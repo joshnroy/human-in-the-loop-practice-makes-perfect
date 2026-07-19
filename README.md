@@ -38,7 +38,7 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   `environment/types.py` holds `State`/`Object`/`Type`/`Action` because defining
   state/action space is Environment's job. Same pattern for `human_oracle/`
   (`Cost` — `send_command` is what produces it), `problem/` (`Task`/`Goal`/
-  `GroundAtom`/`Predicate` — task/goal generation is Problem's job), and `method/`
+  `Predicate`/`GroundAtom` — task/goal generation is Problem's job), and `method/`
   (`Policy`/`Rollout`/`Skill`/`SetupCommand`). A `types.py` only splits into its own
   file once a type grows big enough to earn one. No `__init__.py` anywhere re-exports
   types from its submodules — every name has exactly one import path (e.g.
@@ -71,14 +71,16 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   detail underneath, not interleaved above it. Within `types.py` itself, apply the
   same rule at the class level: the most important/composite type first, the types/
   helpers it depends on further down — the reverse of the usual leaves-before-use
-  convention. This works in Python because names inside function/method bodies, and
-  (with `from __future__ import annotations`) inside type annotations, are only
-  resolved when actually used, which happens after the whole module has finished
-  importing. See `src/hitl_pmp/core/problem/types.py` for the pattern (`Task` first,
-  then `Goal`, `GroundAtom`, `Predicate` in decreasing order of compositeness) —
-  pydantic models with forward references need an explicit `Model.model_rebuild()`
-  call once every class in the file is defined, which is what the loop at the bottom
-  of that file does.
+  convention. Concretely: if `X` relies on `Y` (has a field typed `Y`, or otherwise
+  needs `Y` to do its job), `Y` goes below `X`. See
+  `src/hitl_pmp/core/problem/types.py` for the pattern: `Task` (relies on `Goal`),
+  `Goal` (relies on `GroundAtom`), `Predicate` (relies on `GroundAtom` — it's what
+  `Predicate.__call__` produces), `GroundAtom` last, since both `Goal` and `Predicate`
+  rely on it. This works in Python without any explicit forward-reference bookkeeping:
+  names inside function/method bodies, and (with `from __future__ import annotations`)
+  inside type annotations, are only resolved when actually used — which happens after
+  the whole module has finished importing, so pydantic resolves the forward references
+  itself on first real use. No `Model.model_rebuild()` call is needed.
 
 ## Contributing
 
@@ -86,10 +88,10 @@ There are currently no tests in this repo beyond a single import smoke test, bec
 
 Once concrete code lands under `environments/`, `methods/`, etc., it should get real tests:
 
-- Each concrete `Environment`'s `simulate()` — determinism given a fixed seed/state/action, and that `valid_actions()` never yields an out-of-bounds action.
+- Each concrete `Environment`'s `step()` — determinism given a fixed seed/state/action, and that `get_valid_actions()` never yields an out-of-bounds action.
 - Each concrete `Problem`'s `request_human_reset()` wiring.
 - Regression tests for any fixed bug (add a test when you fix it, so it can't silently regress).
-- Property-based tests via `hypothesis` for invariants once they apply — e.g. Predicate/GroundAtom set consistency, encode/decode round-trips, or `simulate()` determinism (use `@settings(derandomize=True)` or explicit seeding). This is the same approach the `predicators` bilevel-planning codebase takes with its GroundAtom/predicate vocabulary.
+- Property-based tests via `hypothesis` for invariants once they apply — e.g. Predicate/GroundAtom set consistency, encode/decode round-trips, or `step()` determinism (use `@settings(derandomize=True)` or explicit seeding). This is the same approach the `predicators` bilevel-planning codebase takes with its GroundAtom/predicate vocabulary.
 
 `pytest`, `ruff`, `mypy`, and `pre-commit` are already wired up (see Checks below and `.github/workflows/ci.yml`) so this only needs to slot in as concrete code arrives — no new tooling required.
 

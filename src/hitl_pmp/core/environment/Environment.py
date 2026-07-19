@@ -10,7 +10,12 @@ class Environment(abc.ABC):
     """Pure dynamics, as a static-method container — never instantiated. Concrete
     subclasses set action_space and any of their own internal state as class
     attributes; all methods are static and keyword-only. The most external/
-    foundational module in core/ — nothing else here is imported into it."""
+    foundational module in core/ — nothing else here is imported into it.
+
+    Deliberately no reward function: this is a multi-task environment, and success
+    is judged by goal-state reaching (Task.goal.is_satisfied), not a scalar reward —
+    a fixed reward wouldn't make sense across tasks the agent invents for itself.
+    """
 
     action_space: ClassVar[Space]
 
@@ -21,7 +26,7 @@ class Environment(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def simulate(*, state: State, action: Action) -> State:
+    def step(*, state: State, action: Action) -> State:
         raise NotImplementedError
 
     @staticmethod
@@ -33,4 +38,11 @@ class Environment(abc.ABC):
     @abc.abstractmethod
     def set_state(*, state: State) -> None:
         """Privileged setter used by Problem/HumanOracle to force a state; NOT a semantic reset."""
+        raise NotImplementedError
+
+    @staticmethod
+    @abc.abstractmethod
+    def hard_reset() -> None:
+        """Reset to the initial state distribution. Only for the harness to call before
+        a run starts — never mid-practice, and never by the agent itself."""
         raise NotImplementedError

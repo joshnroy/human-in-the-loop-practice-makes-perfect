@@ -14,8 +14,8 @@ a free reset — a human/oracle must sometimes intervene, at a cost, via
 `Problem.request_human_reset()`. Baking Gym's assumption into the core
 abstraction would silently contradict the research question, so
 `core.Environment` stays a bespoke, pure-dynamics interface
-(`simulate`/`get_valid_actions`/`get_current_state`/`set_state`, backed by
-`gymnasium.spaces.Box`), and Gym-compatibility is handled here instead —
+(`step`/`get_valid_actions`/`get_current_state`/`set_state`/`hard_reset`, backed by
+`gymnasium.spaces.Space`), and Gym-compatibility is handled here instead —
 explicitly, as two separate, non-symmetric adapters.
 
 ## Two directions, not one

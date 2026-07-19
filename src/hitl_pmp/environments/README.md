@@ -11,8 +11,8 @@ environments should follow. See [`../core/README.md`](../core/README.md) for why
 Each domain subfolder is expected to contain:
 
 - `environment.py` — a concrete subclass of `core.Environment`: the pure dynamics
-  (`simulate`, `get_valid_actions`, `get_current_state`/`set_state`). No tasks, no
-  humans, no reset cost — just the physics/logic of the domain.
+  (`step`, `get_valid_actions`, `get_current_state`/`set_state`/`hard_reset`). No
+  tasks, no humans, no reset cost — just the physics/logic of the domain.
 - `problem.py` — a concrete subclass of `core.Problem` that binds this domain's
   `environment.py` `Environment` to a chosen `HumanOracle` from
   `../human_oracles/`, and defines the domain's task distribution and

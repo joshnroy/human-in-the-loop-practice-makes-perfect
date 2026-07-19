@@ -24,7 +24,7 @@ rationale:
   `Action` exist to support `Environment` (it's Environment's job to define what
   state/action even mean), so they live in `environment/types.py`. `Cost` exists to
   support `HumanOracle` (it's what `send_command` produces), so it lives in
-  `human_oracle/types.py`. `Task`/`Goal`/`GroundAtom`/`Predicate` exist to support
+  `human_oracle/types.py`. `Task`/`Goal`/`Predicate`/`GroundAtom` exist to support
   `Problem` (task/goal generation is Problem's job), so they live in
   `problem/types.py`. `Policy`/`Rollout`/`Skill`/`SetupCommand` exist to support
   `Method`, so they live in `method/types.py`. `dataclasses`/`attrs` are banned
@@ -61,8 +61,10 @@ environment back to a usable state.
 
 Rather than bolt cost-aware resets onto Gym's `Env`, we split what Gym conflates:
 
-- **`Environment`** stays pure dynamics only — `simulate`, `get_valid_actions`,
-  `get_current_state`/`set_state`. No notion of tasks, humans, or reset cost. This is
+- **`Environment`** stays pure dynamics only — `step`, `get_valid_actions`,
+  `get_current_state`/`set_state`/`hard_reset`. No notion of tasks, humans, or reset
+  cost — `hard_reset` resets to the initial state distribution but is only ever called
+  by the harness before a run starts, never by the agent or tied to a human cost. This is
   the reusable, importable, Gym-compatible layer that can be shared across research
   questions. `action_space` is typed as `gymnasium.spaces.Space` (never the legacy
   `gym` package), not a plain numpy array — a `Space` is self-describing (bounds,
@@ -87,7 +89,7 @@ Rather than bolt cost-aware resets onto Gym's `Env`, we split what Gym conflates
   `core/`.
 - `human_oracle/` — `HumanOracle.py` + `types.py` (`Cost`). Imports `State` from
   `environment/types.py`.
-- `problem/` — `Problem.py` + `types.py` (`Task`, `Goal`, `GroundAtom`, `Predicate`).
+- `problem/` — `Problem.py` + `types.py` (`Task`, `Goal`, `Predicate`, `GroundAtom`).
   Imports from both `environment/` and `human_oracle/`.
 - `method/` — `Method.py` + `types.py` (`Policy`, `Rollout`, `Skill`, `SetupCommand`).
   Imports from `environment/`.
@@ -105,7 +107,7 @@ graph TD
     environment["environment/<br/>Environment, State, Object, Type, Action"]
     human_oracle["human_oracle/<br/>HumanOracle, Cost"]
     metrics["metrics/<br/>Metrics"]
-    problem["problem/<br/>Problem, Task, Goal, GroundAtom, Predicate"]
+    problem["problem/<br/>Problem, Task, Goal, Predicate, GroundAtom"]
     method["method/<br/>Method, Policy, Rollout, Skill, SetupCommand"]
 
     human_oracle --> environment

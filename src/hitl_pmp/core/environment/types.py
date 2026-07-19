@@ -28,6 +28,3 @@ class Type(BaseModel):
 
 
 Action = np.ndarray
-
-for _model in (State, Object, Type):
-    _model.model_rebuild()

@@ -21,13 +21,6 @@ class Goal(BaseModel):
         return all(atom.predicate.holds(state, atom.objects) for atom in self.atoms)
 
 
-class GroundAtom(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    predicate: Predicate
-    objects: tuple[Object, ...]
-
-
 class Predicate(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -39,5 +32,8 @@ class Predicate(BaseModel):
         return GroundAtom(predicate=self, objects=objects)
 
 
-for _model in (Task, Goal, GroundAtom, Predicate):
-    _model.model_rebuild()
+class GroundAtom(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    predicate: Predicate
+    objects: tuple[Object, ...]
