@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hitl-pmp"
+version = "0.1.0"
+description = "Human-in-the-Loop: Practice Makes Perfect"
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic",
+    "gymnasium",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "mypy",
+    "pre-commit",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/hitl_pmp"]
+
+[tool.coverage.report]
+# Abstract-method bodies never execute regardless of test quality -- the whole
+# point is that a concrete subclass overrides them instead.
+exclude_lines = ["raise NotImplementedError"]
+
+[tool.ruff]
+line-length = 100
+preview = true
+
+[tool.ruff.lint]
+# N999 bans non-lower_case.py module/file names.
+select = ["E", "F", "I", "UP", "B", "SIM", "TID", "PLR0917", "N999"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"dataclasses".msg = "Dataclasses are banned in this project — use a pydantic BaseModel instead."
+"attr".msg = "Use a pydantic BaseModel instead of attrs in this project."
+"attrs".msg = "Use a pydantic BaseModel instead of attrs in this project."
+"typing.TYPE_CHECKING".msg = "if TYPE_CHECKING guards are banned — import the target's types.py directly instead of its ABC file, which avoids the cycle without deferring the import."
+
+[tool.ruff.lint.pylint]
+# Every parameter (beyond self/cls) must be keyword-only — this makes any
+# positional-or-keyword parameter in a function we define a lint error.
+max-positional-args = 0
+
+[tool.mypy]
+python_version = "3.10"
+packages = ["hitl_pmp"]
+ignore_missing_imports = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
