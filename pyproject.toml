@@ -31,7 +31,8 @@ line-length = 100
 preview = true
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "TID", "PLR0917"]
+# N999 bans non-lower_case.py module/file names.
+select = ["E", "F", "I", "UP", "B", "SIM", "TID", "PLR0917", "N999"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "dataclasses".msg = "Dataclasses are banned in this project — use a pydantic BaseModel instead."

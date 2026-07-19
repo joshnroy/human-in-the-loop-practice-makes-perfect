@@ -3,9 +3,9 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING, ClassVar
 
-from hitl_pmp.core.environment.Environment import Environment
+from hitl_pmp.core.environment.environment import Environment
 from hitl_pmp.core.environment.types import State
-from hitl_pmp.core.human_oracle.HumanOracle import HumanOracle
+from hitl_pmp.core.human_oracle.human_oracle import HumanOracle
 from hitl_pmp.core.human_oracle.types import Cost
 
 from .types import Task

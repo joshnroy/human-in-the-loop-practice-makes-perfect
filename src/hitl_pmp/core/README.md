@@ -4,14 +4,15 @@ This folder holds the **fixed abstract interfaces** for the project: `Environmen
 `HumanOracle`, `Problem`, `Method`, `Metrics`. Concrete implementations live in
 sibling folders, not here.
 
-Each interface is its own subpackage, split into an entrypoint file (the ABC,
-capitalized to match the class name) and a `types.py` holding the data it supports —
-until any one type grows big enough to earn its own file:
+Each interface is its own subpackage, split into an entrypoint file (named after the
+module, lowercase — `environment/environment.py`, not `Environment.py`; every filename
+in this project is `lower_case.py`, enforced by ruff's `N999`) and a `types.py` holding
+the data it supports — until any one type grows big enough to earn its own file:
 
 ```
 environment/
 ├── __init__.py       (empty)
-├── Environment.py     the ABC — the entrypoint to this module
+├── environment.py     the ABC — the entrypoint to this module
 └── types.py           State, Object, Type, Action
 ```
 
@@ -61,17 +62,27 @@ environment back to a usable state.
 
 Rather than bolt cost-aware resets onto Gym's `Env`, we split what Gym conflates:
 
-- **`Environment`** stays pure dynamics only — `step`, `get_valid_actions`,
-  `get_current_state`/`set_state`/`hard_reset`. No notion of tasks, humans, or reset
-  cost — `hard_reset` resets to the initial state distribution but is only ever called
-  by the harness before a run starts, never by the agent or tied to a human cost. This is
-  the reusable, importable, Gym-compatible layer that can be shared across research
-  questions. `action_space` is typed as `gymnasium.spaces.Space` (never the legacy
-  `gym` package), not a plain numpy array — a `Space` is self-describing (bounds,
-  shape, `sample()`, `contains()`), it's what `to_gym.py` will hand straight to
-  SB3/RLlib with zero conversion, and it's left as the abstract `Space` rather than
-  hardcoded to `Box` so a domain with a mixed discrete-skill/continuous-parameter
-  action structure (e.g. Tossing Room) can pick `Discrete`, `MultiDiscrete`, or `Dict`
+- **`Environment`** is *the real-world environment* (or the real/ground-truth
+  simulator standing in for it) — there is exactly one of it, tracked via
+  `current_state: ClassVar[State]`. It is **not** a reusable, stateless dynamics
+  function that other code can call with a hypothetical state to explore "what if" —
+  a `Method` that needs to plan carries its own model for that; it must not borrow
+  `Environment` to do it. `take_action(*, action)` advances `current_state` by one
+  action via the domain's own underlying dynamics and returns the new state;
+  `get_valid_actions()` reads from `current_state` too — neither takes an explicit
+  `state` argument, both operate on the one real state. `get_current_state()`/
+  `set_state()` are concrete (shared across every `Environment`, not reimplemented
+  per domain) — `set_state` is a *privileged external override* (used by
+  `Problem`/`HumanOracle` to force a state, distinct from `take_action`'s normal
+  forward dynamics). `hard_reset()` resets to the initial state distribution but is
+  only ever called by the harness before a run starts, never by the agent or tied to
+  a human cost. No notion of tasks, humans, or reset cost belongs here.
+  `action_space` is typed as `gymnasium.spaces.Space` (never the legacy `gym`
+  package), not a plain numpy array — a `Space` is self-describing (bounds, shape,
+  `sample()`, `contains()`), it's what `to_gym.py` will hand straight to SB3/RLlib
+  with zero conversion, and it's left as the abstract `Space` rather than hardcoded
+  to `Box` so a domain with a mixed discrete-skill/continuous-parameter action
+  structure (e.g. Tossing Room) can pick `Discrete`, `MultiDiscrete`, or `Dict`
   instead.
 - **`HumanOracle`** is the human/oracle cost model, independently swappable (the v0
   unconditional oracle up through a v3 natural-language, capability-aware oracle in the
@@ -84,16 +95,16 @@ Rather than bolt cost-aware resets onto Gym's `Env`, we split what Gym conflates
 
 ## Files
 
-- `environment/` — `Environment.py` (the ABC) + `types.py` (`State`, `Object`, `Type`,
+- `environment/` — `environment.py` (the ABC) + `types.py` (`State`, `Object`, `Type`,
   `Action`). The most external/foundational subpackage: imports nothing else from
   `core/`.
-- `human_oracle/` — `HumanOracle.py` + `types.py` (`Cost`). Imports `State` from
+- `human_oracle/` — `human_oracle.py` + `types.py` (`Cost`). Imports `State` from
   `environment/types.py`.
-- `problem/` — `Problem.py` + `types.py` (`Task`, `Goal`, `Predicate`, `GroundAtom`).
+- `problem/` — `problem.py` + `types.py` (`Task`, `Goal`, `Predicate`, `GroundAtom`).
   Imports from both `environment/` and `human_oracle/`.
-- `method/` — `Method.py` + `types.py` (`Policy`, `Rollout`, `Skill`, `SetupCommand`).
+- `method/` — `method.py` + `types.py` (`Policy`, `Rollout`, `Skill`, `SetupCommand`).
   Imports from `environment/`.
-- `metrics/` — `Metrics.py`, the (mostly generic) evaluation protocol. No `types.py` —
+- `metrics/` — `metrics.py`, the (mostly generic) evaluation protocol. No `types.py` —
   it has no supporting types of its own yet.
 
 ## Module dependency graph

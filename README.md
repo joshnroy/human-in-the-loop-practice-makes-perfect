@@ -32,9 +32,11 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
 - **All data/state lives in pydantic `BaseModel`s.** `dataclasses` and `attrs` are
   banned — enforced by ruff's `TID251` banned-api rule; importing either is a lint
   error, not just a style nit.
-- **Each interface is a subpackage: an entrypoint file (the ABC, capitalized to match
-  the class name) plus a `types.py`** for the data it supports — not a flat module,
-  and never a shared bucket file. `environment/Environment.py` is the entrypoint;
+- **Every filename is `lower_case.py`, no exceptions.** Enforced by ruff's `N999`
+  (`invalid-module-name`) — a capitalized or mixed-case filename is a lint error.
+- **Each interface is a subpackage: an entrypoint file (named after the module) plus
+  a `types.py`** for the data it supports — not a flat module, and never a shared
+  bucket file. `environment/environment.py` is the entrypoint;
   `environment/types.py` holds `State`/`Object`/`Type`/`Action` because defining
   state/action space is Environment's job. Same pattern for `human_oracle/`
   (`Cost` — `send_command` is what produces it), `problem/` (`Task`/`Goal`/
@@ -67,7 +69,7 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   calls we don't control (e.g. `np.array([1, 2, 3])`) — the rule only inspects
   functions *we* define, so external APIs are naturally exempt.
 - **Files/classes are organized top-down, not bottom-up.** The entrypoint file (e.g.
-  `Problem.py`) is what a reader should open first; its `types.py` is the supporting
+  `problem.py`) is what a reader should open first; its `types.py` is the supporting
   detail underneath, not interleaved above it. Within `types.py` itself, apply the
   same rule at the class level: the most important/composite type first, the types/
   helpers it depends on further down — the reverse of the usual leaves-before-use
@@ -88,10 +90,10 @@ There are currently no tests in this repo beyond a single import smoke test, bec
 
 Once concrete code lands under `environments/`, `methods/`, etc., it should get real tests:
 
-- Each concrete `Environment`'s `step()` — determinism given a fixed seed/state/action, and that `get_valid_actions()` never yields an out-of-bounds action.
+- Each concrete `Environment`'s `take_action()` — determinism given a fixed seed/current_state/action, and that `get_valid_actions()` never yields an out-of-bounds action.
 - Each concrete `Problem`'s `request_human_reset()` wiring.
 - Regression tests for any fixed bug (add a test when you fix it, so it can't silently regress).
-- Property-based tests via `hypothesis` for invariants once they apply — e.g. Predicate/GroundAtom set consistency, encode/decode round-trips, or `step()` determinism (use `@settings(derandomize=True)` or explicit seeding). This is the same approach the `predicators` bilevel-planning codebase takes with its GroundAtom/predicate vocabulary.
+- Property-based tests via `hypothesis` for invariants once they apply — e.g. Predicate/GroundAtom set consistency, encode/decode round-trips, or `take_action()` determinism (use `@settings(derandomize=True)` or explicit seeding). This is the same approach the `predicators` bilevel-planning codebase takes with its GroundAtom/predicate vocabulary.
 
 `pytest`, `ruff`, `mypy`, and `pre-commit` are already wired up (see Checks below and `.github/workflows/ci.yml`) so this only needs to slot in as concrete code arrives — no new tooling required.
 

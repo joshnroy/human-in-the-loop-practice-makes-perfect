@@ -4,15 +4,18 @@ This is where **concrete** `Environment` implementations live — one subfolder 
 domain, e.g. a future `environments/lightswitch/` or `environments/tossing_room/`.
 Nothing concrete exists yet: this folder currently only documents the convention new
 environments should follow. See [`../core/README.md`](../core/README.md) for why
-`Environment` is pure dynamics with no notion of tasks, humans, or reset cost.
+`Environment` is the one real-world/ground-truth instance for a domain (not a
+reusable dynamics function for hypothetical planning), with no notion of tasks,
+humans, or reset cost.
 
 ## Convention for a domain subfolder
 
 Each domain subfolder is expected to contain:
 
-- `environment.py` — a concrete subclass of `core.Environment`: the pure dynamics
-  (`step`, `get_valid_actions`, `get_current_state`/`set_state`/`hard_reset`). No
-  tasks, no humans, no reset cost — just the physics/logic of the domain.
+- `environment.py` — a concrete subclass of `core.Environment`: the domain's own
+  dynamics (`take_action`, `get_valid_actions`, `get_current_state`/`set_state`/
+  `hard_reset`), all operating on the one tracked `current_state`. No tasks, no
+  humans, no reset cost — just the physics/logic of the domain.
 - `problem.py` — a concrete subclass of `core.Problem` that binds this domain's
   `environment.py` `Environment` to a chosen `HumanOracle` from
   `../human_oracles/`, and defines the domain's task distribution and

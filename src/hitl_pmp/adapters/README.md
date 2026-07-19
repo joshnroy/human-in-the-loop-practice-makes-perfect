@@ -13,10 +13,10 @@ opposite: some actions are irreversible, so ending an episode does not imply
 a free reset — a human/oracle must sometimes intervene, at a cost, via
 `Problem.request_human_reset()`. Baking Gym's assumption into the core
 abstraction would silently contradict the research question, so
-`core.Environment` stays a bespoke, pure-dynamics interface
-(`step`/`get_valid_actions`/`get_current_state`/`set_state`/`hard_reset`, backed by
-`gymnasium.spaces.Space`), and Gym-compatibility is handled here instead —
-explicitly, as two separate, non-symmetric adapters.
+`core.Environment` stays a bespoke interface representing the one real-world
+state (`take_action`/`get_valid_actions`/`get_current_state`/`set_state`/
+`hard_reset`, backed by `gymnasium.spaces.Space`), and Gym-compatibility is
+handled here instead — explicitly, as two separate, non-symmetric adapters.
 
 ## Two directions, not one
 
