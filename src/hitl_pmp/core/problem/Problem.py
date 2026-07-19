@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import abc
-from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from hitl_pmp.core.environment.Environment import Environment
+from hitl_pmp.core.environment.types import State
+from hitl_pmp.core.human_oracle.HumanOracle import HumanOracle
+from hitl_pmp.core.human_oracle.types import Cost
 
-from .environment import Environment, Object, State, Type
-from .human_oracle import Cost, HumanOracle
+from .types import Task
 
 if TYPE_CHECKING:
-    from .method import Policy
+    from hitl_pmp.core.method.types import Policy
 
 
 class Problem(abc.ABC):
@@ -27,7 +28,7 @@ class Problem(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def get_train_tasks() -> set[Task]:
+    def get_train_tasks() -> list[Task]:
         raise NotImplementedError
 
     @staticmethod
@@ -51,43 +52,3 @@ class Problem(abc.ABC):
     def run_task_episode(*, task: Task, policy: Policy) -> bool:
         """Run policy on task until goal reached or timeout; returns whether it succeeded."""
         raise NotImplementedError
-
-
-class Task(BaseModel):
-    """The top-level unit of work: an initial state and a goal to reach from it."""
-
-    model_config = ConfigDict(frozen=True)
-
-    initial_state: State
-    goal: Goal
-
-
-class Goal(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    atoms: frozenset[GroundAtom]
-
-    def is_satisfied(self, *, state: State) -> bool:
-        return all(atom.predicate.holds(state, atom.objects) for atom in self.atoms)
-
-
-class GroundAtom(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    predicate: Predicate
-    objects: tuple[Object, ...]
-
-
-class Predicate(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    name: str
-    types: tuple[Type, ...]
-    holds: Callable[[State, tuple[Object, ...]], bool]
-
-    def __call__(self, *, state: State, objects: tuple[Object, ...]) -> GroundAtom:
-        return GroundAtom(predicate=self, objects=objects)
-
-
-for _model in (Task, Goal, GroundAtom, Predicate):
-    _model.model_rebuild()

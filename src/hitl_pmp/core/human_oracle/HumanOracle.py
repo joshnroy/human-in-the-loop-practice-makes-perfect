@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 import abc
 
-from .environment import State
+from hitl_pmp.core.environment.types import State
+
+from .types import Cost
 
 
 class HumanOracle(abc.ABC):
@@ -14,6 +14,3 @@ class HumanOracle(abc.ABC):
     def send_command(*, start_state: State, goal_state: State) -> Cost:
         """Move the environment from start_state to goal_state; cost is inf if infeasible."""
         raise NotImplementedError
-
-
-Cost = float

@@ -1,7 +1,7 @@
 # planning
 
 Shared infrastructure for bridging the symbolic `core.Predicate` /
-`core.GroundAtom` layer (see `core/problem.py`) to classical planners such as
+`core.GroundAtom` layer (see `core/problem/types.py`) to classical planners such as
 Fast Downward.
 
 This follows the precedent set by the sibling repo one level up

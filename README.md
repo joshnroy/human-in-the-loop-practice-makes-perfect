@@ -32,18 +32,23 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
 - **All data/state lives in pydantic `BaseModel`s.** `dataclasses` and `attrs` are
   banned — enforced by ruff's `TID251` banned-api rule; importing either is a lint
   error, not just a style nit.
-- **Supporting data types live in the file whose ABC they support, not a shared
-  bucket file.** There is no project-wide `structs.py`. `State`/`Object`/`Type`/`Action`
-  support `Environment` (defining state/action space is Environment's job), so they
-  live in `environment.py`. `Cost` supports `HumanOracle` (`send_command` is what
-  produces it), so it lives in `human_oracle.py`. `Task`/`Goal`/`GroundAtom`/`Predicate`
-  support `Problem` (task/goal generation is Problem's job), so they live in
-  `problem.py`. Files freely import types from other files' modules when they need
-  them (e.g. `problem.py` imports `State` from `environment.py`) — see
+- **Each interface is a subpackage: an entrypoint file (the ABC, capitalized to match
+  the class name) plus a `types.py`** for the data it supports — not a flat module,
+  and never a shared bucket file. `environment/Environment.py` is the entrypoint;
+  `environment/types.py` holds `State`/`Object`/`Type`/`Action` because defining
+  state/action space is Environment's job. Same pattern for `human_oracle/`
+  (`Cost` — `send_command` is what produces it), `problem/` (`Task`/`Goal`/
+  `GroundAtom`/`Predicate` — task/goal generation is Problem's job), and `method/`
+  (`Policy`/`Rollout`/`Skill`/`SetupCommand`). A `types.py` only splits into its own
+  file once a type grows big enough to earn one. No `__init__.py` anywhere re-exports
+  types from its submodules — every name has exactly one import path (e.g.
+  `from hitl_pmp.core.environment.types import State`), never a second shortcut
+  through a package `__init__.py`. Imports across subpackages are absolute, never
+  relative (`from ..x import y` is a `TID252` lint error) — see
   [`core/README.md`](src/hitl_pmp/core/README.md#module-dependency-graph) for the full
-  dependency diagram. Where two files each need a type the other owns (`Problem` needs
-  `Method`'s `Policy`, `Method` needs `Problem`'s `Task`), resolve it with
-  `if TYPE_CHECKING:`-guarded imports rather than merging the files — this works
+  dependency diagram. Where two subpackages each need a type the other owns
+  (`Problem` needs `Method`'s `Policy`, `Method` needs `Problem`'s `Task`), resolve it
+  with `if TYPE_CHECKING:`-guarded imports rather than merging them — this works
   whenever the need is type-hint-only, never at runtime.
 - **Behavior lives in static-method container classes, not OOP objects.**
   `Environment`, `HumanOracle`, `Problem`, `Method`, `Metrics` are never instantiated —
@@ -61,17 +66,19 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   silenced with `# noqa: PLR0917` right at the definition), and third-party library
   calls we don't control (e.g. `np.array([1, 2, 3])`) — the rule only inspects
   functions *we* define, so external APIs are naturally exempt.
-- **Files/classes are organized top-down, not bottom-up.** Define the most
-  important/composite ("top-level") class first, with the types/helpers it depends on
-  further down the file — the reverse of the usual leaves-before-use convention. This
-  works in Python because names inside function/method bodies, and (with `from
-  __future__ import annotations`) inside type annotations, are only resolved when
-  actually used, which happens after the whole module has finished importing. See
-  `src/hitl_pmp/core/problem.py` for the pattern (`Problem` first, then `Task`, `Goal`,
-  `GroundAtom`, `Predicate` in decreasing order of compositeness) — pydantic models
-  with forward references need an explicit `Model.model_rebuild()` call once every
-  class in the file is defined, which is what the loop at the bottom of that file
-  does.
+- **Files/classes are organized top-down, not bottom-up.** The entrypoint file (e.g.
+  `Problem.py`) is what a reader should open first; its `types.py` is the supporting
+  detail underneath, not interleaved above it. Within `types.py` itself, apply the
+  same rule at the class level: the most important/composite type first, the types/
+  helpers it depends on further down — the reverse of the usual leaves-before-use
+  convention. This works in Python because names inside function/method bodies, and
+  (with `from __future__ import annotations`) inside type annotations, are only
+  resolved when actually used, which happens after the whole module has finished
+  importing. See `src/hitl_pmp/core/problem/types.py` for the pattern (`Task` first,
+  then `Goal`, `GroundAtom`, `Predicate` in decreasing order of compositeness) —
+  pydantic models with forward references need an explicit `Model.model_rebuild()`
+  call once every class in the file is defined, which is what the loop at the bottom
+  of that file does.
 
 ## Contributing
 

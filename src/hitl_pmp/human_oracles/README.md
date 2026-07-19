@@ -32,6 +32,6 @@ yet.
 
 ## Relationship to `core`
 
-`core/human_oracle.py` defines the fixed abstract interface (`HumanOracle`) that every
-version above implements. See [`../core/README.md`](../core/README.md) for the
-Environment/HumanOracle/Problem split rationale.
+`core/human_oracle/HumanOracle.py` defines the fixed abstract interface (`HumanOracle`)
+that every version above implements. See [`../core/README.md`](../core/README.md) for
+the Environment/HumanOracle/Problem split rationale.

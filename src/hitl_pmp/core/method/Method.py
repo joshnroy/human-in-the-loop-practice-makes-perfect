@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import abc
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from .environment import Action, State
+from hitl_pmp.core.environment.types import State
+
+from .types import Policy, Rollout, SetupCommand, Skill
 
 if TYPE_CHECKING:
-    from .problem import Task
+    from hitl_pmp.core.problem.types import Task
 
 
 class Method(abc.ABC):
@@ -48,9 +49,3 @@ class Method(abc.ABC):
     @abc.abstractmethod
     def improve_skill_parameters(*, skill: Skill, rollout: Rollout) -> None:
         raise NotImplementedError
-
-
-Policy = Callable[[State], Action]
-Rollout = Any
-Skill = Any
-SetupCommand = Any
