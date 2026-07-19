@@ -6,9 +6,8 @@ from typing import TYPE_CHECKING, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
-from .environment import Environment
-from .human_oracle import HumanOracle
-from .structs import Cost, Object, State, Type
+from .environment import Environment, Object, State, Type
+from .human_oracle import Cost, HumanOracle
 
 if TYPE_CHECKING:
     from .method import Policy

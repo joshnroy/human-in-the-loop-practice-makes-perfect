@@ -1,27 +1,28 @@
-from .environment import Environment
-from .human_oracle import HumanOracle
+# Import order here follows ruff/isort (alphabetical), not the dependency DAG —
+# see README.md for the actual most-external -> most-internal module diagram.
+from .environment import Action, Environment, Object, State, Type
+from .human_oracle import Cost, HumanOracle
 from .method import Method, Policy, Rollout, SetupCommand, Skill
 from .metrics import Metrics
 from .problem import Goal, GroundAtom, Predicate, Problem, Task
-from .structs import Action, Cost, Object, State, Type
 
 __all__ = [
-    "Cost",
     "Type",
     "Object",
     "State",
     "Action",
+    "Environment",
+    "Cost",
+    "HumanOracle",
+    "Metrics",
     "Predicate",
     "GroundAtom",
     "Goal",
     "Task",
-    "Policy",
-    "Environment",
-    "HumanOracle",
     "Problem",
-    "Method",
+    "Policy",
     "Rollout",
     "Skill",
     "SetupCommand",
-    "Metrics",
+    "Method",
 ]

@@ -8,19 +8,23 @@ Two different conventions apply to two different categories of code here — see
 root [README's Conventions section](../../../README.md#conventions) for the full
 rationale:
 
-- **Data lives alongside the ABC it supports, as pydantic `BaseModel`s** — not bundled
-  into one shared file. `Task`/`Goal`/`GroundAtom`/`Predicate` exist only to support
-  `Problem` (task/goal generation is Problem's job), so they live in `problem.py`.
-  `Policy`/`Rollout`/`Skill`/`SetupCommand` exist only to support `Method`, so they live
-  in `method.py`. Only `Type`/`Object`/`State`/`Action`/`Cost` — genuinely used by 3+ of
-  the five ABCs with no single owner — stay in `structs.py`. `dataclasses`/`attrs` are
-  banned project-wide (ruff `TID251`).
-  Each file is also the reference example of **top-down organization**: the ABC (or,
-  in `structs.py`, the most composite type) is defined first, its supporting types
-  after — the reverse of the usual leaves-before-use convention. This only works
-  because `from __future__ import annotations` makes annotations lazy strings; the
-  explicit `Model.model_rebuild()` loop at the bottom of each file forces pydantic to
-  resolve those forward references once every class in the file actually exists.
+- **Data lives alongside the ABC it supports, as pydantic `BaseModel`s** — there is no
+  shared "bucket" file. `State`/`Object`/`Type`/`Action` exist to support `Environment`
+  (it's Environment's job to define what state/action even mean), so they live in
+  `environment.py`. `Cost` exists to support `HumanOracle` (it's what `send_command`
+  produces), so it lives in `human_oracle.py`. `Task`/`Goal`/`GroundAtom`/`Predicate`
+  exist to support `Problem` (task/goal generation is Problem's job), so they live in
+  `problem.py`. `Policy`/`Rollout`/`Skill`/`SetupCommand` exist to support `Method`, so
+  they live in `method.py`. `dataclasses`/`attrs` are banned project-wide (ruff
+  `TID251`). Every file that needs another file's types just imports them (e.g.
+  `problem.py` imports `State` from `environment.py` and `Cost` from `human_oracle.py`)
+  — see the dependency diagram below.
+  Each file is also the reference example of **top-down organization**: the ABC is
+  defined first, its supporting types after — the reverse of the usual
+  leaves-before-use convention. This only works because `from __future__ import
+  annotations` makes annotations lazy strings; the explicit `Model.model_rebuild()`
+  loop at the bottom of each file forces pydantic to resolve those forward references
+  once every class in the file actually exists.
   `Problem.run_task_episode` needs `Policy` (from `method.py`) and `Method.get_task_policy`/
   `generate_train_task` need `Task` (from `problem.py`) — a genuine two-way dependency,
   resolved with `if TYPE_CHECKING:`-guarded imports in both files, since both uses are
@@ -64,15 +68,37 @@ Rather than bolt cost-aware resets onto Gym's `Env`, we split what Gym conflates
 
 ## Files
 
-- `structs.py` — the shared foundational types with no single owner: `Type`,
-  `Object`, `State`, `Action`, `Cost`.
-- `environment.py` — `Environment`, the pure-dynamics abstract interface.
-- `human_oracle.py` — `HumanOracle`, the swappable human/oracle cost model.
-- `problem.py` — `Problem`, the composition root binding env + oracle + tasks, plus
-  its own vocabulary: `Task`, `Goal`, `GroundAtom`, `Predicate`.
-- `method.py` — `Method`, the agent side that mirrors `Problem`, plus its own
-  vocabulary: `Policy`, `Rollout`, `Skill`, `SetupCommand`.
-- `metrics.py` — `Metrics`, the (mostly generic) evaluation protocol.
+- `environment.py` — `Environment`, plus `State`, `Object`, `Type`, `Action`. The most
+  external/foundational file: imports nothing else from `core/`.
+- `human_oracle.py` — `HumanOracle`, plus `Cost`. Imports `State` from `environment.py`.
+- `problem.py` — `Problem`, plus `Task`, `Goal`, `GroundAtom`, `Predicate`. Imports from
+  both `environment.py` and `human_oracle.py`.
+- `method.py` — `Method`, plus `Policy`, `Rollout`, `Skill`, `SetupCommand`. Imports
+  from `environment.py`.
+- `metrics.py` — `Metrics`, the (mostly generic) evaluation protocol. Imports nothing
+  else from `core/`.
+
+## Module dependency graph
+
+Most-external (fewest internal dependencies) at the top, most-internal at the bottom.
+The `Problem <-> Method` edge is `TYPE_CHECKING`-only in both directions (type hints
+for `Task`/`Policy`), never a real runtime import cycle:
+
+```mermaid
+graph TD
+    environment["environment.py<br/>Environment, State, Object, Type, Action"]
+    human_oracle["human_oracle.py<br/>HumanOracle, Cost"]
+    metrics["metrics.py<br/>Metrics"]
+    problem["problem.py<br/>Problem, Task, Goal, GroundAtom, Predicate"]
+    method["method.py<br/>Method, Policy, Rollout, Skill, SetupCommand"]
+
+    human_oracle --> environment
+    problem --> environment
+    problem --> human_oracle
+    method --> environment
+    problem -.->|TYPE_CHECKING only| method
+    method -.->|TYPE_CHECKING only| problem
+```
 
 ## Concrete implementations
 

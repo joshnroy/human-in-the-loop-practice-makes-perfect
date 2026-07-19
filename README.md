@@ -20,7 +20,7 @@ pip install -e ".[dev]"
 
 Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
 
-- [core/](src/hitl_pmp/core/README.md) — the fixed abstract interfaces (`Environment`, `HumanOracle`, `Problem`, `Method`, `Metrics`) and shared structs
+- [core/](src/hitl_pmp/core/README.md) — the fixed abstract interfaces (`Environment`, `HumanOracle`, `Problem`, `Method`, `Metrics`), each with its own supporting data types
 - [environments/](src/hitl_pmp/environments/README.md) — concrete `Environment` + `Problem` implementations, one subfolder per domain
 - [human_oracles/](src/hitl_pmp/human_oracles/README.md) — concrete `HumanOracle` implementations (the v0-v3 human-cost-model axis)
 - [methods/](src/hitl_pmp/methods/README.md) — concrete `Method`/baseline implementations
@@ -33,13 +33,18 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   banned — enforced by ruff's `TID251` banned-api rule; importing either is a lint
   error, not just a style nit.
 - **Supporting data types live in the file whose ABC they support, not a shared
-  bucket file.** E.g. `Task`/`Goal`/`GroundAtom`/`Predicate` exist only to support
-  `Problem`, so they live in `problem.py`, not a project-wide `structs.py`. Only types
-  genuinely used by 3+ files with no single owner (`Type`, `Object`, `State`, `Action`,
-  `Cost`) stay in a shared `structs.py`. Where two files each need a type the other
-  owns (e.g. `Problem` needs `Method`'s `Policy`, `Method` needs `Problem`'s `Task`),
-  resolve it with `if TYPE_CHECKING:`-guarded imports rather than merging the files —
-  this works whenever the need is type-hint-only, never at runtime.
+  bucket file.** There is no project-wide `structs.py`. `State`/`Object`/`Type`/`Action`
+  support `Environment` (defining state/action space is Environment's job), so they
+  live in `environment.py`. `Cost` supports `HumanOracle` (`send_command` is what
+  produces it), so it lives in `human_oracle.py`. `Task`/`Goal`/`GroundAtom`/`Predicate`
+  support `Problem` (task/goal generation is Problem's job), so they live in
+  `problem.py`. Files freely import types from other files' modules when they need
+  them (e.g. `problem.py` imports `State` from `environment.py`) — see
+  [`core/README.md`](src/hitl_pmp/core/README.md#module-dependency-graph) for the full
+  dependency diagram. Where two files each need a type the other owns (`Problem` needs
+  `Method`'s `Policy`, `Method` needs `Problem`'s `Task`), resolve it with
+  `if TYPE_CHECKING:`-guarded imports rather than merging the files — this works
+  whenever the need is type-hint-only, never at runtime.
 - **Behavior lives in static-method container classes, not OOP objects.**
   `Environment`, `HumanOracle`, `Problem`, `Method`, `Metrics` are never instantiated —
   think Java's "static class" / singleton-by-class-name idiom, not encapsulated

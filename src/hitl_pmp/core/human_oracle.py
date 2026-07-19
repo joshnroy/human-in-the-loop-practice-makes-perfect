@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import abc
 
-from .structs import Cost, State
+from .environment import State
 
 
 class HumanOracle(abc.ABC):
@@ -12,3 +14,6 @@ class HumanOracle(abc.ABC):
     def send_command(*, start_state: State, goal_state: State) -> Cost:
         """Move the environment from start_state to goal_state; cost is inf if infeasible."""
         raise NotImplementedError
+
+
+Cost = float

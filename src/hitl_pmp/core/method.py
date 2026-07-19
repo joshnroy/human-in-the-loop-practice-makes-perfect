@@ -4,7 +4,7 @@ import abc
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from .structs import Action, State
+from .environment import Action, State
 
 if TYPE_CHECKING:
     from .problem import Task
