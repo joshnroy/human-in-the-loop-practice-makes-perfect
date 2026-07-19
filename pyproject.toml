@@ -15,6 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-cov",
     "ruff",
     "mypy",
     "pre-commit",
@@ -25,6 +26,14 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src/hitl_pmp"]
+
+[tool.coverage.report]
+# Abstract-method bodies never execute regardless of test quality -- the whole
+# point is that a concrete subclass overrides them instead.
+exclude_lines = ["raise NotImplementedError"]
 
 [tool.ruff]
 line-length = 100
