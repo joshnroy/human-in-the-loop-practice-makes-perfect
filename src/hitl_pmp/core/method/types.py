@@ -41,4 +41,15 @@ class SetupCommandTarget(Enum):
     HUMAN = "human"
 
 
+# TODO(follow-up PR): Skill is a placeholder. Per predicators/structs.py's NSRT /
+# _GroundNSRT / ParameterizedOption / _Option (a 3-level lifted -> objects-bound ->
+# objects+params-bound hierarchy), this should probably become:
+#   class Skill(BaseModel): name: str; types: tuple[Type, ...]; param_dim: int
+#   class GroundSkill(BaseModel): skill: Skill; objects: tuple[Object, ...]
+# with continuous params sampled inside execute_skill (not part of GroundSkill) --
+# improve_skill_parameters needs to update the *sampler*, not one already-consumed
+# param value, matching _GroundNSRT.sample_option(). Preconditions/effects
+# (STRIPSOperator's symbolic half) deliberately deferred too: needs a Variable/
+# LiftedAtom layer (predicators: Object/Variable both subclass _TypedEntity,
+# distinguished by whether the name starts with "?") that nothing here consumes yet.
 Skill = Any
