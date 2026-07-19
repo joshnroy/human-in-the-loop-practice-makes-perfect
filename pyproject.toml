@@ -9,6 +9,7 @@ description = "Human-in-the-Loop: Practice Makes Perfect"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic",
+    "gymnasium",
 ]
 
 [project.optional-dependencies]
@@ -27,9 +28,20 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
+preview = true
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "TID", "PLR0917"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"dataclasses".msg = "Dataclasses are banned in this project — use a pydantic BaseModel instead."
+"attr".msg = "Use a pydantic BaseModel instead of attrs in this project."
+"attrs".msg = "Use a pydantic BaseModel instead of attrs in this project."
+
+[tool.ruff.lint.pylint]
+# Every parameter (beyond self/cls) must be keyword-only — this makes any
+# positional-or-keyword parameter in a function we define a lint error.
+max-positional-args = 0
 
 [tool.mypy]
 python_version = "3.10"
