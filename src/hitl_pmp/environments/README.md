@@ -1,12 +1,10 @@
 # environments
 
 This is where **concrete** `Environment` implementations live — one subfolder per
-domain, e.g. a future `environments/lightswitch/` or `environments/tossing_room/`.
-Nothing concrete exists yet: this folder currently only documents the convention new
-environments should follow. See [`../core/README.md`](../core/README.md) for why
-`Environment` is the one real-world/ground-truth instance for a domain (not a
-reusable dynamics function for hypothetical planning), with no notion of tasks,
-humans, or reset cost.
+domain, e.g. `environments/lightswitch/` or a future `environments/tossing_room/`.
+See [`../core/README.md`](../core/README.md) for why `Environment` is the one
+real-world/ground-truth instance for a domain (not a reusable dynamics function for
+hypothetical planning), with no notion of tasks, humans, or reset cost.
 
 ## Convention for a domain subfolder
 
@@ -40,5 +38,14 @@ predicate definitions play in `predicators/envs/`.
 
 ## Status
 
-No concrete environments exist yet. This README documents the expected shape of a
-domain subfolder so the first one (and every one after it) is consistent.
+- `lightswitch/` — the paper's "Light Switch" environment, ported from the sibling
+  `hitl-practice` repo's `GridRowEnv` (`predicators/envs/grid_row.py`), which is the
+  paper's actual reference implementation. Has `environment.py` and `tasks.py`, plus
+  a minimal `predicates.py` (`LightOn` — the only predicate the current scope needs).
+  No `problem.py` yet: this environment has no irreversible action (the paper's
+  "impossible" jump skill is just a no-op, not a real hazard), so nothing in this PR
+  needs a `HumanOracle`/`Method` to exist first. Where the paper's prose is imprecise
+  or silent on an exact number, `GridRowEnv`'s code is ground truth — see the Notion
+  page's "Details not in paper but in codebase" section.
+- Every other domain subfolder: not started yet. The convention above describes the
+  expected shape once one lands.
