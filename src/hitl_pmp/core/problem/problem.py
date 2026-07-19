@@ -33,7 +33,7 @@ class Problem(abc.ABC):
         return Problem.env.take_action(action=action)
 
     @staticmethod
-    def get_valid_actions() -> set[Action]:
+    def get_valid_actions() -> list[Action]:
         return Problem.env.get_valid_actions()
 
     @staticmethod

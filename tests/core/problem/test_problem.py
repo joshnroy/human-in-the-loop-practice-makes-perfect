@@ -29,8 +29,8 @@ class _Env(Environment):
         return Environment.current_state
 
     @staticmethod
-    def get_valid_actions() -> set[Action]:
-        return set()
+    def get_valid_actions() -> list[Action]:
+        return [np.array([1.0])]
 
     @staticmethod
     def hard_reset() -> None:
@@ -98,7 +98,9 @@ def test_take_action_delegates_to_env() -> None:
 
 def test_get_valid_actions_delegates_to_env() -> None:
     _wire_problem()
-    assert Problem.get_valid_actions() == set()
+    actions = Problem.get_valid_actions()
+    assert len(actions) == 1
+    assert actions[0].tolist() == [1.0]
 
 
 def test_hard_reset_delegates_to_env() -> None:

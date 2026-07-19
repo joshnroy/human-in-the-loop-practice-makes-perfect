@@ -19,8 +19,8 @@ class _DummyEnvironment(Environment):
         return Environment.current_state
 
     @staticmethod
-    def get_valid_actions() -> set[Action]:
-        return set()
+    def get_valid_actions() -> list[Action]:
+        return [np.array([1.0]), np.array([-1.0])]
 
     @staticmethod
     def hard_reset() -> None:
@@ -47,7 +47,10 @@ def test_take_action_advances_current_state() -> None:
 
 
 def test_get_valid_actions_returns_domain_actions() -> None:
-    assert _DummyEnvironment.get_valid_actions() == set()
+    actions = _DummyEnvironment.get_valid_actions()
+    assert len(actions) == 2
+    assert actions[0].tolist() == [1.0]
+    assert actions[1].tolist() == [-1.0]
 
 
 def test_hard_reset_sets_current_state() -> None:
