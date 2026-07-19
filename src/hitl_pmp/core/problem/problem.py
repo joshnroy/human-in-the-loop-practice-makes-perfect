@@ -70,12 +70,12 @@ class Problem(abc.ABC):
         )
 
     @staticmethod
-    def get_train_tasks() -> list[Task]:
-        return Problem.tasks.get_train_tasks()
+    def sample_train_task() -> Task:
+        return Problem.tasks.sample_train_task()
 
     @staticmethod
-    def get_test_task() -> Task:
-        return Problem.tasks.get_test_task()
+    def sample_test_task() -> Task:
+        return Problem.tasks.sample_test_task()
 
     @staticmethod
     @abc.abstractmethod

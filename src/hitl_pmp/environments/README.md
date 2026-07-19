@@ -16,8 +16,9 @@ Each domain subfolder is expected to contain:
   dynamics (`take_action`, `get_valid_actions`, `get_current_state`/`set_state`/
   `hard_reset`), all operating on the one tracked `current_state`. No tasks, no
   humans, no reset cost — just the physics/logic of the domain.
-- `tasks.py` — a concrete subclass of `core.Tasks`: `get_train_tasks`/`get_test_task`
-  (sampling initial states, goals, train/test splits) specific to this domain.
+- `tasks.py` — a concrete subclass of `core.Tasks`: `sample_train_task`/
+  `sample_test_task` (sampling initial states, goals, train/test splits) specific to
+  this domain.
 - `problem.py` — a concrete subclass of `core.Problem` that sets `env`/`human`/`tasks`
   to this domain's `Environment`, a chosen `HumanOracle` from `../human_oracles/`, and
   this domain's `Tasks`, and implements `run_task_episode` (the one method `Problem`

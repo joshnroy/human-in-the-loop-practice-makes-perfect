@@ -12,9 +12,9 @@ core/
 │   ├── environment/
 │   │   ├── environment.py     Environment — pure dynamics
 │   │   └── types.py            State, Object, Type, Action
-│   ├── human_oracle/
-│   │   ├── human_oracle.py    HumanOracle — the human-cost model
-│   │   └── types.py            Cost, CommandStartStateDescription, CommandEndStateDescription
+│   ├── human/
+│   │   ├── human.py            HumanOracle — the human-cost model
+│   │   └── types.py            Cost, CommandStartStateDescription, CommandGoalDescription
 │   └── tasks/
 │       ├── tasks.py            Tasks — task/goal generation
 │       └── types.py             Task, Goal, Predicate, GroundAtom
@@ -26,7 +26,7 @@ core/
 ```
 
 There is no `problem/types.py` — every type that used to live there now lives in
-whichever of `environment/`, `human_oracle/`, or `tasks/` actually supports it.
+whichever of `environment/`, `human/`, or `tasks/` actually supports it.
 
 ## What `Problem` actually is
 
@@ -48,9 +48,10 @@ siblings of it in `core/`.
 
 To actually deliver on that — so that `Problem` reads like the doc's flat class, not
 just a folder that happens to contain the other three — `Problem` is a **facade**:
-`get_current_state`, `take_action`, `get_valid_actions`, `hard_reset`, `get_train_tasks`,
-`get_test_task`, `calculate_cost_for_human_command`, and `execute_human_command` are
-all concrete passthroughs to `Problem.env`/`Problem.tasks`/`Problem.human` (a shared
+`get_current_state`, `take_action`, `get_valid_actions`, `hard_reset`,
+`sample_train_task`, `sample_test_task`, `calculate_cost_for_human_command`, and
+`execute_human_command` are all concrete passthroughs to
+`Problem.env`/`Problem.tasks`/`Problem.human` (a shared
 private `_describe_command` helper builds the two `Command*Description` objects both
 human-facing methods need, to avoid duplicating that construction). Notably,
 `execute_human_command` doesn't return a cost at all — it hands `Problem.env` directly
@@ -72,24 +73,26 @@ full rationale; the short version, as applied in this folder:
   — no shared "bucket" file anywhere. `State`/`Object`/`Type`/`Action` support
   `Environment` (defining state/action space is Environment's job) →
   `problem/environment/types.py`. `Cost`/`CommandStartStateDescription`/
-  `CommandEndStateDescription` support `HumanOracle` (`send_command`'s signature) →
-  `problem/human_oracle/types.py` — the two `*Description` types currently just wrap a
-  `State` each (with a `TODO` to figure out what they should really contain, per the
-  design doc's v3 human model needing NL/pictorial descriptions instead of raw states).
-  `Task`/`Goal`/`Predicate`/
-  `GroundAtom` support `Tasks` (task/goal generation is `Tasks`' job) →
-  `problem/tasks/types.py`. `Policy`/`Rollout`/`Skill`/`SetupCommand` support `Method`
-  → `method/types.py`. `dataclasses`/`attrs` are banned project-wide (ruff `TID251`).
-  `Task`/`Goal` are intentionally **not** frozen/hashable (unlike `Object`/`Type`/
-  `GroundAtom`/`Predicate`, which sit inside dict keys or a `frozenset`) —
-  `get_train_tasks` returns `list[Task]`, not `set[Task]`, because `Task.initial_state`
-  wraps a mutable numpy-backed `State` that can't honestly be hashed.
+  `CommandGoalDescription` support `HumanOracle` (its two methods' signatures) →
+  `problem/human/types.py` — `CommandStartStateDescription` currently just wraps a
+  `State` (with a `TODO` to figure out what it should really contain, per the design
+  doc's v3 human model needing NL/pictorial descriptions instead of raw states);
+  `CommandGoalDescription` already wraps the same symbolic `Goal` that `Task.goal`
+  uses. `Task`/`Goal`/`Predicate`/`GroundAtom` support `Tasks` (task/goal generation
+  is `Tasks`' job) → `problem/tasks/types.py`. `Policy`/`Rollout`/`Skill`/
+  `SetupCommand` support `Method` → `method/types.py`. `dataclasses`/`attrs` are
+  banned project-wide (ruff `TID251`). `Task`/`Goal` are intentionally **not**
+  frozen/hashable (unlike `Object`/`Type`/`GroundAtom`/`Predicate`, which sit inside
+  dict keys or a `frozenset`) — nothing puts a `Task` in a `set`/dict key position;
+  `Tasks.sample_train_task`/`sample_test_task` each return a single `Task`, and
+  `Task.initial_state` wraps a mutable numpy-backed `State` that couldn't honestly be
+  hashed anyway.
 - **No `__init__.py` re-exports anything** — every name has exactly one import path
   (e.g. `from hitl_pmp.core.problem.environment.types import State`), never a second
   shortcut through a package `__init__.py`.
 - **Imports are absolute across subpackages, relative within one.** From
   `problem/problem.py`, `.environment.environment` and `.tasks.tasks` are same-tree
-  relative imports; from `problem/human_oracle/human_oracle.py`, reaching
+  relative imports; from `problem/human/human.py`, reaching
   `environment/` — a *sibling*, not a parent — requires the absolute
   `hitl_pmp.core.problem.environment.types`, since `..`-style parent-relative imports
   are banned (ruff `TID252`).
@@ -145,8 +148,8 @@ environment back to a usable state.
 - **`HumanOracle`** is the human/oracle cost model, independently swappable (the v0
   unconditional oracle up through a v3 natural-language, capability-aware oracle in the
   design doc) from whichever `Environment` it's paired with.
-- **`Tasks`** is the task/goal distribution — `get_train_tasks()`/`get_test_task()` —
-  also independently swappable from whichever `Environment`/`HumanOracle` it's paired
+- **`Tasks`** is the task/goal distribution — `sample_train_task()`/`sample_test_task()`
+  — also independently swappable from whichever `Environment`/`HumanOracle` it's paired
   with (a curriculum-learning `Tasks` and a random-sampling `Tasks` could sit on top of
   the same domain).
 - **`Problem`** is the composition root/facade that binds one `Environment` + one
@@ -190,13 +193,13 @@ distinction only exists inside a domain's own `Predicate.holds` classifiers.
 - `problem/environment/` — `environment.py` (the `Environment` ABC) + `types.py`
   (`State`, `Object`, `Type`, `Action`). The most foundational subpackage: imports
   nothing else from `core/`.
-- `problem/human_oracle/` — `human_oracle.py` (the `HumanOracle` ABC) + `types.py`
-  (`Cost`, `CommandStartStateDescription`, `CommandEndStateDescription`). Imports
+- `problem/human/` — `human.py` (the `HumanOracle` ABC) + `types.py`
+  (`Cost`, `CommandStartStateDescription`, `CommandGoalDescription`). Imports
   `State` from `../environment/types.py`.
 - `problem/tasks/` — `tasks.py` (the `Tasks` ABC) + `types.py` (`Task`, `Goal`,
   `Predicate`, `GroundAtom`). Imports from `../environment/types.py`.
 - `problem/problem.py` — `Problem`, the facade. Imports from `environment/`,
-  `human_oracle/`, `tasks/`, and `method/types.py`.
+  `human/`, `tasks/`, and `method/types.py`.
 - `method/` — `method.py` (the `Method` ABC) + `types.py` (`Policy`, `Rollout`,
   `Skill`, `SetupCommand`). Imports from `problem/environment/types.py` and
   `problem/tasks/types.py`.
@@ -213,7 +216,7 @@ there's no cycle and no `TYPE_CHECKING` needed anywhere:
 ```mermaid
 graph TD
     env["problem/environment/<br/>Environment, State, Object, Type, Action"]
-    ho["problem/human_oracle/<br/>HumanOracle, Cost"]
+    ho["problem/human/<br/>HumanOracle, Cost"]
     tasktypes["problem/tasks/types.py<br/>Task, Goal, Predicate, GroundAtom"]
     tasks["problem/tasks/tasks.py<br/>Tasks"]
     mtypes["method/types.py<br/>Policy, Rollout, Skill, SetupCommand"]

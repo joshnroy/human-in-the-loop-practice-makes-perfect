@@ -8,11 +8,11 @@ class Tasks(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def get_train_tasks() -> list[Task]:
+    def sample_train_task() -> Task:
         raise NotImplementedError
 
     @staticmethod
     @abc.abstractmethod
-    def get_test_task() -> Task:
+    def sample_test_task() -> Task:
         """A randomly sampled test task, not known to the agent ahead of time."""
         raise NotImplementedError
