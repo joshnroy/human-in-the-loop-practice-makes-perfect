@@ -19,7 +19,7 @@ fail in specific, documented ways that the eventual proposed method should not:
 - `planning_to_practice.py` — extends the "Predicators"-style planning-to-practice
   baseline (see the sibling `hitl-practice` repo's TAMP conventions, e.g.
   `predicators/envs/`) with the ability to (re-)set the environment to any state via
-  `Problem.send_human_command`. Expected failure modes include burning excessive
+  `Problem.execute_human_command`. Expected failure modes include burning excessive
   human-help cost if it resets more often than necessary, or thrashing when its skill
   library can't cover a gap.
 - `pure_vla.py` — a baseline with no online learning at all: a stand-in for "a big

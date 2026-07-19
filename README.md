@@ -95,7 +95,7 @@ There are currently no tests in this repo beyond a single import smoke test, bec
 Once concrete code lands under `environments/`, `methods/`, etc., it should get real tests:
 
 - Each concrete `Environment`'s `take_action()` — determinism given a fixed seed/current_state/action, and that `get_valid_actions()` never yields an out-of-bounds action.
-- Each concrete `Problem`'s `send_human_command()` wiring.
+- Each concrete `Problem`'s `execute_human_command()` wiring.
 - Regression tests for any fixed bug (add a test when you fix it, so it can't silently regress).
 - Property-based tests via `hypothesis` for invariants once they apply — e.g. Predicate/GroundAtom set consistency, encode/decode round-trips, or `take_action()` determinism (use `@settings(derandomize=True)` or explicit seeding). This is the same approach the `predicators` bilevel-planning codebase takes with its GroundAtom/predicate vocabulary.
 

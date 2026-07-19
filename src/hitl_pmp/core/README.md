@@ -14,7 +14,7 @@ core/
 │   │   └── types.py            State, Object, Type, Action
 │   ├── human_oracle/
 │   │   ├── human_oracle.py    HumanOracle — the human-cost model
-│   │   └── types.py            Cost
+│   │   └── types.py            Cost, CommandStartStateDescription, CommandEndStateDescription
 │   └── tasks/
 │       ├── tasks.py            Tasks — task/goal generation
 │       └── types.py             Task, Goal, Predicate, GroundAtom
@@ -49,10 +49,15 @@ siblings of it in `core/`.
 To actually deliver on that — so that `Problem` reads like the doc's flat class, not
 just a folder that happens to contain the other three — `Problem` is a **facade**:
 `get_current_state`, `take_action`, `get_valid_actions`, `hard_reset`, `get_train_tasks`,
-and `get_test_task` are all concrete one-line passthroughs to `Problem.env`/
-`Problem.tasks`. `send_human_command` is a slightly thicker passthrough (it composes
-`Problem.human.send_command` with `Problem.env.set_state`). The **only** method that
-stays abstract on `Problem` itself is `run_task_episode` — genuine orchestration logic
+`get_test_task`, `calculate_cost_for_human_command`, and `execute_human_command` are
+all concrete passthroughs to `Problem.env`/`Problem.tasks`/`Problem.human` (a shared
+private `_describe_command` helper builds the two `Command*Description` objects both
+human-facing methods need, to avoid duplicating that construction). Notably,
+`execute_human_command` doesn't return a cost at all — it hands `Problem.env` directly
+to `Problem.human.execute_human_command`, which is responsible for updating it (e.g.
+via `env.set_state`) to reflect whatever actually happened; querying the cost is
+`calculate_cost_for_human_command`'s separate job. The **only** method that stays
+abstract on `Problem` itself is `run_task_episode` — genuine orchestration logic
 (loop calling the policy, taking actions, checking the goal) that no single part can
 supply on its own, and which every concrete `Problem` must implement. `Method` and
 `Metrics` stay true top-level siblings of `problem/`, matching the doc's
@@ -66,8 +71,12 @@ full rationale; the short version, as applied in this folder:
 - **Data lives in the `types.py` of the module it supports, as pydantic `BaseModel`s**
   — no shared "bucket" file anywhere. `State`/`Object`/`Type`/`Action` support
   `Environment` (defining state/action space is Environment's job) →
-  `problem/environment/types.py`. `Cost` supports `HumanOracle` (`send_command`
-  produces it) → `problem/human_oracle/types.py`. `Task`/`Goal`/`Predicate`/
+  `problem/environment/types.py`. `Cost`/`CommandStartStateDescription`/
+  `CommandEndStateDescription` support `HumanOracle` (`send_command`'s signature) →
+  `problem/human_oracle/types.py` — the two `*Description` types currently just wrap a
+  `State` each (with a `TODO` to figure out what they should really contain, per the
+  design doc's v3 human model needing NL/pictorial descriptions instead of raw states).
+  `Task`/`Goal`/`Predicate`/
   `GroundAtom` support `Tasks` (task/goal generation is `Tasks`' job) →
   `problem/tasks/types.py`. `Policy`/`Rollout`/`Skill`/`SetupCommand` support `Method`
   → `method/types.py`. `dataclasses`/`attrs` are banned project-wide (ruff `TID251`).
@@ -123,7 +132,7 @@ environment back to a usable state.
   `state` argument, both operate on the one real state. `get_current_state()`/
   `set_state()` are concrete (shared across every `Environment`, not reimplemented
   per domain) — `set_state` is a *privileged external override* (used by a human, via
-  `HumanOracle`/`Problem.send_human_command`, to force a state — distinct from
+  `HumanOracle`/`Problem.execute_human_command`, to force a state — distinct from
   `take_action`'s normal forward dynamics). `hard_reset()` resets to the initial state
   distribution but is only ever called by the harness before a run starts, never by
   the agent or tied to a human cost. `action_space` is typed as `gymnasium.spaces.Space`
@@ -142,7 +151,7 @@ environment back to a usable state.
   the same domain).
 - **`Problem`** is the composition root/facade that binds one `Environment` + one
   `HumanOracle` + one `Tasks`. "No auto-reset" and "human-mediated reset has a cost"
-  live here, via `send_human_command`. Unlike `Environment`, a `Problem` is specific
+  live here, via `execute_human_command`. Unlike `Environment`, a `Problem` is specific
   to one research question, not reusable across them.
 
 ## `Type` declares a feature schema, not just a name
@@ -182,7 +191,8 @@ distinction only exists inside a domain's own `Predicate.holds` classifiers.
   (`State`, `Object`, `Type`, `Action`). The most foundational subpackage: imports
   nothing else from `core/`.
 - `problem/human_oracle/` — `human_oracle.py` (the `HumanOracle` ABC) + `types.py`
-  (`Cost`). Imports `State` from `../environment/types.py`.
+  (`Cost`, `CommandStartStateDescription`, `CommandEndStateDescription`). Imports
+  `State` from `../environment/types.py`.
 - `problem/tasks/` — `tasks.py` (the `Tasks` ABC) + `types.py` (`Task`, `Goal`,
   `Predicate`, `GroundAtom`). Imports from `../environment/types.py`.
 - `problem/problem.py` — `Problem`, the facade. Imports from `environment/`,

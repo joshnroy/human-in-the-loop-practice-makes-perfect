@@ -11,7 +11,7 @@ Gym/Gymnasium's `step()`/`reset()` loop assumes `reset()` is free and
 automatic whenever an episode ends. This project's central thesis is the
 opposite: some actions are irreversible, so ending an episode does not imply
 a free reset — a human/oracle must sometimes intervene, at a cost, via
-`Problem.send_human_command()`. Baking Gym's assumption into the core
+`Problem.execute_human_command()`. Baking Gym's assumption into the core
 abstraction would silently contradict the research question, so
 `core.Environment` stays a bespoke interface representing the one real-world
 state (`take_action`/`get_valid_actions`/`get_current_state`/`set_state`/

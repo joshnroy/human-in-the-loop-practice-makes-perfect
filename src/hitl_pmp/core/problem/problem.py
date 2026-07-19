@@ -5,10 +5,10 @@ from hitl_pmp.core.method.types import Policy
 
 from .environment.environment import Environment
 from .environment.types import Action, State
-from .human_oracle.human_oracle import HumanOracle
-from .human_oracle.types import Cost
+from .human.human import HumanOracle
+from .human.types import CommandGoalDescription, CommandStartStateDescription, Cost
 from .tasks.tasks import Tasks
-from .tasks.types import Task
+from .tasks.types import Goal, Task
 
 
 class Problem(abc.ABC):
@@ -41,14 +41,33 @@ class Problem(abc.ABC):
         Problem.env.hard_reset()
 
     @staticmethod
-    def send_human_command(*, goal_state: State) -> Cost:
-        """The only sanctioned reset: pay the human's cost, let them move the state."""
-        cost = Problem.human.send_command(
-            start_state=Problem.get_current_state(), goal_state=goal_state
+    def _describe_command(
+        *, goal: Goal
+    ) -> tuple[CommandStartStateDescription, CommandGoalDescription]:
+        return (
+            CommandStartStateDescription(state=Problem.get_current_state()),
+            CommandGoalDescription(goal=goal),
         )
-        if cost != float("inf"):
-            Problem.env.set_state(state=goal_state)
-        return cost
+
+    @staticmethod
+    def calculate_cost_for_human_command(*, goal: Goal) -> Cost:
+        """Query what asking the human for this would cost, without actually asking."""
+        start, end = Problem._describe_command(goal=goal)
+        return Problem.human.calculate_cost_for_human_command(
+            command_start_state_description=start, command_goal_description=end
+        )
+
+    @staticmethod
+    def execute_human_command(*, goal: Goal) -> None:
+        """The only sanctioned reset: let the human work toward goal. No return value —
+        query calculate_cost_for_human_command beforehand if the cost is needed; this
+        method's only job is to make it happen. Problem.human is responsible for
+        updating Problem.env (it was handed env directly) to reflect whatever actually
+        happened, since only it knows what that was."""
+        start, end = Problem._describe_command(goal=goal)
+        Problem.human.execute_human_command(
+            command_start_state_description=start, command_goal_description=end, env=Problem.env
+        )
 
     @staticmethod
     def get_train_tasks() -> list[Task]:
