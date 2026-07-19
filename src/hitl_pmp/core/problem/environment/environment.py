@@ -38,7 +38,7 @@ class Environment(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def get_valid_actions() -> set[Action]:
+    def get_valid_actions() -> list[Action]:
         raise NotImplementedError
 
     @staticmethod
