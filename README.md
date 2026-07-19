@@ -20,7 +20,7 @@ pip install -e ".[dev]"
 
 Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
 
-- [core/](src/hitl_pmp/core/README.md) — the fixed abstract interfaces (`Environment`, `HumanOracle`, `Problem`, `Method`, `Metrics`), each with its own supporting data types
+- [core/](src/hitl_pmp/core/README.md) — the fixed abstract interfaces: `Problem`, `Method`, `Metrics`, plus `Environment` and `HumanOracle` (nested under `problem/`, since the design doc's `Problem` is what actually owns them), each with its own supporting data types
 - [environments/](src/hitl_pmp/environments/README.md) — concrete `Environment` + `Problem` implementations, one subfolder per domain
 - [human_oracles/](src/hitl_pmp/human_oracles/README.md) — concrete `HumanOracle` implementations (the v0-v3 human-cost-model axis)
 - [methods/](src/hitl_pmp/methods/README.md) — concrete `Method`/baseline implementations
@@ -36,22 +36,25 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   (`invalid-module-name`) — a capitalized or mixed-case filename is a lint error.
 - **Each interface is a subpackage: an entrypoint file (named after the module) plus
   a `types.py`** for the data it supports — not a flat module, and never a shared
-  bucket file. `environment/environment.py` is the entrypoint;
-  `environment/types.py` holds `State`/`Object`/`Type`/`Action` because defining
-  state/action space is Environment's job. Same pattern for `human_oracle/`
-  (`Cost` — `send_command` is what produces it), `problem/` (`Task`/`Goal`/
-  `Predicate`/`GroundAtom` — task/goal generation is Problem's job), and `method/`
-  (`Policy`/`Rollout`/`Skill`/`SetupCommand`). A `types.py` only splits into its own
-  file once a type grows big enough to earn one. No `__init__.py` anywhere re-exports
-  types from its submodules — every name has exactly one import path (e.g.
-  `from hitl_pmp.core.environment.types import State`), never a second shortcut
-  through a package `__init__.py`. Imports across subpackages are absolute, never
-  relative (`from ..x import y` is a `TID252` lint error) — see
-  [`core/README.md`](src/hitl_pmp/core/README.md#module-dependency-graph) for the full
-  dependency diagram. Where two subpackages each need a type the other owns
-  (`Problem` needs `Method`'s `Policy`, `Method` needs `Problem`'s `Task`), resolve it
-  with `if TYPE_CHECKING:`-guarded imports rather than merging them — this works
-  whenever the need is type-hint-only, never at runtime.
+  bucket file. `problem/environment/environment.py` is `Environment`'s entrypoint;
+  `problem/environment/types.py` holds `State`/`Object`/`Type`/`Action` because
+  defining state/action space is Environment's job. Same pattern for
+  `problem/human_oracle/` (`Cost` — `send_command` is what produces it), `problem/`
+  itself (`Task`/`Goal`/`Predicate`/`GroundAtom` — task/goal generation is Problem's
+  job), and `method/` (`Policy`/`Rollout`/`Skill`/`SetupCommand`). `Environment`/
+  `HumanOracle` nest *under* `problem/` rather than sitting beside it — see
+  [`core/README.md`](src/hitl_pmp/core/README.md#what-problem-actually-is) for why. A
+  `types.py` only splits into its own file once a type grows big enough to earn one.
+  No `__init__.py` anywhere re-exports types from its submodules — every name has
+  exactly one import path (e.g. `from hitl_pmp.core.problem.environment.types import
+  State`), never a second shortcut through a package `__init__.py`. Imports across
+  subpackages are absolute, never relative (`from ..x import y` is a `TID252` lint
+  error) — see [`core/README.md`](src/hitl_pmp/core/README.md#module-dependency-graph)
+  for the full dependency diagram. `if TYPE_CHECKING:` guards are also banned
+  (`TID251`) — where two subpackages each need a type the other owns (`Problem` needs
+  `Method`'s `Policy`, `Method` needs `Problem`'s `Task`), just import the target's
+  `types.py` directly (never its ABC file) instead: neither `types.py` imports the
+  other's ABC back, so there's no real cycle to defer around.
 - **Behavior lives in static-method container classes, not OOP objects.**
   `Environment`, `HumanOracle`, `Problem`, `Method`, `Metrics` are never instantiated —
   think Java's "static class" / singleton-by-class-name idiom, not encapsulated

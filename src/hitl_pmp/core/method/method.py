@@ -1,14 +1,10 @@
-from __future__ import annotations
-
 import abc
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from hitl_pmp.core.environment.types import State
+from hitl_pmp.core.problem.environment.types import State
+from hitl_pmp.core.problem.types import Task
 
 from .types import Policy, Rollout, SetupCommand, Skill
-
-if TYPE_CHECKING:
-    from hitl_pmp.core.problem.types import Task
 
 
 class Method(abc.ABC):

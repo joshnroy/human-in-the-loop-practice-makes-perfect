@@ -1,17 +1,13 @@
-from __future__ import annotations
-
 import abc
-from typing import TYPE_CHECKING, ClassVar
+from typing import ClassVar
 
-from hitl_pmp.core.environment.environment import Environment
-from hitl_pmp.core.environment.types import State
-from hitl_pmp.core.human_oracle.human_oracle import HumanOracle
-from hitl_pmp.core.human_oracle.types import Cost
+from hitl_pmp.core.method.types import Policy
 
+from .environment.environment import Environment
+from .environment.types import State
+from .human_oracle.human_oracle import HumanOracle
+from .human_oracle.types import Cost
 from .types import Task
-
-if TYPE_CHECKING:
-    from hitl_pmp.core.method.types import Policy
 
 
 class Problem(abc.ABC):

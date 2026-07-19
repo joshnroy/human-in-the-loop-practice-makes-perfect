@@ -38,6 +38,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "TID", "PLR0917", "N999"]
 "dataclasses".msg = "Dataclasses are banned in this project — use a pydantic BaseModel instead."
 "attr".msg = "Use a pydantic BaseModel instead of attrs in this project."
 "attrs".msg = "Use a pydantic BaseModel instead of attrs in this project."
+"typing.TYPE_CHECKING".msg = "if TYPE_CHECKING guards are banned — import the target's types.py directly instead of its ABC file, which avoids the cycle without deferring the import."
 
 [tool.ruff.lint.pylint]
 # Every parameter (beyond self/cls) must be keyword-only — this makes any

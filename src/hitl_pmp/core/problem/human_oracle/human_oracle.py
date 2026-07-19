@@ -1,6 +1,6 @@
 import abc
 
-from hitl_pmp.core.environment.types import State
+from hitl_pmp.core.problem.environment.types import State
 
 from .types import Cost
 

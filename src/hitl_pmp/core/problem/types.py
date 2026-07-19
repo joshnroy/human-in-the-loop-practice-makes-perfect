@@ -4,7 +4,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict
 
-from hitl_pmp.core.environment.types import Object, State, Type
+from .environment.types import Object, State, Type
 
 
 class Task(BaseModel):
