@@ -2,7 +2,7 @@ import abc
 from typing import Any
 
 from hitl_pmp.core.problem.environment.types import State
-from hitl_pmp.core.problem.types import Task
+from hitl_pmp.core.problem.tasks.types import Task
 
 from .types import Policy, Rollout, SetupCommand, Skill
 

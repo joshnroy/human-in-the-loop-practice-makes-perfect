@@ -16,12 +16,12 @@ Each domain subfolder is expected to contain:
   dynamics (`take_action`, `get_valid_actions`, `get_current_state`/`set_state`/
   `hard_reset`), all operating on the one tracked `current_state`. No tasks, no
   humans, no reset cost — just the physics/logic of the domain.
-- `problem.py` — a concrete subclass of `core.Problem` that binds this domain's
-  `environment.py` `Environment` to a chosen `HumanOracle` from
-  `../human_oracles/`, and defines the domain's task distribution and
-  `request_human_reset` behavior.
-- `tasks.py` — task/goal generation specific to this domain (sampling initial
-  states, goals, train/test splits).
+- `tasks.py` — a concrete subclass of `core.Tasks`: `get_train_tasks`/`get_test_task`
+  (sampling initial states, goals, train/test splits) specific to this domain.
+- `problem.py` — a concrete subclass of `core.Problem` that sets `env`/`human`/`tasks`
+  to this domain's `Environment`, a chosen `HumanOracle` from `../human_oracles/`, and
+  this domain's `Tasks`, and implements `run_task_episode` (the one method `Problem`
+  doesn't get for free as a passthrough).
 - `predicates.py` — domain predicates, needed only if a planning-based `Method`
   requires symbolic `GroundAtom`s for this domain. Pure-RL-only domains can skip
   this file entirely.

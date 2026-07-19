@@ -39,10 +39,11 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   bucket file. `problem/environment/environment.py` is `Environment`'s entrypoint;
   `problem/environment/types.py` holds `State`/`Object`/`Type`/`Action` because
   defining state/action space is Environment's job. Same pattern for
-  `problem/human_oracle/` (`Cost` — `send_command` is what produces it), `problem/`
-  itself (`Task`/`Goal`/`Predicate`/`GroundAtom` — task/goal generation is Problem's
-  job), and `method/` (`Policy`/`Rollout`/`Skill`/`SetupCommand`). `Environment`/
-  `HumanOracle` nest *under* `problem/` rather than sitting beside it — see
+  `problem/human_oracle/` (`Cost` — `send_command` is what produces it),
+  `problem/tasks/` (`Task`/`Goal`/`Predicate`/`GroundAtom` — task/goal generation is
+  Tasks' job), and `method/` (`Policy`/`Rollout`/`Skill`/`SetupCommand`).
+  `Environment`/`HumanOracle`/`Tasks` all nest *under* `problem/` rather than sitting
+  beside it — see
   [`core/README.md`](src/hitl_pmp/core/README.md#what-problem-actually-is) for why. A
   `types.py` only splits into its own file once a type grows big enough to earn one.
   No `__init__.py` anywhere re-exports types from its submodules — every name has
@@ -60,7 +61,7 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   think Java's "static class" / singleton-by-class-name idiom, not encapsulated
   instance state. Every method is `@staticmethod` (`@abc.abstractmethod` on the
   interface, concrete overrides on subclasses); any state a concrete implementation
-  needs (e.g. `Problem.env`, `Problem.human`) is a `ClassVar` set once on the class
+  needs (e.g. `Problem.env`, `Problem.human`, `Problem.tasks`) is a `ClassVar` set once on the class
   itself, not passed into a constructor. This is an organizational choice, not
   idiomatic OOP — the goal is functional-style code (explicit data in, explicit data
   out) organized into namespacing containers.
@@ -78,7 +79,7 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   helpers it depends on further down — the reverse of the usual leaves-before-use
   convention. Concretely: if `X` relies on `Y` (has a field typed `Y`, or otherwise
   needs `Y` to do its job), `Y` goes below `X`. See
-  `src/hitl_pmp/core/problem/types.py` for the pattern: `Task` (relies on `Goal`),
+  `src/hitl_pmp/core/problem/tasks/types.py` for the pattern: `Task` (relies on `Goal`),
   `Goal` (relies on `GroundAtom`), `Predicate` (relies on `GroundAtom` — it's what
   `Predicate.__call__` produces), `GroundAtom` last, since both `Goal` and `Predicate`
   rely on it. This works in Python without any explicit forward-reference bookkeeping:
@@ -89,12 +90,12 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
 
 ## Contributing
 
-There are currently no tests in this repo beyond a single import smoke test, because there is no concrete/production code yet — `core/` contains only abstract interfaces (`Environment`, `HumanOracle`, `Problem`, `Method`, `Metrics`). Standard guidance is to not unit test an ABC directly: it has no behavior of its own, so a test against it either tests nothing or duplicates once per subclass. Test concrete subclasses instead. (If an ABC ever grows concrete helper methods, the pattern is a minimal throwaway "dummy" subclass that implements just enough of the abstract surface to exercise that logic.)
+There are currently no tests in this repo beyond a single import smoke test, because there is no concrete/production code yet — `core/` contains only abstract interfaces (`Environment`, `HumanOracle`, `Tasks`, `Problem`, `Method`, `Metrics`). Standard guidance is to not unit test an ABC directly: it has no behavior of its own, so a test against it either tests nothing or duplicates once per subclass. Test concrete subclasses instead. (If an ABC ever grows concrete helper methods, the pattern is a minimal throwaway "dummy" subclass that implements just enough of the abstract surface to exercise that logic.)
 
 Once concrete code lands under `environments/`, `methods/`, etc., it should get real tests:
 
 - Each concrete `Environment`'s `take_action()` — determinism given a fixed seed/current_state/action, and that `get_valid_actions()` never yields an out-of-bounds action.
-- Each concrete `Problem`'s `request_human_reset()` wiring.
+- Each concrete `Problem`'s `send_human_command()` wiring.
 - Regression tests for any fixed bug (add a test when you fix it, so it can't silently regress).
 - Property-based tests via `hypothesis` for invariants once they apply — e.g. Predicate/GroundAtom set consistency, encode/decode round-trips, or `take_action()` determinism (use `@settings(derandomize=True)` or explicit seeding). This is the same approach the `predicators` bilevel-planning codebase takes with its GroundAtom/predicate vocabulary.
 

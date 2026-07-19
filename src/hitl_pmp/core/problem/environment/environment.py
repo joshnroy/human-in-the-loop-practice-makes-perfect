@@ -44,7 +44,7 @@ class Environment(abc.ABC):
     @staticmethod
     def set_state(*, state: State) -> None:
         """External override: what happens when a human (via HumanOracle, called
-        through Problem.request_human_reset) physically moves the real state — not
+        through Problem.send_human_command) physically moves the real state — not
         the environment's own dynamics, and not a semantic reset."""
         Environment.current_state = state
 

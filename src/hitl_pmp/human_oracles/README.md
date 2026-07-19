@@ -3,7 +3,7 @@
 Concrete implementations of `core.HumanOracle`, the versioned human-cost-model axis from
 the design doc. A `HumanOracle` models what it costs to get a human (or an oracle
 standing in for one) to do something the robot cannot — most centrally, to service a
-`Problem.request_human_reset()` call.
+`Problem.send_human_command()` call.
 
 These are deliberately **domain-agnostic**: a `HumanOracle` implementation should have
 zero knowledge of any specific `Environment`'s dynamics, state layout, or action space.

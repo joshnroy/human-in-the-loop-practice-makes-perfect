@@ -4,44 +4,59 @@ from typing import ClassVar
 from hitl_pmp.core.method.types import Policy
 
 from .environment.environment import Environment
-from .environment.types import State
+from .environment.types import Action, State
 from .human_oracle.human_oracle import HumanOracle
 from .human_oracle.types import Cost
-from .types import Task
+from .tasks.tasks import Tasks
+from .tasks.types import Task
 
 
 class Problem(abc.ABC):
-    """Composition root: one Environment + one HumanOracle + a task distribution.
-
-    A static-method container, never instantiated — env/human are class attributes
-    (references to the Environment/HumanOracle *classes*, themselves also never
-    instantiated). Unlike Environment, a Problem is NOT reusable across research
-    questions.
+    """Composition root: Environment + HumanOracle + Tasks. A static-method
+    container, never instantiated — env/human/tasks are class attributes
+    (references to the Environment/HumanOracle/Tasks *classes*, themselves also
+    never instantiated). Mirrors the design doc's flat Problem(ABC): every method
+    here is a thin passthrough to the relevant part, except run_task_episode,
+    which is genuine orchestration logic each concrete Problem must implement.
     """
 
     env: ClassVar[type[Environment]]
     human: ClassVar[type[HumanOracle]]
+    tasks: ClassVar[type[Tasks]]
 
     @staticmethod
-    @abc.abstractmethod
-    def get_train_tasks() -> list[Task]:
-        raise NotImplementedError
+    def get_current_state() -> State:
+        return Problem.env.get_current_state()
 
     @staticmethod
-    @abc.abstractmethod
-    def get_test_task() -> Task:
-        """A randomly sampled test task, not known to the agent ahead of time."""
-        raise NotImplementedError
+    def take_action(*, action: Action) -> State:
+        return Problem.env.take_action(action=action)
 
     @staticmethod
-    def request_human_reset(*, goal_state: State) -> Cost:
+    def get_valid_actions() -> set[Action]:
+        return Problem.env.get_valid_actions()
+
+    @staticmethod
+    def hard_reset() -> None:
+        Problem.env.hard_reset()
+
+    @staticmethod
+    def send_human_command(*, goal_state: State) -> Cost:
         """The only sanctioned reset: pay the human's cost, let them move the state."""
         cost = Problem.human.send_command(
-            start_state=Problem.env.get_current_state(), goal_state=goal_state
+            start_state=Problem.get_current_state(), goal_state=goal_state
         )
         if cost != float("inf"):
             Problem.env.set_state(state=goal_state)
         return cost
+
+    @staticmethod
+    def get_train_tasks() -> list[Task]:
+        return Problem.tasks.get_train_tasks()
+
+    @staticmethod
+    def get_test_task() -> Task:
+        return Problem.tasks.get_test_task()
 
     @staticmethod
     @abc.abstractmethod
