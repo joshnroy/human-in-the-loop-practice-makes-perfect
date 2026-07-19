@@ -1,0 +1,157 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+Design doc / paper notes live in Notion (ask Josh for access):
+https://app.notion.com/p/joshnroy/Human-in-the-Loop-Practice-Makes-Perfect-37133470fbc580aab736c283e49ee5db?source=copy_link
+
+## Setup
+
+Uses the `hitl-pmp` conda environment (Python 3.10). Activate it before running any
+command below — a persistent shell can silently fall back to `base`, which has
+mismatched dependency versions (e.g. numpy stubs) and produces confusing failures:
+
+```bash
+conda activate hitl-pmp
+pip install -e ".[dev]"
+```
+
+## Commands
+
+```bash
+pytest                        # run all tests
+pytest tests/core/problem/test_problem.py::test_take_action_delegates_to_env  # single test
+ruff check .                  # lint
+ruff check --fix .            # lint, autofix
+ruff format .                 # format
+mypy src                      # typecheck (src only; tests/ has relaxed untyped-def rules)
+coverage run --source=src/hitl_pmp -m pytest -q && coverage report -m  # coverage
+pre-commit install            # optional: run lint/format/typecheck locally pre-commit
+```
+
+All three of lint/typecheck/test run in CI (`.github/workflows/ci.yml`) on every push/PR
+to `main`. `main` only allows squash-merge (no merge commits, no rebase merge).
+
+## Architecture
+
+`src/hitl_pmp/` is reusable library code; `tests/` mirrors it 1:1. `analysis/` (scripts/
+notebooks producing results/figures) will import from `hitl_pmp`, never the reverse.
+
+### The `core/` interfaces and the static-method-container pattern
+
+`core/` holds six **fixed abstract interfaces**, none ever instantiated:
+`Problem`, `Method`, `Metrics` (top-level), plus `Environment`, `HumanOracle`, `Tasks`
+(nested *under* `core/problem/`, not siblings of it — see below for why). Every method
+is `@staticmethod`; any state a concrete subclass needs (e.g. `Problem.env`) is a
+`ClassVar` **set on the base class itself** (`Problem.env = ConcreteEnv`), Java
+static-class/singleton style — not constructor-assigned instance state, and methods
+reference the base class by name (`Problem.env`), never `cls`.
+
+```
+core/
+├── problem/
+│   ├── problem.py            Problem — composition root / facade
+│   ├── environment/
+│   │   ├── environment.py     Environment — the one real-world/ground-truth instance
+│   │   └── types.py            State, Object, Type, Action
+│   ├── human/
+│   │   ├── human.py            HumanOracle — the human-cost model
+│   │   └── types.py            Cost, CommandStartStateDescription, CommandGoalDescription
+│   └── tasks/
+│       ├── tasks.py            Tasks — task/goal generation
+│       └── types.py             Task, Goal, Predicate, GroundAtom
+├── method/
+│   ├── method.py               Method — the agent side
+│   └── types.py                 Policy, Rollout, Skill, SetupCommand
+└── metrics/
+    └── metrics.py               Metrics — the evaluation protocol
+```
+
+**Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
+defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task
+generation, `send_command_to_human`, `reset_environment`, and the "standard MDP
+functions" all as plain methods on one class. This codebase introduced `Environment`/
+`HumanOracle`/`Tasks` as separate classes (motivated by wanting one dynamics
+implementation reusable across different `HumanOracle`/task-distribution pairings, and
+Gym-compatibility for RL baselines), but they still conceptually belong to `Problem`,
+so they nest under it. To make `Problem` still read like the doc's flat class, it's a
+**facade**: `get_current_state`, `take_action`, `get_valid_actions`, `hard_reset`,
+`sample_train_task`, `sample_test_task`, `calculate_cost_for_human_command`, and
+`execute_human_command` are all concrete one-line passthroughs to
+`Problem.env`/`Problem.tasks`/`Problem.human`. The **only** abstract method on `Problem`
+itself is `run_task_episode` — genuine orchestration no single part can supply. Full
+rationale and a mermaid dependency graph: `src/hitl_pmp/core/README.md`.
+
+**Why this breaks from Gym's `reset()`-is-free assumption**: a robot can take
+**irreversible** actions, so ending an episode doesn't imply a free reset — a human
+must sometimes intervene, at a cost. `Environment.take_action`/`get_valid_actions`
+operate implicitly on the one tracked `current_state: ClassVar[State]` (no explicit
+`state` param — this is not a reusable dynamics function for hypothetical "what-if"
+planning; a `Method` that needs to plan carries its own model for that). `set_state` is
+a privileged external override used by `HumanOracle` via
+`Problem.execute_human_command`, distinct from `take_action`'s normal forward dynamics.
+`hard_reset()` is harness-only (before a run starts), never called by the agent.
+`HumanOracle.execute_human_command` takes `env: type[Environment]` directly and is
+responsible for mutating it (e.g. `env.set_state(...)`) to reflect whatever actually
+happened — it returns nothing; querying cost beforehand is
+`calculate_cost_for_human_command`'s separate, side-effect-free job.
+
+### Conventions (enforced by lint, not just documented)
+
+- **Pydantic only** — `dataclasses`/`attrs` are banned via ruff `TID251`.
+- **Keyword-only everywhere** — ruff `PLR0917` with `max-positional-args = 0`. Only
+  `self`/`cls`, unavoidable dunders (`__getitem__`, silenced with `# noqa: PLR0917`),
+  and third-party calls are exempt.
+- **Lowercase filenames only** — ruff `N999`.
+- **No `if TYPE_CHECKING:` guards** — banned via `TID251`. Where two subpackages each
+  need a type the other owns, import the target's `types.py` directly (never its ABC
+  file) — neither `types.py` imports the sibling ABC back, so there's no real cycle.
+- **No `__init__.py` re-exports** — every name has exactly one import path (e.g.
+  `from hitl_pmp.core.problem.environment.types import State`).
+- **Imports absolute across subpackages, relative within one** — ruff `TID252` bans
+  `..`-parent-relative imports.
+- **Data lives in the `types.py` of the module it supports** as pydantic `BaseModel`s
+  — never a shared "bucket" file. `Task`/`Goal` are deliberately *not*
+  frozen/hashable (they wrap a mutable numpy-backed `State`); `Object`/`Type`/
+  `GroundAtom`/`Predicate` *are* frozen (they sit in dict keys / a `frozenset`).
+- **Files/classes organized top-down** — most composite/important first, e.g. in
+  `tasks/types.py`: `Task` → `Goal` → `Predicate` → `GroundAtom`. No
+  `model_rebuild()` calls needed: pydantic resolves forward references lazily on
+  first real use.
+- **`Type` declares a feature schema** (`feature_names: tuple[str, ...]`, `dim`
+  property), not just a name — lets `State`'s validator reject a feature vector whose
+  length doesn't match `obj.type.dim`, and lets `State.get(obj=, feature_name=)` look
+  up by name instead of raw index. No `parent`/inheritance on `Type` — deliberately
+  deferred until a domain actually needs a type hierarchy.
+
+### Sibling folders (concrete implementations; each has its own README)
+
+- `environments/` — concrete `Environment` + `Tasks` + `Problem` per domain, one
+  subfolder each (e.g. `environments/lightswitch/`). A domain subfolder holds
+  `environment.py`, `tasks.py`, `problem.py`, and optionally `predicates.py` (only if
+  a planning-based `Method` needs symbolic `GroundAtom`s for that domain).
+- `human_oracles/` — concrete `HumanOracle` implementations, the v0 (unconditional) →
+  v3 (natural-language, capability-aware) axis from the design doc. Domain-agnostic:
+  a `HumanOracle` knows nothing about any specific `Environment`'s dynamics.
+- `methods/` — concrete `Method`/baseline implementations (trivial fixed-skill
+  planner, `planning_to_practice.py`, `pure_vla.py`, `in_context_vla.py` — see the
+  design doc's baseline progression and expected failure modes).
+- `adapters/` — bidirectional `core.Environment` ↔ Gym/Gymnasium bridge:
+  `from_gym.py` wraps a third-party `gym.Env` to satisfy `core.Environment`;
+  `to_gym.py` wraps this project's `core.Environment` to expose the Gym interface for
+  RL libraries like SB3/RLlib. Not mirror images — different directions, different
+  jobs. Neither exists yet.
+- `planning/` — optional infra bridging `Predicate`/`GroundAtom` to PDDL/Fast
+  Downward, for planning-based `Method`s only. Pure deep-RL baselines never import it.
+
+### Sibling repo: `hitl-practice`
+
+One directory up (`../hitl-practice`) is a fork of the `predicators` TAMP codebase that
+the original "Practice Makes Perfect" paper was built on. This project deliberately does
+**not** extend that codebase (it's entangled and hard to extend), but it's the reference
+implementation for porting any paper environment/behavior faithfully — e.g. the paper's
+"Light Switch" environment is `GridRowEnv` in `predicators/envs/grid_row.py`, with its
+skills/NSRTs in `predicators/ground_truth_models/grid_row/`. When the paper's prose is
+imprecise or silent on an exact number (tolerances, sampling ranges, defaults), treat
+`hitl-practice`'s code as ground truth over the paper text, and check
+`predicators/settings.py` for the actual default config values used.
