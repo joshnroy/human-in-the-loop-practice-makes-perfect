@@ -71,8 +71,12 @@ core/
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol
 └── renderer/
-    └── renderer.py              Renderer, VideoWriter, EpisodeRenderer
+    └── renderer.py              Renderer, VideoWriter
 ```
+
+`Problem.run_task_episode` takes an optional `renderer: type[Renderer] | None = None`
+and returns `(succeeded, frames)` — every episode is optionally recordable through
+this one call (no separate rendering-only codepath, which would duplicate the loop).
 
 `src/hitl_pmp/cli.py` is the global CLI entrypoint (`python -m hitl_pmp.cli --env
 <name> ...`, e.g. `--env lightswitch`); it dispatches to each registered

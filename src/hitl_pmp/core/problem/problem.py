@@ -1,7 +1,10 @@
 import abc
 from typing import ClassVar
 
+import numpy as np
+
 from hitl_pmp.core.method.types import Policy
+from hitl_pmp.core.renderer.renderer import Renderer
 
 from .environment.environment import Environment
 from .environment.types import Action, State
@@ -79,6 +82,12 @@ class Problem(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def run_task_episode(*, task: Task, policy: Policy) -> bool:
-        """Run policy on task until goal reached or timeout; returns whether it succeeded."""
+    def run_task_episode(
+        *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
+    ) -> tuple[bool, list[np.ndarray]]:
+        """Run policy on task until goal reached or timeout; returns (succeeded, frames).
+        frames is empty unless renderer is given, in which case every run is
+        optionally recordable through this one path -- one frame per step (including
+        the initial state) via renderer.render_frame, no separate rendering-only
+        codepath needed."""
         raise NotImplementedError

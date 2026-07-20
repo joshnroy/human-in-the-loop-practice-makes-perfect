@@ -20,7 +20,9 @@ Each domain subfolder is expected to contain:
 - `problem.py` — a concrete subclass of `core.Problem` that sets `env`/`human`/`tasks`
   to this domain's `Environment`, a chosen `HumanOracle` from `../human_oracles/`, and
   this domain's `Tasks`, and implements `run_task_episode` (the one method `Problem`
-  doesn't get for free as a passthrough).
+  doesn't get for free as a passthrough). Its optional `renderer: type[core.Renderer]
+  | None = None` param makes every episode optionally recordable through this same
+  call — no separate rendering-only codepath.
 - `predicates.py` — domain predicates, needed only if a planning-based `Method`
   requires symbolic `GroundAtom`s for this domain. Pure-RL-only domains can skip
   this file entirely.
@@ -37,9 +39,10 @@ Each domain subfolder is expected to contain:
   there, and, if the domain has a `renderer.py`, an `episode.mp4` demo.
 - `renderer.py` — optional: only needed if this domain should be visually
   inspectable. A concrete subclass of `core.Renderer` (`render_frame(*, state) ->
-  np.ndarray`) — pure rendering logic, no episode-loop/video-writing concerns, which
-  live in the domain-agnostic `core.renderer.EpisodeRenderer`/`VideoWriter` instead
-  (see [`../core/README.md`](../core/README.md)).
+  np.ndarray`) — pure rendering logic only. Episode-loop frame capture lives inline
+  in `problem.py`'s `run_task_episode` (via its optional `renderer` param), and
+  video-writing lives in the domain-agnostic `core.renderer.VideoWriter` — neither
+  is this file's concern (see [`../core/README.md`](../core/README.md)).
 
 ## Precedent
 

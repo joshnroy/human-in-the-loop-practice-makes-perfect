@@ -24,7 +24,7 @@ core/
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol
 └── renderer/
-    └── renderer.py              Renderer, VideoWriter, EpisodeRenderer
+    └── renderer.py              Renderer, VideoWriter
 ```
 
 There is no `problem/types.py` — every type that used to live there now lives in
@@ -62,7 +62,12 @@ via `env.set_state`) to reflect whatever actually happened; querying the cost is
 `calculate_cost_for_human_command`'s separate job. The **only** method that stays
 abstract on `Problem` itself is `run_task_episode` — genuine orchestration logic
 (loop calling the policy, taking actions, checking the goal) that no single part can
-supply on its own, and which every concrete `Problem` must implement. `Method` and
+supply on its own, and which every concrete `Problem` must implement. It also takes
+an optional `renderer: type[Renderer] | None = None` and returns `(succeeded,
+frames)` — every episode, in the normal sweep or otherwise, is optionally
+recordable through this one call, rather than a second rendering-only codepath that
+would duplicate the same loop (see "`Renderer` is a pure function of `State`" below).
+`Method` and
 `Metrics` stay true top-level siblings of `problem/`, matching the doc's
 `run(problem: Problem, method: Method) -> Metrics` treating them as independent peers.
 
@@ -175,14 +180,22 @@ design doc's `Problem` genuinely owns them (dynamics, human cost, task generatio
 all `Problem`-scoped concepts). Rendering isn't: it's a pure, stateless function of
 whatever `State` you hand it, useful standalone (e.g. debugging a hand-built `State`
 with no `Problem` in scope at all) and with no reset-cost/human-in-the-loop semantics
-of its own. `renderer.py` also holds two non-abstract, domain-agnostic companions,
-not part of the `Renderer` interface itself since neither varies per domain:
+of its own. `renderer.py` also holds one non-abstract, domain-agnostic companion, not
+part of the `Renderer` interface itself since it never varies per domain:
 `VideoWriter` (writes a frame sequence to a video file via imageio's bundled ffmpeg —
 no native GIF support; convert a written video with an external `ffmpeg` invocation
-instead) and
-`EpisodeRenderer` (runs one task episode against any concrete `Problem`, capturing a
-frame per step — mirrors a `Problem.run_task_episode` loop without touching that core
-interface, since most callers never need rendering).
+instead).
+
+There's deliberately no separate "run an episode and record it" utility here. An
+earlier version had one (`EpisodeRenderer`), but it duplicated `Problem.run_task_episode`'s
+own loop (check the goal, else `take_action`) — the same logic living in two places,
+one of which would silently drift out of sync with the other over time. It would also
+have introduced a real circular import: `EpisodeRenderer` needs `Problem` to drive the
+episode, but if `Problem.run_task_episode`'s signature also needs `Renderer`, that's
+`problem.py` → `renderer.py` → `problem.py`. Instead, `renderer.py` only ever imports
+`State` (a leaf), and `Problem.run_task_episode` imports `Renderer` — one direction,
+no cycle — and does its own inline frame capture when `renderer` is passed, so there
+is exactly one place any episode ever runs, rendered or not.
 
 ## `Type` declares a feature schema, not just a name
 
@@ -232,10 +245,10 @@ distinction only exists inside a domain's own `Predicate.holds` classifiers.
   `problem/tasks/types.py`.
 - `metrics/` — `metrics.py`, the (mostly generic) evaluation protocol. No `types.py` —
   it has no supporting types of its own yet.
-- `renderer/` — `renderer.py` (`Renderer`, `VideoWriter`, `EpisodeRenderer`). No
-  `types.py` — frames are plain `np.ndarray`, no new pydantic type needed. Imports
-  `State` from `problem/environment/types.py`, `Policy` from `method/types.py`,
-  `Problem`/`Task` for `EpisodeRenderer`.
+- `renderer/` — `renderer.py` (`Renderer`, `VideoWriter`). No `types.py` — frames are
+  plain `np.ndarray`, no new pydantic type needed. Imports only `State` from
+  `problem/environment/types.py` — nothing else in `core/`, so it stays a leaf
+  `problem/problem.py` can safely depend on (see the dependency graph below).
 
 ## Module dependency graph
 
@@ -251,26 +264,24 @@ graph TD
     tasktypes["problem/tasks/types.py<br/>Task, Goal, Predicate, GroundAtom"]
     tasks["problem/tasks/tasks.py<br/>Tasks"]
     mtypes["method/types.py<br/>Policy, Rollout, Skill, SetupCommand"]
+    renderer["renderer/<br/>Renderer, VideoWriter"]
     problem["problem/problem.py<br/>Problem"]
     method["method/method.py<br/>Method"]
     metrics["metrics/<br/>Metrics"]
-    renderer["renderer/<br/>Renderer, VideoWriter, EpisodeRenderer"]
 
     ho --> env
     tasktypes --> env
     tasks --> tasktypes
     mtypes --> env
+    renderer --> env
     problem --> env
     problem --> ho
     problem --> tasks
     problem --> mtypes
+    problem --> renderer
     method --> env
     method --> mtypes
     method --> tasktypes
-    renderer --> env
-    renderer --> mtypes
-    renderer --> problem
-    renderer --> tasktypes
 ```
 
 ## Concrete implementations

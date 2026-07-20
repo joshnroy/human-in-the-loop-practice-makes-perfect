@@ -5,10 +5,7 @@ from pathlib import Path
 import imageio
 import numpy as np
 
-from hitl_pmp.core.method.types import Policy
 from hitl_pmp.core.problem.environment.types import State
-from hitl_pmp.core.problem.problem import Problem
-from hitl_pmp.core.problem.tasks.types import Task
 
 
 class Renderer(abc.ABC):
@@ -39,29 +36,3 @@ class VideoWriter:
         # match Sequence[np.ndarray] against the overload's list[_Buffer |
         # _SupportsArray[...] | ...] union.
         imageio.mimsave(output_path, frames, fps=fps)  # type: ignore[call-overload]
-
-
-class EpisodeRenderer:
-    """Runs one task episode while capturing an RGB frame at each step -- mirrors a
-    concrete Problem's run_task_episode loop (check the goal, else take_action)
-    without touching that core interface, since most callers never need rendering.
-    A static-method container, never instantiated."""
-
-    @staticmethod
-    def record(
-        *,
-        problem: type[Problem],
-        renderer: type[Renderer],
-        task: Task,
-        policy: Policy,
-        max_steps: int,
-    ) -> list[np.ndarray]:
-        problem.env.set_state(state=task.initial_state)
-        state = problem.env.get_current_state()
-        frames = [renderer.render_frame(state=state)]
-        for _ in range(max_steps):
-            if task.goal.is_satisfied(state=state):
-                break
-            state = problem.env.take_action(action=policy(state))
-            frames.append(renderer.render_frame(state=state))
-        return frames
