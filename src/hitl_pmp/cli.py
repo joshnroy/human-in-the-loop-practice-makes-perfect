@@ -62,8 +62,7 @@ class Cli:
             type=Path,
             default=None,
             help="If set, additionally render one demo episode to <output-dir>/"
-            "episode.mp4 and write run statistics to <output-dir>/stats.json. "
-            "Disabled (nothing written) if omitted.",
+            "episode.mp4. Disabled (nothing written) if omitted.",
         )
 
     @staticmethod

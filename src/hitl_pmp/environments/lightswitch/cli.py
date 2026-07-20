@@ -1,6 +1,4 @@
 import argparse
-import json
-from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
@@ -84,8 +82,9 @@ class LightSwitchCli:
         progress, and returns (num_solved, num_test_tasks). If args.output_dir is
         set, that same codepath also records the first task's episode (passing
         LightSwitchRenderer through -- every run is optionally recordable this way,
-        not via a separate rendering-only path) and writes it to episode.mp4,
-        alongside stats.json -- both no-ops otherwise."""
+        not via a separate rendering-only path) and writes it to episode.mp4;
+        a no-op otherwise. Run statistics/metrics tracking is a follow-up, not
+        handled here."""
         LightSwitchCli._apply_config(args=args)
         policy = LightSwitchCli.POLICIES[args.policy]
         # No hard_reset() here: run_task_episode below unconditionally overwrites
@@ -93,7 +92,6 @@ class LightSwitchCli:
         # else, so a reset beforehand would never be observed.
 
         num_solved = 0
-        per_task_solved: list[bool] = []
         recorded_frames: list[np.ndarray] = []
         for i in range(args.num_test_tasks):
             task = LightSwitchTasks.sample_test_task()
@@ -106,7 +104,6 @@ class LightSwitchCli:
             if renderer is not None:
                 recorded_frames = frames
             num_solved += int(solved)
-            per_task_solved.append(solved)
             print(f"task {i + 1}/{args.num_test_tasks}: {'solved' if solved else 'FAILED'}")
 
         print(
@@ -115,16 +112,6 @@ class LightSwitchCli:
         )
 
         if args.output_dir is not None:
-            # Stats first: they're already fully computed and cheap to write, and
-            # shouldn't be lost if the (heavier, ffmpeg-dependent) render step below
-            # fails for an unrelated reason.
-            LightSwitchCli._write_stats(
-                output_dir=args.output_dir,
-                policy_name=args.policy,
-                num_test_tasks=args.num_test_tasks,
-                num_solved=num_solved,
-                per_task_solved=per_task_solved,
-            )
             VideoWriter.write(
                 frames=recorded_frames,
                 output_path=args.output_dir / "episode.mp4",
@@ -132,26 +119,6 @@ class LightSwitchCli:
             )
 
         return num_solved, args.num_test_tasks
-
-    @staticmethod
-    def _write_stats(
-        *,
-        output_dir: Path,
-        policy_name: str,
-        num_test_tasks: int,
-        num_solved: int,
-        per_task_solved: list[bool],
-    ) -> None:
-        stats = {
-            "env": "lightswitch",
-            "policy": policy_name,
-            "num_test_tasks": num_test_tasks,
-            "num_solved": num_solved,
-            "success_rate": num_solved / num_test_tasks,
-            "per_task_solved": per_task_solved,
-        }
-        output_dir.mkdir(parents=True, exist_ok=True)
-        (output_dir / "stats.json").write_text(json.dumps(stats, indent=2))
 
     @staticmethod
     def _apply_config(*, args: argparse.Namespace) -> None:

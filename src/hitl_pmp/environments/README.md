@@ -35,8 +35,10 @@ Each domain subfolder is expected to contain:
   `ENVIRONMENTS` dict, which has no domain-specific knowledge of its own. `methods/`
   (once a concrete `Method` exists) is expected to follow the identical pattern —
   see [`../methods/README.md`](../methods/README.md). If `--output-dir` is set
-  (global flag, `hitl_pmp/cli.py`), `run` is also expected to write a `stats.json`
-  there, and, if the domain has a `renderer.py`, an `episode.mp4` demo.
+  (global flag, `hitl_pmp/cli.py`) and the domain has a `renderer.py`, `run` is also
+  expected to write an `episode.mp4` demo there. Run statistics/metrics tracking is
+  a separate, not-yet-built concern (see `core/metrics/metrics.py`), not part of
+  this flag.
 - `renderer.py` — optional: only needed if this domain should be visually
   inspectable. A concrete subclass of `core.Renderer` (`render_frame(*, state) ->
   np.ndarray`) — pure rendering logic only. Episode-loop frame capture lives inline

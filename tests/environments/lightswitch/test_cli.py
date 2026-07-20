@@ -1,5 +1,4 @@
 import argparse
-import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -108,22 +107,8 @@ def test_run_with_output_dir_writes_a_video_file(*, tmp_path: Path) -> None:
     assert video_path.stat().st_size > 0
 
 
-def test_run_with_output_dir_writes_matching_stats_json(*, tmp_path: Path) -> None:
-    args = _build_parser().parse_args(["--num-test-tasks", "3", "--output-dir", str(tmp_path)])
-    num_solved, num_test_tasks = LightSwitchCli.run(args=args)
-
-    stats = json.loads((tmp_path / "stats.json").read_text())
-    assert stats["env"] == "lightswitch"
-    assert stats["policy"] == "oracle"
-    assert stats["num_test_tasks"] == num_test_tasks == 3
-    assert stats["num_solved"] == num_solved == 3
-    assert stats["success_rate"] == 1.0
-    assert stats["per_task_solved"] == [True, True, True]
-
-
 def test_run_with_output_dir_creates_missing_directories(*, tmp_path: Path) -> None:
     output_dir = tmp_path / "nested" / "results"
     args = _build_parser().parse_args(["--num-test-tasks", "1", "--output-dir", str(output_dir)])
     LightSwitchCli.run(args=args)
     assert (output_dir / "episode.mp4").exists()
-    assert (output_dir / "stats.json").exists()
