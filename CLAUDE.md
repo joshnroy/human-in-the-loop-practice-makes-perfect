@@ -69,7 +69,8 @@ core/
 │   ├── method.py               Method — the agent side
 │   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand
 ├── metrics/
-│   └── metrics.py               Metrics — the evaluation protocol
+│   ├── metrics.py               Metrics — the evaluation protocol; MetricsWriter
+│   └── types.py                  MetricsSnapshot
 └── renderer/
     └── renderer.py              Renderer, VideoWriter
 ```
@@ -80,13 +81,22 @@ this one call (no separate rendering-only codepath, which would duplicate the lo
 
 `src/hitl_pmp/cli.py` is the global CLI entrypoint (`python -m hitl_pmp.cli --env
 <name> ...`, e.g. `--env lightswitch`); it dispatches to each registered
-environment's own `environments/<name>/cli.py`. All flags are named, no positional
-arguments. `--output-dir DIR` (global), if the environment has a `renderer.py`,
-additionally writes a demo `episode.mp4`. Writing run statistics/metrics to
-`--output-dir` is a separate, not-yet-built concern -- `core/metrics/metrics.py`'s
-protocol itself (`record_evaluation`/`task_training_curve`) is implemented and
-in real use by `methods/practice_makes_perfect/`'s reproduction (see
-`methods/README.md`), just not yet wired into this global CLI's output.
+environment's own `environments/<name>/cli.py`. Every registered `core.Method`
+similarly plugs in via its own `methods/<name>/cli.py` and the top-level `--method`
+flag (e.g. `--method random-skills`, see `methods/README.md`) — `--method`, unlike
+`--policy` (an environment-specific flag for raw, non-`Method` baselines like the
+Light Switch oracles), lives at the top level since a `Method` is meant to work
+across environments, not tied to one. All flags are named, no positional arguments.
+`--output-dir DIR` (global), if the environment has a `renderer.py`, additionally
+writes a demo `episode.mp4` (plus `episode.gif` too if `--gif` is also set --
+`core.renderer.VideoWriter.write_gif` prefers a pure-Python `imageio`-based
+conversion, falling back to shelling out to `ffmpeg` directly only if that fails).
+If `--method` is set, `--output-dir` also gets a `stats.json`: `core.metrics.
+MetricsWriter.write` serializes the selected `Metrics`' full query surface there,
+generically, via `core/metrics/types.py`'s `MetricsSnapshot` (a real pydantic model,
+not an untyped dict) — this works unchanged for any current or future
+`Method`/`Metrics` combination, since it's written purely against the abstract
+`Metrics` interface.
 
 **Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
 defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task
@@ -119,7 +129,12 @@ happened — it returns nothing; querying cost beforehand is
 
 ### Conventions (enforced by lint, not just documented)
 
-- **Pydantic only** — `dataclasses`/`attrs` are banned via ruff `TID251`.
+- **Pydantic only** — `dataclasses`/`attrs` are banned via ruff `TID251`. This also
+  covers any structured data that isn't core simulation state, not just
+  `types.py`'s own models: e.g. `core/metrics/types.py`'s `MetricsSnapshot` is what
+  `MetricsWriter.write` serializes to `--output-dir/stats.json`, specifically so
+  that shape is statically checked (mypy validates every field), rather than an
+  untyped `dict[str, Any]` handed straight to `json.dumps`.
 - **Keyword-only everywhere** — ruff `PLR0917` with `max-positional-args = 0`. Only
   `self`/`cls`, unavoidable dunders (`__getitem__`, silenced with `# noqa: PLR0917`),
   and third-party calls are exempt.

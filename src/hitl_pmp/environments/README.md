@@ -38,16 +38,21 @@ Each domain subfolder is expected to contain:
   `hitl_pmp/cli.py`. A static-method container (e.g. `LightSwitchCli`) exposing
   `add_arguments(*, parser)` (adds this domain's configurable values as named
   argparse flags — no positional arguments — defaults read live from the relevant
-  classes) and `run(*, args)` (applies them, runs a chosen policy over sampled test
-  tasks, returns/prints results) — registered by name in `hitl_pmp/cli.py`'s
-  `ENVIRONMENTS` dict, which has no domain-specific knowledge of its own. `methods/`
-  (once a concrete `Method` exists) is expected to follow the identical pattern —
-  see [`../methods/README.md`](../methods/README.md). If `--output-dir` is set
-  (global flag, `hitl_pmp/cli.py`) and the domain has a `renderer.py`, `run` is also
-  expected to write an `episode.mp4` demo there. Writing run statistics/metrics to
-  this flag's output is a separate, not-yet-built concern -- `core.Metrics`'s
-  protocol itself is implemented and in real use by `methods/
-  practice_makes_perfect/`'s reproduction, just not yet wired into this CLI flow.
+  classes) and `run(*, args)` (applies them, runs a chosen raw baseline policy over
+  sampled test tasks, returns/prints results) — registered by name in
+  `hitl_pmp/cli.py`'s `ENVIRONMENTS` dict, which has no domain-specific knowledge of
+  its own. Every concrete `core.Method` follows the identical `add_arguments`/`run`
+  pattern via its own `methods/<name>/cli.py`, registered under the top-level
+  `--method` flag instead (not an environment-specific one, since a `Method` is
+  meant to work across environments) — see
+  [`../methods/README.md`](../methods/README.md). If `--output-dir` is set (global
+  flag, `hitl_pmp/cli.py`) and the domain has a `renderer.py`, `run` is also
+  expected to write an `episode.mp4` demo there (plus `episode.gif` if `--gif` is
+  also given, via `core.renderer.VideoWriter.write_gif`). If `--method` is set,
+  `--output-dir` also gets a `stats.json`, written generically over the abstract
+  `core.Metrics` interface by `core.metrics.MetricsWriter` — see
+  [`../methods/README.md`](../methods/README.md) for `RandomSkillsCli`, the first
+  concrete example of this.
 - `renderer.py` — optional: only needed if this domain should be visually
   inspectable. A concrete subclass of `core.Renderer` (`render_frame(*, state,
   label=None) -> np.ndarray`) — pure rendering logic only, but should draw `label`

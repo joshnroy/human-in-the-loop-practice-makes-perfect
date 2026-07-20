@@ -66,22 +66,33 @@ class _FakeTasks(Tasks):
         return Task(initial_state=_state(x=0.0), goal=Goal(atoms=frozenset()))
 
 
+class _FakeRenderer(Renderer):
+    @staticmethod
+    def render_frame(*, state: State, label: str | None = None) -> np.ndarray:
+        del state, label
+        return np.zeros((1, 1, 3), dtype=np.uint8)
+
+
 class _FakeProblem(Problem):
     run_task_episode_calls: ClassVar[int] = 0
+    # renderer arguments this fake was called with, in call order -- lets tests
+    # check exactly which run_task_episode calls actually rendered.
+    renderer_calls: ClassVar[list[bool]] = []
 
     @staticmethod
     def run_task_episode(
         *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
     ) -> tuple[bool, list[np.ndarray]]:
-        del renderer
         _FakeProblem.run_task_episode_calls += 1
+        _FakeProblem.renderer_calls.append(renderer is not None)
         # Mirrors the real per-domain override (e.g. LightSwitchProblem's own
         # run_task_episode): resets env state to the task's initial_state before
         # running -- this is exactly the behavior that makes PracticeLoop
         # NOT reset-free end to end, only within one interaction period.
         _FakeEnv.set_state(state=task.initial_state)
         policy(_FakeProblem.get_current_state())  # exercised, but the fake doesn't need its result
-        return True, []
+        frames = [renderer.render_frame(state=_FakeEnv.get_current_state())] if renderer else []
+        return True, frames
 
 
 class _FakeMethod(Method):
@@ -185,6 +196,7 @@ def _wire_fakes() -> Iterator[None]:
     _FakeTasks.train_task_count = 0
     _FakeTasks.test_task_count = 0
     _FakeProblem.run_task_episode_calls = 0
+    _FakeProblem.renderer_calls = []
     _FakeMethod.policy_call_count = 0
     _FakeMetrics.recorded = []
     try:
@@ -311,3 +323,53 @@ def test_run_without_a_num_cycles_zero_still_runs_the_initial_evaluation() -> No
         num_test_tasks=2,
     )
     assert _FakeMetrics.recorded == [(0, 2, 2)]
+
+
+def test_run_without_a_renderer_returns_no_frames() -> None:
+    frames = PracticeLoop.run(
+        problem=_FakeProblem,
+        method=_FakeMethod,
+        metrics=_FakeMetrics,
+        num_cycles=2,
+        max_steps_per_interaction=1,
+        num_test_tasks=2,
+    )
+    assert frames == []
+    assert _FakeProblem.renderer_calls == [False] * (2 * 3)  # 3 evaluations x 2 test tasks
+
+
+def test_run_with_a_renderer_and_zero_cycles_renders_the_initial_evaluation() -> None:
+    frames = PracticeLoop.run(
+        problem=_FakeProblem,
+        method=_FakeMethod,
+        metrics=_FakeMetrics,
+        num_cycles=0,
+        max_steps_per_interaction=1,
+        num_test_tasks=3,
+        renderer=_FakeRenderer,
+    )
+    assert len(frames) == 1
+    # Only the first test task of the (sole) evaluation sweep renders.
+    assert _FakeProblem.renderer_calls == [True, False, False]
+
+
+def test_run_with_a_renderer_renders_only_the_last_evaluation_sweeps_first_task() -> None:
+    PracticeLoop.run(
+        problem=_FakeProblem,
+        method=_FakeMethod,
+        metrics=_FakeMetrics,
+        num_cycles=2,
+        max_steps_per_interaction=1,
+        num_test_tasks=2,
+        renderer=_FakeRenderer,
+    )
+    # 3 evaluation sweeps of 2 test tasks each: initial, after cycle 1, after
+    # cycle 2. Only the very first task of the very last sweep renders.
+    assert _FakeProblem.renderer_calls == [
+        False,
+        False,  # initial evaluation
+        False,
+        False,  # after cycle 1
+        True,
+        False,  # after cycle 2 (the last sweep)
+    ]

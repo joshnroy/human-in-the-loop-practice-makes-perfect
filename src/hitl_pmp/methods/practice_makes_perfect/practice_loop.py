@@ -1,8 +1,11 @@
 from collections.abc import Callable
 
+import numpy as np
+
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
+from hitl_pmp.core.renderer.renderer import Renderer
 
 
 class PracticeLoop:
@@ -38,7 +41,14 @@ class PracticeLoop:
     (rather than assigning them onto the shared Problem base) will NOT satisfy
     this -- LightSwitchProblem, for instance, only works here because nothing in
     this class calls its inherited facade methods without that wiring already
-    having been done by the caller."""
+    having been done by the caller.
+
+    If renderer is given, the *first* test task of the *last* evaluation sweep
+    (the one after the final cycle, or the sole initial evaluation if
+    num_cycles=0) is recorded and returned as a list of frames -- an empty list
+    otherwise. Only the last sweep is ever rendered (not every one) since this is
+    meant for a single post-hoc demo clip, not per-checkpoint video; earlier
+    sweeps render nothing so run() doesn't pay rendering cost it can't use."""
 
     @staticmethod
     def run(
@@ -50,17 +60,19 @@ class PracticeLoop:
         max_steps_per_interaction: int,
         num_test_tasks: int,
         on_cycle_end: Callable[[], None] | None = None,
-    ) -> None:
+        renderer: type[Renderer] | None = None,
+    ) -> list[np.ndarray]:
         problem.hard_reset()
         num_online_transitions = 0
-        PracticeLoop._evaluate(
+        frames = PracticeLoop._evaluate(
             problem=problem,
             method=method,
             metrics=metrics,
             num_test_tasks=num_test_tasks,
             num_online_transitions=num_online_transitions,
+            renderer=renderer if num_cycles == 0 else None,
         )
-        for _ in range(num_cycles):
+        for cycle in range(num_cycles):
             task = problem.sample_train_task()
             policy = method.get_task_policy(task=task)
             state = problem.get_current_state()
@@ -70,13 +82,16 @@ class PracticeLoop:
                 num_online_transitions += 1
             if on_cycle_end is not None:
                 on_cycle_end()
-            PracticeLoop._evaluate(
+            is_last_cycle = cycle == num_cycles - 1
+            frames = PracticeLoop._evaluate(
                 problem=problem,
                 method=method,
                 metrics=metrics,
                 num_test_tasks=num_test_tasks,
                 num_online_transitions=num_online_transitions,
+                renderer=renderer if is_last_cycle else None,
             )
+        return frames
 
     @staticmethod
     def _evaluate(
@@ -86,16 +101,23 @@ class PracticeLoop:
         metrics: type[Metrics],
         num_test_tasks: int,
         num_online_transitions: int,
-    ) -> None:
+        renderer: type[Renderer] | None = None,
+    ) -> list[np.ndarray]:
         num_solved = 0
-        for _ in range(num_test_tasks):
+        frames: list[np.ndarray] = []
+        for i in range(num_test_tasks):
             task = problem.sample_test_task()
-            solved, _frames = problem.run_task_episode(
-                task=task, policy=method.get_task_policy(task=task)
+            solved, task_frames = problem.run_task_episode(
+                task=task,
+                policy=method.get_task_policy(task=task),
+                renderer=renderer if i == 0 else None,
             )
+            if i == 0 and renderer is not None:
+                frames = task_frames
             num_solved += int(solved)
         metrics.record_evaluation(
             num_online_transitions=num_online_transitions,
             num_solved=num_solved,
             num_total=num_test_tasks,
         )
+        return frames

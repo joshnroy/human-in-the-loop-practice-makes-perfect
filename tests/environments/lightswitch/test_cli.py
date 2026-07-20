@@ -43,6 +43,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--num-test-tasks", type=int, default=20)
     parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--gif", action="store_true")
     LightSwitchCli.add_arguments(parser=parser)
     return parser
 
@@ -110,6 +111,26 @@ def test_run_with_output_dir_writes_a_video_file(*, tmp_path: Path) -> None:
     video_path = tmp_path / "episode.mp4"
     assert video_path.exists()
     assert video_path.stat().st_size > 0
+
+
+def test_run_with_output_dir_and_gif_writes_a_gif_file(*, tmp_path: Path) -> None:
+    args = _build_parser().parse_args([
+        "--num-test-tasks",
+        "2",
+        "--output-dir",
+        str(tmp_path),
+        "--gif",
+    ])
+    LightSwitchCli.run(args=args)
+    gif_path = tmp_path / "episode.gif"
+    assert gif_path.exists()
+    assert gif_path.stat().st_size > 0
+
+
+def test_run_with_output_dir_but_no_gif_flag_writes_no_gif_file(*, tmp_path: Path) -> None:
+    args = _build_parser().parse_args(["--num-test-tasks", "2", "--output-dir", str(tmp_path)])
+    LightSwitchCli.run(args=args)
+    assert not (tmp_path / "episode.gif").exists()
 
 
 def test_run_with_output_dir_creates_missing_directories(*, tmp_path: Path) -> None:

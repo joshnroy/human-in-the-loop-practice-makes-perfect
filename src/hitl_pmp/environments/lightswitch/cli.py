@@ -86,10 +86,12 @@ class LightSwitchCli:
         progress, and returns (num_solved, num_test_tasks). If args.output_dir is
         set, that same codepath also records the first task's episode (passing
         LightSwitchRenderer through -- every run is optionally recordable this way,
-        not via a separate rendering-only path) and writes it to episode.mp4;
-        a no-op otherwise. Run statistics/metrics tracking is a follow-up, not
-        handled here."""
-        LightSwitchCli._apply_config(args=args)
+        not via a separate rendering-only path) and writes it to episode.mp4, plus
+        episode.gif too if args.gif is also set; a no-op otherwise. These raw oracle
+        policies aren't core.Method/core.Metrics-driven, so there's no stats.json
+        here -- that's methods/practice_makes_perfect/cli.py's RandomSkillsCli
+        (registered under --method, not --policy)."""
+        LightSwitchCli.apply_config(args=args)
         policy = LightSwitchCli.POLICIES[args.policy]
         # No hard_reset() here: run_task_episode below unconditionally overwrites
         # current_state from each task's own initial_state before doing anything
@@ -116,16 +118,21 @@ class LightSwitchCli:
         )
 
         if args.output_dir is not None:
+            video_path = args.output_dir / "episode.mp4"
             VideoWriter.write(
-                frames=recorded_frames,
-                output_path=args.output_dir / "episode.mp4",
-                fps=LightSwitchCli.render_fps,
+                frames=recorded_frames, output_path=video_path, fps=LightSwitchCli.render_fps
             )
+            if args.gif:
+                VideoWriter.write_gif(
+                    video_path=video_path,
+                    gif_path=args.output_dir / "episode.gif",
+                    fps=LightSwitchCli.render_fps,
+                )
 
         return num_solved, args.num_test_tasks
 
     @staticmethod
-    def _apply_config(*, args: argparse.Namespace) -> None:
+    def apply_config(*, args: argparse.Namespace) -> None:
         LightSwitchEnvironment.grid_size = args.grid_size
         LightSwitchEnvironment.light_on_tolerance = args.light_on_tolerance
         LightSwitchEnvironment.same_position_tolerance = args.same_position_tolerance

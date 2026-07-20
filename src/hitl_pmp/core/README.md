@@ -22,7 +22,8 @@ core/
 │   ├── method.py               Method — the agent side
 │   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand
 ├── metrics/
-│   └── metrics.py               Metrics — the evaluation protocol
+│   ├── metrics.py               Metrics — the evaluation protocol; MetricsWriter
+│   └── types.py                  MetricsSnapshot
 └── renderer/
     └── renderer.py              Renderer, VideoWriter
 ```
@@ -183,8 +184,21 @@ function of whatever `State` (and optional `label`) you hand it, useful standalo
 reset-cost/human-in-the-loop semantics of its own. `renderer.py` also holds one
 non-abstract, domain-agnostic companion, not part of the `Renderer` interface itself
 since it never varies per domain: `VideoWriter` (writes a frame sequence to a video
-file via imageio's bundled ffmpeg — no native GIF support; convert a written video
-with an external `ffmpeg` invocation instead).
+file via imageio's bundled ffmpeg, and `write_gif` converts an already-written video
+to a gif — prefers imageio itself, pure Python, ffmpeg still doing the underlying
+decode work just wrapped by a library instead of a raw subprocess call, falling back
+to shelling out to `ffmpeg` directly, located via `imageio_ffmpeg`'s own bundled
+copy rather than relying on `ffmpeg` being on `PATH`, only if that import/read ever
+fails).
+
+`metrics/metrics.py` similarly holds a non-abstract companion to `Metrics` itself:
+`MetricsWriter.write(*, metrics: type[Metrics], output_path)` serializes any
+concrete `Metrics`' full query surface (every one of its nine read-only methods) to
+a JSON file — written purely against the abstract interface, so it works unchanged
+for any current or future `Metrics`/`Method`/environment combination with zero
+per-combination serialization code. The serialized shape itself is
+`metrics/types.py`'s `MetricsSnapshot`, a real pydantic model (not an untyped
+`dict[str, Any]` passed straight to `json.dumps`) so mypy validates every field.
 
 `label` is how a rendered episode shows which action/skill was just taken, without
 `Problem`/`Method` needing a separate rendering-specific side channel:
@@ -311,8 +325,10 @@ matching `name`/`types`/`param_dim` is treated the same as the `LightSwitchSkill
 - `method/` — `method.py` (the `Method` ABC) + `types.py` (`LabeledAction`, `Policy`,
   `Rollout`, `Skill`, `GroundSkill`, `SetupCommand`). Imports from
   `problem/environment/types.py` and `problem/tasks/types.py`.
-- `metrics/` — `metrics.py`, the (mostly generic) evaluation protocol. No `types.py` —
-  it has no supporting types of its own yet.
+- `metrics/` — `metrics.py`, the (mostly generic) evaluation protocol, plus
+  `MetricsWriter` (serializes any concrete `Metrics` to JSON, generically). +
+  `types.py` (`MetricsSnapshot`, what `MetricsWriter` serializes). Neither imports
+  anything else from `core/` — like `renderer/`, it stays a leaf.
 - `renderer/` — `renderer.py` (`Renderer`, `VideoWriter`). No `types.py` — frames are
   plain `np.ndarray`, no new pydantic type needed. Imports only `State` from
   `problem/environment/types.py` — nothing else in `core/`, so it stays a leaf

@@ -1,5 +1,8 @@
 import abc
+from pathlib import Path
 from typing import Any
+
+from .types import MetricsSnapshot
 
 
 class Metrics(abc.ABC):
@@ -60,3 +63,31 @@ class Metrics(abc.ABC):
     @abc.abstractmethod
     def task_training_curve_by_subtask() -> Any:
         raise NotImplementedError
+
+
+class MetricsWriter:
+    """Serializes a concrete Metrics implementation's full protocol to a JSON
+    file -- written purely against the abstract Metrics interface (every field
+    comes from calling metrics's own nine query methods), so this works
+    unchanged for any current or future concrete Metrics/Method/environment
+    combination, with no per-combination serialization code needed. Sits
+    alongside Metrics in this file the same way core.renderer.VideoWriter sits
+    alongside Renderer: a concrete support class for an abstract interface, not
+    part of the interface itself. A static-method container, never
+    instantiated, same as every other business-logic class in this project."""
+
+    @staticmethod
+    def write(*, metrics: type[Metrics], output_path: Path) -> None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        snapshot = MetricsSnapshot(
+            task_training_curve=metrics.task_training_curve(),
+            task_training_curve_by_subtask=metrics.task_training_curve_by_subtask(),
+            percentage_success_per_task_test=metrics.percentage_success_per_task_test(),
+            percentage_success_overall_test=metrics.percentage_success_overall_test(),
+            percentage_success_per_task_train=metrics.percentage_success_per_task_train(),
+            percentage_success_overall_train=metrics.percentage_success_overall_train(),
+            num_complete_environment_resets=metrics.num_complete_environment_resets(),
+            num_human_interventions=metrics.num_human_interventions(),
+            summed_human_cost=metrics.summed_human_cost(),
+        )
+        output_path.write_text(snapshot.model_dump_json(indent=2))
