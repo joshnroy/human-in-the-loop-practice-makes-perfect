@@ -50,7 +50,16 @@ class SkillOraclePolicy:
             ground_skill=ground_skill, params=params, state=state
         )
         objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
-        return LabeledAction(action=action, label=f"{ground_skill.skill.name}({objects_desc})")
+        label = f"{ground_skill.skill.name}({objects_desc})"
+        if params.size > 0:
+            # Show every entry in params, not just params[0] -- params has no name
+            # of its own at the GroundSkill/compute_action level (it's a bare
+            # ndarray, deliberately skill-agnostic), so this must stay generic over
+            # param_dim rather than assuming a single scalar, or a future skill with
+            # param_dim > 1 would silently lose everything past the first entry.
+            rounded_params = [round(float(p), 2) for p in params]
+            label += f", params={rounded_params}"
+        return LabeledAction(action=action, label=label)
 
 
 # Policy is a positional Callable[[State], LabeledAction] per its interface contract

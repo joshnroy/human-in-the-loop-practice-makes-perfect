@@ -13,6 +13,8 @@ def test_get_labeled_action_moves_straight_to_the_light_first() -> None:
     light_x = state.get(obj=LightSwitchEnvironment.light, feature_name="x")
     assert labeled.action.tolist() == [light_x - robot_x, 0.0]
     assert labeled.label.startswith("MoveRobot(")
+    # MoveRobot has param_dim=0 -- no continuous parameters to show.
+    assert "params=" not in labeled.label
 
 
 def test_get_labeled_action_dials_exactly_to_target_once_at_the_light() -> None:
@@ -24,6 +26,9 @@ def test_get_labeled_action_dials_exactly_to_target_once_at_the_light() -> None:
     assert labeled.action[0] == 0.0
     assert labeled.action[1] == 0.9 - 0.2
     assert labeled.label.startswith("TurnOnLight(")
+    # TurnOnLight has param_dim=1 -- the actual dlight value sent to compute_action
+    # should be visible in the label, not just the skill name and objects.
+    assert "params=[0.7]" in labeled.label
 
 
 def test_skill_oracle_policy_constant_adapts_get_labeled_action_to_the_policy_contract() -> None:
