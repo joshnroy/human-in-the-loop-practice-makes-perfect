@@ -76,7 +76,9 @@ class LightSwitchCli:
         test tasks, prints progress, and returns (num_solved, num_test_tasks)."""
         LightSwitchCli._apply_config(args=args)
         policy = LightSwitchCli.POLICIES[args.policy]
-        LightSwitchEnvironment.hard_reset()
+        # No hard_reset() here: run_task_episode below unconditionally overwrites
+        # current_state from each task's own initial_state before doing anything
+        # else, so a reset beforehand would never be observed.
 
         num_solved = 0
         for i in range(args.num_test_tasks):

@@ -19,45 +19,72 @@ from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 ENVIRONMENTS = {"lightswitch": LightSwitchCli}
 
 
-def _add_global_arguments(*, parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--env",
-        choices=sorted(ENVIRONMENTS),
-        required=True,
-        help="Which environment to run. Determines which other flags are valid.",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=0,
-        help="Base RNG seed for task sampling. Meaning of derived streams (e.g. "
-        "train/test) is up to the selected environment.",
-    )
-    parser.add_argument(
-        "--num-test-tasks",
-        type=int,
-        default=20,
-        help="Number of sampled test tasks to run the policy on.",
-    )
+class Cli:
+    """The global CLI dispatcher. A static-method container, never instantiated,
+    same as every other business-logic class in this project (including
+    LightSwitchCli, which this delegates to once --env is known)."""
 
+    @staticmethod
+    def parse_positive_int(*, value: str) -> int:
+        parsed = int(value)
+        if parsed < 1:
+            raise argparse.ArgumentTypeError(f"must be >= 1, got {parsed}")
+        return parsed
 
-def _parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
-    _add_global_arguments(parser=parser)
-    # --env determines which other flags are valid, so they can't all be registered
-    # up front: parse what's known so far (ignoring the as-yet-unregistered
-    # environment-specific flags), then add those and parse the full argv for real.
-    known_args, _ = parser.parse_known_args(argv)
-    ENVIRONMENTS[known_args.env].add_arguments(parser=parser)
-    return parser.parse_args(argv)
+    @staticmethod
+    def add_global_arguments(*, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--env",
+            choices=sorted(ENVIRONMENTS),
+            required=True,
+            default=argparse.SUPPRESS,
+            help="Which environment to run. Determines which other flags are valid. "
+            "Also reserves this name and --seed/--num-test-tasks: no environment's "
+            "own add_arguments may redefine them (argparse itself will raise a clear "
+            "conflicting-option-string error if one ever tries).",
+        )
+        parser.add_argument(
+            "--seed",
+            type=int,
+            default=0,
+            help="Base RNG seed for task sampling. Meaning of derived streams (e.g. "
+            "train/test) is up to the selected environment.",
+        )
+        parser.add_argument(
+            "--num-test-tasks",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=20,
+            help="Number of sampled test tasks to run the policy on. Must be >= 1.",
+        )
 
+    @staticmethod
+    def parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
+        # --env determines which other flags are valid, so they can't all be
+        # registered up front. A plain two-pass parse_known_args here would exit
+        # early on --help before ever reaching those environment-specific flags
+        # (argparse's help action fires mid-scan, during the *first* pass) -- so
+        # this discovery pass disables its own help handling and doesn't require
+        # --env, purely to learn --env's value without ever printing anything or
+        # exiting. The real parser built below always has the full flag set (global
+        # + the selected environment's, if any), so it's the one that ever shows
+        # --help or reports a genuine "missing --env" error.
+        discovery = argparse.ArgumentParser(add_help=False)
+        discovery.add_argument("--env", choices=sorted(ENVIRONMENTS))
+        known_args, _ = discovery.parse_known_args(argv)
 
-def main(*, argv: list[str] | None = None) -> None:
-    args = _parse_args(argv=argv)
-    ENVIRONMENTS[args.env].run(args=args)
+        parser = argparse.ArgumentParser(
+            description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        )
+        Cli.add_global_arguments(parser=parser)
+        if known_args.env is not None:
+            ENVIRONMENTS[known_args.env].add_arguments(parser=parser)
+        return parser.parse_args(argv)
+
+    @staticmethod
+    def main(*, argv: list[str] | None = None) -> None:
+        args = Cli.parse_args(argv=argv)
+        ENVIRONMENTS[args.env].run(args=args)
 
 
 if __name__ == "__main__":
-    main()
+    Cli.main()
