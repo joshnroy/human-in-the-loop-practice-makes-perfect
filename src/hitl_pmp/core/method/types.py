@@ -8,7 +8,22 @@ from pydantic import BaseModel, ConfigDict, model_validator
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal
 
-Policy = Callable[[State], Action]
+
+class LabeledAction(BaseModel):
+    """A raw Action paired with a human-readable description of what produced it
+    (an action-oracle's raw numbers, or a specific skill + the objects it was bound
+    to). This is what lets a Renderer overlay show which action/skill was just
+    taken, without Problem/Method needing a separate rendering-specific side
+    channel -- Problem.run_task_episode just forwards .label to
+    Renderer.render_frame's own label param."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    action: Action
+    label: str
+
+
+Policy = Callable[[State], LabeledAction]
 
 
 class Rollout(BaseModel):

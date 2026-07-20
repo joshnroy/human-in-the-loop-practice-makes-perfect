@@ -16,8 +16,12 @@ class Renderer(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def render_frame(*, state: State) -> np.ndarray:
-        """Returns an HxWx3 uint8 RGB frame."""
+    def render_frame(*, state: State, label: str | None = None) -> np.ndarray:
+        """Returns an HxWx3 uint8 RGB frame. label, when given, is the
+        core.method.types.LabeledAction.label of whichever action/skill just
+        produced this state -- overlaid on the frame so a rendered episode shows
+        what happened at each step. None on an episode's first frame (no action has
+        been taken yet to produce a label for)."""
         raise NotImplementedError
 
 

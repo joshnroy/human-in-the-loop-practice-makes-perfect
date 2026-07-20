@@ -42,8 +42,8 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   defining state/action space is Environment's job. Same pattern for
   `problem/human_oracle/` (`Cost` — `send_command` is what produces it),
   `problem/tasks/` (`Task`/`Goal`/`Predicate`/`GroundAtom` — task/goal generation is
-  Tasks' job), and `method/` (`Policy`/`Rollout`/`Skill`/`GroundSkill`/
-  `SetupCommand`).
+  Tasks' job), and `method/` (`LabeledAction`/`Policy`/`Rollout`/`Skill`/
+  `GroundSkill`/`SetupCommand`).
   `Environment`/`HumanOracle`/`Tasks` all nest *under* `problem/` rather than sitting
   beside it — see
   [`core/README.md`](src/hitl_pmp/core/README.md#what-problem-actually-is) for why. A
@@ -69,16 +69,16 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   business logic underneath those interfaces, however small — a `Predicate.holds`
   classifier or a `Policy` function's real logic still lives as a `@staticmethod` on
   its own class (e.g. `environments/lightswitch/predicates.py`'s `LightOnClassifier`,
-  `environments/lightswitch/oracle_policy.py`'s `OraclePolicy`), never as a bare
-  module-level function. Where an interface itself requires a positional callable
-  (`Predicate.holds`, `Policy`), a short module-level lambda adapts the class's
-  keyword-only method into that shape — the lambda is the only thing allowed to be a
-  bare function, since it carries no logic of its own to find later. This is an
-  organizational choice, not idiomatic OOP — the goal is functional-style code
+  `environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy`), never
+  as a bare module-level function. Where an interface itself requires a positional
+  callable (`Predicate.holds`, `Policy`), a short module-level lambda adapts the
+  class's keyword-only method into that shape — the lambda is the only thing allowed
+  to be a bare function, since it carries no logic of its own to find later. This is
+  an organizational choice, not idiomatic OOP — the goal is functional-style code
   (explicit data in, explicit data out) organized into namespacing containers, so
-  behavior is always reachable by class name (`OraclePolicy.get_action`) instead of
-  scattered across module-level functions you have to grep for or chase through an
-  inheritance tree to find.
+  behavior is always reachable by class name (`ActionOraclePolicy.get_action`)
+  instead of scattered across module-level functions you have to grep for or chase
+  through an inheritance tree to find.
 - **Every parameter is keyword-only.** Enforced by ruff's `PLR0917`
   (`too-many-positional-arguments`) with `max-positional-args = 0` — any function we
   define with a positional-or-keyword parameter is a lint error. Exceptions: `self`/

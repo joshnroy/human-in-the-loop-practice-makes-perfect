@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import Policy
+from hitl_pmp.core.method.types import LabeledAction, Policy
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.human.human import HumanOracle
@@ -149,7 +149,9 @@ def test_problem_cannot_be_instantiated_directly() -> None:
 def test_concrete_subclass_implements_run_task_episode() -> None:
     _wire_problem()
     task = Problem.sample_train_task()
-    policy: Policy = lambda state: np.array([0.0])  # noqa: E731
+    policy: Policy = lambda state: LabeledAction(  # noqa: E731
+        action=np.array([0.0]), label="test"
+    )
     solved, frames = _Problem.run_task_episode(task=task, policy=policy)
     assert solved is True
     assert frames == []

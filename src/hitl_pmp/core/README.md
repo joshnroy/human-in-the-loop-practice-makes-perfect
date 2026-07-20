@@ -20,7 +20,7 @@ core/
 │       └── types.py             Task, Goal, Predicate, GroundAtom
 ├── method/
 │   ├── method.py               Method — the agent side
-│   └── types.py                 Policy, Rollout, Skill, GroundSkill, SetupCommand
+│   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, SetupCommand
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol
 └── renderer/
@@ -120,8 +120,8 @@ full rationale; the short version, as applied in this folder:
   static-class/singleton style, not constructor-assigned instance state. This isn't
   limited to the ABCs here: a domain's `Predicate.holds` classifier or a `Policy`
   function's real logic belongs on its own static-method class too (e.g.
-  `environments/lightswitch/oracle_policy.py`'s `OraclePolicy.get_action`), not a bare
-  module-level function — the only exception is a short lambda adapter where an
+  `environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy.get_action`),
+  not a bare module-level function — the only exception is a short lambda adapter where an
   interface itself demands a positional callable (`Predicate.holds`, `Policy`), since
   the lambda carries no logic of its own that would otherwise be lost in a module.
   Every parameter (besides an unavoidable dunder like `__getitem__`) is keyword-only,
@@ -173,18 +173,31 @@ environment back to a usable state.
 
 ## `Renderer` is a pure function of `State`, not a `Problem` component
 
-`Renderer` (one abstract method, `render_frame(*, state) -> np.ndarray`) sits as a
-top-level sibling of `problem/`, like `Method`/`Metrics` — not nested under it like
-`Environment`/`HumanOracle`/`Tasks` are. Those three nest under `problem/` because the
-design doc's `Problem` genuinely owns them (dynamics, human cost, task generation are
-all `Problem`-scoped concepts). Rendering isn't: it's a pure, stateless function of
-whatever `State` you hand it, useful standalone (e.g. debugging a hand-built `State`
-with no `Problem` in scope at all) and with no reset-cost/human-in-the-loop semantics
-of its own. `renderer.py` also holds one non-abstract, domain-agnostic companion, not
-part of the `Renderer` interface itself since it never varies per domain:
-`VideoWriter` (writes a frame sequence to a video file via imageio's bundled ffmpeg —
-no native GIF support; convert a written video with an external `ffmpeg` invocation
-instead).
+`Renderer` (one abstract method, `render_frame(*, state, label=None) -> np.ndarray`)
+sits as a top-level sibling of `problem/`, like `Method`/`Metrics` — not nested under
+it like `Environment`/`HumanOracle`/`Tasks` are. Those three nest under `problem/`
+because the design doc's `Problem` genuinely owns them (dynamics, human cost, task
+generation are all `Problem`-scoped concepts). Rendering isn't: it's a pure, stateless
+function of whatever `State` (and optional `label`) you hand it, useful standalone
+(e.g. debugging a hand-built `State` with no `Problem` in scope at all) and with no
+reset-cost/human-in-the-loop semantics of its own. `renderer.py` also holds one
+non-abstract, domain-agnostic companion, not part of the `Renderer` interface itself
+since it never varies per domain: `VideoWriter` (writes a frame sequence to a video
+file via imageio's bundled ffmpeg — no native GIF support; convert a written video
+with an external `ffmpeg` invocation instead).
+
+`label` is how a rendered episode shows which action/skill was just taken, without
+`Problem`/`Method` needing a separate rendering-specific side channel:
+`method/types.py`'s `LabeledAction` (`action` + `label`) is what every `Policy` now
+returns instead of a bare `Action` — `Problem.run_task_episode` forwards
+`labeled_action.label` straight into `renderer.render_frame`'s `label` param each
+step (`None` on the very first frame, since no action has produced it yet). A raw
+action-oracle labels itself with its own numbers
+(`environments/lightswitch/action_oracle_policy.py`); a skill-based policy labels
+itself with the `GroundSkill` it selected (`environments/lightswitch/
+skill_oracle_policy.py`, e.g. `"MoveRobot(robot, cell0, cell99)"`) — `Renderer`
+itself doesn't know or care which kind of policy produced the label it's asked to
+draw.
 
 There's deliberately no separate "run an episode and record it" utility here. An
 earlier version had one (`EpisodeRenderer`), but it duplicated `Problem.run_task_episode`'s
@@ -287,9 +300,9 @@ matching `name`/`types`/`param_dim` is treated the same as the `LightSwitchSkill
   `Predicate`, `GroundAtom`). Imports from `../environment/types.py`.
 - `problem/problem.py` — `Problem`, the facade. Imports from `environment/`,
   `human/`, `tasks/`, and `method/types.py`.
-- `method/` — `method.py` (the `Method` ABC) + `types.py` (`Policy`, `Rollout`,
-  `Skill`, `GroundSkill`, `SetupCommand`). Imports from `problem/environment/types.py`
-  and `problem/tasks/types.py`.
+- `method/` — `method.py` (the `Method` ABC) + `types.py` (`LabeledAction`, `Policy`,
+  `Rollout`, `Skill`, `GroundSkill`, `SetupCommand`). Imports from
+  `problem/environment/types.py` and `problem/tasks/types.py`.
 - `metrics/` — `metrics.py`, the (mostly generic) evaluation protocol. No `types.py` —
   it has no supporting types of its own yet.
 - `renderer/` — `renderer.py` (`Renderer`, `VideoWriter`). No `types.py` — frames are
@@ -310,7 +323,7 @@ graph TD
     ho["problem/human/<br/>HumanOracle, Cost"]
     tasktypes["problem/tasks/types.py<br/>Task, Goal, Predicate, GroundAtom"]
     tasks["problem/tasks/tasks.py<br/>Tasks"]
-    mtypes["method/types.py<br/>Policy, Rollout, Skill, GroundSkill, SetupCommand"]
+    mtypes["method/types.py<br/>LabeledAction, Policy, Rollout, Skill, GroundSkill, SetupCommand"]
     renderer["renderer/<br/>Renderer, VideoWriter"]
     problem["problem/problem.py<br/>Problem"]
     method["method/method.py<br/>Method"]

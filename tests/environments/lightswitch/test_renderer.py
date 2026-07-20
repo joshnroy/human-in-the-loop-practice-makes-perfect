@@ -48,3 +48,18 @@ def test_render_frame_shape_is_consistent_across_calls() -> None:
     frame1 = LightSwitchRenderer.render_frame(state=state)
     frame2 = LightSwitchRenderer.render_frame(state=state)
     assert frame1.shape == frame2.shape
+
+
+def test_render_frame_with_a_label_differs_from_without_one() -> None:
+    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
+    frame_unlabeled = LightSwitchRenderer.render_frame(state=state)
+    frame_labeled = LightSwitchRenderer.render_frame(state=state, label="MoveRobot(robot, cell99)")
+    assert frame_unlabeled.shape == frame_labeled.shape
+    assert not np.array_equal(frame_unlabeled, frame_labeled)
+
+
+def test_render_frame_with_different_labels_differ() -> None:
+    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
+    frame_a = LightSwitchRenderer.render_frame(state=state, label="MoveRobot(robot, cell99)")
+    frame_b = LightSwitchRenderer.render_frame(state=state, label="TurnOnLight(robot, light)")
+    assert not np.array_equal(frame_a, frame_b)
