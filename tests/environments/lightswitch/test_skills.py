@@ -1,31 +1,66 @@
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import GroundSkill, Skill
+from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
+from hitl_pmp.environments.lightswitch.predicates import (
+    ADJACENT,
+    LIGHT_IN_CELL,
+    LIGHT_OFF,
+    LIGHT_ON,
+    ROBOT_IN_CELL,
+)
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 
 
-def test_move_robot_declares_two_cell_params_and_no_continuous_params() -> None:
+def test_move_robot_declares_two_cell_parameters_and_no_continuous_params() -> None:
     skill = LightSwitchSkills.MOVE_ROBOT
     assert skill.name == "MoveRobot"
-    assert skill.types == (
+    assert [p.type for p in skill.parameters] == [
         LightSwitchEnvironment.robot_type,
         LightSwitchEnvironment.cell_type,
         LightSwitchEnvironment.cell_type,
-    )
+    ]
     assert skill.param_dim == 0
+
+
+def test_move_robot_preconditions_require_adjacency_and_current_position() -> None:
+    skill = LightSwitchSkills.MOVE_ROBOT
+    robot, current_cell, target_cell = skill.parameters
+    assert skill.preconditions == frozenset({
+        LiftedAtom(predicate=ADJACENT, variables=(current_cell, target_cell)),
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, current_cell)),
+    })
+    assert skill.add_effects == frozenset({
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, target_cell))
+    })
+    assert skill.delete_effects == frozenset({
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, current_cell))
+    })
 
 
 def test_turn_on_light_declares_one_continuous_param() -> None:
     skill = LightSwitchSkills.TURN_ON_LIGHT
     assert skill.name == "TurnOnLight"
-    assert skill.types == (
+    assert [p.type for p in skill.parameters] == [
         LightSwitchEnvironment.robot_type,
         LightSwitchEnvironment.cell_type,
         LightSwitchEnvironment.light_type,
-    )
+    ]
     assert skill.param_dim == 1
+
+
+def test_turn_on_light_preconditions_require_light_off() -> None:
+    skill = LightSwitchSkills.TURN_ON_LIGHT
+    robot, current_cell, light = skill.parameters
+    assert skill.preconditions == frozenset({
+        LiftedAtom(predicate=LIGHT_IN_CELL, variables=(light, current_cell)),
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, current_cell)),
+        LiftedAtom(predicate=LIGHT_OFF, variables=(light,)),
+    })
+    assert skill.add_effects == frozenset({LiftedAtom(predicate=LIGHT_ON, variables=(light,))})
+    assert skill.delete_effects == frozenset({LiftedAtom(predicate=LIGHT_OFF, variables=(light,))})
 
 
 def test_turn_off_light_declares_one_continuous_param() -> None:
@@ -34,20 +69,71 @@ def test_turn_off_light_declares_one_continuous_param() -> None:
     assert skill.param_dim == 1
 
 
+def test_turn_off_light_preconditions_require_light_on() -> None:
+    skill = LightSwitchSkills.TURN_OFF_LIGHT
+    robot, current_cell, light = skill.parameters
+    assert skill.preconditions == frozenset({
+        LiftedAtom(predicate=LIGHT_IN_CELL, variables=(light, current_cell)),
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, current_cell)),
+        LiftedAtom(predicate=LIGHT_ON, variables=(light,)),
+    })
+    assert skill.add_effects == frozenset({LiftedAtom(predicate=LIGHT_OFF, variables=(light,))})
+    assert skill.delete_effects == frozenset({LiftedAtom(predicate=LIGHT_ON, variables=(light,))})
+
+
 def test_jump_to_light_declares_all_three_cells_and_the_light() -> None:
     skill = LightSwitchSkills.JUMP_TO_LIGHT
     assert skill.name == "JumpToLight"
-    assert skill.types == (
+    assert [p.type for p in skill.parameters] == [
         LightSwitchEnvironment.robot_type,
         LightSwitchEnvironment.cell_type,
         LightSwitchEnvironment.cell_type,
         LightSwitchEnvironment.cell_type,
         LightSwitchEnvironment.light_type,
+    ]
+
+
+def test_jump_to_light_claims_an_effect_its_option_never_actually_achieves() -> None:
+    """The "impossible skill": the NSRT's symbolic add_effect promises the robot
+    reaches the landing cell, but compute_action (below) always emits a no-op --
+    this mismatch is deliberate, matching predicators' own JumpToLight."""
+    skill = LightSwitchSkills.JUMP_TO_LIGHT
+    robot, start_cell, via_cell, landing_cell, light = skill.parameters
+    assert skill.preconditions == frozenset({
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, start_cell)),
+        LiftedAtom(predicate=ADJACENT, variables=(start_cell, via_cell)),
+        LiftedAtom(predicate=ADJACENT, variables=(via_cell, landing_cell)),
+        LiftedAtom(predicate=LIGHT_IN_CELL, variables=(light, landing_cell)),
+    })
+    assert skill.add_effects == frozenset({
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, landing_cell))
+    })
+    assert skill.delete_effects == frozenset({
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, start_cell))
+    })
+
+
+def test_move_robot_ground_skill_grounds_preconditions_for_real_light_switch_cells() -> None:
+    cells = LightSwitchEnvironment.get_cells()
+    robot = LightSwitchEnvironment.robot
+    ground_skill = GroundSkill(
+        skill=LightSwitchSkills.MOVE_ROBOT, objects=(robot, cells[0], cells[1])
     )
+    assert ground_skill.preconditions == frozenset({
+        GroundAtom(predicate=ADJACENT, objects=(cells[0], cells[1])),
+        GroundAtom(predicate=ROBOT_IN_CELL, objects=(robot, cells[0])),
+    })
+    assert ground_skill.add_effects == frozenset({
+        GroundAtom(predicate=ROBOT_IN_CELL, objects=(robot, cells[1]))
+    })
 
 
 def test_sample_params_returns_empty_array_for_zero_dim_skill() -> None:
-    ground_skill = GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=())
+    cells = LightSwitchEnvironment.get_cells()
+    ground_skill = GroundSkill(
+        skill=LightSwitchSkills.MOVE_ROBOT,
+        objects=(LightSwitchEnvironment.robot, cells[0], cells[1]),
+    )
     params = LightSwitchSkills.sample_params(
         ground_skill=ground_skill, rng=np.random.default_rng(0)
     )
@@ -55,7 +141,11 @@ def test_sample_params_returns_empty_array_for_zero_dim_skill() -> None:
 
 
 def test_sample_params_returns_values_within_unit_interval() -> None:
-    ground_skill = GroundSkill(skill=LightSwitchSkills.TURN_ON_LIGHT, objects=())
+    cells = LightSwitchEnvironment.get_cells()
+    ground_skill = GroundSkill(
+        skill=LightSwitchSkills.TURN_ON_LIGHT,
+        objects=(LightSwitchEnvironment.robot, cells[-1], LightSwitchEnvironment.light),
+    )
     rng = np.random.default_rng(0)
     for _ in range(50):
         params = LightSwitchSkills.sample_params(ground_skill=ground_skill, rng=rng)
@@ -164,16 +254,17 @@ def test_compute_action_dispatches_by_value_not_identity() -> None:
     and frozen pydantic models are value-equal/hashable for exactly this reason."""
     state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
     cells = LightSwitchEnvironment.get_cells()
+    move_robot = LightSwitchSkills.MOVE_ROBOT
     reconstructed_skill = Skill(
-        name="MoveRobot",
-        types=(
-            LightSwitchEnvironment.robot_type,
-            LightSwitchEnvironment.cell_type,
-            LightSwitchEnvironment.cell_type,
-        ),
-        param_dim=0,
+        name=move_robot.name,
+        parameters=move_robot.parameters,
+        preconditions=move_robot.preconditions,
+        add_effects=move_robot.add_effects,
+        delete_effects=move_robot.delete_effects,
+        param_dim=move_robot.param_dim,
     )
     assert reconstructed_skill is not LightSwitchSkills.MOVE_ROBOT
+    assert reconstructed_skill == LightSwitchSkills.MOVE_ROBOT
     ground_skill = GroundSkill(
         skill=reconstructed_skill, objects=(LightSwitchEnvironment.robot, cells[0], cells[3])
     )
@@ -186,7 +277,14 @@ def test_compute_action_dispatches_by_value_not_identity() -> None:
 
 
 def test_compute_action_rejects_a_skill_outside_the_known_set() -> None:
-    unknown_skill = Skill(name="Unknown", types=(), param_dim=0)
+    unknown_skill = Skill(
+        name="Unknown",
+        parameters=(),
+        preconditions=frozenset(),
+        add_effects=frozenset(),
+        delete_effects=frozenset(),
+        param_dim=0,
+    )
     ground_skill = GroundSkill(skill=unknown_skill, objects=())
     state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
     with pytest.raises(ValueError, match="Unknown skill"):

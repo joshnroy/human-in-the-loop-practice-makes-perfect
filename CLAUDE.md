@@ -67,7 +67,7 @@ core/
 │       └── types.py             Task, Goal, Predicate, GroundAtom
 ├── method/
 │   ├── method.py               Method — the agent side
-│   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, SetupCommand
+│   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol
 └── renderer/
@@ -155,16 +155,27 @@ happened — it returns nothing; querying cost beforehand is
 - `human_oracles/` — concrete `HumanOracle` implementations, the v0 (unconditional) →
   v3 (natural-language, capability-aware) axis from the design doc. Domain-agnostic:
   a `HumanOracle` knows nothing about any specific `Environment`'s dynamics.
-- `methods/` — concrete `Method`/baseline implementations (trivial fixed-skill
-  planner, `planning_to_practice.py`, `pure_vla.py`, `in_context_vla.py` — see the
-  design doc's baseline progression and expected failure modes).
+- `methods/` — concrete `Method`/baseline implementations. `practice_makes_perfect/`
+  reproduces the *original* PMP/EES paper's own method + every baseline it compares
+  against (Fail Focus, Competence Gradient, Skill Diversity, Task-Relevant, Task
+  Repeat, Random Skills, MAPLE-Q), on Light Switch — a faithfulness repro, not this
+  project's own research contribution. This project's *own* planned baselines
+  (trivial fixed-skill planner, `planning_to_practice.py`, `pure_vla.py`,
+  `in_context_vla.py` — see the design doc's baseline progression and expected
+  failure modes) stay unimplemented until that reproduction is done.
 - `adapters/` — bidirectional `core.Environment` ↔ Gym/Gymnasium bridge:
   `from_gym.py` wraps a third-party `gym.Env` to satisfy `core.Environment`;
   `to_gym.py` wraps this project's `core.Environment` to expose the Gym interface for
   RL libraries like SB3/RLlib. Not mirror images — different directions, different
   jobs. Neither exists yet.
-- `planning/` — optional infra bridging `Predicate`/`GroundAtom` to PDDL/Fast
-  Downward, for planning-based `Method`s only. Pure deep-RL baselines never import it.
+- `planning/` — bridges `Predicate`/`GroundAtom`/`Skill` to real Fast Downward (PDDL
+  planning), for planning-based `Method`s only — needed for `methods/
+  practice_makes_perfect/`, since EES's competence-cost-aware task planning has no
+  built-in-planner substitute (predicators' own non-FD `astar` planner doesn't
+  support per-operator costs at all). Pure deep-RL baselines (MAPLE-Q) never import
+  it. Not vendored/bundled — see `planning/README.md` for the external install steps
+  and why `_translate`/`_search` are `# pragma: no cover` (mirrors predicators' own
+  precedent: CI can't be assumed to have Fast Downward installed).
 
 ### Sibling repo: `hitl-practice`
 

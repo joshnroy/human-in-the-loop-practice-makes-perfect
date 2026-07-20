@@ -1,39 +1,40 @@
 # planning
 
-Shared infrastructure for bridging the symbolic `core.Predicate` /
-`core.GroundAtom` layer (see `core/problem/tasks/types.py`) to classical planners such as
-Fast Downward.
+Will bridge the symbolic `core.Skill`/`core.Predicate`/`core.GroundAtom` layer (see
+`core/method/types.py`, `core/problem/tasks/types.py`) to real grounded-skill search and,
+eventually, Fast Downward (a classical PDDL planner) — needed to port Practice Makes
+Perfect (EES)'s task planning faithfully (see `methods/README.md`): EES plans to reach the
+precondition of whichever skill it wants to practice next, using `-log(competence)` as
+each skill's edge cost so the minimum-cost plan is the maximum-likelihood-of-success plan.
 
-This follows the precedent set by the sibling repo one level up
-(`hitl-practice/predicators/third_party/fast_downward_translator/`), a
-vendored PDDL-to-SAS+ translator invoked from
-`predicators/planning.py`'s `_sesame_plan_with_fast_downward`. We are not
-extending that codebase (per the project design doc: it is entangled and
-difficult to extend), but its planner-invocation conventions are worth
-reusing rather than reinventing.
+Nothing lives here yet. This package is filled in incrementally, one stacked PR at a time,
+by whichever `Method` first needs each piece:
 
-## Intended pipeline
+- A skill-grounder (backtracking search finding every `GroundSkill` whose preconditions
+  hold in a given symbolic state, plus a state-abstraction helper computing which
+  `GroundAtom`s currently hold) lands with the first `Method` that needs "what can I do
+  right now" — Random Skills, the simplest of the paper's 8 baselines.
+- A real `FastDownwardPlanner` (shelling out to a real Fast Downward binary, mirroring
+  the sibling repo one level up's `hitl-practice/predicators/planning.py`'s
+  `_sesame_plan_with_fast_downward` two-stage translate/patch-costs/search protocol) and
+  a PDDL domain/problem text writer land once a `Method` actually needs cost-aware
+  optimal search over `GroundSkill`s — starting with the Practice Makes Perfect (EES)
+  reproduction itself. We are not extending the sibling `hitl-practice` codebase (per the
+  project design doc: it is entangled and difficult to extend), but its
+  planner-invocation protocol is worth reusing rather than reinventing.
 
-Once implemented, this module is expected to provide the machinery for:
+## Why Fast Downward, not a hand-rolled planner
 
-1. Take a numpy `State` (`dict[Object, np.ndarray]`).
-2. Apply the domain's `Predicate`s to the state to classify which
-   `GroundAtom`s hold, producing a symbolic abstraction of the state.
-3. Combine the abstract state, the domain's typed `Object`s, and a `Goal`
-   (a set of `GroundAtom`s) into a grounded PDDL problem instance.
-4. Translate the grounded PDDL problem to SAS+.
-5. Hand the SAS+ representation to the Fast Downward binary and interpret
-   the returned plan.
+predicators' own built-in `astar` task planner does **not** support per-operator
+costs at all (grepped: `ground_op_costs` is only ever consumed by the Fast-Downward
+code path) — EES's whole mechanism depends on cost-aware *optimal* search
+(`seq-opt-lmcut`), so a real external planner is genuinely load-bearing here, not
+an implementation convenience.
 
 ## Optionality
 
-This is genuinely optional infrastructure. It is only needed if/when a
-planning-based `Method` (e.g. a "planning_to_practice" baseline living in
-`../methods/`) requires symbolic search over `GroundAtom`s to produce a
-plan. Pure deep-RL baselines, or any `Method` that never grounds its policy
-in symbolic search, skip this package entirely and never import from it.
-
-## Status
-
-Nothing in this package is implemented yet. This README and the empty
-`__init__.py` exist only to reserve the module's place in the architecture.
+Only needed by a planning-based `Method` that requires symbolic search over
+`GroundAtom`s to produce a plan — e.g. the Practice Makes Perfect (EES) reproduction
+and its paper baselines (`methods/`). Pure deep-RL baselines like MAPLE-Q, or any
+`Method` that never grounds its policy in symbolic search, skip this package
+entirely and never import from it.
