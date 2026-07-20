@@ -245,6 +245,36 @@ preconditions/effects (`predicators`' `STRIPSOperator`/`NSRT` half) — that nee
 `compute_action` static methods, which round out the lifted → grounded →
 raw-`Action` pipeline these types describe.
 
+```mermaid
+flowchart LR
+    skill["Skill<br/>(lifted template)<br/>name, types, param_dim"]
+    ground["GroundSkill<br/>(bound to objects)<br/>skill, objects"]
+    params["params: ndarray<br/>(sampled fresh each execution)"]
+    action["Action<br/>(raw [dx, dlight])"]
+    state["State"]
+
+    skill -- "bind to concrete objects" --> ground
+    ground -- "sample_params(rng)" --> params
+    ground -- "compute_action(params, state)" --> action
+    state -.-> action
+    params -.-> action
+    action -- "Environment.take_action" --> state
+
+    subgraph example["Light Switch's four Skill instances (skills.py)"]
+        direction TB
+        moveRobot["MoveRobot(robot, cell, cell)<br/>param_dim=0"]
+        turnOn["TurnOnLight(robot, cell, light)<br/>param_dim=1"]
+        turnOff["TurnOffLight(robot, cell, light)<br/>param_dim=1"]
+        jump["JumpToLight(robot, cell, cell, cell, light)<br/>param_dim=1, always a no-op"]
+    end
+    skill -.-> example
+```
+
+`compute_action` dispatches on `ground_skill.skill` by **value equality** (frozen
+pydantic models), not object identity — any independently-constructed `Skill` with
+matching `name`/`types`/`param_dim` is treated the same as the `LightSwitchSkills.*`
+`ClassVar`s above.
+
 ## Files
 
 - `problem/environment/` — `environment.py` (the `Environment` ABC) + `types.py`
