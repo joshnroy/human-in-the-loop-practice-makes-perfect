@@ -177,7 +177,9 @@ whatever `State` you hand it, useful standalone (e.g. debugging a hand-built `St
 with no `Problem` in scope at all) and with no reset-cost/human-in-the-loop semantics
 of its own. `renderer.py` also holds two non-abstract, domain-agnostic companions,
 not part of the `Renderer` interface itself since neither varies per domain:
-`VideoWriter` (writes a frame sequence to `.mp4`/`.gif`, chosen by file extension) and
+`VideoWriter` (writes a frame sequence to a video file via imageio's bundled ffmpeg —
+no native GIF support; convert a written video with an external `ffmpeg` invocation
+instead) and
 `EpisodeRenderer` (runs one task episode against any concrete `Problem`, capturing a
 frame per step — mirrors a `Problem.run_task_episode` loop without touching that core
 interface, since most callers never need rendering).

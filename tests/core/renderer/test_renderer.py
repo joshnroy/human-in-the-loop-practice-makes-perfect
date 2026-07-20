@@ -130,20 +130,9 @@ def test_video_writer_mp4_preserves_frame_count_and_content(*, tmp_path: Path) -
     assert decoded[-1].mean() - decoded[0].mean() > 100
 
 
-def test_video_writer_gif_preserves_frame_count_and_content(*, tmp_path: Path) -> None:
-    frames = _make_solid_frames(size=16, count=3)
-    output_path = tmp_path / "clip.gif"
-    VideoWriter.write(frames=frames, output_path=output_path, fps=5)
-
-    decoded = [np.asarray(frame) for frame in imageio.mimread(output_path)]
-    assert len(decoded) == len(frames)
-    assert decoded[-1].mean() - decoded[0].mean() > 100
-
-
 def test_video_writer_writes_a_single_frame_mp4(*, tmp_path: Path) -> None:
     """EpisodeRenderer.record can legitimately return just 1 frame (goal already
-    satisfied at t=0, no actions taken) -- confirm the mp4 path handles this, not
-    just the gif path (test_video_writer_creates_missing_parent_directories below)."""
+    satisfied at t=0, no actions taken) -- confirm this path is handled."""
     frames = [np.zeros((4, 4, 3), dtype=np.uint8)]
     output_path = tmp_path / "clip.mp4"
     VideoWriter.write(frames=frames, output_path=output_path, fps=5)
@@ -152,7 +141,7 @@ def test_video_writer_writes_a_single_frame_mp4(*, tmp_path: Path) -> None:
 
 
 def test_video_writer_creates_missing_parent_directories(*, tmp_path: Path) -> None:
-    output_path = tmp_path / "nested" / "dir" / "clip.gif"
+    output_path = tmp_path / "nested" / "dir" / "clip.mp4"
     frames = [np.zeros((2, 2, 3), dtype=np.uint8)]
     VideoWriter.write(frames=frames, output_path=output_path, fps=5)
     assert output_path.exists()

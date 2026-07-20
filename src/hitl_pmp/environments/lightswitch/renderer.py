@@ -17,9 +17,10 @@ from .predicates import LightOnClassifier  # noqa: E402
 
 class LightSwitchRenderer(Renderer):
     """Draws the robot (red circle) and light (square, gold when
-    LightOnClassifier.holds else light gray) on a 1D strip spanning the grid. A
-    static-method container, never instantiated, same as every other business-logic
-    class in this project."""
+    LightOnClassifier.holds else light gray) on a 1D strip spanning the grid, with a
+    thin vertical line at each integer boundary marking off the individual cells
+    ("rooms"). A static-method container, never instantiated, same as every other
+    business-logic class in this project."""
 
     # At the default 100 dpi this is 800x160px -- both divisible by 16, avoiding an
     # ffmpeg macro_block_size resize warning when writing to mp4.
@@ -39,6 +40,14 @@ class LightSwitchRenderer(Renderer):
             ax.set_ylim(0, 1)
             ax.set_yticks([])
             ax.set_title(f"Light Switch ({'on' if is_on else 'off'})")
+            ax.vlines(
+                np.arange(0, env.grid_size + 1),
+                ymin=0,
+                ymax=1,
+                colors="lightgray",
+                linewidth=0.5,
+                zorder=0,
+            )
             ax.scatter(
                 [light_x],
                 [0.5],
