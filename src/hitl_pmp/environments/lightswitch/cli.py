@@ -6,10 +6,11 @@ import numpy as np
 from hitl_pmp.core.method.types import Policy
 from hitl_pmp.core.renderer.renderer import Renderer, VideoWriter
 
+from .action_oracle_policy import ACTION_ORACLE_POLICY
 from .environment import LightSwitchEnvironment
-from .oracle_policy import ORACLE_POLICY
 from .problem import LightSwitchProblem
 from .renderer import LightSwitchRenderer
+from .skill_oracle_policy import SKILL_ORACLE_POLICY
 from .tasks import LightSwitchTasks
 
 
@@ -19,7 +20,10 @@ class LightSwitchCli:
     test tasks. A static-method container, never instantiated, same as every other
     business-logic class in this project."""
 
-    POLICIES: ClassVar[dict[str, Policy]] = {"oracle": ORACLE_POLICY}
+    POLICIES: ClassVar[dict[str, Policy]] = {
+        "action-oracle": ACTION_ORACLE_POLICY,
+        "skill-oracle": SKILL_ORACLE_POLICY,
+    }
     render_fps: ClassVar[int] = 2  # slow -- episodes are only a few actions long
 
     @staticmethod
@@ -29,7 +33,7 @@ class LightSwitchCli:
         parser.add_argument(
             "--policy",
             choices=sorted(LightSwitchCli.POLICIES),
-            default="oracle",
+            default="action-oracle",
             help="Which policy to run.",
         )
         parser.add_argument(

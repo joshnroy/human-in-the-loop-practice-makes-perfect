@@ -22,13 +22,15 @@ class LightSwitchRenderer(Renderer):
     ("rooms"). A static-method container, never instantiated, same as every other
     business-logic class in this project."""
 
-    # At the default 100 dpi this is 800x160px -- both divisible by 16, avoiding an
-    # ffmpeg macro_block_size resize warning when writing to mp4.
-    figure_size: ClassVar[tuple[float, float]] = (8.0, 1.6)
+    # At the default 100 dpi this is 800x192px -- both divisible by 16, avoiding an
+    # ffmpeg macro_block_size resize warning when writing to mp4. The extra height
+    # (vs. an earlier 800x160) leaves room for a second title line when a label is
+    # overlaid (see render_frame's label param).
+    figure_size: ClassVar[tuple[float, float]] = (8.0, 1.92)
     marker_size: ClassVar[float] = 300.0
 
     @staticmethod
-    def render_frame(*, state: State) -> np.ndarray:
+    def render_frame(*, state: State, label: str | None = None) -> np.ndarray:
         env = LightSwitchEnvironment
         robot_x = state.get(obj=env.robot, feature_name="x")
         light_x = state.get(obj=env.light, feature_name="x")
@@ -39,7 +41,8 @@ class LightSwitchRenderer(Renderer):
             ax.set_xlim(0, env.grid_size)
             ax.set_ylim(0, 1)
             ax.set_yticks([])
-            ax.set_title(f"Light Switch ({'on' if is_on else 'off'})")
+            title = f"Light Switch ({'on' if is_on else 'off'})"
+            ax.set_title(f"{title}\n{label}" if label else title, fontsize=9)
             ax.vlines(
                 np.arange(0, env.grid_size + 1),
                 ymin=0,

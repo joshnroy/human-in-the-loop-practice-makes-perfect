@@ -50,7 +50,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def test_add_arguments_defaults_match_live_class_values() -> None:
     args = _build_parser().parse_args([])
     assert args.num_test_tasks == 20
-    assert args.policy == "oracle"
+    assert args.policy == "action-oracle"
     assert args.grid_size == LightSwitchEnvironment.grid_size
     assert args.light_on_tolerance == LightSwitchEnvironment.light_on_tolerance
     assert args.same_position_tolerance == LightSwitchEnvironment.same_position_tolerance
@@ -61,8 +61,13 @@ def test_add_arguments_defaults_match_live_class_values() -> None:
     assert args.target_high == LightSwitchTasks.target_high
 
 
-def test_run_with_oracle_policy_solves_every_sampled_task() -> None:
+def test_run_with_action_oracle_policy_solves_every_sampled_task() -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "5"])
+    assert LightSwitchCli.run(args=args) == (5, 5)
+
+
+def test_run_with_skill_oracle_policy_solves_every_sampled_task() -> None:
+    args = _build_parser().parse_args(["--num-test-tasks", "5", "--policy", "skill-oracle"])
     assert LightSwitchCli.run(args=args) == (5, 5)
 
 

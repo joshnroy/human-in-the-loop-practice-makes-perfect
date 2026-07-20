@@ -13,7 +13,8 @@ _OBJ = Object(name="block1", type=_BLOCK)
 
 class _DummyRenderer(Renderer):
     @staticmethod
-    def render_frame(*, state: State) -> np.ndarray:
+    def render_frame(*, state: State, label: str | None = None) -> np.ndarray:
+        del label
         value = int(np.clip(state[_OBJ][0], 0, 255))
         return np.full((2, 2, 3), value, dtype=np.uint8)
 

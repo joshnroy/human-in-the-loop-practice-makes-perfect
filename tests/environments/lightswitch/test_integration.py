@@ -1,11 +1,20 @@
 import numpy as np
+import pytest
 
+from hitl_pmp.core.method.types import Policy
+from hitl_pmp.environments.lightswitch.action_oracle_policy import ACTION_ORACLE_POLICY
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.oracle_policy import ORACLE_POLICY
+from hitl_pmp.environments.lightswitch.skill_oracle_policy import SKILL_ORACLE_POLICY
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 
+_ORACLE_POLICIES: dict[str, Policy] = {
+    "action-oracle": ACTION_ORACLE_POLICY,
+    "skill-oracle": SKILL_ORACLE_POLICY,
+}
 
-def test_oracle_policy_solves_a_sampled_train_task() -> None:
+
+@pytest.mark.parametrize("policy", _ORACLE_POLICIES.values(), ids=_ORACLE_POLICIES.keys())
+def test_oracle_policy_solves_a_sampled_train_task(*, policy: Policy) -> None:
     task = LightSwitchTasks.sample_train_task()
     LightSwitchEnvironment.set_state(state=task.initial_state)
 
@@ -13,18 +22,19 @@ def test_oracle_policy_solves_a_sampled_train_task() -> None:
     assert task.goal.is_satisfied(state=state) is False
 
     for _ in range(2):
-        state = LightSwitchEnvironment.take_action(action=ORACLE_POLICY(state))
+        state = LightSwitchEnvironment.take_action(action=policy(state).action)
 
     assert task.goal.is_satisfied(state=state) is True
 
 
-def test_oracle_policy_solves_a_sampled_test_task() -> None:
+@pytest.mark.parametrize("policy", _ORACLE_POLICIES.values(), ids=_ORACLE_POLICIES.keys())
+def test_oracle_policy_solves_a_sampled_test_task(*, policy: Policy) -> None:
     task = LightSwitchTasks.sample_test_task()
     LightSwitchEnvironment.set_state(state=task.initial_state)
 
     state = LightSwitchEnvironment.get_current_state()
     for _ in range(2):
-        state = LightSwitchEnvironment.take_action(action=ORACLE_POLICY(state))
+        state = LightSwitchEnvironment.take_action(action=policy(state).action)
 
     assert task.goal.is_satisfied(state=state) is True
 

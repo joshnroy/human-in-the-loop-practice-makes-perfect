@@ -1,5 +1,12 @@
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.predicates import LIGHT_ON, LightOnClassifier
+from hitl_pmp.environments.lightswitch.predicates import (
+    ADJACENT,
+    LIGHT_IN_CELL,
+    LIGHT_ON,
+    ROBOT_IN_CELL,
+    AdjacentClassifier,
+    LightOnClassifier,
+)
 
 
 def test_classifier_holds_when_level_matches_target() -> None:
@@ -43,3 +50,44 @@ def test_light_on_does_not_hold_outside_tolerance() -> None:
 def test_light_on_predicate_declares_light_type() -> None:
     assert LIGHT_ON.types == (LightSwitchEnvironment.light_type,)
     assert LIGHT_ON.name == "LightOn"
+
+
+def test_robot_in_cell_holds_for_the_robots_own_cell() -> None:
+    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
+    robot = LightSwitchEnvironment.robot
+    cells = LightSwitchEnvironment.get_cells()
+    atom = ROBOT_IN_CELL(state=state, objects=(robot, cells[0]))
+    assert atom.predicate.holds(state, atom.objects) is True
+
+
+def test_robot_in_cell_does_not_hold_for_a_different_cell() -> None:
+    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
+    robot = LightSwitchEnvironment.robot
+    cells = LightSwitchEnvironment.get_cells()
+    atom = ROBOT_IN_CELL(state=state, objects=(robot, cells[1]))
+    assert atom.predicate.holds(state, atom.objects) is False
+
+
+def test_light_in_cell_holds_for_the_lights_own_cell() -> None:
+    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
+    light = LightSwitchEnvironment.light
+    cells = LightSwitchEnvironment.get_cells()
+    atom = LIGHT_IN_CELL(state=state, objects=(light, cells[-1]))
+    assert atom.predicate.holds(state, atom.objects) is True
+
+
+def test_adjacent_classifier_holds_for_consecutive_cells() -> None:
+    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
+    cells = LightSwitchEnvironment.get_cells()
+    assert AdjacentClassifier.holds(state=state, cell1=cells[0], cell2=cells[1]) is True
+
+
+def test_adjacent_classifier_does_not_hold_for_distant_cells() -> None:
+    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.5)
+    cells = LightSwitchEnvironment.get_cells()
+    assert AdjacentClassifier.holds(state=state, cell1=cells[0], cell2=cells[-1]) is False
+
+
+def test_adjacent_predicate_declares_cell_types() -> None:
+    assert ADJACENT.types == (LightSwitchEnvironment.cell_type, LightSwitchEnvironment.cell_type)
+    assert ADJACENT.name == "Adjacent"

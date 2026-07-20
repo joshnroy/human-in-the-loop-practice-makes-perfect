@@ -19,15 +19,14 @@ class LightSwitchEnvironment(Environment):
     [0, 2*pi], grid_size=100). See the Notion page's "Details not in paper but in
     codebase" section for the full list.
 
-    Unlike GridRowEnv, this doesn't model grid cells as their own State Objects --
-    GridRowEnv only needs them for planner-grounding predicates (RobotInCell,
-    LightInCell, Adjacent), and this port's scope stops at LightOn (see
-    predicates.py), so cell membership is just an x-position comparison
-    (_same_position) rather than a symbolic Cell type. The raw action is
-    [dx, dlight] (continuous, unbounded), matching GridRowEnv.action_space exactly --
-    the paper's MoveTo/ToggleLight/JumpToLight "skills" are a layer on top of this raw
-    action space (predicators' ParameterizedOptions), not part of the environment
-    itself; they belong to a future Method, not here.
+    Cell objects (get_cells()) exist for skills.py's MoveRobot/JumpToLight skills and
+    predicates.py's RobotInCell/LightInCell/Adjacent, matching GridRowEnv's own model
+    -- cell membership itself is still just an x-position comparison (same_position),
+    not a separate "in cell" mechanism the raw dynamics below need to know about. The
+    raw action is [dx, dlight] (continuous, unbounded), matching GridRowEnv.action_space
+    exactly -- the paper's MoveTo/ToggleLight/JumpToLight "skills" are a layer on top
+    of this raw action space (predicators' ParameterizedOptions, ported in skills.py),
+    not part of the environment itself.
     """
 
     grid_size: ClassVar[int] = 100  # predicators' settings.grid_row_num_cells default
@@ -40,6 +39,7 @@ class LightSwitchEnvironment(Environment):
 
     robot_type: ClassVar[Type] = Type(name="robot", feature_names=("x",))
     light_type: ClassVar[Type] = Type(name="light", feature_names=("level", "target", "x"))
+    cell_type: ClassVar[Type] = Type(name="cell", feature_names=("x",))
 
     robot: ClassVar[Object] = Object(name="robot", type=robot_type)
     light: ClassVar[Object] = Object(name="light", type=light_type)
@@ -47,17 +47,29 @@ class LightSwitchEnvironment(Environment):
     action_space: ClassVar[Box] = Box(-np.inf, np.inf, (2,))
 
     @staticmethod
+    def get_cells() -> tuple[Object, ...]:
+        """One Object per grid position, x = i + 0.5 (matching GridRowEnv's
+        _get_tasks). Built fresh on every call, not cached -- grid_size is mutable at
+        runtime (CLI override, test overrides), the same staleness trap
+        LightSwitchProblem.max_episode_steps() already has to avoid. Object equality/
+        hash are value-based (frozen pydantic), so rebuilding is correct, just not
+        free -- negligible at this scale."""
+        env = LightSwitchEnvironment
+        return tuple(Object(name=f"cell{i}", type=env.cell_type) for i in range(env.grid_size))
+
+    @staticmethod
     def build_initial_state(*, light_level: float, light_target: float) -> State:
         """The robot always starts in cell 0; the light always sits in the last cell.
         Only light_level/light_target vary between callers -- hard_reset uses a
         canonical value, Tasks samples light_target per episode."""
         env = LightSwitchEnvironment
-        return State(
-            data={
-                env.robot: np.array([0.5]),
-                env.light: np.array([light_level, light_target, env.grid_size - 0.5]),
-            }
-        )
+        data: dict[Object, np.ndarray] = {
+            env.robot: np.array([0.5]),
+            env.light: np.array([light_level, light_target, env.grid_size - 0.5]),
+        }
+        for i, cell in enumerate(env.get_cells()):
+            data[cell] = np.array([i + 0.5])
+        return State(data=data)
 
     @staticmethod
     def take_action(*, action: Action) -> State:
@@ -66,7 +78,7 @@ class LightSwitchEnvironment(Environment):
         state = env.current_state
         next_state = state.model_copy(deep=True)
 
-        if env._same_position(state=state, obj1=env.robot, obj2=env.light):
+        if env.same_position(state=state, obj1=env.robot, obj2=env.light):
             new_level = float(
                 np.clip(state.get(obj=env.light, feature_name="level") + dlight, 0.0, 1.0)
             )
@@ -95,7 +107,11 @@ class LightSwitchEnvironment(Environment):
         )
 
     @staticmethod
-    def _same_position(*, state: State, obj1: Object, obj2: Object) -> bool:
+    def same_position(*, state: State, obj1: Object, obj2: Object) -> bool:
+        """Whether obj1 and obj2 are at the same x position within tolerance --
+        shared by take_action's light co-location check and predicates.py's
+        RobotInCell/LightInCell (not just an internal detail of one method, hence
+        public)."""
         x1 = state.get(obj=obj1, feature_name="x")
         x2 = state.get(obj=obj2, feature_name="x")
         return bool(abs(x1 - x2) < LightSwitchEnvironment.same_position_tolerance)

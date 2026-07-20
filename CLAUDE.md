@@ -48,9 +48,9 @@ ConcreteEnv`), Java static-class/singleton style — not constructor-assigned in
 state, and methods reference the base class by name (`Problem.env`), never `cls`.
 The same static-method-container rule extends to any concrete business logic
 underneath these interfaces, however small (e.g.
-`environments/lightswitch/oracle_policy.py`'s `OraclePolicy.get_action`) — never a
-bare module-level function, except a short lambda where an interface demands a
-positional callable (`Predicate.holds`, `Policy`).
+`environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy.get_action`)
+— never a bare module-level function, except a short lambda where an interface
+demands a positional callable (`Predicate.holds`, `Policy`).
 
 ```
 core/
@@ -67,7 +67,7 @@ core/
 │       └── types.py             Task, Goal, Predicate, GroundAtom
 ├── method/
 │   ├── method.py               Method — the agent side
-│   └── types.py                 Policy, Rollout, Skill, SetupCommand
+│   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, SetupCommand
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol
 └── renderer/
@@ -147,7 +147,11 @@ happened — it returns nothing; querying cost beforehand is
 - `environments/` — concrete `Environment` + `Tasks` + `Problem` per domain, one
   subfolder each (e.g. `environments/lightswitch/`). A domain subfolder holds
   `environment.py`, `tasks.py`, `problem.py`, and optionally `predicates.py` (only if
-  a planning-based `Method` needs symbolic `GroundAtom`s for that domain).
+  a planning-based `Method` needs symbolic `GroundAtom`s for that domain) and
+  `skills.py` (only if a `Method` selects lifted `Skill`s rather than acting
+  directly in raw action space — declares `Skill` `ClassVar`s plus
+  `sample_params`/`compute_action` static methods; see `core/README.md`'s
+  `Skill`/`GroundSkill` section and `environments/lightswitch/skills.py`).
 - `human_oracles/` — concrete `HumanOracle` implementations, the v0 (unconditional) →
   v3 (natural-language, capability-aware) axis from the design doc. Domain-agnostic:
   a `HumanOracle` knows nothing about any specific `Environment`'s dynamics.

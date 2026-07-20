@@ -4,7 +4,7 @@ from typing import Any
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Task
 
-from .types import Policy, Rollout, SetupCommand, Skill
+from .types import GroundSkill, Policy, Rollout, SetupCommand
 
 
 class Method(abc.ABC):
@@ -38,10 +38,10 @@ class Method(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def execute_skill(*, skill: Skill) -> Rollout:
+    def execute_skill(*, skill: GroundSkill) -> Rollout:
         raise NotImplementedError
 
     @staticmethod
     @abc.abstractmethod
-    def improve_skill_parameters(*, skill: Skill, rollout: Rollout) -> None:
+    def improve_skill_parameters(*, skill: GroundSkill, rollout: Rollout) -> None:
         raise NotImplementedError

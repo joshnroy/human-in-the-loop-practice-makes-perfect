@@ -43,7 +43,8 @@ class LightSwitchProblem(Problem):
         for _ in range(LightSwitchProblem.max_episode_steps()):
             if task.goal.is_satisfied(state=state):
                 return True, frames
-            state = env.take_action(action=policy(state))
+            labeled_action = policy(state)
+            state = env.take_action(action=labeled_action.action)
             if renderer is not None:
-                frames.append(renderer.render_frame(state=state))
+                frames.append(renderer.render_frame(state=state, label=labeled_action.label))
         return task.goal.is_satisfied(state=state), frames
