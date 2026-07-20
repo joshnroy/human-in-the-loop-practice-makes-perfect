@@ -15,7 +15,19 @@ class MlpBinaryClassifier(BaseModel):
     n_iter_no_change=5000 iterations with no loss improvement). A pydantic
     BaseModel wrapping a torch.nn.Module -- deliberately mutable/stateful
     (trained weights), mirroring SkillCompetenceModel's own justification for
-    departing from this project's frozen-data-type norm."""
+    departing from this project's frozen-data-type norm.
+
+    Normalizes inputs to zero mean/unit variance before training/prediction,
+    matching predicators' _NormalizingBinaryClassifier (unconditional in their
+    class hierarchy, not an experiment-specific ablation) -- Light Switch's own
+    inputs genuinely need this: WrappedSampler._construct_input concatenates
+    raw x-position features (up to grid_size, e.g. 100) with continuous params
+    in [-1, 1], and training on that mismatched scale unnormalized would
+    distort gradients. Deliberately does NOT rebalance classes the way
+    predicators' mlp_classifier_balance_data can -- confirmed that flag is
+    explicitly set to False in the real grid_row/EES config
+    (scripts/configs/active_sampler_learning.yaml), so skipping it here is
+    the faithful choice, not a gap."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -24,9 +36,17 @@ class MlpBinaryClassifier(BaseModel):
     learning_rate: float = 1e-3
     max_iters: int = 100_000
     n_iter_no_change: int = 5_000
+    seed: int = 0
     network: torch.nn.Module | None = None
+    input_mean: np.ndarray | None = None
+    input_std: np.ndarray | None = None
 
     def fit(self, *, inputs: np.ndarray, labels: np.ndarray) -> None:
+        torch.manual_seed(self.seed)
+        self.input_mean = inputs.mean(axis=0)
+        self.input_std = inputs.std(axis=0) + 1e-6  # avoid dividing by zero on a constant feature
+        normalized_inputs = (inputs - self.input_mean) / self.input_std
+
         layers: list[torch.nn.Module] = []
         in_size = self.input_dim
         for hidden_size in self.hidden_sizes:
@@ -37,7 +57,7 @@ class MlpBinaryClassifier(BaseModel):
         layers.append(torch.nn.Sigmoid())
         network = torch.nn.Sequential(*layers)
 
-        x = torch.as_tensor(inputs, dtype=torch.float32)
+        x = torch.as_tensor(normalized_inputs, dtype=torch.float32)
         y = torch.as_tensor(labels, dtype=torch.float32).reshape(-1, 1)
         optimizer = torch.optim.Adam(network.parameters(), lr=self.learning_rate)
         loss_fn = torch.nn.BCELoss()
@@ -61,10 +81,11 @@ class MlpBinaryClassifier(BaseModel):
         self.network = network
 
     def predict_proba(self, *, x: np.ndarray) -> float:
-        if self.network is None:
+        if self.network is None or self.input_mean is None or self.input_std is None:
             raise RuntimeError("MlpBinaryClassifier.predict_proba called before fit().")
         with torch.no_grad():
-            tensor = torch.as_tensor(x, dtype=torch.float32).unsqueeze(0)
+            normalized_x = (x - self.input_mean) / self.input_std
+            tensor = torch.as_tensor(normalized_x, dtype=torch.float32).unsqueeze(0)
             return float(self.network(tensor).item())
 
 

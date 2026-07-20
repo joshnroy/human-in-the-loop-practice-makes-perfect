@@ -28,7 +28,11 @@ Figure 4 (Light Switch panel).
   fancier EM/latent-variable alternative the paper also describes trying).
 - `wrapped_sampler.py` — `MlpBinaryClassifier` + `WrappedSampler`: reranks a skill's
   base continuous-parameter sampler using a small PyTorch MLP classifier trained on
-  recorded execution outcomes, epsilon-greedy at exploration time.
+  recorded execution outcomes, epsilon-greedy at exploration time. Inputs are
+  normalized (zero mean/unit variance) before training, matching predicators'
+  classifier base class; class rebalancing is deliberately *not* ported, since the
+  real grid_row/EES config explicitly disables it
+  (`mlp_classifier_balance_data: False`).
 - More pieces (the `Method` implementations themselves, tying these together via real
   Fast Downward planning) land in stacked follow-up PRs, one per baseline.
 
