@@ -20,7 +20,7 @@ core/
 │       └── types.py             Task, Goal, Predicate, GroundAtom
 ├── method/
 │   ├── method.py               Method — the agent side
-│   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, SetupCommand
+│   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol
 └── renderer/
@@ -243,24 +243,32 @@ distinction only exists inside a domain's own `Predicate.holds` classifiers.
 
 ## `Skill`/`GroundSkill` are a lifted/grounded pair, like `Predicate`/`GroundAtom`
 
-`Skill` (name + `types` + `param_dim`) is a lifted template — what a `Method` can
-select before being bound to concrete objects; `GroundSkill` (`skill` + `objects`)
-binds one to a specific object tuple, mirroring `GroundAtom`'s shape in
-`problem/tasks/types.py` exactly. Continuous parameters are deliberately **not**
-part of `GroundSkill` — per `predicators`' `_Option`/`_GroundNSRT.sample_option()`
-precedent, params are sampled fresh each execution (a concrete `Method`'s job,
-inside `execute_skill`), so `improve_skill_parameters` updates the *sampler*, not
-one already-consumed value. `Skill`/`GroundSkill` deliberately omit symbolic
-preconditions/effects (`predicators`' `STRIPSOperator`/`NSRT` half) — that needs a
-`Variable`/`LiftedAtom` layer nothing here consumes yet; see
-`environments/lightswitch/skills.py` for a concrete instantiation (`MoveRobot`,
-`TurnOnLight`, `TurnOffLight`, `JumpToLight`) and its `sample_params`/
-`compute_action` static methods, which round out the lifted → grounded →
-raw-`Action` pipeline these types describe.
+`Skill` (name + `parameters` + `preconditions`/`add_effects`/`delete_effects` +
+`param_dim`) is a lifted template — what a `Method` can select before being bound to
+concrete objects; `GroundSkill` (`skill` + `objects`) binds one to a specific object
+tuple, mirroring `GroundAtom`'s shape in `problem/tasks/types.py` exactly, and
+exposes `.preconditions`/`.add_effects`/`.delete_effects` as *grounded* `GroundAtom`s
+(substituting `objects` for `skill.parameters` positionally). Continuous parameters
+are deliberately **not** part of `GroundSkill` — per `predicators`'
+`_Option`/`_GroundNSRT.sample_option()` precedent, params are sampled fresh each
+execution (a concrete `Method`'s job, inside `execute_skill`), so
+`improve_skill_parameters` updates the *sampler*, not one already-consumed value.
+
+`Skill`'s `preconditions`/`add_effects`/`delete_effects` are `LiftedAtom`s — a
+`Predicate` applied to `Variable`s (a typed placeholder, e.g. `?robot`) rather than
+concrete `Object`s, mirroring `predicators`' `STRIPSOperator`/`NSRT` symbolic half.
+This was deliberately deferred until a real consumer existed; `methods/
+practice_makes_perfect/` (reproducing the original PMP/EES paper) is that consumer —
+it needs real STRIPS operators to task-plan over via Fast Downward (`planning/`).
+`LiftedAtom.ground(*, substitution)` produces a `GroundAtom`, mirroring
+`Predicate.__call__`. See `environments/lightswitch/skills.py` for a concrete
+instantiation (`MoveRobot`, `TurnOnLight`, `TurnOffLight`, `JumpToLight`) and its
+`sample_params`/`compute_action` static methods, which round out the lifted →
+grounded → raw-`Action` pipeline these types describe.
 
 ```mermaid
 flowchart LR
-    skill["Skill<br/>(lifted template)<br/>name, types, param_dim"]
+    skill["Skill<br/>(lifted template)<br/>name, parameters, preconditions/effects, param_dim"]
     ground["GroundSkill<br/>(bound to objects)<br/>skill, objects"]
     params["params: ndarray<br/>(sampled fresh each execution)"]
     action["Action<br/>(raw [dx, dlight])"]
@@ -323,7 +331,7 @@ graph TD
     ho["problem/human/<br/>HumanOracle, Cost"]
     tasktypes["problem/tasks/types.py<br/>Task, Goal, Predicate, GroundAtom"]
     tasks["problem/tasks/tasks.py<br/>Tasks"]
-    mtypes["method/types.py<br/>LabeledAction, Policy, Rollout, Skill, GroundSkill, SetupCommand"]
+    mtypes["method/types.py<br/>LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand"]
     renderer["renderer/<br/>Renderer, VideoWriter"]
     problem["problem/problem.py<br/>Problem"]
     method["method/method.py<br/>Method"]
