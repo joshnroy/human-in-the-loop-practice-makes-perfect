@@ -95,21 +95,21 @@ def test_jump_to_light_declares_all_three_cells_and_the_light() -> None:
 
 def test_jump_to_light_claims_an_effect_its_option_never_actually_achieves() -> None:
     """The "impossible skill": the NSRT's symbolic add_effect promises the robot
-    reaches cell3, but compute_action (below) always emits a no-op -- this
-    mismatch is deliberate, matching predicators' own JumpToLight."""
+    reaches the landing cell, but compute_action (below) always emits a no-op --
+    this mismatch is deliberate, matching predicators' own JumpToLight."""
     skill = LightSwitchSkills.JUMP_TO_LIGHT
-    robot, cell1, cell2, cell3, light = skill.parameters
+    robot, start_cell, via_cell, landing_cell, light = skill.parameters
     assert skill.preconditions == frozenset({
-        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, cell1)),
-        LiftedAtom(predicate=ADJACENT, variables=(cell1, cell2)),
-        LiftedAtom(predicate=ADJACENT, variables=(cell2, cell3)),
-        LiftedAtom(predicate=LIGHT_IN_CELL, variables=(light, cell3)),
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, start_cell)),
+        LiftedAtom(predicate=ADJACENT, variables=(start_cell, via_cell)),
+        LiftedAtom(predicate=ADJACENT, variables=(via_cell, landing_cell)),
+        LiftedAtom(predicate=LIGHT_IN_CELL, variables=(light, landing_cell)),
     })
     assert skill.add_effects == frozenset({
-        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, cell3))
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, landing_cell))
     })
     assert skill.delete_effects == frozenset({
-        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, cell1))
+        LiftedAtom(predicate=ROBOT_IN_CELL, variables=(robot, start_cell))
     })
 
 

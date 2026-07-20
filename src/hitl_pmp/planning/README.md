@@ -37,51 +37,24 @@ an implementation convenience.
     directly into PDDL syntax.
   - `write_problem(*, problem_name, domain_name, objects, init_atoms, goal_atoms)
     -> str`.
-- `fast_downward.py` — `FastDownwardPlanner`, a static-method container:
-  - `plan(*, state, goal, objects, types, predicates, skills, fd_exec_path,
-    ground_skill_costs=None, default_cost=1.0, timeout=10.0) -> list[GroundSkill]`
-    — the two-stage protocol predicators itself uses: (1) translate the written
-    PDDL to a SAS+ file via Fast Downward's own translator (`--sas-file`), (2)
-    optionally patch that file's per-operator costs in place (`_patch_sas_costs`,
-    a pure text transform matching predicators' `_update_sas_file_with_costs`
-    exactly — sets SAS's `metric` flag on, since FD otherwise ignores non-unit
-    costs), (3) run search on the (possibly patched) SAS file alone, which skips
-    re-translation, (4) parse the printed plan back into `GroundSkill`s via a
-    lowercased name lookup (Fast Downward itself lowercases everything
-    internally, confirmed against predicators' own `.lower()` calls when
-    matching SAS operator names).
-  - `_translate`/`_search` are the only two functions that actually shell out to
-    the `fast-downward.py` binary — both are `# pragma: no cover`, mirroring
-    predicators' own precedent for this exact situation (their equivalent
-    functions carry the same exclusion, for the same reason: CI can't be assumed
-    to have Fast Downward installed). Everything around them (PDDL generation,
-    cost injection, plan parsing) is pure and fully unit-tested without needing a
-    real Fast Downward install; `tests/planning/test_fast_downward.py` also has
-    one genuine end-to-end integration test against the real binary, gated with
-    `pytest.mark.skipif` so it runs (and was used to validate this package
-    during development) wherever Fast Downward is installed, and skips
-    everywhere else rather than failing.
+- `grounding.py` — `SkillGrounder`, a static-method container: backtracking
+  search that finds every applicable `GroundSkill` given a set of true
+  `GroundAtom`s, without brute-force enumerating all object combinations (which
+  doesn't scale — see its own TODOs for where that would bite at large object
+  counts).
+
+`fast_downward.py` (the `FastDownwardPlanner` shelling out to a real Fast Downward
+binary, mirroring predicators' `_sesame_plan_with_fast_downward` two-stage
+translate/patch-costs/search protocol) is **not implemented yet** — it isn't needed
+by any `Method` currently in this codebase (Random Skills never plans). It lands in
+a future PR alongside the Practice Makes Perfect (EES) reproduction itself, which is
+the first `Method` that actually needs cost-aware optimal search over `GroundSkill`s.
 
 ## Setup
 
-Fast Downward is an external, non-Python dependency — not vendored, not a pip
-package:
-
-```bash
-git clone https://github.com/aibasel/downward.git
-cd downward && ./build.py
-```
-
-Pass the resulting `downward/` directory as `fd_exec_path` to
-`FastDownwardPlanner.plan`. On macOS, also `brew install coreutils` (for
-`gtimeout` — matches predicators' own platform check, `gtimeout` on Darwin,
-`timeout` elsewhere).
-
-**Not currently installed in CI** — `.github/workflows/ci.yml` does not build Fast
-Downward, so the real end-to-end integration test above is skipped there; only the
-pure/mocked tests run. Building Fast Downward from source takes real CI minutes, so
-whether to add it is left as a deliberate, visible follow-up decision rather than
-something silently baked into this change.
+Nothing to install yet — the files above are pure Python with no external
+dependencies. Fast Downward itself (an external, non-Python binary) will be added
+as a setup step once `fast_downward.py` lands.
 
 ## Optionality
 

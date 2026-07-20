@@ -15,7 +15,16 @@ class LightSwitchSkills:
     delete_effects mirror nsrts.py's four NSRTs exactly, so planning/ can
     task-plan over these the same way predicators task-plans over NSRTs (via Fast
     Downward). A static-method container, never instantiated, same as every other
-    business-logic class in this project."""
+    business-logic class in this project.
+
+    JUMP_TO_LIGHT is a deliberately impossible/dummy skill: its NSRT
+    symbolically claims the robot reaches the light two cells away, but
+    compute_action (below) always emits a no-op regardless of state or
+    params, so it can never actually be completed by executing it. This is
+    intentional, ported directly from predicators' own JumpToLight -- see the
+    "impossible skill" comment right above its definition, and
+    test_compute_action_for_jump_to_light_is_always_a_no_op in
+    tests/environments/lightswitch/test_skills.py."""
 
     _robot: ClassVar[Variable] = Variable(name="robot", type=LightSwitchEnvironment.robot_type)
     _current_cell: ClassVar[Variable] = Variable(
@@ -25,9 +34,19 @@ class LightSwitchSkills:
         name="target_cell", type=LightSwitchEnvironment.cell_type
     )
     _light: ClassVar[Variable] = Variable(name="light", type=LightSwitchEnvironment.light_type)
-    _cell1: ClassVar[Variable] = Variable(name="cell1", type=LightSwitchEnvironment.cell_type)
-    _cell2: ClassVar[Variable] = Variable(name="cell2", type=LightSwitchEnvironment.cell_type)
-    _cell3: ClassVar[Variable] = Variable(name="cell3", type=LightSwitchEnvironment.cell_type)
+    # JUMP_TO_LIGHT's three cells, named for their role in that skill specifically
+    # (a 2-hop "jump" from the robot's current cell, over one intermediate cell,
+    # landing on the light's cell) -- distinct from MoveRobot's
+    # _current_cell/_target_cell above, which are a single 1-hop move.
+    _jump_start_cell: ClassVar[Variable] = Variable(
+        name="jump_start_cell", type=LightSwitchEnvironment.cell_type
+    )
+    _jump_via_cell: ClassVar[Variable] = Variable(
+        name="jump_via_cell", type=LightSwitchEnvironment.cell_type
+    )
+    _jump_landing_cell: ClassVar[Variable] = Variable(
+        name="jump_landing_cell", type=LightSwitchEnvironment.cell_type
+    )
 
     MOVE_ROBOT: ClassVar[Skill] = Skill(
         name="MoveRobot",
@@ -71,21 +90,25 @@ class LightSwitchSkills:
     # theta is ignored by compute_action below (matches predicators' own hardcoded
     # no-op) -- param_dim=1 anyway, purely to mirror the reference implementation's
     # signature; nothing here ever reads the sampled value. Its add_effect
-    # (RobotInCell(robot, cell3)) is symbolically claimed by the NSRT but never
-    # actually achieved by the option, exactly like predicators' own JumpToLight --
-    # this is the "impossible skill" a competence-tracking Method must learn to
-    # stop practicing.
+    # (RobotInCell(robot, jump_landing_cell)) is symbolically claimed by the NSRT
+    # but never actually achieved by the option, exactly like predicators' own
+    # JumpToLight -- this is the "impossible skill" a competence-tracking Method
+    # must learn to stop practicing.
     JUMP_TO_LIGHT: ClassVar[Skill] = Skill(
         name="JumpToLight",
-        parameters=(_robot, _cell1, _cell2, _cell3, _light),
+        parameters=(_robot, _jump_start_cell, _jump_via_cell, _jump_landing_cell, _light),
         preconditions=frozenset({
-            LiftedAtom(predicate=ROBOT_IN_CELL, variables=(_robot, _cell1)),
-            LiftedAtom(predicate=ADJACENT, variables=(_cell1, _cell2)),
-            LiftedAtom(predicate=ADJACENT, variables=(_cell2, _cell3)),
-            LiftedAtom(predicate=LIGHT_IN_CELL, variables=(_light, _cell3)),
+            LiftedAtom(predicate=ROBOT_IN_CELL, variables=(_robot, _jump_start_cell)),
+            LiftedAtom(predicate=ADJACENT, variables=(_jump_start_cell, _jump_via_cell)),
+            LiftedAtom(predicate=ADJACENT, variables=(_jump_via_cell, _jump_landing_cell)),
+            LiftedAtom(predicate=LIGHT_IN_CELL, variables=(_light, _jump_landing_cell)),
         }),
-        add_effects=frozenset({LiftedAtom(predicate=ROBOT_IN_CELL, variables=(_robot, _cell3))}),
-        delete_effects=frozenset({LiftedAtom(predicate=ROBOT_IN_CELL, variables=(_robot, _cell1))}),
+        add_effects=frozenset({
+            LiftedAtom(predicate=ROBOT_IN_CELL, variables=(_robot, _jump_landing_cell))
+        }),
+        delete_effects=frozenset({
+            LiftedAtom(predicate=ROBOT_IN_CELL, variables=(_robot, _jump_start_cell))
+        }),
         param_dim=1,
     )
 

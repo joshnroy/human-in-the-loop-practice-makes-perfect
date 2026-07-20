@@ -8,7 +8,7 @@ side of the codebase, mirroring `core.Problem` as described in `../core/README.m
 ## `practice_makes_perfect/` — reproducing the original PMP/EES paper
 
 Before this project's own novel baselines (below, still unimplemented), this subfolder
-ports the original "Practice Makes Perfect" paper's own method (EES —
+will port the original "Practice Makes Perfect" paper's own method (EES —
 Estimate/Extrapolate/Situate) and every baseline it compares against in its own
 evaluation (Fail Focus, Competence Gradient, Skill Diversity, Task-Relevant, Task
 Repeat, Random Skills, MAPLE-Q), faithfully, as a reproduction exercise on Light
@@ -17,24 +17,12 @@ Switch — the only environment this codebase has so far. This is a pure repro o
 contribution; see `../../../CLAUDE.md` and `../planning/README.md` for why real Fast
 Downward (not a hand-rolled substitute) is used for task planning here.
 
-Ported from `hitl-practice/predicators/{competence_models,approaches/
-active_sampler_learning_approach,explorers/active_sampler_explorer,
-approaches/maple_q_approach}.py` and cross-referenced directly against the paper's own
-Figure 4 (Light Switch panel).
-
-- `competence_models.py` — `SkillCompetenceModel`, the sliding-window Beta-Bernoulli
-  competence estimator ("optimistic" model — the one actually used for grid_row/EES's
-  real experiments, confirmed against predicators' own experiment config, not the
-  fancier EM/latent-variable alternative the paper also describes trying).
-- `wrapped_sampler.py` — `MlpBinaryClassifier` + `WrappedSampler`: reranks a skill's
-  base continuous-parameter sampler using a small PyTorch MLP classifier trained on
-  recorded execution outcomes, epsilon-greedy at exploration time. Inputs are
-  normalized (zero mean/unit variance) before training, matching predicators'
-  classifier base class; class rebalancing is deliberately *not* ported, since the
-  real grid_row/EES config explicitly disables it
-  (`mlp_classifier_balance_data: False`).
-- More pieces (the `Method` implementations themselves, tying these together via real
-  Fast Downward planning) land in stacked follow-up PRs, one per baseline.
+Nothing lives here yet — this PR only realizes the `Skill`/`GroundSkill`
+preconditions/effects layer those pieces will task-plan over (see
+`../core/README.md`'s `Skill`/`GroundSkill` section and
+`environments/lightswitch/skills.py`). The actual competence model, sampler
+learning, Fast Downward planning integration, and each of the 8 paper approaches
+land in stacked follow-up PRs.
 
 ## This project's own planned baselines
 

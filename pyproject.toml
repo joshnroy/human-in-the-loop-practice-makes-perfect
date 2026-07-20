@@ -12,7 +12,6 @@ dependencies = [
     "gymnasium",
     "matplotlib",
     "imageio[ffmpeg]",
-    "torch",
 ]
 
 [project.optional-dependencies]
@@ -35,14 +34,6 @@ source = ["src/hitl_pmp"]
 
 [tool.coverage.report]
 exclude_lines = [
-    # coverage.py's own default -- lost as soon as exclude_lines is set explicitly,
-    # so it's re-added here rather than assumed. Reserved for code that
-    # genuinely can't run in CI (e.g. planning/fast_downward.py's actual
-    # subprocess calls into an external Fast Downward install, matching
-    # predicators' own precedent for the identical situation) -- not a general
-    # escape hatch; the logic around such calls should still be unit-tested via
-    # pure helper functions wherever it can be pulled out.
-    "pragma: no cover",
     # Abstract-method bodies never execute regardless of test quality -- the whole
     # point is that a concrete subclass overrides them instead.
     "raise NotImplementedError",
