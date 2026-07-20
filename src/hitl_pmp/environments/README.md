@@ -24,6 +24,15 @@ Each domain subfolder is expected to contain:
 - `predicates.py` — domain predicates, needed only if a planning-based `Method`
   requires symbolic `GroundAtom`s for this domain. Pure-RL-only domains can skip
   this file entirely.
+- `cli.py` — optional: only needed if this domain should be runnable via the global
+  `hitl_pmp/cli.py`. A static-method container (e.g. `LightSwitchCli`) exposing
+  `add_arguments(*, parser)` (adds this domain's configurable values as named
+  argparse flags — no positional arguments — defaults read live from the relevant
+  classes) and `run(*, args)` (applies them, runs a chosen policy over sampled test
+  tasks, returns/prints results) — registered by name in `hitl_pmp/cli.py`'s
+  `ENVIRONMENTS` dict, which has no domain-specific knowledge of its own. `methods/`
+  (once a concrete `Method` exists) is expected to follow the identical pattern —
+  see [`../methods/README.md`](../methods/README.md).
 
 ## Precedent
 
@@ -40,12 +49,15 @@ predicate definitions play in `predicators/envs/`.
 
 - `lightswitch/` — the paper's "Light Switch" environment, ported from the sibling
   `hitl-practice` repo's `GridRowEnv` (`predicators/envs/grid_row.py`), which is the
-  paper's actual reference implementation. Has `environment.py` and `tasks.py`, plus
-  a minimal `predicates.py` (`LightOn` — the only predicate the current scope needs).
-  No `problem.py` yet: this environment has no irreversible action (the paper's
-  "impossible" jump skill is just a no-op, not a real hazard), so nothing in this PR
-  needs a `HumanOracle`/`Method` to exist first. Where the paper's prose is imprecise
-  or silent on an exact number, `GridRowEnv`'s code is ground truth — see the Notion
-  page's "Details not in paper but in codebase" section.
+  paper's actual reference implementation. Where the paper's prose is imprecise or
+  silent on an exact number, `GridRowEnv`'s code is ground truth — see the Notion
+  page's "Details not in paper but in codebase" section. Has `environment.py`,
+  `tasks.py`, a minimal `predicates.py` (`LightOn` — the only predicate the current
+  scope needs), `problem.py` (`LightSwitchProblem` — no `human` is ever set, since
+  this environment has no irreversible action and never needs
+  `Problem.execute_human_command`), `oracle_policy.py` (`OraclePolicy` — a
+  privileged-knowledge `Policy`, establishing an upper bound before any learning
+  `Method` exists; see the "Now What?" Problem Setting recipe), and `cli.py`
+  (`LightSwitchCli`, runnable via `python -m hitl_pmp.cli --env lightswitch`).
 - Every other domain subfolder: not started yet. The convention above describes the
   expected shape once one lands.
