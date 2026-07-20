@@ -35,13 +35,17 @@ def test_predict_proba_before_fit_raises() -> None:
 
 def test_fit_stops_early_once_the_loss_stops_improving() -> None:
     """n_iter_no_change=1 means the very first non-strictly-improving step
-    should trigger the early-stop break -- exercised separately from the
-    other fit tests, which all use a larger no-change budget and so run to
-    max_iters without ever taking that branch."""
-    rng = np.random.default_rng(3)
-    inputs = rng.uniform(-2.0, 2.0, size=(30, 1))
-    labels = (inputs[:, 0] > 0).astype(float)
-    classifier = MlpBinaryClassifier(input_dim=1, max_iters=5000, n_iter_no_change=1)
+    should trigger the early-stop break. Uses a degenerate, contradictory
+    dataset (the same input labeled both ways) rather than a cleanly
+    separable one: a real solution to converge toward (like the other fit
+    tests use) lets gradient descent keep improving smoothly for a very long
+    time, making an early, reliable non-improving step surprisingly hard to
+    force -- empirically confirmed flaky across seeds. A dataset with no
+    achievable loss floor below chance plateaus almost immediately instead,
+    reliably triggering the break well within max_iters."""
+    inputs = np.array([[0.0]] * 20)
+    labels = np.array([1.0] * 10 + [0.0] * 10)
+    classifier = MlpBinaryClassifier(input_dim=1, max_iters=200, n_iter_no_change=1)
     classifier.fit(inputs=inputs, labels=labels)
     assert classifier.network is not None
 
