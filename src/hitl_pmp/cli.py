@@ -13,6 +13,7 @@ ENVIRONMENTS below -- this file itself has no domain-specific knowledge.
 """
 
 import argparse
+from pathlib import Path
 
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 
@@ -39,9 +40,9 @@ class Cli:
             required=True,
             default=argparse.SUPPRESS,
             help="Which environment to run. Determines which other flags are valid. "
-            "Also reserves this name and --seed/--num-test-tasks: no environment's "
-            "own add_arguments may redefine them (argparse itself will raise a clear "
-            "conflicting-option-string error if one ever tries).",
+            "Also reserves this name and --seed/--num-test-tasks/--output-dir: no "
+            "environment's own add_arguments may redefine them (argparse itself will "
+            "raise a clear conflicting-option-string error if one ever tries).",
         )
         parser.add_argument(
             "--seed",
@@ -55,6 +56,13 @@ class Cli:
             type=lambda value: Cli.parse_positive_int(value=value),
             default=20,
             help="Number of sampled test tasks to run the policy on. Must be >= 1.",
+        )
+        parser.add_argument(
+            "--output-dir",
+            type=Path,
+            default=None,
+            help="If set, additionally render one demo episode to <output-dir>/"
+            "episode.mp4. Disabled (nothing written) if omitted.",
         )
 
     @staticmethod

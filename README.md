@@ -20,8 +20,9 @@ pip install -e ".[dev]"
 
 Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
 
-- [core/](src/hitl_pmp/core/README.md) — the fixed abstract interfaces: `Problem`, `Method`, `Metrics`, plus `Environment` and `HumanOracle` (nested under `problem/`, since the design doc's `Problem` is what actually owns them), each with its own supporting data types
+- [core/](src/hitl_pmp/core/README.md) — the fixed abstract interfaces: `Problem`, `Method`, `Metrics`, `Renderer`, plus `Environment` and `HumanOracle` (nested under `problem/`, since the design doc's `Problem` is what actually owns them), each with its own supporting data types
 - [environments/](src/hitl_pmp/environments/README.md) — concrete `Environment` + `Problem` implementations, one subfolder per domain
+- `cli.py` — the global CLI entrypoint (`python -m hitl_pmp.cli --env <name> ...`); dispatches to each registered environment's own `cli.py`, see [environments/README.md](src/hitl_pmp/environments/README.md)
 - [human_oracles/](src/hitl_pmp/human_oracles/README.md) — concrete `HumanOracle` implementations (the v0-v3 human-cost-model axis)
 - [methods/](src/hitl_pmp/methods/README.md) — concrete `Method`/baseline implementations
 - [adapters/](src/hitl_pmp/adapters/README.md) — the bidirectional Gym <-> `Environment` bridge

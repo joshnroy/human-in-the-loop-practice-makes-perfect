@@ -20,7 +20,9 @@ Each domain subfolder is expected to contain:
 - `problem.py` — a concrete subclass of `core.Problem` that sets `env`/`human`/`tasks`
   to this domain's `Environment`, a chosen `HumanOracle` from `../human_oracles/`, and
   this domain's `Tasks`, and implements `run_task_episode` (the one method `Problem`
-  doesn't get for free as a passthrough).
+  doesn't get for free as a passthrough). Its optional `renderer: type[core.Renderer]
+  | None = None` param makes every episode optionally recordable through this same
+  call — no separate rendering-only codepath.
 - `predicates.py` — domain predicates, needed only if a planning-based `Method`
   requires symbolic `GroundAtom`s for this domain. Pure-RL-only domains can skip
   this file entirely.
@@ -32,7 +34,17 @@ Each domain subfolder is expected to contain:
   tasks, returns/prints results) — registered by name in `hitl_pmp/cli.py`'s
   `ENVIRONMENTS` dict, which has no domain-specific knowledge of its own. `methods/`
   (once a concrete `Method` exists) is expected to follow the identical pattern —
-  see [`../methods/README.md`](../methods/README.md).
+  see [`../methods/README.md`](../methods/README.md). If `--output-dir` is set
+  (global flag, `hitl_pmp/cli.py`) and the domain has a `renderer.py`, `run` is also
+  expected to write an `episode.mp4` demo there. Run statistics/metrics tracking is
+  a separate, not-yet-built concern (see `core/metrics/metrics.py`), not part of
+  this flag.
+- `renderer.py` — optional: only needed if this domain should be visually
+  inspectable. A concrete subclass of `core.Renderer` (`render_frame(*, state) ->
+  np.ndarray`) — pure rendering logic only. Episode-loop frame capture lives inline
+  in `problem.py`'s `run_task_episode` (via its optional `renderer` param), and
+  video-writing lives in the domain-agnostic `core.renderer.VideoWriter` — neither
+  is this file's concern (see [`../core/README.md`](../core/README.md)).
 
 ## Precedent
 
@@ -57,7 +69,9 @@ predicate definitions play in `predicators/envs/`.
   this environment has no irreversible action and never needs
   `Problem.execute_human_command`), `oracle_policy.py` (`OraclePolicy` — a
   privileged-knowledge `Policy`, establishing an upper bound before any learning
-  `Method` exists; see the "Now What?" Problem Setting recipe), and `cli.py`
-  (`LightSwitchCli`, runnable via `python -m hitl_pmp.cli --env lightswitch`).
+  `Method` exists; see the "Now What?" Problem Setting recipe), `renderer.py`
+  (`LightSwitchRenderer` — draws the robot and light on a 1D strip via matplotlib),
+  and `cli.py` (`LightSwitchCli`, runnable via
+  `python -m hitl_pmp.cli --env lightswitch [--output-dir DIR]`).
 - Every other domain subfolder: not started yet. The convention above describes the
   expected shape once one lands.

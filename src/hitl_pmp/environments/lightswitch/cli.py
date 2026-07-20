@@ -1,11 +1,15 @@
 import argparse
 from typing import ClassVar
 
+import numpy as np
+
 from hitl_pmp.core.method.types import Policy
+from hitl_pmp.core.renderer.renderer import Renderer, VideoWriter
 
 from .environment import LightSwitchEnvironment
 from .oracle_policy import ORACLE_POLICY
 from .problem import LightSwitchProblem
+from .renderer import LightSwitchRenderer
 from .tasks import LightSwitchTasks
 
 
@@ -16,6 +20,7 @@ class LightSwitchCli:
     business-logic class in this project."""
 
     POLICIES: ClassVar[dict[str, Policy]] = {"oracle": ORACLE_POLICY}
+    render_fps: ClassVar[int] = 2  # slow -- episodes are only a few actions long
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -73,7 +78,13 @@ class LightSwitchCli:
     @staticmethod
     def run(*, args: argparse.Namespace) -> tuple[int, int]:
         """Applies args as config, runs args.policy over args.num_test_tasks sampled
-        test tasks, prints progress, and returns (num_solved, num_test_tasks)."""
+        test tasks via the one LightSwitchProblem.run_task_episode codepath, prints
+        progress, and returns (num_solved, num_test_tasks). If args.output_dir is
+        set, that same codepath also records the first task's episode (passing
+        LightSwitchRenderer through -- every run is optionally recordable this way,
+        not via a separate rendering-only path) and writes it to episode.mp4;
+        a no-op otherwise. Run statistics/metrics tracking is a follow-up, not
+        handled here."""
         LightSwitchCli._apply_config(args=args)
         policy = LightSwitchCli.POLICIES[args.policy]
         # No hard_reset() here: run_task_episode below unconditionally overwrites
@@ -81,9 +92,17 @@ class LightSwitchCli:
         # else, so a reset beforehand would never be observed.
 
         num_solved = 0
+        recorded_frames: list[np.ndarray] = []
         for i in range(args.num_test_tasks):
             task = LightSwitchTasks.sample_test_task()
-            solved = LightSwitchProblem.run_task_episode(task=task, policy=policy)
+            renderer: type[Renderer] | None = (
+                LightSwitchRenderer if (i == 0 and args.output_dir is not None) else None
+            )
+            solved, frames = LightSwitchProblem.run_task_episode(
+                task=task, policy=policy, renderer=renderer
+            )
+            if renderer is not None:
+                recorded_frames = frames
             num_solved += int(solved)
             print(f"task {i + 1}/{args.num_test_tasks}: {'solved' if solved else 'FAILED'}")
 
@@ -91,6 +110,14 @@ class LightSwitchCli:
             f"success rate: {num_solved}/{args.num_test_tasks} "
             f"({num_solved / args.num_test_tasks:.0%})"
         )
+
+        if args.output_dir is not None:
+            VideoWriter.write(
+                frames=recorded_frames,
+                output_path=args.output_dir / "episode.mp4",
+                fps=LightSwitchCli.render_fps,
+            )
+
         return num_solved, args.num_test_tasks
 
     @staticmethod

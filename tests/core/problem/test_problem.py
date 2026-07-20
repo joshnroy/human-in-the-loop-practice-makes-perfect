@@ -13,6 +13,7 @@ from hitl_pmp.core.problem.human.types import (
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, Task
+from hitl_pmp.core.renderer.renderer import Renderer
 
 _BLOCK = Type(name="block", feature_names=("x",))
 _OBJ = Object(name="block1", type=_BLOCK)
@@ -68,8 +69,11 @@ class _Tasks(Tasks):
 
 class _Problem(Problem):
     @staticmethod
-    def run_task_episode(*, task: Task, policy: Policy) -> bool:
-        return True
+    def run_task_episode(
+        *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
+    ) -> tuple[bool, list[np.ndarray]]:
+        del renderer
+        return True, []
 
 
 def _wire_problem() -> None:
@@ -146,4 +150,6 @@ def test_concrete_subclass_implements_run_task_episode() -> None:
     _wire_problem()
     task = Problem.sample_train_task()
     policy: Policy = lambda state: np.array([0.0])  # noqa: E731
-    assert _Problem.run_task_episode(task=task, policy=policy) is True
+    solved, frames = _Problem.run_task_episode(task=task, policy=policy)
+    assert solved is True
+    assert frames == []
