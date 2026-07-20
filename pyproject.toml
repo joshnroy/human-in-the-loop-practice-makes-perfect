@@ -12,6 +12,7 @@ dependencies = [
     "gymnasium",
     "matplotlib",
     "imageio[ffmpeg]",
+    "torch",
 ]
 
 [project.optional-dependencies]

@@ -39,6 +39,16 @@ LIGHT_ON = Predicate(
     holds=lambda state, objects: LightOnClassifier.holds(state=state, light=objects[0]),
 )
 
+# The paper's own Appendix F omits LightOff from its predicate list, but
+# skills.py's TurnOnLight/TurnOffLight NSRTs need it as a precondition/effect
+# (matching predicators/ground_truth_models/grid_row/nsrts.py) -- it's just LightOn's
+# negation, not a new classifier.
+LIGHT_OFF = Predicate(
+    name="LightOff",
+    types=(LightSwitchEnvironment.light_type,),
+    holds=lambda state, objects: not LightOnClassifier.holds(state=state, light=objects[0]),
+)
+
 # RobotInCell and LightInCell are both literally the same relation (an object and a
 # cell sharing a position), applied to different object pairs -- predicators itself
 # uses one shared _In_holds for both, so both adapt directly to
