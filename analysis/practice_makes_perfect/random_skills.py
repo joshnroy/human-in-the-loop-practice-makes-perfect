@@ -27,21 +27,22 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 _NUM_SEEDS = 3  # matches this reproduction's established seed count (see methods/README.md)
-_NUM_CYCLES = 10
+_GRID_SIZE = 100  # matches the paper's own Light Switch default (LightSwitchEnvironment.grid_size)
+# TODO(scale): num_cycles/num_test_tasks are reduced well below what the paper
+# itself uses, purely so this script finishes in a few minutes rather than
+# ~20+ -- SkillGrounder's brute-force grounding cost, and so per-episode cost,
+# grows steeply with grid_size (one full unsolved episode measured ~2.8s at
+# grid_size=100 vs. ~0.04s at grid_size=20, so keeping grid_size faithful to
+# the paper means the *other* knobs have to shrink instead). Random Skills
+# never learns, so this shouldn't qualitatively change the near-0% result --
+# fewer checkpoints/test tasks just means a coarser, noisier read on a curve
+# that's flat regardless.
+_NUM_CYCLES = 5
 _STEPS_PER_CYCLE = 20
-_NUM_TEST_TASKS = 15
+_NUM_TEST_TASKS = 5
 _RESULTS_DIR = Path("analysis/practice_makes_perfect/results")
 _PLOT_PATH = _RESULTS_DIR / "random_skills_light_switch.png"
 _GIF_PATH = _RESULTS_DIR / "random_skills_episode.gif"
-# TODO(scale): the paper's own Light Switch uses grid_size=100 (this environment's
-# own default); reduced to 20 here purely so this reproduction script finishes
-# quickly (SkillGrounder's brute-force grounding cost grows steeply with
-# grid_size -- one full episode measured ~2.8s at grid_size=100 vs. ~0.04s at
-# grid_size=20). Random Skills never learns, so grid_size shouldn't qualitatively
-# change the near-0% result: a random walk's odds of landing exactly on the light
-# cell within the episode horizon only get worse at larger grid_size, if anything
-# making the near-0% result even more pronounced, not less.
-_GRID_SIZE = 20
 
 
 class RandomSkillsAnalysis:
