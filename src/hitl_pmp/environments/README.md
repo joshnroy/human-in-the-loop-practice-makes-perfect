@@ -26,6 +26,13 @@ Each domain subfolder is expected to contain:
 - `predicates.py` — domain predicates, needed only if a planning-based `Method`
   requires symbolic `GroundAtom`s for this domain. Pure-RL-only domains can skip
   this file entirely.
+- `skills.py` — optional: a static-method container (e.g. `LightSwitchSkills`)
+  declaring this domain's `core.method.types.Skill` `ClassVar`s plus
+  `sample_params(*, ground_skill, rng) -> np.ndarray` and `compute_action(*,
+  ground_skill, params, state) -> Action`, the lifted → grounded → raw-`Action`
+  pipeline described in [`../core/README.md`](../core/README.md). Only needed once a
+  domain has skills a `Method` can select, as opposed to acting directly in raw
+  action space (e.g. `OraclePolicy`).
 - `cli.py` — optional: only needed if this domain should be runnable via the global
   `hitl_pmp/cli.py`. A static-method container (e.g. `LightSwitchCli`) exposing
   `add_arguments(*, parser)` (adds this domain's configurable values as named
@@ -63,15 +70,19 @@ predicate definitions play in `predicators/envs/`.
   `hitl-practice` repo's `GridRowEnv` (`predicators/envs/grid_row.py`), which is the
   paper's actual reference implementation. Where the paper's prose is imprecise or
   silent on an exact number, `GridRowEnv`'s code is ground truth — see the Notion
-  page's "Details not in paper but in codebase" section. Has `environment.py`,
-  `tasks.py`, a minimal `predicates.py` (`LightOn` — the only predicate the current
-  scope needs), `problem.py` (`LightSwitchProblem` — no `human` is ever set, since
-  this environment has no irreversible action and never needs
-  `Problem.execute_human_command`), `oracle_policy.py` (`OraclePolicy` — a
-  privileged-knowledge `Policy`, establishing an upper bound before any learning
-  `Method` exists; see the "Now What?" Problem Setting recipe), `renderer.py`
-  (`LightSwitchRenderer` — draws the robot and light on a 1D strip via matplotlib),
-  and `cli.py` (`LightSwitchCli`, runnable via
+  page's "Details not in paper but in codebase" section. Has `environment.py`
+  (including `get_cells()` — `Cell` objects for `skills.py`/`predicates.py`),
+  `tasks.py`, `predicates.py` (`LightOn`, `RobotInCell`, `LightInCell`, `Adjacent`),
+  `skills.py` (`LightSwitchSkills` — `MoveRobot`, `TurnOnLight`, `TurnOffLight`,
+  `JumpToLight`, ported from `predicators/ground_truth_models/grid_row/options.py`;
+  `JumpToLight` is deliberately a hardcoded no-op, the "impossible skill"), `problem.py`
+  (`LightSwitchProblem` — no `human` is ever set, since this environment has no
+  irreversible action and never needs `Problem.execute_human_command`),
+  `oracle_policy.py` (`OraclePolicy` — a privileged-knowledge `Policy`, establishing
+  an upper bound before any learning `Method` exists; see the "Now What?" Problem
+  Setting recipe — operates at the raw-action level, not through `skills.py`),
+  `renderer.py` (`LightSwitchRenderer` — draws the robot and light on a 1D strip via
+  matplotlib), and `cli.py` (`LightSwitchCli`, runnable via
   `python -m hitl_pmp.cli --env lightswitch [--output-dir DIR]`).
 - Every other domain subfolder: not started yet. The convention above describes the
   expected shape once one lands.

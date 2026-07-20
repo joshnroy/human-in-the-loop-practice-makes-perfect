@@ -20,7 +20,7 @@ core/
 │       └── types.py             Task, Goal, Predicate, GroundAtom
 ├── method/
 │   ├── method.py               Method — the agent side
-│   └── types.py                 Policy, Rollout, Skill, SetupCommand
+│   └── types.py                 Policy, Rollout, Skill, GroundSkill, SetupCommand
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol
 └── renderer/
@@ -87,7 +87,7 @@ full rationale; the short version, as applied in this folder:
   `CommandGoalDescription` already wraps the same symbolic `Goal` that `Task.goal`
   uses. `Task`/`Goal`/`Predicate`/`GroundAtom` support `Tasks` (task/goal generation
   is `Tasks`' job) → `problem/tasks/types.py`. `Policy`/`Rollout`/`Skill`/
-  `SetupCommand` support `Method` → `method/types.py`. `dataclasses`/`attrs` are
+  `GroundSkill`/`SetupCommand` support `Method` → `method/types.py`. `dataclasses`/`attrs` are
   banned project-wide (ruff `TID251`). `Task`/`Goal` are intentionally **not**
   frozen/hashable (unlike `Object`/`Type`/`GroundAtom`/`Predicate`, which sit inside
   dict keys or a `frozenset`) — nothing puts a `Task` in a `set`/dict key position;
@@ -228,6 +228,23 @@ interchangeable under this same interface: neither `Type`/`Object`/`State` nor t
 planner ever know or care whether a feature is discrete- or continuous-valued — that
 distinction only exists inside a domain's own `Predicate.holds` classifiers.
 
+## `Skill`/`GroundSkill` are a lifted/grounded pair, like `Predicate`/`GroundAtom`
+
+`Skill` (name + `types` + `param_dim`) is a lifted template — what a `Method` can
+select before being bound to concrete objects; `GroundSkill` (`skill` + `objects`)
+binds one to a specific object tuple, mirroring `GroundAtom`'s shape in
+`problem/tasks/types.py` exactly. Continuous parameters are deliberately **not**
+part of `GroundSkill` — per `predicators`' `_Option`/`_GroundNSRT.sample_option()`
+precedent, params are sampled fresh each execution (a concrete `Method`'s job,
+inside `execute_skill`), so `improve_skill_parameters` updates the *sampler*, not
+one already-consumed value. `Skill`/`GroundSkill` deliberately omit symbolic
+preconditions/effects (`predicators`' `STRIPSOperator`/`NSRT` half) — that needs a
+`Variable`/`LiftedAtom` layer nothing here consumes yet; see
+`environments/lightswitch/skills.py` for a concrete instantiation (`MoveRobot`,
+`TurnOnLight`, `TurnOffLight`, `JumpToLight`) and its `sample_params`/
+`compute_action` static methods, which round out the lifted → grounded →
+raw-`Action` pipeline these types describe.
+
 ## Files
 
 - `problem/environment/` — `environment.py` (the `Environment` ABC) + `types.py`
@@ -241,8 +258,8 @@ distinction only exists inside a domain's own `Predicate.holds` classifiers.
 - `problem/problem.py` — `Problem`, the facade. Imports from `environment/`,
   `human/`, `tasks/`, and `method/types.py`.
 - `method/` — `method.py` (the `Method` ABC) + `types.py` (`Policy`, `Rollout`,
-  `Skill`, `SetupCommand`). Imports from `problem/environment/types.py` and
-  `problem/tasks/types.py`.
+  `Skill`, `GroundSkill`, `SetupCommand`). Imports from `problem/environment/types.py`
+  and `problem/tasks/types.py`.
 - `metrics/` — `metrics.py`, the (mostly generic) evaluation protocol. No `types.py` —
   it has no supporting types of its own yet.
 - `renderer/` — `renderer.py` (`Renderer`, `VideoWriter`). No `types.py` — frames are
@@ -263,7 +280,7 @@ graph TD
     ho["problem/human/<br/>HumanOracle, Cost"]
     tasktypes["problem/tasks/types.py<br/>Task, Goal, Predicate, GroundAtom"]
     tasks["problem/tasks/tasks.py<br/>Tasks"]
-    mtypes["method/types.py<br/>Policy, Rollout, Skill, SetupCommand"]
+    mtypes["method/types.py<br/>Policy, Rollout, Skill, GroundSkill, SetupCommand"]
     renderer["renderer/<br/>Renderer, VideoWriter"]
     problem["problem/problem.py<br/>Problem"]
     method["method/method.py<br/>Method"]

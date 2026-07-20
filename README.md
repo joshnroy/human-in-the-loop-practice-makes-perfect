@@ -42,7 +42,8 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   defining state/action space is Environment's job. Same pattern for
   `problem/human_oracle/` (`Cost` — `send_command` is what produces it),
   `problem/tasks/` (`Task`/`Goal`/`Predicate`/`GroundAtom` — task/goal generation is
-  Tasks' job), and `method/` (`Policy`/`Rollout`/`Skill`/`SetupCommand`).
+  Tasks' job), and `method/` (`Policy`/`Rollout`/`Skill`/`GroundSkill`/
+  `SetupCommand`).
   `Environment`/`HumanOracle`/`Tasks` all nest *under* `problem/` rather than sitting
   beside it — see
   [`core/README.md`](src/hitl_pmp/core/README.md#what-problem-actually-is) for why. A
