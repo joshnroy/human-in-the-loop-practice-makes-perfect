@@ -82,8 +82,11 @@ this one call (no separate rendering-only codepath, which would duplicate the lo
 <name> ...`, e.g. `--env lightswitch`); it dispatches to each registered
 environment's own `environments/<name>/cli.py`. All flags are named, no positional
 arguments. `--output-dir DIR` (global), if the environment has a `renderer.py`,
-additionally writes a demo `episode.mp4`. Run statistics/metrics tracking is a
-separate, not-yet-built concern (`core/metrics/metrics.py`).
+additionally writes a demo `episode.mp4`. Writing run statistics/metrics to
+`--output-dir` is a separate, not-yet-built concern -- `core/metrics/metrics.py`'s
+protocol itself (`record_evaluation`/`task_training_curve`) is implemented and
+in real use by `methods/practice_makes_perfect/`'s reproduction (see
+`methods/README.md`), just not yet wired into this global CLI's output.
 
 **Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
 defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task

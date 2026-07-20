@@ -17,20 +17,24 @@ Switch — the only environment this codebase has so far. This is a pure repro o
 contribution; see `../../../CLAUDE.md` and `../planning/README.md` for why real Fast
 Downward (not a hand-rolled substitute) is used for task planning here.
 
-This PR adds the first concrete baseline:
+The first concrete baseline is `random_skills_method.py`'s `RandomSkillsMethod` (of
+the 8 paper approaches, the simplest): no planning anywhere, not even at evaluation
+time. Each step, uniformly samples one currently-applicable `GroundSkill` (via
+`planning.grounding.SkillGrounder`) and executes it with its own base sampler's
+params. Never pursues a task's actual goal, matching the paper's own near-0% Random
+Skills curve. `core/metrics/metrics.py`'s `record_evaluation`/`task_training_curve`,
+with `environments/lightswitch/metrics.py`'s `LightSwitchMetrics` as the first
+concrete implementation, is what makes that curve observable.
 
-- `random_skills_method.py` — `RandomSkillsMethod`, the first concrete `Method` (of
-  the 8 paper approaches) and the simplest: no planning anywhere, not even at
-  evaluation time. Each step, uniformly samples one currently-applicable
-  `GroundSkill` (via `planning.grounding.SkillGrounder`) and executes it with its
-  own base sampler's params. Never pursues a task's actual goal, matching the
-  paper's own near-0% Random Skills curve.
-
-`core/metrics/metrics.py` also gains `record_evaluation`/`task_training_curve`, with
-`environments/lightswitch/metrics.py`'s `LightSwitchMetrics` as the first concrete
-implementation — but nothing yet drives an actual online-learning loop that calls
-`record_evaluation`; that's `OnlineLearningRunner`, which lands in the next PR (the
-first one to actually need both a `Method` and a `Metrics` together).
+This PR adds `practice_loop.py`'s `PracticeLoop` — drives PMP-style online learning
+(one initial evaluation, then `num_cycles` rounds of an interaction period + optional
+per-cycle retraining hook + an evaluation sweep), mirroring
+predicators' `main.py:_run_pipeline`. Domain- and `Method`-agnostic (any
+`core.Problem`/`core.Method`/`core.Metrics` triple); see its own docstring for the
+exact reset semantics and the `Problem.env`/`Problem.tasks` wiring a caller must set
+up first. This is the first piece to actually exercise `Metrics.record_evaluation`,
+so `RandomSkillsMethod`'s training curve is now genuinely observable end to end (see
+`tests/methods/practice_makes_perfect/test_integration.py`).
 
 The competence model, sampler learning, real Fast Downward planning integration, and
 each of the remaining 7 paper approaches (EES itself, Fail Focus, Competence
