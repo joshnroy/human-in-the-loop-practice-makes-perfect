@@ -31,9 +31,15 @@ testpaths = ["tests"]
 source = ["src/hitl_pmp"]
 
 [tool.coverage.report]
-# Abstract-method bodies never execute regardless of test quality -- the whole
-# point is that a concrete subclass overrides them instead.
-exclude_lines = ["raise NotImplementedError"]
+exclude_lines = [
+    # Abstract-method bodies never execute regardless of test quality -- the whole
+    # point is that a concrete subclass overrides them instead.
+    "raise NotImplementedError",
+    # pytest imports modules rather than running them as __main__, so a script's
+    # entrypoint guard is never exercised under test regardless of how well its
+    # own main()/parse_args() are covered.
+    "if __name__ == .__main__.:",
+]
 
 [tool.ruff]
 line-length = 100

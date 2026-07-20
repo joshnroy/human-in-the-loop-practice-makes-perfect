@@ -103,15 +103,22 @@ full rationale; the short version, as applied in this folder:
   `method.py` imports `Task` from `problem/tasks/types.py` (not `problem.py`). Neither
   `types.py` imports the other's ABC file back, so there's no cycle — just import the
   target's `types.py` directly and skip the deferred-import trick entirely.
-- **Behavior lives in the ABCs, as static-method containers.** None of `Environment`/
-  `HumanOracle`/`Tasks`/`Problem`/`Method`/`Metrics` is ever instantiated — almost
-  every method is `@staticmethod` (`Problem`'s facade methods are concrete but still
-  static — they delegate, they don't need instance state of their own), and any state
-  a concrete subclass needs (e.g. `Problem.env`, `Problem.human`, `Problem.tasks`) is a
-  `ClassVar` set once on the class itself, Java static-class/singleton style, not
-  constructor-assigned instance state. Every parameter (besides an unavoidable dunder
-  like `__getitem__`) is keyword-only, enforced by ruff's `PLR0917` with
-  `max-positional-args = 0`.
+- **Behavior lives in the ABCs, as static-method containers — and every concrete
+  business-logic helper underneath them follows the same rule.** None of
+  `Environment`/`HumanOracle`/`Tasks`/`Problem`/`Method`/`Metrics` is ever
+  instantiated — almost every method is `@staticmethod` (`Problem`'s facade methods
+  are concrete but still static — they delegate, they don't need instance state of
+  their own), and any state a concrete subclass needs (e.g. `Problem.env`,
+  `Problem.human`, `Problem.tasks`) is a `ClassVar` set once on the class itself, Java
+  static-class/singleton style, not constructor-assigned instance state. This isn't
+  limited to the ABCs here: a domain's `Predicate.holds` classifier or a `Policy`
+  function's real logic belongs on its own static-method class too (e.g.
+  `environments/lightswitch/oracle_policy.py`'s `OraclePolicy.get_action`), not a bare
+  module-level function — the only exception is a short lambda adapter where an
+  interface itself demands a positional callable (`Predicate.holds`, `Policy`), since
+  the lambda carries no logic of its own that would otherwise be lost in a module.
+  Every parameter (besides an unavoidable dunder like `__getitem__`) is keyword-only,
+  enforced by ruff's `PLR0917` with `max-positional-args = 0`.
 - **Files/classes are organized top-down**, most composite first — see
   `problem/tasks/types.py` (`Task` → `Goal` → `Predicate` → `GroundAtom`, in
   decreasing order of "what relies on what").

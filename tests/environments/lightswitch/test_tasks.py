@@ -45,6 +45,48 @@ def test_train_and_test_targets_vary_across_samples() -> None:
     assert len(targets) > 1
 
 
+def test_set_seed_is_deterministic() -> None:
+    LightSwitchTasks.set_seed(seed=42)
+    first = LightSwitchTasks.sample_train_task().initial_state.get(
+        obj=LightSwitchEnvironment.light, feature_name="target"
+    )
+
+    LightSwitchTasks.set_seed(seed=42)
+    second = LightSwitchTasks.sample_train_task().initial_state.get(
+        obj=LightSwitchEnvironment.light, feature_name="target"
+    )
+
+    assert first == second
+
+
+def test_set_seed_changes_sampled_targets() -> None:
+    LightSwitchTasks.set_seed(seed=1)
+    a = LightSwitchTasks.sample_train_task().initial_state.get(
+        obj=LightSwitchEnvironment.light, feature_name="target"
+    )
+
+    LightSwitchTasks.set_seed(seed=2)
+    b = LightSwitchTasks.sample_train_task().initial_state.get(
+        obj=LightSwitchEnvironment.light, feature_name="target"
+    )
+
+    assert a != b
+
+
+def test_set_seed_also_rederives_the_test_stream() -> None:
+    LightSwitchTasks.set_seed(seed=7)
+    first_test = LightSwitchTasks.sample_test_task().initial_state.get(
+        obj=LightSwitchEnvironment.light, feature_name="target"
+    )
+
+    LightSwitchTasks.set_seed(seed=7)
+    second_test = LightSwitchTasks.sample_test_task().initial_state.get(
+        obj=LightSwitchEnvironment.light, feature_name="target"
+    )
+
+    assert first_test == second_test
+
+
 def test_train_and_test_use_independent_rng_streams() -> None:
     LightSwitchTasks.train_rng = LightSwitchTasks._make_rng(offset=0)
     LightSwitchTasks.test_rng = LightSwitchTasks._make_rng(

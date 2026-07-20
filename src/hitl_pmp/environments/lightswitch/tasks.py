@@ -27,6 +27,18 @@ class LightSwitchTasks(Tasks):
     test_rng: ClassVar[np.random.Generator]
 
     @staticmethod
+    def set_seed(*, seed: int) -> None:
+        """Reset seed and rederive both RNG streams together -- mirrors predicators'
+        BaseEnv._set_seed (train_rng from seed, test_rng from
+        seed + test_env_seed_offset). The single entry point for reseeding; nothing
+        else should assign train_rng/test_rng directly."""
+        LightSwitchTasks.seed = seed
+        LightSwitchTasks.train_rng = LightSwitchTasks._make_rng(offset=0)
+        LightSwitchTasks.test_rng = LightSwitchTasks._make_rng(
+            offset=LightSwitchTasks.test_env_seed_offset
+        )
+
+    @staticmethod
     def _make_rng(*, offset: int) -> np.random.Generator:
         return np.random.default_rng(LightSwitchTasks.seed + offset)
 
@@ -49,5 +61,4 @@ class LightSwitchTasks(Tasks):
         return Task(initial_state=initial_state, goal=goal)
 
 
-LightSwitchTasks.train_rng = LightSwitchTasks._make_rng(offset=0)
-LightSwitchTasks.test_rng = LightSwitchTasks._make_rng(offset=LightSwitchTasks.test_env_seed_offset)
+LightSwitchTasks.set_seed(seed=LightSwitchTasks.seed)

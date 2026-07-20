@@ -34,6 +34,13 @@ fail in specific, documented ways that the eventual proposed method should not:
 ## Files
 
 - `__init__.py` — empty, marks this as a package.
+- `cli.py` (per concrete method, once one exists) — same convention as
+  `environments/<domain>/cli.py` (see
+  [`../environments/README.md`](../environments/README.md)): a static-method
+  container exposing `add_arguments(*, parser)`/`run(*, args)`, registered by name in
+  `hitl_pmp/cli.py`'s registry, so a method's own hyperparameters become named CLI
+  flags the same way an environment's do — no positional arguments, no
+  method-specific knowledge in `hitl_pmp/cli.py` itself.
 
 ## Concrete implementations
 
