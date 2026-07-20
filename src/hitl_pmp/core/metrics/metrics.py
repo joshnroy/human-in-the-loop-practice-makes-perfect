@@ -43,7 +43,17 @@ class Metrics(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def task_training_curve() -> Any:
+    def record_evaluation(*, num_online_transitions: int, num_solved: int, num_total: int) -> None:
+        """Records one evaluation checkpoint (e.g. after an online-learning cycle) --
+        the building block task_training_curve() reports back out."""
+        raise NotImplementedError
+
+    @staticmethod
+    @abc.abstractmethod
+    def task_training_curve() -> list[tuple[int, float]]:
+        """(num_online_transitions, percentage_solved) pairs, in recorded order --
+        e.g. Figure 4 of the "Practice Makes Perfect" paper plots exactly this,
+        per approach per seed."""
         raise NotImplementedError
 
     @staticmethod

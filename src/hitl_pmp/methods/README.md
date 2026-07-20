@@ -17,12 +17,25 @@ Switch — the only environment this codebase has so far. This is a pure repro o
 contribution; see `../../../CLAUDE.md` and `../planning/README.md` for why real Fast
 Downward (not a hand-rolled substitute) is used for task planning here.
 
-Nothing lives here yet — this PR only realizes the `Skill`/`GroundSkill`
-preconditions/effects layer those pieces will task-plan over (see
-`../core/README.md`'s `Skill`/`GroundSkill` section and
-`environments/lightswitch/skills.py`). The actual competence model, sampler
-learning, Fast Downward planning integration, and each of the 8 paper approaches
-land in stacked follow-up PRs.
+This PR adds the first concrete baseline:
+
+- `random_skills_method.py` — `RandomSkillsMethod`, the first concrete `Method` (of
+  the 8 paper approaches) and the simplest: no planning anywhere, not even at
+  evaluation time. Each step, uniformly samples one currently-applicable
+  `GroundSkill` (via `planning.grounding.SkillGrounder`) and executes it with its
+  own base sampler's params. Never pursues a task's actual goal, matching the
+  paper's own near-0% Random Skills curve.
+
+`core/metrics/metrics.py` also gains `record_evaluation`/`task_training_curve`, with
+`environments/lightswitch/metrics.py`'s `LightSwitchMetrics` as the first concrete
+implementation — but nothing yet drives an actual online-learning loop that calls
+`record_evaluation`; that's `OnlineLearningRunner`, which lands in the next PR (the
+first one to actually need both a `Method` and a `Metrics` together).
+
+The competence model, sampler learning, real Fast Downward planning integration, and
+each of the remaining 7 paper approaches (EES itself, Fail Focus, Competence
+Gradient, Skill Diversity, Task-Relevant, Task Repeat, MAPLE-Q) land in further
+stacked follow-up PRs, one per baseline.
 
 ## This project's own planned baselines
 

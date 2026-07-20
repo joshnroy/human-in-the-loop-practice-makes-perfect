@@ -10,6 +10,7 @@ def test_metrics_declares_expected_abstract_methods() -> None:
         "num_complete_environment_resets",
         "num_human_interventions",
         "summed_human_cost",
+        "record_evaluation",
         "task_training_curve",
         "task_training_curve_by_subtask",
     })
