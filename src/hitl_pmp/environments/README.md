@@ -32,7 +32,14 @@ Each domain subfolder is expected to contain:
   tasks, returns/prints results) — registered by name in `hitl_pmp/cli.py`'s
   `ENVIRONMENTS` dict, which has no domain-specific knowledge of its own. `methods/`
   (once a concrete `Method` exists) is expected to follow the identical pattern —
-  see [`../methods/README.md`](../methods/README.md).
+  see [`../methods/README.md`](../methods/README.md). If `--output-dir` is set
+  (global flag, `hitl_pmp/cli.py`), `run` is also expected to write a `stats.json`
+  there, and, if the domain has a `renderer.py`, an `episode.mp4` demo.
+- `renderer.py` — optional: only needed if this domain should be visually
+  inspectable. A concrete subclass of `core.Renderer` (`render_frame(*, state) ->
+  np.ndarray`) — pure rendering logic, no episode-loop/video-writing concerns, which
+  live in the domain-agnostic `core.renderer.EpisodeRenderer`/`VideoWriter` instead
+  (see [`../core/README.md`](../core/README.md)).
 
 ## Precedent
 
@@ -57,7 +64,9 @@ predicate definitions play in `predicators/envs/`.
   this environment has no irreversible action and never needs
   `Problem.execute_human_command`), `oracle_policy.py` (`OraclePolicy` — a
   privileged-knowledge `Policy`, establishing an upper bound before any learning
-  `Method` exists; see the "Now What?" Problem Setting recipe), and `cli.py`
-  (`LightSwitchCli`, runnable via `python -m hitl_pmp.cli --env lightswitch`).
+  `Method` exists; see the "Now What?" Problem Setting recipe), `renderer.py`
+  (`LightSwitchRenderer` — draws the robot and light on a 1D strip via matplotlib),
+  and `cli.py` (`LightSwitchCli`, runnable via
+  `python -m hitl_pmp.cli --env lightswitch [--output-dir DIR]`).
 - Every other domain subfolder: not started yet. The convention above describes the
   expected shape once one lands.

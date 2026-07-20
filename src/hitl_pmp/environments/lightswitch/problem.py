@@ -23,15 +23,20 @@ class LightSwitchProblem(Problem):
     tasks: ClassVar[type[Tasks]] = LightSwitchTasks
 
     @staticmethod
+    def max_episode_steps() -> int:
+        """Matches the paper's own Light-Switch task horizon (Appendix F):
+        H_eval = number of grid cells + 2. Computed fresh each call (not cached) so
+        an overridden LightSwitchEnvironment.grid_size is respected -- shared by
+        run_task_episode and, in renderer.py, the demo-episode recorder, so the
+        formula has exactly one source."""
+        return LightSwitchEnvironment.grid_size + 2
+
+    @staticmethod
     def run_task_episode(*, task: Task, policy: Policy) -> bool:
         env = LightSwitchProblem.env
         env.set_state(state=task.initial_state)
         state = env.get_current_state()
-        # Matches the paper's own Light-Switch task horizon (Appendix F):
-        # H_eval = number of grid cells + 2. Computed here (not cached) so an
-        # overridden LightSwitchEnvironment.grid_size is respected at call time.
-        max_steps = LightSwitchEnvironment.grid_size + 2
-        for _ in range(max_steps):
+        for _ in range(LightSwitchProblem.max_episode_steps()):
             if task.goal.is_satisfied(state=state):
                 return True
             state = env.take_action(action=policy(state))

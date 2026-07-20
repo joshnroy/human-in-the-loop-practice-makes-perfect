@@ -39,13 +39,18 @@ notebooks producing results/figures) will import from `hitl_pmp`, never the reve
 
 ### The `core/` interfaces and the static-method-container pattern
 
-`core/` holds six **fixed abstract interfaces**, none ever instantiated:
-`Problem`, `Method`, `Metrics` (top-level), plus `Environment`, `HumanOracle`, `Tasks`
-(nested *under* `core/problem/`, not siblings of it — see below for why). Every method
-is `@staticmethod`; any state a concrete subclass needs (e.g. `Problem.env`) is a
-`ClassVar` **set on the base class itself** (`Problem.env = ConcreteEnv`), Java
-static-class/singleton style — not constructor-assigned instance state, and methods
-reference the base class by name (`Problem.env`), never `cls`.
+`core/` holds seven **fixed abstract interfaces**, none ever instantiated:
+`Problem`, `Method`, `Metrics`, `Renderer` (top-level), plus `Environment`,
+`HumanOracle`, `Tasks` (nested *under* `core/problem/`, not siblings of it — see
+below for why). Every method is `@staticmethod`; any state a concrete subclass needs
+(e.g. `Problem.env`) is a `ClassVar` **set on the base class itself** (`Problem.env =
+ConcreteEnv`), Java static-class/singleton style — not constructor-assigned instance
+state, and methods reference the base class by name (`Problem.env`), never `cls`.
+The same static-method-container rule extends to any concrete business logic
+underneath these interfaces, however small (e.g.
+`environments/lightswitch/oracle_policy.py`'s `OraclePolicy.get_action`) — never a
+bare module-level function, except a short lambda where an interface demands a
+positional callable (`Predicate.holds`, `Policy`).
 
 ```
 core/
@@ -63,9 +68,17 @@ core/
 ├── method/
 │   ├── method.py               Method — the agent side
 │   └── types.py                 Policy, Rollout, Skill, SetupCommand
-└── metrics/
-    └── metrics.py               Metrics — the evaluation protocol
+├── metrics/
+│   └── metrics.py               Metrics — the evaluation protocol
+└── renderer/
+    └── renderer.py              Renderer, VideoWriter, EpisodeRenderer
 ```
+
+`src/hitl_pmp/cli.py` is the global CLI entrypoint (`python -m hitl_pmp.cli --env
+<name> ...`, e.g. `--env lightswitch`); it dispatches to each registered
+environment's own `environments/<name>/cli.py`. All flags are named, no positional
+arguments. `--output-dir DIR` (global) additionally writes `stats.json` and, if the
+environment has a `renderer.py`, a demo `episode.mp4`.
 
 **Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
 defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task

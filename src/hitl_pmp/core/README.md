@@ -1,9 +1,9 @@
 # core
 
 This folder holds the **fixed abstract interfaces** for the project: `Problem`,
-`Method`, `Metrics` — plus `Environment`, `HumanOracle`, and `Tasks`, which live
-*nested inside* `problem/` (see "What `Problem` actually is" below for why). Concrete
-implementations live in sibling folders, not here.
+`Method`, `Metrics`, `Renderer` — plus `Environment`, `HumanOracle`, and `Tasks`,
+which live *nested inside* `problem/` (see "What `Problem` actually is" below for
+why). Concrete implementations live in sibling folders, not here.
 
 ```
 core/
@@ -21,8 +21,10 @@ core/
 ├── method/
 │   ├── method.py               Method — the agent side
 │   └── types.py                 Policy, Rollout, Skill, SetupCommand
-└── metrics/
-    └── metrics.py               Metrics — the evaluation protocol
+├── metrics/
+│   └── metrics.py               Metrics — the evaluation protocol
+└── renderer/
+    └── renderer.py              Renderer, VideoWriter, EpisodeRenderer
 ```
 
 There is no `problem/types.py` — every type that used to live there now lives in
@@ -164,6 +166,22 @@ environment back to a usable state.
   live here, via `execute_human_command`. Unlike `Environment`, a `Problem` is specific
   to one research question, not reusable across them.
 
+## `Renderer` is a pure function of `State`, not a `Problem` component
+
+`Renderer` (one abstract method, `render_frame(*, state) -> np.ndarray`) sits as a
+top-level sibling of `problem/`, like `Method`/`Metrics` — not nested under it like
+`Environment`/`HumanOracle`/`Tasks` are. Those three nest under `problem/` because the
+design doc's `Problem` genuinely owns them (dynamics, human cost, task generation are
+all `Problem`-scoped concepts). Rendering isn't: it's a pure, stateless function of
+whatever `State` you hand it, useful standalone (e.g. debugging a hand-built `State`
+with no `Problem` in scope at all) and with no reset-cost/human-in-the-loop semantics
+of its own. `renderer.py` also holds two non-abstract, domain-agnostic companions,
+not part of the `Renderer` interface itself since neither varies per domain:
+`VideoWriter` (writes a frame sequence to `.mp4`/`.gif`, chosen by file extension) and
+`EpisodeRenderer` (runs one task episode against any concrete `Problem`, capturing a
+frame per step — mirrors a `Problem.run_task_episode` loop without touching that core
+interface, since most callers never need rendering).
+
 ## `Type` declares a feature schema, not just a name
 
 `Type` carries `feature_names: tuple[str, ...]` and a `dim` property (`len(feature_names)`)
@@ -212,6 +230,10 @@ distinction only exists inside a domain's own `Predicate.holds` classifiers.
   `problem/tasks/types.py`.
 - `metrics/` — `metrics.py`, the (mostly generic) evaluation protocol. No `types.py` —
   it has no supporting types of its own yet.
+- `renderer/` — `renderer.py` (`Renderer`, `VideoWriter`, `EpisodeRenderer`). No
+  `types.py` — frames are plain `np.ndarray`, no new pydantic type needed. Imports
+  `State` from `problem/environment/types.py`, `Policy` from `method/types.py`,
+  `Problem`/`Task` for `EpisodeRenderer`.
 
 ## Module dependency graph
 
@@ -230,6 +252,7 @@ graph TD
     problem["problem/problem.py<br/>Problem"]
     method["method/method.py<br/>Method"]
     metrics["metrics/<br/>Metrics"]
+    renderer["renderer/<br/>Renderer, VideoWriter, EpisodeRenderer"]
 
     ho --> env
     tasktypes --> env
@@ -242,6 +265,10 @@ graph TD
     method --> env
     method --> mtypes
     method --> tasktypes
+    renderer --> env
+    renderer --> mtypes
+    renderer --> problem
+    renderer --> tasktypes
 ```
 
 ## Concrete implementations

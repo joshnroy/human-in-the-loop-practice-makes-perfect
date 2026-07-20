@@ -23,6 +23,15 @@ def test_light_switch_problem_is_wired_to_its_own_domain_by_default() -> None:
     assert LightSwitchProblem.tasks is LightSwitchTasks
 
 
+def test_max_episode_steps_matches_the_papers_horizon_formula() -> None:
+    original_grid_size = LightSwitchEnvironment.grid_size
+    try:
+        LightSwitchEnvironment.grid_size = 7
+        assert LightSwitchProblem.max_episode_steps() == 9
+    finally:
+        LightSwitchEnvironment.grid_size = original_grid_size
+
+
 def test_run_task_episode_succeeds_immediately_for_an_already_satisfied_task() -> None:
     initial_state = LightSwitchEnvironment.build_initial_state(light_level=0.5, light_target=0.5)
     light_on = LIGHT_ON(state=initial_state, objects=(LightSwitchEnvironment.light,))
