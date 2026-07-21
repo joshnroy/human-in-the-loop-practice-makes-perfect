@@ -12,6 +12,7 @@ dependencies = [
     "gymnasium",
     "matplotlib",
     "imageio[ffmpeg]",
+    "imageio-ffmpeg",
 ]
 
 [project.optional-dependencies]

@@ -183,8 +183,12 @@ function of whatever `State` (and optional `label`) you hand it, useful standalo
 reset-cost/human-in-the-loop semantics of its own. `renderer.py` also holds one
 non-abstract, domain-agnostic companion, not part of the `Renderer` interface itself
 since it never varies per domain: `VideoWriter` (writes a frame sequence to a video
-file via imageio's bundled ffmpeg — no native GIF support; convert a written video
-with an external `ffmpeg` invocation instead).
+file via imageio's bundled ffmpeg, and `write_gif` converts an already-written video
+to a gif — prefers imageio itself, pure Python, ffmpeg still doing the underlying
+decode work just wrapped by a library instead of a raw subprocess call, falling back
+to shelling out to `ffmpeg` directly, located via `imageio_ffmpeg`'s own bundled
+copy rather than relying on `ffmpeg` being on `PATH`, only if that import/read ever
+fails).
 
 `label` is how a rendered episode shows which action/skill was just taken, without
 `Problem`/`Method` needing a separate rendering-specific side channel:

@@ -32,6 +32,33 @@ pre-commit install            # optional: run lint/format/typecheck locally pre-
 All three of lint/typecheck/test run in CI (`.github/workflows/ci.yml`) on every push/PR
 to `main`. `main` only allows squash-merge (no merge commits, no rebase merge).
 
+## Workflow: one independent feature per PR, stacked in dependency order
+
+Multi-piece work (e.g. "port this paper baseline") gets decomposed into a list of
+genuinely independent features *before* any branch is created, not discovered
+mid-implementation. Two features are independent if neither imports/calls the
+other; a feature that imports another is *dependent* on it, not independent, even
+if they're conceptually part of the same effort.
+
+- Write out the full dependency-ordered list up front (most-foundational first —
+  a feature with zero dependencies on the others goes first; each later PR only
+  depends on what's strictly below it in the list).
+- Build and open **one PR at a time**, stacked on the previous one's branch,
+  even when the whole set was scoped together. Don't bundle several independent
+  features into one PR because they're related or were requested together — if a
+  PR's diff spans more than one of the list's entries, split it before opening.
+- If a later PR reveals that an earlier one's scope was wrong (e.g. a piece
+  turns out to need infrastructure that didn't ship yet), fix the ordering going
+  forward rather than quietly re-bundling — reopen/re-split as needed, and keep
+  the running dependency list current so this doesn't recur.
+- `analysis/` scripts are **post-run analysis only** — they read `--output-dir`
+  output back in and produce plots/tables/reports; they never run a simulation
+  or drive a `Method` themselves. That's `hitl_pmp/cli.py`'s job (`python -m
+  hitl_pmp.cli --env ... --method ... --output-dir ...`). If an `analysis/`
+  script is calling `Problem`/`Method`/`Environment` directly instead of
+  invoking the CLI and reading its output, that's a sign that the CLI-side
+  wiring it depends on shipped in a later PR than it should have.
+
 ## Architecture
 
 `src/hitl_pmp/` is reusable library code; `tests/` mirrors it 1:1. `analysis/` (scripts/
