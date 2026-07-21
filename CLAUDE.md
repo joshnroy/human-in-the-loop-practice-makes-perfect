@@ -52,6 +52,12 @@ if they're conceptually part of the same effort.
   turns out to need infrastructure that didn't ship yet), fix the ordering going
   forward rather than quietly re-bundling — reopen/re-split as needed, and keep
   the running dependency list current so this doesn't recur.
+- `scripts/` holds operational entrypoints that *drive* runs — notably
+  `scripts/run_sweep.py`, which runs a (method × seed) grid in parallel into the
+  `<results-root>/<method>/<seed>/` layout `analysis/` globs for, with fixed
+  (never randomly drawn) seeds. Use it rather than hand-rolling a shell loop; a
+  single `--seed` fully determines a run, pinned end-to-end by
+  `tests/scripts/test_reproducibility.py`.
 - `analysis/` scripts are **post-run analysis only** — they read `--output-dir`
   output back in and produce plots/tables/reports; they never run a simulation
   or drive a `Method` themselves. That's `hitl_pmp/cli.py`'s job (`python -m
