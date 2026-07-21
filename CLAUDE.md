@@ -66,18 +66,27 @@ notebooks producing results/figures) will import from `hitl_pmp`, never the reve
 
 ### The `core/` interfaces and the static-method-container pattern
 
-`core/` holds seven **fixed abstract interfaces**, none ever instantiated:
-`Problem`, `Method`, `Metrics`, `Renderer` (top-level), plus `Environment`,
-`HumanOracle`, `Tasks` (nested *under* `core/problem/`, not siblings of it — see
-below for why). Every method is `@staticmethod`; any state a concrete subclass needs
-(e.g. `Problem.env`) is a `ClassVar` **set on the base class itself** (`Problem.env =
-ConcreteEnv`), Java static-class/singleton style — not constructor-assigned instance
-state, and methods reference the base class by name (`Problem.env`), never `cls`.
-The same static-method-container rule extends to any concrete business logic
-underneath these interfaces, however small (e.g.
+`core/` holds six **fixed abstract interfaces**, none ever instantiated: `Problem`,
+`Method`, `Renderer` (top-level), plus `Environment`, `HumanOracle`, `Tasks` (nested
+*under* `core/problem/`, not siblings of it — see below for why). Every method is
+`@staticmethod`; any state a concrete subclass needs (e.g. `Problem.env`) is a
+`ClassVar` **set on the base class itself** (`Problem.env = ConcreteEnv`), Java
+static-class/singleton style — not constructor-assigned instance state, and methods
+reference the base class by name (`Problem.env`), never `cls`. The same
+static-method-container rule extends to any concrete business logic underneath these
+interfaces, however small (e.g.
 `environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy.get_action`)
 — never a bare module-level function, except a short lambda where an interface
 demands a positional callable (`Predicate.holds`, `Policy`).
+
+`Metrics` (`core/metrics/metrics.py`) sits alongside these but isn't actually
+abstract: every method there is already a genuine, reusable default (nothing in this
+codebase needs different behavior than "one task type, no real human-intervention
+tracking" yet), so there's no forced-must-override method the way `Problem` still has
+`run_task_episode`. Callers use `Metrics` directly, no per-domain subclass — a future
+`Method`/environment that genuinely needs different behavior overrides just the
+specific method that differs (ordinary subclassing, not contingent on the parent
+being an ABC).
 
 ```
 core/
@@ -107,10 +116,15 @@ this one call (no separate rendering-only codepath, which would duplicate the lo
 
 `src/hitl_pmp/cli.py` is the global CLI entrypoint (`python -m hitl_pmp.cli --env
 <name> ...`, e.g. `--env lightswitch`); it dispatches to each registered
-environment's own `environments/<name>/cli.py`. All flags are named, no positional
+environment's own `environments/<name>/cli.py`, or — if `--method <name>` is given
+instead — to a registered `core.Method`'s own `methods/<name>/cli.py`, which drives
+it through `src/hitl_pmp/practice_loop.py`'s `PracticeLoop` (the one execution
+harness every `Method` runs through; see the `core/` section above for why
+`Metrics`, what it records evaluations into, is fully concrete). `METHODS` is empty
+for now — nothing implements `core.Method` yet. All flags are named, no positional
 arguments. `--output-dir DIR` (global), if the environment has a `renderer.py`,
-additionally writes a demo `episode.mp4`. Run statistics/metrics tracking is a
-separate, not-yet-built concern (`core/metrics/metrics.py`).
+additionally writes a demo `episode.mp4`. Writing run statistics (e.g. a `stats.json`
+built from `Metrics`) to `--output-dir` is a separate, not-yet-built concern.
 
 **Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
 defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task
