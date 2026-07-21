@@ -25,19 +25,35 @@ with `seq-opt-lmcut`, patching per-ground-skill costs into the translated SAS fi
 
 ## Protocol
 
-Taken from the paper's own experimental section wherever it states a number:
+Taken from the paper's own experimental section wherever it states a number.
+
+Six settings are **stated differently by the paper's text than by the reference code
+that generated the paper's figures**. Since the figures came from the code, this log
+follows the code (the project convention), except grid size, where the text's number
+is used and the alternative is reported as a separate arm below.
+
+| Setting | Paper text | predicators code | Used here |
+|---|---|---|---|
+| Light Switch grid size | **25** ("We use a grid size of 25 rooms in our main experiments") | **100** (`settings.py:367`, never overridden by the paper's own yaml) | 25, with a 100-cell arm reported |
+| Evaluation horizon `H_eval` | 27 (= cells + 2) | `grid_row_num_cells + 2` | cells + 2 ✓ |
+| Competence window `w` | **2** | **5** (`skill_competence_model_optimistic_window_size`) | 5 |
+| ToggleLight parameter prior | **U(0, 2π)** | **U(-1, 1)** (`Box(-1.0, 1.0, (1,))`) | U(-1, 1) |
+| Sampler training iterations | **10000** (early stop after 5000 no-change) | **100000** (yaml override) | **1000** — see faithfulness note 5 |
+| Planning-progress tasks | "the 10 most recently seen tasks" | `sorted(seen_idxs)[:10]`, "Don't randomize: would lead to noisy estimates" | 10 most recent |
+| Explore bonus / UCB | **not mentioned at all** | `1e-1`, `use_ucb_bonus=True` | 1e-1 |
+
+Settings where text and code agree, all reproduced exactly:
 
 | Setting | Value | Source |
 |---------|-------|--------|
-| Light Switch grid size | 25 cells | paper ("in our main experiments") |
-| Evaluation horizon `H_eval` | 27 (= cells + 2) | paper |
-| Steps per free period | 150 | paper |
-| Evaluation tasks per checkpoint | 10, held-out | paper |
-| Seeds | 10 | paper |
-| Exploration | epsilon-greedy, ε = 0.5 | paper |
-| Competence prior | Beta(10, 1) | paper |
-| Planning-progress tasks | 10 most recent | paper |
-| Replan frequency | once per 100 scoring calls | paper |
+| Steps per free period | 150 | paper + yaml |
+| Evaluation tasks per checkpoint | 10, held-out | paper + yaml |
+| Seeds | 10 | paper ("we run 10 random seeds of each approach") |
+| Exploration | epsilon-greedy, ε = 0.5 | paper + `settings.py` |
+| Competence prior | Beta(10, 1) | paper + `settings.py` |
+| Replan frequency | once per 100 scoring calls | paper + `settings.py` |
+| Sampler candidates | 100, argmax of classifier probability | paper + `settings.py` |
+| Planner | Fast Downward, `seq-opt-lmcut`, 10 s timeout | paper + yaml |
 | Online learning cycles | 10 | **predicators' default** — the paper never states its free-period count |
 
 Command per run:
@@ -55,8 +71,8 @@ then `python -m analysis.practice_makes_perfect.ees --results-root <results> --o
 The x-axis of every curve below. **The paper never defines the term** — it appears
 exactly once in the source available to us, in the Figure 4 caption ("Percentage of
 evaluation tasks solved vs. number of online transitions collected"), with no
-definition in the body and no tick values (Figure 4 is an image the transcription
-doesn't carry). So the reading below is inferred, and worth stating explicitly.
+definition in the body. So the reading below is inferred, and worth stating
+explicitly. (Figure 4 itself is reproduced under "Comparison to the paper" below.)
 
 It is the number of **environment steps taken during practice**, accumulated across
 free periods. Evaluation steps are *not* counted: the metric measures how much
@@ -91,22 +107,34 @@ so one skill execution is one action is one transition, in both codebases.
 Mean fraction of the 10 held-out evaluation tasks solved, across **10 seeds**
 (± standard error), at each checkpoint:
 
-| Online transitions | EES | Random Skills | Skill Oracle |
-|--------------------|-----|---------------|--------------|
-| 0 (before practice) | 0.0% | 0.0% | 100% |
-| 150   | **50.0%** ± 7.0 | 0.0% | 100% |
-| 300   | **89.0%** ± 6.0 | 0.0% | 100% |
-| 450   | **95.0%** ± 4.0 | 0.0% | 100% |
-| 600   | **98.0%** ± 2.0 | 0.0% | 100% |
-| 750   | **98.0%** ± 2.0 | 0.0% | 100% |
-| 900   | **100.0%** ± 0.0 | 0.0% | 100% |
-| 1050 – 1500 | **100.0%** ± 0.0 | 0.0% | 100% |
+| Online transitions | EES (25 cells) | EES (100 cells) | Random Skills | Skill Oracle |
+|---|---|---|---|---|
+| 0 (before practice) | 0.0% | 0.0% | 0.0% | 100% |
+| 150  | **44.0%** ± 7.5 | 36.0% ± 8.3 | 0.0% | 100% |
+| 300  | **66.0%** ± 9.3 | 62.0% ± 10.2 | 0.0% | 100% |
+| 450  | **78.0%** ± 6.6 | 79.0% ± 7.8 | 0.0% | 100% |
+| 600  | **97.0%** ± 2.1 | 83.0% ± 8.4 | 0.0% | 100% |
+| 750  | **99.0%** ± 1.0 | 90.0% ± 3.7 | 0.0% | 100% |
+| 900  | **99.0%** ± 1.0 | 92.0% ± 3.6 | 0.0% | 100% |
+| 1050 | **100.0%** ± 0.0 | 94.0% ± 4.3 | 0.0% | 100% |
+| 1200 | **100.0%** ± 0.0 | 98.0% ± 1.3 | 0.0% | 100% |
+| 1350 – 1500 | **100.0%** ± 0.0 | 98.0% ± 2.0 | 0.0% | 100% |
+
+The bolded 25-cell column is the headline arm (the paper text's grid size); the
+100-cell column is the reference code's own default, reported because the two
+disagree (see Protocol). Both are 10 seeds.
 
 EES reaches the privileged oracle's success rate — from a standing start of 0% —
-after roughly **900 online transitions** (6 free periods), and is already at 89%
+after roughly **1050 online transitions** (7 free periods), and is already at 66%
 after two. `skill-oracle` cheats with privileged ground-truth state and never
 practices, so it is a flat upper bound rather than a curve; `random-skills`
-collects the identical transition budget and never solves anything.
+collects the identical transition budget and never solves anything, on any seed, at
+any checkpoint.
+
+Grid size genuinely matters to these numbers, which is worth stating explicitly
+because it did *not* before the harness bug described below was fixed: a larger grid
+spends more of each 150-step free period walking to the light and less of it
+practicing the toggle, so the 100-cell arm learns more slowly per transition.
 
 ![EES vs baselines learning curve](./2026-07-21-ees-vs-baselines-light-switch.png)
 
@@ -119,8 +147,8 @@ The same evaluation task, attempted at five points across training
 | Transitions | Aggregate success (10 seeds) | This episode | |
 |---|---|---|---|
 | 0 | 0% | fails — never gets the light on | ![0](./2026-07-21-ees-progress-000000.gif) |
-| 300 | 89% | fails | ![300](./2026-07-21-ees-progress-000300.gif) |
-| 750 | 98% | solves | ![750](./2026-07-21-ees-progress-000750.gif) |
+| 300 | 66% | fails | ![300](./2026-07-21-ees-progress-000300.gif) |
+| 750 | 99% | solves | ![750](./2026-07-21-ees-progress-000750.gif) |
 | 1200 | 100% | solves | ![1200](./2026-07-21-ees-progress-001200.gif) |
 | 1500 | 100% | solves | ![1500](./2026-07-21-ees-progress-001500.gif) |
 
@@ -133,10 +161,10 @@ Two honest caveats about reading these:
    then dials the level to the wrong value repeatedly until the horizon runs out,
    while the trained one walks over and sets it correctly in a single move — the
    `TurnOnLight` sampler having been specialized away from its uniform prior.
-2. **Seed 5 is slower than typical**, not cherry-picked to flatter: 8 of the 10
-   seeds already solve this task by the 300-transition checkpoint, and seed 5 is
-   one of the two that doesn't. It was chosen precisely because a below-median
-   seed shows three distinct stages instead of two.
+2. **Seed 5 is slower than typical**, not cherry-picked to flatter. Per-seed solve
+   counts at the 300-transition checkpoint are 10, 6, 7, 6, 3, **2**, 10, 4, 8, 10
+   out of 10 — seed 5 is the *worst* of the ten. It was chosen precisely because a
+   below-median seed shows three distinct stages instead of two.
 
 The episode length is itself a tell: the failing clips run the full 27-step
 evaluation horizon, while the solving ones finish in 25 actions — 24 `MoveRobot`
@@ -145,62 +173,77 @@ steps across the grid plus one correct `TurnOnLight`, which is optimal for a
 
 ## Comparison to the paper
 
-**What can and cannot be compared.** The paper's Light Switch result is Figure 4,
-which in the source available to us is *an image only* — no per-curve numbers, and
-the body text gives no Light-Switch numbers either. The values below were therefore
-**read off the figure by eye, to roughly ±10 points**. They are not published data
-and should not be cited as such; they are enough to compare *shape and timing*, not
-enough to compare *values*.
+Figure 4 from the paper (Light Switch is the leftmost panel):
 
-Both axes are directly comparable: 0–1500 online transitions with a 150-step free
-period, so the checkpoints line up 1:1. See "What 'online transitions' means here"
-above for why that axis means the same thing in both codebases.
+![Paper Figure 4](./2026-07-21-paper-figure-4.jpg)
 
-| online transitions | Paper EES (eyeballed, ±10) | This reproduction | Δ |
+> Fig. 4: Simulation results. Percentage of evaluation tasks solved vs. number of
+> online transitions collected for all approaches in all simulated environments.
+> Solid lines represent means and shading represents standard error across 10 seeds.
+
+**What can and cannot be compared.** Figure 4 is an image; the paper publishes no
+per-curve numbers for Light Switch and the body text gives none. The paper column
+below is therefore **read off that image by eye, to roughly ±5–10 points**. It is not
+published data and should not be cited as such — it is enough to compare *shape and
+timing*, not *values*.
+
+The axes are directly comparable: 0–1500 online transitions, 150-step free periods,
+10 seeds, standard-error shading on both sides. See "What 'online transitions' means
+here" above for why that axis means the same thing in both codebases.
+
+| online transitions | Paper EES (eyeballed, ±5–10) | Ours, 25 cells | Ours, 100 cells |
 |---|---|---|---|
-| 0 | 0 | 0.0 | 0 |
-| 150 | ~25 | 50.0 ± 7.0 | +25 |
-| 300 | ~45 | 89.0 ± 6.0 | **+44** |
-| 450 | ~60 | 95.0 ± 4.0 | **+35** |
-| 600 | ~80 | 98.0 ± 2.0 | +18 |
-| 750 | ~92 | 98.0 ± 2.0 | +6 |
-| 900 | ~98 | 100.0 ± 0.0 | +2 |
-| 1050–1500 | 100 | 100.0 ± 0.0 | 0 |
-| Random Skills, every checkpoint | 0 | 0.0 ± 0.0 | **0 (exact)** |
+| 0 | 0 | 0.0 | 0.0 |
+| 150 | ~30 | 44.0 ± 7.5 | 36.0 ± 8.3 |
+| 300 | ~42 | 66.0 ± 9.3 | 62.0 ± 10.2 |
+| 450 | ~58 | 78.0 ± 6.6 | 79.0 ± 7.8 |
+| 600 | ~85 | 97.0 ± 2.1 | **83.0 ± 8.4** |
+| 750 | ~96 | 99.0 ± 1.0 | 90.0 ± 3.7 |
+| 900 | ~99 | 99.0 ± 1.0 | 92.0 ± 3.6 |
+| 1050 | 100 | **100.0 ± 0.0** | 94.0 ± 4.3 |
+| 1200–1500 | 100 | **100.0 ± 0.0** | 98.0 ± 2.0 |
+| Random Skills, every checkpoint | 0 | **0.0 ± 0.0** | — |
 
-**Verdict: qualitative match, quantitative overshoot.** The shape, the endpoints,
-and the saturation point all agree — both curves run 0% → 100% and flatten well
-before the 1500-transition budget, and Random Skills is pinned at exactly 0
-throughout in both. But this reproduction converges roughly twice as fast over the
-150–600 range.
+**Verdict: the qualitative result reproduces; the mid-curve is still optimistic.**
 
-**That gap is not yet explained, and the direction is suspicious** — a
-reproduction outperforming its source usually means the reproduction is easier than
-the original, not better. The leading hypothesis was tested and refuted (see the
-ablation section below). Remaining candidates, none yet tested:
+What matches:
 
-- **Figure-reading error.** ±10 covers part of the 150 and 600 gaps but nowhere
-  near the +44 at 300 transitions.
-- **Evaluation retry structure.** With H_eval = 27 and 24 of those steps spent
-  walking to the light, this port gets ~3 toggle attempts per evaluation episode,
-  each one replanned. If the paper's evaluation effectively allows fewer, a sampler
-  of equal quality would score lower there than here.
-- **Practice throughput per free period.** Once co-located with the light, this
-  port alternates TurnOffLight/TurnOnLight roughly every step, so a 150-step period
-  yields on the order of 60 datapoints per toggle skill. If predicators spends more
-  of each period travelling or re-planning, it gathers less per period.
+- **Shape.** Both rise steeply, knee around 450–670, then saturate — not a straight
+  line and not a late step change.
+- **Saturation point.** The paper's EES reaches 100% at roughly 1000 transitions;
+  the 25-cell arm reaches it at 1050.
+- **The floor.** Random Skills is exactly 0.0% at every checkpoint on all 10 seeds,
+  matching the paper's flat-zero Random Skills (and its flat-zero MAPLE-Q).
+- **The claim being tested.** "EES is consistently the most sample efficient" holds:
+  it is the only practicing method here that improves at all.
 
-Below is what the paper states *in prose*, which is comparable without any
-figure-reading.
+What does not:
 
-| Paper's claim (Light Switch) | This reproduction |
-|------------------------------|-------------------|
-| "EES is consistently the most sample efficient, achieving higher success rates after fewer online transitions than the baselines" | **Reproduced.** EES is the only practicing method that improves at all here: 0% → 100% in ~900 transitions, versus 0% for Random Skills over the same budget. |
-| "Like the Random Skills baseline, MAPLE-Q fails to solve any evaluation tasks" (Random Skills ≈ 0%) | **Reproduced.** Random Skills scores exactly 0.0% at every checkpoint, all 10 seeds. (MAPLE-Q is not ported yet — it is pure deep RL and shares none of this scaffolding.) |
-| "The main challenge in this environment is for the robot to specialize its parameter prior for the ToggleLight skill" | **Reproduced, and measured directly.** Probing the trained sampler over 200 fresh targets: mean |dlight − target| falls from **0.781** under the uniform prior to **0.028** learned, and the fraction of draws landing inside the 0.1 `light_on_tolerance` rises from **10% to 100%**. That specialization is the whole result — it is what turns a 0% policy into a 100% one. |
-| JumpToLight "is impossible and never achieves its purported effect" | **Reproduced.** After training, EES's competence estimates are TurnOnLight 0.995, TurnOffLight 0.993, MoveRobot 0.917, and **JumpToLight 0.114** — it learned the impossible skill is impossible. Since plan cost is −log(competence), JumpToLight costs ~2.17 against ~0.005 for TurnOnLight, roughly a 400× penalty, so cost-aware planning routes around it rather than being trapped by it. |
+- Ours is **~15–25 points high over the 150–450 band** at both grid sizes. Since it
+  persists at 25 *and* 100 cells, it is not a grid-size artifact.
+- The two grid sizes trade off against each other rather than one being clearly
+  right: 100 cells tracks the paper's mid-curve better (83 vs ~85 at 600, where 25
+  cells overshoots to 97), but plateaus at 98% instead of reaching a clean 100%.
 
-## A bug this experiment caught
+**Where the remaining gap probably lives.** An audit of every `CFG.*` setting the
+reference reads (see Faithfulness notes) leaves three candidates, none yet tested:
+
+1. **`skip_perfect` / UCB denominators.** predicators computes both from
+   `_ground_op_hist`, which records *every* execution including epsilon-random ones;
+   this port computes them from competence observations, which exclude random
+   attempts. Ours therefore reaches a measured success rate of 1.0 sooner, drops a
+   mastered skill as a practice target earlier, and moves on — plausibly the single
+   largest remaining effect, and in the right direction to explain an early lead.
+2. **Epsilon-greedy scope.** predicators uses the exploration sampler only for the
+   practice target; every prefix and goal-pursuit skill runs through the greedy test
+   sampler. This port explores on all of them.
+3. **Sampler training length**, 1000 iterations against the paper config's 100000 —
+   this one cuts the other way and should make ours *worse*, so it does not explain
+   an overshoot, but it does mean neither arm is a like-for-like comparison.
+
+## Two bugs this experiment caught
+
+### 1. Competence polluted by epsilon-greedy random attempts
 
 The first version of this port updated the competence model on **every** practice
 attempt, including the ones where the epsilon-greedy branch deliberately chose a
@@ -229,6 +272,40 @@ success curve alone would never have surfaced this; the per-skill probe did. Bot
 the pre- and post-fix numbers above come from the same seed-0 configuration, and the
 10-seed sweep reported above was re-run from scratch on the fixed code.
 
+### 2. The practice period never reset the environment
+
+`PracticeLoop` sampled a train task each cycle and handed it to the `Method`, but
+never installed its initial state into the environment — it read
+`problem.get_current_state()`, i.e. whatever the preceding *evaluation sweep* left
+behind. predicators resets per interaction request (`main.py:301-302`,
+`cogman.reset(env_task)`).
+
+An evaluation episode ends with the environment in a **solved** state, so every free
+period began having already achieved the goal: on Light Switch, with the robot
+already standing at the light. It skipped the entire traversal and spent all 150
+steps practicing the toggle.
+
+The tell was that **`--grid-size` had no effect whatsoever** — whole-sweep
+`stats.json` files were byte-identical at 25 and 100 cells, which is not a property
+this environment should have. Sampler datapoints collected over two 150-step
+periods, before → after:
+
+| | before | after |
+|---|---|---|
+| `--grid-size 25`, TurnOnLight | 226 | 230 |
+| `--grid-size 100`, TurnOnLight | 226 | **91** |
+
+Fixed in a separate PR ahead of this one, since it lives in the shared harness and
+affects every `Method`, not just EES. **Every number in this log postdates that
+fix**; the pre-fix curve was materially more optimistic (89% at 300 transitions
+against 66% now).
+
+It survived earlier review because `tests/test_practice_loop.py`'s fake task
+generator returned the same initial state for train *and* test tasks, making
+"resumed from the evaluation sweep" and "started from the train task"
+indistinguishable. The fakes now differ, and a test pins each half of the contract:
+state is continuous *within* a free period, and reset *between* periods.
+
 ## Ablation: predicators' double-`observe()` bug costs nothing here (negative result)
 
 `predicators/explorers/active_sampler_explorer.py` calls `observe()` on the
@@ -252,15 +329,21 @@ binary:
 | online transitions | This port (greedy ×1, random ×0) | predicators' flow (greedy ×2, random ×1) |
 |---|---|---|
 | 0 | 0.0 ± 0.0 | 0.0 ± 0.0 |
-| 150 | 50.0 ± 7.0 | 54.0 ± 7.8 |
-| 300 | 89.0 ± 6.0 | 89.0 ± 7.7 |
-| 450 | 95.0 ± 4.0 | 93.0 ± 4.7 |
-| 600 | 98.0 ± 2.0 | 100.0 ± 0.0 |
-| 750 | 98.0 ± 2.0 | 100.0 ± 0.0 |
-| 900–1500 | 100.0 ± 0.0 | 100.0 ± 0.0 |
+| 150 | 44.0 ± 7.5 | 44.0 ± 9.1 |
+| 300 | 66.0 ± 9.3 | 60.0 ± 9.1 |
+| 450 | 78.0 ± 6.6 | 73.0 ± 11.3 |
+| 600 | 97.0 ± 2.1 | 95.0 ± 4.0 |
+| 750 | 99.0 ± 1.0 | 100.0 ± 0.0 |
+| 900 | 99.0 ± 1.0 | 100.0 ± 0.0 |
+| 1050 | 100.0 ± 0.0 | 100.0 ± 0.0 |
+| 1200 | 100.0 ± 0.0 | 99.0 ± 1.0 |
+| 1350–1500 | 100.0 ± 0.0 | 100.0 ± 0.0 |
 
 **The hypothesis is refuted.** The two arms agree within standard error at every
-checkpoint, and the buggy arm is if anything marginally *faster*. So the bug does
+checkpoint, with no consistent direction — the buggy arm is slightly behind early
+and slightly ahead late. (This ablation was re-run from scratch after the
+environment-reset fix above; the conclusion is unchanged from the pre-fix run.) So
+the bug does
 not explain the gap against the paper, and this port's deviation from predicators
 on this point is immaterial to the headline result.
 
@@ -282,33 +365,71 @@ that on *this* domain that incoherence does not propagate to the success curve.
 
 ## Faithfulness notes
 
-Where this port deliberately differs from `predicators`, and why:
+Every `CFG.*` setting the reference reads across `active_sampler_explorer.py`,
+`active_sampler_learning_approach.py`, `competence_models.py`, `main.py`,
+`settings.py`, and the paper's own yaml was audited against this port. The MLP
+sampler matches exactly (hidden sizes `[32, 32]`, Adam at `1e-3`, BCE, full-batch,
+`n_iter_no_change=5000`, best-loss checkpointing, balancing off, min/max
+normalization, 100 test-time candidates, refit from scratch each cycle), as does the
+competence math, the UCB bonus, tie-breaking, plan re-pricing, and the Fast Downward
+three-stage protocol. What follows is everything that differs.
 
-1. ~~One skill = one raw action, unlike predicators' multi-step options.~~
-   **Not actually a deviation** — this was checked and the original note was
-   wrong. All four `grid_row` options are `SingletonParameterizedOption` ("takes a
-   single action and stops"), so predicators also executes exactly one raw action
-   per skill on this domain. The two are identical here, which is what makes the
-   online-transition axes directly comparable rather than merely analogous.
-2. **The last skill of an interaction period is never scored.** Its outcome would
-   need a subsequent state to check `add_effects` against. predicators observes at
-   option termination instead. Costs at most one datapoint per period.
-3. **predicators' double-count bug is not reproduced.** It calls `observe()` twice
-   per non-exploratory attempt (`active_sampler_explorer.py` lines 407 and 443);
-   that is a bug, so this port observes once. **Measured, and it changes nothing**
-   — `--reproduce-predicators-double-observe` restores the original flow and lands
-   within standard error at every checkpoint; see the ablation section above.
-4. **`ToggleLight`'s prior is U(-1, 1), not U(0, 2π).** The paper's text says the
-   latter; the reference *code* uses the former, and per this project's convention
-   the codebase is ground truth where the two disagree. Inherited from the existing
-   Light Switch port, not introduced here.
-5. **Sampler training iterations default to 1000, not 100000.** The paper's config
-   uses the larger value; the default here keeps a run to minutes. Raise
-   `--sampler-max-train-iters` to match exactly.
-6. **Only the "optimistic" competence model is ported**, because
-   `CFG.skill_competence_model = "optimistic"` is what EES actually runs. The
-   paper also describes an EM/latent-variable variant it does *not* use for its
-   main results.
+**Deliberate, and measured to be immaterial:**
+
+1. **predicators' double-count bug is not reproduced.** It calls `observe()` twice
+   per non-exploratory attempt (`active_sampler_explorer.py:407` unconditionally,
+   then `:442-443` under the guard), so the suppression its own comment describes
+   never takes effect. This port observes once.
+   `--reproduce-predicators-double-observe` restores the original flow and lands
+   within standard error at every checkpoint — see the ablation above.
+
+**Deliberate, untested, and plausibly part of the remaining gap:**
+
+2. **`skip_perfect` and the UCB `num_tries` use exploration-excluding counts.**
+   predicators reads `_ground_op_hist`, appended on *every* execution including
+   epsilon-random ones (`:400`); this port reads competence observations, which
+   exclude them. Ours reaches a measured rate of 1.0 sooner and stops practicing a
+   mastered skill earlier. The best current candidate for the mid-curve overshoot.
+3. **Epsilon-greedy applies to every skill in a practice episode.** predicators
+   uses the exploration sampler only for the practice target itself; prefix and
+   goal-pursuit skills run through the greedy *test* sampler and do update
+   competence.
+4. **Sampler training iterations default to 1000**, against the paper config's
+   100000 (and the paper text's 10000). Keeps a run to minutes; raise
+   `--sampler-max-train-iters` to match. Cuts *against* our results, not for them.
+5. **Test tasks are resampled every sweep** from a continuing RNG stream;
+   predicators re-runs one fixed set of test tasks at every checkpoint. Same
+   expectation, more sweep-to-sweep variance here.
+6. **No horizon cap on the goal-pursuit phase.** predicators cuts over to practice
+   after `CFG.horizon` steps; this port pursues the goal until it is achieved or
+   planning fails.
+7. **Replanning tasks are not implemented.** predicators also scores planning
+   progress against a `maxlen=5` deque of fictitious goals generated during
+   replanning; this port scores only against seen train tasks.
+
+**Not deviations (corrections to earlier claims in this log):**
+
+8. ~~One skill = one raw action, unlike predicators' multi-step options.~~ **Wrong
+   premise.** All four `grid_row` options are `SingletonParameterizedOption` ("takes
+   a single action and stops"), so predicators also executes one raw action per
+   skill here. That is what makes the online-transition axes directly comparable.
+9. ~~`ToggleLight`'s U(-1, 1) prior is a deviation.~~ **It matches the reference
+   code exactly** (`Box(-1.0, 1.0, (1,))`). It differs from the paper *text*, which
+   says U(0, 2π) — a paper-vs-code discrepancy, not a port-vs-reference one. Same
+   for the competence window (text says `w=2`, code uses 5).
+
+**Scope:**
+
+10. **The last skill of an interaction period is never scored**, since checking
+    `add_effects` needs a subsequent state. predicators observes at option
+    termination. Costs at most one datapoint per period.
+11. **Only the "optimistic" competence model is ported**, because
+    `CFG.skill_competence_model = "optimistic"` is what EES actually runs. The paper
+    also describes an EM/latent-variable variant it does *not* use for main results.
+12. **Seven of the paper's eight Figure 4 approaches are not ported.** Fail Focus,
+    Competence Gradient, Skill Diversity, Task-Relevant, Task Repeat, and MAPLE-Q
+    remain unbuilt; `skill-oracle` is this project's own addition and is not in the
+    paper.
 
 ## Reproducing
 

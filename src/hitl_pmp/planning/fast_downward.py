@@ -232,6 +232,14 @@ class FastDownwardPlanner:
                 continue
             end_idx = next(i for i in range(idx + 1, len(lines)) if lines[i] == "end_operator")
             cost_idx = end_idx - 1
+            # predicators asserts the same thing (planning.py:1040). The cost line
+            # is located positionally, so if FD's SAS layout ever shifts, this
+            # would silently rewrite the wrong line and produce plausible-looking
+            # but wrongly-priced plans -- the worst kind of failure here.
+            assert lines[cost_idx] == "1", (
+                f"Expected an unset SAS cost line ('1') at index {cost_idx}, "
+                f"got {lines[cost_idx]!r} -- FD's SAS operator layout may have changed."
+            )
             cost = remaining.pop(lines[idx + 1], default_cost)
             lines[cost_idx] = str(int((10**cost_precision) * cost))
         # Leftover entries are normal, not an error: FD's translator drops operators

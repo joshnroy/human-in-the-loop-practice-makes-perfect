@@ -55,10 +55,11 @@ class EesMethod(Method):
     A* planner is not a substitute: it ignores per-operator costs entirely.
 
     Deviations from predicators, all deliberate:
-    1. One skill execution is one raw `Action` here, because every Light Switch
-       skill's `compute_action` completes in a single step. predicators runs an
-       option to termination over many low-level steps. Nothing about EES's logic
-       depends on that difference on this domain.
+    1. `skip_perfect` and the UCB `num_tries` are computed from competence
+       observations, which exclude epsilon-greedy random attempts. predicators
+       reads `_ground_op_hist`, appended on *every* execution including random
+       ones (`active_sampler_explorer.py:400`), so a skill here reaches a
+       measured rate of 1.0 sooner and is dropped as a practice target earlier.
     2. The outcome of the *last* skill in an interaction period is never observed
        (there is no subsequent state to check `add_effects` against). predicators
        observes at option termination instead. This loses at most one datapoint
@@ -84,8 +85,11 @@ class EesMethod(Method):
     explore_bonus: float = 1e-1
     use_ucb_bonus: bool = True
     skip_perfect: bool = True
-    # CFG.active_sampler_explorer_planning_progress_max_tasks -- the paper: "use
-    # only the 10 most recent tasks".
+    # CFG.active_sampler_explorer_planning_progress_max_tasks. The paper text says
+    # "the 10 most recently seen tasks"; the reference code instead takes
+    # `sorted(seen_idxs)[:10]` ("Don't randomize: would lead to noisy estimates").
+    # This follows the text. On this domain the two coincide in effect, since every
+    # Light Switch task differs only in the light's target value.
     planning_progress_max_tasks: int = 10
     # CFG.active_sampler_explorer_replan_frequency -- the paper: "cache last plan
     # per task, re-run planner once per 100 calls".
