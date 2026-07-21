@@ -23,6 +23,51 @@ This package is filled in incrementally, one stacked PR at a time, by whichever
     its own TODOs for where that would bite at large object counts). This is Random
     Skills' entire mechanism: uniformly sample one applicable `GroundSkill`.
 
+## How grounding works
+
+"Grounding" means substituting concrete `Object`s for the free variables in a
+*lifted* thing, producing its *ground* counterpart -- the same sense predicators
+uses it in. Two different things get grounded here, and `SkillGrounder`'s two
+functions are the two steps, run in sequence:
+
+```mermaid
+flowchart LR
+    subgraph lifted["Lifted (templates)"]
+        Predicate["Predicate<br/>(core.problem.tasks.types)"]
+        Skill["Skill<br/>(core.method.types)<br/>parameters: Variables"]
+    end
+    subgraph ground["Ground (concrete instances)"]
+        GroundAtom["GroundAtom<br/>predicate + concrete Objects"]
+        GroundSkill["GroundSkill<br/>skill + concrete Objects"]
+    end
+
+    State -->|"1. abstract_state():<br/>evaluate every Predicate.holds()<br/>against every object combo"| GroundAtom
+    Predicate -.->|"applied to Objects"| GroundAtom
+    GroundAtom -->|"true_atoms"| Search
+    Skill -->|"2. applicable_ground_skills():<br/>backtracking search over<br/>skill.parameters"| Search["SkillGrounder<br/>backtrack + prune"]
+    Search -->|"prune the moment a fully-<br/>determined precondition fails"| GroundSkill
+```
+
+Step 1 (`abstract_state`) grounds *predicates*: it turns the raw numeric `State`
+into the set of `GroundAtom`s that currently hold -- the symbolic facts a
+precondition check needs, since a lifted `Predicate` can't be checked against a
+`State` directly (its `holds` classifier needs concrete `Object`s, not free
+variables). Step 2 (`applicable_ground_skills`) grounds *skills*: given those true
+atoms, it finds every `Variable -> Object` binding for a `Skill`'s parameters whose
+(now-ground) preconditions all hold, producing the actual `GroundSkill`s available
+right now -- e.g. Random Skills' whole action space at a given step.
+
+Step 2's own search interleaves generation and checking within one backtracking
+pass -- pruning a candidate binding the moment a precondition it fully determines
+fails, rather than finishing every parameter before checking anything. This is
+deliberately different from predicators' own equivalent (`all_ground_nsrts` +
+`get_applicable_operators` in `hitl-practice/predicators/utils.py`), which
+generates the *full* Cartesian product of objects for a skill's parameters
+first, unconditionally, and only filters by precondition afterward -- see
+`_applicable_groundings`'s own TODO(scale) comment for where our pruning still
+degrades toward that same worst case (a skill whose preconditions leave several
+parameters unconstrained until late in `skill.parameters`' order).
+
 A real `FastDownwardPlanner` (shelling out to a real Fast Downward binary, mirroring the
 sibling repo one level up's `hitl-practice/predicators/planning.py`'s
 `_sesame_plan_with_fast_downward` two-stage translate/patch-costs/search protocol) and a
