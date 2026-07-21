@@ -62,12 +62,16 @@ proportionally more room rather than being unfairly cut off. 3 seeds each.
 | 60        | 62            | 7200   | 1329                 | 2/3      |
 | 70        | 72            | 9800   | 1443                 | 2/3      |
 | 80        | 82            | 12800  | 4890                 | 2/3      |
-| 90        | 92            | 16200  | *pending*            | -        |
-| 100       | 102           | 20000  | *pending*            | -        |
+| 90        | 92            | 16200  | 5500                 | 2/3      |
+| 100       | 102           | 20000  | 5703                 | 2/3      |
 
-*(90/100 were still running as of this writeup — grounding cost is O(grid_size²)
-per step on top of an O(grid_size²) step cap, so the largest sizes are slow. Will
-update this table once they land.)*
+Overall, **34/42 seeds (81%) solved within their quadratic-scaled cap** across all
+14 grid sizes — the rest are genuine long-tail outliers (see the compounding
+argument below), not a sign the cap itself is systematically too small. Note the
+apparent "flattening" of the orange line above `grid_size=60` in the plot below is
+itself partly a cap artifact (the same survivorship-bias effect discussed for
+`grid_size=50`, just less severe) — it is not evidence the true scaling is
+sub-quadratic.
 
 ![steps to solve vs paper horizon](./2026-07-21-random-skills-steps-to-solve-vs-horizon.png)
 
