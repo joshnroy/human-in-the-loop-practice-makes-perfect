@@ -38,15 +38,20 @@ Each domain subfolder is expected to contain:
   `hitl_pmp/cli.py`. A static-method container (e.g. `LightSwitchCli`) exposing
   `add_arguments(*, parser)` (adds this domain's configurable values as named
   argparse flags — no positional arguments — defaults read live from the relevant
-  classes) and `run(*, args)` (applies them, runs a chosen policy over sampled test
-  tasks, returns/prints results) — registered by name in `hitl_pmp/cli.py`'s
-  `ENVIRONMENTS` dict, which has no domain-specific knowledge of its own. `methods/`
-  (once a concrete `Method` exists) is expected to follow the identical pattern —
-  see [`../methods/README.md`](../methods/README.md). If `--output-dir` is set
-  (global flag, `hitl_pmp/cli.py`) and the domain has a `renderer.py`, `run` is also
-  expected to write an `episode.mp4` demo there. Run statistics/metrics tracking is
-  a separate, not-yet-built concern (see `core/metrics/metrics.py`), not part of
-  this flag.
+  classes) and `apply_config(*, args)` (applies them to the domain's own
+  ClassVars) — registered by name in `hitl_pmp/cli.py`'s `ENVIRONMENTS` dict,
+  which has no domain-specific knowledge of its own. An environment is never run
+  directly, though: actually driving a `core.Method` through `practice_loop.py`'s
+  `PracticeLoop` and printing/writing results is a *method*-CLI's job (registered
+  in `hitl_pmp/cli.py`'s `METHODS` dict instead, under `--method`, and living
+  under `methods/<name>/cli.py` — not here, since it's method-specific glue, not
+  environment-specific) — see `LightSwitchCli.run_method` (the shared body every
+  Light-Switch method-CLI calls, e.g. `methods/oracle/cli.py`'s `SkillOracleCli`)
+  and [`../methods/README.md`](../methods/README.md). If `--output-dir` is set
+  (global flag, `hitl_pmp/cli.py`) and the domain has a `renderer.py`, that
+  method-CLI's `run` is also expected to write an `episode.mp4` demo there. Run
+  statistics/metrics tracking to that same flag is a separate, not-yet-built
+  concern (see `core/metrics/metrics.py`).
 - `renderer.py` — optional: only needed if this domain should be visually
   inspectable. A concrete subclass of `core.Renderer` (`render_frame(*, state,
   label=None) -> np.ndarray`) — pure rendering logic only, but should draw `label`
@@ -90,11 +95,21 @@ predicate definitions play in `predicators/envs/`.
   `skills.py`'s `Skill`/`GroundSkill`/`compute_action` pipeline — the two exist
   side by side specifically to demonstrate that both are legitimate ways to
   produce a `Policy`, matching predicators' own skill-agnostic baseline
-  interface) — `renderer.py` (`LightSwitchRenderer` — draws the robot and light on
-  a 1D strip via matplotlib, plus whichever policy's `LabeledAction.label` as a
-  second title line, e.g. `"MoveRobot(robot, cell0, cell99)"` or `"raw action
-  [dx=..., dlight=...]"`), and `cli.py` (`LightSwitchCli`, runnable via
-  `python -m hitl_pmp.cli --env lightswitch --policy {action-oracle,skill-oracle}
-  [--output-dir DIR]`).
+  interface). Both are Light-Switch-only, with no knowledge of any other
+  domain; `SkillOraclePolicy` is wrapped as a real `core.Method`
+  (`SkillOracleMethod`, in `../../methods/oracle/skill_oracle_method.py` — see
+  [`../../methods/README.md`](../../methods/README.md), not here, since the
+  `Problem.env`-keyed dispatch it needs is a cross-domain concern), runnable via
+  the global CLI's `--method` flag (below); `ActionOraclePolicy` isn't
+  currently wrapped/wired the same way, so it's exercised directly by its own
+  tests rather than through the CLI. `renderer.py`
+  (`LightSwitchRenderer` — draws the robot and light on a 1D strip via
+  matplotlib, plus whichever policy's `LabeledAction.label` as a second title
+  line, e.g. `"MoveRobot(robot, cell0, cell99)"` or `"raw action [dx=...,
+  dlight=...]"`), and `cli.py` (`LightSwitchCli` for this domain's own config
+  flags and its shared `run_method` helper, called by
+  `../../methods/oracle/cli.py`'s `SkillOracleCli`), runnable via
+  `python -m hitl_pmp.cli --env lightswitch --method skill-oracle
+  [--output-dir DIR]`.
 - Every other domain subfolder: not started yet. The convention above describes the
   expected shape once one lands.

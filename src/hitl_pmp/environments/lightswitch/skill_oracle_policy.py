@@ -1,6 +1,6 @@
 import numpy as np
 
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy
+from hitl_pmp.core.method.types import GroundSkill, LabeledAction
 from hitl_pmp.core.problem.environment.types import State
 
 from .environment import LightSwitchEnvironment
@@ -8,16 +8,21 @@ from .skills import LightSwitchSkills
 
 
 class SkillOraclePolicy:
-    """Cheats with privileged ground-truth state, exactly like ActionOraclePolicy --
-    but, unlike it, routes every action through skills.py's lifted -> grounded ->
-    compute_action pipeline: MoveRobot to the light's cell, then TurnOnLight by
-    exactly the remaining gap. Same two-action solve as ActionOraclePolicy; the
-    point of this class is to exercise Skill/GroundSkill end-to-end with a real
-    caller, not to behave differently. A static-method container, never
+    """Cheats with privileged ground-truth state -- routes every action through
+    skills.py's lifted -> grounded -> compute_action pipeline (unlike
+    ActionOraclePolicy, which acts directly in raw action space). Light-Switch-
+    only, same as ActionOraclePolicy -- the cross-environment dispatch lives one
+    layer up, in methods/oracle/skill_oracle_method.py's SkillOracleMethod, since
+    that's the layer allowed to reason about which environment is wired (see
+    core/README.md's Problem facade section). A static-method container, never
     instantiated, same as every other business-logic class in this project."""
 
     @staticmethod
     def get_labeled_action(*, state: State) -> LabeledAction:
+        """MoveRobot to the light's cell, then TurnOnLight by exactly the
+        remaining gap -- same two-action solve as ActionOraclePolicy; the point
+        of this method is to exercise Skill/GroundSkill end-to-end with a real
+        caller, not to behave differently."""
         env = LightSwitchEnvironment
         robot, light = env.robot, env.light
         robot_x = state.get(obj=robot, feature_name="x")
@@ -60,12 +65,3 @@ class SkillOraclePolicy:
             rounded_params = [round(float(p), 2) for p in params]
             label += f", params={rounded_params}"
         return LabeledAction(action=action, label=label)
-
-
-# Policy is a positional Callable[[State], LabeledAction] per its interface contract
-# (core/method/types.py) -- this lambda just adapts that into a call to
-# SkillOraclePolicy's keyword-only get_labeled_action, same pattern as
-# predicates.py's LIGHT_ON.
-SKILL_ORACLE_POLICY: Policy = lambda state: SkillOraclePolicy.get_labeled_action(  # noqa: E731
-    state=state
-)

@@ -5,6 +5,24 @@ side of the codebase, mirroring `core.Problem` as described in `../core/README.m
 `Method` implements `reset_environment`, `get_task_policy`, `generate_train_task`,
 `execute_setup_command`, `execute_skill`, and `improve_skill_parameters`.
 
+## `oracle/` — privileged-knowledge baselines, wrapped as `core.Method`s
+
+`SkillOracleMethod` (`oracle/skill_oracle_method.py`) wraps
+`environments/lightswitch/skill_oracle_policy.py`'s `SkillOraclePolicy` as a real
+`core.Method`, the first one actually wired through `PracticeLoop`, via
+`oracle/cli.py`'s `SkillOracleCli` (`--method skill-oracle`) —
+`environments/lightswitch/cli.py`'s `LightSwitchCli` itself no longer has its own
+`run()` loop at all, since `--method` (not `--env` alone) is now how anything
+actually runs. `SkillOraclePolicy` itself only knows Light Switch's own oracle logic
+(same as `ActionOraclePolicy`); the `Problem.env`-keyed dispatch that lets
+`SkillOracleMethod` stay domain-agnostic at its entrypoint lives on
+`SkillOracleMethod` itself, not on the policy it wraps — that dispatch is a *method*
+concern (which environment is currently wired), not something a single domain's own
+policy file should need to know about its siblings. `ActionOraclePolicy` isn't
+wrapped/wired the same way (its raw-action-space oracle is exercised directly by its
+own tests, not through the CLI) — only one oracle needed wiring to prove out the
+pattern.
+
 ## `practice_makes_perfect/` — reproducing the original PMP/EES paper
 
 Before this project's own novel baselines (below, still unimplemented), this subfolder
@@ -16,19 +34,16 @@ Switch — the only environment this codebase has so far. This is a pure repro o
 *reference paper's* results, not this project's own human-in-the-loop research
 contribution; see `../../../CLAUDE.md` and `../planning/README.md` for why real Fast
 Downward (not a hand-rolled substitute) is used for task planning here.
+`RandomSkillsMethod` (the first of the 8 paper approaches) hasn't landed yet —
+tracked as a stacked follow-up, along with the actual competence model, sampler
+learning, and Fast Downward planning integration.
 
 The actual online-learning loop, `PracticeLoop`, lives at the top level
 (`../../practice_loop.py`, alongside `../../cli.py`) rather than here, since it's the
-one execution harness every `core.Method` runs through — oracles included, once
-they're wrapped as `Method`s — not something specific to this paper reproduction. See
-its own docstring for the exact reset semantics, the `Problem.env`/`Problem.tasks`
-wiring a caller must set up first, and how its optional `renderer` param works.
-Not yet wired to any real `Method`: the Light Switch oracle policies
-(`environments/lightswitch/action_oracle_policy.py`/`skill_oracle_policy.py`) still
-run through their own separate loop in `LightSwitchCli.run()`, and
-`RandomSkillsMethod` (the first of the 8 paper approaches) hasn't landed yet — both
-are tracked as stacked follow-ups, along with the actual competence model, sampler
-learning, and Fast Downward planning integration.
+one execution harness every `core.Method` runs through — oracles included (see
+`oracle/` above) — not something specific to this paper reproduction. See its own
+docstring for the exact reset semantics, the `Problem.env`/`Problem.tasks` wiring a
+caller must set up first, and how its optional `renderer` param works.
 
 `core.Metrics` (`../core/README.md`'s "`Metrics` is fully concrete" section) is what
 `PracticeLoop` records evaluations into — used directly, no Light-Switch-specific

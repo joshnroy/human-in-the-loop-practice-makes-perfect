@@ -4,12 +4,21 @@ import pytest
 from hitl_pmp.core.method.types import Policy
 from hitl_pmp.environments.lightswitch.action_oracle_policy import ACTION_ORACLE_POLICY
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.skill_oracle_policy import SKILL_ORACLE_POLICY
+from hitl_pmp.environments.lightswitch.skill_oracle_policy import SkillOraclePolicy
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
+
+# Policy is a positional Callable[[State], LabeledAction] per its interface contract
+# (core/method/types.py) -- same adapter pattern as ACTION_ORACLE_POLICY itself.
+# SkillOraclePolicy.get_labeled_action is Light-Switch-only (the Problem.env
+# dispatch lives one layer up, in methods/oracle/skill_oracle_method.py's
+# SkillOracleMethod), so it's safe to call directly without wiring Problem.env.
+_SKILL_ORACLE_POLICY: Policy = lambda state: SkillOraclePolicy.get_labeled_action(  # noqa: E731
+    state=state
+)
 
 _ORACLE_POLICIES: dict[str, Policy] = {
     "action-oracle": ACTION_ORACLE_POLICY,
-    "skill-oracle": SKILL_ORACLE_POLICY,
+    "skill-oracle": _SKILL_ORACLE_POLICY,
 }
 
 

@@ -1,9 +1,5 @@
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.skill_oracle_policy import (
-    SKILL_ORACLE_POLICY,
-    SkillOraclePolicy,
-)
-from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
+from hitl_pmp.environments.lightswitch.skill_oracle_policy import SkillOraclePolicy
 
 
 def test_get_labeled_action_moves_straight_to_the_light_first() -> None:
@@ -29,25 +25,3 @@ def test_get_labeled_action_dials_exactly_to_target_once_at_the_light() -> None:
     # TurnOnLight has param_dim=1 -- the actual dlight value sent to compute_action
     # should be visible in the label, not just the skill name and objects.
     assert "params=[0.7]" in labeled.label
-
-
-def test_skill_oracle_policy_constant_adapts_get_labeled_action_to_the_policy_contract() -> None:
-    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.7)
-    labeled = SKILL_ORACLE_POLICY(state)
-    assert (
-        labeled.action.tolist() == SkillOraclePolicy.get_labeled_action(state=state).action.tolist()
-    )
-
-
-def test_solves_a_sampled_task_in_exactly_two_actions() -> None:
-    task = LightSwitchTasks.sample_train_task()
-    LightSwitchEnvironment.set_state(state=task.initial_state)
-
-    state = LightSwitchEnvironment.get_current_state()
-    assert task.goal.is_satisfied(state=state) is False
-
-    state = LightSwitchEnvironment.take_action(action=SKILL_ORACLE_POLICY(state).action)
-    assert task.goal.is_satisfied(state=state) is False
-
-    state = LightSwitchEnvironment.take_action(action=SKILL_ORACLE_POLICY(state).action)
-    assert task.goal.is_satisfied(state=state) is True
