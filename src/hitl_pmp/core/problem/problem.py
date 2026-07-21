@@ -47,6 +47,18 @@ class Problem(BaseModel, abc.ABC):
     def hard_reset(self) -> None:
         self.env.hard_reset()
 
+    def reset_to_task(self, *, task: Task) -> State:
+        """Install a task's initial state as the environment's current state, and
+        return it.
+
+        Harness-only, like hard_reset -- an agent never calls this. It exists so
+        both places that start an episode from a task (an evaluation episode, and
+        each of PracticeLoop's free periods) go through one named operation rather
+        than reaching into self.env.set_state, whose documented role is the
+        HumanOracle's privileged override."""
+        self.env.set_state(state=task.initial_state)
+        return self.env.get_current_state()
+
     def _describe_command(
         self, *, goal: Goal
     ) -> tuple[CommandStartStateDescription, CommandGoalDescription]:

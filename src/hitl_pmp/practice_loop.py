@@ -14,16 +14,22 @@ class PracticeLoop:
     an evaluation sweep over sampled test tasks) -- mirrors predicators'
     main.py:_run_pipeline. hard_reset() is called exactly once, before the very
     first evaluation, and never again -- but this does NOT mean state is reset-free
-    end to end: run_task_episode (called once per test task inside _evaluate) resets
-    the environment itself via env.set_state(state=task.initial_state), since it has
-    to start each evaluation episode from that task's own initial state. So state is
-    only continuous *within* one interaction period (a Method's own get_task_policy
-    is expected to decide internally, e.g. by checking task.goal.is_satisfied
-    against the current state on every call, when to keep pursuing the sampled
-    task's goal versus switch to self-directed practice for the rest of the period);
-    each new interaction period actually resumes from wherever the immediately
-    preceding evaluation sweep's last episode left off, not from where the
-    interaction period itself ended.
+    end to end. Every episode-like unit starts from a task's own initial state:
+    run_task_episode (once per test task inside _evaluate) and each interaction
+    period (via problem.reset_to_task on the train task just sampled) both do so,
+    matching predicators, which resets per interaction request (main.py:301-302).
+    State is therefore continuous only *within* one interaction period -- a Method's
+    own get_task_policy is expected to decide internally, e.g. by checking
+    task.goal.is_satisfied against the current state on every call, when to keep
+    pursuing the sampled task's goal versus switch to self-directed practice for
+    the rest of the period.
+
+    That per-period reset is load-bearing rather than tidiness. An evaluation
+    episode ends with the environment in a *solved* state, so a period that resumed
+    from it would begin having already achieved the goal -- on Light Switch, with
+    the robot standing at the light, skipping the whole traversal and spending
+    every step of its budget practicing the toggle. That inflates practice
+    throughput per period and makes grid_size stop affecting results at all.
 
     Domain- and Method-agnostic (any core.Problem/core.Method/core.Metrics
     triple) -- lives at the top level, alongside cli.py, since it's the one
@@ -89,7 +95,13 @@ class PracticeLoop:
         for cycle in range(num_cycles):
             task = problem.sample_train_task()
             policy = method.get_task_policy(task=task)
-            state = problem.get_current_state()
+            # Start the period at the task just sampled, rather than resuming from
+            # whatever the preceding evaluation sweep left behind. predicators does
+            # the same (main.py:301-302, `cogman.reset(env_task)` per interaction
+            # request), and it is load-bearing: an evaluation episode ends with the
+            # environment in a *solved* state, so resuming from it would hand every
+            # free period a head start it never earned.
+            state = problem.reset_to_task(task=task)
             for _ in range(max_steps_per_interaction):
                 labeled_action = policy(state)
                 state = problem.take_action(action=labeled_action.action)
