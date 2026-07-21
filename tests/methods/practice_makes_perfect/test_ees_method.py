@@ -217,3 +217,51 @@ def test_ees_learns_to_solve_light_switch_over_practice_cycles() -> None:
     curve = metrics.task_training_curve()
     assert len(curve) == 7  # initial evaluation + one per cycle
     assert curve[-1][1] > curve[0][1]
+
+
+def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_sampler_data() -> None:
+    """predicators suppresses the competence update when the epsilon-greedy random
+    branch fires. Competence has to mean "how good is this skill when the robot
+    actually tries", not "how often does a coin flip work" -- at epsilon=0.5 the
+    latter roughly halves the apparent competence of a mastered skill, corrupting
+    the plan costs and practice scores computed from it. The sampler still keeps
+    the attempt: a deliberately random parameter that failed is exactly the
+    negative example the classifier needs.
+
+    Note the epsilon branch only exists once a sampler has been *fitted* -- before
+    that there is nothing to be greedy about, so the first cycle's attempts do
+    update competence (predicators behaves the same way, using the unwrapped base
+    sampler until the first learning cycle). Hence the warm-up cycle below."""
+    env = LightSwitchEnvironment(grid_size=4)
+    # epsilon=1.0 => once fitted, every parameterized attempt takes the random branch.
+    method = EesMethod(env=env, seed=0, exploration_epsilon=1.0, sampler_max_train_iters=50)
+    tasks = LightSwitchTasks(env=env, seed=0)
+
+    def _practice(*, steps: int) -> None:
+        task = tasks.sample_train_task()
+        env.set_state(state=task.initial_state)
+        policy = method.get_practice_policy(task=task)
+        state = env.get_current_state()
+        for _ in range(steps):
+            state = env.take_action(action=policy(state).action)
+
+    _practice(steps=12)
+    method.end_cycle()  # fits the samplers, so the epsilon branch now exists
+
+    def _parameterized_competence_observations() -> int:
+        return sum(
+            method.competence_model(ground_skill=ground_skill).num_observations
+            for ground_skill in method._competence_models
+            if ground_skill.skill.param_dim > 0
+        )
+
+    competence_before = _parameterized_competence_observations()
+    sampler_before = method.sampler(skill_name="TurnOnLight", param_dim=1).num_observations
+
+    _practice(steps=12)
+
+    assert _parameterized_competence_observations() == competence_before
+    assert method.sampler(skill_name="TurnOnLight", param_dim=1).num_observations > sampler_before
+    # Param-free skills (MoveRobot) have no sampler and so no epsilon branch --
+    # their competence keeps being tracked normally.
+    assert method.total_observations() > competence_before

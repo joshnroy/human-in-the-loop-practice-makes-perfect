@@ -2,7 +2,7 @@ import math
 from typing import Any
 
 import numpy as np
-from pydantic import PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy, Rollout, SetupCommand
@@ -65,7 +65,9 @@ class EesMethod(Method):
        per period.
     3. predicators double-counts one `observe()` call per non-exploratory attempt
        (`active_sampler_learning_approach.py` calls it at both line 407 and 443);
-       that is a bug, and is not reproduced here.
+       that is a bug, and is not reproduced here. The *suppression* those same
+       lines implement -- no competence update when the epsilon-greedy random
+       branch fired -- IS reproduced; see `_SkillAttempt`.
     4. Candidate practice targets are scored against cached plans that are
        refreshed only every `replan_frequency` scoring calls -- predicators'
        own optimization (`active_sampler_explorer_replan_frequency`), and the
@@ -264,9 +266,13 @@ class EesMethod(Method):
             score = -total / len(plans)
 
         if self.use_ucb_bonus:
+            # predicators' exact form: c * sqrt(log(total_trials) / num_tries). The
+            # max(..., 1) guards only divide-by-zero / log(0) for a skill or a run
+            # with no attempts yet; with one attempt log(1) = 0, i.e. no bonus,
+            # which is predicators' behavior too.
             num_tries = max(model.num_observations, 1)
             total_trials = max(self.total_observations(), 1)
-            score += self.explore_bonus * math.sqrt(math.log(total_trials + 1) / num_tries)
+            score += self.explore_bonus * math.sqrt(math.log(total_trials) / num_tries)
         return score
 
     def choose_practice_target(self) -> list[GroundSkill]:
@@ -360,10 +366,10 @@ class EesMethod(Method):
 
     def execute_ground_skill(
         self, *, ground_skill: GroundSkill, state: State, explore: bool
-    ) -> tuple[LabeledAction, tuple[str, list[float], np.ndarray] | None]:
+    ) -> tuple[LabeledAction, "_SkillAttempt | None"]:
         """Returns the action plus, when this skill has continuous parameters and
-        we're practicing, the (skill_name, features, params) triple to label with
-        the outcome once it's observed."""
+        we're practicing, the record to label with the outcome once it's
+        observed."""
         skill = ground_skill.skill
         if skill.param_dim == 0:
             params: np.ndarray = np.zeros(0)
@@ -375,10 +381,19 @@ class EesMethod(Method):
                 for _ in range(self.num_candidates)
             ]
             sampler = self.sampler(skill_name=skill.name, param_dim=skill.param_dim)
-            params, _was_random = sampler.sample(
+            params, was_random = sampler.sample(
                 features=features, candidates=candidates, explore=explore
             )
-            record = (skill.name, features, params) if explore else None
+            record = (
+                _SkillAttempt(
+                    skill_name=skill.name,
+                    features=features,
+                    params=params,
+                    was_random_exploration=was_random,
+                )
+                if explore
+                else None
+            )
 
         action = LightSwitchSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state
@@ -422,6 +437,28 @@ class EesMethod(Method):
         )
 
 
+class _SkillAttempt(BaseModel):
+    """One executed skill whose outcome isn't known yet: what the sampler was
+    asked, what it chose, and whether that choice came from the epsilon-greedy
+    *random* branch rather than the learned argmax.
+
+    That last flag matters: predicators suppresses the *competence* update for
+    randomly-explored attempts (`active_sampler_learning_approach.py` lines
+    442-443) while still keeping them as sampler training data. Without it,
+    competence measures "how often does a coin flip work" rather than "how good
+    is this skill when the robot actually tries" -- at the paper's epsilon=0.5
+    that roughly halves the apparent competence of a skill the robot has in fact
+    mastered, which then corrupts both the plan costs and the practice-selection
+    scores computed from it."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    skill_name: str
+    features: list[float]
+    params: np.ndarray
+    was_random_exploration: bool
+
+
 class _EesEpisode:
     """Per-episode mutable scratch for one EES rollout: the remaining plan, and the
     skill whose outcome hasn't been observed yet.
@@ -437,7 +474,7 @@ class _EesEpisode:
         self._practicing = practicing
         self._plan: list[GroundSkill] = []
         self._pending: GroundSkill | None = None
-        self._pending_sampler_record: tuple[str, list[float], np.ndarray] | None = None
+        self._pending_sampler_record: _SkillAttempt | None = None
         self._goal_phase_done = False
 
     def step(self, *, state: State) -> LabeledAction:
@@ -465,11 +502,19 @@ class _EesEpisode:
             return
         if self._practicing:
             success = self._pending.add_effects <= true_atoms
-            self._method.observe_outcome(ground_skill=self._pending, success=success)
-            if self._pending_sampler_record is not None:
-                skill_name, features, params = self._pending_sampler_record
+            attempt = self._pending_sampler_record
+            # Competence is skipped for epsilon-greedy random attempts (see
+            # _SkillAttempt) but sampler data is kept regardless -- a deliberately
+            # random parameter that failed is exactly the negative example the
+            # classifier needs.
+            if attempt is None or not attempt.was_random_exploration:
+                self._method.observe_outcome(ground_skill=self._pending, success=success)
+            if attempt is not None:
                 self._method.observe_sampler_outcome(
-                    skill_name=skill_name, features=features, params=params, success=success
+                    skill_name=attempt.skill_name,
+                    features=attempt.features,
+                    params=attempt.params,
+                    success=success,
                 )
         self._pending = None
         self._pending_sampler_record = None
