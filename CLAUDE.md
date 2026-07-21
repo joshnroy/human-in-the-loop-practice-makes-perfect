@@ -179,7 +179,7 @@ happened — it returns nothing; querying cost beforehand is
   directly in raw action space — declares `Skill` `ClassVar`s plus
   `sample_params`/`compute_action` static methods; see `core/README.md`'s
   `Skill`/`GroundSkill` section and `environments/lightswitch/skills.py`).
-- `human_oracles/` — concrete `HumanOracle` implementations, the v0 (unconditional) →
+- `humans/` — concrete `HumanOracle` implementations, the v0 (unconditional) →
   v3 (natural-language, capability-aware) axis from the design doc. Domain-agnostic:
   a `HumanOracle` knows nothing about any specific `Environment`'s dynamics.
 - `methods/` — concrete `Method`/baseline implementations. `practice_makes_perfect/`

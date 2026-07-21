@@ -1,4 +1,4 @@
-# human_oracles
+# humans
 
 Concrete implementations of `core.HumanOracle`, the versioned human-cost-model axis from
 the design doc. A `HumanOracle` models what it costs to get a human (or an oracle
