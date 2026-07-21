@@ -98,6 +98,12 @@ class EesMethod(Method):
     # Beta(10, 1), the paper's stated initial-cycle prior.
     prior_alpha: float = 10.0
     prior_beta: float = 1.0
+
+    # Not a hyperparameter -- an ablation switch that restores predicators' own
+    # double-`observe()` bug (see deviation 3 above), so its cost can be measured
+    # rather than argued about. The paper's published curve contains the bug, so
+    # this is the setting that makes our numbers directly comparable to it.
+    reproduce_predicators_double_observe: bool = False
     planning_timeout: float = 10.0
     sampler_max_train_iters: int = 1000
 
@@ -160,8 +166,30 @@ class EesMethod(Method):
             )
         return self._competence_models[ground_skill]
 
-    def observe_outcome(self, *, ground_skill: GroundSkill, success: bool) -> None:
-        self.competence_model(ground_skill=ground_skill).observe(success=success)
+    def observe_outcome(
+        self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
+    ) -> None:
+        """Records one practice outcome against a skill's competence model.
+
+        An epsilon-greedy *random* attempt is not recorded: at the paper's
+        epsilon = 0.5 half of all attempts are coin flips by construction, so
+        counting them would make competence measure how often a coin flip works
+        rather than how good the skill is when the robot actually tries. The
+        sampler's own training data keeps those attempts regardless -- a
+        deliberately random parameter that failed is exactly the negative example
+        the classifier needs.
+
+        `reproduce_predicators_double_observe` restores predicators' literal
+        control flow instead; see that field for why the flag exists.
+        """
+        model = self.competence_model(ground_skill=ground_skill)
+        if self.reproduce_predicators_double_observe:
+            model.observe(success=success)  # active_sampler_explorer.py:407
+            if not was_random_exploration:  # :442-443
+                model.observe(success=success)
+            return
+        if not was_random_exploration:
+            model.observe(success=success)
 
     def total_observations(self) -> int:
         return sum(model.num_observations for model in self._competence_models.values())
@@ -510,12 +538,13 @@ class _EesEpisode:
         if self._practicing:
             success = self._pending.add_effects <= true_atoms
             attempt = self._pending_sampler_record
-            # Competence is skipped for epsilon-greedy random attempts (see
-            # _SkillAttempt) but sampler data is kept regardless -- a deliberately
-            # random parameter that failed is exactly the negative example the
-            # classifier needs.
-            if attempt is None or not attempt.was_random_exploration:
-                self._method.observe_outcome(ground_skill=self._pending, success=success)
+            # observe_outcome() owns what an epsilon-greedy random attempt does to
+            # competence; sampler data below is kept either way.
+            self._method.observe_outcome(
+                ground_skill=self._pending,
+                success=success,
+                was_random_exploration=attempt is not None and attempt.was_random_exploration,
+            )
             if attempt is not None:
                 self._method.observe_sampler_outcome(
                     skill_name=attempt.skill_name,

@@ -412,3 +412,57 @@ def test_evaluation_still_degrades_to_a_no_op_rather_than_ending_the_episode() -
 
     labeled = method.get_task_policy(task=task)(env.get_current_state())
     assert labeled.label.startswith("no-op")
+
+
+def test_random_exploration_attempts_do_not_touch_competence_by_default() -> None:
+    """The core suppression this port implements: at the paper's epsilon = 0.5,
+    half of all practice attempts are coin flips by construction, so counting them
+    would make "competence" measure how often a coin flip works rather than how good
+    the skill is when the robot actually tries."""
+    method, env = _build()
+    skill = _turn_on_light(env=env)
+    for _ in range(10):
+        method.observe_outcome(ground_skill=skill, success=False, was_random_exploration=True)
+    assert method.competence_model(ground_skill=skill).num_observations == 0
+
+
+def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
+    """predicators calls observe() unconditionally (active_sampler_explorer.py:407)
+    and then again under `if not exploration_indicator` (:442-443), so a greedy
+    attempt lands twice and a random one lands once -- the suppression its own
+    comment describes never actually takes effect. The flag exists to measure what
+    that bug costs, since the paper's published curve contains it."""
+    method, env = _build(seed=1)
+    skill = _turn_on_light(env=env)
+
+    method.reproduce_predicators_double_observe = True
+    method.observe_outcome(ground_skill=skill, success=True, was_random_exploration=False)
+    assert method.competence_model(ground_skill=skill).num_observations == 2
+
+    method.observe_outcome(ground_skill=skill, success=True, was_random_exploration=True)
+    assert method.competence_model(ground_skill=skill).num_observations == 3
+
+
+def test_double_observe_flag_defaults_off_so_the_headline_result_is_the_fixed_one() -> None:
+    method, _ = _build()
+    assert method.reproduce_predicators_double_observe is False
+
+
+def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
+    """Why the bug slows learning: with random attempts counted at half the weight
+    of greedy ones, a skill the robot has actually mastered still reads as mediocre
+    (its random attempts keep failing), so `skip_perfect` never fires and EES keeps
+    spending transitions re-practicing it."""
+    buggy, env = _build()
+    buggy.reproduce_predicators_double_observe = True
+    fixed, _ = _build()
+    skill = _turn_on_light(env=env)
+    # A mastered skill at epsilon = 0.5: every greedy attempt succeeds, every
+    # random one fails (the toggle tolerance covers ~10% of the parameter range).
+    for _ in range(20):
+        for method in (buggy, fixed):
+            method.observe_outcome(ground_skill=skill, success=True, was_random_exploration=False)
+            method.observe_outcome(ground_skill=skill, success=False, was_random_exploration=True)
+
+    assert fixed.measured_success_rate(ground_skill=skill) == 1.0
+    assert buggy.measured_success_rate(ground_skill=skill) < 0.75

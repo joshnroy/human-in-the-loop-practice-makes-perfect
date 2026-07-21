@@ -58,6 +58,13 @@ class EesCli:
             "100000; the default here is far lower so a run finishes in minutes.",
         )
         parser.add_argument(
+            "--reproduce-predicators-double-observe",
+            action="store_true",
+            help="Ablation: restore predicators' double-observe() bug, which counts "
+            "a greedy practice outcome twice and a random one once. The paper's "
+            "published curve contains it, so this is the comparable setting.",
+        )
+        parser.add_argument(
             "--planning-timeout",
             type=float,
             default=EesMethod.model_fields["planning_timeout"].default,
@@ -74,6 +81,7 @@ class EesCli:
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 planning_timeout=args.planning_timeout,
+                reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
