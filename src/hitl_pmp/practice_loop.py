@@ -26,10 +26,20 @@ class PracticeLoop:
     interaction period itself ended.
 
     Domain- and Method-agnostic (any core.Problem/core.Method/core.Metrics
-    triple), though scoped under methods/practice_makes_perfect/ for now
-    since its cycle/interaction-period structure is shaped by this specific
-    reproduction's needs. A static-method container, never instantiated, same
-    as every other business-logic class in this project.
+    triple) -- lives at the top level, alongside cli.py, since it's the one
+    execution harness every core.Method runs through, not something specific
+    to the "Practice Makes Perfect" paper reproduction. A non-learning Method
+    (e.g. a privileged oracle) is just num_cycles=0 through this same loop --
+    mirrors predicators' own main.py:_run_pipeline, whose only structural
+    fork for a non-learning approach is skipping the online-learning cycles
+    entirely and running one evaluation sweep; there's no separate pipeline
+    anywhere in predicators either, and no is_learning_based-style branch
+    needed here -- a Method that doesn't learn just gets called with
+    num_cycles=0 by its caller, or has no-op on_cycle_end/
+    improve_skill_parameters if it does use cycles for some other reason
+    (e.g. re-evaluating checkpoints without retraining). A static-method
+    container, never instantiated, same as every other business-logic class
+    in this project.
 
     Caller must wire Problem.env/Problem.tasks (ClassVar assignment on the base
     Problem class, e.g. `Problem.env = LightSwitchEnvironment; Problem.tasks =

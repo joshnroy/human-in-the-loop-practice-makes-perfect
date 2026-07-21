@@ -13,7 +13,7 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.core.renderer.renderer import Renderer
-from hitl_pmp.methods.practice_makes_perfect.practice_loop import PracticeLoop
+from hitl_pmp.practice_loop import PracticeLoop
 
 _BLOCK = Type(name="block", feature_names=("x",))
 _OBJ = Object(name="thing", type=_BLOCK)
