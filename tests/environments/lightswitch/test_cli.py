@@ -43,7 +43,7 @@ def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[s
     args = _build_parser().parse_args(["--num-test-tasks", "5"])
     LightSwitchCli.run_method(
         args=args,
-        method=SkillOracleMethod,
+        method_factory=lambda env: SkillOracleMethod(env=env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -54,7 +54,7 @@ def test_run_method_applies_seed_deterministically() -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--seed", "99"])
     LightSwitchCli.run_method(
         args=args,
-        method=SkillOracleMethod,
+        method_factory=lambda env: SkillOracleMethod(env=env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -66,7 +66,7 @@ def test_run_method_applies_seed_deterministically() -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--seed", "99"])
     LightSwitchCli.run_method(
         args=args,
-        method=SkillOracleMethod,
+        method_factory=lambda env: SkillOracleMethod(env=env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -84,7 +84,7 @@ def test_run_method_respects_a_smaller_grid_size_override(
     args = _build_parser().parse_args(["--num-test-tasks", "4", "--grid-size", "3"])
     LightSwitchCli.run_method(
         args=args,
-        method=SkillOracleMethod,
+        method_factory=lambda env: SkillOracleMethod(env=env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -100,7 +100,7 @@ def test_run_method_applies_light_on_tolerance_override() -> None:
         args = _build_parser().parse_args(["--num-test-tasks", "1", "--light-on-tolerance", "0.5"])
         LightSwitchCli.run_method(
             args=args,
-            method=SkillOracleMethod,
+            method_factory=lambda env: SkillOracleMethod(env=env),
             num_cycles=0,
             max_steps_per_interaction=0,
         )
@@ -113,7 +113,7 @@ def test_run_method_without_output_dir_writes_no_files(*, tmp_path: Path) -> Non
     args = _build_parser().parse_args(["--num-test-tasks", "2"])
     LightSwitchCli.run_method(
         args=args,
-        method=SkillOracleMethod,
+        method_factory=lambda env: SkillOracleMethod(env=env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -124,7 +124,7 @@ def test_run_method_with_output_dir_writes_a_video_file(*, tmp_path: Path) -> No
     args = _build_parser().parse_args(["--num-test-tasks", "2", "--output-dir", str(tmp_path)])
     LightSwitchCli.run_method(
         args=args,
-        method=SkillOracleMethod,
+        method_factory=lambda env: SkillOracleMethod(env=env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -138,7 +138,7 @@ def test_run_method_with_output_dir_creates_missing_directories(*, tmp_path: Pat
     args = _build_parser().parse_args(["--num-test-tasks", "1", "--output-dir", str(output_dir)])
     LightSwitchCli.run_method(
         args=args,
-        method=SkillOracleMethod,
+        method_factory=lambda env: SkillOracleMethod(env=env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )

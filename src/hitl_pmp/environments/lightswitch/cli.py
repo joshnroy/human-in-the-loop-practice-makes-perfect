@@ -1,4 +1,5 @@
 import argparse
+from collections.abc import Callable
 from typing import ClassVar
 
 from hitl_pmp.core.method.method import Method
@@ -88,23 +89,27 @@ class LightSwitchCli:
     def run_method(
         *,
         args: argparse.Namespace,
-        method: type[Method],
+        method_factory: Callable[[LightSwitchEnvironment], Method],
         num_cycles: int,
         max_steps_per_interaction: int,
     ) -> None:
         """Shared by every Light-Switch method-CLI (methods/oracle/cli.py's
-        SkillOracleCli, and eventually a Random Skills one): this domain's
-        composition root -- builds the actual LightSwitchEnvironment/
-        LightSwitchTasks/LightSwitchProblem instances from args, constructs
-        `method` (a Method subclass whose only required field is env, matching
-        every Method built so far -- a future Method needing more of its own
-        constructor arguments would widen this, not something to build ahead of
-        need) with that same env instance, then delegates the domain-agnostic
-        rest (driving method through PracticeLoop, printing, video-writing) to
-        method_runner.py's MethodRunner. num_cycles/max_steps_per_interaction
-        come from the *caller* (SkillOracleCli passes 0/0 since an oracle never
-        practices) rather than being hardcoded here, since that's a property of
-        which method is being driven, not of Light Switch."""
+        SkillOracleCli, methods/practice_makes_perfect/cli.py's RandomSkillsCli):
+        this domain's composition root -- builds the actual LightSwitchEnvironment/
+        LightSwitchTasks/LightSwitchProblem instances from args, calls
+        `method_factory(env)` to build the Method instance, then delegates the
+        domain-agnostic rest (driving method through PracticeLoop, printing,
+        video-writing) to method_runner.py's MethodRunner. method_factory (not a
+        bare `method: type[Method]` constructed here as `method(env=env)`) exists
+        because not every Method's constructor takes only env -- RandomSkillsMethod
+        also needs its own seed, so its own CLI passes
+        `lambda env: RandomSkillsMethod(env=env, seed=args.seed)` instead of the
+        bare class; SkillOracleCli, whose Method genuinely needs nothing beyond
+        env, just passes `lambda env: SkillOracleMethod(env=env)`.
+        num_cycles/max_steps_per_interaction come from the *caller* (SkillOracleCli/
+        RandomSkillsCli both pass 0/0 since neither practices) rather than being
+        hardcoded here, since that's a property of which method is being driven,
+        not of Light Switch."""
         LightSwitchCli.apply_config(args=args)
         env = LightSwitchEnvironment(
             grid_size=args.grid_size, canonical_light_target=args.canonical_light_target
@@ -123,7 +128,7 @@ class LightSwitchCli:
         )
         MethodRunner.run(
             args=args,
-            method=method(env=env),
+            method=method_factory(env),
             problem=problem,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,

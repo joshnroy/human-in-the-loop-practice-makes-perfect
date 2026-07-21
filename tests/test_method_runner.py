@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
 from hitl_pmp.environments.lightswitch.renderer import LightSwitchRenderer
@@ -64,6 +65,20 @@ def test_run_without_output_dir_writes_no_files(*, tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
+def test_run_without_output_dir_writes_no_stats_json(*, tmp_path: Path) -> None:
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(output_dir=None),
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    assert not (tmp_path / "stats.json").exists()
+
+
 def test_run_with_output_dir_and_renderer_writes_a_video_file(*, tmp_path: Path) -> None:
     problem = _build_problem()
     MethodRunner.run(
@@ -78,6 +93,26 @@ def test_run_with_output_dir_and_renderer_writes_a_video_file(*, tmp_path: Path)
     video_path = tmp_path / "episode.mp4"
     assert video_path.exists()
     assert video_path.stat().st_size > 0
+
+
+def test_run_with_output_dir_writes_stats_json_that_round_trips(*, tmp_path: Path) -> None:
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(num_test_tasks=3, output_dir=tmp_path),
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        renderer=LightSwitchRenderer,
+        render_fps=2,
+    )
+    stats_path = tmp_path / "stats.json"
+    assert stats_path.exists()
+
+    loaded = Metrics.model_validate_json(stats_path.read_text())
+    assert loaded == metrics
+    assert loaded.evaluations == metrics.evaluations
+    assert loaded.task_name == metrics.task_name
 
 
 def test_run_does_not_leak_evaluations_between_calls() -> None:

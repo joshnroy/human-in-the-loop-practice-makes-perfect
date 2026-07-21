@@ -25,7 +25,7 @@ class SkillOracleCli:
     def run(*, args: argparse.Namespace) -> None:
         LightSwitchCli.run_method(
             args=args,
-            method=SkillOracleMethod,
+            method_factory=lambda env: SkillOracleMethod(env=env),
             num_cycles=0,  # an oracle never practices/learns -- one evaluation sweep only
             max_steps_per_interaction=0,  # unused: never reached with num_cycles=0
         )

@@ -24,6 +24,7 @@ from typing import Protocol
 
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
+from hitl_pmp.methods.practice_makes_perfect.cli import RandomSkillsCli
 
 ENVIRONMENTS = {"lightswitch": LightSwitchCli}
 
@@ -45,6 +46,7 @@ class MethodCli(Protocol):
 
 METHODS: dict[str, type[MethodCli]] = {
     "skill-oracle": SkillOracleCli,
+    "random-skills": RandomSkillsCli,
 }
 
 
@@ -97,8 +99,9 @@ class Cli:
             "--output-dir",
             type=Path,
             default=None,
-            help="If set, additionally render one demo episode to <output-dir>/"
-            "episode.mp4. Disabled (nothing written) if omitted.",
+            help="If set, additionally write <output-dir>/stats.json (the run's "
+            "Metrics) and render one demo episode to <output-dir>/episode.mp4. "
+            "Disabled (nothing written) if omitted.",
         )
 
     @staticmethod
