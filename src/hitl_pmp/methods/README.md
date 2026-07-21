@@ -32,7 +32,7 @@ pattern.
 ## `practice_makes_perfect/` — reproducing the original PMP/EES paper
 
 Before this project's own novel baselines (below, still unimplemented), this subfolder
-will port the original "Practice Makes Perfect" paper's own method (EES —
+ports the original "Practice Makes Perfect" paper's own method (EES —
 Estimate/Extrapolate/Situate) and every baseline it compares against in its own
 evaluation (Fail Focus, Competence Gradient, Skill Diversity, Task-Relevant, Task
 Repeat, Random Skills, MAPLE-Q), faithfully, as a reproduction exercise on Light
@@ -40,9 +40,23 @@ Switch — the only environment this codebase has so far. This is a pure repro o
 *reference paper's* results, not this project's own human-in-the-loop research
 contribution; see `../../../CLAUDE.md` and `../planning/README.md` for why real Fast
 Downward (not a hand-rolled substitute) is used for task planning here.
-`RandomSkillsMethod` (the first of the 8 paper approaches) hasn't landed yet —
-tracked as a stacked follow-up, along with the actual competence model, sampler
-learning, and Fast Downward planning integration.
+
+`RandomSkillsMethod` (`random_skills_method.py`, the first of the 8 paper approaches
+to land) uniformly samples among the currently-applicable ground skills each step
+(via `planning.grounding.SkillGrounder`) and executes one — no planning, no
+competence model, no sampler learning, matching predicators' own
+`RandomOptionsApproach`. Same split as `oracle/`:
+`environments/lightswitch/random_skills_policy.py`'s `RandomSkillsPolicy` holds the
+actual Light-Switch-specific grounding/sampling logic; `RandomSkillsMethod` itself
+just dispatches on `isinstance(self.env, LightSwitchEnvironment)` and adds the one
+thing no other `Method` needed yet — its own `seed`/RNG stream, since skill/param
+sampling needs a source of randomness independent of task sampling. Wired in via
+`cli.py`'s `RandomSkillsCli` (`--method random-skills`); `analysis/
+practice_makes_perfect/random_skills.py` reads its `--output-dir` `stats.json`
+output back in for reporting (never drives it directly — see the root `analysis/`
+convention in `../../../CLAUDE.md`). The actual competence model, sampler learning,
+and Fast Downward planning integration the remaining baselines and EES itself need
+are still tracked as stacked follow-ups.
 
 The actual online-learning loop, `PracticeLoop`, lives at the top level
 (`../../practice_loop.py`, alongside `../../cli.py`) rather than here, since it's the
