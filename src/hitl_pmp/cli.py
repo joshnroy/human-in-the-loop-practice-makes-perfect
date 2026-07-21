@@ -100,8 +100,17 @@ class Cli:
             type=Path,
             default=None,
             help="If set, additionally write <output-dir>/stats.json (the run's "
-            "Metrics) and render one demo episode to <output-dir>/episode.mp4. "
+            "Metrics) and render demo episodes to <output-dir>/episode*.mp4. "
             "Disabled (nothing written) if omitted.",
+        )
+        parser.add_argument(
+            "--num-render-checkpoints",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=1,
+            help="How many evaluation sweeps to record, spread evenly from before "
+            "any practice through the end of training. 1 (default) records only "
+            "the finished policy; a larger value produces a visible progression. "
+            "Only meaningful with --output-dir and a learning --method.",
         )
 
     @staticmethod

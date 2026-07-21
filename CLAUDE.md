@@ -158,7 +158,10 @@ execution harness every `Method` runs through regardless of whether it learns (s
 the `core/` section above for why `Metrics`, what it records evaluations into, is
 fully concrete). All flags are named, no positional arguments. `--output-dir DIR`
 (global), if the environment has a `renderer.py`, additionally writes a demo
-`episode.mp4`. Writing run statistics (e.g. a `stats.json` built from `Metrics`) to
+`episode.mp4`. `--num-render-checkpoints N` (global) instead records N evaluation
+sweeps spread evenly from before any practice through the end of training, as
+`episode_<transitions>.mp4` -- a visible progression for a `Method` that learns,
+rather than one clip of the finished policy. Writing run statistics (e.g. a `stats.json` built from `Metrics`) to
 `--output-dir` is a separate, not-yet-built concern.
 
 **Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc

@@ -273,7 +273,7 @@ def test_run_without_a_renderer_returns_no_frames() -> None:
         max_steps_per_interaction=1,
         num_test_tasks=2,
     )
-    assert frames == []
+    assert frames == {}
     assert problem.renderer_calls == [False] * (2 * 3)  # 3 evaluations x 2 test tasks
 
 
@@ -314,3 +314,66 @@ def test_run_with_a_renderer_renders_only_the_last_evaluation_sweeps_first_task(
         True,
         False,  # after cycle 2 (the last sweep)
     ]
+
+
+def test_render_sweep_indices_defaults_to_the_final_sweep_only() -> None:
+    """Backwards-compatible default: one clip of the finished policy."""
+    assert PracticeLoop.render_sweep_indices(num_cycles=10, num_render_checkpoints=1) == frozenset({
+        10
+    })
+
+
+def test_render_sweep_indices_spreads_evenly_across_training() -> None:
+    """Five clips over ten cycles, spanning untrained (sweep 0, before any
+    practice) through fully trained (sweep 10) -- so a set of them reads as a
+    progression rather than five samples of the same finished policy."""
+    assert PracticeLoop.render_sweep_indices(num_cycles=10, num_render_checkpoints=5) == frozenset({
+        0,
+        2,
+        5,
+        8,
+        10,
+    })
+
+
+def test_render_sweep_indices_never_exceeds_the_number_of_sweeps() -> None:
+    """Asking for more checkpoints than there are sweeps yields every sweep, not
+    duplicates or an index past the end."""
+    assert PracticeLoop.render_sweep_indices(num_cycles=2, num_render_checkpoints=9) == frozenset({
+        0,
+        1,
+        2,
+    })
+
+
+def test_run_returns_frames_keyed_by_transitions_for_each_checkpoint() -> None:
+    problem, method, metrics = _build()
+    frames_by_transitions = PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=4,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        renderer=_FakeRenderer,
+        num_render_checkpoints=3,
+    )
+    # Sweeps 0, 2, 4 -> 0, 4, 8 transitions at 2 steps per cycle.
+    assert sorted(frames_by_transitions) == [0, 4, 8]
+    assert all(frames for frames in frames_by_transitions.values())
+
+
+def test_run_without_a_renderer_returns_nothing_even_with_checkpoints_requested() -> None:
+    problem, method, metrics = _build()
+    assert (
+        PracticeLoop.run(
+            problem=problem,
+            method=method,
+            metrics=metrics,
+            num_cycles=4,
+            max_steps_per_interaction=1,
+            num_test_tasks=1,
+            num_render_checkpoints=5,
+        )
+        == {}
+    )
