@@ -18,7 +18,7 @@ Each domain subfolder is expected to contain:
   `sample_test_task` (sampling initial states, goals, train/test splits) specific to
   this domain.
 - `problem.py` — a concrete subclass of `core.Problem` that sets `env`/`human`/`tasks`
-  to this domain's `Environment`, a chosen `HumanOracle` from `../human_oracles/`, and
+  to this domain's `Environment`, a chosen `HumanOracle` from `../humans/`, and
   this domain's `Tasks`, and implements `run_task_episode` (the one method `Problem`
   doesn't get for free as a passthrough). Its optional `renderer: type[core.Renderer]
   | None = None` param makes every episode optionally recordable through this same

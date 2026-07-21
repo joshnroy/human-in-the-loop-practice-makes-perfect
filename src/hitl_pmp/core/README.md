@@ -359,5 +359,5 @@ graph TD
 ## Concrete implementations
 
 Live in sibling folders: [`../environments/`](../environments/),
-[`../human_oracles/`](../human_oracles/), [`../methods/`](../methods/),
+[`../humans/`](../humans/), [`../methods/`](../methods/),
 [`../adapters/`](../adapters/), [`../planning/`](../planning/).
