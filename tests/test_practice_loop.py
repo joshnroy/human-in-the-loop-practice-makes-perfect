@@ -52,7 +52,11 @@ class _FakeTasks(Tasks):
 
     def sample_train_task(self) -> Task:
         self.train_task_count += 1
-        return Task(initial_state=_state(x=0.0), goal=Goal(atoms=frozenset()))
+        # Deliberately distinguishable from sample_test_task's x=0.0: if both
+        # returned the same value, a practice period that (incorrectly) resumed
+        # from the preceding evaluation sweep's state would be indistinguishable
+        # from one that correctly starts at its own train task's initial state.
+        return Task(initial_state=_state(x=100.0), goal=Goal(atoms=frozenset()))
 
     def sample_test_task(self) -> Task:
         self.test_task_count += 1
@@ -221,18 +225,22 @@ def test_run_stays_reset_free_within_one_interaction_period() -> None:
         max_steps_per_interaction=3,
         num_test_tasks=1,
     )
-    # Steps within the one interaction period run: x=0 -> 1 -> 2 -> 3, so
-    # pre_action_xs (recorded before each increment) for that period is [0, 1, 2].
-    assert problem.env.pre_action_xs[:3] == [0.0, 1.0, 2.0]
+    # The period starts at its train task's x=100, then accumulates: 100 -> 101 ->
+    # 102 -> 103, so pre_action_xs (recorded before each increment) is [100, 101, 102].
+    assert problem.env.pre_action_xs[:3] == [100.0, 101.0, 102.0]
 
 
-def test_run_interaction_period_resumes_from_the_prior_evaluations_reset_state() -> None:
-    """NOT reset-free end to end: an evaluation sweep resets env state via
-    run_task_episode's own env.set_state(state=task.initial_state) call, so
-    cycle N+1's interaction period does not resume from wherever cycle N's own
-    training steps left off -- it resumes from wherever the intervening
-    evaluation sweep's last episode reset state to (here, always
-    task.initial_state's x=0.0, since _FakeTasks always returns x=0.0)."""
+def test_run_starts_each_interaction_period_from_its_own_train_tasks_initial_state() -> None:
+    """Every free period begins at the train task the loop just sampled -- not at
+    whatever state the preceding evaluation sweep happened to leave behind, and not
+    where the previous period's own steps left off.
+
+    This matches predicators, which resets per interaction request (main.py:301-302:
+    `env_task = env.get_train_tasks()[request.train_task_idx]` then
+    `cogman.reset(env_task)`), and getting it wrong is not cosmetic: an evaluation
+    episode ends in a *solved* state, so on Light Switch a resuming period would
+    start with the robot already at the light, skip the traversal entirely, and
+    spend its whole budget practicing the toggle."""
     problem, method, metrics = _build()
     PracticeLoop.run(
         problem=problem,
@@ -242,12 +250,11 @@ def test_run_interaction_period_resumes_from_the_prior_evaluations_reset_state()
         max_steps_per_interaction=3,
         num_test_tasks=1,
     )
-    # If training resumed from where the previous period's own steps left off
-    # (genuinely reset-free end to end), cycle 2's period would start at x=3.0.
-    # Instead it restarts at x=0.0, because the evaluation sweep in between reset
-    # it via run_task_episode.
+    # Train tasks start at x=100, test tasks at x=0. Resuming from the evaluation
+    # sweep would show 0.0; resuming from the previous period's own last step would
+    # show 103.0 for the second period.
     first_step_of_each_period = problem.env.pre_action_xs[0::3]
-    assert first_step_of_each_period == [0.0, 0.0]
+    assert first_step_of_each_period == [100.0, 100.0]
 
 
 def test_run_without_a_num_cycles_zero_still_runs_the_initial_evaluation() -> None:

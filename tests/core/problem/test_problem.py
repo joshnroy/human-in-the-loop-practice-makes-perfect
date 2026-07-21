@@ -100,6 +100,22 @@ def test_hard_reset_delegates_to_env() -> None:
     assert problem.get_current_state()[_OBJ].tolist() == [0.0]
 
 
+def test_reset_to_task_installs_the_tasks_initial_state_and_returns_it() -> None:
+    """The one named way to start an episode-like unit from a task -- used by both
+    an evaluation episode and each of PracticeLoop's free periods, so neither has
+    to reach into env.set_state, whose documented role is the HumanOracle's
+    privileged override."""
+    problem = _build_problem()
+    problem.take_action(action=np.array([5.0]))
+    assert problem.get_current_state()[_OBJ].tolist() == [5.0]
+
+    task = Task(initial_state=State(data={_OBJ: np.array([42.0])}), goal=Goal(atoms=frozenset()))
+    returned = problem.reset_to_task(task=task)
+
+    assert returned[_OBJ].tolist() == [42.0]
+    assert problem.get_current_state()[_OBJ].tolist() == [42.0]
+
+
 def test_sample_train_and_test_task_delegate_to_tasks() -> None:
     problem = _build_problem()
     assert problem.sample_train_task().initial_state[_OBJ].tolist() == [0.0]

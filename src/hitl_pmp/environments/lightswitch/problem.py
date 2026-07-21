@@ -30,8 +30,7 @@ class LightSwitchProblem(Problem):
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
     ) -> tuple[bool, list[np.ndarray]]:
-        self.env.set_state(state=task.initial_state)
-        state = self.env.get_current_state()
+        state = self.reset_to_task(task=task)
         frames = [renderer.render_frame(state=state, env=self.env)] if renderer is not None else []
         for _ in range(self.max_episode_steps()):
             if task.goal.is_satisfied(state=state):
