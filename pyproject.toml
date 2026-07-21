@@ -13,6 +13,7 @@ dependencies = [
     "matplotlib",
     "imageio[ffmpeg]",
     "imageio-ffmpeg",
+    "torch",
 ]
 
 [project.optional-dependencies]

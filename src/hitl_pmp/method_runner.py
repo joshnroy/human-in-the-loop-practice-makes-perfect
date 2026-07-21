@@ -56,7 +56,11 @@ class MethodRunner:
             renderer=renderer,
             num_render_checkpoints=num_render_checkpoints,
         )
-        _num_online_transitions, num_solved, num_total = metrics.evaluations[0]
+        # The LAST evaluation, not the first: with num_cycles=0 (every non-learning
+        # baseline) there is exactly one sweep so the two coincide, but for a
+        # learning Method the first sweep runs *before* any practice, so reporting
+        # it would always print the untrained score and hide the whole result.
+        _num_online_transitions, num_solved, num_total = metrics.evaluations[-1]
         print(f"success rate: {num_solved}/{num_total} ({num_solved / num_total:.0%})")
 
         if args.output_dir is not None:

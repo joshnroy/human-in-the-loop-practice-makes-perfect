@@ -54,9 +54,42 @@ sampling needs a source of randomness independent of task sampling. Wired in via
 `cli.py`'s `RandomSkillsCli` (`--method random-skills`); `analysis/
 practice_makes_perfect/random_skills.py` reads its `--output-dir` `stats.json`
 output back in for reporting (never drives it directly — see the root `analysis/`
-convention in `../../../CLAUDE.md`). The actual competence model, sampler learning,
-and Fast Downward planning integration the remaining baselines and EES itself need
-are still tracked as stacked follow-ups.
+convention in `../../../CLAUDE.md`).
+
+`EesMethod` (`ees_method.py`) is the paper's **own** method — the reproduction's
+centrepiece — ported from predicators' `active_sampler_learning` approach plus its
+`active_sampler` explorer under `active_sampler_explore_task_strategy=planning_progress`
+(the exact combination `scripts/configs/active_sampler_learning.yaml` runs). Its three
+named steps map onto three pieces here:
+
+- **Estimate** — `competence_models.py`'s `OptimisticSkillCompetenceModel`, one per
+  *ground* skill ever executed, updated with whether that skill's own `add_effects`
+  actually held afterward. Beta-Bernoulli posterior mean under the paper's stated
+  Beta(10, 1) prior.
+- **Extrapolate** — that model's `predict_competence(num_additional_data=1)`: how
+  competent would this skill be after another cycle's practice?
+- **Situate** — the extrapolated competence is substituted into the cost dict and the
+  *seen tasks'* cached plans are re-priced; the skill whose hypothetical improvement
+  most reduces the cost of plans the robot actually needs wins, and EES then plans to
+  that skill's preconditions in order to practice it somewhere it's executable.
+
+Plan cost is `sum(-log(competence))`, so minimizing it maximizes `prod(competence)` —
+the paper's `J_task`, the probability a plan runs without replanning. That identity is
+why `../planning/fast_downward.py` (real Fast Downward, `seq-opt-lmcut`, per-ground-skill
+costs patched into the translated SAS) is load-bearing rather than a convenience.
+`wrapped_sampler.py` is the other learnable half: one `LearnedSkillSampler` per skill
+name, a torch MLP binary classifier over `[1.0] + state_features + params` that scores
+candidate parameters, refit from scratch each cycle, epsilon-greedy (0.5) while
+practicing. Wired in via `cli.py`'s `EesCli` (`--method ees`); `analysis/
+practice_makes_perfect/ees.py` renders the paper's own Figure 4 view (fraction of
+evaluation tasks solved vs. online transitions) from the resulting `stats.json` files.
+
+Practice happens through `core.Method`'s `get_practice_policy`/`end_cycle` pair (see
+`../core/method/method.py`): exploration and data collection are confined to the
+interaction period, so the held-out evaluation sweep never trains on itself. The
+remaining six paper baselines (Fail Focus, Competence Gradient, Skill Diversity,
+Task-Relevant, Task Repeat, MAPLE-Q) are still stacked follow-ups — each is a different
+`score_ground_skill` on the same scaffolding, except MAPLE-Q which is pure deep RL.
 
 The actual online-learning loop, `PracticeLoop`, lives at the top level
 (`../../practice_loop.py`, alongside `../../cli.py`) rather than here, since it's the
