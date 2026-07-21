@@ -37,21 +37,14 @@ class PracticeLoop:
     needed here -- a Method that doesn't learn just gets called with
     num_cycles=0 by its caller, or has no-op on_cycle_end/
     improve_skill_parameters if it does use cycles for some other reason
-    (e.g. re-evaluating checkpoints without retraining). A static-method
-    container, never instantiated, same as every other business-logic class
-    in this project.
+    (e.g. re-evaluating checkpoints without retraining).
 
-    Caller must wire Problem.env/Problem.tasks (ClassVar assignment on the base
-    Problem class, e.g. `Problem.env = LightSwitchEnvironment; Problem.tasks =
-    LightSwitchTasks`) before calling run() -- run() only ever calls the `problem`
-    argument's inherited facade methods (hard_reset, sample_train_task, etc.),
-    which read Problem.env/Problem.tasks off the base class by name, not off
-    whichever subclass was passed in (see core/README.md's Problem facade section).
-    A concrete Problem subclass that sets env/tasks as its own class attributes
-    (rather than assigning them onto the shared Problem base) will NOT satisfy
-    this -- LightSwitchProblem, for instance, only works here because nothing in
-    this class calls its inherited facade methods without that wiring already
-    having been done by the caller.
+    problem/method/metrics are real instances now (constructed by the caller's
+    own composition root, e.g. environments/lightswitch/cli.py's
+    LightSwitchCli.run_method), not classes with shared ClassVar state to wire
+    beforehand -- there is no separate "remember to set Problem.env/
+    Problem.tasks first" step anymore; whatever problem instance is passed in
+    already has everything it needs.
 
     If renderer is given, the *first* test task of the *last* evaluation sweep
     (the one after the final cycle, or the sole initial evaluation if
@@ -63,9 +56,9 @@ class PracticeLoop:
     @staticmethod
     def run(
         *,
-        problem: type[Problem],
-        method: type[Method],
-        metrics: type[Metrics],
+        problem: Problem,
+        method: Method,
+        metrics: Metrics,
         num_cycles: int,
         max_steps_per_interaction: int,
         num_test_tasks: int,
@@ -106,9 +99,9 @@ class PracticeLoop:
     @staticmethod
     def _evaluate(
         *,
-        problem: type[Problem],
-        method: type[Method],
-        metrics: type[Metrics],
+        problem: Problem,
+        method: Method,
+        metrics: Metrics,
         num_test_tasks: int,
         num_online_transitions: int,
         renderer: type[Renderer] | None = None,

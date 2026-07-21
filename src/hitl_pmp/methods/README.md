@@ -2,8 +2,12 @@
 
 This folder is where concrete `core.Method` implementations live — the agent/baseline
 side of the codebase, mirroring `core.Problem` as described in `../core/README.md`. A
-`Method` implements `reset_environment`, `get_task_policy`, `generate_train_task`,
-`execute_setup_command`, `execute_skill`, and `improve_skill_parameters`.
+concrete `Method` is a real, constructor-injected pydantic instance now (not a
+static-method container), with a required `env: Environment` field on the base
+`Method` class (the one piece of context every `Method` concretely needs to act at
+all) — `reset_environment`, `get_task_policy`, `generate_train_task`,
+`execute_setup_command`, `execute_skill`, and `improve_skill_parameters` are all
+ordinary instance methods (`self`, not `@staticmethod`).
 
 ## `oracle/` — privileged-knowledge baselines, wrapped as `core.Method`s
 
@@ -14,11 +18,13 @@ side of the codebase, mirroring `core.Problem` as described in `../core/README.m
 `environments/lightswitch/cli.py`'s `LightSwitchCli` itself no longer has its own
 `run()` loop at all, since `--method` (not `--env` alone) is now how anything
 actually runs. `SkillOraclePolicy` itself only knows Light Switch's own oracle logic
-(same as `ActionOraclePolicy`); the `Problem.env`-keyed dispatch that lets
-`SkillOracleMethod` stay domain-agnostic at its entrypoint lives on
-`SkillOracleMethod` itself, not on the policy it wraps — that dispatch is a *method*
-concern (which environment is currently wired), not something a single domain's own
-policy file should need to know about its siblings. `ActionOraclePolicy` isn't
+(same as `ActionOraclePolicy`); the `isinstance(self.env, LightSwitchEnvironment)`-
+keyed dispatch that lets `SkillOracleMethod` stay domain-agnostic at its entrypoint
+lives on `SkillOracleMethod` itself, not on the policy it wraps — `self.env` is a
+real constructor-injected field inherited from the base `Method` class (the
+`Environment` instance this particular `SkillOracleMethod` was built with), and that
+dispatch is a *method* concern, not something a single domain's own policy file
+should need to know about its siblings. `ActionOraclePolicy` isn't
 wrapped/wired the same way (its raw-action-space oracle is exercised directly by its
 own tests, not through the CLI) — only one oracle needed wiring to prove out the
 pattern.
@@ -42,10 +48,14 @@ The actual online-learning loop, `PracticeLoop`, lives at the top level
 (`../../practice_loop.py`, alongside `../../cli.py`) rather than here, since it's the
 one execution harness every `core.Method` runs through — oracles included (see
 `oracle/` above) — not something specific to this paper reproduction. See its own
-docstring for the exact reset semantics, the `Problem.env`/`Problem.tasks` wiring a
-caller must set up first, and how its optional `renderer` param works. Driving
-`PracticeLoop` from a CLI (resetting `Metrics`, printing a success-rate summary,
-writing `episode.mp4`) is `../../method_runner.py`'s `MethodRunner` — also top-level
+docstring for the exact reset semantics and how its optional `renderer` param works;
+`problem`/`method`/`metrics` are real instances a caller constructs first (via its
+own composition root, e.g. `../environments/lightswitch/cli.py`'s
+`LightSwitchCli.run_method`) and simply passes in — there's no separate
+`Problem.env`/`Problem.tasks`-style global wiring step to remember beforehand,
+unlike the old ClassVar-singleton design. Driving `PracticeLoop` from a CLI
+(constructing a fresh `Metrics()`, printing a success-rate summary, writing
+`episode.mp4`) is `../../method_runner.py`'s `MethodRunner` — also top-level
 and domain-/method-agnostic, called by every domain's own `<Domain>Cli.run_method`
 (e.g. `../environments/lightswitch/cli.py`'s `LightSwitchCli.run_method`) so that
 generic tail is written once rather than copy-pasted into each domain's `cli.py`.

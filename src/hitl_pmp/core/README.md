@@ -111,24 +111,37 @@ full rationale; the short version, as applied in this folder:
   `method.py` imports `Task` from `problem/tasks/types.py` (not `problem.py`). Neither
   `types.py` imports the other's ABC file back, so there's no cycle — just import the
   target's `types.py` directly and skip the deferred-import trick entirely.
-- **Behavior lives in the ABCs, as static-method containers — and every concrete
-  business-logic helper underneath them follows the same rule.** None of
-  `Environment`/`HumanOracle`/`Tasks`/`Problem`/`Method`/`Metrics` is ever
-  instantiated (`Metrics` isn't itself an ABC — see "`Metrics` is fully concrete"
-  below — but follows the identical static-method-container discipline) — almost
-  every method is `@staticmethod` (`Problem`'s facade methods
-  are concrete but still static — they delegate, they don't need instance state of
-  their own), and any state a concrete subclass needs (e.g. `Problem.env`,
-  `Problem.human`, `Problem.tasks`) is a `ClassVar` set once on the class itself, Java
-  static-class/singleton style, not constructor-assigned instance state. This isn't
-  limited to the ABCs here: a domain's `Predicate.holds` classifier or a `Policy`
-  function's real logic belongs on its own static-method class too (e.g.
-  `environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy.get_action`),
-  not a bare module-level function — the only exception is a short lambda adapter where an
-  interface itself demands a positional callable (`Predicate.holds`, `Policy`), since
-  the lambda carries no logic of its own that would otherwise be lost in a module.
-  Every parameter (besides an unavoidable dunder like `__getitem__`) is keyword-only,
-  enforced by ruff's `PLR0917` with `max-positional-args = 0`.
+- **Behavior lives on real instances where there's genuine per-run state, and on
+  static-method containers everywhere else.** `Environment`/`Problem`/`Tasks`/
+  `Method` (plus `Metrics`, see "`Metrics` is fully concrete" below) are real
+  pydantic `BaseModel, abc.ABC` instances now, constructed with their per-run state
+  as keyword constructor arguments (e.g. `LightSwitchEnvironment(grid_size=10)`,
+  `LightSwitchProblem(env=env, tasks=tasks)`) — `self`, not `cls` or a bare class
+  reference, and every abstract method is a normal instance method. This used to be
+  a uniform static-method-container pattern (`ClassVar` state mutated on the base
+  class, Java static-class/singleton style) applied to all six interfaces, but that
+  caused real problems: a caller had to remember to wire e.g. `Problem.env =
+  ConcreteEnv` *before* calling anything, every test needed a hand-rolled
+  snapshot/restore fixture around any mutation to avoid leaking state into other
+  tests, and a `problem`/`method` value passed as a parameter could silently
+  disagree with the separately-wired global it actually read from at runtime.
+  `HumanOracle`/`Renderer` have no state of their own to hold between calls, so
+  they stay static-method containers — but take the one `Environment` *instance*
+  they need as an explicit per-call argument now, never a global. The same split
+  applies to concrete business logic underneath these interfaces: a domain's own
+  structural constants (e.g. `LightSwitchEnvironment.robot`/`.light_type`, or a
+  `Predicate.holds` classifier that only reads a still-`ClassVar` tolerance) stay
+  `ClassVar`/static, while anything needing a specific instance's per-run config
+  takes that instance as an explicit parameter (e.g.
+  `environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy.get_action`
+  is fully static since it never reads instance-level config; a domain's `Renderer`
+  or oracle policy that *does* need e.g. `grid_size` takes `env: Environment`
+  explicitly) — never a bare module-level function, the only exception being a
+  short lambda adapter where an interface itself demands a positional callable
+  (`Predicate.holds`, `Policy`), since the lambda carries no logic of its own that
+  would otherwise be lost in a module. Every parameter (besides an unavoidable
+  dunder like `__getitem__`) is keyword-only, enforced by ruff's `PLR0917` with
+  `max-positional-args = 0` — `self` is exempt, same as `cls` always was.
 - **Files/classes are organized top-down**, most composite first — see
   `problem/tasks/types.py` (`Task` → `Goal` → `Predicate` → `GroundAtom`, in
   decreasing order of "what relies on what").
@@ -142,8 +155,8 @@ imply a free reset — a human/oracle must sometimes intervene, at a cost, to mo
 environment back to a usable state.
 
 - **`Environment`** is *the real-world environment* (or the real/ground-truth
-  simulator standing in for it) — there is exactly one of it, tracked via
-  `current_state: ClassVar[State]`. It is **not** a reusable, stateless dynamics
+  simulator standing in for it) — each instance tracks exactly one of it, via its
+  own `current_state: State | None` field. It is **not** a reusable, stateless dynamics
   function that other code can call with a hypothetical state to explore "what if" —
   a `Method` that needs to plan carries its own model for that; it must not borrow
   `Environment` to do it. `take_action(*, action)` advances `current_state` by one
@@ -174,16 +187,23 @@ environment back to a usable state.
   live here, via `execute_human_command`. Unlike `Environment`, a `Problem` is specific
   to one research question, not reusable across them.
 
-## `Renderer` is a pure function of `State`, not a `Problem` component
+## `Renderer` stays static, not a `Problem` component
 
-`Renderer` (one abstract method, `render_frame(*, state, label=None) -> np.ndarray`)
-sits as a top-level sibling of `problem/`, like `Method`/`Metrics` — not nested under
-it like `Environment`/`HumanOracle`/`Tasks` are. Those three nest under `problem/`
-because the design doc's `Problem` genuinely owns them (dynamics, human cost, task
-generation are all `Problem`-scoped concepts). Rendering isn't: it's a pure, stateless
-function of whatever `State` (and optional `label`) you hand it, useful standalone
-(e.g. debugging a hand-built `State` with no `Problem` in scope at all) and with no
-reset-cost/human-in-the-loop semantics of its own. `renderer.py` also holds one
+`Renderer` (one abstract method, `render_frame(*, state, env, label=None) ->
+np.ndarray`) sits as a top-level sibling of `problem/`, like `Method`/`Metrics` — not
+nested under it like `Environment`/`HumanOracle`/`Tasks` are. Those three nest under
+`problem/` because the design doc's `Problem` genuinely owns them (dynamics, human
+cost, task generation are all `Problem`-scoped concepts). Rendering isn't: it has no
+state of its own to carry between calls (unlike `Environment`/`Problem`/`Tasks`/
+`Method`, it never became a constructor-injected instance), so it stays a
+static-method container, useful standalone (e.g. debugging a hand-built `State` with
+no `Problem` in scope at all) and with no reset-cost/human-in-the-loop semantics of
+its own. `env` is an explicit per-call argument (the one `Environment` instance a
+concrete renderer might need to read domain config from, e.g. `LightSwitchRenderer`
+reading `grid_size` for its axis limits) rather than a hidden global read — a
+concrete `render_frame` override that doesn't need anything from it just ignores the
+parameter, same as `HumanOracle.calculate_cost_for_human_command` ignoring `env`
+entirely while `execute_human_command` uses it. `renderer.py` also holds one
 non-abstract, domain-agnostic companion, not part of the `Renderer` interface itself
 since it never varies per domain: `VideoWriter` (writes a frame sequence to a video
 file via imageio's bundled ffmpeg, and `write_gif` converts an already-written video
@@ -228,15 +248,16 @@ different behavior than "exactly one task/goal type, no real human-intervention
 tracking" (no `Method` here ever calls `Problem.execute_human_command`). There is no
 forced-must-override method left, so there's nothing left to make abstract.
 
-Shared state (`evaluations`, `task_name`) lives on `Metrics` itself as `ClassVar`s,
-the same single-shared-mutable-slot pattern `Problem.env`/`Problem.tasks` already
-use — call `reset()` before each `(problem, method, seed)` run in a sweep. This
-project only ever runs one such combination at a time (e.g. `analysis/` scripts
-shell out one CLI subprocess per seed), so that's never actually stressed by
-concurrent use.
+`evaluations`/`task_name` are real instance fields now, not shared `ClassVar`s — a
+fresh `Metrics()` per `(problem, method, seed)` run in a sweep replaces the old
+"shared mutable slot, call `reset()` before reusing it" pattern entirely. There's
+nothing left over from a previous run to explicitly clear, since nothing is shared
+to begin with; `method_runner.py`'s `MethodRunner.run` constructs one per call and
+returns it, so a caller (or a test) can inspect exactly what happened without
+needing to reach for any global.
 
-Callers use `Metrics` directly — no per-domain/per-method subclass needed for the
-common case. A future `Method` that tracks real human-intervention cost overrides
+Callers construct `Metrics()` directly — no per-domain/per-method subclass needed for
+the common case. A future `Method` that tracks real human-intervention cost overrides
 just `num_human_interventions`/`summed_human_cost`; a future multi-task environment
 overrides just `task_training_curve_by_subtask`/`percentage_success_per_task_test` —
 inheriting everything else unchanged either way, since overriding a concrete method

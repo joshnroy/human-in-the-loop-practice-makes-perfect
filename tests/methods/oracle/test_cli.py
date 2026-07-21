@@ -4,33 +4,25 @@ from pathlib import Path
 
 import pytest
 
-from hitl_pmp.core.metrics.metrics import Metrics
-from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 
 
 @pytest.fixture(autouse=True)
 def _restore_lightswitch_config() -> Iterator[None]:
-    """SkillOracleCli.run() delegates to LightSwitchCli.run_method(), which
-    mutates shared ClassVar state as a side effect; snapshot and restore it
-    around every test in this file, same as
-    tests/environments/lightswitch/test_cli.py."""
-    original_grid_size = LightSwitchEnvironment.grid_size
-    original_seed = LightSwitchTasks.seed
-    original_problem_env = getattr(Problem, "env", None)
-    original_problem_tasks = getattr(Problem, "tasks", None)
+    """SkillOracleCli.run() delegates to LightSwitchCli.run_method(), which still
+    mutates LightSwitchEnvironment.light_on_tolerance/.same_position_tolerance as a
+    ClassVar side effect via apply_config (see that method's own docstring for why
+    those two specifically stay ClassVar rather than becoming constructor
+    arguments). Everything else run_method touches -- env/tasks/problem/method -- is
+    now a freshly constructed instance per call, with nothing left over to restore."""
+    original_light_on_tolerance = LightSwitchEnvironment.light_on_tolerance
+    original_same_position_tolerance = LightSwitchEnvironment.same_position_tolerance
     try:
         yield
     finally:
-        LightSwitchEnvironment.grid_size = original_grid_size
-        LightSwitchTasks.set_seed(seed=original_seed)
-        if original_problem_env is not None:
-            Problem.env = original_problem_env
-        if original_problem_tasks is not None:
-            Problem.tasks = original_problem_tasks
-        Metrics.reset()
+        LightSwitchEnvironment.light_on_tolerance = original_light_on_tolerance
+        LightSwitchEnvironment.same_position_tolerance = original_same_position_tolerance
 
 
 def _build_parser() -> argparse.ArgumentParser:

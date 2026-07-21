@@ -7,7 +7,12 @@ from .types import CommandGoalDescription, CommandStartStateDescription, Cost
 
 class HumanOracle(abc.ABC):
     """The v0-v3 human-cost-model axis from the design doc; a static-method container,
-    never instantiated, swappable independent of Environment."""
+    never instantiated, swappable independent of Environment. Unlike
+    Environment/Problem/Tasks/Method, this one stays static rather than becoming a
+    constructor-injected instance: it has no state of its own to hold between calls
+    -- execute_human_command already receives the one Environment *instance* it
+    needs to mutate as an explicit per-call argument, the same pattern the rest of
+    this refactor moved everything else toward, HumanOracle just already had it."""
 
     @staticmethod
     @abc.abstractmethod
@@ -26,7 +31,7 @@ class HumanOracle(abc.ABC):
         *,
         command_start_state_description: CommandStartStateDescription,
         command_goal_description: CommandGoalDescription,
-        env: type[Environment],
+        env: Environment,
     ) -> None:
         """Actually ask the human to satisfy command_goal_description, starting from
         command_start_state_description. No return value — the cost was already

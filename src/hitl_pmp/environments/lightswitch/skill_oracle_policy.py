@@ -18,12 +18,12 @@ class SkillOraclePolicy:
     instantiated, same as every other business-logic class in this project."""
 
     @staticmethod
-    def get_labeled_action(*, state: State) -> LabeledAction:
+    def get_labeled_action(*, state: State, env: LightSwitchEnvironment) -> LabeledAction:
         """MoveRobot to the light's cell, then TurnOnLight by exactly the
         remaining gap -- same two-action solve as ActionOraclePolicy; the point
         of this method is to exercise Skill/GroundSkill end-to-end with a real
-        caller, not to behave differently."""
-        env = LightSwitchEnvironment
+        caller, not to behave differently. Needs an env instance (not just the
+        class) now that get_cells() reads instance-level grid_size."""
         robot, light = env.robot, env.light
         robot_x = state.get(obj=robot, feature_name="x")
         light_x = state.get(obj=light, feature_name="x")

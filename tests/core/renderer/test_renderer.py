@@ -4,17 +4,32 @@ import imageio
 import numpy as np
 import pytest
 
-from hitl_pmp.core.problem.environment.types import Object, State, Type
+from hitl_pmp.core.problem.environment.environment import Environment
+from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.renderer.renderer import Renderer, VideoWriter
 
 _BLOCK = Type(name="block", feature_names=("x",))
 _OBJ = Object(name="block1", type=_BLOCK)
 
 
+class _DummyEnv(Environment):
+    """render_frame's signature requires an env instance now -- unused here, this
+    domain's renderer just doesn't happen to need anything from it."""
+
+    def take_action(self, *, action: Action) -> State:
+        raise NotImplementedError
+
+    def get_valid_actions(self) -> list[Action]:
+        raise NotImplementedError
+
+    def hard_reset(self) -> None:
+        raise NotImplementedError
+
+
 class _DummyRenderer(Renderer):
     @staticmethod
-    def render_frame(*, state: State, label: str | None = None) -> np.ndarray:
-        del label
+    def render_frame(*, state: State, env: Environment, label: str | None = None) -> np.ndarray:
+        del env, label
         value = int(np.clip(state[_OBJ][0], 0, 255))
         return np.full((2, 2, 3), value, dtype=np.uint8)
 
@@ -30,7 +45,7 @@ def test_renderer_cannot_be_instantiated_directly() -> None:
 
 def test_dummy_renderer_reflects_state_in_the_frame() -> None:
     state = State(data={_OBJ: np.array([7.0])})
-    frame = _DummyRenderer.render_frame(state=state)
+    frame = _DummyRenderer.render_frame(state=state, env=_DummyEnv())
     assert frame.shape == (2, 2, 3)
     assert frame[0, 0, 0] == 7
 

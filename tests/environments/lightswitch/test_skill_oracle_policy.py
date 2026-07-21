@@ -3,8 +3,9 @@ from hitl_pmp.environments.lightswitch.skill_oracle_policy import SkillOraclePol
 
 
 def test_get_labeled_action_moves_straight_to_the_light_first() -> None:
-    state = LightSwitchEnvironment.build_initial_state(light_level=0.0, light_target=0.7)
-    labeled = SkillOraclePolicy.get_labeled_action(state=state)
+    env = LightSwitchEnvironment()
+    state = env.build_initial_state(light_level=0.0, light_target=0.7)
+    labeled = SkillOraclePolicy.get_labeled_action(state=state, env=env)
     robot_x = state.get(obj=LightSwitchEnvironment.robot, feature_name="x")
     light_x = state.get(obj=LightSwitchEnvironment.light, feature_name="x")
     assert labeled.action.tolist() == [light_x - robot_x, 0.0]
@@ -14,11 +15,12 @@ def test_get_labeled_action_moves_straight_to_the_light_first() -> None:
 
 
 def test_get_labeled_action_dials_exactly_to_target_once_at_the_light() -> None:
-    light_x = float(LightSwitchEnvironment.grid_size - 0.5)
-    state = LightSwitchEnvironment.build_initial_state(light_level=0.2, light_target=0.9)
+    env = LightSwitchEnvironment()
+    light_x = float(env.grid_size - 0.5)
+    state = env.build_initial_state(light_level=0.2, light_target=0.9)
     state.set(obj=LightSwitchEnvironment.robot, feature_name="x", feature_val=light_x)
 
-    labeled = SkillOraclePolicy.get_labeled_action(state=state)
+    labeled = SkillOraclePolicy.get_labeled_action(state=state, env=env)
     assert labeled.action[0] == 0.0
     assert labeled.action[1] == 0.9 - 0.2
     assert labeled.label.startswith("TurnOnLight(")
