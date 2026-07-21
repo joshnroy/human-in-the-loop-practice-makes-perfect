@@ -115,16 +115,19 @@ and returns `(succeeded, frames)` — every episode is optionally recordable thr
 this one call (no separate rendering-only codepath, which would duplicate the loop).
 
 `src/hitl_pmp/cli.py` is the global CLI entrypoint (`python -m hitl_pmp.cli --env
-<name> ...`, e.g. `--env lightswitch`); it dispatches to each registered
-environment's own `environments/<name>/cli.py`, or — if `--method <name>` is given
-instead — to a registered `core.Method`'s own `methods/<name>/cli.py`, which drives
-it through `src/hitl_pmp/practice_loop.py`'s `PracticeLoop` (the one execution
-harness every `Method` runs through; see the `core/` section above for why
-`Metrics`, what it records evaluations into, is fully concrete). `METHODS` is empty
-for now — nothing implements `core.Method` yet. All flags are named, no positional
-arguments. `--output-dir DIR` (global), if the environment has a `renderer.py`,
-additionally writes a demo `episode.mp4`. Writing run statistics (e.g. a `stats.json`
-built from `Metrics`) to `--output-dir` is a separate, not-yet-built concern.
+<name> --method <name> ...`, e.g. `--env lightswitch --method skill-oracle`); both
+`--env` and `--method` are required. `--env` registers a domain's own config flags
+(via `environments/<name>/cli.py`'s `add_arguments`) but that domain is never run
+directly — `--method` is what actually drives a registered `core.Method` (via its
+own `methods/<name>/cli.py`, or — for privileged oracle baselines that predate any
+real `Method` — a domain's own `cli.py`, e.g. `environments/lightswitch/cli.py`'s
+`SkillOracleCli`) through `src/hitl_pmp/practice_loop.py`'s `PracticeLoop`, the one
+execution harness every `Method` runs through regardless of whether it learns (see
+the `core/` section above for why `Metrics`, what it records evaluations into, is
+fully concrete). All flags are named, no positional arguments. `--output-dir DIR`
+(global), if the environment has a `renderer.py`, additionally writes a demo
+`episode.mp4`. Writing run statistics (e.g. a `stats.json` built from `Metrics`) to
+`--output-dir` is a separate, not-yet-built concern.
 
 **Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
 defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task

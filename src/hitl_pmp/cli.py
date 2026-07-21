@@ -1,47 +1,50 @@
-"""The global CLI: pick an environment, then either run one of its raw baseline
-policies over sampled test tasks (--policy, an environment-specific flag) or drive
-a registered core.Method through PracticeLoop (--method, a global flag here since a
-Method is meant to work across environments, not tied to one). Every flag is named
--- no positional arguments anywhere.
+"""The global CLI: pick an environment, then drive a registered core.Method through
+PracticeLoop (--method) -- the one execution harness every Method runs through,
+whether it learns or not (a non-learning Method, e.g. a privileged oracle, is simply
+--num-cycles 0 through the same loop; see practice_loop.py's own docstring). Every
+flag is named -- no positional arguments anywhere.
 
 Global flags (--seed, --num-test-tasks, --env, --method) are generic runner concepts
 meaningful for any environment/method. Environment-specific flags depend on --env's
-value, and a method's own flags (once --method is chosen) come from its own
-add_arguments:
-    python -m hitl_pmp.cli --seed 7 --num-test-tasks 5 --env lightswitch --grid-size 3
+value, and a method's own flags come from its own add_arguments:
+    python -m hitl_pmp.cli --env lightswitch --method skill-oracle --num-test-tasks 5
 
 Every environment plugs into this file by having its own cli.py that exposes an
-add_arguments(*, parser)/run(*, args) pair (see environments/lightswitch/cli.py's
-LightSwitchCli) and registering itself in ENVIRONMENTS below; every method does the
-same via methods/<name>/cli.py, registering in METHODS -- this file itself has no
-domain- or method-specific knowledge. METHODS is empty for now: nothing implements
-core.Method yet (see methods/README.md).
+add_arguments(*, parser) pair (see environments/lightswitch/cli.py's LightSwitchCli)
+and registering itself in ENVIRONMENTS below, purely for its own config flags
+(--grid-size etc.) -- an environment is never run directly, only via a --method that
+wires itself to it. Every method plugs in the same way via its own
+add_arguments(*, parser)/run(*, args) pair, registering in METHODS -- this file
+itself has no domain- or method-specific knowledge.
 """
 
 import argparse
 from pathlib import Path
+from typing import Protocol
 
-from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.environments.lightswitch.cli import LightSwitchCli, SkillOracleCli
 
 ENVIRONMENTS = {"lightswitch": LightSwitchCli}
 
 
-class MethodCli:
+class MethodCli(Protocol):
     """The add_arguments(*, parser)/run(*, args) shape every methods/<name>/cli.py
     entry in METHODS must expose -- mirrors environments/<domain>/cli.py's
-    (unnamed, structurally-typed) convention. Exists purely for METHODS' own type
-    annotation; concrete method CLIs don't need to subclass this."""
+    (unnamed, structurally-typed) convention. A Protocol (not a base class) purely
+    for METHODS' own type annotation, so mypy checks this structurally: a concrete
+    method CLI like SkillOracleCli satisfies it just by having matching methods,
+    with no subclassing needed."""
 
     @staticmethod
-    def add_arguments(*, parser: argparse.ArgumentParser) -> None:
-        raise NotImplementedError
+    def add_arguments(*, parser: argparse.ArgumentParser) -> None: ...
 
     @staticmethod
-    def run(*, args: argparse.Namespace) -> None:
-        raise NotImplementedError
+    def run(*, args: argparse.Namespace) -> None: ...
 
 
-METHODS: dict[str, type[MethodCli]] = {}
+METHODS: dict[str, type[MethodCli]] = {
+    "skill-oracle": SkillOracleCli,
+}
 
 
 class Cli:
@@ -68,21 +71,13 @@ class Cli:
             "no environment's own add_arguments may redefine them (argparse itself will "
             "raise a clear conflicting-option-string error if one ever tries).",
         )
-        # TODO: --method is optional (default=None) only because --policy/
-        # LightSwitchCli.run() is still the sole working path today (METHODS is
-        # empty). Once the oracle policies are wrapped as core.Method and that
-        # separate --policy loop is removed, PracticeLoop becomes the only
-        # entrypoint -- --method should become required=True at that point (like
-        # --env already is), and main()'s if/else below collapses to a single
-        # METHODS[args.method].run(args=args) call.
         parser.add_argument(
             "--method",
             choices=sorted(METHODS),
-            default=None,
-            help="If set, drives this core.Method through PracticeLoop instead of "
-            "running one of --env's own raw baseline policies (see --policy, an "
-            "environment-specific flag). Determines which method-specific flags are "
-            "valid. Empty for now -- nothing implements core.Method yet.",
+            required=True,
+            default=argparse.SUPPRESS,
+            help="Which core.Method to drive through PracticeLoop. Determines which "
+            "method-specific flags are valid.",
         )
         parser.add_argument(
             "--seed",
@@ -111,14 +106,14 @@ class Cli:
         # be registered up front. A plain two-pass parse_known_args here would exit
         # early on --help before ever reaching those specific flags (argparse's
         # help action fires mid-scan, during the *first* pass) -- so this discovery
-        # pass disables its own help handling and doesn't require --env, purely to
-        # learn --env/--method's values without ever printing anything or exiting.
+        # pass disables its own help handling and doesn't require --env/--method,
+        # purely to learn their values without ever printing anything or exiting.
         # The real parser built below always has the full flag set (global + the
         # selected environment's/method's), so it's the one that ever shows --help
-        # or reports a genuine "missing --env" error.
+        # or reports a genuine "missing --env"/"missing --method" error.
         discovery = argparse.ArgumentParser(add_help=False)
         discovery.add_argument("--env", choices=sorted(ENVIRONMENTS))
-        discovery.add_argument("--method", choices=sorted(METHODS), default=None)
+        discovery.add_argument("--method", choices=sorted(METHODS))
         known_args, _ = discovery.parse_known_args(argv)
 
         parser = argparse.ArgumentParser(
@@ -134,16 +129,7 @@ class Cli:
     @staticmethod
     def main(*, argv: list[str] | None = None) -> None:
         args = Cli.parse_args(argv=argv)
-        # TODO: this if/else is transitional -- see the --method TODO above.
-        # Once --method is the only entrypoint, this becomes just
-        # METHODS[args.method].run(args=args), and the else branch (plus
-        # ENVIRONMENTS[...].run() as a directly-invoked codepath, as opposed to
-        # ENVIRONMENTS itself, still needed for a domain's own config flags) goes
-        # away.
-        if args.method is not None:
-            METHODS[args.method].run(args=args)
-        else:
-            ENVIRONMENTS[args.env].run(args=args)
+        METHODS[args.method].run(args=args)
 
 
 if __name__ == "__main__":

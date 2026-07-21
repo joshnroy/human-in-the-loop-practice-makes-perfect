@@ -23,12 +23,17 @@ one execution harness every `core.Method` runs through — oracles included, onc
 they're wrapped as `Method`s — not something specific to this paper reproduction. See
 its own docstring for the exact reset semantics, the `Problem.env`/`Problem.tasks`
 wiring a caller must set up first, and how its optional `renderer` param works.
-Not yet wired to any real `Method`: the Light Switch oracle policies
-(`environments/lightswitch/action_oracle_policy.py`/`skill_oracle_policy.py`) still
-run through their own separate loop in `LightSwitchCli.run()`, and
-`RandomSkillsMethod` (the first of the 8 paper approaches) hasn't landed yet — both
-are tracked as stacked follow-ups, along with the actual competence model, sampler
-learning, and Fast Downward planning integration.
+`SkillOracleMethod` (`environments/lightswitch/skill_oracle_policy.py`) is the
+first `core.Method` actually wired through `PracticeLoop`, via
+`environments/lightswitch/cli.py`'s `SkillOracleCli` (`--method skill-oracle`) —
+`LightSwitchCli` itself no longer has its own `run()` loop at all, since
+`--method` (not `--env` alone) is now how anything actually runs.
+`ActionOraclePolicy` isn't wrapped/wired the same way (its raw-action-space
+oracle is exercised directly by its own tests, not through the CLI) — only one
+oracle needed wiring to prove out the pattern. `RandomSkillsMethod` (the first
+of the 8 paper approaches) hasn't landed yet — tracked as a stacked follow-up,
+along with the actual competence model, sampler learning, and Fast Downward
+planning integration.
 
 `core.Metrics` (`../core/README.md`'s "`Metrics` is fully concrete" section) is what
 `PracticeLoop` records evaluations into — used directly, no Light-Switch-specific
