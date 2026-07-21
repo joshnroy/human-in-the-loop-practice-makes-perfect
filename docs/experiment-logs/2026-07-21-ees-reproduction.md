@@ -110,11 +110,38 @@ collects the identical transition budget and never solves anything.
 
 ![EES vs baselines learning curve](./2026-07-21-ees-vs-baselines-light-switch.png)
 
-An EES episode after training — it walks to the light and sets the dial in one
-correct move, because the `TurnOnLight` sampler has been specialized away from its
-uniform prior:
+### Watching it learn
 
-![EES trained episode](./2026-07-21-ees-trained-episode.gif)
+The same evaluation task, attempted at five points across training
+(`--num-render-checkpoints 5`). All five are **seed 5**, and all five are the
+*same* held-out task — only the policy differs.
+
+| Transitions | Aggregate success (10 seeds) | This episode | |
+|---|---|---|---|
+| 0 | 0% | fails — never gets the light on | ![0](./2026-07-21-ees-progress-000000.gif) |
+| 300 | 89% | fails | ![300](./2026-07-21-ees-progress-000300.gif) |
+| 750 | 98% | solves | ![750](./2026-07-21-ees-progress-000750.gif) |
+| 1200 | 100% | solves | ![1200](./2026-07-21-ees-progress-001200.gif) |
+| 1500 | 100% | solves | ![1500](./2026-07-21-ees-progress-001500.gif) |
+
+Two honest caveats about reading these:
+
+1. **A single episode is binary**, so the clips show fail → fail → solve → solve →
+   solve rather than smooth improvement. The gradual part is the aggregate curve
+   above; a clip can only show which side of the threshold one attempt landed on.
+   What *is* visible is the mechanism: the untrained policy walks to the light and
+   then dials the level to the wrong value repeatedly until the horizon runs out,
+   while the trained one walks over and sets it correctly in a single move — the
+   `TurnOnLight` sampler having been specialized away from its uniform prior.
+2. **Seed 5 is slower than typical**, not cherry-picked to flatter: 8 of the 10
+   seeds already solve this task by the 300-transition checkpoint, and seed 5 is
+   one of the two that doesn't. It was chosen precisely because a below-median
+   seed shows three distinct stages instead of two.
+
+The episode length is itself a tell: the failing clips run the full 27-step
+evaluation horizon, while the solving ones finish in 25 actions — 24 `MoveRobot`
+steps across the grid plus one correct `TurnOnLight`, which is optimal for a
+25-cell grid.
 
 ## Comparison to the paper
 
@@ -192,4 +219,22 @@ Where this port deliberately differs from `predicators`, and why:
 ## Reproducing
 
 Fast Downward is required and is not vendored — see CLAUDE.md's Setup section.
-The full sweep is the script embedded above, run once per (method, seed).
+The whole sweep is one command (30 runs, ~3 minutes on 12 cores):
+
+```bash
+python -m scripts.run_sweep \
+    --env lightswitch \
+    --methods ees random-skills skill-oracle \
+    --num-seeds 10 \
+    --results-root results/ees \
+    --shared-args "--grid-size 25 --num-test-tasks 10 --num-render-checkpoints 5" \
+    --method-args "ees=--num-cycles 10 --max-steps-per-interaction 150" \
+    --method-args "random-skills=--num-cycles 10 --max-steps-per-interaction 150"
+
+python -m analysis.practice_makes_perfect.ees \
+    --results-root results/ees --output curve.png
+```
+
+Seeds are fixed (0..9), and one `--seed` fully determines a run, so this
+regenerates the numbers above exactly — pinned by
+`tests/scripts/test_reproducibility.py`.
