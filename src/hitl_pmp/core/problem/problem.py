@@ -1,7 +1,7 @@
 import abc
-from typing import ClassVar
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict
 
 from hitl_pmp.core.method.types import Policy
 from hitl_pmp.core.renderer.renderer import Renderer
@@ -14,76 +14,76 @@ from .tasks.tasks import Tasks
 from .tasks.types import Goal, Task
 
 
-class Problem(abc.ABC):
-    """Composition root: Environment + HumanOracle + Tasks. A static-method
-    container, never instantiated — env/human/tasks are class attributes
-    (references to the Environment/HumanOracle/Tasks *classes*, themselves also
-    never instantiated). Mirrors the design doc's flat Problem(ABC): every method
-    here is a thin passthrough to the relevant part, except run_task_episode,
-    which is genuine orchestration logic each concrete Problem must implement.
+class Problem(BaseModel, abc.ABC):
+    """Composition root: Environment + HumanOracle + Tasks. A real,
+    constructor-injected instance now (not a static-method container): env/tasks
+    are required fields (references to the actual Environment/Tasks *instances*
+    this Problem drives), human is optional since not every domain has one
+    (LightSwitchProblem never sets it -- no irreversible action exists there).
+    Mirrors the design doc's flat Problem(ABC): every method here is a thin
+    passthrough to the relevant part, except run_task_episode, which is genuine
+    orchestration logic each concrete Problem must implement.
+
+    human stays type[HumanOracle] rather than an instance, unlike env/tasks: it has
+    no state of its own to hold (see human.py's own docstring), so there's nothing
+    for an instance to carry that the class itself doesn't already provide.
     """
 
-    env: ClassVar[type[Environment]]
-    human: ClassVar[type[HumanOracle]]
-    tasks: ClassVar[type[Tasks]]
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    @staticmethod
-    def get_current_state() -> State:
-        return Problem.env.get_current_state()
+    env: Environment
+    tasks: Tasks
+    human: type[HumanOracle] | None = None
 
-    @staticmethod
-    def take_action(*, action: Action) -> State:
-        return Problem.env.take_action(action=action)
+    def get_current_state(self) -> State:
+        return self.env.get_current_state()
 
-    @staticmethod
-    def get_valid_actions() -> list[Action]:
-        return Problem.env.get_valid_actions()
+    def take_action(self, *, action: Action) -> State:
+        return self.env.take_action(action=action)
 
-    @staticmethod
-    def hard_reset() -> None:
-        Problem.env.hard_reset()
+    def get_valid_actions(self) -> list[Action]:
+        return self.env.get_valid_actions()
 
-    @staticmethod
+    def hard_reset(self) -> None:
+        self.env.hard_reset()
+
     def _describe_command(
-        *, goal: Goal
+        self, *, goal: Goal
     ) -> tuple[CommandStartStateDescription, CommandGoalDescription]:
         return (
-            CommandStartStateDescription(state=Problem.get_current_state()),
+            CommandStartStateDescription(state=self.get_current_state()),
             CommandGoalDescription(goal=goal),
         )
 
-    @staticmethod
-    def calculate_cost_for_human_command(*, goal: Goal) -> Cost:
+    def calculate_cost_for_human_command(self, *, goal: Goal) -> Cost:
         """Query what asking the human for this would cost, without actually asking."""
-        start, end = Problem._describe_command(goal=goal)
-        return Problem.human.calculate_cost_for_human_command(
+        assert self.human is not None, "calculate_cost_for_human_command needs self.human set."
+        start, end = self._describe_command(goal=goal)
+        return self.human.calculate_cost_for_human_command(
             command_start_state_description=start, command_goal_description=end
         )
 
-    @staticmethod
-    def execute_human_command(*, goal: Goal) -> None:
+    def execute_human_command(self, *, goal: Goal) -> None:
         """The only sanctioned reset: let the human work toward goal. No return value —
         query calculate_cost_for_human_command beforehand if the cost is needed; this
-        method's only job is to make it happen. Problem.human is responsible for
-        updating Problem.env (it was handed env directly) to reflect whatever actually
+        method's only job is to make it happen. self.human is responsible for
+        updating self.env (it was handed env directly) to reflect whatever actually
         happened, since only it knows what that was."""
-        start, end = Problem._describe_command(goal=goal)
-        Problem.human.execute_human_command(
-            command_start_state_description=start, command_goal_description=end, env=Problem.env
+        assert self.human is not None, "execute_human_command needs self.human set."
+        start, end = self._describe_command(goal=goal)
+        self.human.execute_human_command(
+            command_start_state_description=start, command_goal_description=end, env=self.env
         )
 
-    @staticmethod
-    def sample_train_task() -> Task:
-        return Problem.tasks.sample_train_task()
+    def sample_train_task(self) -> Task:
+        return self.tasks.sample_train_task()
 
-    @staticmethod
-    def sample_test_task() -> Task:
-        return Problem.tasks.sample_test_task()
+    def sample_test_task(self) -> Task:
+        return self.tasks.sample_test_task()
 
-    @staticmethod
     @abc.abstractmethod
     def run_task_episode(
-        *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
+        self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
     ) -> tuple[bool, list[np.ndarray]]:
         """Run policy on task until goal reached or timeout; returns (succeeded, frames).
         frames is empty unless renderer is given, in which case every run is

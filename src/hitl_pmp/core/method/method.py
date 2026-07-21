@@ -1,47 +1,52 @@
 import abc
 from typing import Any
 
+from pydantic import BaseModel
+
+from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Task
 
 from .types import GroundSkill, Policy, Rollout, SetupCommand
 
 
-class Method(abc.ABC):
+class Method(BaseModel, abc.ABC):
     """The agent side: decides what to practice, executes skills, improves them.
 
-    A static-method container, never instantiated; mirrors Problem on the
-    environment side.
+    A real, constructor-injected instance now (not a static-method container):
+    env is the one piece of context every Method concretely needs to act at all
+    (e.g. SkillOracleMethod's oracle logic has to know which domain it's cheating
+    in) -- there is no global Problem.env to read anymore, so whatever a Method
+    needs from its environment must be handed to it explicitly, and the natural
+    place for that is construction time, mirroring Environment/Tasks. Methods that
+    turn out not to need env at all are still free to ignore self.env entirely;
+    nothing about this field forces every concrete Method to use it.
     """
 
-    @staticmethod
+    env: Environment
+
     @abc.abstractmethod
-    def reset_environment(*, start_state: State) -> bool:
+    def reset_environment(self, *, start_state: State) -> bool:
         """The agent's own attempt to self-navigate to start_state, without human help."""
         raise NotImplementedError
 
-    @staticmethod
     @abc.abstractmethod
-    def get_task_policy(*, task: Task) -> Policy:
+    def get_task_policy(self, *, task: Task) -> Policy:
         raise NotImplementedError
 
-    @staticmethod
     @abc.abstractmethod
-    def generate_train_task(*, tbd_inputs: Any) -> Task:
+    def generate_train_task(self, *, tbd_inputs: Any) -> Task:
         """Decides what to practice next; exact inputs still TBD per the design doc."""
         raise NotImplementedError
 
-    @staticmethod
     @abc.abstractmethod
-    def execute_setup_command(*, setup_command: SetupCommand) -> None:
+    def execute_setup_command(self, *, setup_command: SetupCommand) -> None:
         raise NotImplementedError
 
-    @staticmethod
     @abc.abstractmethod
-    def execute_skill(*, skill: GroundSkill) -> Rollout:
+    def execute_skill(self, *, skill: GroundSkill) -> Rollout:
         raise NotImplementedError
 
-    @staticmethod
     @abc.abstractmethod
-    def improve_skill_parameters(*, skill: GroundSkill, rollout: Rollout) -> None:
+    def improve_skill_parameters(self, *, skill: GroundSkill, rollout: Rollout) -> None:
         raise NotImplementedError

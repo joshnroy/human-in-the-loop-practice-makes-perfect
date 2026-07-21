@@ -58,27 +58,23 @@ Subpackages under `src/hitl_pmp/` (see each folder's own README for details):
   `Method`'s `Policy`, `Method` needs `Problem`'s `Task`), just import the target's
   `types.py` directly (never its ABC file) instead: neither `types.py` imports the
   other's ABC back, so there's no real cycle to defer around.
-- **Behavior lives in static-method container classes, not OOP objects — and this
-  applies to any business logic, not just the core ABCs.** `Environment`,
-  `HumanOracle`, `Problem`, `Method`, `Metrics` are never instantiated — think Java's
-  "static class" / singleton-by-class-name idiom, not encapsulated instance state.
-  Every method is `@staticmethod` (`@abc.abstractmethod` on the interface, concrete
-  overrides on subclasses); any state a concrete implementation needs (e.g.
-  `Problem.env`, `Problem.human`, `Problem.tasks`) is a `ClassVar` set once on the
-  class itself, not passed into a constructor. The same rule extends to any concrete
-  business logic underneath those interfaces, however small — a `Predicate.holds`
-  classifier or a `Policy` function's real logic still lives as a `@staticmethod` on
-  its own class (e.g. `environments/lightswitch/predicates.py`'s `LightOnClassifier`,
-  `environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy`), never
-  as a bare module-level function. Where an interface itself requires a positional
-  callable (`Predicate.holds`, `Policy`), a short module-level lambda adapts the
-  class's keyword-only method into that shape — the lambda is the only thing allowed
-  to be a bare function, since it carries no logic of its own to find later. This is
-  an organizational choice, not idiomatic OOP — the goal is functional-style code
-  (explicit data in, explicit data out) organized into namespacing containers, so
-  behavior is always reachable by class name (`ActionOraclePolicy.get_action`)
-  instead of scattered across module-level functions you have to grep for or chase
-  through an inheritance tree to find.
+- **Behavior lives on real instances where there's genuine per-run state
+  (`Environment`, `Problem`, `Tasks`, `Method`, `Metrics`), and on static-method
+  container classes everywhere else.** The state-carrying five are real pydantic
+  `BaseModel, abc.ABC` instances, constructed with their per-run state as keyword
+  constructor arguments (e.g. `LightSwitchEnvironment(grid_size=10)`) — not the
+  never-instantiated, `ClassVar`-mutated "Java static class" pattern this bullet
+  used to describe; that pattern caused real state-leakage bugs and forgot-to-wire
+  footguns in practice. `HumanOracle`/`Renderer` have no state of their own to hold
+  between calls, so they stay static-method containers, taking the one `Environment`
+  *instance* they need as an explicit per-call argument instead of a global. The
+  same split applies to any concrete business logic underneath these interfaces: a
+  domain's own structural constants (e.g. `environments/lightswitch/predicates.py`'s
+  `LightOnClassifier`) stay `@staticmethod`/`ClassVar` where they genuinely don't
+  need per-instance config, never as a bare module-level function — the only
+  exception is a short lambda adapter where an interface itself demands a positional
+  callable (`Predicate.holds`, `Policy`), since the lambda carries no logic of its
+  own to find later. Full rationale: [`src/hitl_pmp/core/README.md`](src/hitl_pmp/core/README.md#conventions-applied-here).
 - **Every parameter is keyword-only.** Enforced by ruff's `PLR0917`
   (`too-many-positional-arguments`) with `max-positional-args = 0` — any function we
   define with a positional-or-keyword parameter is a lint error. Exceptions: `self`/

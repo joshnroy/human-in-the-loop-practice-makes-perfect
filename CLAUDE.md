@@ -65,29 +65,54 @@ if they're conceptually part of the same effort.
 `src/hitl_pmp/` is reusable library code; `tests/` mirrors it 1:1. `analysis/` (scripts/
 notebooks producing results/figures) will import from `hitl_pmp`, never the reverse.
 
-### The `core/` interfaces and the static-method-container pattern
+### The `core/` interfaces: instances where there's real state, static containers where there isn't
 
-`core/` holds six **fixed abstract interfaces**, none ever instantiated: `Problem`,
-`Method`, `Renderer` (top-level), plus `Environment`, `HumanOracle`, `Tasks` (nested
-*under* `core/problem/`, not siblings of it — see below for why). Every method is
-`@staticmethod`; any state a concrete subclass needs (e.g. `Problem.env`) is a
-`ClassVar` **set on the base class itself** (`Problem.env = ConcreteEnv`), Java
-static-class/singleton style — not constructor-assigned instance state, and methods
-reference the base class by name (`Problem.env`), never `cls`. The same
-static-method-container rule extends to any concrete business logic underneath these
-interfaces, however small (e.g.
-`environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy.get_action`)
-— never a bare module-level function, except a short lambda where an interface
-demands a positional callable (`Predicate.holds`, `Policy`).
+`core/` holds six **fixed abstract interfaces**: `Problem`, `Method`, `Renderer`
+(top-level), plus `Environment`, `HumanOracle`, `Tasks` (nested *under*
+`core/problem/`, not siblings of it — see below for why). These used to be a single
+static-method-container pattern applied uniformly to all six (never instantiated,
+state as a `ClassVar` mutated on the base class, Java static-class/singleton style)
+— that pattern caused real, repeated problems in practice: a caller had to remember
+to wire e.g. `Problem.env = ConcreteEnv` *before* calling anything, tests needed a
+hand-rolled snapshot/restore fixture around every mutation to avoid leaking state
+into other tests, and a `problem`/`method` value passed as a parameter could
+silently disagree with the separately-wired global ClassVar it actually read from
+at runtime.
+
+The dividing line now is **does this class carry real per-run state**:
+- `Environment`, `Problem`, `Tasks`, `Method` genuinely do (`current_state`,
+  `env`/`tasks`/`human`, RNG streams, etc.), so they're real pydantic
+  (`BaseModel, abc.ABC`) instances now, constructed with that state as keyword
+  constructor arguments (e.g. `LightSwitchEnvironment(grid_size=10)`,
+  `LightSwitchProblem(env=env, tasks=tasks)`) — every method is a normal instance
+  method (`self`, not `@staticmethod`), and a concrete domain's own genuine
+  structural *constants* (e.g. `LightSwitchEnvironment.robot`/`.light_type`/
+  `.action_space`) still stay `ClassVar`, since those really are the same for every
+  instance that will ever exist. `Metrics` (`core/metrics/metrics.py`) got the same
+  treatment even though it isn't one of the six interfaces (see below).
+- `HumanOracle` and `Renderer` have no state of their own to hold between calls, so
+  they stay static-method containers — but both now take the one `Environment`
+  *instance* they need to read/mutate as an explicit per-call argument
+  (`HumanOracle.execute_human_command(..., env: Environment)`,
+  `Renderer.render_frame(*, state, env, label=None)`) rather than ever reaching for
+  a global. The same rule extends to any concrete business logic underneath these
+  interfaces: genuinely stateless helpers (e.g.
+  `environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy.get_action`)
+  stay static-method containers too — never a bare module-level function, except a
+  short lambda where an interface demands a positional callable (`Predicate.holds`,
+  `Policy`) — but anything that needs a specific `Environment` instance's config now
+  takes that instance as an explicit parameter instead of reading a class attribute.
 
 `Metrics` (`core/metrics/metrics.py`) sits alongside these but isn't actually
 abstract: every method there is already a genuine, reusable default (nothing in this
 codebase needs different behavior than "one task type, no real human-intervention
 tracking" yet), so there's no forced-must-override method the way `Problem` still has
-`run_task_episode`. Callers use `Metrics` directly, no per-domain subclass — a future
-`Method`/environment that genuinely needs different behavior overrides just the
+`run_task_episode`. Callers construct `Metrics()` directly, no per-domain subclass — a
+future `Method`/environment that genuinely needs different behavior overrides just the
 specific method that differs (ordinary subclassing, not contingent on the parent
-being an ABC).
+being an ABC). Constructing a fresh instance per run is also what replaced the old
+shared-`ClassVar`-plus-`reset()` pattern: there's no leftover state to explicitly
+clear anymore, since nothing is shared to begin with.
 
 ```
 core/
@@ -148,15 +173,15 @@ rationale and a mermaid dependency graph: `src/hitl_pmp/core/README.md`.
 **Why this breaks from Gym's `reset()`-is-free assumption**: a robot can take
 **irreversible** actions, so ending an episode doesn't imply a free reset — a human
 must sometimes intervene, at a cost. `Environment.take_action`/`get_valid_actions`
-operate implicitly on the one tracked `current_state: ClassVar[State]` (no explicit
-`state` param — this is not a reusable dynamics function for hypothetical "what-if"
-planning; a `Method` that needs to plan carries its own model for that). `set_state` is
-a privileged external override used by `HumanOracle` via
+operate implicitly on that instance's own tracked `current_state: State | None`
+(no explicit `state` param — this is not a reusable dynamics function for
+hypothetical "what-if" planning; a `Method` that needs to plan carries its own model
+for that). `set_state` is a privileged external override used by `HumanOracle` via
 `Problem.execute_human_command`, distinct from `take_action`'s normal forward dynamics.
 `hard_reset()` is harness-only (before a run starts), never called by the agent.
-`HumanOracle.execute_human_command` takes `env: type[Environment]` directly and is
-responsible for mutating it (e.g. `env.set_state(...)`) to reflect whatever actually
-happened — it returns nothing; querying cost beforehand is
+`HumanOracle.execute_human_command` takes `env: Environment` (the instance) directly
+and is responsible for mutating it (e.g. `env.set_state(...)`) to reflect whatever
+actually happened — it returns nothing; querying cost beforehand is
 `calculate_cost_for_human_command`'s separate, side-effect-free job.
 
 ### Conventions (enforced by lint, not just documented)

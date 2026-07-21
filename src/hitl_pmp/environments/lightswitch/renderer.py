@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from matplotlib.backends.backend_agg import FigureCanvasAgg  # noqa: E402
 
+from hitl_pmp.core.problem.environment.environment import Environment  # noqa: E402
 from hitl_pmp.core.problem.environment.types import State  # noqa: E402
 from hitl_pmp.core.renderer.renderer import Renderer  # noqa: E402
 
@@ -30,8 +31,13 @@ class LightSwitchRenderer(Renderer):
     marker_size: ClassVar[float] = 300.0
 
     @staticmethod
-    def render_frame(*, state: State, label: str | None = None) -> np.ndarray:
-        env = LightSwitchEnvironment
+    def render_frame(*, state: State, env: Environment, label: str | None = None) -> np.ndarray:
+        # env is typed as the base Environment here (matching the Renderer ABC's
+        # signature exactly -- narrowing a parameter type on override would violate
+        # Liskov substitution, per mypy); narrow it back before reading Light-Switch-
+        # specific fields (grid_size, robot, light) that only LightSwitchEnvironment
+        # actually has.
+        assert isinstance(env, LightSwitchEnvironment)
         robot_x = state.get(obj=env.robot, feature_name="x")
         light_x = state.get(obj=env.light, feature_name="x")
         is_on = LightOnClassifier.holds(state=state, light=env.light)

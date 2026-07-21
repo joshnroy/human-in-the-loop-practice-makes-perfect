@@ -7,18 +7,25 @@ import imageio
 import imageio_ffmpeg
 import numpy as np
 
+from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
 
 
 class Renderer(abc.ABC):
     """Renders a State as an RGB frame -- a static-method container, never
-    instantiated, same pattern as every other core interface. A pure function of
-    State: unlike Environment/HumanOracle/Tasks it doesn't belong to Problem, so it
-    isn't nested under problem/."""
+    instantiated, same pattern as HumanOracle: it has no state of its own to hold
+    between calls, so it stays static rather than becoming a constructor-injected
+    instance like Environment/Problem/Tasks/Method did. Unlike Environment/
+    HumanOracle/Tasks it doesn't belong to Problem, so it isn't nested under
+    problem/. Takes env explicitly (the one Environment instance a concrete
+    renderer needs to read e.g. viewport bounds from) rather than reaching for a
+    global -- render_frame is a function of (State, Environment), not of State
+    alone, once a domain's rendering depends on any of that Environment's own
+    per-instance config (e.g. LightSwitchRenderer's axis limits need grid_size)."""
 
     @staticmethod
     @abc.abstractmethod
-    def render_frame(*, state: State, label: str | None = None) -> np.ndarray:
+    def render_frame(*, state: State, env: Environment, label: str | None = None) -> np.ndarray:
         """Returns an HxWx3 uint8 RGB frame. label, when given, is the
         core.method.types.LabeledAction.label of whichever action/skill just
         produced this state -- overlaid on the frame so a rendered episode shows

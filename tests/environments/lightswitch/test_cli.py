@@ -1,49 +1,12 @@
 import argparse
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from hitl_pmp.core.metrics.metrics import Metrics
-from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
-
-
-@pytest.fixture(autouse=True)
-def _restore_lightswitch_config() -> Iterator[None]:
-    """LightSwitchCli.run_method() mutates shared ClassVar state (grid_size, seed,
-    Problem.env/tasks, Metrics.evaluations, ...) as a side effect; snapshot and
-    restore it around every test in this file so tests can't leak configuration
-    into each other regardless of execution order."""
-    original_grid_size = LightSwitchEnvironment.grid_size
-    original_light_on_tolerance = LightSwitchEnvironment.light_on_tolerance
-    original_same_position_tolerance = LightSwitchEnvironment.same_position_tolerance
-    original_canonical_light_target = LightSwitchEnvironment.canonical_light_target
-    original_seed = LightSwitchTasks.seed
-    original_test_env_seed_offset = LightSwitchTasks.test_env_seed_offset
-    original_target_low = LightSwitchTasks.target_low
-    original_target_high = LightSwitchTasks.target_high
-    original_problem_env = getattr(Problem, "env", None)
-    original_problem_tasks = getattr(Problem, "tasks", None)
-    try:
-        yield
-    finally:
-        LightSwitchEnvironment.grid_size = original_grid_size
-        LightSwitchEnvironment.light_on_tolerance = original_light_on_tolerance
-        LightSwitchEnvironment.same_position_tolerance = original_same_position_tolerance
-        LightSwitchEnvironment.canonical_light_target = original_canonical_light_target
-        LightSwitchTasks.test_env_seed_offset = original_test_env_seed_offset
-        LightSwitchTasks.target_low = original_target_low
-        LightSwitchTasks.target_high = original_target_high
-        LightSwitchTasks.set_seed(seed=original_seed)
-        if original_problem_env is not None:
-            Problem.env = original_problem_env
-        if original_problem_tasks is not None:
-            Problem.tasks = original_problem_tasks
-        Metrics.reset()
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -61,14 +24,19 @@ def _build_parser() -> argparse.ArgumentParser:
 def test_add_arguments_defaults_match_live_class_values() -> None:
     args = _build_parser().parse_args([])
     assert args.num_test_tasks == 20
-    assert args.grid_size == LightSwitchEnvironment.grid_size
+    assert args.grid_size == LightSwitchEnvironment.model_fields["grid_size"].default
     assert args.light_on_tolerance == LightSwitchEnvironment.light_on_tolerance
     assert args.same_position_tolerance == LightSwitchEnvironment.same_position_tolerance
-    assert args.canonical_light_target == LightSwitchEnvironment.canonical_light_target
-    assert args.seed == LightSwitchTasks.seed
-    assert args.test_env_seed_offset == LightSwitchTasks.test_env_seed_offset
-    assert args.target_low == LightSwitchTasks.target_low
-    assert args.target_high == LightSwitchTasks.target_high
+    assert (
+        args.canonical_light_target
+        == LightSwitchEnvironment.model_fields["canonical_light_target"].default
+    )
+    assert args.seed == 0
+    assert (
+        args.test_env_seed_offset == LightSwitchTasks.model_fields["test_env_seed_offset"].default
+    )
+    assert args.target_low == LightSwitchTasks.model_fields["target_low"].default
+    assert args.target_high == LightSwitchTasks.model_fields["target_high"].default
 
 
 def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[str]) -> None:
@@ -90,7 +58,8 @@ def test_run_method_applies_seed_deterministically() -> None:
         num_cycles=0,
         max_steps_per_interaction=0,
     )
-    first_target = LightSwitchTasks.sample_test_task().initial_state.get(
+    tasks_a = LightSwitchTasks(env=LightSwitchEnvironment(), seed=99)
+    first_target = tasks_a.sample_test_task().initial_state.get(
         obj=LightSwitchEnvironment.light, feature_name="target"
     )
 
@@ -101,7 +70,8 @@ def test_run_method_applies_seed_deterministically() -> None:
         num_cycles=0,
         max_steps_per_interaction=0,
     )
-    second_target = LightSwitchTasks.sample_test_task().initial_state.get(
+    tasks_b = LightSwitchTasks(env=LightSwitchEnvironment(), seed=99)
+    second_target = tasks_b.sample_test_task().initial_state.get(
         obj=LightSwitchEnvironment.light, feature_name="target"
     )
 
@@ -119,7 +89,24 @@ def test_run_method_respects_a_smaller_grid_size_override(
         max_steps_per_interaction=0,
     )
     assert "success rate: 4/4 (100%)" in capsys.readouterr().out
-    assert LightSwitchEnvironment.grid_size == 3
+
+
+def test_run_method_applies_light_on_tolerance_override() -> None:
+    """light_on_tolerance/same_position_tolerance are the only two values left as
+    ClassVar mutation (see LightSwitchEnvironment's own docstring for why) --
+    confirm run_method's apply_config step still applies them."""
+    original = LightSwitchEnvironment.light_on_tolerance
+    try:
+        args = _build_parser().parse_args(["--num-test-tasks", "1", "--light-on-tolerance", "0.5"])
+        LightSwitchCli.run_method(
+            args=args,
+            method=SkillOracleMethod,
+            num_cycles=0,
+            max_steps_per_interaction=0,
+        )
+        assert LightSwitchEnvironment.light_on_tolerance == 0.5
+    finally:
+        LightSwitchEnvironment.light_on_tolerance = original
 
 
 def test_run_method_without_output_dir_writes_no_files(*, tmp_path: Path) -> None:

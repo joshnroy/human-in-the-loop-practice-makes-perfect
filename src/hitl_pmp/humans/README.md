@@ -19,13 +19,18 @@ All versions implement two methods:
   asking the human would cost, without actually asking; safe to call repeatedly for
   planning/ROI.
 - `execute_human_command(*, command_start_state_description, command_goal_description,
-  env: type[Environment]) -> None` — actually ask. No return value (the cost was
-  already known from `calculate_cost_for_human_command`); instead this is handed
-  `env` directly and is responsible for updating it (e.g. `env.set_state(...)`) to
-  reflect whatever actually happened, since only it knows what that was. This is
-  deliberately hand-waved at the interface level — each version below implements its
-  own policy for how the human actually goes about it, so different versions can
-  model humans of different capability/efficiency without the interface changing.
+  env: Environment) -> None` — actually ask. No return value (the cost was
+  already known from `calculate_cost_for_human_command`); instead this is handed the
+  one `Environment` *instance* directly and is responsible for updating it (e.g.
+  `env.set_state(...)`) to reflect whatever actually happened, since only it knows
+  what that was. This is deliberately hand-waved at the interface level — each
+  version below implements its own policy for how the human actually goes about it,
+  so different versions can model humans of different capability/efficiency without
+  the interface changing. `HumanOracle` itself stays a static-method container (no
+  constructor, no state of its own) even though `Environment`/`Problem`/`Tasks`/
+  `Method` are real constructor-injected instances now — it never needed a global to
+  begin with, since `execute_human_command` already receives the one `Environment`
+  instance it needs as this explicit per-call argument.
 
 `CommandStartStateDescription` currently just wraps a raw `State` (see the `TODO` in
 `core/problem/human/types.py`); `CommandGoalDescription` already wraps the same

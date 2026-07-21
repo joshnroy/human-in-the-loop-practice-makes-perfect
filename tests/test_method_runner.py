@@ -1,11 +1,8 @@
 import argparse
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from hitl_pmp.core.metrics.metrics import Metrics
-from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
 from hitl_pmp.environments.lightswitch.renderer import LightSwitchRenderer
@@ -14,31 +11,21 @@ from hitl_pmp.method_runner import MethodRunner
 from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
 
 
-@pytest.fixture(autouse=True)
-def _wire_lightswitch() -> Iterator[None]:
-    original_problem_env = getattr(Problem, "env", None)
-    original_problem_tasks = getattr(Problem, "tasks", None)
-    Problem.env = LightSwitchEnvironment
-    Problem.tasks = LightSwitchTasks
-    try:
-        yield
-    finally:
-        if original_problem_env is not None:
-            Problem.env = original_problem_env
-        if original_problem_tasks is not None:
-            Problem.tasks = original_problem_tasks
-        Metrics.reset()
-
-
 def _args(*, num_test_tasks: int = 5, output_dir: Path | None = None) -> argparse.Namespace:
     return argparse.Namespace(num_test_tasks=num_test_tasks, output_dir=output_dir)
 
 
+def _build_problem() -> LightSwitchProblem:
+    env = LightSwitchEnvironment()
+    return LightSwitchProblem(env=env, tasks=LightSwitchTasks(env=env))
+
+
 def test_run_prints_success_rate(*, capsys: pytest.CaptureFixture[str]) -> None:
+    problem = _build_problem()
     MethodRunner.run(
         args=_args(num_test_tasks=5),
-        method=SkillOracleMethod,
-        problem=LightSwitchProblem,
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
         renderer=None,
@@ -48,10 +35,11 @@ def test_run_prints_success_rate(*, capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_run_records_one_evaluation_per_cycle_plus_the_initial_one() -> None:
-    MethodRunner.run(
+    problem = _build_problem()
+    metrics = MethodRunner.run(
         args=_args(num_test_tasks=3),
-        method=SkillOracleMethod,
-        problem=LightSwitchProblem,
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
         num_cycles=2,
         max_steps_per_interaction=2,
         renderer=None,
@@ -59,14 +47,15 @@ def test_run_records_one_evaluation_per_cycle_plus_the_initial_one() -> None:
     )
     # num_cycles/max_steps_per_interaction are forwarded to PracticeLoop.run, not
     # hardcoded inside MethodRunner -- one initial evaluation plus one per cycle.
-    assert len(Metrics.evaluations) == 3
+    assert len(metrics.evaluations) == 3
 
 
 def test_run_without_output_dir_writes_no_files(*, tmp_path: Path) -> None:
+    problem = _build_problem()
     MethodRunner.run(
         args=_args(output_dir=None),
-        method=SkillOracleMethod,
-        problem=LightSwitchProblem,
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
         renderer=LightSwitchRenderer,
@@ -76,10 +65,11 @@ def test_run_without_output_dir_writes_no_files(*, tmp_path: Path) -> None:
 
 
 def test_run_with_output_dir_and_renderer_writes_a_video_file(*, tmp_path: Path) -> None:
+    problem = _build_problem()
     MethodRunner.run(
         args=_args(output_dir=tmp_path),
-        method=SkillOracleMethod,
-        problem=LightSwitchProblem,
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
         renderer=LightSwitchRenderer,
@@ -90,25 +80,30 @@ def test_run_with_output_dir_and_renderer_writes_a_video_file(*, tmp_path: Path)
     assert video_path.stat().st_size > 0
 
 
-def test_run_resets_metrics_so_evaluations_dont_leak_between_calls() -> None:
-    MethodRunner.run(
+def test_run_does_not_leak_evaluations_between_calls() -> None:
+    """MethodRunner constructs a fresh Metrics() per call now (see its own
+    docstring) -- there's no reset() step to forget, and no shared state two
+    back-to-back calls could leak through."""
+    problem = _build_problem()
+    first = MethodRunner.run(
         args=_args(num_test_tasks=2),
-        method=SkillOracleMethod,
-        problem=LightSwitchProblem,
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
         renderer=None,
         render_fps=2,
     )
-    assert len(Metrics.evaluations) == 1
+    assert len(first.evaluations) == 1
 
-    MethodRunner.run(
+    second = MethodRunner.run(
         args=_args(num_test_tasks=2),
-        method=SkillOracleMethod,
-        problem=LightSwitchProblem,
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
         renderer=None,
         render_fps=2,
     )
-    assert len(Metrics.evaluations) == 1
+    assert len(second.evaluations) == 1
+    assert first is not second

@@ -7,13 +7,15 @@ from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_oracle_policy import SkillOraclePolicy
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 
+_ENV = LightSwitchEnvironment()
+_TASKS = LightSwitchTasks(env=_ENV)
+
 # Policy is a positional Callable[[State], LabeledAction] per its interface contract
 # (core/method/types.py) -- same adapter pattern as ACTION_ORACLE_POLICY itself.
-# SkillOraclePolicy.get_labeled_action is Light-Switch-only (the Problem.env
-# dispatch lives one layer up, in methods/oracle/skill_oracle_method.py's
-# SkillOracleMethod), so it's safe to call directly without wiring Problem.env.
+# SkillOraclePolicy.get_labeled_action needs an env instance now (get_cells() reads
+# instance-level grid_size), captured here via a closure over _ENV.
 _SKILL_ORACLE_POLICY: Policy = lambda state: SkillOraclePolicy.get_labeled_action(  # noqa: E731
-    state=state
+    state=state, env=_ENV
 )
 
 _ORACLE_POLICIES: dict[str, Policy] = {
@@ -24,26 +26,26 @@ _ORACLE_POLICIES: dict[str, Policy] = {
 
 @pytest.mark.parametrize("policy", _ORACLE_POLICIES.values(), ids=_ORACLE_POLICIES.keys())
 def test_oracle_policy_solves_a_sampled_train_task(*, policy: Policy) -> None:
-    task = LightSwitchTasks.sample_train_task()
-    LightSwitchEnvironment.set_state(state=task.initial_state)
+    task = _TASKS.sample_train_task()
+    _ENV.set_state(state=task.initial_state)
 
-    state = LightSwitchEnvironment.get_current_state()
+    state = _ENV.get_current_state()
     assert task.goal.is_satisfied(state=state) is False
 
     for _ in range(2):
-        state = LightSwitchEnvironment.take_action(action=policy(state).action)
+        state = _ENV.take_action(action=policy(state).action)
 
     assert task.goal.is_satisfied(state=state) is True
 
 
 @pytest.mark.parametrize("policy", _ORACLE_POLICIES.values(), ids=_ORACLE_POLICIES.keys())
 def test_oracle_policy_solves_a_sampled_test_task(*, policy: Policy) -> None:
-    task = LightSwitchTasks.sample_test_task()
-    LightSwitchEnvironment.set_state(state=task.initial_state)
+    task = _TASKS.sample_test_task()
+    _ENV.set_state(state=task.initial_state)
 
-    state = LightSwitchEnvironment.get_current_state()
+    state = _ENV.get_current_state()
     for _ in range(2):
-        state = LightSwitchEnvironment.take_action(action=policy(state).action)
+        state = _ENV.take_action(action=policy(state).action)
 
     assert task.goal.is_satisfied(state=state) is True
 
@@ -54,10 +56,10 @@ def test_jump_action_never_reaches_the_light_in_one_step() -> None:
     light on in one take_action call, since dlight is applied based on the
     pre-action position. This is the mechanism the paper's "impossible skill"
     exploits, at the raw environment level."""
-    task = LightSwitchTasks.sample_train_task()
-    LightSwitchEnvironment.set_state(state=task.initial_state)
+    task = _TASKS.sample_train_task()
+    _ENV.set_state(state=task.initial_state)
 
-    state = LightSwitchEnvironment.get_current_state()
+    state = _ENV.get_current_state()
     light = LightSwitchEnvironment.light
     light_x = state.get(obj=light, feature_name="x")
     robot = LightSwitchEnvironment.robot
@@ -65,6 +67,6 @@ def test_jump_action_never_reaches_the_light_in_one_step() -> None:
     target = state.get(obj=light, feature_name="target")
 
     jump_action = np.array([light_x - robot_x, target])
-    next_state = LightSwitchEnvironment.take_action(action=jump_action)
+    next_state = _ENV.take_action(action=jump_action)
 
     assert task.goal.is_satisfied(state=next_state) is False
