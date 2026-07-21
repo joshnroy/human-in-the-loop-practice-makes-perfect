@@ -66,18 +66,27 @@ notebooks producing results/figures) will import from `hitl_pmp`, never the reve
 
 ### The `core/` interfaces and the static-method-container pattern
 
-`core/` holds seven **fixed abstract interfaces**, none ever instantiated:
-`Problem`, `Method`, `Metrics`, `Renderer` (top-level), plus `Environment`,
-`HumanOracle`, `Tasks` (nested *under* `core/problem/`, not siblings of it — see
-below for why). Every method is `@staticmethod`; any state a concrete subclass needs
-(e.g. `Problem.env`) is a `ClassVar` **set on the base class itself** (`Problem.env =
-ConcreteEnv`), Java static-class/singleton style — not constructor-assigned instance
-state, and methods reference the base class by name (`Problem.env`), never `cls`.
-The same static-method-container rule extends to any concrete business logic
-underneath these interfaces, however small (e.g.
+`core/` holds six **fixed abstract interfaces**, none ever instantiated: `Problem`,
+`Method`, `Renderer` (top-level), plus `Environment`, `HumanOracle`, `Tasks` (nested
+*under* `core/problem/`, not siblings of it — see below for why). Every method is
+`@staticmethod`; any state a concrete subclass needs (e.g. `Problem.env`) is a
+`ClassVar` **set on the base class itself** (`Problem.env = ConcreteEnv`), Java
+static-class/singleton style — not constructor-assigned instance state, and methods
+reference the base class by name (`Problem.env`), never `cls`. The same
+static-method-container rule extends to any concrete business logic underneath these
+interfaces, however small (e.g.
 `environments/lightswitch/action_oracle_policy.py`'s `ActionOraclePolicy.get_action`)
 — never a bare module-level function, except a short lambda where an interface
 demands a positional callable (`Predicate.holds`, `Policy`).
+
+`Metrics` (`core/metrics/metrics.py`) sits alongside these but isn't actually
+abstract: every method there is already a genuine, reusable default (nothing in this
+codebase needs different behavior than "one task type, no real human-intervention
+tracking" yet), so there's no forced-must-override method the way `Problem` still has
+`run_task_episode`. Callers use `Metrics` directly, no per-domain subclass — a future
+`Method`/environment that genuinely needs different behavior overrides just the
+specific method that differs (ordinary subclassing, not contingent on the parent
+being an ABC).
 
 ```
 core/

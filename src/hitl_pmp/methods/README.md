@@ -17,12 +17,24 @@ Switch — the only environment this codebase has so far. This is a pure repro o
 contribution; see `../../../CLAUDE.md` and `../planning/README.md` for why real Fast
 Downward (not a hand-rolled substitute) is used for task planning here.
 
-Nothing lives here yet — this PR only realizes the `Skill`/`GroundSkill`
-preconditions/effects layer those pieces will task-plan over (see
-`../core/README.md`'s `Skill`/`GroundSkill` section and
-`environments/lightswitch/skills.py`). The actual competence model, sampler
-learning, Fast Downward planning integration, and each of the 8 paper approaches
-land in stacked follow-up PRs.
+`practice_loop.py`'s `PracticeLoop` is the first piece here: drives PMP-style online
+learning (one initial evaluation, then `num_cycles` rounds of an interaction period +
+an optional per-cycle retraining hook + an evaluation sweep over sampled test tasks),
+mirroring predicators' `main.py:_run_pipeline`. Domain- and `Method`-agnostic (any
+`core.Problem`/`core.Method`/`core.Metrics` triple) — see its own docstring for the
+exact reset semantics, the `Problem.env`/`Problem.tasks` wiring a caller must set up
+first, and how its optional `renderer` param works. Not yet wired to any real
+`Method`: the Light Switch oracle policies (`environments/lightswitch/
+action_oracle_policy.py`/`skill_oracle_policy.py`) still run through their own
+separate loop in `LightSwitchCli.run()`, and `RandomSkillsMethod` (the first of the 8
+paper approaches) hasn't landed yet — both are tracked as stacked follow-ups, along
+with the actual competence model, sampler learning, and Fast Downward planning
+integration.
+
+`core.Metrics` (`../core/README.md`'s "`Metrics` is fully concrete" section) is what
+`PracticeLoop` records evaluations into — used directly, no Light-Switch-specific
+subclass, since nothing in this reproduction needs different behavior than the
+generic default yet.
 
 ## This project's own planned baselines
 

@@ -1,9 +1,10 @@
 # core
 
 This folder holds the **fixed abstract interfaces** for the project: `Problem`,
-`Method`, `Metrics`, `Renderer` — plus `Environment`, `HumanOracle`, and `Tasks`,
-which live *nested inside* `problem/` (see "What `Problem` actually is" below for
-why). Concrete implementations live in sibling folders, not here.
+`Method`, `Renderer` — plus `Environment`, `HumanOracle`, and `Tasks`, which live
+*nested inside* `problem/` (see "What `Problem` actually is" below for why).
+Concrete implementations live in sibling folders, not here. `Metrics` also lives
+here but isn't actually abstract — see "`Metrics` is fully concrete" below.
 
 ```
 core/
@@ -22,7 +23,7 @@ core/
 │   ├── method.py               Method — the agent side
 │   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand
 ├── metrics/
-│   └── metrics.py               Metrics — the evaluation protocol
+│   └── metrics.py               Metrics — the evaluation protocol (fully concrete)
 └── renderer/
     └── renderer.py              Renderer, VideoWriter
 ```
@@ -113,7 +114,9 @@ full rationale; the short version, as applied in this folder:
 - **Behavior lives in the ABCs, as static-method containers — and every concrete
   business-logic helper underneath them follows the same rule.** None of
   `Environment`/`HumanOracle`/`Tasks`/`Problem`/`Method`/`Metrics` is ever
-  instantiated — almost every method is `@staticmethod` (`Problem`'s facade methods
+  instantiated (`Metrics` isn't itself an ABC — see "`Metrics` is fully concrete"
+  below — but follows the identical static-method-container discipline) — almost
+  every method is `@staticmethod` (`Problem`'s facade methods
   are concrete but still static — they delegate, they don't need instance state of
   their own), and any state a concrete subclass needs (e.g. `Problem.env`,
   `Problem.human`, `Problem.tasks`) is a `ClassVar` set once on the class itself, Java
@@ -213,6 +216,31 @@ episode, but if `Problem.run_task_episode`'s signature also needs `Renderer`, th
 `State` (a leaf), and `Problem.run_task_episode` imports `Renderer` — one direction,
 no cycle — and does its own inline frame capture when `renderer` is passed, so there
 is exactly one place any episode ever runs, rendered or not.
+
+## `Metrics` is fully concrete
+
+Unlike `Problem`/`Method`/`Renderer`/`Environment`/`HumanOracle`/`Tasks`, `Metrics`
+is not an `abc.ABC`. `Problem` set the precedent that an interface here can be
+mostly-concrete (only `run_task_episode` is genuinely abstract, everything else is a
+concrete facade passthrough) — `Metrics` takes that one step further: every method
+is already a genuine, reusable default, because nothing in this codebase today needs
+different behavior than "exactly one task/goal type, no real human-intervention
+tracking" (no `Method` here ever calls `Problem.execute_human_command`). There is no
+forced-must-override method left, so there's nothing left to make abstract.
+
+Shared state (`evaluations`, `task_name`) lives on `Metrics` itself as `ClassVar`s,
+the same single-shared-mutable-slot pattern `Problem.env`/`Problem.tasks` already
+use — call `reset()` before each `(problem, method, seed)` run in a sweep. This
+project only ever runs one such combination at a time (e.g. `analysis/` scripts
+shell out one CLI subprocess per seed), so that's never actually stressed by
+concurrent use.
+
+Callers use `Metrics` directly — no per-domain/per-method subclass needed for the
+common case. A future `Method` that tracks real human-intervention cost overrides
+just `num_human_interventions`/`summed_human_cost`; a future multi-task environment
+overrides just `task_training_curve_by_subtask`/`percentage_success_per_task_test` —
+inheriting everything else unchanged either way, since overriding a concrete method
+works exactly like overriding an abstract one.
 
 ## `Type` declares a feature schema, not just a name
 
@@ -315,8 +343,9 @@ matching `name`/`types`/`param_dim` is treated the same as the `LightSwitchSkill
 - `method/` — `method.py` (the `Method` ABC) + `types.py` (`LabeledAction`, `Policy`,
   `Rollout`, `Skill`, `GroundSkill`, `SetupCommand`). Imports from
   `problem/environment/types.py` and `problem/tasks/types.py`.
-- `metrics/` — `metrics.py`, the (mostly generic) evaluation protocol. No `types.py` —
-  it has no supporting types of its own yet.
+- `metrics/` — `metrics.py`, the evaluation protocol, fully concrete (see "`Metrics`
+  is fully concrete" above) — imports nothing else from `core/`, so it stays a leaf
+  like `renderer/`. No `types.py` — it has no supporting types of its own yet.
 - `renderer/` — `renderer.py` (`Renderer`, `VideoWriter`). No `types.py` — frames are
   plain `np.ndarray`, no new pydantic type needed. Imports only `State` from
   `problem/environment/types.py` — nothing else in `core/`, so it stays a leaf
