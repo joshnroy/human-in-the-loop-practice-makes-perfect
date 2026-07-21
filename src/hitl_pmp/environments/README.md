@@ -38,19 +38,25 @@ Each domain subfolder is expected to contain:
   `hitl_pmp/cli.py`. A static-method container (e.g. `LightSwitchCli`) exposing
   `add_arguments(*, parser)` (adds this domain's configurable values as named
   argparse flags — no positional arguments — defaults read live from the relevant
-  classes) and `apply_config(*, args)` (applies them to the domain's own
-  ClassVars) — registered by name in `hitl_pmp/cli.py`'s `ENVIRONMENTS` dict,
-  which has no domain-specific knowledge of its own. An environment is never run
-  directly, though: actually driving a `core.Method` through `practice_loop.py`'s
-  `PracticeLoop` and printing/writing results is a *method*-CLI's job (registered
-  in `hitl_pmp/cli.py`'s `METHODS` dict instead, under `--method`, and living
-  under `methods/<name>/cli.py` — not here, since it's method-specific glue, not
-  environment-specific) — see `LightSwitchCli.run_method` (the shared body every
-  Light-Switch method-CLI calls, e.g. `methods/oracle/cli.py`'s `SkillOracleCli`)
-  and [`../methods/README.md`](../methods/README.md). If `--output-dir` is set
+  classes), `apply_config(*, args)` (applies them to the domain's own ClassVars),
+  and `run_method(*, args, method, num_cycles, max_steps_per_interaction)`
+  (applies config, wires `Problem.env`/`Problem.tasks` — the two things
+  genuinely specific to this domain — then delegates to `../method_runner.py`'s
+  `MethodRunner` for the domain-agnostic rest: actually driving a `core.Method`
+  through `practice_loop.py`'s `PracticeLoop`, printing a success-rate summary,
+  and writing `episode.mp4` if `--output-dir` is set) — registered by name in
+  `hitl_pmp/cli.py`'s `ENVIRONMENTS` dict, which has no domain-specific
+  knowledge of its own. An environment is never run directly, though: a
+  method-CLI (registered in `hitl_pmp/cli.py`'s `METHODS` dict instead, under
+  `--method`, and living under `methods/<name>/cli.py` — not here, since it's
+  method-specific glue, not environment-specific) is what calls `run_method`,
+  supplying which `core.Method` to drive and its own `num_cycles`/
+  `max_steps_per_interaction` (an oracle passes `0`/`0` since it never
+  practices) — see `methods/oracle/cli.py`'s `SkillOracleCli` and
+  [`../methods/README.md`](../methods/README.md). If `--output-dir` is set
   (global flag, `hitl_pmp/cli.py`) and the domain has a `renderer.py`, that
-  method-CLI's `run` is also expected to write an `episode.mp4` demo there. Run
-  statistics/metrics tracking to that same flag is a separate, not-yet-built
+  demo `episode.mp4` gets written there. Run statistics/metrics tracking to
+  that same flag is a separate, not-yet-built
   concern (see `core/metrics/metrics.py`).
 - `renderer.py` — optional: only needed if this domain should be visually
   inspectable. A concrete subclass of `core.Renderer` (`render_frame(*, state,

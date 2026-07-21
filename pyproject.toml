@@ -80,13 +80,14 @@ root_packages = ["hitl_pmp"]
 # Encodes core/README.md's dependency direction as an enforced contract, not just
 # prose: core/ is the foundation nothing else may be imported by; practice_loop.py/
 # humans/planning/adapters depend only on core and are mutually independent (nothing
-# in any of the four currently imports another); environments/ sits above those
-# (environments/<domain>/cli.py drives practice_loop.py); methods/ sits above
-# environments/ (a Method like SkillOracleMethod imports the domain it wraps); and
-# hitl_pmp/cli.py is the true top, the only thing allowed to import both
-# environments/ and methods/ directly. This is the exact rule a manual review missed
-# once already (SkillOracleMethod briefly lived inside environments/lightswitch/
-# before being moved to methods/oracle/) -- see methods/README.md's "oracle/" section.
+# in any of the four currently imports another); method_runner.py sits above those
+# (it drives practice_loop.py); environments/ sits above that (environments/<domain>/
+# cli.py drives method_runner.py); methods/ sits above environments/ (a Method like
+# SkillOracleMethod imports the domain it wraps); and hitl_pmp/cli.py is the true
+# top, the only thing allowed to import both environments/ and methods/ directly.
+# This is the exact rule a manual review missed once already (SkillOracleMethod
+# briefly lived inside environments/lightswitch/ before being moved to
+# methods/oracle/) -- see methods/README.md's "oracle/" section.
 [[tool.importlinter.contracts]]
 name = "Layered architecture"
 type = "layers"
@@ -94,6 +95,7 @@ layers = [
     "hitl_pmp.cli",
     "hitl_pmp.methods",
     "hitl_pmp.environments",
+    "hitl_pmp.method_runner",
     "hitl_pmp.practice_loop | hitl_pmp.humans | hitl_pmp.planning | hitl_pmp.adapters",
     "hitl_pmp.core",
 ]
