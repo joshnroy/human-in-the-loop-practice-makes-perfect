@@ -71,3 +71,45 @@ def test_video_writer_creates_missing_parent_directories(*, tmp_path: Path) -> N
     frames = [np.zeros((2, 2, 3), dtype=np.uint8)]
     VideoWriter.write(frames=frames, output_path=output_path, fps=5)
     assert output_path.exists()
+
+
+def test_video_writer_write_gif_converts_an_existing_video(*, tmp_path: Path) -> None:
+    video_path = tmp_path / "clip.mp4"
+    VideoWriter.write(frames=_make_solid_frames(size=32, count=4), output_path=video_path, fps=5)
+    gif_path = tmp_path / "clip.gif"
+
+    VideoWriter.write_gif(video_path=video_path, gif_path=gif_path, fps=5)
+
+    assert gif_path.exists()
+    decoded = [np.asarray(frame) for frame in imageio.mimread(gif_path)]
+    assert len(decoded) == 4
+
+
+def test_video_writer_write_gif_creates_missing_parent_directories(*, tmp_path: Path) -> None:
+    video_path = tmp_path / "clip.mp4"
+    VideoWriter.write(frames=_make_solid_frames(size=8, count=2), output_path=video_path, fps=5)
+    gif_path = tmp_path / "nested" / "dir" / "clip.gif"
+
+    VideoWriter.write_gif(video_path=video_path, gif_path=gif_path, fps=5)
+
+    assert gif_path.exists()
+
+
+def test_video_writer_write_gif_falls_back_to_ffmpeg_subprocess_on_imageio_failure(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If imageio's own video-reading path fails for any reason, write_gif should
+    still succeed by shelling out to ffmpeg directly, not propagate the failure."""
+    video_path = tmp_path / "clip.mp4"
+    VideoWriter.write(frames=_make_solid_frames(size=16, count=3), output_path=video_path, fps=5)
+    gif_path = tmp_path / "clip.gif"
+
+    def _broken_get_reader(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("simulated imageio failure")
+
+    monkeypatch.setattr(imageio, "get_reader", _broken_get_reader)
+
+    VideoWriter.write_gif(video_path=video_path, gif_path=gif_path, fps=5)
+
+    assert gif_path.exists()
+    assert gif_path.stat().st_size > 0
