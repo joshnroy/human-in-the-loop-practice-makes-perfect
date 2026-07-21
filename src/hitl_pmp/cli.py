@@ -68,6 +68,13 @@ class Cli:
             "no environment's own add_arguments may redefine them (argparse itself will "
             "raise a clear conflicting-option-string error if one ever tries).",
         )
+        # TODO: --method is optional (default=None) only because --policy/
+        # LightSwitchCli.run() is still the sole working path today (METHODS is
+        # empty). Once the oracle policies are wrapped as core.Method and that
+        # separate --policy loop is removed, PracticeLoop becomes the only
+        # entrypoint -- --method should become required=True at that point (like
+        # --env already is), and main()'s if/else below collapses to a single
+        # METHODS[args.method].run(args=args) call.
         parser.add_argument(
             "--method",
             choices=sorted(METHODS),
@@ -127,6 +134,12 @@ class Cli:
     @staticmethod
     def main(*, argv: list[str] | None = None) -> None:
         args = Cli.parse_args(argv=argv)
+        # TODO: this if/else is transitional -- see the --method TODO above.
+        # Once --method is the only entrypoint, this becomes just
+        # METHODS[args.method].run(args=args), and the else branch (plus
+        # ENVIRONMENTS[...].run() as a directly-invoked codepath, as opposed to
+        # ENVIRONMENTS itself, still needed for a domain's own config flags) goes
+        # away.
         if args.method is not None:
             METHODS[args.method].run(args=args)
         else:
