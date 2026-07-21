@@ -52,7 +52,25 @@ then `python -m analysis.practice_makes_perfect.ees --results-root <results> --o
 
 ## Results
 
-RESULTS_TABLE_PLACEHOLDER
+Mean fraction of the 10 held-out evaluation tasks solved, across **10 seeds**
+(± standard error), at each checkpoint:
+
+| Online transitions | EES | Random Skills | Skill Oracle |
+|--------------------|-----|---------------|--------------|
+| 0 (before practice) | 0.0% | 0.0% | 100% |
+| 150   | **50.0%** ± 7.0 | 0.0% | 100% |
+| 300   | **89.0%** ± 6.0 | 0.0% | 100% |
+| 450   | **95.0%** ± 4.0 | 0.0% | 100% |
+| 600   | **98.0%** ± 2.0 | 0.0% | 100% |
+| 750   | **98.0%** ± 2.0 | 0.0% | 100% |
+| 900   | **100.0%** ± 0.0 | 0.0% | 100% |
+| 1050 – 1500 | **100.0%** ± 0.0 | 0.0% | 100% |
+
+EES reaches the privileged oracle's success rate — from a standing start of 0% —
+after roughly **900 online transitions** (6 free periods), and is already at 89%
+after two. `skill-oracle` cheats with privileged ground-truth state and never
+practices, so it is a flat upper bound rather than a curve; `random-skills`
+collects the identical transition budget and never solves anything.
 
 ![EES vs baselines learning curve](./2026-07-21-ees-vs-baselines-light-switch.png)
 
@@ -73,10 +91,39 @@ is claimed, and none should be inferred from the chart above.
 
 | Paper's claim (Light Switch) | This reproduction |
 |------------------------------|-------------------|
-| "EES is consistently the most sample efficient, achieving higher success rates after fewer online transitions than the baselines" | REPRO_EES_PLACEHOLDER |
-| "Like the Random Skills baseline, MAPLE-Q fails to solve any evaluation tasks" (Random Skills ≈ 0%) | REPRO_RANDOM_PLACEHOLDER |
-| "The main challenge in this environment is for the robot to specialize its parameter prior for the ToggleLight skill" | REPRO_SAMPLER_PLACEHOLDER |
-| JumpToLight "is impossible and never achieves its purported effect" | REPRO_JUMP_PLACEHOLDER |
+| "EES is consistently the most sample efficient, achieving higher success rates after fewer online transitions than the baselines" | **Reproduced.** EES is the only practicing method that improves at all here: 0% → 100% in ~900 transitions, versus 0% for Random Skills over the same budget. |
+| "Like the Random Skills baseline, MAPLE-Q fails to solve any evaluation tasks" (Random Skills ≈ 0%) | **Reproduced.** Random Skills scores exactly 0.0% at every checkpoint, all 10 seeds. (MAPLE-Q is not ported yet — it is pure deep RL and shares none of this scaffolding.) |
+| "The main challenge in this environment is for the robot to specialize its parameter prior for the ToggleLight skill" | **Reproduced, and measured directly.** Probing the trained sampler over 200 fresh targets: mean |dlight − target| falls from **0.781** under the uniform prior to **0.028** learned, and the fraction of draws landing inside the 0.1 `light_on_tolerance` rises from **10% to 100%**. That specialization is the whole result — it is what turns a 0% policy into a 100% one. |
+| JumpToLight "is impossible and never achieves its purported effect" | **Reproduced.** After training, EES's competence estimates are TurnOnLight 0.995, TurnOffLight 0.993, MoveRobot 0.917, and **JumpToLight 0.114** — it learned the impossible skill is impossible. Since plan cost is −log(competence), JumpToLight costs ~2.17 against ~0.005 for TurnOnLight, roughly a 400× penalty, so cost-aware planning routes around it rather than being trapped by it. |
+
+## A bug this experiment caught
+
+The first version of this port updated the competence model on **every** practice
+attempt, including the ones where the epsilon-greedy branch deliberately chose a
+*random* parameter. Success rate still hit 100%, so the headline curve looked fine —
+but probing the trained model showed `TurnOnLight` competence at **0.575** while the
+policy was solving 10/10 evaluation tasks, which is incoherent.
+
+The cause: at the paper's ε = 0.5, half of all attempts are coin flips by
+construction, so "competence" was measuring how often a coin flip works rather than
+how good the skill is when the robot actually tries. predicators suppresses exactly
+this update (`active_sampler_learning_approach.py` lines 442-443, keyed off the
+`epsilon_bool` its sampler returns). After fixing it:
+
+| Skill | Competence before fix | After fix |
+|-------|----------------------|-----------|
+| TurnOnLight | 0.575 | **0.995** |
+| TurnOffLight | 0.897 | **0.993** |
+| MoveRobot | 0.917 | 0.917 |
+| JumpToLight (impossible) | 0.769 | **0.114** |
+
+Note it is the *impossible* skill that moved most, and in the right direction. The
+buggy version could not tell JumpToLight (0.769) from a mastered skill (0.575) —
+it had them backwards — which is precisely the discrimination EES's whole mechanism
+depends on, since those numbers become the planner's edge costs. The end-to-end
+success curve alone would never have surfaced this; the per-skill probe did. Both
+the pre- and post-fix numbers above come from the same seed-0 configuration, and the
+10-seed sweep reported above was re-run from scratch on the fixed code.
 
 ## Faithfulness notes
 

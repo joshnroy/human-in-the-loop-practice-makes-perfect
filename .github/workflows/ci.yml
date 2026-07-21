@@ -35,5 +35,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+      # Fast Downward is a genuine runtime dependency of the planning-based
+      # Methods (--method ees) and its tests deliberately shell out to a real
+      # binary rather than mocking one -- a mock would not exercise the SAS
+      # cost patching, which is the whole load-bearing mechanism. Built from
+      # source and cached, since there is no usable wheel/apt package.
+      - name: Cache Fast Downward
+        id: cache-fd
+        uses: actions/cache@v4
+        with:
+          path: downward
+          key: fast-downward-${{ runner.os }}-release-v1
+      - name: Build Fast Downward
+        if: steps.cache-fd.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/aibasel/downward.git
+          cd downward && ./build.py
       - run: pip install -e ".[dev]"
       - run: pytest -q
+        env:
+          # `downward/` is checked out inside the workspace here rather than
+          # beside the repo, so point the planner at it explicitly.
+          FD_EXEC_PATH: ${{ github.workspace }}/downward

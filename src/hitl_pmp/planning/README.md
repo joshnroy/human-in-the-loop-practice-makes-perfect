@@ -135,14 +135,17 @@ Fast Downward is **not** vendored or pip-installable as part of this project; it
 external checkout that must be built locally:
 
 ```bash
+# From this repo's parent directory, so the checkout ends up beside it:
 git clone https://github.com/aibasel/downward.git && cd downward && ./build.py
-export FD_EXEC_PATH=/path/to/downward   # the dir containing fast-downward.py
+export FD_EXEC_PATH=/path/to/downward   # only needed if it is NOT a sibling
 ```
 
 `FastDownwardPlanner.fd_dir()` reads `FD_EXEC_PATH` (predicators' own convention),
-falling back to this project's known-good local checkout path. A missing
-`fast-downward.py` raises `FileNotFoundError` with those instructions, never a
-confusing subprocess error. On macOS the GNU `timeout` wrapper is `gtimeout`
+falling back to a `downward/` checkout sitting **beside this repo** — the same
+sibling-repo convention `CLAUDE.md` documents for `../hitl-practice`, so the common
+case needs no environment variable and no machine-specific absolute path is baked
+into the source. A missing `fast-downward.py` raises `FileNotFoundError` with those
+instructions, never a confusing subprocess error. On macOS the GNU `timeout` wrapper is `gtimeout`
 (`brew install coreutils`); `sys.platform` picks between the two.
 
 `tests/planning/test_fast_downward.py` genuinely shells out to that binary rather than

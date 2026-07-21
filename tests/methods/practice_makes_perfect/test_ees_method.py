@@ -4,7 +4,9 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
+from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
@@ -265,3 +267,115 @@ def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_samp
     # Param-free skills (MoveRobot) have no sampler and so no epsilon branch --
     # their competence keeps being tracked normally.
     assert method.total_observations() > competence_before
+
+
+def test_reset_environment_directly_sets_state_and_returns_true() -> None:
+    method, env = _build()
+    start_state = env.build_initial_state(light_level=0.3, light_target=0.8)
+    assert method.reset_environment(start_state=start_state) is True
+    assert env.get_current_state() is start_state
+
+
+def test_measured_success_rate_is_zero_for_a_never_executed_skill() -> None:
+    """Zero rather than the prior mean, so `skip_perfect` can't fire on a skill
+    with no evidence at all."""
+    method, env = _build()
+    assert method.measured_success_rate(ground_skill=_turn_on_light(env=env)) == 0.0
+
+
+def test_random_choice_is_reproducible_for_a_given_seed() -> None:
+    method_a, env_a = _build(seed=3)
+    method_b, env_b = _build(seed=3)
+    options_a = list(env_a.get_cells())
+    skills_a = [
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env_a.robot, c, c))
+        for c in options_a
+    ]
+    skills_b = [
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env_b.robot, c, c))
+        for c in env_b.get_cells()
+    ]
+    assert method_a.random_choice(ground_skills=skills_a) == method_b.random_choice(
+        ground_skills=skills_b
+    )
+
+
+def test_score_is_pure_exploration_bonus_when_no_tasks_have_been_seen() -> None:
+    """With nothing to situate against, planning progress is undefined -- the score
+    falls back to the UCB bonus alone rather than erroring or ranking arbitrarily."""
+    method, env = _build()
+    skill = _turn_on_light(env=env)
+    method.observe_outcome(ground_skill=skill, success=False)
+    score = method.score_ground_skill(ground_skill=skill)
+    assert score >= 0.0
+    assert math.isfinite(score)
+
+
+def test_evaluation_policy_emits_a_no_op_once_the_goal_is_already_satisfied() -> None:
+    """run_task_episode stops the moment the goal holds, so this path is normally
+    unreachable -- but the policy must degrade to a no-op rather than crash if it
+    is stepped anyway."""
+    method, env = _build()
+    initial_state = env.build_initial_state(light_level=0.5, light_target=0.5)
+    light_on = LIGHT_ON(state=initial_state, objects=(env.light,))
+    task = Task(initial_state=initial_state, goal=Goal(atoms=frozenset({light_on})))
+    env.set_state(state=initial_state)
+
+    policy = method.get_task_policy(task=task)
+    labeled = policy(env.get_current_state())
+    assert labeled.label.startswith("no-op")
+    assert labeled.action.tolist() == [0.0, 0.0]
+
+
+def test_refresh_planning_progress_plans_skips_tasks_it_cannot_plan_for() -> None:
+    """An unreachable goal raises PlanningFailure inside the refresh loop; that task
+    is dropped rather than taking the whole scoring pass down with it."""
+    method, env = _build()
+    unreachable = frozenset({
+        ADJACENT(
+            state=env.build_initial_state(light_level=0.0, light_target=0.5),
+            objects=(env.get_cells()[0], env.get_cells()[0]),
+        )
+    })
+    method.record_seen_task(
+        init_atoms=method.abstract_state(
+            state=env.build_initial_state(light_level=0.0, light_target=0.5)
+        ),
+        goal=unreachable,
+    )
+    method.refresh_planning_progress_plans()
+    assert method.planning_progress_plans() == []
+
+
+def test_the_four_unreachable_method_hooks_raise() -> None:
+    method, _ = _build()
+    with pytest.raises(NotImplementedError):
+        method.generate_train_task(tbd_inputs=None)
+    with pytest.raises(NotImplementedError):
+        method.execute_setup_command(setup_command=None)  # type: ignore[arg-type]
+    with pytest.raises(NotImplementedError):
+        method.execute_skill(skill=None)  # type: ignore[arg-type]
+    with pytest.raises(NotImplementedError):
+        method.improve_skill_parameters(skill=None, rollout=None)  # type: ignore[arg-type]
+
+
+def test_practice_bootstraps_from_a_random_applicable_skill_with_no_candidates_yet() -> None:
+    """At the very start of practice the candidate set is empty (no ground skill has
+    been executed, so nothing has a competence model). If the assigned goal is
+    already satisfied there is no goal-pursuit phase to populate it either, so EES
+    must fall back to a uniformly random applicable skill -- that bootstrap is what
+    creates the first candidates."""
+    method, env = _build()
+    initial_state = env.build_initial_state(light_level=0.5, light_target=0.5)
+    light_on = LIGHT_ON(state=initial_state, objects=(env.light,))
+    task = Task(initial_state=initial_state, goal=Goal(atoms=frozenset({light_on})))
+    env.set_state(state=initial_state)
+
+    policy = method.get_practice_policy(task=task)
+    state = env.get_current_state()
+    for _ in range(4):
+        labeled = policy(state)
+        assert not labeled.label.startswith("no-op")
+        state = env.take_action(action=labeled.action)
+
+    assert method.total_observations() > 0
