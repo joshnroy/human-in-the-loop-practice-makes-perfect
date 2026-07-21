@@ -393,10 +393,11 @@ Live in sibling folders: [`../environments/`](../environments/),
 
 The overall dependency direction across the whole package -- `core` is the
 foundation; `practice_loop.py`/`humans/`/`planning/`/`adapters/` depend only on
-`core` and are mutually independent; `environments/` sits above those (a domain's
-own `cli.py` drives `practice_loop.py`); `methods/` sits above `environments/` (a
-`Method` imports the domain(s) it wraps); `hitl_pmp/cli.py` is the true top -- isn't
-just prose here. It's an enforced `import-linter` "layers" contract in
+`core` and are mutually independent; `method_runner.py` sits above those (it drives
+`practice_loop.py`); `environments/` sits above that (a domain's own `cli.py` drives
+`method_runner.py`); `methods/` sits above `environments/` (a `Method` imports the
+domain(s) it wraps); `hitl_pmp/cli.py` is the true top -- isn't just prose here. It's
+an enforced `import-linter` "layers" contract in
 `pyproject.toml`'s `[tool.importlinter]` (run via `lint-imports`, wired into CI and
 pre-commit). That's a direct response to `SkillOracleMethod` briefly living inside
 `environments/lightswitch/` before being moved to `methods/oracle/` -- a violation of

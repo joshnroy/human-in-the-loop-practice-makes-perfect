@@ -73,19 +73,34 @@ def test_add_arguments_defaults_match_live_class_values() -> None:
 
 def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[str]) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "5"])
-    LightSwitchCli.run_method(args=args, method=SkillOracleMethod)
+    LightSwitchCli.run_method(
+        args=args,
+        method=SkillOracleMethod,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
     assert "success rate: 5/5 (100%)" in capsys.readouterr().out
 
 
 def test_run_method_applies_seed_deterministically() -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--seed", "99"])
-    LightSwitchCli.run_method(args=args, method=SkillOracleMethod)
+    LightSwitchCli.run_method(
+        args=args,
+        method=SkillOracleMethod,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
     first_target = LightSwitchTasks.sample_test_task().initial_state.get(
         obj=LightSwitchEnvironment.light, feature_name="target"
     )
 
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--seed", "99"])
-    LightSwitchCli.run_method(args=args, method=SkillOracleMethod)
+    LightSwitchCli.run_method(
+        args=args,
+        method=SkillOracleMethod,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
     second_target = LightSwitchTasks.sample_test_task().initial_state.get(
         obj=LightSwitchEnvironment.light, feature_name="target"
     )
@@ -97,20 +112,35 @@ def test_run_method_respects_a_smaller_grid_size_override(
     *, capsys: pytest.CaptureFixture[str]
 ) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "4", "--grid-size", "3"])
-    LightSwitchCli.run_method(args=args, method=SkillOracleMethod)
+    LightSwitchCli.run_method(
+        args=args,
+        method=SkillOracleMethod,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
     assert "success rate: 4/4 (100%)" in capsys.readouterr().out
     assert LightSwitchEnvironment.grid_size == 3
 
 
 def test_run_method_without_output_dir_writes_no_files(*, tmp_path: Path) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "2"])
-    LightSwitchCli.run_method(args=args, method=SkillOracleMethod)
+    LightSwitchCli.run_method(
+        args=args,
+        method=SkillOracleMethod,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
     assert list(tmp_path.iterdir()) == []
 
 
 def test_run_method_with_output_dir_writes_a_video_file(*, tmp_path: Path) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "2", "--output-dir", str(tmp_path)])
-    LightSwitchCli.run_method(args=args, method=SkillOracleMethod)
+    LightSwitchCli.run_method(
+        args=args,
+        method=SkillOracleMethod,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
     video_path = tmp_path / "episode.mp4"
     assert video_path.exists()
     assert video_path.stat().st_size > 0
@@ -119,5 +149,10 @@ def test_run_method_with_output_dir_writes_a_video_file(*, tmp_path: Path) -> No
 def test_run_method_with_output_dir_creates_missing_directories(*, tmp_path: Path) -> None:
     output_dir = tmp_path / "nested" / "results"
     args = _build_parser().parse_args(["--num-test-tasks", "1", "--output-dir", str(output_dir)])
-    LightSwitchCli.run_method(args=args, method=SkillOracleMethod)
+    LightSwitchCli.run_method(
+        args=args,
+        method=SkillOracleMethod,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
     assert (output_dir / "episode.mp4").exists()

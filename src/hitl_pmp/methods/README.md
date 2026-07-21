@@ -43,7 +43,12 @@ The actual online-learning loop, `PracticeLoop`, lives at the top level
 one execution harness every `core.Method` runs through — oracles included (see
 `oracle/` above) — not something specific to this paper reproduction. See its own
 docstring for the exact reset semantics, the `Problem.env`/`Problem.tasks` wiring a
-caller must set up first, and how its optional `renderer` param works.
+caller must set up first, and how its optional `renderer` param works. Driving
+`PracticeLoop` from a CLI (resetting `Metrics`, printing a success-rate summary,
+writing `episode.mp4`) is `../../method_runner.py`'s `MethodRunner` — also top-level
+and domain-/method-agnostic, called by every domain's own `<Domain>Cli.run_method`
+(e.g. `../environments/lightswitch/cli.py`'s `LightSwitchCli.run_method`) so that
+generic tail is written once rather than copy-pasted into each domain's `cli.py`.
 
 `core.Metrics` (`../core/README.md`'s "`Metrics` is fully concrete" section) is what
 `PracticeLoop` records evaluations into — used directly, no Light-Switch-specific

@@ -2,10 +2,9 @@ import argparse
 from typing import ClassVar
 
 from hitl_pmp.core.method.method import Method
-from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
-from hitl_pmp.core.renderer.renderer import Renderer, VideoWriter
-from hitl_pmp.practice_loop import PracticeLoop
+from hitl_pmp.core.renderer.renderer import Renderer
+from hitl_pmp.method_runner import MethodRunner
 
 from .environment import LightSwitchEnvironment
 from .problem import LightSwitchProblem
@@ -17,8 +16,9 @@ class LightSwitchCli:
     """Plugs Light Switch into the generic runner (see hitl_pmp/cli.py): exposes
     its configurable ClassVars as argparse flags, applied by whichever --method
     is chosen (e.g. methods/oracle/cli.py's SkillOracleCli) before driving that
-    method through PracticeLoop -- the one execution harness every core.Method
-    runs through, so there's no separate run() loop here anymore. A
+    method through PracticeLoop (via method_runner.py's MethodRunner -- see its
+    own docstring for which parts of running a method are actually
+    domain-agnostic), so there's no separate run() loop here anymore. A
     static-method container, never instantiated, same as every other
     business-logic class in this project."""
 
@@ -86,39 +86,40 @@ class LightSwitchCli:
         LightSwitchTasks.set_seed(seed=args.seed)
 
     @staticmethod
-    def run_method(*, args: argparse.Namespace, method: type[Method]) -> None:
+    def run_method(
+        *,
+        args: argparse.Namespace,
+        method: type[Method],
+        num_cycles: int,
+        max_steps_per_interaction: int,
+    ) -> None:
         """Shared by every Light-Switch method-CLI (methods/oracle/cli.py's
-        SkillOracleCli, and eventually a Random Skills one): applies config, wires Problem.env/
-        Problem.tasks (needed since PracticeLoop only
-        ever calls the problem argument's *inherited* facade methods, which read
+        SkillOracleCli, and eventually a Random Skills one): applies config, wires
+        Problem.env/Problem.tasks (needed since PracticeLoop only ever calls the
+        problem argument's *inherited* facade methods, which read
         Problem.env/Problem.tasks off the base class by name -- see
-        practice_loop.py's own docstring), drives method through PracticeLoop,
-        prints a success-rate summary, and writes episode.mp4 if --output-dir is
-        set. Metrics.reset() first, so a run's own evaluations() don't leak from
-        (or into) whatever an earlier run in the same process left behind."""
+        practice_loop.py's own docstring) -- the two things that are genuinely
+        specific to this domain -- then delegates the rest (actually driving
+        method through PracticeLoop, printing, video-writing) to
+        method_runner.py's MethodRunner, which every other domain's own
+        run_method will delegate to the same way. num_cycles/
+        max_steps_per_interaction come from the *caller* (SkillOracleCli passes
+        0/0 since an oracle never practices) rather than being hardcoded here,
+        since that's a property of which method is being driven, not of Light
+        Switch."""
         LightSwitchCli.apply_config(args=args)
         Problem.env = LightSwitchEnvironment
         Problem.tasks = LightSwitchTasks
-        Metrics.reset()
 
         renderer: type[Renderer] | None = (
             LightSwitchRenderer if args.output_dir is not None else None
         )
-        frames = PracticeLoop.run(
-            problem=LightSwitchProblem,
+        MethodRunner.run(
+            args=args,
             method=method,
-            metrics=Metrics,
-            num_cycles=0,  # an oracle never practices/learns -- one evaluation sweep only
-            max_steps_per_interaction=0,  # unused: never reached with num_cycles=0
-            num_test_tasks=args.num_test_tasks,
+            problem=LightSwitchProblem,
+            num_cycles=num_cycles,
+            max_steps_per_interaction=max_steps_per_interaction,
             renderer=renderer,
+            render_fps=LightSwitchCli.render_fps,
         )
-        _num_online_transitions, num_solved, num_total = Metrics.evaluations[0]
-        print(f"success rate: {num_solved}/{num_total} ({num_solved / num_total:.0%})")
-
-        if args.output_dir is not None:
-            VideoWriter.write(
-                frames=frames,
-                output_path=args.output_dir / "episode.mp4",
-                fps=LightSwitchCli.render_fps,
-            )
