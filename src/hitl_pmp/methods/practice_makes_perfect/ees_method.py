@@ -4,7 +4,7 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from hitl_pmp.core.method.method import Method
+from hitl_pmp.core.method.method import InteractionComplete, Method
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy, Rollout, SetupCommand
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
@@ -485,8 +485,15 @@ class _EesEpisode:
         if not self._plan:
             self._plan = self._next_plan(true_atoms=true_atoms)
         if not self._plan:
-            # Nothing reachable to do (e.g. evaluation after the goal is met, or a
-            # planning failure) -- emit a no-op rather than crashing the episode.
+            if self._practicing:
+                # Nothing left worth practicing (no candidate reachable and no
+                # applicable skill to bootstrap from). Ending the period here
+                # rather than burning the remaining budget on no-ops is what keeps
+                # the online-transition count data-driven -- see
+                # InteractionComplete.
+                raise InteractionComplete
+            # Evaluation: run_task_episode owns termination (goal check + horizon),
+            # so degrade to a no-op rather than ending its episode from in here.
             return LabeledAction(action=np.zeros(2), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)

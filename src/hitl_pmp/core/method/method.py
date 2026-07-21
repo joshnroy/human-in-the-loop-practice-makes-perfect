@@ -10,6 +10,24 @@ from hitl_pmp.core.problem.tasks.types import Task
 from .types import GroundSkill, Policy, Rollout, SetupCommand
 
 
+class InteractionComplete(Exception):  # noqa: N818
+    """Raised by a practice policy that has nothing further worth doing, ending
+    the current interaction period early.
+
+    This is what makes the online-transition count *data-driven* rather than
+    budget-driven: practice_loop.py charges only the steps actually taken, the
+    way predicators sums `len(result.actions)` over the trajectories its
+    explorers actually produced (main.py:244) rather than assuming every request
+    ran to `max_num_steps_interaction_request`. predicators' explorers signal the
+    same condition by raising out of `run_episode_and_get_observations`, which
+    then returns a correspondingly short trajectory.
+
+    Not an error: ending early is a normal end to a period. The cycle still
+    retrains (`end_cycle`) and is still evaluated. Named without the `Error`
+    suffix (hence the ruff N818 waiver) precisely because it is control flow, not
+    a failure."""
+
+
 class Method(BaseModel, abc.ABC):
     """The agent side: decides what to practice, executes skills, improves them.
 

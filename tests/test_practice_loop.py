@@ -1,7 +1,7 @@
 import numpy as np
 from pydantic import ConfigDict, Field
 
-from hitl_pmp.core.method.method import Method
+from hitl_pmp.core.method.method import InteractionComplete, Method
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy, Rollout, SetupCommand
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.environment.environment import Environment
@@ -490,3 +490,78 @@ def test_run_with_zero_cycles_never_calls_end_cycle_or_practice_policy() -> None
     )
     assert method.end_cycle_calls == 0
     assert method.practice_policy_calls == 0
+
+
+class _EarlyStoppingMethod(_FakeMethod):
+    """Signals it has nothing left to practice after a fixed number of steps --
+    predicators' explorers do the equivalent by raising out of
+    run_episode_and_get_observations, which then returns a short trajectory."""
+
+    steps_before_stopping: int = 2
+    steps_taken: int = 0
+
+    def get_practice_policy(self, *, task: Task) -> Policy:
+        del task
+        self.practice_policy_calls += 1
+        # Lambda adapter, per this project's convention for interfaces that
+        # demand a positional callable (Policy is Callable[[State], ...]).
+        return lambda state: self._early_action(state=state)
+
+    def _early_action(self, *, state: State) -> LabeledAction:
+        del state
+        if self.steps_taken >= self.steps_before_stopping:
+            raise InteractionComplete
+        self.steps_taken += 1
+        return LabeledAction(action=np.array([0.0]), label="early")
+
+
+def test_run_counts_only_the_transitions_actually_taken() -> None:
+    """Data-driven, matching predicators' `num_online_transitions += sum(
+    len(result.actions) for result in interaction_results)`: an interaction period
+    that ends early contributes only the steps it really took, not its budget."""
+    env = _FakeEnv()
+    event_log = _EventLog()
+    problem = _FakeProblem(env=env, tasks=_FakeTasks(env=env), event_log=event_log)
+    method = _EarlyStoppingMethod(env=env, event_log=event_log, steps_before_stopping=2)
+    metrics = Metrics()
+
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=100,
+        num_test_tasks=1,
+    )
+
+    transitions_recorded = [transitions for transitions, _, _ in metrics.evaluations]
+    # 0 before any practice, then only the 2 steps actually taken -- not 100.
+    assert transitions_recorded == [0, 2]
+
+
+def test_early_stopping_still_ends_the_cycle_and_evaluates() -> None:
+    """Stopping early is a normal end to the period, not an error: the cycle must
+    still retrain and be measured."""
+    env = _FakeEnv()
+    event_log = _EventLog()
+    problem = _FakeProblem(env=env, tasks=_FakeTasks(env=env), event_log=event_log)
+    method = _EarlyStoppingMethod(env=env, event_log=event_log, steps_before_stopping=1)
+    metrics = Metrics()
+
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=50,
+        num_test_tasks=1,
+    )
+
+    assert method.end_cycle_calls == 2
+    assert problem.event_log.events == [
+        "evaluate",
+        "end_cycle",
+        "evaluate",
+        "end_cycle",
+        "evaluate",
+    ]

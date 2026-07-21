@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 import numpy as np
 
-from hitl_pmp.core.method.method import Method
+from hitl_pmp.core.method.method import InteractionComplete, Method
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer
@@ -51,6 +51,17 @@ class PracticeLoop:
     beforehand -- there is no separate "remember to set Problem.env/
     Problem.tasks first" step anymore; whatever problem instance is passed in
     already has everything it needs.
+
+    num_online_transitions -- the x-axis of every learning curve this produces --
+    counts environment steps taken during *interaction periods only*; the
+    evaluation sweeps cost real compute but are deliberately not charged, since
+    the metric measures how much experience the agent needed, not how much was
+    spent measuring it. The count is data-driven rather than budget-driven: a
+    period that ends early (the Method raises InteractionComplete) contributes
+    only the steps it actually took. That matches predicators, which accumulates
+    `sum(len(result.actions) for result in interaction_results)` over the
+    trajectories its explorers really produced (main.py:244) rather than assuming
+    each request ran to max_num_steps_interaction_request.
 
     If renderer is given, the *first* test task of each rendered evaluation sweep
     is recorded, and run() returns {num_online_transitions: frames}. Which sweeps
@@ -108,7 +119,14 @@ class PracticeLoop:
             # free period a head start it never earned.
             state = problem.reset_to_task(task=task)
             for _ in range(max_steps_per_interaction):
-                labeled_action = policy(state)
+                try:
+                    labeled_action = policy(state)
+                except InteractionComplete:
+                    # The Method has nothing further worth practicing. Ending
+                    # early is normal, and the steps not taken are not charged --
+                    # see InteractionComplete's own docstring for why the count is
+                    # data-driven rather than budget-driven.
+                    break
                 state = problem.take_action(action=labeled_action.action)
                 num_online_transitions += 1
             # Before this cycle's evaluation, so the sweep actually measures what

@@ -50,6 +50,42 @@ python -m hitl_pmp.cli --env lightswitch --method ees --grid-size 25 \
 
 then `python -m analysis.practice_makes_perfect.ees --results-root <results> --output <png>`.
 
+## What "online transitions" means here
+
+The x-axis of every curve below. **The paper never defines the term** — it appears
+exactly once in the source available to us, in the Figure 4 caption ("Percentage of
+evaluation tasks solved vs. number of online transitions collected"), with no
+definition in the body and no tick values (Figure 4 is an image the transcription
+doesn't carry). So the reading below is inferred, and worth stating explicitly.
+
+It is the number of **environment steps taken during practice**, accumulated across
+free periods. Evaluation steps are *not* counted: the metric measures how much
+experience the agent needed, not how much was spent measuring it. Two things in the
+paper support that reading — it states a per-free-period step budget (150 for Light
+Switch), and its real-robot checkpoints are "0/120/240 transitions", far too small
+to be anything but low-level steps.
+
+Both codebases implement exactly this:
+
+| | predicators | this repo |
+|---|---|---|
+| Where | `main.py:244` | `practice_loop.py:97` |
+| How | `num_online_transitions += sum(len(r.actions) for r in interaction_results)` | `num_online_transitions += 1` per `problem.take_action` |
+| When | after the interaction, before learning and before the checkpoint | identical |
+| Evaluation counted? | no (`_run_testing` doesn't touch it) | no (`_evaluate` receives the value, never increments) |
+
+Both are **data-driven**: a period that ends early contributes only the steps it
+actually took, rather than being charged its full budget. On Light Switch this never
+fires in practice (some skill is always applicable), which was verified — the curves
+are byte-identical with and without early termination — so all checkpoints here land
+on exact multiples of 150.
+
+One unit question worth settling, since it determines whether these axes are
+comparable at all: `len(r.actions)` counts *raw actions*, not skills. On this domain
+they coincide — all four `grid_row` options are `SingletonParameterizedOption`,
+whose docstring is *"A parameterized option that takes a single action and stops"* —
+so one skill execution is one action is one transition, in both codebases.
+
 ## Results
 
 Mean fraction of the 10 held-out evaluation tasks solved, across **10 seeds**
@@ -129,10 +165,12 @@ the pre- and post-fix numbers above come from the same seed-0 configuration, and
 
 Where this port deliberately differs from `predicators`, and why:
 
-1. **One skill = one raw action.** Every Light Switch skill's `compute_action`
-   completes in a single step, so there is no option-termination loop.
-   predicators runs options over many low-level steps. Nothing in EES's logic
-   depends on the difference here.
+1. ~~One skill = one raw action, unlike predicators' multi-step options.~~
+   **Not actually a deviation** — this was checked and the original note was
+   wrong. All four `grid_row` options are `SingletonParameterizedOption` ("takes a
+   single action and stops"), so predicators also executes exactly one raw action
+   per skill on this domain. The two are identical here, which is what makes the
+   online-transition axes directly comparable rather than merely analogous.
 2. **The last skill of an interaction period is never scored.** Its outcome would
    need a subsequent state to check `add_effects` against. predicators observes at
    option termination instead. Costs at most one datapoint per period.

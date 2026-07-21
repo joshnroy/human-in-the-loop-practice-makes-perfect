@@ -379,3 +379,36 @@ def test_practice_bootstraps_from_a_random_applicable_skill_with_no_candidates_y
         state = env.take_action(action=labeled.action)
 
     assert method.total_observations() > 0
+
+
+def test_practice_signals_completion_when_nothing_is_applicable() -> None:
+    """With no applicable skill and no reachable candidate, EES ends the
+    interaction period rather than burning the remaining budget on no-ops -- which
+    is what makes PracticeLoop's transition count data-driven."""
+    from hitl_pmp.core.method.method import InteractionComplete
+
+    method, env = _build()
+    # Robot parked off-cell: no ground skill's preconditions hold anywhere, so
+    # there is nothing to bootstrap from (same construction as
+    # test_random_skills_policy's no-applicable-skill case).
+    stranded = env.build_initial_state(light_level=0.0, light_target=0.7)
+    stranded.set(obj=LightSwitchEnvironment.robot, feature_name="x", feature_val=1.23)
+    task = Task(initial_state=stranded, goal=Goal(atoms=frozenset()))
+    env.set_state(state=stranded)
+
+    policy = method.get_practice_policy(task=task)
+    with pytest.raises(InteractionComplete):
+        policy(env.get_current_state())
+
+
+def test_evaluation_still_degrades_to_a_no_op_rather_than_ending_the_episode() -> None:
+    """Evaluation must NOT raise: run_task_episode owns termination there (goal
+    check plus horizon), so the policy degrades to a no-op instead."""
+    method, env = _build()
+    initial_state = env.build_initial_state(light_level=0.5, light_target=0.5)
+    light_on = LIGHT_ON(state=initial_state, objects=(env.light,))
+    task = Task(initial_state=initial_state, goal=Goal(atoms=frozenset({light_on})))
+    env.set_state(state=initial_state)
+
+    labeled = method.get_task_policy(task=task)(env.get_current_state())
+    assert labeled.label.startswith("no-op")
