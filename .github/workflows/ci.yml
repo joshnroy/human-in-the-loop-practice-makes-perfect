@@ -16,6 +16,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
+      - run: lint-imports
 
   typecheck:
     runs-on: ubuntu-latest
