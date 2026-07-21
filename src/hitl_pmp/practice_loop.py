@@ -46,12 +46,15 @@ class PracticeLoop:
     Problem.tasks first" step anymore; whatever problem instance is passed in
     already has everything it needs.
 
-    If renderer is given, the *first* test task of the *last* evaluation sweep
-    (the one after the final cycle, or the sole initial evaluation if
-    num_cycles=0) is recorded and returned as a list of frames -- an empty list
-    otherwise. Only the last sweep is ever rendered (not every one) since this is
-    meant for a single post-hoc demo clip, not per-checkpoint video; earlier
-    sweeps render nothing so run() doesn't pay rendering cost it can't use."""
+    If renderer is given, the *first* test task of each rendered evaluation sweep
+    is recorded, and run() returns {num_online_transitions: frames}. Which sweeps
+    those are is set by num_render_checkpoints: 1 (the default) records only the
+    final sweep, i.e. a single post-hoc demo clip of the finished policy. A larger
+    value spreads recordings evenly from sweep 0 (before any practice) through the
+    last, which turns the output into a visible *progression* -- the same task
+    attempted by a policy at increasing levels of competence, which is the thing
+    worth looking at for a Method that actually learns. Unrendered sweeps cost
+    nothing, so this stays opt-in rather than always-on."""
 
     @staticmethod
     def run(
@@ -64,7 +67,13 @@ class PracticeLoop:
         num_test_tasks: int,
         on_cycle_end: Callable[[], None] | None = None,
         renderer: type[Renderer] | None = None,
-    ) -> list[np.ndarray]:
+        num_render_checkpoints: int = 1,
+    ) -> dict[int, list[np.ndarray]]:
+        rendered_sweeps = PracticeLoop.render_sweep_indices(
+            num_cycles=num_cycles, num_render_checkpoints=num_render_checkpoints
+        )
+        frames_by_transitions: dict[int, list[np.ndarray]] = {}
+
         problem.hard_reset()
         num_online_transitions = 0
         frames = PracticeLoop._evaluate(
@@ -73,8 +82,10 @@ class PracticeLoop:
             metrics=metrics,
             num_test_tasks=num_test_tasks,
             num_online_transitions=num_online_transitions,
-            renderer=renderer if num_cycles == 0 else None,
+            renderer=renderer if 0 in rendered_sweeps else None,
         )
+        if frames:
+            frames_by_transitions[num_online_transitions] = frames
         for cycle in range(num_cycles):
             task = problem.sample_train_task()
             policy = method.get_task_policy(task=task)
@@ -85,16 +96,30 @@ class PracticeLoop:
                 num_online_transitions += 1
             if on_cycle_end is not None:
                 on_cycle_end()
-            is_last_cycle = cycle == num_cycles - 1
             frames = PracticeLoop._evaluate(
                 problem=problem,
                 method=method,
                 metrics=metrics,
                 num_test_tasks=num_test_tasks,
                 num_online_transitions=num_online_transitions,
-                renderer=renderer if is_last_cycle else None,
+                renderer=renderer if (cycle + 1) in rendered_sweeps else None,
             )
-        return frames
+            if frames:
+                frames_by_transitions[num_online_transitions] = frames
+        return frames_by_transitions
+
+    @staticmethod
+    def render_sweep_indices(*, num_cycles: int, num_render_checkpoints: int) -> frozenset[int]:
+        """Which evaluation sweeps to record, as indices into the num_cycles + 1
+        sweeps (0 = the initial one, before any practice). Evenly spaced and
+        always inclusive of both ends, so recordings span untrained through fully
+        trained rather than clustering at one end."""
+        num_sweeps = num_cycles + 1
+        checkpoints = max(1, min(num_render_checkpoints, num_sweeps))
+        if checkpoints == 1:
+            return frozenset({num_cycles})
+        step = num_cycles / (checkpoints - 1)
+        return frozenset(round(index * step) for index in range(checkpoints))
 
     @staticmethod
     def _evaluate(

@@ -134,4 +134,5 @@ class LightSwitchCli:
             max_steps_per_interaction=max_steps_per_interaction,
             renderer=renderer,
             render_fps=LightSwitchCli.render_fps,
+            num_render_checkpoints=getattr(args, "num_render_checkpoints", 1),
         )

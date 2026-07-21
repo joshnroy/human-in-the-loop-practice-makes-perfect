@@ -43,9 +43,10 @@ class MethodRunner:
         max_steps_per_interaction: int,
         renderer: type[Renderer] | None,
         render_fps: int,
+        num_render_checkpoints: int = 1,
     ) -> Metrics:
         metrics = Metrics()
-        frames = PracticeLoop.run(
+        frames_by_transitions = PracticeLoop.run(
             problem=problem,
             method=method,
             metrics=metrics,
@@ -53,15 +54,27 @@ class MethodRunner:
             max_steps_per_interaction=max_steps_per_interaction,
             num_test_tasks=args.num_test_tasks,
             renderer=renderer,
+            num_render_checkpoints=num_render_checkpoints,
         )
         _num_online_transitions, num_solved, num_total = metrics.evaluations[0]
         print(f"success rate: {num_solved}/{num_total} ({num_solved / num_total:.0%})")
 
         if args.output_dir is not None:
-            VideoWriter.write(
-                frames=frames,
-                output_path=args.output_dir / "episode.mp4",
-                fps=render_fps,
-            )
+            for transitions, frames in sorted(frames_by_transitions.items()):
+                # One clip per rendered checkpoint, named by the training progress
+                # it depicts, so a set of them reads as a progression. The final
+                # one is additionally written as plain episode.mp4 -- the
+                # single-clip name callers and docs already refer to.
+                VideoWriter.write(
+                    frames=frames,
+                    output_path=args.output_dir / f"episode_{transitions:06d}.mp4",
+                    fps=render_fps,
+                )
+            if frames_by_transitions:
+                VideoWriter.write(
+                    frames=frames_by_transitions[max(frames_by_transitions)],
+                    output_path=args.output_dir / "episode.mp4",
+                    fps=render_fps,
+                )
             (args.output_dir / "stats.json").write_text(metrics.model_dump_json(indent=2))
         return metrics

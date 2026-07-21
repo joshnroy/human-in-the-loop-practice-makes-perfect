@@ -142,3 +142,38 @@ def test_run_does_not_leak_evaluations_between_calls() -> None:
     )
     assert len(second.evaluations) == 1
     assert first is not second
+
+
+def test_run_writes_one_clip_per_render_checkpoint(*, tmp_path: Path) -> None:
+    """A set of clips across training is the point -- named by the transition
+    count each depicts, so they sort into a progression."""
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=1, output_dir=tmp_path),
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
+        num_cycles=4,
+        max_steps_per_interaction=2,
+        renderer=LightSwitchRenderer,
+        render_fps=2,
+        num_render_checkpoints=3,
+    )
+    clips = sorted(path.name for path in tmp_path.glob("episode_*.mp4"))
+    assert clips == ["episode_000000.mp4", "episode_000004.mp4", "episode_000008.mp4"]
+    # The final one is also written under the plain name callers already use.
+    assert (tmp_path / "episode.mp4").exists()
+
+
+def test_run_defaults_to_a_single_final_clip(*, tmp_path: Path) -> None:
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=1, output_dir=tmp_path),
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        renderer=LightSwitchRenderer,
+        render_fps=2,
+    )
+    assert len(list(tmp_path.glob("episode_*.mp4"))) == 1
+    assert (tmp_path / "episode.mp4").exists()
