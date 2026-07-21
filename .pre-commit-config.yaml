@@ -10,3 +10,11 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: [pydantic, numpy, gymnasium]
+  - repo: local
+    hooks:
+      - id: import-linter
+        name: import-linter
+        description: Enforces pyproject.toml's [tool.importlinter] dependency-direction contracts.
+        entry: lint-imports
+        language: system
+        pass_filenames: false

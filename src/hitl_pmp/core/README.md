@@ -390,3 +390,15 @@ graph TD
 Live in sibling folders: [`../environments/`](../environments/),
 [`../humans/`](../humans/), [`../methods/`](../methods/),
 [`../adapters/`](../adapters/), [`../planning/`](../planning/).
+
+The overall dependency direction across the whole package -- `core` is the
+foundation; `practice_loop.py`/`humans/`/`planning/`/`adapters/` depend only on
+`core` and are mutually independent; `environments/` sits above those (a domain's
+own `cli.py` drives `practice_loop.py`); `methods/` sits above `environments/` (a
+`Method` imports the domain(s) it wraps); `hitl_pmp/cli.py` is the true top -- isn't
+just prose here. It's an enforced `import-linter` "layers" contract in
+`pyproject.toml`'s `[tool.importlinter]` (run via `lint-imports`, wired into CI and
+pre-commit). That's a direct response to `SkillOracleMethod` briefly living inside
+`environments/lightswitch/` before being moved to `methods/oracle/` -- a violation of
+exactly this direction that manual review didn't catch until asked about directly
+(see `../methods/README.md`'s "`oracle/`" section).

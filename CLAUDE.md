@@ -25,11 +25,12 @@ ruff check .                  # lint
 ruff check --fix .            # lint, autofix
 ruff format .                 # format
 mypy src                      # typecheck (src only; tests/ has relaxed untyped-def rules)
+lint-imports                  # enforce the core/environments/methods dependency direction
 coverage run --source=src/hitl_pmp -m pytest -q && coverage report -m  # coverage
 pre-commit install            # optional: run lint/format/typecheck locally pre-commit
 ```
 
-All three of lint/typecheck/test run in CI (`.github/workflows/ci.yml`) on every push/PR
+All four of lint/typecheck/import-direction/test run in CI (`.github/workflows/ci.yml`) on every push/PR
 to `main`. `main` only allows squash-merge (no merge commits, no rebase merge).
 
 ## Workflow: one independent feature per PR, stacked in dependency order
