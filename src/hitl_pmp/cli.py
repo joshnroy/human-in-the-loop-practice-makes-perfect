@@ -22,7 +22,8 @@ import argparse
 from pathlib import Path
 from typing import Protocol
 
-from hitl_pmp.environments.lightswitch.cli import LightSwitchCli, SkillOracleCli
+from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.methods.oracle.cli import SkillOracleCli
 
 ENVIRONMENTS = {"lightswitch": LightSwitchCli}
 

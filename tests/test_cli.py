@@ -4,7 +4,8 @@ import pytest
 
 import hitl_pmp.cli as cli_module
 from hitl_pmp.cli import ENVIRONMENTS, METHODS, Cli, MethodCli
-from hitl_pmp.environments.lightswitch.cli import LightSwitchCli, SkillOracleCli
+from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.methods.oracle.cli import SkillOracleCli
 
 
 class _FakeMethodCli(MethodCli):

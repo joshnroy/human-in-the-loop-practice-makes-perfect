@@ -10,18 +10,17 @@ from hitl_pmp.practice_loop import PracticeLoop
 from .environment import LightSwitchEnvironment
 from .problem import LightSwitchProblem
 from .renderer import LightSwitchRenderer
-from .skill_oracle_policy import SkillOracleMethod
 from .tasks import LightSwitchTasks
 
 
 class LightSwitchCli:
     """Plugs Light Switch into the generic runner (see hitl_pmp/cli.py): exposes
     its configurable ClassVars as argparse flags, applied by whichever --method
-    is chosen (SkillOracleCli below) before driving that method through
-    PracticeLoop -- the one execution harness every core.Method runs through, so
-    there's no separate run() loop here anymore. A static-method container,
-    never instantiated, same as every other business-logic class in this
-    project."""
+    is chosen (e.g. methods/oracle/cli.py's SkillOracleCli) before driving that
+    method through PracticeLoop -- the one execution harness every core.Method
+    runs through, so there's no separate run() loop here anymore. A
+    static-method container, never instantiated, same as every other
+    business-logic class in this project."""
 
     render_fps: ClassVar[int] = 2  # slow -- episodes are only a few actions long
 
@@ -88,8 +87,8 @@ class LightSwitchCli:
 
     @staticmethod
     def run_method(*, args: argparse.Namespace, method: type[Method]) -> None:
-        """Shared by every Light-Switch method-CLI (SkillOracleCli below, and
-        eventually a Random Skills one): applies config, wires Problem.env/
+        """Shared by every Light-Switch method-CLI (methods/oracle/cli.py's
+        SkillOracleCli, and eventually a Random Skills one): applies config, wires Problem.env/
         Problem.tasks (needed since PracticeLoop only
         ever calls the problem argument's *inherited* facade methods, which read
         Problem.env/Problem.tasks off the base class by name -- see
@@ -123,21 +122,3 @@ class LightSwitchCli:
                 output_path=args.output_dir / "episode.mp4",
                 fps=LightSwitchCli.render_fps,
             )
-
-
-class SkillOracleCli:
-    """Plugs SkillOracleMethod into the global CLI under --method skill-oracle.
-    A static-method container, never instantiated, same as every other
-    business-logic class in this project."""
-
-    @staticmethod
-    def add_arguments(*, parser: argparse.ArgumentParser) -> None:
-        """No method-specific flags -- SkillOracleMethod hardcodes Light Switch
-        internals directly (TODO(scale): this is this codebase's only
-        environment so far), so everything it needs comes from --env
-        lightswitch's own add_arguments, already registered by then."""
-        del parser
-
-    @staticmethod
-    def run(*, args: argparse.Namespace) -> None:
-        LightSwitchCli.run_method(args=args, method=SkillOracleMethod)

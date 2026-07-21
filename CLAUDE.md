@@ -119,9 +119,9 @@ this one call (no separate rendering-only codepath, which would duplicate the lo
 `--env` and `--method` are required. `--env` registers a domain's own config flags
 (via `environments/<name>/cli.py`'s `add_arguments`) but that domain is never run
 directly — `--method` is what actually drives a registered `core.Method` (via its
-own `methods/<name>/cli.py`, or — for privileged oracle baselines that predate any
-real `Method` — a domain's own `cli.py`, e.g. `environments/lightswitch/cli.py`'s
-`SkillOracleCli`) through `src/hitl_pmp/practice_loop.py`'s `PracticeLoop`, the one
+own `methods/<name>/cli.py`, e.g. `methods/oracle/cli.py`'s `SkillOracleCli` for the
+privileged oracle baselines that predate any real learning `Method`) through
+`src/hitl_pmp/practice_loop.py`'s `PracticeLoop`, the one
 execution harness every `Method` runs through regardless of whether it learns (see
 the `core/` section above for why `Metrics`, what it records evaluations into, is
 fully concrete). All flags are named, no positional arguments. `--output-dir DIR`
