@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.methods.practice_makes_perfect.cli import RandomSkillsCli
+from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
 
 @pytest.fixture(autouse=True)
@@ -40,13 +40,27 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def test_add_arguments_adds_no_flags_of_its_own() -> None:
-    """RandomSkillsMethod's own RNG reuses the global --seed, so this is a
-    no-op, unlike a future method-CLI with real hyperparameters."""
+def test_add_arguments_registers_only_the_shared_practice_protocol_flags() -> None:
+    """RandomSkillsMethod's own RNG reuses the global --seed, so it has no
+    hyperparameters of its own -- but it still exposes the two protocol flags
+    (shared with --method ees via PracticeCycleCli) so both can be run over the
+    same transition budget and charted on one axis."""
     before = argparse.ArgumentParser()
     after = argparse.ArgumentParser()
     RandomSkillsCli.add_arguments(parser=after)
-    assert [action.dest for action in after._actions] == [action.dest for action in before._actions]
+    added = [
+        action.dest
+        for action in after._actions
+        if action.dest not in {a.dest for a in before._actions}
+    ]
+    assert added == ["num_cycles", "max_steps_per_interaction"]
+
+
+def test_random_skills_defaults_to_no_practice_cycles() -> None:
+    """This baseline never learns, so one evaluation sweep tells you everything --
+    the flag exists purely to make an equal-budget comparison possible."""
+    args = _build_parser().parse_args([])
+    assert args.num_cycles == 0
 
 
 def test_run_prints_a_parseable_success_rate(*, capsys: pytest.CaptureFixture[str]) -> None:
@@ -69,3 +83,51 @@ def test_run_applies_seed_deterministically(*, capsys: pytest.CaptureFixture[str
     second = capsys.readouterr().out
 
     assert first == second
+
+
+def _build_ees_parser() -> argparse.ArgumentParser:
+    from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--num-test-tasks", type=int, default=20)
+    parser.add_argument("--output-dir", type=Path, default=None)
+    LightSwitchCli.add_arguments(parser=parser)
+    EesCli.add_arguments(parser=parser)
+    return parser
+
+
+def test_ees_defaults_match_the_papers_light_switch_protocol() -> None:
+    """The paper states 150 steps per free period and epsilon-greedy 0.5 for
+    Light Switch; 10 cycles is predicators' own num_online_learning_cycles
+    default (the paper never states its free-period count)."""
+    args = _build_ees_parser().parse_args([])
+    assert args.num_cycles == 10
+    assert args.max_steps_per_interaction == 150
+    assert args.exploration_epsilon == 0.5
+
+
+def test_ees_run_completes_end_to_end_through_the_cli(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI *wiring* only: that --method ees parses its flags, builds an EesMethod,
+    and drives real practice cycles to completion. The actual learning claim is
+    asserted in test_ees_method.py, which can see the returned Metrics; this can
+    only see stdout. Small grid/cycle counts to stay fast -- the full protocol
+    lives in the experiment log, not the test suite."""
+    args = _build_ees_parser().parse_args([
+        "--num-test-tasks",
+        "5",
+        "--grid-size",
+        "5",
+        "--seed",
+        "0",
+        "--num-cycles",
+        "4",
+        "--max-steps-per-interaction",
+        "40",
+        "--sampler-max-train-iters",
+        "300",
+    ])
+    EesCli.run(args=args)
+    assert re.search(r"success rate: \d+/5", capsys.readouterr().out)

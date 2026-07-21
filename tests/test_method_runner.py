@@ -177,3 +177,25 @@ def test_run_defaults_to_a_single_final_clip(*, tmp_path: Path) -> None:
     )
     assert len(list(tmp_path.glob("episode_*.mp4"))) == 1
     assert (tmp_path / "episode.mp4").exists()
+
+
+def test_run_reports_the_final_evaluation_not_the_first(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With num_cycles > 0 the first sweep runs before any practice, so reporting
+    evaluations[0] would always print the untrained score. The oracle solves
+    everything at every checkpoint, so this pins the index rather than the value:
+    the printed denominator must match num_test_tasks of the LAST sweep."""
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(num_test_tasks=3),
+        method=SkillOracleMethod(env=problem.env),
+        problem=problem,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        renderer=None,
+        render_fps=2,
+    )
+    assert len(metrics.evaluations) == 3
+    _transitions, num_solved, num_total = metrics.evaluations[-1]
+    assert f"success rate: {num_solved}/{num_total}" in capsys.readouterr().out

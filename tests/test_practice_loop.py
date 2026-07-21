@@ -1,5 +1,5 @@
 import numpy as np
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy, Rollout, SetupCommand
@@ -18,6 +18,19 @@ _OBJ = Object(name="thing", type=_BLOCK)
 
 def _state(*, x: float) -> State:
     return State(data={_OBJ: np.array([x])})
+
+
+class _EventLog:
+    """A plain, non-pydantic container so _FakeProblem and _FakeMethod genuinely
+    share ONE object. A `list[str]` field would not work: pydantic validates
+    list-typed fields by *copying* them, so each model would silently end up with
+    its own list and the interleaving assertion would be vacuous."""
+
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    def record(self, *, event: str) -> None:
+        self.events.append(event)
 
 
 class _FakeEnv(Environment):
@@ -80,11 +93,15 @@ class _FakeProblem(Problem):
     # renderer arguments this fake was called with, in call order -- lets tests
     # check exactly which run_task_episode calls actually rendered.
     renderer_calls: list[bool] = Field(default_factory=list)
+    # Shared with _FakeMethod (same object, wired in _build) so a test can assert
+    # the *interleaving* of evaluation sweeps and end_cycle calls, not just counts.
+    event_log: _EventLog = Field(default_factory=_EventLog)
 
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
     ) -> tuple[bool, list[np.ndarray]]:
         self.run_task_episode_calls += 1
+        self.event_log.record(event="evaluate")
         self.renderer_calls.append(renderer is not None)
         # Mirrors the real per-domain override (e.g. LightSwitchProblem's own
         # run_task_episode): resets env state to the task's initial_state before
@@ -101,18 +118,35 @@ class _FakeProblem(Problem):
 
 
 class _FakeMethod(Method):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     policy_call_count: int = 0
+    task_policy_calls: int = 0
+    practice_policy_calls: int = 0
+    end_cycle_calls: int = 0
+    # Shared with _FakeProblem -- see its own event_log comment.
+    event_log: _EventLog = Field(default_factory=_EventLog)
 
     def reset_environment(self, *, start_state: State) -> bool:
         raise NotImplementedError
 
     def get_task_policy(self, *, task: Task) -> Policy:
         del task
+        self.task_policy_calls += 1
         # Policy is a positional Callable[[State], LabeledAction] per its interface
         # contract -- this lambda just adapts that into a call to _get_action's
         # keyword-only signature, same pattern as RandomSkillsMethod's own
         # get_task_policy.
         return lambda state: self._get_action(state=state)  # noqa: E731
+
+    def get_practice_policy(self, *, task: Task) -> Policy:
+        del task
+        self.practice_policy_calls += 1
+        return lambda state: self._get_action(state=state)  # noqa: E731
+
+    def end_cycle(self) -> None:
+        self.end_cycle_calls += 1
+        self.event_log.record(event="end_cycle")
 
     def _get_action(self, *, state: State) -> LabeledAction:
         del state
@@ -137,8 +171,11 @@ def _build() -> tuple[_FakeProblem, _FakeMethod, Metrics]:
     state to reset and no global Problem.env-style wiring left to snapshot/restore,
     since each of these instances carries its own state."""
     env = _FakeEnv()
-    problem = _FakeProblem(env=env, tasks=_FakeTasks(env=env))
-    method = _FakeMethod(env=env)
+    # One list object shared by both fakes, so a test can assert the interleaving
+    # of evaluation sweeps and end_cycle calls.
+    event_log = _EventLog()
+    problem = _FakeProblem(env=env, tasks=_FakeTasks(env=env), event_log=event_log)
+    method = _FakeMethod(env=env, event_log=event_log)
     return problem, method, Metrics()
 
 
@@ -384,3 +421,72 @@ def test_run_without_a_renderer_returns_nothing_even_with_checkpoints_requested(
         )
         == {}
     )
+
+
+def test_run_uses_practice_policy_for_interaction_and_task_policy_for_evaluation() -> None:
+    """The practice/evaluate split a learning Method (EES) depends on: exploration
+    happens only in the interaction period, never during the held-out evaluation
+    sweep (which would be training on the test set)."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=1,
+        num_test_tasks=3,
+    )
+    # One practice policy per cycle.
+    assert method.practice_policy_calls == 2
+    # One task policy per test task per evaluation sweep (initial + one per cycle).
+    assert method.task_policy_calls == 3 * 3
+
+
+def test_run_calls_end_cycle_once_per_cycle() -> None:
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=1,
+        num_test_tasks=1,
+    )
+    assert method.end_cycle_calls == 3
+
+
+def test_run_calls_end_cycle_before_that_cycles_evaluation() -> None:
+    """Retraining has to land before the sweep that's meant to measure it --
+    otherwise every reported evaluation lags a cycle behind the learning."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=1,
+        num_test_tasks=1,
+    )
+    # Initial sweep before any cycle, then each cycle ends (retrains) before the
+    # sweep that measures it.
+    assert problem.event_log.events == [
+        "evaluate",
+        "end_cycle",
+        "evaluate",
+        "end_cycle",
+        "evaluate",
+    ]
+
+
+def test_run_with_zero_cycles_never_calls_end_cycle_or_practice_policy() -> None:
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=0,
+        max_steps_per_interaction=5,
+        num_test_tasks=2,
+    )
+    assert method.end_cycle_calls == 0
+    assert method.practice_policy_calls == 0

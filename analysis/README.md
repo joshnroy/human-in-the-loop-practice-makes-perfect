@@ -21,3 +21,11 @@ exactly one place those are computed, not a second copy living in `analysis/`.
   `--grid-size` values, given a `--results-root DIR` laid out as
   `DIR/<method>/<grid_size>/<seed>/stats.json`. Prints a table; `--output PATH.png`
   additionally plots success rate vs. `grid_size`, one line per method.
+- `practice_makes_perfect/ees.py` — the paper's own Figure 4 view for the EES
+  reproduction: fraction of evaluation tasks solved vs. number of online
+  transitions, one line per approach, solid = mean across seeds and shading =
+  standard error. Takes `--results-root DIR` laid out as
+  `DIR/<method>/<seed>/stats.json` (grid size fixed, seeds varying — the axis that
+  matters here is *training progress*, not environment size). A method with a
+  single checkpoint (`--method skill-oracle`, which never practices) is drawn as a
+  flat dashed reference level rather than a lone point.

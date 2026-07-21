@@ -24,7 +24,7 @@ from typing import Protocol
 
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
-from hitl_pmp.methods.practice_makes_perfect.cli import RandomSkillsCli
+from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
 ENVIRONMENTS = {"lightswitch": LightSwitchCli}
 
@@ -47,6 +47,7 @@ class MethodCli(Protocol):
 METHODS: dict[str, type[MethodCli]] = {
     "skill-oracle": SkillOracleCli,
     "random-skills": RandomSkillsCli,
+    "ees": EesCli,
 }
 
 

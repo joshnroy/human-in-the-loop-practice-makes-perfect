@@ -32,7 +32,38 @@ class Method(BaseModel, abc.ABC):
 
     @abc.abstractmethod
     def get_task_policy(self, *, task: Task) -> Policy:
+        """The policy used to *evaluate* on a task: pursue the goal, exploiting
+        whatever has been learned so far. Never explores, and must never record
+        training data -- practice_loop.py calls this once per held-out test task,
+        so learning from it would be training on the test set."""
         raise NotImplementedError
+
+    def get_practice_policy(self, *, task: Task) -> Policy:
+        """The policy used during an interaction/practice period, where a Method
+        is free to explore and to record whatever training data it wants.
+
+        Concrete (not abstract) and defaults to get_task_policy, because a Method
+        that doesn't learn -- every baseline built so far (SkillOracleMethod,
+        RandomSkillsMethod) -- behaves identically in both phases and shouldn't
+        need boilerplate to say so. A learning Method (EES) overrides this to
+        explore, keeping exploration strictly out of get_task_policy: predicators
+        splits the same way, with the approach's own _solve() used for evaluation
+        and a separate explorer used during interaction (see
+        predicators/approaches/active_sampler_learning_approach.py, whose
+        _create_explorer is only ever consulted for interaction requests)."""
+        return self.get_task_policy(task=task)
+
+    def end_cycle(self) -> None:
+        """Called by practice_loop.py once after each interaction period, before
+        that cycle's evaluation sweep -- the hook where a learning Method
+        retrains on everything it just collected (predicators does exactly this
+        between cycles: _update_sampler_data, then _learn_wrapped_samplers, then
+        advance_cycle on every competence model).
+
+        Concrete no-op by default, for the same reason as get_practice_policy: a
+        non-learning Method has nothing to do here. Distinct from
+        improve_skill_parameters, which is per-skill-execution rather than
+        per-cycle."""
 
     @abc.abstractmethod
     def generate_train_task(self, *, tbd_inputs: Any) -> Task:

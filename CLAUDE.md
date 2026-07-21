@@ -16,6 +16,16 @@ conda activate hitl-pmp
 pip install -e ".[dev]"
 ```
 
+**Fast Downward** is required by any planning-based `Method` (`--method ees`, and
+`planning/`'s own tests). It is deliberately not vendored — build it once and it is
+found automatically if it sits beside this repo (the same sibling convention as
+`../hitl-practice`), or point `FD_EXEC_PATH` at any other checkout:
+
+```bash
+cd .. && git clone https://github.com/aibasel/downward.git && cd downward && ./build.py
+brew install coreutils   # macOS only: predicators' protocol shells out to `gtimeout`
+```
+
 ## Commands
 
 ```bash
@@ -156,13 +166,19 @@ privileged oracle baselines that predate any real learning `Method`) through
 `src/hitl_pmp/practice_loop.py`'s `PracticeLoop`, the one
 execution harness every `Method` runs through regardless of whether it learns (see
 the `core/` section above for why `Metrics`, what it records evaluations into, is
-fully concrete). All flags are named, no positional arguments. `--output-dir DIR`
-(global), if the environment has a `renderer.py`, additionally writes a demo
-`episode.mp4`. `--num-render-checkpoints N` (global) instead records N evaluation
-sweeps spread evenly from before any practice through the end of training, as
-`episode_<transitions>.mp4` -- a visible progression for a `Method` that learns,
-rather than one clip of the finished policy. Writing run statistics (e.g. a `stats.json` built from `Metrics`) to
-`--output-dir` is a separate, not-yet-built concern.
+fully concrete). A *learning* `Method` distinguishes its two phases through
+`Method.get_practice_policy` (explores and records training data during an
+interaction period) versus `get_task_policy` (exploits only, on held-out evaluation
+tasks — learning from it would be training on the test set), plus `end_cycle()` for
+per-cycle retraining; both are concrete defaults, so non-learning baselines need no
+boilerplate. All flags are named, no positional arguments. `--output-dir DIR`
+(global) writes `stats.json` (the run's serialized `Metrics` — raw fields only, so
+readers reconstruct a `Metrics` and call its own computation methods) and, if the
+environment has a `renderer.py`, a demo `episode.mp4`.
+`--num-render-checkpoints N` (global) instead records N evaluation sweeps spread
+evenly from before any practice through the end of training, as
+`episode_<transitions>.mp4` — a visible progression for a `Method` that learns,
+rather than one clip of the finished policy.
 
 **Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
 defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task
@@ -252,9 +268,12 @@ actually happened — it returns nothing; querying cost beforehand is
   practice_makes_perfect/`, since EES's competence-cost-aware task planning has no
   built-in-planner substitute (predicators' own non-FD `astar` planner doesn't
   support per-operator costs at all). Pure deep-RL baselines (MAPLE-Q) never import
-  it. Not vendored/bundled — see `planning/README.md` for the external install steps
-  and why `_translate`/`_search` are `# pragma: no cover` (mirrors predicators' own
-  precedent: CI can't be assumed to have Fast Downward installed).
+  it. Not vendored/bundled — see the Setup section above and `planning/README.md`
+  for install steps. `pddl.py`'s `PddlWriter` renders the symbolic layer as PDDL;
+  `fast_downward.py`'s `FastDownwardPlanner` runs predicators' own three-stage
+  protocol (translate → patch per-ground-skill costs into the SAS file → search with
+  `seq-opt-lmcut`). Its tests genuinely shell out to a real FD rather than being
+  skipped, so a missing/broken install fails loudly instead of silently.
 
 ### Sibling repo: `hitl-practice`
 
