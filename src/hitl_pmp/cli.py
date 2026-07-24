@@ -22,6 +22,7 @@ import argparse
 from pathlib import Path
 from typing import Protocol
 
+from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
@@ -33,15 +34,16 @@ class EnvironmentCli(Protocol):
     ENVIRONMENTS must expose -- this file only ever calls add_arguments on them (a
     domain's own run_method is driven by its selected --method, not from here). A
     Protocol (not a base class) so ENVIRONMENTS can hold structurally-different domain
-    CLIs -- e.g. LightSwitchCli and TossingRoomCli, whose run_method signatures differ
-    by their own concrete Environment type -- under one annotation mypy checks
-    structurally."""
+    CLIs -- e.g. BallRingCli, LightSwitchCli and TossingRoomCli, whose run_method
+    signatures differ by their own concrete Environment type -- under one annotation
+    mypy checks structurally."""
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None: ...
 
 
 ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
+    "ballring": BallRingCli,
     "lightswitch": LightSwitchCli,
     "tossingroom": TossingRoomCli,
 }
