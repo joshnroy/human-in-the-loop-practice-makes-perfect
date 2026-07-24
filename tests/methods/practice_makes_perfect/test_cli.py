@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
@@ -68,18 +69,18 @@ def test_run_prints_a_parseable_success_rate(*, capsys: pytest.CaptureFixture[st
     confirm run_method wiring actually completes and prints a well-formed
     success-rate line for the requested --num-test-tasks."""
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--grid-size", "5", "--seed", "0"])
-    RandomSkillsCli.run(args=args)
+    RandomSkillsCli.run(args=args, env_cli=LightSwitchCli)
     out = capsys.readouterr().out
     assert re.search(r"success rate: \d+/3 \(\d+%\)", out)
 
 
 def test_run_applies_seed_deterministically(*, capsys: pytest.CaptureFixture[str]) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--grid-size", "5", "--seed", "42"])
-    RandomSkillsCli.run(args=args)
+    RandomSkillsCli.run(args=args, env_cli=LightSwitchCli)
     first = capsys.readouterr().out
 
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--grid-size", "5", "--seed", "42"])
-    RandomSkillsCli.run(args=args)
+    RandomSkillsCli.run(args=args, env_cli=LightSwitchCli)
     second = capsys.readouterr().out
 
     assert first == second
@@ -129,5 +130,5 @@ def test_ees_run_completes_end_to_end_through_the_cli(
         "--sampler-max-train-iters",
         "300",
     ])
-    EesCli.run(args=args)
+    EesCli.run(args=args, env_cli=LightSwitchCli)
     assert re.search(r"success rate: \d+/5", capsys.readouterr().out)

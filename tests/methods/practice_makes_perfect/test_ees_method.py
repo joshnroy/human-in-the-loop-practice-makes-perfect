@@ -7,6 +7,7 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
+from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
@@ -14,7 +15,7 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
 def _build(*, grid_size: int = 4, seed: int = 0) -> tuple[EesMethod, LightSwitchEnvironment]:
     env = LightSwitchEnvironment(grid_size=grid_size)
-    return EesMethod(env=env, seed=seed), env
+    return EesMethod(env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=seed), env
 
 
 def _turn_on_light(*, env: LightSwitchEnvironment) -> GroundSkill:
@@ -209,7 +210,12 @@ def test_ees_learns_to_solve_light_switch_over_practice_cycles() -> None:
     problem = LightSwitchProblem(env=env, tasks=LightSwitchTasks(env=env, seed=0))
     metrics = MethodRunner.run(
         args=argparse.Namespace(num_test_tasks=5, output_dir=None),
-        method=EesMethod(env=env, seed=0, sampler_max_train_iters=300),
+        method=EesMethod(
+            env=env,
+            skill_provider=LightSwitchSkillProvider(env=env),
+            seed=0,
+            sampler_max_train_iters=300,
+        ),
         problem=problem,
         num_cycles=6,
         max_steps_per_interaction=40,
@@ -236,7 +242,13 @@ def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_samp
     sampler until the first learning cycle). Hence the warm-up cycle below."""
     env = LightSwitchEnvironment(grid_size=4)
     # epsilon=1.0 => once fitted, every parameterized attempt takes the random branch.
-    method = EesMethod(env=env, seed=0, exploration_epsilon=1.0, sampler_max_train_iters=50)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        exploration_epsilon=1.0,
+        sampler_max_train_iters=50,
+    )
     tasks = LightSwitchTasks(env=env, seed=0)
 
     def _practice(*, steps: int) -> None:

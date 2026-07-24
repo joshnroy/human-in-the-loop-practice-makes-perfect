@@ -2,11 +2,13 @@ import argparse
 from collections.abc import Callable
 
 from hitl_pmp.core.method.method import Method
+from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.method_runner import MethodRunner
 
 from .environment import BallRingEnvironment
 from .problem import BallRingProblem
+from .skill_provider import BallRingOracle, BallRingSkillProvider
 from .tasks import BallRingTasks
 
 
@@ -19,13 +21,12 @@ class BallRingCli:
     MethodRunner). Mirrors ``LightSwitchCli`` exactly; a static-method container,
     never instantiated.
 
-    No renderer is passed yet: PR 1 ships the env/tasks/problem/facade only, and a
-    Ball-Ring ``renderer.py`` (like ``lightswitch/renderer.py``) is a later addition
-    -- until then ``--output-dir`` writes ``stats.json`` but no ``episode.mp4``.
-    Likewise, no Ball-Ring ``Method`` exists yet (the skill-oracle/random-skills/EES
-    method CLIs are still hardcoded to Light Switch, a pre-existing ``TODO(scale)``),
-    so ``run_method`` is driven by a caller-supplied ``method_factory`` -- the same
-    shape ``LightSwitchCli.run_method`` uses.
+    No renderer is passed yet: a Ball-Ring ``renderer.py`` (like
+    ``lightswitch/renderer.py``) is a later addition -- until then ``--output-dir``
+    writes ``stats.json`` but no ``episode.mp4``. ``run_method`` builds this domain's
+    ``DomainContext`` (env + BallRingSkillProvider + BallRingOracle) and hands it to
+    the caller-supplied ``method_factory``, exactly like ``LightSwitchCli.run_method``
+    -- so ``--env ballring --method {skill-oracle,random-skills,ees}`` all run.
     """
 
     @staticmethod
@@ -85,15 +86,16 @@ class BallRingCli:
     def run_method(
         *,
         args: argparse.Namespace,
-        method_factory: Callable[[BallRingEnvironment], Method],
+        method_factory: Callable[[DomainContext], Method],
         num_cycles: int,
         max_steps_per_interaction: int,
     ) -> None:
         """This domain's composition root: builds the actual BallRingEnvironment/
-        BallRingTasks/BallRingProblem instances from args, calls ``method_factory(env)``
-        to build the Method, then delegates the domain-agnostic rest (PracticeLoop,
-        printing, stats.json) to method_runner.py's MethodRunner. Mirrors
-        ``LightSwitchCli.run_method``."""
+        BallRingTasks/BallRingProblem instances plus this domain's
+        BallRingSkillProvider/BallRingOracle (bundled into a DomainContext), calls
+        ``method_factory(context)`` to build the Method, then delegates the
+        domain-agnostic rest (PracticeLoop, printing, stats.json) to MethodRunner.
+        Mirrors ``LightSwitchCli.run_method``."""
         env = BallRingEnvironment(
             num_tables=args.num_tables,
             num_sticky_tables=args.num_sticky_tables,
@@ -107,11 +109,16 @@ class BallRingCli:
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
         )
         problem = BallRingProblem(env=env, tasks=tasks)
+        context = DomainContext(
+            env=env,
+            skill_provider=BallRingSkillProvider(env=env),
+            oracle=BallRingOracle(env=env),
+        )
 
         renderer: type[Renderer] | None = None  # no Ball-Ring renderer yet (see class docstring)
         MethodRunner.run(
             args=args,
-            method=method_factory(env),
+            method=method_factory(context),
             problem=problem,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,

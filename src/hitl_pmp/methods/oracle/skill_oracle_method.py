@@ -1,64 +1,42 @@
 from typing import Any
 
 from hitl_pmp.core.method.method import Method
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy, Rollout, SetupCommand
+from hitl_pmp.core.method.skill_provider import OraclePolicyProvider
+from hitl_pmp.core.method.types import GroundSkill, Policy, Rollout, SetupCommand
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Task
-from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.skill_oracle_policy import SkillOraclePolicy
-from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
-from hitl_pmp.environments.tossingroom.skill_oracle_policy import (
-    SkillOraclePolicy as TossingRoomSkillOraclePolicy,
-)
-
-
 class SkillOracleMethod(Method):
-    """Wraps SkillOraclePolicy (environments/lightswitch/skill_oracle_policy.py)
-    as a core.Method, so it runs through the same practice_loop.py:PracticeLoop
-    harness as every other Method. Domain dispatch (get_labeled_action, below)
-    lives here rather than on SkillOraclePolicy itself: SkillOraclePolicy only
-    knows its own domain's oracle logic (matching ActionOraclePolicy's
-    precedent), while this class -- living under methods/, not
-    environments/lightswitch/ -- is the layer allowed to reason about which
-    environment self.env actually is (inherited from Method; see
-    core/README.md's dependency-direction section). Only Light Switch exists so
-    far, so there's only one branch -- a second domain would add its own
-    environments/<domain>/skill_oracle_policy.py plus one more branch in
-    get_labeled_action, not a second SkillOracleMethod-like class.
+    """Wraps a domain's privileged, hand-authored solver (its OraclePolicyProvider)
+    as a core.Method, so the upper-bound baseline runs through the same
+    practice_loop.py:PracticeLoop harness as every other Method.
 
-    Tossing Room deviates slightly from that "one more branch in get_labeled_action"
-    pattern: its oracle is goal-dependent (from state alone it can't tell throw-
-    recycling from throw-trash), and get_labeled_action(state) has no goal to hand it.
-    So the Tossing Room branch lives in get_task_policy, which does have the task's
-    goal to close over -- get_labeled_action stays Light-Switch-only, unchanged."""
+    Fully domain-agnostic now: the domain-specific oracle logic lives in the injected
+    `oracle` (e.g. `environments/lightswitch/skill_provider.py`'s LightSwitchOracle,
+    `environments/ballring/skill_provider.py`'s BallRingOracle,
+    `environments/tossingroom/skill_provider.py`'s TossingRoomOracle), rather than in
+    an `isinstance(self.env, ...)` branch here. Adding a domain means adding its
+    OraclePolicyProvider, not editing this class.
 
-    def get_labeled_action(self, *, state: State) -> LabeledAction:
-        if isinstance(self.env, LightSwitchEnvironment):
-            return SkillOraclePolicy.get_labeled_action(state=state, env=self.env)
-        raise NotImplementedError(
-            f"SkillOracleMethod has no oracle logic for env={self.env!r} yet."
-        )
+    The oracle is handed the task's goal as well as the state: most domains ignore it
+    (Light Switch, Ball-Ring drive toward their single fixed objective from privileged
+    state), but a goal-dependent oracle -- Tossing Room, whose state alone can't tell
+    throw-recycling from throw-trash -- reads it to pick which item/bin/room to head
+    for."""
+
+    oracle: OraclePolicyProvider
 
     def reset_environment(self, *, start_state: State) -> bool:
-        """No irreversible actions exist in Light Switch and the base PMP paper
-        has no human-in-the-loop layer at all -- this reproduction never needs a
-        real "self-navigate without help" recovery, so a direct environment set
-        stands in for it (matches RandomSkillsMethod's own reasoning)."""
+        """No irreversible actions matter to this oracle and the base PMP paper has no
+        human-in-the-loop layer -- a direct environment set stands in for a real
+        "self-navigate without help" recovery (matches RandomSkillsMethod)."""
         self.env.set_state(state=start_state)
         return True
 
     def get_task_policy(self, *, task: Task) -> Policy:
-        if isinstance(self.env, TossingRoomEnvironment):
-            # Tossing Room's oracle is goal-dependent: close over this task's goal so
-            # the returned policy knows which item/bin/room to head for.
-            env = self.env
-            goal = task.goal
-            return lambda state: TossingRoomSkillOraclePolicy.get_labeled_action(
-                state=state, env=env, goal=goal
-            )
-        del task  # Light Switch's oracle always drives toward the light using
-        # privileged state, regardless of which task it's handed
-        return lambda state: self.get_labeled_action(state=state)
+        # Close over the goal so a goal-dependent oracle (Tossing Room) can read it;
+        # goal-agnostic oracles (Light Switch, Ball-Ring) ignore it.
+        goal = task.goal
+        return lambda state: self.oracle.get_labeled_action(state=state, goal=goal)
 
     def generate_train_task(self, *, tbd_inputs: Any) -> Task:
         raise NotImplementedError(

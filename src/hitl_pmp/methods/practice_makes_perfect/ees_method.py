@@ -5,18 +5,18 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from hitl_pmp.core.method.method import InteractionComplete, Method
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy, Rollout, SetupCommand
+from hitl_pmp.core.method.skill_provider import SkillProvider
+from hitl_pmp.core.method.types import (
+    GroundSkill,
+    LabeledAction,
+    Policy,
+    Rollout,
+    SetupCommand,
+    Skill,
+)
+from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
-from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.predicates import (
-    ADJACENT,
-    LIGHT_IN_CELL,
-    LIGHT_OFF,
-    LIGHT_ON,
-    ROBOT_IN_CELL,
-)
-from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
 
@@ -78,7 +78,8 @@ class EesMethod(Method):
        reason scoring is cheap enough to do per candidate per step.
     """
 
-    env: LightSwitchEnvironment
+    env: Environment
+    skill_provider: SkillProvider
     seed: int = 0
 
     # --- EES hyperparameters, defaulted to predicators'/the paper's own values ---
@@ -152,28 +153,20 @@ class EesMethod(Method):
 
     # ------------------------------------------------------------------ domain
 
-    def skills(self) -> tuple:  # type: ignore[type-arg]
-        """This domain's four lifted skills, including the deliberately impossible
-        JumpToLight -- EES is supposed to *discover* that it never works."""
-        return (
-            LightSwitchSkills.MOVE_ROBOT,
-            LightSwitchSkills.TURN_ON_LIGHT,
-            LightSwitchSkills.TURN_OFF_LIGHT,
-            LightSwitchSkills.JUMP_TO_LIGHT,
-        )
+    def skills(self) -> tuple[Skill, ...]:
+        """This domain's lifted skills (e.g. Light Switch's four, including the
+        deliberately impossible JumpToLight -- EES is supposed to *discover* it never
+        works). Delegated to the injected SkillProvider so EES is domain-agnostic."""
+        return self.skill_provider.skills()
 
     def predicates(self) -> tuple[Predicate, ...]:
-        return (LIGHT_ON, LIGHT_OFF, ROBOT_IN_CELL, LIGHT_IN_CELL, ADJACENT)
+        return self.skill_provider.predicates()
 
     def types(self) -> tuple[Type, ...]:
-        return (
-            LightSwitchEnvironment.robot_type,
-            LightSwitchEnvironment.light_type,
-            LightSwitchEnvironment.cell_type,
-        )
+        return self.skill_provider.types()
 
     def objects(self) -> tuple[Object, ...]:
-        return (self.env.robot, self.env.light, *self.env.get_cells())
+        return self.skill_provider.objects()
 
     def abstract_state(self, *, state: State) -> frozenset[GroundAtom]:
         return SkillGrounder.abstract_state(
@@ -460,7 +453,7 @@ class EesMethod(Method):
         else:
             features = self.state_features(ground_skill=ground_skill, state=state)
             candidates = [
-                LightSwitchSkills.sample_params(ground_skill=ground_skill, rng=self._rng)
+                self.skill_provider.sample_params(ground_skill=ground_skill, rng=self._rng)
                 for _ in range(self.num_candidates)
             ]
             sampler = self.sampler(skill_name=skill.name, param_dim=skill.param_dim)
@@ -478,7 +471,7 @@ class EesMethod(Method):
                 else None
             )
 
-        action = LightSwitchSkills.compute_action(
+        action = self.skill_provider.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )
         objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
@@ -560,6 +553,9 @@ class _EesEpisode:
         self._pending_sampler_record: _SkillAttempt | None = None
         self._goal_phase_done = False
 
+    def _noop_action(self) -> np.ndarray:
+        return np.zeros(self._method.env.action_space.shape)
+
     def step(self, *, state: State) -> LabeledAction:
         method = self._method
         true_atoms = method.abstract_state(state=state)
@@ -577,7 +573,8 @@ class _EesEpisode:
                 raise InteractionComplete
             # Evaluation: run_task_episode owns termination (goal check + horizon),
             # so degrade to a no-op rather than ending its episode from in here.
-            return LabeledAction(action=np.zeros(2), label="no-op (no plan)")
+            # Sized to this env's action space (Light Switch 2-D, Ball-Ring 5-D).
+            return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)
         labeled, record = method.execute_ground_skill(

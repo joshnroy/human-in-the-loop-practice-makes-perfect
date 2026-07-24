@@ -137,6 +137,30 @@ class BallRingEnvironment(Environment):
         tables = [obj for obj in state.data if obj.type == cls.table_type]
         return tuple(sorted(tables, key=lambda obj: obj.name))
 
+    def table_objects(self) -> tuple[Object, ...]:
+        """The ring's table Objects, reconstructed deterministically from this env's
+        num_tables/num_sticky_tables (names + Type only, no positions) and sorted by
+        name -- the state-independent counterpart of ``get_tables``, for the symbolic
+        layer's ``objects()``. Object is frozen/value-equal, so these compare equal to
+        the same-named tables any State built by ``sample_initial_state`` contains."""
+        tables = [
+            Object(
+                name=f"{'sticky' if i < self.num_sticky_tables else 'normal'}-table-{i}",
+                type=self.table_type,
+            )
+            for i in range(self.num_tables)
+        ]
+        return tuple(sorted(tables, key=lambda obj: obj.name))
+
+    def all_objects(self) -> tuple[Object, ...]:
+        """Every object the symbolic layer grounds over: the three singletons plus the
+        ring of tables."""
+        return (self.robot, self.ball, self.cup, *self.table_objects())
+
+    def target_table(self) -> Object:
+        """The sticky target table (``table_objects()[-1]``) -- the goal's table."""
+        return self.table_objects()[-1]
+
     @staticmethod
     def holding(*, state: State, obj: Object) -> bool:
         return bool(state.get(obj=obj, feature_name="held") > 0.5)

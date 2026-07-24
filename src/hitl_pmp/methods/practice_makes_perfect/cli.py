@@ -1,6 +1,6 @@
 import argparse
 
-from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.cli_protocols import EnvironmentCli
 
 from .ees_method import EesMethod
 from .random_skills_method import RandomSkillsMethod
@@ -80,11 +80,12 @@ class EesCli:
         )
 
     @staticmethod
-    def run(*, args: argparse.Namespace) -> None:
-        LightSwitchCli.run_method(
+    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        env_cli.run_method(
             args=args,
-            method_factory=lambda env: EesMethod(
-                env=env,
+            method_factory=lambda ctx: EesMethod(
+                env=ctx.env,
+                skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
@@ -120,10 +121,12 @@ class RandomSkillsCli:
         PracticeCycleCli.add_arguments(parser=parser, default_num_cycles=0, default_max_steps=150)
 
     @staticmethod
-    def run(*, args: argparse.Namespace) -> None:
-        LightSwitchCli.run_method(
+    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        env_cli.run_method(
             args=args,
-            method_factory=lambda env: RandomSkillsMethod(env=env, seed=args.seed),
+            method_factory=lambda ctx: RandomSkillsMethod(
+                env=ctx.env, skill_provider=ctx.skill_provider, seed=args.seed
+            ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
         )

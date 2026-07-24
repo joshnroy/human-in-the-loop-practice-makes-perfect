@@ -50,6 +50,27 @@ def test_add_arguments_adds_no_flags_of_its_own() -> None:
 
 
 def test_run_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[str]) -> None:
+    from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+
     args = _build_parser().parse_args(["--num-test-tasks", "5"])
-    SkillOracleCli.run(args=args)
+    SkillOracleCli.run(args=args, env_cli=LightSwitchCli)
+    assert "success rate: 5/5 (100%)" in capsys.readouterr().out
+
+
+def test_run_solves_every_sampled_task_on_ballring(*, capsys: pytest.CaptureFixture[str]) -> None:
+    """The same method-CLI now drives Ball-Ring too, via its env_cli -- the point of
+    the generalization. Ball-Ring's privileged oracle solves every task within the
+    horizon-8 budget."""
+    import argparse
+
+    from hitl_pmp.environments.ballring.cli import BallRingCli
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--num-test-tasks", type=int, default=20)
+    parser.add_argument("--output-dir", type=Path, default=None)
+    BallRingCli.add_arguments(parser=parser)
+    SkillOracleCli.add_arguments(parser=parser)
+    args = parser.parse_args(["--num-test-tasks", "5"])
+    SkillOracleCli.run(args=args, env_cli=BallRingCli)
     assert "success rate: 5/5 (100%)" in capsys.readouterr().out

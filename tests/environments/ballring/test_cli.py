@@ -79,7 +79,7 @@ def test_run_method_drives_the_composition_root(*, capsys: Any) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "3"])
     BallRingCli.run_method(
         args=args,
-        method_factory=lambda env: _NoOpMethod(env=env),
+        method_factory=lambda ctx: _NoOpMethod(env=ctx.env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -92,7 +92,7 @@ def test_run_method_applies_seed_deterministically() -> None:
         args = _build_parser().parse_args(["--num-test-tasks", "2", "--seed", "99"])
         BallRingCli.run_method(
             args=args,
-            method_factory=lambda env: _NoOpMethod(env=env),
+            method_factory=lambda ctx: _NoOpMethod(env=ctx.env),
             num_cycles=0,
             max_steps_per_interaction=0,
         )
@@ -106,7 +106,7 @@ def test_run_method_with_output_dir_writes_stats_but_no_video(*, tmp_path: Path)
     args = _build_parser().parse_args(["--num-test-tasks", "2", "--output-dir", str(tmp_path)])
     BallRingCli.run_method(
         args=args,
-        method_factory=lambda env: _NoOpMethod(env=env),
+        method_factory=lambda ctx: _NoOpMethod(env=ctx.env),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
