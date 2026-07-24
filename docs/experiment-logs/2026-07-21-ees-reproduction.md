@@ -226,14 +226,20 @@ What does not:
   cells overshoots to 97), but plateaus at 98% instead of reaching a clean 100%.
 
 **Where the remaining gap probably lives.** An audit of every `CFG.*` setting the
-reference reads (see Faithfulness notes) leaves three candidates, none yet tested:
+reference reads (see Faithfulness notes) left three candidates; the first has since
+been measured out (see the ablation below) and does **not** explain the gap:
 
-1. **`skip_perfect` / UCB denominators.** predicators computes both from
+1. **`skip_perfect` / UCB denominators.** ~~predicators computes both from
    `_ground_op_hist`, which records *every* execution including epsilon-random ones;
    this port computes them from competence observations, which exclude random
    attempts. Ours therefore reaches a measured success rate of 1.0 sooner, drops a
    mastered skill as a practice target earlier, and moves on — plausibly the single
-   largest remaining effect, and in the right direction to explain an early lead.
+   largest remaining effect.~~ **Tested and refuted** —
+   `--reproduce-predicators-practice-target-history` restores predicators' exact
+   all-attempts bookkeeping and lands within standard error at every checkpoint (see
+   "Ablation: predicators' all-attempts practice-target history" below). Immaterial
+   here, same reason as the double-`observe()` bug: practice *selection* is not the
+   Light Switch bottleneck.
 2. **Epsilon-greedy scope.** predicators uses the exploration sampler only for the
    practice target; every prefix and goal-pursuit skill runs through the greedy test
    sampler. This port explores on all of them.
@@ -363,6 +369,73 @@ the previous section really were incoherent (an impossible skill scoring above a
 mastered one), and those numbers are reported throughout this log. It shows only
 that on *this* domain that incoherence does not propagate to the success curve.
 
+## Ablation: predicators' all-attempts practice-target history also costs nothing here (negative result)
+
+This is the deviation flagged above as *"plausibly the single largest remaining
+effect"* on the 150–450 overshoot, now measured rather than argued.
+
+Two EES quantities read a per-skill outcome history to decide **which skill to
+practice next**: `skip_perfect` (a skill whose measured success rate is exactly 1.0
+is dropped as a target) and the UCB bonus `c·sqrt(log(total)/num_tries)` (fewer
+tries → bigger bonus → revisit). predicators computes both from `_ground_op_hist`,
+which it appends on **every** execution including epsilon-greedy random ones
+(`active_sampler_explorer.py:400`). This port instead read them from the competence
+model's history, which **excludes** random attempts — correct for competence (at
+ε = 0.5, counting coin flips would make competence measure how often a coin flip
+works), but that random-excluding history was then reused for the practice-target
+bookkeeping too, which predicators does not do. The consequence is directional and
+in the right direction to explain an early lead: a mastered toggle skill hits
+measured-rate 1.0 sooner for us (we see only its greedy successes, not its random
+failures), so `skip_perfect` fires earlier and EES moves on to something useful
+sooner — early-optimistic exactly in the 150–450 band.
+
+`--reproduce-predicators-practice-target-history` computes `skip_perfect`'s
+success-rate check and the UCB `num_tries`/`total` from an all-attempts history
+(greedy + random) matching `_ground_op_hist`, while competence keeps reading its own
+clean random-excluding history unchanged — the two decisions this port had
+accidentally coupled, separated. Both arms, 10 seeds each, same binary, 25-cell Light
+Switch:
+
+| online transitions | This port (competence history, random-excluding) | predicators' flow (`_ground_op_hist`, all attempts) | Paper EES (eyeballed, ±5–10) |
+|---|---|---|---|
+| 0 | 0.0 ± 0.0 | 0.0 ± 0.0 | 0 |
+| 150 | 44.0 ± 7.5 | 44.0 ± 7.5 | ~30 |
+| 300 | 66.0 ± 9.3 | 65.0 ± 9.5 | ~42 |
+| 450 | 78.0 ± 6.6 | 75.0 ± 6.2 | ~58 |
+| 600 | 97.0 ± 2.1 | 97.0 ± 2.1 | ~85 |
+| 750 | 99.0 ± 1.0 | 100.0 ± 0.0 | ~96 |
+| 900 | 99.0 ± 1.0 | 99.0 ± 1.0 | ~99 |
+| 1050 | 100.0 ± 0.0 | 100.0 ± 0.0 | 100 |
+| 1200 | 100.0 ± 0.0 | 100.0 ± 0.0 | 100 |
+| 1350–1500 | 100.0 ± 0.0 | 100.0 ± 0.0 | 100 |
+
+**The hypothesis is refuted.** The all-attempts arm tracks the baseline within
+standard error at every checkpoint (the largest single-checkpoint move is 3 points,
+at 450, with no consistent direction — behind at 300/450, level or ahead at 750),
+and the ~15–25-point overshoot against the paper across 150–450 is completely
+unchanged. Turning on predicators' exact bookkeeping does **not** pull our curve down
+toward the paper's.
+
+The reason is the same one the double-`observe()` ablation above surfaced, and it is
+a property of the environment rather than of the bug: on Light Switch the competence
+history only influences *which* skill to practice next and the planner's edge costs —
+it never touches the sampler's training data, which is retained for random attempts
+either way. With four skills and one obvious practice target, practice *selection* is
+simply not the bottleneck here; sampler specialization is, exactly as the paper says.
+So while this port's deviation from predicators on this point is real (the flag
+documents the faithful fix, and the unit tests pin that it changes `skip_perfect` and
+the UCB denominator as intended), it is immaterial to the headline curve on this
+domain. The flag defaults **off**: the port keeps its own cleaner random-excluding
+bookkeeping, since the two are indistinguishable in outcome here and the
+random-excluding version is the more defensible default.
+
+With both the double-`observe()` and the practice-target-history candidates now
+measured out, the mid-curve overshoot is most likely down to the remaining untested
+deviations — epsilon-greedy scope and the 1000-vs-100000 sampler training length,
+candidates 2 and 3 in "Where the remaining gap probably lives" above — or to the
+eyeballed-from-an-image nature of the paper column itself (±5–10 points, which is a
+large fraction of a 15–25-point gap).
+
 ## Faithfulness notes
 
 Every `CFG.*` setting the reference reads across `active_sampler_explorer.py`,
@@ -382,14 +455,18 @@ three-stage protocol. What follows is everything that differs.
    never takes effect. This port observes once.
    `--reproduce-predicators-double-observe` restores the original flow and lands
    within standard error at every checkpoint — see the ablation above.
-
-**Deliberate, untested, and plausibly part of the remaining gap:**
-
 2. **`skip_perfect` and the UCB `num_tries` use exploration-excluding counts.**
    predicators reads `_ground_op_hist`, appended on *every* execution including
    epsilon-random ones (`:400`); this port reads competence observations, which
-   exclude them. Ours reaches a measured rate of 1.0 sooner and stops practicing a
-   mastered skill earlier. The best current candidate for the mid-curve overshoot.
+   exclude them, so ours reaches a measured rate of 1.0 sooner and stops practicing a
+   mastered skill earlier. `--reproduce-predicators-practice-target-history` restores
+   the all-attempts bookkeeping (competence stays random-excluding) and lands within
+   standard error at every checkpoint — see "Ablation: predicators' all-attempts
+   practice-target history" above. Was the leading candidate for the mid-curve
+   overshoot; measured out.
+
+**Deliberate, untested, and plausibly part of the remaining gap:**
+
 3. **Epsilon-greedy applies to every skill in a practice episode.** predicators
    uses the exploration sampler only for the practice target itself; prefix and
    goal-pursuit skills run through the greedy *test* sampler and do update
@@ -464,4 +541,21 @@ python -m scripts.run_sweep \
     --results-root results/ees-double-observe \
     --shared-args "--grid-size 25 --num-test-tasks 10" \
     --method-args "ees=--num-cycles 10 --max-steps-per-interaction 150 --reproduce-predicators-double-observe"
+```
+
+The all-attempts practice-target-history ablation is the same shape — a baseline arm
+(flag off, current `main` behavior) and a flag-on arm with separate results roots:
+
+```bash
+python -m scripts.run_sweep \
+    --env lightswitch --methods ees --num-seeds 10 \
+    --results-root results/ees-baseline \
+    --shared-args "--grid-size 25 --num-test-tasks 10" \
+    --method-args "ees=--num-cycles 10 --max-steps-per-interaction 150"
+
+python -m scripts.run_sweep \
+    --env lightswitch --methods ees --num-seeds 10 \
+    --results-root results/ees-target-history \
+    --shared-args "--grid-size 25 --num-test-tasks 10" \
+    --method-args "ees=--num-cycles 10 --max-steps-per-interaction 150 --reproduce-predicators-practice-target-history"
 ```

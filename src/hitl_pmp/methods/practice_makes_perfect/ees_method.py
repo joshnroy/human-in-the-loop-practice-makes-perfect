@@ -60,6 +60,9 @@ class EesMethod(Method):
        reads `_ground_op_hist`, appended on *every* execution including random
        ones (`active_sampler_explorer.py:400`), so a skill here reaches a
        measured rate of 1.0 sooner and is dropped as a practice target earlier.
+       `reproduce_predicators_practice_target_history` restores predicators'
+       all-attempts bookkeeping for exactly these two quantities (competence stays
+       random-excluding either way); see that field for why the flag exists.
     2. The outcome of the *last* skill in an interaction period is never observed
        (there is no subsequent state to check `add_effects` against). predicators
        observes at option termination instead. This loses at most one datapoint
@@ -108,11 +111,30 @@ class EesMethod(Method):
     # rather than argued about. The paper's published curve contains the bug, so
     # this is the setting that makes our numbers directly comparable to it.
     reproduce_predicators_double_observe: bool = False
+
+    # A second, independent ablation switch (see deviation 1 above). predicators
+    # computes `skip_perfect`'s success-rate check and the UCB `num_tries`/`total`
+    # from `_ground_op_hist`, appended on *every* execution including epsilon-random
+    # ones (`active_sampler_explorer.py:400`). This port instead reads the
+    # competence model's history, which *excludes* random attempts -- correct for
+    # competence (at epsilon=0.5 counting coin flips would make competence measure
+    # how often a coin flip works), but that random-excluding history was then
+    # reused for the practice-target bookkeeping too, which predicators does not do.
+    # With this flag ON, the practice-target quantities read an all-attempts history
+    # (greedy + random) matching `_ground_op_hist`, while competence keeps reading
+    # its own clean random-excluding history unchanged. Two separable decisions the
+    # port accidentally coupled; default OFF preserves current behavior.
+    reproduce_predicators_practice_target_history: bool = False
     planning_timeout: float = 10.0
     sampler_max_train_iters: int = 1000
 
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
+    # Per ground skill, one bool per execution regardless of the epsilon-greedy
+    # random branch -- predicators' `_ground_op_hist`. Only consulted when
+    # `reproduce_predicators_practice_target_history` is on; competence always reads
+    # its own random-excluding history in `_competence_models` instead.
+    _all_attempt_outcomes: dict[GroundSkill, list[bool]] = PrivateAttr()
     _samplers: dict[str, LearnedSkillSampler] = PrivateAttr()
     # (init_atoms, goal) for each task EES has been handed, newest last.
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
@@ -122,6 +144,7 @@ class EesMethod(Method):
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
         self._competence_models = {}
+        self._all_attempt_outcomes = {}
         self._samplers = {}
         self._seen_tasks = []
         self._cached_plans = []
@@ -185,7 +208,13 @@ class EesMethod(Method):
 
         `reproduce_predicators_double_observe` restores predicators' literal
         control flow instead; see that field for why the flag exists.
+
+        Independently of competence, every execution is recorded (greedy *and*
+        random) into `_all_attempt_outcomes` -- predicators' `_ground_op_hist`.
+        `skip_perfect`/UCB read it only when
+        `reproduce_predicators_practice_target_history` is on.
         """
+        self._all_attempt_outcomes.setdefault(ground_skill, []).append(success)
         model = self.competence_model(ground_skill=ground_skill)
         if self.reproduce_predicators_double_observe:
             model.observe(success=success)  # active_sampler_explorer.py:407
@@ -198,12 +227,34 @@ class EesMethod(Method):
     def total_observations(self) -> int:
         return sum(model.num_observations for model in self._competence_models.values())
 
+    def practice_target_num_tries(self, *, ground_skill: GroundSkill) -> int:
+        """The per-skill trial count `skip_perfect`/UCB reason about. Reads the
+        all-attempts (`_ground_op_hist`) history when
+        `reproduce_predicators_practice_target_history` is on, else the competence
+        history (which excludes epsilon-random attempts)."""
+        if self.reproduce_predicators_practice_target_history:
+            return len(self._all_attempt_outcomes.get(ground_skill, []))
+        return self.competence_model(ground_skill=ground_skill).num_observations
+
+    def practice_target_total_tries(self) -> int:
+        """The UCB `total` across all skills, matching whichever per-skill history
+        `practice_target_num_tries` reads."""
+        if self.reproduce_predicators_practice_target_history:
+            return sum(len(outcomes) for outcomes in self._all_attempt_outcomes.values())
+        return self.total_observations()
+
     def measured_success_rate(self, *, ground_skill: GroundSkill) -> float:
         """Raw (prior-free) success fraction, which is what predicators' own
         `skip_perfect` check uses -- deliberately not the posterior mean, which
-        can never reach exactly 1.0 under a Beta prior."""
-        model = self.competence_model(ground_skill=ground_skill)
-        outcomes = [outcome for cycle in model.cycle_observations for outcome in cycle]
+        can never reach exactly 1.0 under a Beta prior. Reads the all-attempts
+        (`_ground_op_hist`) history when
+        `reproduce_predicators_practice_target_history` is on, else the competence
+        history (which excludes epsilon-random attempts)."""
+        if self.reproduce_predicators_practice_target_history:
+            outcomes: list[bool] = self._all_attempt_outcomes.get(ground_skill, [])
+        else:
+            model = self.competence_model(ground_skill=ground_skill)
+            outcomes = [outcome for cycle in model.cycle_observations for outcome in cycle]
         if not outcomes:
             return 0.0
         return sum(outcomes) / len(outcomes)
@@ -302,8 +353,8 @@ class EesMethod(Method):
             # max(..., 1) guards only divide-by-zero / log(0) for a skill or a run
             # with no attempts yet; with one attempt log(1) = 0, i.e. no bonus,
             # which is predicators' behavior too.
-            num_tries = max(model.num_observations, 1)
-            total_trials = max(self.total_observations(), 1)
+            num_tries = max(self.practice_target_num_tries(ground_skill=ground_skill), 1)
+            total_trials = max(self.practice_target_total_tries(), 1)
             score += self.explore_bonus * math.sqrt(math.log(total_trials) / num_tries)
         return score
 

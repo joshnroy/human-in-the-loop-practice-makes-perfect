@@ -65,6 +65,14 @@ class EesCli:
             "published curve contains it, so this is the comparable setting.",
         )
         parser.add_argument(
+            "--reproduce-predicators-practice-target-history",
+            action="store_true",
+            help="Ablation: compute skip_perfect and the UCB num_tries/total from an "
+            "all-attempts history (greedy + random), matching predicators' "
+            "_ground_op_hist. Off by default, which reads the random-excluding "
+            "competence history instead; competence itself is unaffected either way.",
+        )
+        parser.add_argument(
             "--planning-timeout",
             type=float,
             default=EesMethod.model_fields["planning_timeout"].default,
@@ -82,6 +90,9 @@ class EesCli:
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 planning_timeout=args.planning_timeout,
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
+                reproduce_predicators_practice_target_history=(
+                    args.reproduce_predicators_practice_target_history
+                ),
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
