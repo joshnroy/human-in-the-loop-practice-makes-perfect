@@ -466,3 +466,92 @@ def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
 
     assert fixed.measured_success_rate(ground_skill=skill) == 1.0
     assert buggy.measured_success_rate(ground_skill=skill) < 0.75
+
+
+def test_practice_target_history_flag_defaults_off() -> None:
+    """The all-attempts practice-target bookkeeping is opt-in: by default the port
+    keeps its own random-excluding behavior, so the headline result is unchanged."""
+    method, _ = _build()
+    assert method.reproduce_predicators_practice_target_history is False
+
+
+def _feed_mastered_at_epsilon_half(*, method: EesMethod, skill: GroundSkill, reps: int) -> None:
+    """A mastered skill under epsilon = 0.5: every greedy attempt succeeds, every
+    random one fails (the toggle tolerance covers only a slice of the param range)."""
+    for _ in range(reps):
+        method.observe_outcome(ground_skill=skill, success=True, was_random_exploration=False)
+        method.observe_outcome(ground_skill=skill, success=False, was_random_exploration=True)
+
+
+def test_flag_on_counts_random_attempts_in_measured_success_rate() -> None:
+    """predicators reads `_ground_op_hist`, appended on *every* execution including
+    epsilon-random ones. With the flag ON, `measured_success_rate` matches that: a
+    mastered skill whose random attempts keep failing does NOT read as perfect."""
+    method, env = _build()
+    method.reproduce_predicators_practice_target_history = True
+    skill = _turn_on_light(env=env)
+    _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
+    # 20 greedy successes + 20 random failures = 20/40.
+    assert method.measured_success_rate(ground_skill=skill) == pytest.approx(0.5)
+
+
+def test_flag_on_stops_skip_perfect_from_firing_on_a_greedy_only_perfect_skill() -> None:
+    """The mechanism the flag targets: OFF, a mastered skill's random failures are
+    invisible so its measured rate is 1.0 and `skip_perfect` scores it -inf; ON, the
+    random failures count, the rate is below 1.0, and the skill stays a candidate."""
+    off, env = _build()
+    on, _ = _build()
+    on.reproduce_predicators_practice_target_history = True
+    skill = _turn_on_light(env=env)
+    for method in (off, on):
+        _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
+
+    # OFF (current behavior): only greedy successes are visible -> perfect -> skipped.
+    assert off.measured_success_rate(ground_skill=skill) == 1.0
+    assert off.score_ground_skill(ground_skill=skill) == -math.inf
+    # ON (predicators): random failures count -> not perfect -> still scored finitely.
+    assert on.score_ground_skill(ground_skill=skill) != -math.inf
+    assert math.isfinite(on.score_ground_skill(ground_skill=skill))
+
+
+def test_flag_on_counts_random_attempts_in_the_ucb_denominator() -> None:
+    """The UCB bonus is `c * sqrt(log(total) / num_tries)`. With no seen tasks the
+    score is that bonus alone. ON counts the random attempts toward `num_tries`, so
+    for a single skill (where total == num_tries) the larger denominator makes the
+    ON bonus strictly smaller than the OFF one."""
+    off, env = _build()
+    on, _ = _build()
+    on.reproduce_predicators_practice_target_history = True
+    skill = _turn_on_light(env=env)
+    # 2 greedy attempts (one each way, so neither arm reads as perfect) + 8 random
+    # failures: OFF's num_tries sees 2 attempts, ON's sees 10.
+    for method in (off, on):
+        method.observe_outcome(ground_skill=skill, success=True, was_random_exploration=False)
+        method.observe_outcome(ground_skill=skill, success=False, was_random_exploration=False)
+        for _ in range(8):
+            method.observe_outcome(ground_skill=skill, success=False, was_random_exploration=True)
+
+    off_score = off.score_ground_skill(ground_skill=skill)
+    on_score = on.score_ground_skill(ground_skill=skill)
+    assert off_score > 0.0 and on_score > 0.0  # pure UCB bonus, no tasks seen
+    assert on_score < off_score
+
+
+def test_flag_does_not_change_competence_in_either_state() -> None:
+    """The two decisions the port accidentally coupled are separated by the flag:
+    competence (the planner's edge costs / J_task) must EXCLUDE random attempts
+    regardless of the flag. Only the practice-target bookkeeping moves."""
+    off, env = _build()
+    on, _ = _build()
+    on.reproduce_predicators_practice_target_history = True
+    skill = _turn_on_light(env=env)
+    for method in (off, on):
+        _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
+
+    off_model = off.competence_model(ground_skill=skill)
+    on_model = on.competence_model(ground_skill=skill)
+    # Random attempts excluded from competence in BOTH states: only the 20 greedy
+    # successes land, so competence and its observation count are identical.
+    assert off_model.num_observations == 20
+    assert on_model.num_observations == 20
+    assert off_model.get_current_competence() == on_model.get_current_competence()
