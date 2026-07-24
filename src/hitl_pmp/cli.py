@@ -22,11 +22,28 @@ import argparse
 from pathlib import Path
 from typing import Protocol
 
+from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
-ENVIRONMENTS = {"lightswitch": LightSwitchCli}
+
+class EnvironmentCli(Protocol):
+    """The add_arguments(*, parser) shape every environments/<domain>/cli.py entry in
+    ENVIRONMENTS must expose (this file only calls add_arguments on the selected
+    environment -- run_method is called by the method CLIs, not here). A Protocol,
+    for ENVIRONMENTS' own type annotation, so mypy accepts a dict mixing several
+    distinct concrete domain CLIs (BallRingCli, LightSwitchCli, ...) without widening
+    the value type to type[object]. Mirrors MethodCli below."""
+
+    @staticmethod
+    def add_arguments(*, parser: argparse.ArgumentParser) -> None: ...
+
+
+ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
+    "ballring": BallRingCli,
+    "lightswitch": LightSwitchCli,
+}
 
 
 class MethodCli(Protocol):
