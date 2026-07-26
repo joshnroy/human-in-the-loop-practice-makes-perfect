@@ -162,6 +162,29 @@ def test_place_held_object_on_floor_drops_it_at_commanded_position() -> None:
     assert env.on_floor(state=next_state, obj=E.ball) is True
 
 
+def test_place_on_floor_over_a_table_footprint_stays_a_floor_place_not_a_crash() -> None:
+    """A place-on-floor action (obj_type_id == 0.0, what the floor-place skills
+    emit) must place on the floor even when its commanded point happens to land
+    within a table's geometry -- e.g. a per-seed table layout the floor target
+    overlaps. Without the obj_type_id == 0.0 guard this reached the cup-place
+    branch's `assert obj_type_id == 2.0` and crashed, which took down EES runs on
+    the seeds whose table layout overlapped the floor-place target."""
+    env = E()
+    state = _state(
+        tables=[_table(name="normal-table-0", x=0.5, y=0.5, radius=0.1)],
+        robot=(0.5, 0.5),
+        ball=(0.5, 0.5, 0.02, 1.0),  # held
+    )
+    env.set_state(state=state)
+    # (0.5, 0.5) is squarely inside normal-table-0's footprint, but obj_type_id 0.0
+    # means "place on the floor here": it must release the ball at the commanded
+    # point rather than routing to the cup-place branch and asserting.
+    next_state = env.take_action(action=np.array([1.0, 0.0, 1.0, 0.5, 0.5]))
+    assert env.holding(state=next_state, obj=E.ball) is False
+    assert next_state.get(obj=E.ball, feature_name="x") == 0.5
+    assert next_state.get(obj=E.ball, feature_name="y") == 0.5
+
+
 def test_place_held_ball_onto_cup_on_floor_creates_ball_in_cup() -> None:
     env = E()
     state = _state(

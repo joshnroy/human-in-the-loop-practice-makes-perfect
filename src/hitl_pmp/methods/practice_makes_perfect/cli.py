@@ -78,6 +78,20 @@ class EesCli:
             default=EesMethod.model_fields["planning_timeout"].default,
             help="Per-call Fast Downward timeout, in seconds.",
         )
+        parser.add_argument(
+            "--competence-window-size",
+            type=int,
+            default=EesMethod.model_fields["competence_window_size"].default,
+            help="Optimistic competence model window (predicators' default 5; the "
+            "paper overrides to 2 for the simulated Ball-Ring).",
+        )
+        parser.add_argument(
+            "--competence-recency-size",
+            type=int,
+            default=EesMethod.model_fields["competence_recency_size"].default,
+            help="Optimistic competence model recency window (predicators' default 5; "
+            "the paper overrides to 2 for the simulated Ball-Ring).",
+        )
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
@@ -90,6 +104,8 @@ class EesCli:
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 planning_timeout=args.planning_timeout,
+                competence_window_size=args.competence_window_size,
+                competence_recency_size=args.competence_recency_size,
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history

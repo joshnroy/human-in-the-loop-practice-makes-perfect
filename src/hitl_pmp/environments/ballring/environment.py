@@ -329,11 +329,19 @@ class BallRingEnvironment(Environment):
         obj_being_held: Object,
         ball_in_cup: bool,
     ) -> None:
+        # A place-on-floor action (obj_type_id == 0.0) always places on the floor,
+        # even if the commanded point happens to land within a table's geometry.
+        # predicators dispatches table-vs-floor purely by geometry and only then
+        # checks obj_type_id, which is safe there because its floor points never
+        # overlap a table; ours can (e.g. a per-seed table layout near the room
+        # center that the floor-place skills target), which would otherwise reach
+        # the `assert obj_type_id == 2.0` cup-place branch below and crash.
         table: Object | None = None
-        for target in self.get_tables(state=state):
-            if self.object_contains_point(state=state, obj=target, px=act_x, py=act_y):
-                table = target
-                break
+        if obj_type_id != 0.0:
+            for target in self.get_tables(state=state):
+                if self.object_contains_point(state=state, obj=target, px=act_x, py=act_y):
+                    table = target
+                    break
 
         if table is None:
             # No reachability check for the floor: the robot may 'throw' onto it.
@@ -400,7 +408,13 @@ class BallRingEnvironment(Environment):
                     ball_only=ball_only,
                 )
         else:
-            # obj_type_id == 2.0 while holding: drop the ball into the cup.
+            # obj_type_id == 2.0 while holding: drop the ball into the cup. This
+            # assert is a faithful tripwire (predicators asserts the same) -- it
+            # only fires if an inapplicable skill was executed (e.g. a pick fired
+            # while holding, reinterpreted as a place). The fix for that lives in
+            # the EES execution loop (closed-loop precondition gating), not here;
+            # predicators never trips it because its options are never executed
+            # when inapplicable.
             assert obj_type_id == 2.0
             assert obj_being_held == self.ball
             next_state.set(obj=self.ball, feature_name="x", feature_val=act_x)
