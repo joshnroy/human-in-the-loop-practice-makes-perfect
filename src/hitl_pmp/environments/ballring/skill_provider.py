@@ -72,6 +72,18 @@ class BallRingSkillProvider(SkillProvider):
             ground_skill=ground_skill, params=params, state=state, env=self.env
         )
 
+    def oracle_sampler_input(
+        self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float] | None:
+        """Route the domain-agnostic Method's oracle-feature-selection hook to
+        `BallRingSkills` -- a curated sampler input row for the cup-placement skill,
+        `None` (fall back to `"all"`) for everything else. This is the seam that lets
+        Ball-Ring reproduce the paper's `active_sampler_learning_feature_selection:
+        oracle` without the Method importing this environment."""
+        return BallRingSkills.oracle_sampler_input(
+            ground_skill=ground_skill, state=state, params=params
+        )
+
 
 class BallRingOracle(OraclePolicyProvider):
     """Ball-Ring's privileged solver, driving `SkillOracleMethod` as the upper-bound

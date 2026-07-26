@@ -106,6 +106,12 @@ class EesMethod(Method):
     # Beta(10, 1), the paper's stated initial-cycle prior.
     prior_alpha: float = 10.0
     prior_beta: float = 1.0
+    # CFG.skill_competence_model_optimistic_{window,recency}_size. predicators'
+    # settings.py default is 5 (Light Switch uses it); the paper's own
+    # active_sampler_learning.yaml overrides both to 2 for the simulated Ball-Ring,
+    # so a Ball-Ring run passes --competence-window-size 2 --competence-recency-size 2.
+    competence_window_size: int = 5
+    competence_recency_size: int = 5
 
     # Not a hyperparameter -- an ablation switch that restores predicators' own
     # double-`observe()` bug (see deviation 3 above), so its cost can be measured
@@ -182,7 +188,10 @@ class EesMethod(Method):
         quadratic in grid_size while the number ever tried stays small."""
         if ground_skill not in self._competence_models:
             self._competence_models[ground_skill] = OptimisticSkillCompetenceModel(
-                alpha=self.prior_alpha, beta=self.prior_beta
+                alpha=self.prior_alpha,
+                beta=self.prior_beta,
+                window_size=self.competence_window_size,
+                recency_size=self.competence_recency_size,
             )
         return self._competence_models[ground_skill]
 
@@ -389,18 +398,39 @@ class EesMethod(Method):
     def state_features(self, *, ground_skill: GroundSkill, state: State) -> list[float]:
         """`concat(state[obj] for obj in ground_skill.objects)` -- predicators'
         `construct_active_sampler_input` under `feature_selection="all"`. The
-        leading 1.0 bias term is added by the sampler itself."""
+        leading 1.0 bias term is added by `build_sampler_input`."""
         features: list[float] = []
         for obj in ground_skill.objects:
             features.extend(float(value) for value in state[obj])
         return features
 
+    def sampler_input_row(
+        self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float]:
+        """The full classifier input row for one (ground skill, state, params) --
+        predicators' `construct_active_sampler_input`, which is domain-aware. Asks the
+        domain's `SkillProvider` for an oracle row first (`feature_selection="oracle"`);
+        if it declines (returns `None`), falls back to the default `"all"` layout
+        `[1.0] + concat(state[obj]) + params`. A pure function of its arguments, so the
+        row built to *score* a candidate and the row later *observed* for the chosen
+        candidate are identical as long as they are built at the same state -- which is
+        why the caller snapshots this at decision time rather than rebuilding it once
+        the state has moved on."""
+        oracle = self.skill_provider.oracle_sampler_input(
+            ground_skill=ground_skill, state=state, params=params
+        )
+        if oracle is not None:
+            return oracle
+        return LearnedSkillSampler.build_sampler_input(
+            state_features=self.state_features(ground_skill=ground_skill, state=state),
+            params=params,
+        )
+
     def observe_sampler_outcome(
-        self, *, skill_name: str, features: list[float], params: np.ndarray, success: bool
+        self, *, skill_name: str, param_dim: int, sampler_input: list[float], success: bool
     ) -> None:
-        param_dim = len(params)
         self.sampler(skill_name=skill_name, param_dim=param_dim).observe(
-            features=features, params=params, success=success
+            sampler_input=sampler_input, success=success
         )
 
     # ---------------------------------------------------------------- lifecycle
@@ -451,20 +481,28 @@ class EesMethod(Method):
             params: np.ndarray = np.zeros(0)
             record = None
         else:
-            features = self.state_features(ground_skill=ground_skill, state=state)
             candidates = [
                 self.skill_provider.sample_params(ground_skill=ground_skill, rng=self._rng)
                 for _ in range(self.num_candidates)
             ]
+            sampler_inputs = [
+                self.sampler_input_row(ground_skill=ground_skill, state=state, params=candidate)
+                for candidate in candidates
+            ]
             sampler = self.sampler(skill_name=skill.name, param_dim=skill.param_dim)
             params, was_random = sampler.sample(
-                features=features, candidates=candidates, explore=explore
+                sampler_inputs=sampler_inputs, candidates=candidates, explore=explore
             )
             record = (
                 _SkillAttempt(
                     skill_name=skill.name,
-                    features=features,
-                    params=params,
+                    param_dim=skill.param_dim,
+                    # Snapshot the chosen candidate's row at *this* state -- observing
+                    # it later, after the state has changed, would build a different
+                    # (desynced) row. Same-state, same-params rebuild is deterministic.
+                    sampler_input=self.sampler_input_row(
+                        ground_skill=ground_skill, state=state, params=params
+                    ),
                     was_random_exploration=was_random,
                 )
                 if explore
@@ -530,8 +568,11 @@ class _SkillAttempt(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     skill_name: str
-    features: list[float]
-    params: np.ndarray
+    param_dim: int
+    # The classifier input row built at decision time (bias + features + params, or a
+    # domain's oracle row). Stored rather than rederived so the observed training row
+    # is exactly the row that was scored -- see EesMethod.sampler_input_row.
+    sampler_input: list[float]
     was_random_exploration: bool
 
 
@@ -560,6 +601,18 @@ class _EesEpisode:
         method = self._method
         true_atoms = method.abstract_state(state=state)
         self._observe_pending(true_atoms=true_atoms)
+
+        # Closed-loop execution: if the next queued skill's preconditions no longer
+        # hold, the plan has diverged (a stochastic outcome -- e.g. a bare ball
+        # placed on a table falling to the floor -- broke a downstream skill's
+        # preconditions) and executing it anyway would drive an inapplicable action
+        # into the env. Discard the stale plan and replan instead. This mirrors
+        # predicators, whose option policy raises OptionExecutionFailure when a step
+        # is not initiable and re-plans (active_sampler_explorer.py:340-343) rather
+        # than ever feeding simulate() an inapplicable option. The earlier open-loop
+        # execution is what tripped Ball-Ring's pick/place obj_type_id asserts.
+        if self._plan and not (self._plan[0].preconditions <= true_atoms):
+            self._plan = []
 
         if not self._plan:
             self._plan = self._next_plan(true_atoms=true_atoms)
@@ -600,8 +653,8 @@ class _EesEpisode:
             if attempt is not None:
                 self._method.observe_sampler_outcome(
                     skill_name=attempt.skill_name,
-                    features=attempt.features,
-                    params=attempt.params,
+                    param_dim=attempt.param_dim,
+                    sampler_input=attempt.sampler_input,
                     success=success,
                 )
         self._pending = None

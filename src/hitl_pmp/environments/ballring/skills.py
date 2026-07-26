@@ -430,11 +430,23 @@ class BallRingSkills:
         return (env.x_lb + env.x_ub) / 2, (env.y_lb + env.y_ub) / 2
 
     @staticmethod
-    def _place_on_table_action(
+    def place_on_table_xy(
         *, ground_skill: GroundSkill, params: np.ndarray, state: State
-    ) -> Action:
-        # objects: [robot, ball, cup, table]; the object placed is objects[-2]
-        # (predicators' place_on_table_sampler uses objs[-2]/objs[-1]).
+    ) -> tuple[float, float]:
+        """The concrete placement point `(x, y)` a place-on-table skill's continuous
+        parameters `(u, theta)` resolve to, given the state: a fractional radius `u`
+        scaled by the usable table radius, at angle `theta` about the table center.
+        Ported from predicators' `place_on_table_sampler`
+        (`dist = uniform(0, table_radius - size); x = table_x + dist*cos(theta)`).
+
+        Factored out so the raw action (`_place_on_table_action`) and the oracle
+        sampler input (`oracle_sampler_input`) convert `(u, theta)` the *same* way --
+        the oracle classifier is trained/scored on these placement coordinates, so
+        they must match the coordinates the action actually commands.
+
+        objects: `[robot, ball, cup, table]`; the placed object is `objects[-2]`, the
+        table `objects[-1]` (predicators' `place_on_table_sampler` uses
+        `objs[-2]`/`objs[-1]`)."""
         obj = ground_skill.objects[-2]
         table = ground_skill.objects[-1]
         u, theta = float(params[0]), float(params[1])
@@ -445,7 +457,59 @@ class BallRingSkills:
         dist = u * max(table_radius - size, 0.0)
         x = table_x + dist * np.cos(theta)
         y = table_y + dist * np.sin(theta)
+        return float(x), float(y)
+
+    @staticmethod
+    def _place_on_table_action(
+        *, ground_skill: GroundSkill, params: np.ndarray, state: State
+    ) -> Action:
+        x, y = BallRingSkills.place_on_table_xy(
+            ground_skill=ground_skill, params=params, state=state
+        )
         return np.array([1.0, 3.0, 0.0, x, y])  # 3.0 = place onto table
+
+    @staticmethod
+    def oracle_sampler_input(
+        *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float] | None:
+        """Ball-Ring's oracle feature selection for the learned sampler --
+        predicators' `active_sampler_learning_feature_selection = "oracle"` branch for
+        `ball_and_cup_sticky_table` in `utils.construct_active_sampler_input`.
+
+        For a place-cup-*-on-table skill (option name contains both ``"PlaceCup"`` and
+        ``"Table"``), returns the curated row -- bias, the target table's geometry and
+        sticky-region description, and the placement coordinates -- so the
+        cup-placement sampler sees the sticky-region features directly instead of
+        having them buried under five tables' worth of concatenated ``state[obj]``
+        clutter (the ``"all"`` layout). Every other skill returns ``None`` (fall back
+        to ``"all"``): ``PlaceBallOnTable`` has ``"Ball"`` not ``"Cup"``, and this port
+        deliberately has no ``PlaceCupWithBallOnTable`` (absent in predicators'
+        ground-truth models too), so exactly one skill,
+        ``PlaceCupWithoutBallOnTable``, takes this path.
+
+        `place_x`/`place_y` are the converted `(x, y)` placement coordinates (via
+        `place_on_table_xy`), matching predicators, whose place option params are the
+        placement coordinates directly (`_, _, _, param_x, param_y = params`); ours
+        sample `(u, theta)` and convert, so the conversion happens here."""
+        name = ground_skill.skill.name
+        if "PlaceCup" not in name or "Table" not in name:
+            return None
+        table = ground_skill.objects[-1]
+        place_x, place_y = BallRingSkills.place_on_table_xy(
+            ground_skill=ground_skill, params=params, state=state
+        )
+        return [
+            1.0,  # bias
+            state.get(obj=table, feature_name="radius"),
+            state.get(obj=table, feature_name="sticky"),
+            state.get(obj=table, feature_name="sticky_region_x_offset"),
+            state.get(obj=table, feature_name="sticky_region_y_offset"),
+            state.get(obj=table, feature_name="sticky_region_radius"),
+            state.get(obj=table, feature_name="x"),
+            state.get(obj=table, feature_name="y"),
+            place_x,
+            place_y,
+        ]
 
     # Fixed set of candidate approach angles scanned for a collision-free pose --
     # deterministic stand-in for predicators' navigate rejection sampler.

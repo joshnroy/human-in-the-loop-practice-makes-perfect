@@ -68,6 +68,26 @@ class SkillProvider(BaseModel, abc.ABC):
         reading whatever the state provides (object positions, etc.)."""
         raise NotImplementedError
 
+    def oracle_sampler_input(
+        self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float] | None:
+        """Optional per-domain "oracle feature selection" for the learned sampler's
+        classifier input -- predicators'
+        `active_sampler_learning_feature_selection = "oracle"` branch of
+        `utils.construct_active_sampler_input`.
+
+        Returns the *full* sampler input row (including the leading `1.0` bias) when
+        this domain hand-picks a curated feature vector for this ground skill, or
+        `None` to fall back to the default `"all"` layout
+        (`[1.0] + concat(state[obj] for obj) + params`) the caller builds itself.
+
+        Non-abstract with a `None` default so a domain that does no oracle feature
+        selection (e.g. Light Switch) needs no override and is left exactly as it was.
+        A concrete provider that overrides this must build the row consistently for
+        both a training observation and a candidate being scored -- i.e. it is a pure
+        function of `(ground_skill, state, params)`."""
+        return None
+
 
 class OraclePolicyProvider(BaseModel, abc.ABC):
     """A domain's privileged, hand-authored solver -- what `SkillOracleMethod` drives

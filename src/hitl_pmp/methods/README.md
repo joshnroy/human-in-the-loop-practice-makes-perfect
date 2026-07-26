@@ -78,9 +78,16 @@ the paper's `J_task`, the probability a plan runs without replanning. That ident
 why `../planning/fast_downward.py` (real Fast Downward, `seq-opt-lmcut`, per-ground-skill
 costs patched into the translated SAS) is load-bearing rather than a convenience.
 `wrapped_sampler.py` is the other learnable half: one `LearnedSkillSampler` per skill
-name, a torch MLP binary classifier over `[1.0] + state_features + params` that scores
+name, a torch MLP binary classifier over a per-candidate input row that scores
 candidate parameters, refit from scratch each cycle, epsilon-greedy (0.5) while
-practicing. Wired in via `cli.py`'s `EesCli` (`--method ees`); `analysis/
+practicing. The row is built by `EesMethod.sampler_input_row`, which asks the domain's
+`SkillProvider.oracle_sampler_input` for a curated "oracle" feature vector
+(predicators' `active_sampler_learning_feature_selection = "oracle"`) and otherwise
+falls back to the default `"all"` layout `[1.0] + state_features + params` — Ball-Ring
+overrides it for its cup-placement skill (table + sticky-region features + converted
+placement coords) so those features aren't buried under five tables of clutter; Light
+Switch defines none and stays on `"all"`. Wired in via `cli.py`'s `EesCli`
+(`--method ees`); `analysis/
 practice_makes_perfect/ees.py` renders the paper's own Figure 4 view (fraction of
 evaluation tasks solved vs. online transitions) from the resulting `stats.json` files.
 

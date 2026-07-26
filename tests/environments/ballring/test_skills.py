@@ -1,6 +1,8 @@
 import numpy as np
+import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.environments.ballring.environment import BallRingEnvironment
 from hitl_pmp.environments.ballring.predicates import (
     BALL_IN_CUP,
@@ -123,6 +125,84 @@ def test_place_bare_ball_on_table_is_impossible_it_always_falls() -> None:
     # PlaceBallOnTable's add-effect (BallOnTable) is never actually achieved.
     assert env.on_table(state=next_state, obj=env.ball, table=normal) is False
     assert env.on_floor(state=next_state, obj=env.ball) is True
+
+
+def _hand_built_place_cup_state_and_skill() -> tuple[State, GroundSkill]:
+    """A hand-constructed state with a single known table (specific radius / sticky /
+    sticky-region offsets / center) and a cup of known radius, plus the ground
+    PlaceCupWithoutBallOnTable skill over it. Concrete numbers chosen so the
+    (u, theta) -> (x, y) conversion is exact (theta = 0)."""
+    table = Object(name="sticky-table-0", type=E.table_type)
+    # [x, y, radius, sticky, sticky_region_x_offset, sticky_region_y_offset,
+    #  sticky_region_radius]
+    table_features = np.array([0.5, 0.5, 0.2, 1.0, 0.03, -0.04, 0.07])
+    # cup [x, y, radius, held]; radius 0.05 => size (diameter) 0.1.
+    state = State(
+        data={
+            E.robot: np.array([0.0, 0.0]),
+            E.ball: np.array([0.0, 0.0, 0.04, 0.0]),
+            E.cup: np.array([0.0, 0.0, 0.05, 0.0]),
+            table: table_features,
+        }
+    )
+    place = GroundSkill(
+        skill=BallRingSkills.PLACE_CUP_WITHOUT_BALL_ON_TABLE,
+        objects=(E.robot, E.ball, E.cup, table),
+    )
+    return state, place
+
+
+def test_oracle_sampler_input_pins_the_predicators_layout_and_converts_placement() -> None:
+    """The exact oracle vector predicators emits for a PlaceCup*OnTable skill:
+    [1.0, table_radius, sticky, sticky_region_x_offset, sticky_region_y_offset,
+     sticky_region_radius, table_x, table_y, place_x, place_y]
+    with place_x/place_y the *converted* (x, y) our (u, theta) params produce, not
+    the raw (u, theta)."""
+    state, place = _hand_built_place_cup_state_and_skill()
+    # u = 0.5, theta = 0: dist = 0.5 * (table_radius 0.2 - size 0.1) = 0.05;
+    # place_x = 0.5 + 0.05*cos(0) = 0.55, place_y = 0.5 + 0.05*sin(0) = 0.5.
+    params = np.array([0.5, 0.0])
+    row = BallRingSkills.oracle_sampler_input(ground_skill=place, state=state, params=params)
+    assert row == pytest.approx([1.0, 0.2, 1.0, 0.03, -0.04, 0.07, 0.5, 0.5, 0.55, 0.5])
+
+
+def test_oracle_place_coordinates_match_the_action_the_skill_commands() -> None:
+    """The classifier is trained/scored on the placement coordinates, so they must be
+    the same (x, y) the realized action actually commands."""
+    state, place = _hand_built_place_cup_state_and_skill()
+    params = np.array([0.37, 1.1])
+    row = BallRingSkills.oracle_sampler_input(ground_skill=place, state=state, params=params)
+    action = BallRingSkills._place_on_table_action(ground_skill=place, params=params, state=state)
+    assert row is not None
+    assert (row[-2], row[-1]) == pytest.approx((float(action[3]), float(action[4])))
+
+
+def test_oracle_sampler_input_is_none_for_place_ball_on_table() -> None:
+    """PlaceBallOnTable has 'Ball' not 'Cup' in its name -> "all" features, not oracle."""
+    state, _ = _hand_built_place_cup_state_and_skill()
+    table = Object(name="sticky-table-0", type=E.table_type)
+    place_ball = GroundSkill(
+        skill=BallRingSkills.PLACE_BALL_ON_TABLE, objects=(E.robot, E.ball, E.cup, table)
+    )
+    assert (
+        BallRingSkills.oracle_sampler_input(
+            ground_skill=place_ball, state=state, params=np.array([0.5, 0.0])
+        )
+        is None
+    )
+
+
+def test_oracle_sampler_input_is_none_for_a_pick_skill() -> None:
+    table = Object(name="sticky-table-0", type=E.table_type)
+    state, _ = _hand_built_place_cup_state_and_skill()
+    pick = GroundSkill(
+        skill=BallRingSkills.PICK_CUP_WITHOUT_BALL_FROM_TABLE,
+        objects=(E.robot, E.cup, E.ball, table),
+    )
+    assert (
+        BallRingSkills.oracle_sampler_input(ground_skill=pick, state=state, params=np.zeros(0))
+        is None
+    )
 
 
 def test_navigate_skills_are_always_applicable_in_the_initial_state() -> None:
