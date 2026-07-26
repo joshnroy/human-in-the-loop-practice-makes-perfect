@@ -1,6 +1,7 @@
 import argparse
 
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 
 from .skill_oracle_method import SkillOracleMethod
 
@@ -23,9 +24,27 @@ class SkillOracleCli:
 
     @staticmethod
     def run(*, args: argparse.Namespace) -> None:
-        LightSwitchCli.run_method(
-            args=args,
-            method_factory=lambda env: SkillOracleMethod(env=env),
-            num_cycles=0,  # an oracle never practices/learns -- one evaluation sweep only
-            max_steps_per_interaction=0,  # unused: never reached with num_cycles=0
-        )
+        """Dispatches on --env to the selected domain's own composition root
+        (<Domain>Cli.run_method), so --method skill-oracle works for every registered
+        environment. The two branches are spelled out (rather than a dict) because
+        each domain's run_method declares its own concrete environment type for
+        method_factory, which a heterogeneous dict would erase. This mapping is
+        hardcoded here (not read from hitl_pmp/cli.py's ENVIRONMENTS) since
+        hitl_pmp/cli.py is the top layer -- methods/ may not import it (import-linter).
+        getattr default: the global CLI always sets args.env, but this domain's own
+        isolated tests build a parser without it and expect the Light Switch path."""
+        env_name = getattr(args, "env", "lightswitch")
+        if env_name == "tossingroom":
+            TossingRoomCli.run_method(
+                args=args,
+                method_factory=lambda env: SkillOracleMethod(env=env),
+                num_cycles=0,
+                max_steps_per_interaction=0,
+            )
+        else:
+            LightSwitchCli.run_method(
+                args=args,
+                method_factory=lambda env: SkillOracleMethod(env=env),
+                num_cycles=0,  # an oracle never practices/learns -- one evaluation sweep only
+                max_steps_per_interaction=0,  # unused: never reached with num_cycles=0
+            )

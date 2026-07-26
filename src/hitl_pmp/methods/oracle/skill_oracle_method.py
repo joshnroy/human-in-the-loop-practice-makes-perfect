@@ -6,6 +6,10 @@ from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_oracle_policy import SkillOraclePolicy
+from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
+from hitl_pmp.environments.tossingroom.skill_oracle_policy import (
+    SkillOraclePolicy as TossingRoomSkillOraclePolicy,
+)
 
 
 class SkillOracleMethod(Method):
@@ -20,7 +24,13 @@ class SkillOracleMethod(Method):
     core/README.md's dependency-direction section). Only Light Switch exists so
     far, so there's only one branch -- a second domain would add its own
     environments/<domain>/skill_oracle_policy.py plus one more branch in
-    get_labeled_action, not a second SkillOracleMethod-like class."""
+    get_labeled_action, not a second SkillOracleMethod-like class.
+
+    Tossing Room deviates slightly from that "one more branch in get_labeled_action"
+    pattern: its oracle is goal-dependent (from state alone it can't tell throw-
+    recycling from throw-trash), and get_labeled_action(state) has no goal to hand it.
+    So the Tossing Room branch lives in get_task_policy, which does have the task's
+    goal to close over -- get_labeled_action stays Light-Switch-only, unchanged."""
 
     def get_labeled_action(self, *, state: State) -> LabeledAction:
         if isinstance(self.env, LightSwitchEnvironment):
@@ -38,8 +48,16 @@ class SkillOracleMethod(Method):
         return True
 
     def get_task_policy(self, *, task: Task) -> Policy:
-        del task  # never consulted -- this oracle always drives toward the
-        # light using privileged state, regardless of which task it's handed
+        if isinstance(self.env, TossingRoomEnvironment):
+            # Tossing Room's oracle is goal-dependent: close over this task's goal so
+            # the returned policy knows which item/bin/room to head for.
+            env = self.env
+            goal = task.goal
+            return lambda state: TossingRoomSkillOraclePolicy.get_labeled_action(
+                state=state, env=env, goal=goal
+            )
+        del task  # Light Switch's oracle always drives toward the light using
+        # privileged state, regardless of which task it's handed
         return lambda state: self.get_labeled_action(state=state)
 
     def generate_train_task(self, *, tbd_inputs: Any) -> Task:

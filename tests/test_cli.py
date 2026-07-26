@@ -34,6 +34,21 @@ def test_environments_registry_contains_lightswitch() -> None:
     assert ENVIRONMENTS["lightswitch"] is LightSwitchCli
 
 
+def test_main_runs_tossingroom_skill_oracle_end_to_end() -> None:
+    Cli.main(
+        argv=[
+            "--env",
+            "tossingroom",
+            "--method",
+            "skill-oracle",
+            "--num-test-tasks",
+            "4",
+            "--goal-type",
+            "recycling",
+        ]
+    )
+
+
 def test_methods_registry_contains_skill_oracle() -> None:
     assert METHODS["skill-oracle"] is SkillOracleCli
 
