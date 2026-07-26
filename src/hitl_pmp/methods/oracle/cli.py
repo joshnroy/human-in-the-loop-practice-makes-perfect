@@ -16,10 +16,10 @@ class SkillOracleCli:
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
-        """No method-specific flags -- SkillOracleMethod hardcodes Light Switch
-        internals directly (TODO(scale): this is this codebase's only
-        environment so far), so everything it needs comes from --env
-        lightswitch's own add_arguments, already registered by then."""
+        """No method-specific flags -- SkillOracleMethod carries no hyperparameters of
+        its own; everything it needs comes from the selected --env's own
+        add_arguments (lightswitch or tossingroom), already registered by then. run()
+        below dispatches to that env's composition root."""
         del parser
 
     @staticmethod
