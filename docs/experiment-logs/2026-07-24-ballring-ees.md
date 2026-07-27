@@ -250,19 +250,39 @@ python -m scripts.run_sweep --env ballring --methods ees --num-seeds 3 \
     --reproduce-predicators-explore-target-only --goal-pursuit-horizon 8"
 ```
 
-**Result: REFUTED, and the pair is actively worse than the baseline.**
+**Result: REFUTED — the cap does not close the gap.** All four arms at n = 10
+(mean ± stderr, % of 10 evaluation tasks solved):
 
-| transitions | scope+cap h=8 (n=10) | ours-100k baseline (n=10) | predicators (n=10) |
+| transitions | scope+cap h=8 | scope-only | ours-100k baseline | predicators |
+|---|---|---|---|---|
+| 500 | 6 ± 6 | 1 ± 1 | 12 ± 6 | 37 ± 6 |
+| 1000 | 23 ± 12 | 12 ± 7 | 22 ± 10 | 53 ± 8 |
+| 1500 | 37 ± 10 | 31 ± 11 | 44 ± 13 | 81 ± 6 |
+| 2000 | 50 ± 14 | 50 ± 13 | 90 ± 6 | 95 ± 2 |
+| 2500 | 42 ± 12 | 65 ± 12 | 66 ± 11 | 91 ± 4 |
+
+Welch t-tests on the per-seed finals at 2500 transitions, which are what actually
+license the conclusions above:
+
+| comparison | difference | p | verdict |
 |---|---|---|---|
-| 500 | 6 ± 6 | 12 ± 6 | 37 ± 6 |
-| 1000 | 23 ± 12 | 22 ± 10 | 53 ± 8 |
-| 1500 | 37 ± 10 | 44 ± 13 | 81 ± 6 |
-| 2000 | 50 ± 14 | 90 ± 6 | 95 ± 2 |
-| 2500 | 42 ± 12 | 66 ± 11 | 91 ± 4 |
+| scope-only vs baseline | −1 | 0.95 | no effect (a clean, properly powered null) |
+| scope+cap vs baseline | −24 | 0.13 | **not significant** — trends worse, unproven |
+| scope+cap vs scope-only | −23 | 0.17 | not significant |
+| baseline vs predicators | −25 | **0.027** | significant |
+| scope-only vs predicators | −26 | **0.038** | significant |
+| scope+cap vs predicators | −49 | **<0.001** | significant |
 
-So both of the explorer-side deviations the paper is silent on — epsilon-greedy scope and
-the horizon cap — are now implemented and measured, individually and together, and
-neither explains the gap. That is evidence *against* "we mis-ported the explorer".
+So both of the explorer-side deviations the paper is silent on — epsilon-greedy scope
+and the horizon cap — are now implemented and measured, individually and together, and
+neither closes the gap. That is evidence *against* "we mis-ported the explorer".
+
+**Do not over-read the scope+cap number.** An earlier draft of this log called the pair
+"actively worse than the baseline". That was an over-claim: −24 points at p = 0.13 is
+not a detected difference, it is a wide error bar. With sd ≈ 36 at n = 10, this
+protocol can only resolve differences of roughly 35 points; anything smaller needs far
+more seeds. The only defensible statements here are the null (scope-only ≈ baseline)
+and the gap to predicators.
 
 **Methodological note: the 3-seed version of this experiment was misleading.** An
 earlier n=3 run of exactly this configuration produced a seed scoring 60% at 500
@@ -278,17 +298,31 @@ and individual seeds *collapse mid-run* — seed 8 goes 50% -> 100% -> **0%** ov
 last three evaluation sweeps, and seed 7 goes 40% -> 80% -> **0%**. A run at 100%
 dropping to 0% in a single cycle is not a tuning problem.
 
-| | % solved at 2500 |
-|---|---|
-| predicators | 91 ± 4 (tight) |
-| ours-100k baseline | 66 ± 11 |
-| ours scope+cap | 42 ± 12, bimodal |
+Across all 10 seeds at 2500 transitions, the spread — not the mean — is what separates
+the two codebases, and unlike the mean differences above it is statistically solid
+(F-test on the variances, df 9,9):
 
-predicators is *consistent*; we are bimodal — runs either learn (80-90%) or fail
-outright (0%). The question worth answering is therefore not "why is our mean lower"
-but **"why does a third of our seeds fail completely"**, which no explorer-policy lever
-can explain. This reframes the ranked list above: item #3 (the noisy tail) is the main
-event, not a cheap diagnostic.
+| arm | sd | worst seed | best seed | seeds at 0% | F vs predicators | p |
+|---|---|---|---|---|---|---|
+| predicators | **12.0** | **70** | 100 | 0 | — | — |
+| ours-100k baseline | 33.7 | 10 | 100 | 0 | 7.9 | **0.005** |
+| ours scope-only | 37.8 | 0 | 100 | 2 | 10.0 | **0.002** |
+| ours scope+cap | 36.5 | 0 | 90 | 3 | 9.3 | **0.003** |
+
+predicators' *worst* run out of ten still solves 70% of evaluation tasks; it never
+comes close to failing. Ours range from 0% to 100% on the same protocol, and every one
+of our arms is ~3x more variable than the reference at p < 0.005. That is the one
+difference in this whole investigation that is unambiguous.
+
+Individual seeds also *collapse mid-run* — seed 8 of the scope+cap arm goes
+50% -> 100% -> **0%** over its last three evaluation sweeps, and seed 7 goes
+40% -> 80% -> **0%**. A run at 100% dropping to 0% within a single cycle is not a
+tuning problem, and no exploration-policy lever can explain it.
+
+The question worth answering is therefore not "why is our mean lower" but **"why do
+individual runs fail catastrophically"**. Fix that and the mean follows, because a mean
+computed over a bimodal mixture is mostly reporting the mixing ratio. This reframes the
+ranked list above: item #3 (the noisy tail) is the main event, not a cheap diagnostic.
 
 ### Two checks that bound where the bug can be
 
@@ -325,7 +359,7 @@ the arm that actually changes the practice/goal-pursuit budget split:
 | | uncapped | capped (h=8) |
 |---|---|---|
 | explore every practice skill | baseline, 66 ± 11 (n=10) | **not run** |
-| target-only | n=10 in progress | 42 ± 12 (n=10) |
+| target-only | 65 ± 12 (n=10) | 42 ± 12 (n=10) |
 
 Recommended order: **#1 first** (highest-likelihood, directly motivated by the refuted
 result), then **#3** (cheap; tells us how much of the 2500 gap is real vs noise), then
