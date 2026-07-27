@@ -3,7 +3,7 @@ import numpy as np
 from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
-from hitl_pmp.core.problem.tasks.types import Predicate
+from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import LightSwitchEnvironment
 from .predicates import ADJACENT, LIGHT_IN_CELL, LIGHT_OFF, LIGHT_ON, ROBOT_IN_CELL
@@ -59,5 +59,6 @@ class LightSwitchOracle(OraclePolicyProvider):
 
     env: LightSwitchEnvironment
 
-    def get_labeled_action(self, *, state: State) -> LabeledAction:
+    def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
+        del goal  # Light Switch always drives toward the light from privileged state
         return SkillOraclePolicy.get_labeled_action(state=state, env=self.env)

@@ -38,7 +38,7 @@ def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[s
     args = _build_parser().parse_args(["--num-test-tasks", "8"])
     TossingRoomCli.run_method(
         args=args,
-        method_factory=lambda env: SkillOracleMethod(env=env),
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -49,7 +49,7 @@ def test_run_method_forces_a_single_goal_type(*, capsys: pytest.CaptureFixture[s
     args = _build_parser().parse_args(["--num-test-tasks", "5", "--goal-type", "recycling"])
     TossingRoomCli.run_method(
         args=args,
-        method_factory=lambda env: SkillOracleMethod(env=env),
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -60,7 +60,7 @@ def test_run_method_applies_seed_deterministically() -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--seed", "99"])
     TossingRoomCli.run_method(
         args=args,
-        method_factory=lambda env: SkillOracleMethod(env=env),
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -86,7 +86,7 @@ def test_run_method_respects_a_larger_layout(*, capsys: pytest.CaptureFixture[st
     ])
     TossingRoomCli.run_method(
         args=args,
-        method_factory=lambda env: SkillOracleMethod(env=env),
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -104,7 +104,7 @@ def test_run_method_with_output_dir_writes_a_video(*, tmp_path: Path) -> None:
     ])
     TossingRoomCli.run_method(
         args=args,
-        method_factory=lambda env: SkillOracleMethod(env=env),
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
@@ -117,7 +117,7 @@ def test_run_method_without_output_dir_writes_nothing(*, tmp_path: Path) -> None
     args = _build_parser().parse_args(["--num-test-tasks", "2"])
     TossingRoomCli.run_method(
         args=args,
-        method_factory=lambda env: SkillOracleMethod(env=env),
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
         max_steps_per_interaction=0,
     )

@@ -3,7 +3,7 @@ import numpy as np
 from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
-from hitl_pmp.core.problem.tasks.types import Predicate
+from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import BallRingEnvironment
 from .predicates import (
@@ -97,7 +97,8 @@ class BallRingOracle(OraclePolicyProvider):
 
     env: BallRingEnvironment
 
-    def get_labeled_action(self, *, state: State) -> LabeledAction:
+    def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
+        del goal  # Ball-Ring always drives toward BallOnTable(ball, target) from state
         env = self.env
         target = env.target_table()
         ball, cup, robot = env.ball, env.cup, env.robot

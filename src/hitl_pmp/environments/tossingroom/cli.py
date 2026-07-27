@@ -3,12 +3,14 @@ from collections.abc import Callable
 from typing import ClassVar
 
 from hitl_pmp.core.method.method import Method
+from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.method_runner import MethodRunner
 
 from .environment import TossingRoomEnvironment
 from .problem import TossingRoomProblem
 from .renderer import TossingRoomRenderer
+from .skill_provider import TossingRoomOracle, TossingRoomSkillProvider
 from .tasks import TossingRoomGoalType, TossingRoomTasks
 
 
@@ -108,15 +110,16 @@ class TossingRoomCli:
     def run_method(
         *,
         args: argparse.Namespace,
-        method_factory: Callable[[TossingRoomEnvironment], Method],
+        method_factory: Callable[[DomainContext], Method],
         num_cycles: int,
         max_steps_per_interaction: int,
     ) -> None:
         """This domain's composition root -- builds the actual TossingRoomEnvironment/
-        TossingRoomTasks/TossingRoomProblem from args, calls method_factory(env), then
-        delegates the domain-agnostic rest (driving through PracticeLoop, printing,
-        video-writing) to method_runner.py's MethodRunner. Mirrors
-        LightSwitchCli.run_method."""
+        TossingRoomTasks/TossingRoomProblem from args, bundles this domain's
+        SkillProvider/OraclePolicyProvider into a DomainContext, calls
+        method_factory(context), then delegates the domain-agnostic rest (driving
+        through PracticeLoop, printing, video-writing) to method_runner.py's
+        MethodRunner. Mirrors LightSwitchCli.run_method."""
         env = TossingRoomEnvironment(
             num_rooms=args.num_rooms,
             start_room=args.start_room,
@@ -139,13 +142,18 @@ class TossingRoomCli:
             forced_goal_type=forced_goal_type,
         )
         problem = TossingRoomProblem(env=env, tasks=tasks)
+        context = DomainContext(
+            env=env,
+            skill_provider=TossingRoomSkillProvider(env=env),
+            oracle=TossingRoomOracle(env=env),
+        )
 
         renderer: type[Renderer] | None = (
             TossingRoomRenderer if args.output_dir is not None else None
         )
         MethodRunner.run(
             args=args,
-            method=method_factory(env),
+            method=method_factory(context),
             problem=problem,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,

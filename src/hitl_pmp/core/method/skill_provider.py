@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
-from hitl_pmp.core.problem.tasks.types import Predicate
+from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 
 class SkillProvider(BaseModel, abc.ABC):
@@ -99,7 +99,11 @@ class OraclePolicyProvider(BaseModel, abc.ABC):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @abc.abstractmethod
-    def get_labeled_action(self, *, state: State) -> LabeledAction:
+    def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
+        """Next privileged action toward `goal`. Goal-agnostic oracles (Light Switch,
+        Ball-Ring drive toward a single fixed objective from state alone) ignore it;
+        a goal-dependent oracle (Tossing Room, whose state can't distinguish
+        throw-recycling from throw-trash) reads it to pick which item/bin/room."""
         raise NotImplementedError
 
 

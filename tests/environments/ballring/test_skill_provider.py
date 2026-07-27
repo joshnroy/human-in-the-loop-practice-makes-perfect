@@ -57,7 +57,7 @@ def test_oracle_solves_a_sampled_test_task_within_the_horizon() -> None:
     oracle = BallRingOracle(env=env)
     task = problem.tasks.sample_test_task()
     solved, _ = problem.run_task_episode(
-        task=task, policy=lambda state: oracle.get_labeled_action(state=state)
+        task=task, policy=lambda state: oracle.get_labeled_action(state=state, goal=task.goal)
     )
     assert solved is True
 
@@ -70,7 +70,8 @@ def test_oracle_solves_multiple_seeds() -> None:
     for _ in range(8):
         task = problem.tasks.sample_test_task()
         ok, _ = problem.run_task_episode(
-            task=task, policy=lambda state: oracle.get_labeled_action(state=state)
+            task=task,
+            policy=lambda state, goal=task.goal: oracle.get_labeled_action(state=state, goal=goal),
         )
         solved += int(ok)
     assert solved == 8

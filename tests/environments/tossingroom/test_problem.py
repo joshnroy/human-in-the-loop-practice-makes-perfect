@@ -5,6 +5,7 @@ from hitl_pmp.core.method.types import LabeledAction, Policy
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
 from hitl_pmp.environments.tossingroom.problem import TossingRoomProblem
 from hitl_pmp.environments.tossingroom.renderer import TossingRoomRenderer
+from hitl_pmp.environments.tossingroom.skill_provider import TossingRoomOracle
 from hitl_pmp.environments.tossingroom.tasks import TossingRoomGoalType, TossingRoomTasks
 from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
 
@@ -27,7 +28,9 @@ def _build_problem(*, num_rooms: int = 7, goal_type: TossingRoomGoalType | None 
 
 
 def _oracle_policy(*, problem, task) -> Policy:
-    return SkillOracleMethod(env=problem.env).get_task_policy(task=task)
+    return SkillOracleMethod(
+        env=problem.env, oracle=TossingRoomOracle(env=problem.env)
+    ).get_task_policy(task=task)
 
 
 def test_problem_requires_its_own_domains_types() -> None:

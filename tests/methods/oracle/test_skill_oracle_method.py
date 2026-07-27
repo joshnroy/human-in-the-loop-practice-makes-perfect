@@ -17,7 +17,7 @@ def test_task_policy_delegates_to_the_injected_oracle() -> None:
     env = LightSwitchEnvironment()
     method = _method(env=env)
     state = env.build_initial_state(light_level=0.0, light_target=0.7)
-    dispatched = method.get_task_policy(task=None)(state)  # type: ignore[arg-type]
+    dispatched = method.get_task_policy(task=LightSwitchTasks(env=env).sample_train_task())(state)
     direct = SkillOraclePolicy.get_labeled_action(state=state, env=env)
     assert dispatched.action.tolist() == direct.action.tolist()
     assert dispatched.label == direct.label
