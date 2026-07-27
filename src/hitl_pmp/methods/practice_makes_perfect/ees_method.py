@@ -113,10 +113,13 @@ class EesMethod(Method):
     competence_window_size: int = 5
     competence_recency_size: int = 5
 
-    # Not a hyperparameter -- an ablation switch that restores predicators' own
-    # double-`observe()` bug (see deviation 3 above), so its cost can be measured
-    # rather than argued about. The paper's published curve contains the bug, so
-    # this is the setting that makes our numbers directly comparable to it.
+    # Kept default FALSE, unlike the other two reproduce_* flags. This restores
+    # predicators' own double-`observe()` bug (deviation 3): it counts each random
+    # attempt once toward competence, which corrupts a mastered skill's estimate down
+    # to ~0.67 and mis-prices the planner's edge costs. Measured NULL on the success
+    # curve, so leaving it off does not hurt matching predicators' results, and it
+    # keeps competence clean. Pass --reproduce-predicators-double-observe for a
+    # bit-exact-faithful (bug-included) run.
     reproduce_predicators_double_observe: bool = False
 
     # A second, independent ablation switch (see deviation 1 above). predicators
@@ -127,11 +130,24 @@ class EesMethod(Method):
     # competence (at epsilon=0.5 counting coin flips would make competence measure
     # how often a coin flip works), but that random-excluding history was then
     # reused for the practice-target bookkeeping too, which predicators does not do.
-    # With this flag ON, the practice-target quantities read an all-attempts history
-    # (greedy + random) matching `_ground_op_hist`, while competence keeps reading
-    # its own clean random-excluding history unchanged. Two separable decisions the
-    # port accidentally coupled; default OFF preserves current behavior.
-    reproduce_predicators_practice_target_history: bool = False
+    # Default TRUE (match predicators). ON, the practice-target quantities read an
+    # all-attempts history (greedy + random) matching `_ground_op_hist`, while
+    # competence keeps reading its own clean random-excluding history unchanged. Two
+    # separable decisions the port had accidentally coupled; turn OFF to ablate.
+    reproduce_predicators_practice_target_history: bool = True
+    # Kept default FALSE, and this is a *coupled* deviation, not an independent one.
+    # ON, exploration (epsilon-greedy) fires only on the practice-target skill, greedy
+    # for the prefix -- matching predicators (active_sampler_explorer.py fires its
+    # exploration sampler only once next_practice_nsrt's preconditions hold). But
+    # predicators pairs that with a HORIZON CAP on goal-pursuit (audit D7), which this
+    # port lacks: our goal-pursuit is greedy and runs until the goal is achieved or
+    # planning fails. Turning this ON alone deadlocks a goal-directed domain like Light
+    # Switch -- a bad initial sampler can never achieve the goal greedily, so practice
+    # (where the target would be explored) never begins. Our explore-EVERYTHING default
+    # is what compensates for the missing horizon cap. So ON only faithfully matches
+    # predicators together with a goal-pursuit horizon cap; on its own it is an ablation
+    # that HELPS long multi-skill plans (Ball-Ring) but STARVES short goal-directed ones.
+    reproduce_predicators_explore_target_only: bool = False
     planning_timeout: float = 10.0
     sampler_max_train_iters: int = 1000
 
@@ -593,6 +609,10 @@ class _EesEpisode:
         self._pending: GroundSkill | None = None
         self._pending_sampler_record: _SkillAttempt | None = None
         self._goal_phase_done = False
+        # The last skill of the current practice plan -- the one actually being
+        # practiced (the prefix just navigates to its preconditions). Only consulted
+        # under reproduce_predicators_explore_target_only, to explore that skill alone.
+        self._practice_target: GroundSkill | None = None
 
     def _noop_action(self) -> np.ndarray:
         return np.zeros(self._method.env.action_space.shape)
@@ -616,6 +636,13 @@ class _EesEpisode:
 
         if not self._plan:
             self._plan = self._next_plan(true_atoms=true_atoms)
+            # The practice target is the last skill of a practice plan (a goal-pursuit
+            # plan has none); the prefix just reaches its preconditions.
+            self._practice_target = (
+                self._plan[-1]
+                if (self._practicing and self._goal_phase_done and self._plan)
+                else None
+            )
         if not self._plan:
             if self._practicing:
                 # Nothing left worth practicing (no candidate reachable and no
@@ -630,8 +657,19 @@ class _EesEpisode:
             return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)
+        # By default every skill executed during practice explores (epsilon-greedy).
+        # Under reproduce_predicators_explore_target_only, only the practice target
+        # does -- the prefix that navigates to it uses the greedy learned sampler,
+        # matching predicators (active_sampler_explorer.py fires its exploration
+        # sampler only once next_practice_nsrt's preconditions hold). On this domain's
+        # long multi-skill plans, exploring every step spends ~half of all actions on
+        # off-target random params; this flag measures that cost.
+        explore = self._practicing and (
+            not method.reproduce_predicators_explore_target_only
+            or ground_skill is self._practice_target
+        )
         labeled, record = method.execute_ground_skill(
-            ground_skill=ground_skill, state=state, explore=self._practicing
+            ground_skill=ground_skill, state=state, explore=explore
         )
         self._pending = ground_skill
         self._pending_sampler_record = record

@@ -248,6 +248,10 @@ def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_samp
         seed=0,
         exploration_epsilon=1.0,
         sampler_max_train_iters=50,
+        # This test isolates competence's random-exclusion, so it needs every
+        # parameterized attempt to be random; target-only exploration would make a
+        # prefix TurnOnLight greedy and counted, so pin it off here.
+        reproduce_predicators_explore_target_only=False,
     )
     tasks = LightSwitchTasks(env=env, seed=0)
 
@@ -455,11 +459,6 @@ def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
     assert method.competence_model(ground_skill=skill).num_observations == 3
 
 
-def test_double_observe_flag_defaults_off_so_the_headline_result_is_the_fixed_one() -> None:
-    method, _ = _build()
-    assert method.reproduce_predicators_double_observe is False
-
-
 def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
     """Why the bug slows learning: with random attempts counted at half the weight
     of greedy ones, a skill the robot has actually mastered still reads as mediocre
@@ -468,6 +467,11 @@ def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
     buggy, env = _build()
     buggy.reproduce_predicators_double_observe = True
     fixed, _ = _build()
+    # Isolate double-observe's effect on competence: read measured_success_rate from
+    # the competence history (not the all-attempts one), so pin practice-target-history
+    # off on both -- the only difference between them is then double-observe.
+    buggy.reproduce_predicators_practice_target_history = False
+    fixed.reproduce_predicators_practice_target_history = False
     skill = _turn_on_light(env=env)
     # A mastered skill at epsilon = 0.5: every greedy attempt succeeds, every
     # random one fails (the toggle tolerance covers ~10% of the parameter range).
@@ -480,11 +484,16 @@ def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
     assert buggy.measured_success_rate(ground_skill=skill) < 0.75
 
 
-def test_practice_target_history_flag_defaults_off() -> None:
-    """The all-attempts practice-target bookkeeping is opt-in: by default the port
-    keeps its own random-excluding behavior, so the headline result is unchanged."""
+def test_predicators_matching_flag_defaults() -> None:
+    """The port defaults toward matching predicators, with two documented exceptions.
+    practice_target_history is ON (a clean match). double_observe stays OFF (it is null
+    on the success curve but corrupts competence). explore_target_only stays OFF
+    because it is coupled to a horizon cap this port lacks -- ON alone starves
+    goal-directed learning (see its field comment)."""
     method, _ = _build()
-    assert method.reproduce_predicators_practice_target_history is False
+    assert method.reproduce_predicators_practice_target_history is True
+    assert method.reproduce_predicators_explore_target_only is False
+    assert method.reproduce_predicators_double_observe is False
 
 
 def _feed_mastered_at_epsilon_half(*, method: EesMethod, skill: GroundSkill, reps: int) -> None:
@@ -514,6 +523,7 @@ def test_flag_on_stops_skip_perfect_from_firing_on_a_greedy_only_perfect_skill()
     off, env = _build()
     on, _ = _build()
     on.reproduce_predicators_practice_target_history = True
+    off.reproduce_predicators_practice_target_history = False
     skill = _turn_on_light(env=env)
     for method in (off, on):
         _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
@@ -534,6 +544,7 @@ def test_flag_on_counts_random_attempts_in_the_ucb_denominator() -> None:
     off, env = _build()
     on, _ = _build()
     on.reproduce_predicators_practice_target_history = True
+    off.reproduce_predicators_practice_target_history = False
     skill = _turn_on_light(env=env)
     # 2 greedy attempts (one each way, so neither arm reads as perfect) + 8 random
     # failures: OFF's num_tries sees 2 attempts, ON's sees 10.
@@ -556,6 +567,7 @@ def test_flag_does_not_change_competence_in_either_state() -> None:
     off, env = _build()
     on, _ = _build()
     on.reproduce_predicators_practice_target_history = True
+    off.reproduce_predicators_practice_target_history = False
     skill = _turn_on_light(env=env)
     for method in (off, on):
         _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
