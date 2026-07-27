@@ -565,3 +565,65 @@ def test_early_stopping_still_ends_the_cycle_and_evaluates() -> None:
         "end_cycle",
         "evaluate",
     ]
+
+
+def test_the_test_set_is_drawn_once_and_reused_by_every_sweep() -> None:
+    """The evaluation set must be fixed for the whole run, matching predicators'
+    cached `BaseEnv.get_test_tasks`. Re-sampling it per sweep makes consecutive
+    points on a learning curve measure different task sets, so the curve carries
+    task-sampling variance on top of the policy change it is meant to isolate --
+    which on Ball-Ring produced ~3x the reference implementation's per-seed
+    variance and apparent within-one-cycle collapses."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=4,
+        max_steps_per_interaction=2,
+        num_test_tasks=3,
+    )
+    # 5 sweeps happen (1 initial + 4 cycles), but only 3 test tasks are ever drawn.
+    assert len(metrics.evaluations) == 5
+    assert problem.tasks.test_task_count == 3
+
+
+def test_train_tasks_come_from_a_fixed_pool_sampled_with_replacement() -> None:
+    """predicators draws each interaction period's task from a cached pool of
+    `num_train_tasks` (default 50) with replacement, rather than from an unbounded
+    stream of never-repeated tasks. The repetition matters: EES scores planning
+    progress over the tasks it has *seen*, so revisiting them is what lets those
+    plans actually get cheaper."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=6,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        num_train_tasks=4,
+    )
+    # The pool is drawn once, up front -- 6 cycles do not draw 6 more tasks.
+    assert problem.tasks.train_task_count == 4
+
+
+def test_the_same_seed_picks_the_same_train_tasks() -> None:
+    """The pool is sampled from this loop's own seed-derived stream, so which task
+    each cycle practices on is reproducible -- the guarantee scripts/run_sweep.py
+    depends on."""
+    picks = []
+    for _ in range(2):
+        problem, method, metrics = _build()
+        PracticeLoop.run(
+            problem=problem,
+            method=method,
+            metrics=metrics,
+            num_cycles=5,
+            max_steps_per_interaction=1,
+            num_test_tasks=1,
+            num_train_tasks=8,
+            seed=3,
+        )
+        picks.append(list(problem.env.pre_action_xs))
+    assert picks[0] == picks[1]

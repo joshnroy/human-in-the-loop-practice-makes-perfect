@@ -208,7 +208,7 @@ def test_ees_learns_to_solve_light_switch_over_practice_cycles() -> None:
     env = LightSwitchEnvironment(grid_size=5)
     problem = LightSwitchProblem(env=env, tasks=LightSwitchTasks(env=env, seed=0))
     metrics = MethodRunner.run(
-        args=argparse.Namespace(num_test_tasks=5, output_dir=None),
+        args=argparse.Namespace(num_test_tasks=5, output_dir=None, seed=0),
         method=EesMethod(env=env, seed=0, sampler_max_train_iters=300),
         problem=problem,
         num_cycles=6,

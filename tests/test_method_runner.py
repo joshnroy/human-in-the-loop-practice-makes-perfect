@@ -13,7 +13,7 @@ from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
 
 
 def _args(*, num_test_tasks: int = 5, output_dir: Path | None = None) -> argparse.Namespace:
-    return argparse.Namespace(num_test_tasks=num_test_tasks, output_dir=output_dir)
+    return argparse.Namespace(num_test_tasks=num_test_tasks, output_dir=output_dir, seed=0)
 
 
 def _build_problem() -> LightSwitchProblem:

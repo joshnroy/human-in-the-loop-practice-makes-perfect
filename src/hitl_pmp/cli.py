@@ -93,8 +93,10 @@ class Cli:
         parser.add_argument(
             "--num-test-tasks",
             type=lambda value: Cli.parse_positive_int(value=value),
-            default=20,
-            help="Number of sampled test tasks to run the policy on. Must be >= 1.",
+            default=10,
+            help="Number of test tasks to evaluate the policy on. Must be >= 1. Drawn "
+            "once and reused by every evaluation sweep. 10 is the paper's own value "
+            "(active_sampler_learning.yaml's num_test_tasks).",
         )
         parser.add_argument(
             "--output-dir",

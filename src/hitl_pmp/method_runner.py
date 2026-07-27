@@ -53,6 +53,7 @@ class MethodRunner:
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
             num_test_tasks=args.num_test_tasks,
+            seed=args.seed,
             renderer=renderer,
             num_render_checkpoints=num_render_checkpoints,
         )
