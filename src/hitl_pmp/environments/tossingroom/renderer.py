@@ -95,16 +95,33 @@ class TossingRoomRenderer(Renderer):
         )
 
     @staticmethod
-    def _draw_pile(*, ax: Axes, x: float, y: float, color: str, name: str) -> None:
-        ax.add_patch(
-            Polygon(
-                [[x - 0.07, y], [x + 0.07, y], [x, y + 0.11]],
-                facecolor=color,
-                edgecolor="black",
-                zorder=4,
+    def _draw_pile(*, ax: Axes, x: float, y: float, color: str, name: str, count: int = 3) -> None:
+        # `count` small item-triangles in a tight row, a concrete depiction of the
+        # start room's pile (the env pile itself is limitless for Pickup; this just
+        # shows n of them). The label carries the count so it reads unambiguously.
+        half = 0.028
+        spacing = 0.062
+        left = x - spacing * (count - 1) / 2.0
+        for i in range(count):
+            cx = left + i * spacing
+            ax.add_patch(
+                Polygon(
+                    [[cx - half, y], [cx + half, y], [cx, y + 0.075]],
+                    facecolor=color,
+                    edgecolor="black",
+                    zorder=4,
+                )
             )
+        ax.text(
+            x,
+            y - 0.05,
+            f"{name} x{count}",
+            color="black",
+            fontsize=6.5,
+            ha="center",
+            va="top",
+            zorder=4,
         )
-        ax.text(x, y - 0.06, name, color="black", fontsize=6.5, ha="center", va="top", zorder=4)
 
     @staticmethod
     def render_frame(*, state: State, env: Environment, label: str | None = None) -> np.ndarray:
