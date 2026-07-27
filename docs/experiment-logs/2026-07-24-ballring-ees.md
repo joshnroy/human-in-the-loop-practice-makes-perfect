@@ -351,6 +351,73 @@ built with `utils.SingletonParameterizedOption`
 1 option = 1 transition = 1 of our skills, predicators' `horizon: 8` really is 8 skill
 executions, and the axes line up.
 
+### Environment-fidelity audit: three confirmed port bugs
+
+Prompted by the variance finding, the Ball-Ring port was diffed against predicators'
+`ball_and_cup_sticky_table` as configured by the paper's own YAML. The stochastic
+dynamics, geometry, action space, all 16 operators' preconditions/add/delete effects,
+the task distribution, the success criterion and the oracle feature vector all came back
+clean. Three real mismatches did not. All three were verified by hand against both
+codebases.
+
+**1. `ignore_effects` is absent from this port's symbolic layer entirely** — the likely
+big one. predicators' three `NavigateTo*` NSRTs declare
+`ignore_effects = {ReachableSurface, ReachableBall, ReachableCup}`
+(`nsrts.py:457,514,526`), i.e. navigating anywhere **wipes every reachability atom**.
+Ours declare `delete_effects=frozenset()` (`environments/ballring/skills.py:68-93`), and
+`ignore_effects` does not appear anywhere in `src/` — `core.method.types.Skill` has no
+such field. So our symbolic model is *monotone* in reachability: once reachable to the
+ball, reachable forever, even after navigating to a table across the room.
+
+Initial atoms are always correct (the env guarantees exactly one reachable object), and
+closed-loop replanning catches the divergence without burning a step, so this never
+crashes — which is why it survived this long. But it is systematic: **any plan needing
+re-navigation to a previously-visited object omits that navigate**, so FD returns a
+7-operator plan where the true plan is 8. That matters twice over. It leaves zero slack
+against `H_eval = 8`, and — far worse — **it mis-prices every plan EES scores**.
+Planning progress is computed from plan costs over the seen tasks, and every one of
+those costs is systematically one `NavigateToTable` too cheap, which distorts *which
+skill EES decides to practice*. That is EES's core mechanism, so this is a correctness
+bug in the same class as lever #1 (closed-loop execution), not a tuning detail.
+
+**2. The evaluation test set is resampled on every sweep** — the direct suspect for the
+variance result above. predicators generates its test tasks **once** and caches them
+(`envs/base_env.py:180-193`, `if not self._test_tasks: ...`), so every cycle is scored
+on the *same* 10 tasks and the learning curve isolates policy change. Ours calls
+`problem.sample_test_task()` fresh inside the evaluation loop
+(`practice_loop.py:174-175`), advancing an unbounded stream, so **every sweep measures a
+different test set**. That stacks task-sampling variance on top of policy variance —
+and because Ball-Ring tasks differ precisely in the sticky-region offset the sampler is
+trying to learn, a policy that has specialized to part of that distribution can plausibly
+swing between a favourable draw and an unfavourable one. It is a strong candidate for
+both the ~3x variance inflation and the within-one-cycle 100% -> 0% collapses, and it is
+cheap to fix.
+
+**3. Floor placements have no jitter, so `BallInCup` is always true.** predicators'
+`place_on_floor_sampler` scatters the object in a small disk around the room centre
+(`dist ~ U(0, 2*radius)`, `nsrts.py:287-303`); ours returns the room centre exactly
+(`skills.py:429-430`, no jitter — a deliberate simplification whose consequence was not
+noticed). At the paper geometry `BallInCup` needs the two centres within 0.00245, so
+placing the cup on the floor and then the ball on the floor puts both at exactly
+(0.5, 0.5) and makes `BallInCup` true **100%** of the time, where predicators hits it
+~5%. Our `PlaceBallOnFloor` therefore records a *failed* outcome (its `BallNotInCup`
+add-effect does not hold) essentially every time, corrupting that skill's competence
+curve and hence practice selection.
+
+Lower-priority items from the same audit, not yet addressed: `PlaceBallOnFloor` is also
+missing `ignore_effects = {BallInCup, ReachableBall}` (`nsrts.py:285`), so the model can
+believe `BallInCup` and `BallNotInCup` simultaneously; `--num-test-tasks` defaults to 20
+where the paper config uses 10 (every command in this log passes 10 explicitly, so
+published numbers are unaffected); and train tasks are an unbounded fresh stream where
+predicators draws with replacement from a fixed pool of 50, which changes what "planning
+progress on seen tasks" means.
+
+**Fix order** (most likely to explain the measured symptoms first): cache the test set
+per run (2), add `ignore_effects` to `Skill` + `PddlWriter` and populate the navigate
+operators (1), restore floor-place jitter (3). Each is a separate PR under this repo's
+one-feature-per-PR rule, and each should be re-measured at n = 10 before the next lands
+— given sd ~ 36, anything smaller cannot be resolved.
+
 ### Design status
 
 The scope x cap factorial is missing a cell — cap-only has never been run, and it is
