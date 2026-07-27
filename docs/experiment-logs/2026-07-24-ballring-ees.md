@@ -210,6 +210,123 @@ deque too).
 | 5 | **Predicators-side parity check** | Re-run predicators **sequentially** (no CPU contention) — its per-seed curves are wall-clock-timeout-sensitive, so some of its *early* climb may be a fast-hardware artifact inflating the gap. | low–medium | may shrink the gap from the reference side |
 | 6 | **Last-skill-of-period observation** (audit D2) | Observe the final skill of each free period (needs the next state). ≤1 datapoint/period. | low | low |
 
+### Follow-up #1: the goal-pursuit horizon cap (the coupled pair)
+
+Implemented as `--goal-pursuit-horizon N` (`EesMethod.goal_pursuit_horizon`), the port's
+version of predicators' `assigned_task_horizon`
+(`active_sampler_explorer.py:191-198`): spend at most N skills pursuing the assigned
+train task's goal, then declare it finished and practice for the rest of the period.
+Exhausting the budget also drops the in-flight plan, matching predicators clearing
+`current_policy` so it replans — those queued skills were selected to reach a goal we
+just stopped pursuing. The cap governs practice only, never evaluation: it lives in
+predicators' *explorer*, and `run_task_episode` already owns when an eval episode ends.
+
+The default is `None` (uncapped, this port's original behavior) because **predicators
+has no single global horizon** — it is a per-environment config, and the values differ
+by more than an order of magnitude:
+
+| predicators env | `CFG.horizon` | interaction period |
+|---|---|---|
+| `ball_and_cup_sticky_table` (Ball-Ring) | **8** | 100 |
+| `grid_row` (Light Switch) | `grid_row_num_cells + 2` | 150 |
+| everything else | 100 (default) | 100 |
+
+That table is itself the explanation for why the scope-only ablation failed. On
+Ball-Ring predicators spends **8 of its 100 steps** on the assigned goal and the other
+~92 practicing. Uncapped, our goal phase can consume most of the period, so
+restricting exploration to the practice target removed most of our exploration instead
+of focusing it. Only with `--goal-pursuit-horizon 8` does target-only exploration
+describe the same regime predicators is actually in.
+
+Reproduce (3 seeds, matching the scope-only ablation's budget):
+
+```bash
+python -m scripts.run_sweep --env ballring --methods ees --num-seeds 3 \
+  --results-root results/ballring-100k-targetonly-horizon8 \
+  --shared-args "--num-test-tasks 10" \
+  --method-args "ees=--num-cycles 25 --max-steps-per-interaction 100 \
+    --competence-window-size 2 --competence-recency-size 2 \
+    --exploration-epsilon 0.5 --sampler-max-train-iters 100000 \
+    --reproduce-predicators-explore-target-only --goal-pursuit-horizon 8"
+```
+
+**Result: REFUTED, and the pair is actively worse than the baseline.**
+
+| transitions | scope+cap h=8 (n=10) | ours-100k baseline (n=10) | predicators (n=10) |
+|---|---|---|---|
+| 500 | 6 ± 6 | 12 ± 6 | 37 ± 6 |
+| 1000 | 23 ± 12 | 22 ± 10 | 53 ± 8 |
+| 1500 | 37 ± 10 | 44 ± 13 | 81 ± 6 |
+| 2000 | 50 ± 14 | 90 ± 6 | 95 ± 2 |
+| 2500 | 42 ± 12 | 66 ± 11 | 91 ± 4 |
+
+So both of the explorer-side deviations the paper is silent on — epsilon-greedy scope and
+the horizon cap — are now implemented and measured, individually and together, and
+neither explains the gap. That is evidence *against* "we mis-ported the explorer".
+
+**Methodological note: the 3-seed version of this experiment was misleading.** An
+earlier n=3 run of exactly this configuration produced a seed scoring 60% at 500
+transitions, against predicators' 37% and the baseline's 12% — which looked like the
+cap fixing the flat start. At n=10 the mean at 500 is **6%**: nine of ten seeds score
+0 there, and that one seed was noise. Nothing at n=3 on this domain is reportable;
+the per-seed spread is far too wide.
+
+### The real finding: our variance, not our mean
+
+The per-seed finals at 2500 for scope+cap are `[90, 10, 50, 50, 80, 0, 80, 0, 0, 60]`,
+and individual seeds *collapse mid-run* — seed 8 goes 50% -> 100% -> **0%** over its
+last three evaluation sweeps, and seed 7 goes 40% -> 80% -> **0%**. A run at 100%
+dropping to 0% in a single cycle is not a tuning problem.
+
+| | % solved at 2500 |
+|---|---|
+| predicators | 91 ± 4 (tight) |
+| ours-100k baseline | 66 ± 11 |
+| ours scope+cap | 42 ± 12, bimodal |
+
+predicators is *consistent*; we are bimodal — runs either learn (80-90%) or fail
+outright (0%). The question worth answering is therefore not "why is our mean lower"
+but **"why does a third of our seeds fail completely"**, which no explorer-policy lever
+can explain. This reframes the ranked list above: item #3 (the noisy tail) is the main
+event, not a cheap diagnostic.
+
+### Two checks that bound where the bug can be
+
+**1. The oracle/random bracket is clean.** On the same 10 seeds and the same evaluation
+protocol:
+
+| baseline | final % solved |
+|---|---|
+| `skill-oracle` | **100% on every seed** |
+| `random-skills` | **0% on every seed** |
+
+So the environment, skills, symbolic layer, task distribution, and evaluation harness
+are all sound, and the metric separates a good policy from a bad one. The failure is
+confined to the *learning* path. Caveat: `skill-oracle` runs a hand-coded policy
+provider and never invokes Fast Downward, so **planner** behavior is not covered by
+that 100%.
+
+**2. The x-axis is comparable between the two codebases.** Worth verifying because
+predicators counts `max_num_steps_interaction_request` in low-level env transitions
+while this port executes exactly one skill per step — if its options spanned multiple
+transitions, "2500 transitions" would mean different things on the two curves and every
+comparison here would be invalid. It does not: every Ball-Ring option in predicators is
+built with `utils.SingletonParameterizedOption`
+(`ground_truth_models/ball_and_cup_sticky_table/options.py:43-160`), documented in
+`utils.py:1105` as *"a parameterized option that takes a single action and stops"*. So
+1 option = 1 transition = 1 of our skills, predicators' `horizon: 8` really is 8 skill
+executions, and the axes line up.
+
+### Design status
+
+The scope x cap factorial is missing a cell — cap-only has never been run, and it is
+the arm that actually changes the practice/goal-pursuit budget split:
+
+| | uncapped | capped (h=8) |
+|---|---|---|
+| explore every practice skill | baseline, 66 ± 11 (n=10) | **not run** |
+| target-only | n=10 in progress | 42 ± 12 (n=10) |
+
 Recommended order: **#1 first** (highest-likelihood, directly motivated by the refuted
 result), then **#3** (cheap; tells us how much of the 2500 gap is real vs noise), then
 **#2**. #5 is worth one run because it tests whether the reference itself is inflated.
