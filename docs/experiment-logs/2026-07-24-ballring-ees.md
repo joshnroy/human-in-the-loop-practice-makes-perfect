@@ -133,6 +133,73 @@ the identical config. "Fig 4" is read off the paper image (±5-10).
 Random Skills stays at 0% throughout (undirected practice never assembles the
 cup-carry plan); Skill Oracle is a 100% flat upper bound.
 
+## The residual gap to predicators, and config parity
+
+With the four levers above, `ours-100k` reproduces the paper's flat-then-climb shape
+and peaks ~90% at 2000 transitions. But it still trails the predicators reference,
+which climbs earlier (~500) and holds ~91-95%, and our tail is noisier (drops to ~66%
+at 2500). Two questions this raises: is the comparison even fair (same config?), and
+what accounts for the residual gap?
+
+**Config parity.** Everything the *paper* states, both runs match:
+
+| Setting | Predicators code | Paper text | Ours | Match |
+|---|---|---|---|---|
+| epsilon | 0.5 | 0.5 | 0.5 | ✓ |
+| competence prior | Beta(10,1) | Beta(10,1) | Beta(10,1) | ✓ |
+| competence window/recency | 2 | w = 2 | 2 | ✓ |
+| sampler candidates | 100 | 100 | 100 | ✓ |
+| sampler train iters | 100000 | 10000 | 100000 | ✓ |
+| feature selection | oracle | (implied) | oracle | ✓ |
+| free period / horizon / cycles | 100 / 8 / 25 | 100 / 8 / — | 100 / 8 / 25 | ✓ |
+| planner | seq-opt-lmcut | LM-Cut | seq-opt-lmcut | ✓ |
+
+The remaining differences are all **predicators-internal implementation choices the
+paper never documents** — so "matching the paper" is done; "matching predicators'
+code" is the operative, and looser, target:
+
+| Behavior | Predicators code | Paper | Ours (default) |
+|---|---|---|---|
+| epsilon-greedy scope | target-only, greedy prefix | silent | every practice skill |
+| goal-pursuit horizon cap | yes (`CFG.horizon`) | silent | none |
+| skip_perfect / UCB history | all-attempts `_ground_op_hist` | silent | all-attempts (matched) |
+| double-`observe()` | yes (a bug) | silent | no (keeps competence clean) |
+| replanning-tasks deque | seen + 5 fictitious | silent | seen only |
+| last-skill-of-period observed | yes | silent | no |
+
+**Ablation: epsilon-greedy scope alone does NOT close the gap.** Our port explores
+(random params) on *every* skill during a practice period; predicators explores only
+the practice-target skill and is greedy for the prefix. On Ball-Ring's ~8-step plans
+that looked like the prime suspect — at epsilon = 0.5 we randomize half of *all*
+actions, not just the target. Running it (`--reproduce-predicators-explore-target-only`,
+3 seeds, 100k iters) refutes it as a standalone cause:
+
+| transitions | target-only (3 seeds) | ours-100k baseline (10) | predicators |
+|---|---|---|---|
+| 1000 | 20 ± 20 | 22 ± 10 | 53 |
+| 1500 | 40 ± 31 | 44 ± 13 | 81 |
+| 2000 | 53 ± 29 | 90 ± 6 | 95 |
+| 2500 | 57 ± 30 | 66 ± 11 | 91 |
+
+Target-only tracks the baseline (within a very noisy 3-seed band) and stays far below
+predicators. The reason is a **coupling** the flag's own field comment documents:
+predicators pairs target-only exploration with a **goal-pursuit horizon cap** (it
+practices after `CFG.horizon` steps of pursuing the goal). Our goal-pursuit is greedy
+and *uncapped* — it runs until the goal is achieved or planning fails. So restricting
+exploration to the target, without also capping goal-pursuit, just yields *less*
+exploration (the uncapped greedy goal phase still eats the period), not better-focused
+exploration. In fact turning it on **alone deadlocks a goal-directed domain like Light
+Switch**: a bad initial sampler never achieves the goal greedily, so the practice phase
+where the target would be explored never begins (this is asserted in
+`test_ees_method.py`). Our explore-everything default is precisely what *compensates*
+for the missing horizon cap.
+
+**Takeaway.** The residual gap is not any single one of these deviations. The
+epsilon-greedy scope and the horizon cap are a **coupled pair** — a faithful
+"ours == predicators' code" run needs both together (and probably the replanning-tasks
+deque too). Implementing the horizon cap so the scope ablation can be re-run *with* it
+is the natural next step; it's left as future work.
+
 ## Faithfulness notes / deliberate deviations
 
 1. **Sampler default is 1000, not 100000.** Kept for Light Switch run-time; pass
