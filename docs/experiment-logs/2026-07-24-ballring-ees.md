@@ -197,8 +197,22 @@ for the missing horizon cap.
 **Takeaway.** The residual gap is not any single one of these deviations. The
 epsilon-greedy scope and the horizon cap are a **coupled pair** — a faithful
 "ours == predicators' code" run needs both together (and probably the replanning-tasks
-deque too). Implementing the horizon cap so the scope ablation can be re-run *with* it
-is the natural next step; it's left as future work.
+deque too).
+
+### What to try next (ranked)
+
+| # | Hypothesis / change | What it does | Effort | Likelihood it closes the gap |
+|---|---|---|---|---|
+| 1 | **Scope + goal-pursuit horizon cap together** | Add the `CFG.horizon` cap predicators has, then re-run with `--reproduce-predicators-explore-target-only`. The pair is the point: focused exploration only helps once goal-pursuit stops monopolizing the period. | moderate | **high** — the direct follow-up to the refuted scope-only run |
+| 2 | **Replanning-tasks deque** (audit D1) | Score planning-progress against seen tasks **+ 5 fictitious replan goals** (`max_replan_tasks=5`), not seen-only. Changes *which* skill EES practices — could focus practice on the cup-placement earlier. | moderate | medium |
+| 3 | **Diagnose the noisy tail** | Per-seed look at why some seeds regress 90%@2000 → 66%@2500; run more seeds to tighten the ±11 band. Part of the "gap" at 2500 may be variance, not method. | low | diagnostic (may shrink the *apparent* gap) |
+| 4 | **Planning-progress task selection** | predicators uses `sorted(seen_idxs)[:10]` ("don't randomize — noisy"); ours uses the 10 *most recent*. Cheap to flip and test. | low | low–medium |
+| 5 | **Predicators-side parity check** | Re-run predicators **sequentially** (no CPU contention) — its per-seed curves are wall-clock-timeout-sensitive, so some of its *early* climb may be a fast-hardware artifact inflating the gap. | low–medium | may shrink the gap from the reference side |
+| 6 | **Last-skill-of-period observation** (audit D2) | Observe the final skill of each free period (needs the next state). ≤1 datapoint/period. | low | low |
+
+Recommended order: **#1 first** (highest-likelihood, directly motivated by the refuted
+result), then **#3** (cheap; tells us how much of the 2500 gap is real vs noise), then
+**#2**. #5 is worth one run because it tests whether the reference itself is inflated.
 
 ## Faithfulness notes / deliberate deviations
 
