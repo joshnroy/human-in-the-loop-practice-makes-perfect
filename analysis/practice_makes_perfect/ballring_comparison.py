@@ -21,7 +21,26 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 # Ball-Ring EES read off Figure 4 (middle panel), transitions -> % solved (+-5-10).
-_FIGURE_4_EES = {0: 0, 250: 48, 500: 42, 1000: 44, 1500: 45, 2000: 80, 2500: 97}
+# Densely traced from the green "EES (Ours)" mean line: a steep rise to ~48 by ~300,
+# a gentle dip to ~41, a ~43-46 plateau through ~1100, then a steady climb to ~97 by
+# 2500 (the old sparse 7-point version linearly interpolated into an artificial
+# spike-then-flat-then-ramp that didn't match the figure).
+_FIGURE_4_EES = {
+    0: 0,
+    150: 32,
+    300: 48,
+    500: 44,
+    700: 41,
+    900: 43,
+    1100: 46,
+    1300: 57,
+    1500: 64,
+    1700: 70,
+    1900: 76,
+    2100: 87,
+    2300: 93,
+    2500: 97,
+}
 
 
 class BallRingComparison:
