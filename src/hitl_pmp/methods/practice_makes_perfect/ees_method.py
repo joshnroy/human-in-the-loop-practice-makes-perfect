@@ -148,6 +148,26 @@ class EesMethod(Method):
     # predicators together with a goal-pursuit horizon cap; on its own it is an ablation
     # that HELPS long multi-skill plans (Ball-Ring) but STARVES short goal-directed ones.
     reproduce_predicators_explore_target_only: bool = False
+
+    # predicators' `CFG.horizon`, read by active_sampler_explorer as
+    # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
+    # train task's goal before giving up and practicing for the rest of the period
+    # (explorer lines 191-198 -- decrement per skill, and at <= 0 mark the assigned
+    # task finished and force a replan). This port originally had no such cap: its
+    # goal phase ran until the goal was achieved or planning failed.
+    #
+    # This is the OTHER HALF of reproduce_predicators_explore_target_only's coupling
+    # (see that field). Target-only exploration is only sensible once goal-pursuit is
+    # bounded -- uncapped, a greedy goal phase can eat the whole period, so practice,
+    # the only place exploration would then fire, never starts. Measured: scope alone
+    # did not close the gap to predicators on Ball-Ring, and deadlocks Light Switch.
+    #
+    # No single faithful default exists because predicators sets this PER ENVIRONMENT
+    # rather than globally (`ball_and_cup_sticky_table: horizon: 8`, `grid_row:
+    # grid_row_num_cells + 2`, defaulting to 100). So None keeps this port's original
+    # uncapped behavior, and a Ball-Ring run passes --goal-pursuit-horizon 8 to match
+    # the paper's own config for that domain.
+    goal_pursuit_horizon: int | None = None
     planning_timeout: float = 10.0
     sampler_max_train_iters: int = 1000
 
@@ -613,6 +633,9 @@ class _EesEpisode:
         # practiced (the prefix just navigates to its preconditions). Only consulted
         # under reproduce_predicators_explore_target_only, to explore that skill alone.
         self._practice_target: GroundSkill | None = None
+        # Remaining goal-pursuit budget (predicators' `assigned_task_horizon`); None
+        # means uncapped. Counts down one per skill while the goal phase runs.
+        self._goal_pursuit_remaining: int | None = method.goal_pursuit_horizon
 
     def _noop_action(self) -> np.ndarray:
         return np.zeros(self._method.env.action_space.shape)
@@ -621,6 +644,7 @@ class _EesEpisode:
         method = self._method
         true_atoms = method.abstract_state(state=state)
         self._observe_pending(true_atoms=true_atoms)
+        self._tick_goal_pursuit_horizon()
 
         # Closed-loop execution: if the next queued skill's preconditions no longer
         # hold, the plan has diverged (a stochastic outcome -- e.g. a bare ball
@@ -674,6 +698,24 @@ class _EesEpisode:
         self._pending = ground_skill
         self._pending_sampler_record = record
         return labeled
+
+    def _tick_goal_pursuit_horizon(self) -> None:
+        """Spend one step of the goal-pursuit budget, and end the goal phase once it
+        runs out -- predicators' `assigned_task_horizon` countdown
+        (active_sampler_explorer.py:191-198). Only meaningful while practicing: an
+        evaluation episode has no practice phase to fall back to, and its termination
+        is run_task_episode's job. Exhausting the budget also drops any in-flight
+        goal plan, matching predicators clearing `current_policy` so it replans -- the
+        queued skills were chosen to reach a goal we've just stopped pursuing."""
+        if not self._practicing or self._goal_phase_done:
+            return
+        if self._goal_pursuit_remaining is None:
+            return
+        if self._goal_pursuit_remaining <= 0:
+            self._goal_phase_done = True
+            self._plan = []
+        else:
+            self._goal_pursuit_remaining -= 1
 
     def _observe_pending(self, *, true_atoms: frozenset[GroundAtom]) -> None:
         if self._pending is None:

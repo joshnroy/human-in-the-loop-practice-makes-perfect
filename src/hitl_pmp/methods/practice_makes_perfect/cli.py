@@ -83,6 +83,14 @@ class EesCli:
             "--no-... explores every skill during practice.",
         )
         parser.add_argument(
+            "--goal-pursuit-horizon",
+            type=int,
+            default=EesMethod.model_fields["goal_pursuit_horizon"].default,
+            help="Skills spent pursuing the assigned train-task goal before switching "
+            "to practice for the rest of the period (predicators' per-env CFG.horizon: "
+            "8 for Ball-Ring, num_cells+2 for Light Switch). Omit for uncapped.",
+        )
+        parser.add_argument(
             "--planning-timeout",
             type=float,
             default=EesMethod.model_fields["planning_timeout"].default,
@@ -113,6 +121,7 @@ class EesCli:
                 seed=args.seed,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
+                goal_pursuit_horizon=args.goal_pursuit_horizon,
                 planning_timeout=args.planning_timeout,
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,

@@ -10,7 +10,7 @@ from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
-from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
 
 
 def _build(*, grid_size: int = 4, seed: int = 0) -> tuple[EesMethod, LightSwitchEnvironment]:
@@ -494,6 +494,68 @@ def test_predicators_matching_flag_defaults() -> None:
     assert method.reproduce_predicators_practice_target_history is True
     assert method.reproduce_predicators_explore_target_only is False
     assert method.reproduce_predicators_double_observe is False
+    # predicators sets its horizon per environment rather than globally, so there is
+    # no faithful single default; None keeps this port's original uncapped goal phase.
+    assert method.goal_pursuit_horizon is None
+
+
+def _practice_episode(*, method: EesMethod) -> _EesEpisode:
+    """A practice episode whose goal is already trivially satisfied is not usable here
+    -- the point is to tick the horizon while the goal phase is still running -- so
+    this uses an empty goal set and drives the countdown directly."""
+    return _EesEpisode(method=method, goal=frozenset(), practicing=True)
+
+
+def test_goal_pursuit_horizon_ends_the_goal_phase_once_its_budget_runs_out() -> None:
+    """predicators' `assigned_task_horizon` (active_sampler_explorer.py:191-198):
+    spend at most this many skills pursuing the assigned train-task goal, then give up
+    and practice for the rest of the period. Exhausting it also drops the in-flight
+    plan, matching predicators clearing `current_policy` so it replans -- those queued
+    skills were chosen to reach a goal we just stopped pursuing."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=2,
+    )
+    episode = _practice_episode(method=method)
+    episode._plan = [_turn_on_light(env=env)]
+
+    for _ in range(2):
+        episode._tick_goal_pursuit_horizon()
+        assert episode._goal_phase_done is False
+
+    episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is True
+    assert episode._plan == []
+
+
+def test_goal_pursuit_is_uncapped_by_default() -> None:
+    """The port's original behavior, kept as the default: pursue the assigned goal
+    until it is achieved or planning fails, however many skills that takes."""
+    method, _ = _build()
+    episode = _practice_episode(method=method)
+    for _ in range(50):
+        episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is False
+
+
+def test_goal_pursuit_horizon_does_not_apply_to_evaluation_episodes() -> None:
+    """The cap lives in predicators' *explorer*, so it governs practice only.
+    run_task_episode owns when an evaluation episode ends; cutting its goal pursuit
+    short here would just make it emit no-ops on tasks it could still have solved."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=0,
+    )
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=False)
+    for _ in range(10):
+        episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is False
 
 
 def _feed_mastered_at_epsilon_half(*, method: EesMethod, skill: GroundSkill, reps: int) -> None:
