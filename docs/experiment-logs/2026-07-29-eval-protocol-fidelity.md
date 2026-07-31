@@ -95,6 +95,53 @@ it was pinned at 300 iterations, asserting that EES learns at a budget where it
 demonstrably cannot, and passed only because the re-sampled evaluation set handed its
 final sweep a separate draw.
 
+### The properly powered version: ours vs predicators vs paper, both domains
+
+The single-seed probe above is suggestive, not evidence. Run as a proper grid — the
+three real config values, 10 seeds each, both domains, all under the fixed test set,
+arms run sequentially:
+
+**Ball-Ring** (25 cycles x 100 steps; the domain that discriminates):
+
+| metric | ours (1000) | predicators (10000) | paper (100000) |
+|---|---|---|---|
+| final mean % | 34 | **67** | 53 |
+| final sd | 35.7 | **24.5** | 25.4 |
+| worst seed % | 0 | **30** | 0 |
+| seeds at 0% | 3 | **0** | 1 |
+| downward steps (of 250) | 51 | 49 | 57 |
+| wall clock, 10 seeds | 8m | 9m | 16m |
+
+| comparison | difference | p | verdict |
+|---|---|---|---|
+| 10000 vs 1000 | **+33** | **0.016** | significant |
+| 100000 vs 1000 | +19 | 0.170 | not significant |
+| 100000 vs 10000 | −14 | 0.210 | not significant |
+
+**Light Switch** (10 cycles x 150 steps): all three arms reach ~100% on essentially
+every seed (final means 100 / 100 / 99). The domain saturates, so it cannot
+discriminate these settings at all — only the climb rate differs (10k/100k hit the
+ceiling by 600 transitions where 1k is still at 94%). Worth stating plainly: **the
+existing Light Switch reproduction at 1000 iterations is not compromised.**
+
+Three conclusions:
+
+1. **1000 is genuinely too low, and this is the largest single lever found so far.**
+   Raising it to 10000 doubles the Ball-Ring score and removes *every* catastrophic
+   seed — the worst run goes from 0% to 30%.
+2. **More is not better.** 100000 — the paper's own config value — scores *lower* than
+   10000 and brings back a 0% seed. The difference is not significant, so the honest
+   claim is that 10000 and 100000 are **statistically indistinguishable**, and 100000
+   costs ~70% more wall clock for no measurable gain. The default should therefore be
+   **10000** (predicators' own `settings.py` value), not the paper config's 100000.
+3. **This does not close the gap, and it does not fix the jaggedness.** The best arm is
+   67% against predicators' 91% ± 4, and downward steps are unchanged at every budget
+   (51 / 49 / 57). Convergence removed the *floor* — runs no longer die — but the
+   cycle-to-cycle instability is a separate, still-unexplained defect.
+
+Changing the default belongs to the EES-method PR stacked after this one, not here;
+this log records the measurement that justifies it.
+
 ## Reproducing
 
 ```bash
