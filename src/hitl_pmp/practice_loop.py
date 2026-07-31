@@ -64,11 +64,11 @@ class PracticeLoop:
     trajectories its explorers really produced (main.py:244) rather than assuming
     each request ran to max_num_steps_interaction_request.
 
-    **Fixed task sets.** Both task sets are drawn once, before the first sweep, and
-    reused for the whole run -- matching predicators, whose `BaseEnv.get_train_tasks`/
-    `get_test_tasks` generate once and cache (`envs/base_env.py:174-193`).
+    **Fixed test set.** The evaluation set is drawn once, before the first sweep, and
+    reused for the whole run -- matching predicators, whose `BaseEnv.get_test_tasks`
+    generates once and caches (`envs/base_env.py:180-193`).
 
-    For the *test* set this is load-bearing, not tidiness. Re-sampling it per sweep
+    This is load-bearing, not tidiness. Re-sampling it per sweep
     (which this loop used to do) means every point on a learning curve is measured on
     a different set, so the curve carries task-sampling variance on top of the policy
     change it is supposed to isolate -- and a Method whose competence is uneven across
@@ -77,17 +77,18 @@ class PracticeLoop:
     quantity the sampler is learning, that produced ~3x the per-seed variance of the
     reference implementation and apparent 100%-to-0% collapses within a single cycle.
     A fixed set makes consecutive points comparable, which is the whole point of a
-    learning curve. It also means `num_test_tasks` is the *denominator* everywhere,
-    so `_evaluate` reads it off the list rather than being told twice.
+    learning curve. Measured on Light Switch EES at 10 seeds, it cuts pooled
+    across-seed sd during the climb from 16.6 to 10.4 and downward steps from 5 to 2
+    (of 100 adjacent pairs). It also means `num_test_tasks` is the *denominator*
+    everywhere, so `_evaluate` reads it off the list rather than being told twice.
 
-    The *train* pool is the same idea applied to the other side: `num_train_tasks`
-    tasks drawn once, then sampled **with replacement** each cycle from this loop's
-    own `seed`-derived stream, matching predicators' `num_train_tasks = 50` plus
-    `task_idx = self._rng.choice(len(self._train_tasks))`
-    (`approaches/online_nsrt_learning_approach.py:66-67`). Repetition is not
-    incidental there: EES scores "planning progress" over the tasks it has *seen*, so
-    a pool the agent revisits is what lets those plans genuinely get cheaper, whereas
-    an unbounded stream of never-repeated tasks changes what that score means.
+    The *train* side has a separate, unrelated fidelity gap -- predicators draws each
+    period's task with replacement from a cached pool of `num_train_tasks = 50`
+    (`approaches/online_nsrt_learning_approach.py:66-67`) where this loop draws from an
+    unbounded never-repeating stream. That is deliberately NOT fixed here: implementing
+    it alongside this change measurably cancelled this change's benefit on Light Switch
+    (sd back to 15.7, 6 regressions, final mean 100% -> 97%), so it needs its own PR
+    and its own evidence rather than riding along with a protocol fix.
 
     If renderer is given, the *first* test task of each rendered evaluation sweep
     is recorded, and run() returns {num_online_transitions: frames}. Which sweeps
@@ -108,8 +109,6 @@ class PracticeLoop:
         num_cycles: int,
         max_steps_per_interaction: int,
         num_test_tasks: int,
-        seed: int = 0,
-        num_train_tasks: int = 50,
         on_cycle_end: Callable[[], None] | None = None,
         renderer: type[Renderer] | None = None,
         num_render_checkpoints: int = 1,
@@ -120,12 +119,9 @@ class PracticeLoop:
         frames_by_transitions: dict[int, list[np.ndarray]] = {}
 
         problem.hard_reset()
-        # Both task sets are drawn ONCE, up front -- see the class docstring's
-        # "fixed task sets" section for why re-sampling either one per cycle
-        # corrupts the learning curve.
+        # Drawn ONCE, up front -- see the class docstring's "fixed test set"
+        # section for why re-sampling it per sweep corrupts the learning curve.
         test_tasks = [problem.sample_test_task() for _ in range(num_test_tasks)]
-        train_task_pool = [problem.sample_train_task() for _ in range(num_train_tasks)]
-        train_rng = np.random.default_rng(seed)
         num_online_transitions = 0
         frames = PracticeLoop._evaluate(
             problem=problem,
@@ -138,7 +134,7 @@ class PracticeLoop:
         if frames:
             frames_by_transitions[num_online_transitions] = frames
         for cycle in range(num_cycles):
-            task = train_task_pool[int(train_rng.integers(len(train_task_pool)))]
+            task = problem.sample_train_task()
             # get_practice_policy, not get_task_policy: a learning Method explores
             # (and records training data) during the interaction period, but must
             # not do either during the evaluation sweep below, which runs on
