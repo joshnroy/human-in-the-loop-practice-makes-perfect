@@ -5,6 +5,7 @@ import numpy as np
 from hitl_pmp.core.method.method import InteractionComplete, Method
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
+from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
 
 
@@ -63,6 +64,32 @@ class PracticeLoop:
     trajectories its explorers really produced (main.py:244) rather than assuming
     each request ran to max_num_steps_interaction_request.
 
+    **Fixed test set.** The evaluation set is drawn once, before the first sweep, and
+    reused for the whole run -- matching predicators, whose `BaseEnv.get_test_tasks`
+    generates once and caches (`envs/base_env.py:180-193`).
+
+    This is load-bearing, not tidiness. Re-sampling it per sweep
+    (which this loop used to do) means every point on a learning curve is measured on
+    a different set, so the curve carries task-sampling variance on top of the policy
+    change it is supposed to isolate -- and a Method whose competence is uneven across
+    the task distribution can then swing between a favourable and an unfavourable draw
+    from one cycle to the next. On Ball-Ring, where tasks differ precisely in the
+    quantity the sampler is learning, that produced ~3x the per-seed variance of the
+    reference implementation and apparent 100%-to-0% collapses within a single cycle.
+    A fixed set makes consecutive points comparable, which is the whole point of a
+    learning curve. Measured on Light Switch EES at 10 seeds, it cuts pooled
+    across-seed sd during the climb from 16.6 to 10.4 and downward steps from 5 to 2
+    (of 100 adjacent pairs). It also means `num_test_tasks` is the *denominator*
+    everywhere, so `_evaluate` reads it off the list rather than being told twice.
+
+    The *train* side has a separate, unrelated fidelity gap -- predicators draws each
+    period's task with replacement from a cached pool of `num_train_tasks = 50`
+    (`approaches/online_nsrt_learning_approach.py:66-67`) where this loop draws from an
+    unbounded never-repeating stream. That is deliberately NOT fixed here: implementing
+    it alongside this change measurably cancelled this change's benefit on Light Switch
+    (sd back to 15.7, 6 regressions, final mean 100% -> 97%), so it needs its own PR
+    and its own evidence rather than riding along with a protocol fix.
+
     If renderer is given, the *first* test task of each rendered evaluation sweep
     is recorded, and run() returns {num_online_transitions: frames}. Which sweeps
     those are is set by num_render_checkpoints: 1 (the default) records only the
@@ -92,12 +119,15 @@ class PracticeLoop:
         frames_by_transitions: dict[int, list[np.ndarray]] = {}
 
         problem.hard_reset()
+        # Drawn ONCE, up front -- see the class docstring's "fixed test set"
+        # section for why re-sampling it per sweep corrupts the learning curve.
+        test_tasks = [problem.sample_test_task() for _ in range(num_test_tasks)]
         num_online_transitions = 0
         frames = PracticeLoop._evaluate(
             problem=problem,
             method=method,
             metrics=metrics,
-            num_test_tasks=num_test_tasks,
+            test_tasks=test_tasks,
             num_online_transitions=num_online_transitions,
             renderer=renderer if 0 in rendered_sweeps else None,
         )
@@ -138,7 +168,7 @@ class PracticeLoop:
                 problem=problem,
                 method=method,
                 metrics=metrics,
-                num_test_tasks=num_test_tasks,
+                test_tasks=test_tasks,
                 num_online_transitions=num_online_transitions,
                 renderer=renderer if (cycle + 1) in rendered_sweeps else None,
             )
@@ -165,14 +195,13 @@ class PracticeLoop:
         problem: Problem,
         method: Method,
         metrics: Metrics,
-        num_test_tasks: int,
+        test_tasks: list[Task],
         num_online_transitions: int,
         renderer: type[Renderer] | None = None,
     ) -> list[np.ndarray]:
         num_solved = 0
         frames: list[np.ndarray] = []
-        for i in range(num_test_tasks):
-            task = problem.sample_test_task()
+        for i, task in enumerate(test_tasks):
             solved, task_frames = problem.run_task_episode(
                 task=task,
                 policy=method.get_task_policy(task=task),
@@ -184,6 +213,6 @@ class PracticeLoop:
         metrics.record_evaluation(
             num_online_transitions=num_online_transitions,
             num_solved=num_solved,
-            num_total=num_test_tasks,
+            num_total=len(test_tasks),
         )
         return frames

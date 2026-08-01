@@ -565,3 +565,24 @@ def test_early_stopping_still_ends_the_cycle_and_evaluates() -> None:
         "end_cycle",
         "evaluate",
     ]
+
+
+def test_the_test_set_is_drawn_once_and_reused_by_every_sweep() -> None:
+    """The evaluation set must be fixed for the whole run, matching predicators'
+    cached `BaseEnv.get_test_tasks`. Re-sampling it per sweep makes consecutive
+    points on a learning curve measure different task sets, so the curve carries
+    task-sampling variance on top of the policy change it is meant to isolate --
+    which on Ball-Ring produced ~3x the reference implementation's per-seed
+    variance and apparent within-one-cycle collapses."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=4,
+        max_steps_per_interaction=2,
+        num_test_tasks=3,
+    )
+    # 5 sweeps happen (1 initial + 4 cycles), but only 3 test tasks are ever drawn.
+    assert len(metrics.evaluations) == 5
+    assert problem.tasks.test_task_count == 3
