@@ -167,6 +167,22 @@ code" is the operative, and looser, target:
 | replanning-tasks deque | seen + 5 fictitious | silent | seen only |
 | last-skill-of-period observed | yes | silent | no |
 
+> **CORRECTION (supersedes every `--reproduce-predicators-explore-target-only` number
+> below, in this section and in Follow-up #1).** When those runs were made, the flag did
+> two things at once: it narrowed epsilon-greedy exploration to the practice target
+> *and* — because one boolean gated both decisions in `execute_ground_skill` — silently
+> discarded the sampler's training row for every non-target attempt, i.e. the whole
+> goal-pursuit phase. predicators does not do that: `_update_sampler_data` appends every
+> segment of every trajectory with no exploration gating at all
+> (`active_sampler_learning_approach.py:211-258`); the epsilon indicator's only consumer
+> is the competence update (`active_sampler_explorer.py:442-443`). Those two arms were
+> therefore measuring "focused exploration **minus most of the training data**", not
+> exploration scope. The coupling is now fixed (`explore` and `practicing` are separate
+> arguments), so the scope-only null and the scope+cap trend are **confounded, not
+> results** — both need re-running before anything is concluded from them. The
+> *structural* argument below (uncapped goal pursuit eats the period; scope and the
+> horizon cap are a coupled pair) is unaffected: it does not rest on these numbers.
+
 **Ablation: epsilon-greedy scope alone does NOT close the gap.** Our port explores
 (random params) on *every* skill during a practice period; predicators explores only
 the practice-target skill and is greedy for the prefix. On Ball-Ring's ~8-step plans
@@ -211,6 +227,10 @@ deque too).
 | 6 | **Last-skill-of-period observation** (audit D2) | Observe the final skill of each free period (needs the next state). ≤1 datapoint/period. | low | low |
 
 ### Follow-up #1: the goal-pursuit horizon cap (the coupled pair)
+
+> **Its measured numbers are confounded** — this arm also passes
+> `--reproduce-predicators-explore-target-only`, so see the CORRECTION above. Re-run
+> before drawing conclusions from the scope+cap column.
 
 Implemented as `--goal-pursuit-horizon N` (`EesMethod.goal_pursuit_horizon`), the port's
 version of predicators' `assigned_task_horizon`

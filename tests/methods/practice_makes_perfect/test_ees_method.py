@@ -10,7 +10,11 @@ from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
-from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
+from hitl_pmp.methods.practice_makes_perfect.ees_method import (
+    EesMethod,
+    _EesEpisode,
+    _SkillAttempt,
+)
 
 
 def _build(*, grid_size: int = 4, seed: int = 0) -> tuple[EesMethod, LightSwitchEnvironment]:
@@ -116,7 +120,10 @@ def test_end_cycle_advances_every_competence_model() -> None:
 
 def test_evaluation_policy_records_no_training_data() -> None:
     """get_task_policy runs on held-out test tasks -- learning from it would be
-    training on the test set. Pinning that it doesn't."""
+    training on the test set. Pinning that it doesn't, on *both* datasets: competence
+    and the samplers' classifier rows. (Evaluation still constructs a sampler in order
+    to choose parameters greedily, so this asserts on its observation count rather
+    than on the sampler dict being empty.)"""
     method, env = _build()
     tasks = LightSwitchTasks(env=env, seed=0)
     task = tasks.sample_train_task()
@@ -128,6 +135,7 @@ def test_evaluation_policy_records_no_training_data() -> None:
         state = env.take_action(action=policy(state).action)
 
     assert method.total_observations() == 0
+    assert all(sampler.num_observations == 0 for sampler in method._samplers.values())
 
 
 def test_practice_policy_records_training_data() -> None:
@@ -292,6 +300,147 @@ def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_samp
     # Param-free skills (MoveRobot) have no sampler and so no epsilon branch --
     # their competence keeps being tracked normally.
     assert method.total_observations() > competence_before
+
+
+def test_a_greedy_practice_attempt_still_produces_sampler_training_data() -> None:
+    """The exploration/training-data split. predicators' `_update_sampler_data`
+    appends *every* segment of every collected trajectory to `_sampler_data[o.parent]`
+    with no exploration gating at all (active_sampler_learning_approach.py:211-258);
+    the epsilon indicator's only consumer is the competence update
+    (active_sampler_explorer.py:442-443). So a greedy attempt during practice is a
+    training row exactly like a random one -- it just carries
+    was_random_exploration=False, which is what keeps it counted toward competence."""
+    method, env = _build()
+    state = env.build_initial_state(light_level=0.3, light_target=0.8)
+
+    _labeled, record = method.execute_ground_skill(
+        ground_skill=_turn_on_light(env=env), state=state, explore=False, practicing=True
+    )
+
+    assert record is not None
+    assert record.was_random_exploration is False
+
+
+def test_an_evaluation_attempt_produces_no_record_even_though_it_samples() -> None:
+    """The other side of the split: `practicing`, not `explore`, is what decides
+    whether a training row exists. An evaluation attempt is greedy *and* records
+    nothing -- learning from held-out test tasks would be training on the test set."""
+    method, env = _build()
+    state = env.build_initial_state(light_level=0.3, light_target=0.8)
+
+    _labeled, record = method.execute_ground_skill(
+        ground_skill=_turn_on_light(env=env), state=state, explore=False, practicing=False
+    )
+
+    assert record is None
+
+
+def _target_only_method(*, env: LightSwitchEnvironment, target_only: bool) -> EesMethod:
+    """epsilon=1.0 so every *exploring* parameterized attempt takes the random branch,
+    and a goal-pursuit cap so the practice phase (the only place target-only
+    exploration fires) is actually reached within the episode."""
+    return EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        exploration_epsilon=1.0,
+        sampler_max_train_iters=50,
+        goal_pursuit_horizon=6,
+        reproduce_predicators_explore_target_only=target_only,
+    )
+
+
+def _practice_attempts(
+    *, method: EesMethod, env: LightSwitchEnvironment, steps: int
+) -> list[tuple[str, bool, _SkillAttempt | None]]:
+    """Drives one practice episode step by step, returning per executed skill its
+    name, whether it was the practice target, and its `_SkillAttempt` (or None).
+
+    `_practice_target` is None exactly while a goal-pursuit plan is being executed
+    (it is only set from a practice plan's last skill), so it doubles as the
+    "was this a goal-pursuit attempt" flag.
+    """
+    tasks = LightSwitchTasks(env=env, seed=0)
+    task = tasks.sample_train_task()
+    env.set_state(state=task.initial_state)
+    episode = _EesEpisode(method=method, goal=task.goal.atoms, practicing=True)
+
+    attempts: list[tuple[str, bool, _SkillAttempt | None]] = []
+    state = env.get_current_state()
+    for _ in range(steps):
+        labeled = episode.step(state=state)
+        assert episode._pending is not None
+        attempts.append((
+            episode._pending.skill.name,
+            episode._pending is episode._practice_target,
+            episode._pending_sampler_record,
+        ))
+        state = env.take_action(action=labeled.action)
+    return attempts
+
+
+def _parameterized_non_target_records(
+    *, attempts: list[tuple[str, bool, _SkillAttempt | None]]
+) -> list[_SkillAttempt | None]:
+    """The attempts whose data the coupling used to discard: parameterized skills
+    executed while *not* practicing the target, i.e. the goal-pursuit phase (MoveRobot
+    is param_dim=0 and never has a record either way, so it is excluded)."""
+    return [
+        record
+        for name, is_target, record in attempts
+        if not is_target and name in ("TurnOnLight", "TurnOffLight", "JumpToLight")
+    ]
+
+
+def _warm_up(*, method: EesMethod, env: LightSwitchEnvironment) -> None:
+    """One practice period plus a fit, so the samplers exist and the epsilon branch
+    is reachable -- an unfitted sampler draws uniformly and reports was_random=False
+    regardless of `explore` (wrapped_sampler deviation 6)."""
+    _practice_attempts(method=method, env=env, steps=12)
+    method.end_cycle()
+
+
+def test_target_only_exploration_still_records_goal_pursuit_attempts() -> None:
+    """reproduce_predicators_explore_target_only narrows *where epsilon fires*, and
+    nothing else. predicators fires its exploration sampler only once the practice
+    target's preconditions hold (active_sampler_explorer.py:202-222) and returns
+    `(act, False)` for every other step (:335-339) -- but still trains the sampler on
+    all of them (active_sampler_learning_approach.py:211-258).
+
+    So under the flag the goal-pursuit phase, where most of this arm's parameterized
+    attempts happen, must keep contributing training rows; only its epsilon branch is
+    off. Coupling the two silently discarded that data."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _target_only_method(env=env, target_only=True)
+    _warm_up(method=method, env=env)
+    sampler_before = method.sampler(skill_name="TurnOnLight", param_dim=1).num_observations
+
+    attempts = _practice_attempts(method=method, env=env, steps=12)
+
+    goal_pursuit = _parameterized_non_target_records(attempts=attempts)
+    assert goal_pursuit  # the episode really did run parameterized non-target skills
+    assert all(record is not None for record in goal_pursuit)
+    # Non-target attempts are greedy: the epsilon branch never fired off-target, even
+    # at epsilon = 1.0.
+    assert not any(record.was_random_exploration for record in goal_pursuit if record)
+    assert method.sampler(skill_name="TurnOnLight", param_dim=1).num_observations > sampler_before
+
+
+def test_without_the_flag_goal_pursuit_attempts_explore_too() -> None:
+    """The contrast that makes the test above non-vacuous: with target-only OFF (the
+    default), the very same non-target attempts DO take the epsilon branch. The flag
+    changes exploration scope, not whether training data is recorded -- both arms
+    record."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _target_only_method(env=env, target_only=False)
+    _warm_up(method=method, env=env)
+
+    attempts = _practice_attempts(method=method, env=env, steps=12)
+
+    goal_pursuit = _parameterized_non_target_records(attempts=attempts)
+    assert goal_pursuit
+    assert all(record is not None for record in goal_pursuit)
+    assert any(record.was_random_exploration for record in goal_pursuit if record)
 
 
 def test_reset_environment_directly_sets_state_and_returns_true() -> None:

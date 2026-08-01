@@ -93,7 +93,9 @@ def test_recorded_training_row_matches_the_action_the_skill_actually_commands() 
     it will never be scored on."""
     method, env, state = _ballring_method_state()
     place_cup = _place_cup(env=env)
-    labeled, record = method.execute_ground_skill(ground_skill=place_cup, state=state, explore=True)
+    labeled, record = method.execute_ground_skill(
+        ground_skill=place_cup, state=state, explore=True, practicing=True
+    )
     assert record is not None
     assert record.param_dim == 2
     assert len(record.sampler_input) == 10

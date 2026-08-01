@@ -79,8 +79,9 @@ class EesCli:
             action=argparse.BooleanOptionalAction,
             default=EesMethod.model_fields["reproduce_predicators_explore_target_only"].default,
             help="Explore (epsilon-greedy) only on the practice-target skill, greedy "
-            "for the prefix that reaches it, matching predicators (default on). "
-            "--no-... explores every skill during practice.",
+            "for goal pursuit and for the prefix that reaches it, matching predicators "
+            "(default off: it needs --goal-pursuit-horizon to be sensible). Scope only "
+            "-- every parameterized practice attempt trains the sampler either way.",
         )
         parser.add_argument(
             "--goal-pursuit-horizon",

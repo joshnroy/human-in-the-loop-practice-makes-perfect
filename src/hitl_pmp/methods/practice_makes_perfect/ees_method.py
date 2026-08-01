@@ -68,10 +68,14 @@ class EesMethod(Method):
        observes at option termination instead. This loses at most one datapoint
        per period.
     3. predicators double-counts one `observe()` call per non-exploratory attempt
-       (`active_sampler_learning_approach.py` calls it at both line 407 and 443);
-       that is a bug, and is not reproduced here. The *suppression* those same
-       lines implement -- no competence update when the epsilon-greedy random
-       branch fired -- IS reproduced; see `_SkillAttempt`.
+       (`active_sampler_explorer.py` calls it at both line 407 and 443); that is a
+       bug, and is not reproduced here. The *suppression* those same lines implement
+       -- no competence update when the epsilon-greedy random branch fired -- IS
+       reproduced; see `_SkillAttempt`. That epsilon indicator gates the competence
+       update and nothing else: the sampler's training set is built from every
+       attempt regardless (`active_sampler_learning_approach.py:211-258`), which is
+       why `execute_ground_skill` takes `practicing` and `explore` as two separate
+       arguments.
     4. Candidate practice targets are scored against cached plans that are
        refreshed only every `replan_frequency` scoring calls -- predicators'
        own optimization (`active_sampler_explorer_replan_frequency`), and the
@@ -137,16 +141,26 @@ class EesMethod(Method):
     reproduce_predicators_practice_target_history: bool = True
     # Kept default FALSE, and this is a *coupled* deviation, not an independent one.
     # ON, exploration (epsilon-greedy) fires only on the practice-target skill, greedy
-    # for the prefix -- matching predicators (active_sampler_explorer.py fires its
-    # exploration sampler only once next_practice_nsrt's preconditions hold). But
-    # predicators pairs that with a HORIZON CAP on goal-pursuit (audit D7), which this
-    # port lacks: our goal-pursuit is greedy and runs until the goal is achieved or
+    # everywhere else -- matching predicators, which fires its exploration sampler only
+    # once next_practice_nsrt's preconditions hold (active_sampler_explorer.py:202-222)
+    # and returns `(act, False)` for every other step (:335-339). But predicators pairs
+    # that with a HORIZON CAP on goal-pursuit (audit D7), which this port lacks by
+    # default: our goal-pursuit is greedy and runs until the goal is achieved or
     # planning fails. Turning this ON alone deadlocks a goal-directed domain like Light
     # Switch -- a bad initial sampler can never achieve the goal greedily, so practice
     # (where the target would be explored) never begins. Our explore-EVERYTHING default
     # is what compensates for the missing horizon cap. So ON only faithfully matches
-    # predicators together with a goal-pursuit horizon cap; on its own it is an ablation
-    # that HELPS long multi-skill plans (Ball-Ring) but STARVES short goal-directed ones.
+    # predicators together with a goal-pursuit horizon cap.
+    #
+    # SCOPE ONLY. This flag narrows *where epsilon fires*; it does not decide which
+    # attempts become sampler training data. Every parameterized attempt during
+    # practice trains the classifier either way -- see `execute_ground_skill`.
+    # CAUTION reading older results: until that split landed, ON also silently
+    # discarded the sampler rows from every greedy attempt (the whole goal-pursuit
+    # phase, which is where most of this arm's data came from). Any scope ablation
+    # measured before then -- including the "helps Ball-Ring / starves Light Switch"
+    # and "scope alone did not close the gap" readings in the Ball-Ring log -- was
+    # confounded with that data loss and needs re-running to be interpretable.
     reproduce_predicators_explore_target_only: bool = False
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
@@ -159,8 +173,10 @@ class EesMethod(Method):
     # This is the OTHER HALF of reproduce_predicators_explore_target_only's coupling
     # (see that field). Target-only exploration is only sensible once goal-pursuit is
     # bounded -- uncapped, a greedy goal phase can eat the whole period, so practice,
-    # the only place exploration would then fire, never starts. Measured: scope alone
-    # did not close the gap to predicators on Ball-Ring, and deadlocks Light Switch.
+    # the only place exploration would then fire, never starts. (The earlier reading
+    # that scope alone did not close the Ball-Ring gap predates the exploration/
+    # training-data split described on that field, so it is not evidence about scope;
+    # the deadlock argument above is structural and stands on its own.)
     #
     # No single faithful default exists because predicators sets this PER ENVIRONMENT
     # rather than globally (`ball_and_cup_sticky_table: horizon: 8`, `grid_row:
@@ -507,11 +523,30 @@ class EesMethod(Method):
         return lambda state: episode.step(state=state)
 
     def execute_ground_skill(
-        self, *, ground_skill: GroundSkill, state: State, explore: bool
+        self, *, ground_skill: GroundSkill, state: State, explore: bool, practicing: bool
     ) -> tuple[LabeledAction, "_SkillAttempt | None"]:
         """Returns the action plus, when this skill has continuous parameters and
-        we're practicing, the record to label with the outcome once it's
-        observed."""
+        we're practicing, the record to label with the outcome once it's observed.
+
+        `practicing` and `explore` are two *independent* decisions, and predicators
+        keeps them independent too:
+
+        - `practicing` decides whether a training row is produced at all. Every
+          parameterized skill executed during an interaction period yields one,
+          greedy or epsilon-random alike -- predicators' `_update_sampler_data`
+          appends *every* segment of every collected trajectory to
+          `_sampler_data[o.parent]` with no exploration gating whatsoever
+          (`active_sampler_learning_approach.py:211-258`).
+        - `explore` decides only whether `sampler.sample` may take the epsilon
+          branch. predicators fires its exploration sampler solely on the practice
+          target (`active_sampler_explorer.py:202-222`) and returns `(act, False)`
+          for everything else, which the greedy `_wrap_sampler_test` produced
+          (`active_sampler_explorer.py:335-339`).
+
+        A greedy (`explore=False`) attempt therefore still records, with
+        `was_random_exploration=False` -- the only thing that flag ever gates is the
+        *competence* update (see `observe_outcome` and `_SkillAttempt`).
+        """
         skill = ground_skill.skill
         if skill.param_dim == 0:
             params: np.ndarray = np.zeros(0)
@@ -539,9 +574,11 @@ class EesMethod(Method):
                     sampler_input=self.sampler_input_row(
                         ground_skill=ground_skill, state=state, params=params
                     ),
+                    # False whenever `explore` is False: `sample` never consults
+                    # epsilon in that branch (its `_wrap_sampler_test` equivalent).
                     was_random_exploration=was_random,
                 )
-                if explore
+                if practicing
                 else None
             )
 
@@ -592,14 +629,23 @@ class _SkillAttempt(BaseModel):
     asked, what it chose, and whether that choice came from the epsilon-greedy
     *random* branch rather than the learned argmax.
 
-    That last flag matters: predicators suppresses the *competence* update for
-    randomly-explored attempts (`active_sampler_learning_approach.py` lines
-    442-443) while still keeping them as sampler training data. Without it,
-    competence measures "how often does a coin flip work" rather than "how good
-    is this skill when the robot actually tries" -- at the paper's epsilon=0.5
-    that roughly halves the apparent competence of a skill the robot has in fact
-    mastered, which then corrupts both the plan costs and the practice-selection
-    scores computed from it."""
+    One of these is built for **every** parameterized skill executed during an
+    interaction period, greedy attempts included -- predicators' epsilon indicator
+    has exactly one consumer, and the sampler dataset is not it.
+    `_update_sampler_data` appends every segment of every collected trajectory to
+    `_sampler_data[o.parent]` with no exploration gating at all
+    (`active_sampler_learning_approach.py:211-258`).
+
+    `was_random_exploration` is that indicator, and it gates the *competence*
+    update alone: predicators suppresses the competence `observe()` for
+    randomly-explored attempts (`active_sampler_explorer.py:442-443`, guarded by
+    `if not exploration_indicator`) while still keeping them as sampler training
+    data. Without that suppression, competence measures "how often does a coin flip
+    work" rather than "how good is this skill when the robot actually tries" -- at
+    the paper's epsilon=0.5 that roughly halves the apparent competence of a skill
+    the robot has in fact mastered, which then corrupts both the plan costs and the
+    practice-selection scores computed from it. A greedy attempt records
+    `was_random_exploration=False` and so counts toward competence normally."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -681,19 +727,27 @@ class _EesEpisode:
             return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)
-        # By default every skill executed during practice explores (epsilon-greedy).
-        # Under reproduce_predicators_explore_target_only, only the practice target
-        # does -- the prefix that navigates to it uses the greedy learned sampler,
-        # matching predicators (active_sampler_explorer.py fires its exploration
-        # sampler only once next_practice_nsrt's preconditions hold). On this domain's
-        # long multi-skill plans, exploring every step spends ~half of all actions on
-        # off-target random params; this flag measures that cost.
+        # Exploration *scope* only. By default every skill executed during practice
+        # explores (epsilon-greedy). Under reproduce_predicators_explore_target_only,
+        # only the practice target does -- the goal-pursuit phase and the prefix that
+        # navigates to the target both use the greedy learned sampler, matching
+        # predicators, whose exploration sampler fires solely once next_practice_nsrt's
+        # preconditions hold (active_sampler_explorer.py:202-222) and which returns
+        # `(act, False)` for every other step (:335-339). On long multi-skill plans,
+        # exploring every step spends ~half of all actions on off-target random params;
+        # this flag measures that cost.
+        #
+        # It does NOT decide whether the attempt becomes sampler training data --
+        # `practicing` does, unconditionally. predicators' `_update_sampler_data`
+        # appends every segment with no exploration gating
+        # (active_sampler_learning_approach.py:211-258), so a greedy attempt is a
+        # training row just like a random one.
         explore = self._practicing and (
             not method.reproduce_predicators_explore_target_only
             or ground_skill is self._practice_target
         )
         labeled, record = method.execute_ground_skill(
-            ground_skill=ground_skill, state=state, explore=explore
+            ground_skill=ground_skill, state=state, explore=explore, practicing=self._practicing
         )
         self._pending = ground_skill
         self._pending_sampler_record = record
