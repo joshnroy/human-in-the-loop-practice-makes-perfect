@@ -108,6 +108,18 @@ def test_ees_defaults_match_the_papers_light_switch_protocol() -> None:
     assert args.exploration_epsilon == 0.5
 
 
+def test_goal_pursuit_interval_defaults_to_grid_rows_override_and_is_overridable() -> None:
+    """The paper's active_sampler_learning.yaml sets this to 1 for grid_row (Light
+    Switch) but leaves ball_and_cup_sticky_table (Ball-Ring) on settings.py's default of
+    5, so the CLI default reproduces Light Switch and a Ball-Ring run passes 5."""
+    args = _build_ees_parser().parse_args([])
+    assert args.goal_pursuit_interval == 1
+    assert args.goal_pursuit_init_cycles == 1
+
+    args = _build_ees_parser().parse_args(["--goal-pursuit-interval", "5"])
+    assert args.goal_pursuit_interval == 5
+
+
 def test_ees_run_completes_end_to_end_through_the_cli(
     *, capsys: pytest.CaptureFixture[str]
 ) -> None:

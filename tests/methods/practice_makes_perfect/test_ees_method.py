@@ -506,6 +506,10 @@ def test_predicators_matching_flag_defaults() -> None:
     # predicators sets its horizon per environment rather than globally, so there is
     # no faithful single default; None keeps this port's original uncapped goal phase.
     assert method.goal_pursuit_horizon is None
+    # Interval 1 reproduces grid_row's own override (settings.py's default is 5), i.e.
+    # keeps this port's existing Light Switch behavior; a Ball-Ring run passes 5.
+    assert method.goal_pursuit_interval == 1
+    assert method.goal_pursuit_init_cycles == 1
 
 
 def _practice_episode(*, method: EesMethod) -> _EesEpisode:
@@ -565,6 +569,151 @@ def test_goal_pursuit_horizon_does_not_apply_to_evaluation_episodes() -> None:
     for _ in range(10):
         episode._tick_goal_pursuit_horizon()
     assert episode._goal_phase_done is False
+
+
+def _interval_method(
+    *, interval: int, init_cycles: int = 1, horizon: int | None = None
+) -> tuple[EesMethod, LightSwitchEnvironment]:
+    """Returns the env alongside the method, same as _build: Method.env is typed as the
+    abstract Environment, so a caller that needs Light Switch specifics needs the
+    concrete instance back."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_interval=interval,
+        goal_pursuit_init_cycles=init_cycles,
+        goal_pursuit_horizon=horizon,
+    )
+    return method, env
+
+
+def _skips_goal_phase_at_cycle(*, method: EesMethod, cycle: int) -> bool:
+    """Whether a practice episode started on this cycle skips the goal phase outright.
+
+    Asserted straight off the constructor rather than after a step(): the episode's goal
+    is the empty set, which any state trivially satisfies, so a step-driven check could
+    not tell "skipped by the interval" apart from "goal was already met"."""
+    method._cycle_index = cycle
+    return _EesEpisode(method=method, goal=frozenset(), practicing=True)._goal_phase_done
+
+
+def test_goal_pursuit_interval_of_one_pursues_the_goal_every_cycle() -> None:
+    """The default, and grid_row's own override in the paper's
+    active_sampler_learning.yaml -- so this pins that Light Switch behavior is exactly
+    what it was before the interval existed."""
+    method, _ = _interval_method(interval=1)
+    for cycle in range(10):
+        method._cycle_index = cycle
+        assert method.pursues_goal_this_cycle() is True
+        assert _skips_goal_phase_at_cycle(method=method, cycle=cycle) is False
+
+
+def test_goal_pursuit_interval_of_five_skips_the_goal_on_four_cycles_in_five() -> None:
+    """ball_and_cup_sticky_table (Ball-Ring) is NOT overridden in the paper's config, so
+    it keeps settings.py:608's default of 5: predicators pursues the assigned goal on
+    cycles 0, 5, 10, ... only, and every other period is pure practice
+    (`assigned_task_finished` is True from t=0, active_sampler_explorer.py:135)."""
+    method, _ = _interval_method(interval=5)
+    pursuing = [
+        cycle for cycle in range(11) if not _skips_goal_phase_at_cycle(method=method, cycle=cycle)
+    ]
+    assert pursuing == [0, 5, 10]
+
+
+def test_init_cycles_force_goal_pursuit_regardless_of_the_interval() -> None:
+    """`active_sampler_learning_init_cycles_to_pursue_goal` (settings.py:674) is the
+    first clause of predicators' disjunction: the earliest cycles pursue the goal even
+    when the modulo says otherwise, so a run never opens with periods that have no
+    goal-directed experience at all.
+
+    init_cycles is 3 here on purpose: at the default 1, cycle 0 already satisfies
+    `0 % n == 0`, so the clause would be doing no work and this would pass for the wrong
+    reason. Cycles 1 and 2 are the ones only init_cycles can explain."""
+    method, _ = _interval_method(interval=5, init_cycles=3)
+    for cycle in (1, 2):
+        assert _skips_goal_phase_at_cycle(method=method, cycle=cycle) is False
+    # Past the init window the interval takes over again.
+    for cycle in (3, 4):
+        assert _skips_goal_phase_at_cycle(method=method, cycle=cycle) is True
+    assert _skips_goal_phase_at_cycle(method=method, cycle=5) is False
+
+
+def test_end_cycle_advances_the_cycle_the_interval_is_computed_from() -> None:
+    """The interval needs a cycle index, and end_cycle -- called once per cycle by
+    practice_loop.py, after the interaction period it closes -- is where it comes from
+    (predicators bumps `_online_learning_cycle` at the same point). Driven through the
+    real end_cycle rather than by poking the counter, since that wiring is the claim."""
+    method, _ = _interval_method(interval=5)
+    pursued: list[bool] = []
+    for _ in range(6):
+        pursued.append(method.pursues_goal_this_cycle())
+        method.end_cycle()
+
+    assert method.cycle_index() == 6
+    assert pursued == [True, False, False, False, False, True]
+
+
+def test_goal_pursuit_interval_does_not_apply_to_evaluation_episodes() -> None:
+    """The interval lives in predicators' *explorer*, so like the horizon it governs
+    practice only. An evaluation episode has no practice phase to fall back on, so
+    skipping its goal phase would just make it emit no-ops on solvable test tasks."""
+    method, _ = _interval_method(interval=5)
+    method._cycle_index = 3  # a cycle whose practice period would skip the goal
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=False)
+    assert episode._goal_phase_done is False
+
+
+def test_a_skipped_goal_phase_spends_none_of_the_goal_pursuit_horizon() -> None:
+    """The two knobs compose: the interval decides WHETHER a cycle pursues the goal, the
+    horizon caps HOW LONG a pursuing one may. On a non-pursuing cycle the phase is
+    already over at t=0, so no budget is spent and no in-flight plan is dropped."""
+    method, env = _interval_method(interval=5, horizon=2)
+    method._cycle_index = 3
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    plan = [_turn_on_light(env=env)]
+    episode._plan = list(plan)
+
+    for _ in range(10):
+        episode._tick_goal_pursuit_horizon()
+
+    assert episode._goal_pursuit_remaining == 2
+    assert episode._plan == plan
+
+
+def test_a_pursuing_cycle_is_still_capped_by_the_goal_pursuit_horizon() -> None:
+    """The other half of the composition: on a cycle the interval does let pursue the
+    goal, the horizon behaves exactly as it does with no interval configured."""
+    method, _ = _interval_method(interval=5, horizon=2)
+    method._cycle_index = 5  # 5 % 5 == 0, so this cycle pursues
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    assert episode._goal_phase_done is False
+
+    for _ in range(2):
+        episode._tick_goal_pursuit_horizon()
+        assert episode._goal_phase_done is False
+
+    episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is True
+
+
+def test_a_non_pursuing_cycle_still_records_its_assigned_task_as_seen() -> None:
+    """predicators adds the train task to `_seen_train_task_idxs` at the top of its
+    option policy, independently of `pursue_task_goal_first`. That set is the empirical
+    task distribution `planning_progress_plans` prices every practice-target score
+    against, so gating it on goal pursuit would blind EES on exactly the cycles that do
+    nothing but practice."""
+    method, env = _interval_method(interval=5)
+    method._cycle_index = 3
+    tasks = LightSwitchTasks(env=env, seed=0)
+    task = tasks.sample_train_task()
+
+    method.get_practice_policy(task=task)
+
+    assert method._seen_tasks == [
+        (method.abstract_state(state=task.initial_state), task.goal.atoms)
+    ]
 
 
 def _feed_mastered_at_epsilon_half(*, method: EesMethod, skill: GroundSkill, reps: int) -> None:

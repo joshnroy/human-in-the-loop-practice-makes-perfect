@@ -2,7 +2,7 @@ import math
 from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.method.method import InteractionComplete, Method
 from hitl_pmp.core.method.skill_provider import SkillProvider
@@ -168,6 +168,38 @@ class EesMethod(Method):
     # uncapped behavior, and a Ball-Ring run passes --goal-pursuit-horizon 8 to match
     # the paper's own config for that domain.
     goal_pursuit_horizon: int | None = None
+
+    # predicators' `CFG.active_sampler_learning_explore_pursue_goal_interval`, read in
+    # `active_sampler_learning_approach.py:108-114` to decide, PER CYCLE, whether the
+    # interaction period pursues its assigned train task's goal AT ALL:
+    #
+    #     pursue_task_goal_first = (cycle < init_cycles_to_pursue_goal) or (cycle % n == 0)
+    #
+    # and the explorer then starts with `assigned_task_finished = not
+    # pursue_task_goal_first` (`active_sampler_explorer.py:135`), i.e. on a non-pursuing
+    # cycle the goal phase is skipped from t=0 and EES's practice-target selection drives
+    # every step of the period.
+    #
+    # The whole point of exposing this is an ASYMMETRY in the paper's own config: the
+    # settings.py default is 5 (`settings.py:608`), and
+    # `scripts/configs/active_sampler_learning.yaml` OVERRIDES it to 1 for `grid_row`
+    # (Light Switch) but does NOT override it for `ball_and_cup_sticky_table` (Ball-Ring),
+    # which therefore keeps 5. So on Light Switch predicators pursues the goal every
+    # cycle, while on Ball-Ring it pursues it on cycles 0, 5, 10, 15, 20 only -- 5 of 25
+    # -- and spends the other 20 periods entirely on practice. This port had hardcoded
+    # Light Switch's setting (always pursue) and applied it to Ball-Ring too.
+    #
+    # Default 1 therefore reproduces `grid_row`'s override exactly, i.e. preserves this
+    # port's existing Light Switch behavior bit for bit; a Ball-Ring run passes
+    # --goal-pursuit-interval 5.
+    goal_pursuit_interval: int = Field(default=1, ge=1)
+    # predicators' `CFG.active_sampler_learning_init_cycles_to_pursue_goal`
+    # (`settings.py:674`, default 1): the first this-many cycles pursue the goal
+    # regardless of the interval, so a run never starts with a period that has no
+    # goal-directed experience at all. With interval 1 this clause is redundant (every
+    # cycle pursues anyway); it only bites when the interval is > 1.
+    goal_pursuit_init_cycles: int = Field(default=1, ge=0)
+
     planning_timeout: float = 10.0
     sampler_max_train_iters: int = 1000
 
@@ -183,6 +215,10 @@ class EesMethod(Method):
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
     _cached_plans: list[list[GroundSkill]] = PrivateAttr()
     _score_calls: int = PrivateAttr()
+    # predicators' `_online_learning_cycle`: which cycle's interaction period is
+    # running right now. Read only by `pursues_goal_this_cycle`; bumped by `end_cycle`,
+    # which practice_loop.py calls once per cycle after the period it closes.
+    _cycle_index: int = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -192,6 +228,7 @@ class EesMethod(Method):
         self._seen_tasks = []
         self._cached_plans = []
         self._score_calls = 0
+        self._cycle_index = 0
 
     # ------------------------------------------------------------------ domain
 
@@ -479,6 +516,27 @@ class EesMethod(Method):
         for sampler in self._samplers.values():
             sampler.fit()
 
+    def cycle_index(self) -> int:
+        """Which online-learning cycle's interaction period is running -- predicators'
+        `_online_learning_cycle`, 0 for the first period."""
+        return self._cycle_index
+
+    def pursues_goal_this_cycle(self) -> bool:
+        """Whether *this* cycle's interaction period pursues its assigned train task's
+        goal before practicing, or skips straight to practice --
+        `active_sampler_learning_approach.py:108-114`:
+
+            pursue_task_goal_first = (cycle < init_cycles) or (cycle % interval == 0)
+
+        See `goal_pursuit_interval` for why this is configurable at all: the paper's own
+        config sets interval 1 for `grid_row` (Light Switch) and leaves
+        `ball_and_cup_sticky_table` (Ball-Ring) on the default 5, so the same method
+        pursues the goal every cycle on one domain and 1-in-5 on the other."""
+        return (
+            self._cycle_index < self.goal_pursuit_init_cycles
+            or self._cycle_index % self.goal_pursuit_interval == 0
+        )
+
     def end_cycle(self) -> None:
         """Retrain, then start a new competence cycle -- predicators' per-cycle
         order (`_update_sampler_data` -> `_learn_wrapped_samplers` ->
@@ -488,6 +546,11 @@ class EesMethod(Method):
         self.advance_competence_cycle()
         # Competence has changed, so every cached plan's price is stale.
         self.refresh_planning_progress_plans()
+        # The period this call closes is over, so the next get_practice_policy belongs
+        # to the next cycle -- which is what pursues_goal_this_cycle reads. predicators
+        # bumps `_online_learning_cycle` at the same point, in
+        # learn_from_interaction_results, after the explorer for that cycle has run.
+        self._cycle_index += 1
 
     # ------------------------------------------------------------------ policy
 
@@ -498,10 +561,18 @@ class EesMethod(Method):
         return lambda state: episode.step(state=state)
 
     def get_practice_policy(self, *, task: Task) -> Policy:
-        """Practice: pursue the assigned goal first (predicators'
-        `pursue_task_goal_first`), then spend the rest of the period practicing
-        whichever skill scores best."""
+        """Practice: on a goal-pursuing cycle, pursue the assigned goal first
+        (predicators' `pursue_task_goal_first`) and then spend the rest of the period
+        practicing whichever skill scores best; on a non-pursuing cycle, practice for
+        the whole period. `pursues_goal_this_cycle` decides which."""
         init_atoms = self.abstract_state(state=task.initial_state)
+        # Unconditional, even when this cycle will not pursue the goal: predicators
+        # records the task as seen at the top of its option policy
+        # (`active_sampler_explorer.py`'s `_seen_train_task_idxs.add`), independently of
+        # `pursue_task_goal_first`. Load-bearing -- the seen-task set is the empirical
+        # distribution `planning_progress_plans` prices every practice-target score
+        # against, so gating it here would blind EES on exactly the cycles that do
+        # nothing but practice.
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
         episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
         return lambda state: episode.step(state=state)
@@ -628,7 +699,13 @@ class _EesEpisode:
         self._plan: list[GroundSkill] = []
         self._pending: GroundSkill | None = None
         self._pending_sampler_record: _SkillAttempt | None = None
-        self._goal_phase_done = False
+        # Starting the goal phase already "done" is how a non-goal-pursuing cycle skips
+        # it entirely -- predicators' `assigned_task_finished = not
+        # pursue_task_goal_first` (active_sampler_explorer.py:135), which makes practice
+        # drive the period from t=0. Practice-only: an evaluation episode has no
+        # practice phase to fall back on and must always plan to its task's goal, so the
+        # interval (which lives in predicators' *explorer*) never touches it.
+        self._goal_phase_done = practicing and not method.pursues_goal_this_cycle()
         # The last skill of the current practice plan -- the one actually being
         # practiced (the prefix just navigates to its preconditions). Only consulted
         # under reproduce_predicators_explore_target_only, to explore that skill alone.
@@ -706,7 +783,12 @@ class _EesEpisode:
         evaluation episode has no practice phase to fall back to, and its termination
         is run_task_episode's job. Exhausting the budget also drops any in-flight
         goal plan, matching predicators clearing `current_policy` so it replans -- the
-        queued skills were chosen to reach a goal we've just stopped pursuing."""
+        queued skills were chosen to reach a goal we've just stopped pursuing.
+
+        Composes with `goal_pursuit_interval`, the complementary knob, via the
+        `_goal_phase_done` early return below: the interval decides WHETHER this cycle
+        pursues the goal, the horizon caps HOW LONG a pursuing cycle may. On a
+        non-pursuing cycle the phase is already done at t=0, so no budget is spent."""
         if not self._practicing or self._goal_phase_done:
             return
         if self._goal_pursuit_remaining is None:

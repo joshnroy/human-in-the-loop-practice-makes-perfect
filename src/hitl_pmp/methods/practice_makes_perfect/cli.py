@@ -91,6 +91,25 @@ class EesCli:
             "8 for Ball-Ring, num_cells+2 for Light Switch). Omit for uncapped.",
         )
         parser.add_argument(
+            "--goal-pursuit-interval",
+            type=int,
+            default=EesMethod.model_fields["goal_pursuit_interval"].default,
+            help="Pursue the assigned train-task goal only on cycles where "
+            "cycle %% interval == 0; every other cycle practices for the whole period "
+            "(predicators' active_sampler_learning_explore_pursue_goal_interval). The "
+            "paper's config overrides this to 1 for grid_row (Light Switch) but leaves "
+            "ball_and_cup_sticky_table (Ball-Ring) on the default 5, so a Ball-Ring run "
+            "passes 5.",
+        )
+        parser.add_argument(
+            "--goal-pursuit-init-cycles",
+            type=int,
+            default=EesMethod.model_fields["goal_pursuit_init_cycles"].default,
+            help="Pursue the goal on the first this-many cycles regardless of "
+            "--goal-pursuit-interval (predicators' "
+            "active_sampler_learning_init_cycles_to_pursue_goal, default 1).",
+        )
+        parser.add_argument(
             "--planning-timeout",
             type=float,
             default=EesMethod.model_fields["planning_timeout"].default,
@@ -122,6 +141,8 @@ class EesCli:
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
+                goal_pursuit_interval=args.goal_pursuit_interval,
+                goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
                 planning_timeout=args.planning_timeout,
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
