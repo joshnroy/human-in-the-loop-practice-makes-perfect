@@ -59,12 +59,23 @@ class BallRingSkills:
     Everything else is ``param_dim=0``:
 
     - **Picks / place-in-cup** are deterministic (target the object's own center /
-      the cup's center) -- under the paper's deterministic config a correctly aimed
-      pick always grasps, so there is nothing to learn.
-    - **Navigation** deterministically scans angles for a collision-free pose within
-      ``reachable_thresh`` of the target -- the faithful *effect* of predicators'
-      "sample a valid pose until one works" rejection sampler, without a failure mode
-      the experiment doesn't care about.
+      the cup's center). predicators' ``pick_obj_sampler`` does draw a point, but
+      *every* point it can draw succeeds: it offsets by ``(radius/2, radius/2)`` and
+      jitters by up to ``radius/4``, so the worst case is
+      ``radius*sqrt(2)/2 + radius/4 = 0.957 * radius`` from the object's center --
+      inside ``object_contains_point``'s ``radius`` disk with 4.3% of the radius to
+      spare -- and the paper config's ``pick_success_prob = 1.0`` then grasps
+      unconditionally. A competence model over a skill that succeeds for every
+      parameter value learns the same 1.0 either way, so there is nothing to learn.
+    - **Navigation** deterministically scans angles across the
+      ``(radius, reachable_thresh]`` annulus for a collision-free pose (see
+      ``navigate_action``). This is sound only because that scan, like predicators'
+      rejection sampler, always finds *some* valid pose: which one it finds is
+      unobservable to the symbolic layer, since every ``NavigateTo*`` wipes all three
+      reachability predicates via ``ignore_effects`` and placement only tests
+      ``euclidean_reachable`` to the target. Scanning a single distance in the
+      annulus did *not* always find one, which is what made the earlier version of
+      this argument false.
 
     The place-on-floor skills' jitter is *not* cosmetic. predicators'
     ``place_on_floor_sampler`` scatters the placed object in a disk of radius

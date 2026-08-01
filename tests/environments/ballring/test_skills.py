@@ -102,6 +102,21 @@ def test_sample_params_ranges() -> None:
     assert BallRingSkills.sample_params(ground_skill=nav, rng=rng).shape == (0,)
 
 
+def test_floor_place_params_come_only_from_the_passed_rng() -> None:
+    """The floor-placement jitter must stay reproducible from `--seed`: the Method
+    owns the RNG (`EesMethod._rng` / `RandomSkillsMethod._rng`, both
+    `default_rng(seed)`), and `sample_params` may only draw from the one it is
+    handed. A module-level or unseeded generator here would break every sweep
+    silently, so pin it: same seed -> identical draws, different seed -> different."""
+    place = GroundSkill(skill=BallRingSkills.PLACE_BALL_ON_FLOOR, objects=(E.robot, E.cup, E.ball))
+    first = BallRingSkills.sample_params(ground_skill=place, rng=np.random.default_rng(7))
+    again = BallRingSkills.sample_params(ground_skill=place, rng=np.random.default_rng(7))
+    other = BallRingSkills.sample_params(ground_skill=place, rng=np.random.default_rng(8))
+    assert first.shape == (2,)
+    assert first.tolist() == again.tolist()
+    assert first.tolist() != other.tolist()
+
+
 def test_navigate_produces_a_reachable_collision_free_pose() -> None:
     env = E()
     state = env.sample_initial_state(rng=np.random.default_rng(3))
