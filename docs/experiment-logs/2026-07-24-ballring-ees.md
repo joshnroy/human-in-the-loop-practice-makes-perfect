@@ -480,3 +480,74 @@ The predicators reference was run in its own `predicators` conda env with
 --active_sampler_explore_task_strategy planning_progress
 --active_sampler_learning_feature_selection oracle --sampler_mlp_classifier_max_itr
 100000 --num_online_learning_cycles 25` plus the Ball-Ring config flags above.
+
+---
+
+## The actual root cause: `ignore_effects` was missing from the symbolic layer
+
+Everything above this section chased the wrong thing. The gap to predicators was not an
+EES hyperparameter, not the exploration policy, and not the evaluation protocol. It was
+a missing concept in the operator representation.
+
+predicators' three `NavigateTo*` NSRTs declare
+`ignore_effects = {ReachableSurface, ReachableBall, ReachableCup}`
+(`ground_truth_models/ball_and_cup_sticky_table/nsrts.py:457,514,526`), compiled to PDDL
+as a universal delete (`structs.py:782-791`): navigating anywhere wipes **every**
+reachability atom. This port had no `ignore_effects` field on `Skill` at all, so
+reachability was **monotone** — once reachable to something, reachable forever.
+
+Why an operator-by-operator audit missed it: a field-by-field diff of
+`preconditions`/`add_effects`/`delete_effects` passes cleanly when an entire *class* of
+effect is absent from the representation. There was no field to disagree about.
+
+The consequence, from `EesMethod.plan_to` on a real Ball-Ring test task:
+
+```
+before                                          after
+0 NavigateToTable(robot, normal-table-1)        0 NavigateToTable(robot, normal-table-1)
+1 NavigateToTable(robot, sticky-table-0)   <--  1 PickBallFromTable(robot, ball, cup, normal-table-1)
+2 PickBallFromTable(robot, ball, cup,      <--  2 NavigateToTable(robot, sticky-table-0)
+                   normal-table-1)              3 PlaceBallOnTable(robot, ball, cup, sticky-table-0)
+3 PlaceBallOnTable(robot, ball, cup, sticky-table-0)
+```
+
+The "before" plan walks to table A, walks to table B, then picks the ball off table A.
+Simulated symbolically it is executable under the port's monotone model and fails at
+step 2 under predicators' model. **Every** Ball-Ring evaluation plan was structurally
+unexecutable, so success depended on whether the forced mid-execution replan happened to
+fit in the remaining horizon-8 budget — and since all orderings use the same multiset of
+skills they are exactly cost-tied, leaving Fast Downward's internal tie-breaking to
+decide. A per-task lottery, which is why the symptom presented as huge variance and
+bimodal seeds rather than a uniform shortfall.
+
+### Measured effect
+
+10 seeds, Ball-Ring, 10000 sampler iterations, fixed test set, arms run sequentially on
+one base so the fix is the only difference:
+
+| arm | final mean % | sd | worst seed | seeds at 0% | vs control | p |
+|---|---|---|---|---|---|---|
+| control | 67 | 24.5 | 30 | 0 | — | — |
+| **`ignore_effects`** | **98** | **4.2** | **90** | 0 | **+31** | **<0.001** |
+| *predicators (reference)* | *91* | *12.0* | *70* | *0* | | |
+
+Per-seed finals: control `[30,50,50,60,60,60,60,100,100,100]` versus
+`[90,90,100,100,100,100,100,100,100,100]`. Every seed reached 2500 transitions in both
+arms, so the x-axis is comparable.
+
+### Read this result with suspicion, not satisfaction
+
+The fixed port now **exceeds** the reference (98% vs 91%) at a third of its variance.
+That is not obviously good news. The most likely explanation is that this port's
+Ball-Ring is slightly *easier* than predicators': several skills that sample continuous
+parameters there are `param_dim=0` here, and floor placements have no jitter (a known
+open bug recorded in the environment-fidelity audit above, which makes `BallInCup` true
+100% of the time instead of ~5%). Beating the reference is a reason to go finish those
+environment items, not to stop.
+
+It also means the remaining fidelity fixes — the goal-pursuit interval, the
+sampler-data/exploration decoupling, and the planning-progress scoring changes — are now
+measured against a ceiling: at 98% with sd 4.2 there is almost no headroom left for any
+of them to show an effect on this metric. Their evaluation needs either the paper's
+stochastic configuration restored or a harder task distribution; a null result on this
+setup would say nothing about them.
