@@ -117,6 +117,48 @@ def test_navigate_produces_a_reachable_collision_free_pose() -> None:
     assert env.exists_robot_collision(state=next_state) is False
 
 
+def test_navigate_never_falls_back_to_an_unchecked_colliding_pose() -> None:
+    """predicators' `navigate_to_obj_sampler` rejection-samples the whole
+    (radius, reachable_thresh] annulus and asserts the reachability predicate, so it
+    never gives up. Scanning a single distance in that annulus did give up: with the
+    ball on its start table, every angle at half the annulus is still inside the
+    table's circle, so all 24 candidates collided and the unchecked fallback returned
+    a colliding pose -- which `_simulate` rejects, making NavigateToBall a silent
+    no-op that records a failure predicators cannot produce. Was 153 of these 2100
+    target poses; must be 0."""
+    env = E()
+    for seed in range(300):
+        state = env.sample_initial_state(rng=np.random.default_rng(seed))
+        for target in (*env.get_tables(state=state), env.cup, env.ball):
+            action = BallRingSkills.navigate_action(state=state, env=env, target=target)
+            x, y = float(action[3]), float(action[4])
+            assert env.x_lb <= x <= env.x_ub and env.y_lb <= y <= env.y_ub
+            posed = state.model_copy(deep=True)
+            posed.set(obj=env.robot, feature_name="x", feature_val=x)
+            posed.set(obj=env.robot, feature_name="y", feature_val=y)
+            assert env.exists_robot_collision(state=posed) is False
+            assert env.is_reachable(state=posed, robot=env.robot, other=target) is True
+
+
+def test_navigate_still_prefers_the_midpoint_of_the_annulus() -> None:
+    """The extra annulus fractions must only ever run as an escalation: a target with
+    a clear approach at half the annulus keeps returning exactly the pose it always
+    did, so this change cannot move any navigation that already worked."""
+    env = E()
+    state = env.sample_initial_state(rng=np.random.default_rng(3))
+    target = env.target_table()
+    radius = state.get(obj=target, feature_name="radius")
+    expected_dist = radius + 0.5 * (env.reachable_thresh - radius)
+    action = BallRingSkills.navigate_action(state=state, env=env, target=target)
+    actual_dist = float(
+        np.hypot(
+            float(action[3]) - state.get(obj=target, feature_name="x"),
+            float(action[4]) - state.get(obj=target, feature_name="y"),
+        )
+    )
+    assert actual_dist == pytest.approx(expected_dist)
+
+
 def test_place_cup_on_normal_table_lands_it_on_the_table() -> None:
     env = E()
     state = env.sample_initial_state(rng=np.random.default_rng(1))
