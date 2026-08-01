@@ -20,46 +20,19 @@ itself has no domain- or method-specific knowledge.
 
 import argparse
 from pathlib import Path
-from typing import Protocol
 
+from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli
+from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
-
-class EnvironmentCli(Protocol):
-    """The add_arguments(*, parser) shape every environments/<domain>/cli.py entry in
-    ENVIRONMENTS must expose -- this file only ever calls add_arguments on them (a
-    domain's own run_method is driven by its selected --method, not from here). A
-    Protocol (not a base class) so ENVIRONMENTS can hold structurally-different domain
-    CLIs -- e.g. LightSwitchCli and TossingRoomCli, whose run_method signatures differ
-    by their own concrete Environment type -- under one annotation mypy checks
-    structurally."""
-
-    @staticmethod
-    def add_arguments(*, parser: argparse.ArgumentParser) -> None: ...
-
-
 ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
+    "ballring": BallRingCli,
     "lightswitch": LightSwitchCli,
     "tossingroom": TossingRoomCli,
 }
-
-
-class MethodCli(Protocol):
-    """The add_arguments(*, parser)/run(*, args) shape every methods/<name>/cli.py
-    entry in METHODS must expose -- mirrors environments/<domain>/cli.py's
-    (unnamed, structurally-typed) convention. A Protocol (not a base class) purely
-    for METHODS' own type annotation, so mypy checks this structurally: a concrete
-    method CLI like SkillOracleCli satisfies it just by having matching methods,
-    with no subclassing needed."""
-
-    @staticmethod
-    def add_arguments(*, parser: argparse.ArgumentParser) -> None: ...
-
-    @staticmethod
-    def run(*, args: argparse.Namespace) -> None: ...
 
 
 METHODS: dict[str, type[MethodCli]] = {
@@ -163,7 +136,11 @@ class Cli:
     @staticmethod
     def main(*, argv: list[str] | None = None) -> None:
         args = Cli.parse_args(argv=argv)
-        METHODS[args.method].run(args=args)
+        # cli.py is the one place allowed to import both environments/ and methods/,
+        # so it is where the selected env-CLI (its composition root) and method-CLI
+        # are wired together -- the method-CLI drives `env_cli.run_method`, so a
+        # method never imports a specific environment.
+        METHODS[args.method].run(args=args, env_cli=ENVIRONMENTS[args.env])
 
 
 if __name__ == "__main__":

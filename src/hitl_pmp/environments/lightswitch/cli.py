@@ -3,12 +3,14 @@ from collections.abc import Callable
 from typing import ClassVar
 
 from hitl_pmp.core.method.method import Method
+from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.method_runner import MethodRunner
 
 from .environment import LightSwitchEnvironment
 from .problem import LightSwitchProblem
 from .renderer import LightSwitchRenderer
+from .skill_provider import LightSwitchOracle, LightSwitchSkillProvider
 from .tasks import LightSwitchTasks
 
 
@@ -89,27 +91,25 @@ class LightSwitchCli:
     def run_method(
         *,
         args: argparse.Namespace,
-        method_factory: Callable[[LightSwitchEnvironment], Method],
+        method_factory: Callable[[DomainContext], Method],
         num_cycles: int,
         max_steps_per_interaction: int,
     ) -> None:
-        """Shared by every Light-Switch method-CLI (methods/oracle/cli.py's
-        SkillOracleCli, methods/practice_makes_perfect/cli.py's RandomSkillsCli):
-        this domain's composition root -- builds the actual LightSwitchEnvironment/
-        LightSwitchTasks/LightSwitchProblem instances from args, calls
-        `method_factory(env)` to build the Method instance, then delegates the
-        domain-agnostic rest (driving method through PracticeLoop, printing,
-        video-writing) to method_runner.py's MethodRunner. method_factory (not a
-        bare `method: type[Method]` constructed here as `method(env=env)`) exists
-        because not every Method's constructor takes only env -- RandomSkillsMethod
-        also needs its own seed, so its own CLI passes
-        `lambda env: RandomSkillsMethod(env=env, seed=args.seed)` instead of the
-        bare class; SkillOracleCli, whose Method genuinely needs nothing beyond
-        env, just passes `lambda env: SkillOracleMethod(env=env)`.
-        num_cycles/max_steps_per_interaction come from the *caller* (SkillOracleCli/
-        RandomSkillsCli both pass 0/0 since neither practices) rather than being
-        hardcoded here, since that's a property of which method is being driven,
-        not of Light Switch."""
+        """Shared by every method-CLI driving this domain: this domain's composition
+        root -- builds the actual LightSwitchEnvironment/LightSwitchTasks/
+        LightSwitchProblem instances plus this domain's SkillProvider/
+        OraclePolicyProvider (bundled into a DomainContext), calls
+        `method_factory(context)` to build the Method instance, then delegates the
+        domain-agnostic rest (PracticeLoop, printing, video-writing) to MethodRunner.
+        method_factory takes the whole DomainContext (not just env) so a method-CLI
+        picks exactly what its Method needs from it -- e.g. EesCli/RandomSkillsCli
+        pass `lambda ctx: RandomSkillsMethod(skill_provider=ctx.skill_provider,
+        env=ctx.env, seed=args.seed)`, SkillOracleCli passes
+        `lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle)` -- and the
+        method side never imports this environment. num_cycles/
+        max_steps_per_interaction come from the *caller* (an oracle passes 0/0),
+        since that's a property of which method is being driven, not of Light
+        Switch."""
         LightSwitchCli.apply_config(args=args)
         env = LightSwitchEnvironment(
             grid_size=args.grid_size, canonical_light_target=args.canonical_light_target
@@ -122,13 +122,18 @@ class LightSwitchCli:
             target_high=args.target_high,
         )
         problem = LightSwitchProblem(env=env, tasks=tasks)
+        context = DomainContext(
+            env=env,
+            skill_provider=LightSwitchSkillProvider(env=env),
+            oracle=LightSwitchOracle(env=env),
+        )
 
         renderer: type[Renderer] | None = (
             LightSwitchRenderer if args.output_dir is not None else None
         )
         MethodRunner.run(
             args=args,
-            method=method_factory(env),
+            method=method_factory(context),
             problem=problem,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,

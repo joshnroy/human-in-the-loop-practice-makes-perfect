@@ -2,6 +2,7 @@ import pytest
 
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
 from hitl_pmp.environments.tossingroom.problem import TossingRoomProblem
+from hitl_pmp.environments.tossingroom.skill_provider import TossingRoomOracle
 from hitl_pmp.environments.tossingroom.tasks import TossingRoomGoalType, TossingRoomTasks
 from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
 
@@ -13,7 +14,7 @@ def test_oracle_solves_every_goal_type_on_train_and_test_tasks(
     env = TossingRoomEnvironment()
     tasks = TossingRoomTasks(env=env, seed=0, forced_goal_type=goal_type)
     problem = TossingRoomProblem(env=env, tasks=tasks)
-    method = SkillOracleMethod(env=env)
+    method = SkillOracleMethod(env=env, oracle=TossingRoomOracle(env=env))
 
     for sample in (tasks.sample_train_task, tasks.sample_test_task):
         for _ in range(10):
@@ -28,7 +29,7 @@ def test_oracle_solves_the_default_mixed_distribution() -> None:
     env = TossingRoomEnvironment()
     tasks = TossingRoomTasks(env=env, seed=0)
     problem = TossingRoomProblem(env=env, tasks=tasks)
-    method = SkillOracleMethod(env=env)
+    method = SkillOracleMethod(env=env, oracle=TossingRoomOracle(env=env))
     solved = 0
     for _ in range(30):
         task = tasks.sample_test_task()
@@ -43,7 +44,7 @@ def test_oracle_never_issues_the_blocked_rightward_ledge_step() -> None:
     env = TossingRoomEnvironment()
     tasks = TossingRoomTasks(env=env, seed=0)
     problem = TossingRoomProblem(env=env, tasks=tasks)
-    method = SkillOracleMethod(env=env)
+    method = SkillOracleMethod(env=env, oracle=TossingRoomOracle(env=env))
     for _ in range(30):
         task = tasks.sample_test_task()
         state = problem.reset_to_task(task=task)

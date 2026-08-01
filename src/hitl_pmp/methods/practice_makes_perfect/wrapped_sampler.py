@@ -259,10 +259,12 @@ class LearnedSkillSampler(BaseModel):
     Typical use per learning cycle:
 
         for rollout in cycle_data:
-            sampler.observe(features=..., params=..., success=...)
+            sampler.observe(sampler_input=..., success=...)   # a prebuilt input row
         sampler.fit()                      # refit from scratch on *all* data
+        candidates = [base_sampler() for _ in range(100)]
         params, was_random = sampler.sample(
-            features=..., candidates=[base_sampler() for _ in range(100)],
+            sampler_inputs=[build_row(c) for c in candidates],
+            candidates=candidates,
             explore=True,
         )
 
@@ -320,6 +322,12 @@ class LearnedSkillSampler(BaseModel):
         what makes a single per-skill-name classifier meaningful across groundings).
         A `@staticmethod` on the class rather than a module-level function, per this
         repo's static-method-container rule.
+
+        This is only the *default* ("all") row layout: the caller (`EesMethod`) is
+        what actually builds each classifier input row, so a domain that does oracle
+        feature selection (`SkillProvider.oracle_sampler_input`) supplies a curated
+        row instead. Either way the sampler below consumes an already-built row, so it
+        stays domain-agnostic about which features a row contains.
         """
         return [1.0, *state_features, *(float(p) for p in params)]
 
@@ -331,20 +339,23 @@ class LearnedSkillSampler(BaseModel):
     def num_observations(self) -> int:
         return len(self._labels)
 
-    def observe(self, *, features: list[float], params: np.ndarray, success: bool) -> None:
-        """Record one (state, chosen params) -> success transition.
+    def observe(self, *, sampler_input: list[float], success: bool) -> None:
+        """Record one (already-built classifier input row) -> success transition.
+
+        `sampler_input` is the full row the caller built for the chosen parameters at
+        the state the skill was executed in (bias term included) -- either the default
+        `build_sampler_input` layout or a domain's oracle row. Taking the prebuilt row
+        rather than `(features, params)` is what lets one code path serve both feature
+        selections, and -- critically -- lets the caller snapshot the row at *decision*
+        time so a training row can never desync from the row that was scored (the state
+        has already mutated by the time an outcome is observed).
 
         `success` is the label predicators computes as "did the ground skill's add
         effects hold in the resulting state" (`_ClassifierWrappedSamplerLearner`
         consumes the pre-labeled `_OptionSamplerDataset`); deciding that is the
         caller's job, not this file's.
         """
-        if params.shape != (self.param_dim,):
-            raise ValueError(
-                f"{self.skill_name}: expected params of shape ({self.param_dim},), "
-                f"got {params.shape}."
-            )
-        self._inputs.append(self.build_sampler_input(state_features=features, params=params))
+        self._inputs.append(list(sampler_input))
         self._labels.append(int(success))
 
     def fit(self) -> None:
@@ -371,32 +382,35 @@ class LearnedSkillSampler(BaseModel):
             y_data=np.array(self._labels, dtype=np.float64),
         )
 
-    def score_candidates(
-        self, *, features: list[float], candidates: list[np.ndarray]
-    ) -> list[float]:
-        """Predicted success probability for each candidate parameter vector --
+    def score_inputs(self, *, sampler_inputs: list[list[float]]) -> list[float]:
+        """Predicted success probability for each already-built classifier input row --
         predicators' `_classifier_to_score_fn` composed with
         `_vector_score_fn_to_score_fn`. Returns 0.5 for everything when unfitted, so
         callers that only want to inspect scores get a well-defined, unopinionated
         answer instead of an exception."""
-        if not candidates:
-            raise ValueError(f"{self.skill_name}: sample requires at least one candidate.")
+        if not sampler_inputs:
+            raise ValueError(f"{self.skill_name}: scoring requires at least one input row.")
         if not self.is_fitted:
-            return [0.5] * len(candidates)
-        x_data = np.array(
-            [
-                self.build_sampler_input(state_features=features, params=params)
-                for params in candidates
-            ],
-            dtype=np.float64,
-        )
+            return [0.5] * len(sampler_inputs)
+        x_data = np.array(sampler_inputs, dtype=np.float64)
         return [float(p) for p in self._classifier.predict_proba(x_data=x_data)]
 
     def sample(
-        self, *, features: list[float], candidates: list[np.ndarray], explore: bool
+        self,
+        *,
+        sampler_inputs: list[list[float]],
+        candidates: list[np.ndarray],
+        explore: bool,
     ) -> tuple[np.ndarray, bool]:
         """Choose one candidate parameter vector; return it with a flag saying whether
         it was chosen by the epsilon-random branch.
+
+        `candidates[i]` is the raw parameter vector (what the caller will realize into
+        an action) and `sampler_inputs[i]` is its already-built classifier input row --
+        the two are kept separate on purpose: the classifier may score a *transformed*
+        view of the parameters (e.g. an oracle row that uses converted placement
+        coordinates), but `sample` must return the untransformed parameter vector the
+        caller drew, or `compute_action` would receive the wrong representation.
 
         `explore=False` is predicators' `_wrap_sampler_test`: pure argmax of the
         classifier scores, epsilon never consulted, flag always `False`.
@@ -411,9 +425,20 @@ class LearnedSkillSampler(BaseModel):
         """
         if not candidates:
             raise ValueError(f"{self.skill_name}: sample requires at least one candidate.")
+        if len(sampler_inputs) != len(candidates):
+            raise ValueError(
+                f"{self.skill_name}: got {len(sampler_inputs)} input rows for "
+                f"{len(candidates)} candidates; they must correspond one-to-one."
+            )
+        for candidate in candidates:
+            if candidate.shape != (self.param_dim,):
+                raise ValueError(
+                    f"{self.skill_name}: expected candidates of shape ({self.param_dim},), "
+                    f"got {candidate.shape}."
+                )
         if not self.is_fitted:
             return candidates[int(self._rng.integers(0, len(candidates)))], False
-        scores = self.score_candidates(features=features, candidates=candidates)
+        scores = self.score_inputs(sampler_inputs=sampler_inputs)
         index = int(np.argmax(scores))
         was_random = False
         if explore and self._rng.uniform() <= self.exploration_epsilon:

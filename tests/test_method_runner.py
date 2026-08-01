@@ -7,6 +7,7 @@ from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
 from hitl_pmp.environments.lightswitch.renderer import LightSwitchRenderer
+from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchOracle
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.method_runner import MethodRunner
 from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
@@ -25,7 +26,7 @@ def test_run_prints_success_rate(*, capsys: pytest.CaptureFixture[str]) -> None:
     problem = _build_problem()
     MethodRunner.run(
         args=_args(num_test_tasks=5),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
@@ -39,7 +40,7 @@ def test_run_records_one_evaluation_per_cycle_plus_the_initial_one() -> None:
     problem = _build_problem()
     metrics = MethodRunner.run(
         args=_args(num_test_tasks=3),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=2,
         max_steps_per_interaction=2,
@@ -55,7 +56,7 @@ def test_run_without_output_dir_writes_no_files(*, tmp_path: Path) -> None:
     problem = _build_problem()
     MethodRunner.run(
         args=_args(output_dir=None),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
@@ -69,7 +70,7 @@ def test_run_without_output_dir_writes_no_stats_json(*, tmp_path: Path) -> None:
     problem = _build_problem()
     MethodRunner.run(
         args=_args(output_dir=None),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
@@ -83,7 +84,7 @@ def test_run_with_output_dir_and_renderer_writes_a_video_file(*, tmp_path: Path)
     problem = _build_problem()
     MethodRunner.run(
         args=_args(output_dir=tmp_path),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
@@ -99,7 +100,7 @@ def test_run_with_output_dir_writes_stats_json_that_round_trips(*, tmp_path: Pat
     problem = _build_problem()
     metrics = MethodRunner.run(
         args=_args(num_test_tasks=3, output_dir=tmp_path),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=2,
         max_steps_per_interaction=2,
@@ -122,7 +123,7 @@ def test_run_does_not_leak_evaluations_between_calls() -> None:
     problem = _build_problem()
     first = MethodRunner.run(
         args=_args(num_test_tasks=2),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
@@ -133,7 +134,7 @@ def test_run_does_not_leak_evaluations_between_calls() -> None:
 
     second = MethodRunner.run(
         args=_args(num_test_tasks=2),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=0,
         max_steps_per_interaction=0,
@@ -150,7 +151,7 @@ def test_run_writes_one_clip_per_render_checkpoint(*, tmp_path: Path) -> None:
     problem = _build_problem()
     MethodRunner.run(
         args=_args(num_test_tasks=1, output_dir=tmp_path),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=4,
         max_steps_per_interaction=2,
@@ -168,7 +169,7 @@ def test_run_defaults_to_a_single_final_clip(*, tmp_path: Path) -> None:
     problem = _build_problem()
     MethodRunner.run(
         args=_args(num_test_tasks=1, output_dir=tmp_path),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=3,
         max_steps_per_interaction=2,
@@ -189,7 +190,7 @@ def test_run_reports_the_final_evaluation_not_the_first(
     problem = _build_problem()
     metrics = MethodRunner.run(
         args=_args(num_test_tasks=3),
-        method=SkillOracleMethod(env=problem.env),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=2,
         max_steps_per_interaction=2,

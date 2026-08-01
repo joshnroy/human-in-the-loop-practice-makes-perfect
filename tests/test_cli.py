@@ -16,7 +16,11 @@ class _FakeMethodCli(MethodCli):
         parser.add_argument("--fake-flag", type=int, default=0)
 
     @staticmethod
-    def run(*, args: argparse.Namespace) -> None:
+    def run(*, args: argparse.Namespace, env_cli: object) -> None:
+        # env_cli is accepted to match the MethodCli protocol's run() signature
+        # (cli.py hands the selected env-CLI to the method-CLI); this fake only
+        # exercises dispatch, so it records the call and ignores env_cli.
+        del env_cli
         _FakeMethodCli.run_calls.append(args)
 
 

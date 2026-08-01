@@ -7,14 +7,15 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
+from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
-from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
 
 
 def _build(*, grid_size: int = 4, seed: int = 0) -> tuple[EesMethod, LightSwitchEnvironment]:
     env = LightSwitchEnvironment(grid_size=grid_size)
-    return EesMethod(env=env, seed=seed), env
+    return EesMethod(env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=seed), env
 
 
 def _turn_on_light(*, env: LightSwitchEnvironment) -> GroundSkill:
@@ -215,7 +216,12 @@ def test_ees_learns_to_solve_light_switch_over_practice_cycles() -> None:
         # 300 -> [0, .2, 0, 1, 1, .1, .1, .1, .2] but 1000 -> [0, .3, .7, then 1
         # for the rest]). This assertion is about whether EES learns, so it must
         # not be run at a sampler budget where it demonstrably cannot.
-        method=EesMethod(env=env, seed=0, sampler_max_train_iters=1000),
+        method=EesMethod(
+            env=env,
+            skill_provider=LightSwitchSkillProvider(env=env),
+            seed=0,
+            sampler_max_train_iters=1000,
+        ),
         problem=problem,
         num_cycles=6,
         max_steps_per_interaction=40,
@@ -245,7 +251,17 @@ def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_samp
     sampler until the first learning cycle). Hence the warm-up cycle below."""
     env = LightSwitchEnvironment(grid_size=4)
     # epsilon=1.0 => once fitted, every parameterized attempt takes the random branch.
-    method = EesMethod(env=env, seed=0, exploration_epsilon=1.0, sampler_max_train_iters=50)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        exploration_epsilon=1.0,
+        sampler_max_train_iters=50,
+        # This test isolates competence's random-exclusion, so it needs every
+        # parameterized attempt to be random; target-only exploration would make a
+        # prefix TurnOnLight greedy and counted, so pin it off here.
+        reproduce_predicators_explore_target_only=False,
+    )
     tasks = LightSwitchTasks(env=env, seed=0)
 
     def _practice(*, steps: int) -> None:
@@ -452,11 +468,6 @@ def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
     assert method.competence_model(ground_skill=skill).num_observations == 3
 
 
-def test_double_observe_flag_defaults_off_so_the_headline_result_is_the_fixed_one() -> None:
-    method, _ = _build()
-    assert method.reproduce_predicators_double_observe is False
-
-
 def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
     """Why the bug slows learning: with random attempts counted at half the weight
     of greedy ones, a skill the robot has actually mastered still reads as mediocre
@@ -465,6 +476,11 @@ def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
     buggy, env = _build()
     buggy.reproduce_predicators_double_observe = True
     fixed, _ = _build()
+    # Isolate double-observe's effect on competence: read measured_success_rate from
+    # the competence history (not the all-attempts one), so pin practice-target-history
+    # off on both -- the only difference between them is then double-observe.
+    buggy.reproduce_predicators_practice_target_history = False
+    fixed.reproduce_predicators_practice_target_history = False
     skill = _turn_on_light(env=env)
     # A mastered skill at epsilon = 0.5: every greedy attempt succeeds, every
     # random one fails (the toggle tolerance covers ~10% of the parameter range).
@@ -477,11 +493,78 @@ def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
     assert buggy.measured_success_rate(ground_skill=skill) < 0.75
 
 
-def test_practice_target_history_flag_defaults_off() -> None:
-    """The all-attempts practice-target bookkeeping is opt-in: by default the port
-    keeps its own random-excluding behavior, so the headline result is unchanged."""
+def test_predicators_matching_flag_defaults() -> None:
+    """The port defaults toward matching predicators, with two documented exceptions.
+    practice_target_history is ON (a clean match). double_observe stays OFF (it is null
+    on the success curve but corrupts competence). explore_target_only stays OFF
+    because it is coupled to a horizon cap this port lacks -- ON alone starves
+    goal-directed learning (see its field comment)."""
     method, _ = _build()
-    assert method.reproduce_predicators_practice_target_history is False
+    assert method.reproduce_predicators_practice_target_history is True
+    assert method.reproduce_predicators_explore_target_only is False
+    assert method.reproduce_predicators_double_observe is False
+    # predicators sets its horizon per environment rather than globally, so there is
+    # no faithful single default; None keeps this port's original uncapped goal phase.
+    assert method.goal_pursuit_horizon is None
+
+
+def _practice_episode(*, method: EesMethod) -> _EesEpisode:
+    """A practice episode whose goal is already trivially satisfied is not usable here
+    -- the point is to tick the horizon while the goal phase is still running -- so
+    this uses an empty goal set and drives the countdown directly."""
+    return _EesEpisode(method=method, goal=frozenset(), practicing=True)
+
+
+def test_goal_pursuit_horizon_ends_the_goal_phase_once_its_budget_runs_out() -> None:
+    """predicators' `assigned_task_horizon` (active_sampler_explorer.py:191-198):
+    spend at most this many skills pursuing the assigned train-task goal, then give up
+    and practice for the rest of the period. Exhausting it also drops the in-flight
+    plan, matching predicators clearing `current_policy` so it replans -- those queued
+    skills were chosen to reach a goal we just stopped pursuing."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=2,
+    )
+    episode = _practice_episode(method=method)
+    episode._plan = [_turn_on_light(env=env)]
+
+    for _ in range(2):
+        episode._tick_goal_pursuit_horizon()
+        assert episode._goal_phase_done is False
+
+    episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is True
+    assert episode._plan == []
+
+
+def test_goal_pursuit_is_uncapped_by_default() -> None:
+    """The port's original behavior, kept as the default: pursue the assigned goal
+    until it is achieved or planning fails, however many skills that takes."""
+    method, _ = _build()
+    episode = _practice_episode(method=method)
+    for _ in range(50):
+        episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is False
+
+
+def test_goal_pursuit_horizon_does_not_apply_to_evaluation_episodes() -> None:
+    """The cap lives in predicators' *explorer*, so it governs practice only.
+    run_task_episode owns when an evaluation episode ends; cutting its goal pursuit
+    short here would just make it emit no-ops on tasks it could still have solved."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=0,
+    )
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=False)
+    for _ in range(10):
+        episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is False
 
 
 def _feed_mastered_at_epsilon_half(*, method: EesMethod, skill: GroundSkill, reps: int) -> None:
@@ -511,6 +594,7 @@ def test_flag_on_stops_skip_perfect_from_firing_on_a_greedy_only_perfect_skill()
     off, env = _build()
     on, _ = _build()
     on.reproduce_predicators_practice_target_history = True
+    off.reproduce_predicators_practice_target_history = False
     skill = _turn_on_light(env=env)
     for method in (off, on):
         _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
@@ -531,6 +615,7 @@ def test_flag_on_counts_random_attempts_in_the_ucb_denominator() -> None:
     off, env = _build()
     on, _ = _build()
     on.reproduce_predicators_practice_target_history = True
+    off.reproduce_predicators_practice_target_history = False
     skill = _turn_on_light(env=env)
     # 2 greedy attempts (one each way, so neither arm reads as perfect) + 8 random
     # failures: OFF's num_tries sees 2 attempts, ON's sees 10.
@@ -553,6 +638,7 @@ def test_flag_does_not_change_competence_in_either_state() -> None:
     off, env = _build()
     on, _ = _build()
     on.reproduce_predicators_practice_target_history = True
+    off.reproduce_predicators_practice_target_history = False
     skill = _turn_on_light(env=env)
     for method in (off, on):
         _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
