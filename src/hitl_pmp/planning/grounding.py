@@ -19,23 +19,33 @@ class SkillGrounder:
     container, never instantiated, same as every other business-logic class in
     this project.
 
-    Deliberately does NOT force distinct objects across a skill's parameter
-    slots -- that's not a general STRIPS/PDDL rule, and the real
+    Deliberately does NOT force distinct objects across a parameter/argument
+    slot list, in either `abstract_state` or `applicable_ground_skills` --
+    that's not a general STRIPS/PDDL rule, predicators' own `abstract()`
+    documents "Duplicate arguments in predicates are allowed." and its
+    `get_object_combinations` applies no distinctness filter, and the real
     FastDownwardPlanner this must stay consistent with doesn't apply one
     either (its generated PDDL has no explicit (not (= ?x ?y)) constraints).
     For Light Switch specifically, preconditions like Adjacent already rule
     out same-cell bindings on their own (Adjacent(c, c) is never true), so
-    nothing is lost by leaving distinctness unenforced here."""
+    nothing is lost by leaving distinctness unenforced here; neither Light
+    Switch nor Ball-Ring currently has a predicate taking two slots of the
+    same type, so this is latent for them -- but it is shared `planning/`
+    code and a same-type-twice predicate must abstract correctly."""
 
     @staticmethod
     def abstract_state(
         *, state: State, objects: tuple[Object, ...], predicates: tuple[Predicate, ...]
     ) -> frozenset[GroundAtom]:
         """Every GroundAtom that currently holds, across every predicate and every
-        type-matching combination of distinct objects -- the symbolic abstraction
+        type-matching combination of objects -- the symbolic abstraction
         applicable_ground_skills' true_atoms needs. Brute-force over all
         combinations is fine at Light Switch's scale (at most a couple hundred
         objects).
+
+        Repeated objects across a predicate's slots are *included*, matching
+        predicators' `abstract()` ("Duplicate arguments in predicates are
+        allowed.") -- see the class docstring.
 
         TODO(scale): this is O(product of per-slot candidate counts) per predicate
         -- quadratic for a 2-arity predicate over one large type (e.g. Adjacent
@@ -50,8 +60,6 @@ class SkillGrounder:
                 for object_type in predicate.types
             ]
             for combo in itertools.product(*candidates_per_slot):
-                if len(set(combo)) != len(combo):
-                    continue  # a ground atom never holds of a repeated object here
                 if predicate.holds(state, combo):
                     atoms.add(GroundAtom(predicate=predicate, objects=combo))
         return frozenset(atoms)
