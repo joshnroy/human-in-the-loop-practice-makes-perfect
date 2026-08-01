@@ -69,10 +69,22 @@ def test_ignore_effects_match_predicators_nsrts_exactly() -> None:
     assert actual == expected
 
 
-def test_place_on_table_skills_have_two_continuous_params_others_zero() -> None:
+_PARAMETERIZED = frozenset({
+    "PlaceBallOnTable",
+    "PlaceCupWithoutBallOnTable",
+    "PlaceBallOnFloor",
+    "PlaceCupWithoutBallOnFloor",
+    "PlaceCupWithBallOnFloor",
+})
+
+
+def test_only_the_five_placement_skills_have_continuous_params() -> None:
+    """Every skill predicators samples a *placement point* for carries (u, theta)
+    here: the two `place_on_table_sampler` skills and the three
+    `place_on_floor_sampler` skills. Picks and navigation stay param_dim=0 -- see
+    BallRingSkills' docstring for why that is sound under the deterministic config."""
     for skill in BallRingSkills.all_skills():
-        expected = 2 if skill.name in ("PlaceBallOnTable", "PlaceCupWithoutBallOnTable") else 0
-        assert skill.param_dim == expected
+        assert skill.param_dim == (2 if skill.name in _PARAMETERIZED else 0)
 
 
 def test_sample_params_ranges() -> None:
@@ -226,6 +238,209 @@ def test_oracle_sampler_input_is_none_for_a_pick_skill() -> None:
         BallRingSkills.oracle_sampler_input(ground_skill=pick, state=state, params=np.zeros(0))
         is None
     )
+
+
+# --------------------------------------------------------- place-on-floor jitter
+
+
+def _floor_place_cup_then_ball(
+    *, env: BallRingEnvironment, state: State, rng: np.random.Generator
+) -> State:
+    """Floor-place the cup, then floor-place the ball, drawing each skill's
+    (u, theta) from `rng` -- the sequence that used to put both objects at the
+    *identical* room-center point. Drives the real
+    compute_action -> env._simulate path, not a reimplementation of the sampler."""
+    place_cup = GroundSkill(
+        skill=BallRingSkills.PLACE_CUP_WITHOUT_BALL_ON_FLOOR,
+        objects=(env.robot, env.ball, env.cup),
+    )
+    place_ball = GroundSkill(
+        skill=BallRingSkills.PLACE_BALL_ON_FLOOR, objects=(env.robot, env.cup, env.ball)
+    )
+    current = state.model_copy(deep=True)
+    for ground_skill, held in ((place_cup, env.cup), (place_ball, env.ball)):
+        current.set(obj=held, feature_name="held", feature_val=1.0)
+        env.set_state(state=current)
+        action = BallRingSkills.compute_action(
+            ground_skill=ground_skill,
+            params=BallRingSkills.sample_params(ground_skill=ground_skill, rng=rng),
+            state=current,
+            env=env,
+        )
+        current = env.take_action(action=action)
+    return current
+
+
+def _predicted_ball_in_cup_rate(*, state: State, draws: int = 400_000) -> float:
+    """The rate the *geometry alone* predicts, computed independently of the skill
+    code: two points drawn as predicators' `place_on_floor_sampler` draws them
+    (`dist ~ U(0, 2*radius)`, `theta ~ U(0, 2*pi)`, about the room center), counted
+    as BallInCup when `dist(ball, cup) + ball_radius <= cup_radius`."""
+    cup_r = state.get(obj=E.cup, feature_name="radius")
+    ball_r = state.get(obj=E.ball, feature_name="radius")
+    rng = np.random.default_rng(0)
+    d_cup = rng.uniform(0.0, 2 * cup_r, draws)
+    t_cup = rng.uniform(0.0, 2 * np.pi, draws)
+    d_ball = rng.uniform(0.0, 2 * ball_r, draws)
+    t_ball = rng.uniform(0.0, 2 * np.pi, draws)
+    separation = np.hypot(
+        d_ball * np.cos(t_ball) - d_cup * np.cos(t_cup),
+        d_ball * np.sin(t_ball) - d_cup * np.sin(t_cup),
+    )
+    return float(np.mean(separation + ball_r <= cup_r))
+
+
+def test_floor_placing_the_cup_then_the_ball_rarely_produces_ball_in_cup() -> None:
+    """The gap this jitter closes. With both floor placements pinned to the exact
+    room center, BallInCup held *every* time (the two centers coincide, and BallInCup
+    only needs them within cup_radius - ball_radius ~ 0.0024). predicators scatters
+    each placement in a disk of radius 2*radius(obj), which makes the coincidence
+    rare -- the rate the actual geometry predicts, ~0.6%, not the ~100% we had."""
+    env = E()
+    state = env.sample_initial_state(rng=np.random.default_rng(11))
+    predicted = _predicted_ball_in_cup_rate(state=state)
+    assert predicted < 0.02  # the geometry itself says this is rare
+
+    trials = 3000
+    rng = np.random.default_rng(0)
+    hits = sum(
+        env.ball_in_cup(
+            state=_floor_place_cup_then_ball(env=env, state=state, rng=rng),
+            ball=env.ball,
+            cup=env.cup,
+        )
+        for _ in range(trials)
+    )
+    measured = hits / trials
+    assert measured < 0.05  # emphatically not the old 1.0
+    # ...and it matches the independently-computed geometric prediction.
+    assert measured == pytest.approx(predicted, abs=0.01)
+
+
+def test_place_ball_on_floor_achieves_its_ball_not_in_cup_add_effect() -> None:
+    """The corrupted competence signal: PlaceBallOnFloor's add-effects are
+    BallNotInCup and BallOnFloor. Pinned to the room center after a floor-placed cup,
+    BallNotInCup essentially never held, so the skill recorded a failure nearly every
+    time. Checked through the Predicates, i.e. what the Method actually observes."""
+    env = E()
+    state = env.sample_initial_state(rng=np.random.default_rng(11))
+    trials = 500
+    rng = np.random.default_rng(1)
+    achieved = 0
+    for _ in range(trials):
+        final = _floor_place_cup_then_ball(env=env, state=state, rng=rng)
+        if BALL_NOT_IN_CUP.holds(final, (env.ball, env.cup)) and BALL_ON_FLOOR.holds(
+            final, (env.ball,)
+        ):
+            achieved += 1
+    assert achieved / trials > 0.95
+
+
+def test_floor_placements_stay_on_the_floor_and_off_every_table() -> None:
+    """The jitter disk is far smaller than the ring's clearance, so a floor place is
+    still always a floor place -- CupOnFloor/BallOnFloor, never CupOnTable."""
+    env = E()
+    state = env.sample_initial_state(rng=np.random.default_rng(4))
+    rng = np.random.default_rng(2)
+    for _ in range(100):
+        final = _floor_place_cup_then_ball(env=env, state=state, rng=rng)
+        assert CUP_ON_FLOOR.holds(final, (env.cup,)) is True
+        assert BALL_ON_FLOOR.holds(final, (env.ball,)) is True
+
+
+def test_place_cup_with_ball_on_floor_keeps_ball_in_cup_under_jitter() -> None:
+    """PlaceCupWithBallOnFloor's symbolic model declares no BallInCup delete *or*
+    ignore effect, so the planner assumes the ball stays in the cup. The jitter must
+    not break that: `_place_object` co-locates the contained ball with the cup, so one
+    shared draw moves both and BallInCup survives."""
+    env = E()
+    state = env.sample_initial_state(rng=np.random.default_rng(8))
+    place = GroundSkill(
+        skill=BallRingSkills.PLACE_CUP_WITH_BALL_ON_FLOOR, objects=(env.robot, env.ball, env.cup)
+    )
+    rng = np.random.default_rng(3)
+    for _ in range(100):
+        current = state.model_copy(deep=True)
+        # Hold the cup with the ball inside it (co-located, both held).
+        for obj in (env.cup, env.ball):
+            current.set(obj=obj, feature_name="held", feature_val=1.0)
+        for feature in ("x", "y"):
+            current.set(
+                obj=env.ball,
+                feature_name=feature,
+                feature_val=current.get(obj=env.cup, feature_name=feature),
+            )
+        assert env.ball_in_cup(state=current, ball=env.ball, cup=env.cup) is True
+        env.set_state(state=current)
+        action = BallRingSkills.compute_action(
+            ground_skill=place,
+            params=BallRingSkills.sample_params(ground_skill=place, rng=rng),
+            state=current,
+            env=env,
+        )
+        final = env.take_action(action=action)
+        assert BALL_IN_CUP.holds(final, (env.ball, env.cup)) is True
+        assert CUP_ON_FLOOR.holds(final, (env.cup,)) is True
+        assert BALL_ON_FLOOR.holds(final, (env.ball,)) is True
+
+
+def test_place_on_floor_xy_reproduces_the_predicators_sampler_conversion() -> None:
+    """(u, theta) -> room center + u*2*radius(objects[-1]) at angle theta, with
+    objects[-1] the object being placed (predicators' `obj_to_place = objs[-1]`):
+    the ball for PlaceBallOnFloor's [robot, cup, ball], the cup for
+    PlaceCup*OnFloor's [robot, ball, cup]."""
+    env = E()
+    state = env.sample_initial_state(rng=np.random.default_rng(6))
+    ball_r = state.get(obj=env.ball, feature_name="radius")
+    cup_r = state.get(obj=env.cup, feature_name="radius")
+    center = ((env.x_lb + env.x_ub) / 2, (env.y_lb + env.y_ub) / 2)
+
+    place_ball = GroundSkill(
+        skill=BallRingSkills.PLACE_BALL_ON_FLOOR, objects=(env.robot, env.cup, env.ball)
+    )
+    place_cup = GroundSkill(
+        skill=BallRingSkills.PLACE_CUP_WITHOUT_BALL_ON_FLOOR,
+        objects=(env.robot, env.ball, env.cup),
+    )
+    # u = 0 is the room center exactly (the old, unjittered behavior).
+    assert BallRingSkills.place_on_floor_xy(
+        ground_skill=place_ball, params=np.array([0.0, 1.3]), state=state, env=env
+    ) == pytest.approx(center)
+    # u = 1, theta = 0 is the disk's far edge, scaled by the *placed* object.
+    assert BallRingSkills.place_on_floor_xy(
+        ground_skill=place_ball, params=np.array([1.0, 0.0]), state=state, env=env
+    ) == pytest.approx((center[0] + 2 * ball_r, center[1]))
+    assert BallRingSkills.place_on_floor_xy(
+        ground_skill=place_cup, params=np.array([1.0, 0.0]), state=state, env=env
+    ) == pytest.approx((center[0] + 2 * cup_r, center[1]))
+
+
+def test_place_ball_on_floor_commands_ball_only_but_place_cup_does_not() -> None:
+    """predicators' `place_ball_on_floor_sampler` overrides `sample_arr[2] = 1.0` so
+    the ball is placed *without* the cup it may be sitting in; the cup placements keep
+    ball_only = 0 so a contained ball travels with the cup."""
+    env = E()
+    state = env.sample_initial_state(rng=np.random.default_rng(6))
+    params = np.array([0.4, 2.0])
+    ball_action = BallRingSkills.compute_action(
+        ground_skill=GroundSkill(
+            skill=BallRingSkills.PLACE_BALL_ON_FLOOR, objects=(env.robot, env.cup, env.ball)
+        ),
+        params=params,
+        state=state,
+        env=env,
+    )
+    cup_action = BallRingSkills.compute_action(
+        ground_skill=GroundSkill(
+            skill=BallRingSkills.PLACE_CUP_WITH_BALL_ON_FLOOR,
+            objects=(env.robot, env.ball, env.cup),
+        ),
+        params=params,
+        state=state,
+        env=env,
+    )
+    assert (ball_action[0], ball_action[1], ball_action[2]) == (1.0, 0.0, 1.0)
+    assert (cup_action[0], cup_action[1], cup_action[2]) == (1.0, 0.0, 0.0)
 
 
 def test_navigate_skills_are_always_applicable_in_the_initial_state() -> None:
