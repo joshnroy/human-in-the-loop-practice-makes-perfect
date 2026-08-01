@@ -9,7 +9,7 @@ caught a second change which **cancelled** the benefit and had to be removed.
 
 ```python
 for i in range(num_test_tasks):
-    task = problem.sample_test_task()   # fresh tasks, every sweep
+    task = problem.sample_test_task()  # fresh tasks, every sweep
 ```
 
 predicators does not do this: `BaseEnv.get_test_tasks` generates once and caches
