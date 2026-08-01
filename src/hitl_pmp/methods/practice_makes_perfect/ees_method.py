@@ -1,4 +1,5 @@
 import math
+from collections import deque
 from typing import Any
 
 import numpy as np
@@ -89,12 +90,15 @@ class EesMethod(Method):
     explore_bonus: float = 1e-1
     use_ucb_bonus: bool = True
     skip_perfect: bool = True
-    # CFG.active_sampler_explorer_planning_progress_max_tasks. The paper text says
-    # "the 10 most recently seen tasks"; the reference code instead takes
-    # `sorted(seen_idxs)[:10]` ("Don't randomize: would lead to noisy estimates").
-    # This follows the text. On this domain the two coincide in effect, since every
-    # Light Switch task differs only in the light's target value.
+    # CFG.active_sampler_explorer_planning_progress_max_tasks -- how many of the seen
+    # training tasks planning progress is priced against. *Which* of them (a fixed
+    # prefix of the tasks ever seen, or the most recent ones) is
+    # `reproduce_predicators_planning_progress_task_prefix`'s separate job.
     planning_progress_max_tasks: int = 10
+    # CFG.active_sampler_explorer_planning_progress_max_replan_tasks (predicators'
+    # settings.py:672, default 5) -- the cap on the fictitious re-planning tasks
+    # `reproduce_predicators_replanning_tasks` folds into that same priced set.
+    planning_progress_max_replan_tasks: int = 5
     # CFG.active_sampler_explorer_replan_frequency -- the paper: "cache last plan
     # per task, re-run planner once per 100 calls".
     replan_frequency: int = 100
@@ -168,6 +172,73 @@ class EesMethod(Method):
     # uncapped behavior, and a Ball-Ring run passes --goal-pursuit-horizon 8 to match
     # the paper's own config for that domain.
     goal_pursuit_horizon: int | None = None
+
+    # Which seen training tasks planning progress is priced against. predicators uses
+    # `sorted(self._seen_train_task_idxs)[:num_tasks]` -- "Select an arbitrary but
+    # constant subset of the training tasks. Don't randomize: would lead to noisy
+    # estimates that artificially favor some operators over others"
+    # (active_sampler_explorer.py:559-563) -- i.e. a fixed *prefix* of the tasks ever
+    # seen, so the objective EES optimizes stops moving once `planning_progress_max_tasks`
+    # tasks have been seen. This port took the `planning_progress_max_tasks` most
+    # *recent* seen tasks instead (following the paper text's "10 most recently seen
+    # tasks"), which makes that objective non-stationary: each new task silently
+    # redefines what "progress" means, so scores are not comparable across cycles.
+    # The port's old comment justified the window by claiming the two "coincide in
+    # effect, since every Light Switch task differs only in the light's target value".
+    # That is true on Light Switch and FALSE in general. Measured: 30 sampled Light
+    # Switch train tasks abstract to exactly 1 distinct (init_atoms, goal) pair (the
+    # sampled target is a continuous feature no predicate reads), so on Light Switch
+    # prefix and window really do price the same set; the same 30 sampled Ball-Ring train
+    # tasks abstract to 7 distinct pairs, so on Ball-Ring they price different sets.
+    # Kept default FALSE despite predicators doing the prefix, precisely because of that
+    # 7: Ball-Ring is the domain currently being measured, so flipping this default would
+    # silently move the baseline arm's numbers. Flip it with
+    # --reproduce-predicators-planning-progress-task-prefix once that arm is measured.
+    reproduce_predicators_planning_progress_task_prefix: bool = False
+
+    # The planning-progress normalizer: what the summed plan cost is divided by before
+    # the UCB bonus is added. predicators computes `score = -sum(plan_costs)`
+    # (active_sampler_explorer.py:578) then `score = score / seen_train_tasks_num;
+    # score += bonus` (:484-492), where `seen_train_tasks_num =
+    # len(self._seen_train_task_idxs)` (:480) -- a denominator that keeps *growing* all
+    # run. This port divides by the number of plans actually priced, which saturates at
+    # `planning_progress_max_tasks`. Not cosmetic: `explore_bonus` is a fixed constant,
+    # so a forever-growing denominator steadily shrinks the planning-progress term
+    # relative to the bonus, and a predicators run therefore drifts toward round-robin
+    # coverage late on, while ours never does -- one skill can hold the practice budget
+    # indefinitely.
+    # Kept default FALSE, unlike the task-prefix flag above: while at most
+    # `planning_progress_max_tasks` tasks have been seen and every one of them plans,
+    # the two denominators are equal, but they diverge the moment either stops holding
+    # (more cycles than max_tasks, or a task dropped by PlanningFailure), and the
+    # divergence reweights the UCB term against planning progress -- a real behavior
+    # change that needs its own measurement rather than a silent default flip.
+    # Note the interaction with `reproduce_predicators_replanning_tasks`: with this flag
+    # OFF and that one ON, the fictitious replanning plans count toward this denominator
+    # (they are plans), which predicators' own denominator never does.
+    reproduce_predicators_planning_progress_normalizer: bool = False
+
+    # The fictitious re-planning tasks. Besides the seen training tasks, predicators
+    # prices planning progress against up to
+    # `CFG.active_sampler_explorer_planning_progress_max_replan_tasks` (settings.py:672,
+    # default 5) tasks it invented itself: `self._replanning_tasks: Deque[Task] =
+    # deque([], maxlen=n)` (active_sampler_explorer.py:90-92), appended as
+    # `Task(state, goal)` on every mid-period re-plan (:298-299) and folded into the
+    # priced set as `("replan", i)` ids (:567-569). They are what makes the score
+    # sensitive to where the robot actually *is* and which sub-goal it is chasing, not
+    # only to the task distribution. That deque belongs to the explorer, and predicators
+    # builds a fresh explorer every cycle (approaches/online_nsrt_learning_approach.py:53),
+    # so it resets per cycle -- `end_cycle` here clears it for the same reason.
+    # Caching caveat (deviation 4 above): predicators plans a newly appended replanning
+    # task immediately the first time each of the 5 deque *positions* is used and
+    # stale-caches it after that; this port caches the whole priced set together, so a
+    # new replanning task enters scoring at the next whole-list refresh instead of
+    # instantly.
+    # Kept default FALSE: unlike the task-prefix flag this changes the priced set on
+    # every domain including Light Switch (a fictitious task's goal is some skill's
+    # preconditions, not the domain's own goal), so it needs its own measurement first.
+    reproduce_predicators_replanning_tasks: bool = False
+
     planning_timeout: float = 10.0
     sampler_max_train_iters: int = 1000
 
@@ -181,6 +252,12 @@ class EesMethod(Method):
     _samplers: dict[str, LearnedSkillSampler] = PrivateAttr()
     # (init_atoms, goal) for each task EES has been handed, newest last.
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
+    # (init_atoms, goal) for each *fictitious* task invented by a mid-period re-plan --
+    # predicators' `_replanning_tasks` deque, bounded to
+    # `planning_progress_max_replan_tasks` and cleared per cycle. Recorded whether or not
+    # `reproduce_predicators_replanning_tasks` is on (it is bounded and costs nothing);
+    # that flag only decides whether they are priced.
+    _replanning_tasks: deque[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
     _cached_plans: list[list[GroundSkill]] = PrivateAttr()
     _score_calls: int = PrivateAttr()
 
@@ -190,6 +267,7 @@ class EesMethod(Method):
         self._all_attempt_outcomes = {}
         self._samplers = {}
         self._seen_tasks = []
+        self._replanning_tasks = deque([], maxlen=self.planning_progress_max_replan_tasks)
         self._cached_plans = []
         self._score_calls = 0
 
@@ -342,11 +420,52 @@ class EesMethod(Method):
         assumed prior."""
         self._seen_tasks.append((init_atoms, goal))
 
+    def record_replanning_task(
+        self, *, init_atoms: frozenset[GroundAtom], goal: frozenset[GroundAtom]
+    ) -> None:
+        """One fictitious task, invented because the robot re-planned mid-period from
+        wherever it stands toward whatever sub-goal it just chose -- predicators appends
+        exactly this on every re-plan (`self._replanning_tasks.append(task)`,
+        active_sampler_explorer.py:298-299), *before* trying to plan for it, so a
+        sub-goal that turns out to be unreachable is recorded too. The deque's `maxlen`
+        keeps only the most recent `planning_progress_max_replan_tasks`, "to deal with
+        the non-stationary distribution" (:565-566)."""
+        self._replanning_tasks.append((init_atoms, goal))
+
+    def replanning_tasks(self) -> list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]]:
+        """The live contents of predicators' `_replanning_tasks` deque, oldest first."""
+        return list(self._replanning_tasks)
+
+    def clear_replanning_tasks(self) -> None:
+        """Per cycle, because predicators' deque lives on the explorer and a fresh
+        explorer is constructed every cycle
+        (approaches/online_nsrt_learning_approach.py:53)."""
+        self._replanning_tasks.clear()
+
+    def planning_progress_tasks(self) -> list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]]:
+        """The (init_atoms, goal) pairs planning progress is priced against: up to
+        `planning_progress_max_tasks` seen training tasks, plus -- when
+        `reproduce_predicators_replanning_tasks` is on -- the fictitious re-planning
+        tasks (predicators' `train_task_ids + replan_task_ids`,
+        active_sampler_explorer.py:557-570).
+
+        *Which* training tasks is `reproduce_predicators_planning_progress_task_prefix`:
+        predicators takes a fixed prefix of the tasks ever seen
+        (`sorted(self._seen_train_task_idxs)[:num_tasks]`, :559-563), this port
+        originally took the most recent ones. See that field for why both exist."""
+        if self.reproduce_predicators_planning_progress_task_prefix:
+            train_tasks = self._seen_tasks[: self.planning_progress_max_tasks]
+        else:
+            train_tasks = self._seen_tasks[-self.planning_progress_max_tasks :]
+        if self.reproduce_predicators_replanning_tasks:
+            return [*train_tasks, *self._replanning_tasks]
+        return list(train_tasks)
+
     def planning_progress_plans(self) -> list[list[GroundSkill]]:
-        """Cached plans for the most recent seen tasks, refreshed only every
-        `replan_frequency` calls (predicators' own optimization). Without the
-        cache, scoring every candidate against every seen task would mean a fresh
-        Fast Downward invocation per candidate per task per step."""
+        """Cached plans for the priced tasks, refreshed only every `replan_frequency`
+        calls (predicators' own optimization). Without the cache, scoring every
+        candidate against every task would mean a fresh Fast Downward invocation per
+        candidate per task per step."""
         if self._score_calls % self.replan_frequency == 0:
             self.refresh_planning_progress_plans()
         self._score_calls += 1
@@ -355,7 +474,7 @@ class EesMethod(Method):
     def refresh_planning_progress_plans(self) -> None:
         costs = self.skill_costs()
         plans: list[list[GroundSkill]] = []
-        for init_atoms, goal in self._seen_tasks[-self.planning_progress_max_tasks :]:
+        for init_atoms, goal in self.planning_progress_tasks():
             try:
                 plans.append(self.plan_to(init_atoms=init_atoms, goal=goal, costs=costs))
             except PlanningFailure:
@@ -384,7 +503,7 @@ class EesMethod(Method):
             total = sum(
                 sum(costs.get(step, self.default_cost()) for step in plan) for plan in plans
             )
-            score = -total / len(plans)
+            score = -total / self.planning_progress_normalizer(num_plans=len(plans))
 
         if self.use_ucb_bonus:
             # predicators' exact form: c * sqrt(log(total_trials) / num_tries). The
@@ -395,6 +514,22 @@ class EesMethod(Method):
             total_trials = max(self.practice_target_total_tries(), 1)
             score += self.explore_bonus * math.sqrt(math.log(total_trials) / num_tries)
         return score
+
+    def planning_progress_normalizer(self, *, num_plans: int) -> float:
+        """What the summed plan cost is divided by before the UCB bonus is added.
+        predicators divides by `len(self._seen_train_task_idxs)`
+        (active_sampler_explorer.py:480,484-492) -- every training task ever seen,
+        whether or not it was priced this pass -- so the term keeps shrinking against the
+        fixed `explore_bonus` all run. This port divides by the number of plans actually
+        priced, which saturates. See
+        `reproduce_predicators_planning_progress_normalizer`.
+
+        `max(..., 1)` only guards divide-by-zero: predicators reaches this line only with
+        at least one seen training task, since its explorer runs only after one has been
+        assigned."""
+        if self.reproduce_predicators_planning_progress_normalizer:
+            return float(max(len(self._seen_tasks), 1))
+        return float(num_plans)
 
     def choose_practice_target(self) -> list[GroundSkill]:
         """Candidates in descending score order -- the explorer tries them in turn
@@ -486,6 +621,10 @@ class EesMethod(Method):
         that measures this cycle."""
         self.fit_samplers()
         self.advance_competence_cycle()
+        # Strictly before the refresh below: predicators' re-planning deque belongs to an
+        # explorer that is rebuilt each cycle, so this cycle's fictitious tasks must not
+        # survive into the next cycle's priced set.
+        self.clear_replanning_tasks()
         # Competence has changed, so every cached plan's price is stale.
         self.refresh_planning_progress_plans()
 
@@ -746,6 +885,12 @@ class _EesEpisode:
             if self._goal <= true_atoms:
                 self._goal_phase_done = True
             else:
+                if self._practicing:
+                    # predicators records a fictitious task for *every* mid-period
+                    # re-plan, the assigned-goal branch included
+                    # (active_sampler_explorer.py:289-299). Practice only: no explorer --
+                    # and so no such bookkeeping -- exists during evaluation.
+                    method.record_replanning_task(init_atoms=true_atoms, goal=self._goal)
                 try:
                     plan = method.plan_to(
                         init_atoms=true_atoms, goal=self._goal, costs=method.skill_costs()
@@ -766,6 +911,12 @@ class _EesEpisode:
         the candidate set in the first place."""
         method = self._method
         for candidate in method.choose_practice_target():
+            # Recorded per candidate *considered*, before either the already-satisfied
+            # shortcut or the planning attempt: predicators appends a task for every goal
+            # its `generate_goals()` yields and only then tries to plan for it
+            # (active_sampler_explorer.py:289-311), so unreachable and trivially
+            # satisfied sub-goals both land in the deque.
+            method.record_replanning_task(init_atoms=true_atoms, goal=candidate.preconditions)
             if candidate.preconditions <= true_atoms:
                 return [candidate]
             try:

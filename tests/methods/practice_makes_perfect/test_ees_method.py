@@ -4,9 +4,9 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.core.problem.tasks.types import Goal, Task
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
+from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON, ROBOT_IN_CELL
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
@@ -506,6 +506,14 @@ def test_predicators_matching_flag_defaults() -> None:
     # predicators sets its horizon per environment rather than globally, so there is
     # no faithful single default; None keeps this port's original uncapped goal phase.
     assert method.goal_pursuit_horizon is None
+    # All three planning-progress-scoring deviations stay at this port's current
+    # behavior until each has its own measurement: every one of them moves scores on
+    # Ball-Ring, the domain currently being measured. (The task-prefix one cannot move a
+    # Light Switch number -- see the abstract-task-identity test below -- but Light
+    # Switch is not the only domain this Method runs on anymore.)
+    assert method.reproduce_predicators_planning_progress_task_prefix is False
+    assert method.reproduce_predicators_planning_progress_normalizer is False
+    assert method.reproduce_predicators_replanning_tasks is False
 
 
 def _practice_episode(*, method: EesMethod) -> _EesEpisode:
@@ -650,3 +658,194 @@ def test_flag_does_not_change_competence_in_either_state() -> None:
     assert off_model.num_observations == 20
     assert on_model.num_observations == 20
     assert off_model.get_current_competence() == on_model.get_current_competence()
+
+
+def _numbered_goal(*, env: LightSwitchEnvironment, index: int) -> frozenset[GroundAtom]:
+    """A distinguishable stand-in goal ("robot in cell <index>"), for the tests that
+    care about *which* tasks get priced and never about planning for them."""
+    state = env.build_initial_state(light_level=0.0, light_target=0.5)
+    return frozenset({ROBOT_IN_CELL(state=state, objects=(env.robot, env.get_cells()[index]))})
+
+
+def _record_numbered_seen_tasks(
+    *, method: EesMethod, env: LightSwitchEnvironment, count: int
+) -> list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]]:
+    """Records `count` mutually distinguishable seen tasks, in the order recorded."""
+    init_atoms = method.abstract_state(
+        state=env.build_initial_state(light_level=0.0, light_target=0.5)
+    )
+    recorded = []
+    for index in range(count):
+        goal = _numbered_goal(env=env, index=index)
+        method.record_seen_task(init_atoms=init_atoms, goal=goal)
+        recorded.append((init_atoms, goal))
+    return recorded
+
+
+def test_every_light_switch_task_abstracts_to_one_and_the_same_symbolic_task() -> None:
+    """The fact the old "sliding window and fixed prefix coincide in effect" comment
+    rested on: the per-task sampled light target is a continuous feature no predicate
+    reads, so however the seen tasks are subsetted, planning progress is priced against
+    the same symbolic task -- which is why turning the task-prefix flag on cannot move a
+    Light Switch result. It is NOT true in general, which is why the old comment was
+    wrong and the flag exists: the same check on Ball-Ring gives 7 distinct symbolic
+    tasks out of 30 sampled, so there the flag genuinely reprices."""
+    method, env = _build()
+    tasks = LightSwitchTasks(env=env, seed=0)
+    symbolic = {
+        (method.abstract_state(state=task.initial_state), task.goal.atoms)
+        for task in (tasks.sample_train_task() for _ in range(30))
+    }
+    assert len(symbolic) == 1
+
+
+def test_task_prefix_flag_prices_the_first_tasks_seen_and_keeps_pricing_them() -> None:
+    """predicators picks `sorted(self._seen_train_task_idxs)[:num_tasks]` -- "an
+    arbitrary but constant subset" (active_sampler_explorer.py:559-563) -- so the
+    objective EES optimizes stops moving once max_tasks tasks have been seen."""
+    method, env = _build(grid_size=14)
+    method.reproduce_predicators_planning_progress_task_prefix = True
+    recorded = _record_numbered_seen_tasks(method=method, env=env, count=12)
+
+    assert method.planning_progress_tasks() == recorded[:10]
+    # Stable across later cycles: seeing more tasks does not redefine the objective.
+    _record_numbered_seen_tasks(method=method, env=env, count=3)
+    assert method.planning_progress_tasks() == recorded[:10]
+
+
+def test_task_prefix_flag_off_prices_the_most_recent_tasks_as_before() -> None:
+    """Flag OFF -- the default -- reproduces this port's original behavior exactly: the
+    sliding window of the `planning_progress_max_tasks` most recent seen tasks."""
+    method, env = _build(grid_size=14)
+    assert method.reproduce_predicators_planning_progress_task_prefix is False
+    recorded = _record_numbered_seen_tasks(method=method, env=env, count=12)
+
+    assert method.planning_progress_tasks() == recorded[-10:]
+
+
+def _score_at_two_seen_task_counts(
+    *, method: EesMethod, env: LightSwitchEnvironment
+) -> tuple[float, float, float]:
+    """Scores one skill after 3 seen tasks and again after 6, with
+    `planning_progress_max_tasks=3` so the priced *plans* are identical both times and
+    only the seen-task count differs. Returns (score_at_3, score_at_6, ucb_bonus)."""
+    skill = _turn_on_light(env=env)
+    method.observe_outcome(ground_skill=skill, success=True)
+    method.observe_outcome(ground_skill=skill, success=False)
+    for _ in range(3):
+        _record_one_seen_task(method=method, env=env)
+    score_few = method.score_ground_skill(ground_skill=skill)
+    for _ in range(3):
+        _record_one_seen_task(method=method, env=env)
+    score_many = method.score_ground_skill(ground_skill=skill)
+    # One skill, two attempts: total_trials == num_tries == 2.
+    bonus = method.explore_bonus * math.sqrt(math.log(2) / 2)
+    return score_few, score_many, bonus
+
+
+def test_predicators_normalizer_shrinks_the_planning_term_as_more_tasks_are_seen() -> None:
+    """predicators divides by `len(self._seen_train_task_idxs)`
+    (active_sampler_explorer.py:480,484-492), a denominator that keeps growing, while
+    `explore_bonus` is a fixed constant -- so the UCB term's weight relative to planning
+    progress grows all run, which is what eventually pulls a predicators run toward
+    round-robin coverage."""
+    method, env = _build()
+    method.planning_progress_max_tasks = 3
+    method.reproduce_predicators_planning_progress_normalizer = True
+    score_few, score_many, bonus = _score_at_two_seen_task_counts(method=method, env=env)
+
+    planning_few = score_few - bonus
+    planning_many = score_many - bonus
+    assert planning_few < 0.0
+    # Same priced plans, denominator 3 -> 6: the planning term halves...
+    assert planning_many == pytest.approx(planning_few / 2)
+    # ...while the bonus does not, so its relative weight grows.
+    assert abs(bonus / planning_many) > abs(bonus / planning_few)
+
+
+def test_normalizer_flag_off_keeps_the_saturating_denominator() -> None:
+    """Flag OFF reproduces this port's original behavior exactly: divide by the number of
+    plans priced, which saturates at `planning_progress_max_tasks`, so seeing more tasks
+    leaves the score (and hence the UCB term's relative weight) untouched."""
+    method, env = _build()
+    method.planning_progress_max_tasks = 3
+    score_few, score_many, _bonus = _score_at_two_seen_task_counts(method=method, env=env)
+
+    assert score_many == pytest.approx(score_few)
+
+
+def test_replanning_tasks_are_capped_at_the_most_recent_few() -> None:
+    """predicators' `deque([], maxlen=n)` with
+    `n = CFG.active_sampler_explorer_planning_progress_max_replan_tasks`
+    (active_sampler_explorer.py:90-92, default 5 at settings.py:672): the most recent
+    fictitious tasks only, "to deal with the non-stationary distribution"."""
+    method, env = _build(grid_size=14)
+    init_atoms = method.abstract_state(
+        state=env.build_initial_state(light_level=0.0, light_target=0.5)
+    )
+    goals = [_numbered_goal(env=env, index=index) for index in range(7)]
+    for goal in goals:
+        method.record_replanning_task(init_atoms=init_atoms, goal=goal)
+
+    assert method.replanning_tasks() == [(init_atoms, goal) for goal in goals[-5:]]
+
+
+def test_replanning_tasks_are_cleared_every_cycle() -> None:
+    """predicators' deque lives on the explorer, and a fresh explorer is constructed per
+    cycle (approaches/online_nsrt_learning_approach.py:53), so last cycle's fictitious
+    tasks never price the next cycle's scores."""
+    method, env = _build()
+    method.record_replanning_task(
+        init_atoms=method.abstract_state(
+            state=env.build_initial_state(light_level=0.0, light_target=0.5)
+        ),
+        goal=_numbered_goal(env=env, index=1),
+    )
+    assert method.replanning_tasks()
+
+    method.end_cycle()
+    assert method.replanning_tasks() == []
+
+
+def test_replanning_flag_decides_whether_fictitious_tasks_are_priced() -> None:
+    """The deque is filled either way (it is bounded and costs nothing); the flag only
+    decides whether those tasks join the seen training tasks in the priced set --
+    predicators' `train_task_ids + replan_task_ids` (active_sampler_explorer.py:567-569).
+    OFF is this port's original behavior: seen training tasks only."""
+    off, env = _build(grid_size=14)
+    on, _ = _build(grid_size=14)
+    for method in (off, on):
+        seen = _record_numbered_seen_tasks(method=method, env=env, count=2)
+        for index in (5, 6, 7):
+            method.record_replanning_task(
+                init_atoms=seen[0][0], goal=_numbered_goal(env=env, index=index)
+            )
+    on.reproduce_predicators_replanning_tasks = True
+
+    assert len(off.planning_progress_tasks()) == 2
+    assert off.planning_progress_tasks() == on.planning_progress_tasks()[:2]
+    assert len(on.planning_progress_tasks()) == 5
+
+
+def test_practice_replans_record_fictitious_tasks_but_evaluation_does_not() -> None:
+    """Where the deque actually comes from: every mid-period re-plan, both the
+    assigned-goal branch and each practice candidate considered
+    (active_sampler_explorer.py:289-311). The evaluation policy has no explorer behind
+    it, so it must record nothing -- those are held-out test tasks."""
+    method, env = _build()
+    tasks = LightSwitchTasks(env=env, seed=0)
+    task = tasks.sample_train_task()
+
+    env.set_state(state=task.initial_state)
+    evaluating = method.get_task_policy(task=task)
+    state = env.get_current_state()
+    for _ in range(3):
+        state = env.take_action(action=evaluating(state).action)
+    assert method.replanning_tasks() == []
+
+    env.set_state(state=task.initial_state)
+    practicing = method.get_practice_policy(task=task)
+    state = env.get_current_state()
+    for _ in range(3):
+        state = env.take_action(action=practicing(state).action)
+    assert method.replanning_tasks()

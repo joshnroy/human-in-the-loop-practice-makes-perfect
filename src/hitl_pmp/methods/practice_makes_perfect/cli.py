@@ -82,6 +82,41 @@ class EesCli:
             "for the prefix that reaches it, matching predicators (default on). "
             "--no-... explores every skill during practice.",
         )
+        # The three planning-progress-scoring deviations, each separately measurable. All
+        # three default OFF (this port's current behavior): each one moves scores on
+        # Ball-Ring, the domain being measured, so no default flips without its own run.
+        # See the matching EesMethod fields for the evidence behind each.
+        parser.add_argument(
+            "--reproduce-predicators-planning-progress-task-prefix",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields[
+                "reproduce_predicators_planning_progress_task_prefix"
+            ].default,
+            help="Price planning progress against a fixed *prefix* of the seen train "
+            "tasks (predicators' sorted(seen_idxs)[:max_tasks]), so the objective stops "
+            "moving between cycles (default off: off prices the most recent ones, which "
+            "is what this port did originally).",
+        )
+        parser.add_argument(
+            "--reproduce-predicators-planning-progress-normalizer",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields[
+                "reproduce_predicators_planning_progress_normalizer"
+            ].default,
+            help="Divide the summed plan cost by the number of train tasks ever seen "
+            "(predicators' forever-growing denominator, which steadily raises the UCB "
+            "bonus's relative weight) rather than by the number of plans priced, which "
+            "saturates (default off).",
+        )
+        parser.add_argument(
+            "--reproduce-predicators-replanning-tasks",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reproduce_predicators_replanning_tasks"].default,
+            help="Also price planning progress against up to 5 fictitious tasks created "
+            "by mid-period re-planning (predicators' _replanning_tasks deque, reset each "
+            "cycle), which makes the score sensitive to where the robot actually is "
+            "(default off).",
+        )
         parser.add_argument(
             "--goal-pursuit-horizon",
             type=int,
@@ -131,6 +166,15 @@ class EesCli:
                 ),
                 reproduce_predicators_explore_target_only=(
                     args.reproduce_predicators_explore_target_only
+                ),
+                reproduce_predicators_planning_progress_task_prefix=(
+                    args.reproduce_predicators_planning_progress_task_prefix
+                ),
+                reproduce_predicators_planning_progress_normalizer=(
+                    args.reproduce_predicators_planning_progress_normalizer
+                ),
+                reproduce_predicators_replanning_tasks=(
+                    args.reproduce_predicators_replanning_tasks
                 ),
             ),
             num_cycles=args.num_cycles,
