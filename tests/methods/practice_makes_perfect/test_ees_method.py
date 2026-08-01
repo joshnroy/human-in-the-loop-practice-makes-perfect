@@ -646,8 +646,10 @@ def test_predicators_matching_flag_defaults() -> None:
     """The port defaults toward matching predicators, with two documented exceptions.
     practice_target_history is ON (a clean match). double_observe stays OFF (it is null
     on the success curve but corrupts competence). explore_target_only stays OFF
-    because it is coupled to a horizon cap this port lacks -- ON alone starves
-    goal-directed learning (see its field comment)."""
+    because it is coupled to a horizon cap this port lacks by default: uncapped greedy
+    goal pursuit can eat the period, so restricting exploration to the target just
+    yields less exploration rather than better-focused exploration (see its field
+    comment, including why the stronger "deadlocks Light Switch" claim was withdrawn)."""
     method, _ = _build()
     assert method.reproduce_predicators_practice_target_history is True
     assert method.reproduce_predicators_explore_target_only is False

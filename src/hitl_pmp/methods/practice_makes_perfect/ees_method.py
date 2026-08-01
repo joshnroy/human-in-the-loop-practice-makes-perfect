@@ -55,14 +55,16 @@ class EesMethod(Method):
     A* planner is not a substitute: it ignores per-operator costs entirely.
 
     Deviations from predicators, all deliberate:
-    1. `skip_perfect` and the UCB `num_tries` are computed from competence
-       observations, which exclude epsilon-greedy random attempts. predicators
-       reads `_ground_op_hist`, appended on *every* execution including random
-       ones (`active_sampler_explorer.py:400`), so a skill here reaches a
-       measured rate of 1.0 sooner and is dropped as a practice target earlier.
-       `reproduce_predicators_practice_target_history` restores predicators'
-       all-attempts bookkeeping for exactly these two quantities (competence stays
-       random-excluding either way); see that field for why the flag exists.
+    1. (Now off by default.) `skip_perfect` and the UCB `num_tries` were computed
+       from competence observations, which exclude epsilon-greedy random attempts,
+       where predicators reads `_ground_op_hist`, appended on *every* execution
+       including random ones (`active_sampler_explorer.py:400`) -- so a skill
+       reached a measured rate of 1.0 sooner and was dropped as a practice target
+       earlier. `reproduce_predicators_practice_target_history` now defaults to
+       True, i.e. those two quantities read the all-attempts history and match
+       predicators; competence stays random-excluding either way. Pass
+       `--no-reproduce-predicators-practice-target-history` to ablate back to the
+       deviating behavior.
     2. The outcome of the *last* skill in an interaction period is never observed
        (there is no subsequent state to check `add_effects` against). predicators
        observes at option termination instead. This loses at most one datapoint
@@ -146,21 +148,26 @@ class EesMethod(Method):
     # and returns `(act, False)` for every other step (:335-339). But predicators pairs
     # that with a HORIZON CAP on goal-pursuit (audit D7), which this port lacks by
     # default: our goal-pursuit is greedy and runs until the goal is achieved or
-    # planning fails. Turning this ON alone deadlocks a goal-directed domain like Light
-    # Switch -- a bad initial sampler can never achieve the goal greedily, so practice
-    # (where the target would be explored) never begins. Our explore-EVERYTHING default
-    # is what compensates for the missing horizon cap. So ON only faithfully matches
-    # predicators together with a goal-pursuit horizon cap.
+    # planning fails. Uncapped, that greedy goal phase can eat most of the period, so
+    # ON gives *less* exploration rather than better-focused exploration -- the
+    # explore-EVERYTHING default is what compensates for the missing cap. So ON only
+    # faithfully matches predicators together with a goal-pursuit horizon cap.
     #
     # SCOPE ONLY. This flag narrows *where epsilon fires*; it does not decide which
     # attempts become sampler training data. Every parameterized attempt during
     # practice trains the classifier either way -- see `execute_ground_skill`.
-    # CAUTION reading older results: until that split landed, ON also silently
-    # discarded the sampler rows from every greedy attempt (the whole goal-pursuit
-    # phase, which is where most of this arm's data came from). Any scope ablation
-    # measured before then -- including the "helps Ball-Ring / starves Light Switch"
-    # and "scope alone did not close the gap" readings in the Ball-Ring log -- was
-    # confounded with that data loss and needs re-running to be interpretable.
+    # CAUTION reading older claims about this flag: until that split landed, ON also
+    # silently discarded the sampler rows from every greedy attempt (the whole
+    # goal-pursuit phase, which is where most of this arm's data came from). Both the
+    # numbers ("helps Ball-Ring", "scope alone did not close the gap") and the stated
+    # mechanism ("ON alone DEADLOCKS Light Switch -- practice never begins") were
+    # measured under that data loss, and the mechanism especially: with the rows
+    # discarded, the sampler never fit at all, so it could never improve. A post-fix
+    # spot check on Light Switch (grid 4, seed 0, 5 cycles, uncapped) does fit the
+    # sampler and does reach the goal, collecting 83 TurnOnLight rows where the
+    # pre-fix code collected 9. Treat the deadlock claim as withdrawn and the whole
+    # arm as needing re-measurement; what remains argued (not measured) is the
+    # structural point above that scope and the cap are a coupled pair.
     reproduce_predicators_explore_target_only: bool = False
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as

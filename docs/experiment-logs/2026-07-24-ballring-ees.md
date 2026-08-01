@@ -167,8 +167,9 @@ code" is the operative, and looser, target:
 | replanning-tasks deque | seen + 5 fictitious | silent | seen only |
 | last-skill-of-period observed | yes | silent | no |
 
-> **CORRECTION (supersedes every `--reproduce-predicators-explore-target-only` number
-> below, in this section and in Follow-up #1).** When those runs were made, the flag did
+> **CORRECTION (supersedes every `--reproduce-predicators-explore-target-only` result
+> below — this section, Follow-up #1, and the `ours scope-only` / `ours scope+cap` rows
+> in "The real finding: our variance, not our mean").** When those runs were made, the flag did
 > two things at once: it narrowed epsilon-greedy exploration to the practice target
 > *and* — because one boolean gated both decisions in `execute_ground_skill` — silently
 > discarded the sampler's training row for every non-target attempt, i.e. the whole
@@ -181,7 +182,13 @@ code" is the operative, and looser, target:
 > arguments), so the scope-only null and the scope+cap trend are **confounded, not
 > results** — both need re-running before anything is concluded from them. The
 > *structural* argument below (uncapped goal pursuit eats the period; scope and the
-> horizon cap are a coupled pair) is unaffected: it does not rest on these numbers.
+> horizon cap are a coupled pair) does not rest on these numbers and still stands as an
+> argument. The stronger claim that target-only **deadlocks Light Switch** does not: it
+> was a symptom of the bug. With the rows discarded the sampler never fit at all, so it
+> could never improve. Post-fix spot check (grid 4, seed 0, 5 uncapped practice cycles,
+> `--reproduce-predicators-explore-target-only`): the sampler fits, the goal is reached,
+> and TurnOnLight collects **83** training rows where the pre-fix code collected **9**.
+> Read it as starved learning, not deadlock — and re-measure before restating either.
 
 **Ablation: epsilon-greedy scope alone does NOT close the gap.** Our port explores
 (random params) on *every* skill during a practice period; predicators explores only
@@ -204,11 +211,15 @@ practices after `CFG.horizon` steps of pursuing the goal). Our goal-pursuit is g
 and *uncapped* — it runs until the goal is achieved or planning fails. So restricting
 exploration to the target, without also capping goal-pursuit, just yields *less*
 exploration (the uncapped greedy goal phase still eats the period), not better-focused
-exploration. In fact turning it on **alone deadlocks a goal-directed domain like Light
-Switch**: a bad initial sampler never achieves the goal greedily, so the practice phase
-where the target would be explored never begins (this is asserted in
-`test_ees_method.py`). Our explore-everything default is precisely what *compensates*
-for the missing horizon cap.
+exploration. Our explore-everything default is precisely what *compensates* for the
+missing horizon cap.
+
+~~In fact turning it on alone deadlocks a goal-directed domain like Light Switch: a bad
+initial sampler never achieves the goal greedily, so the practice phase where the target
+would be explored never begins.~~ **Withdrawn** — see the correction above. That was the
+coupling bug, not the scope: with the goal-pursuit rows discarded the sampler never fit,
+so it could not improve and the goal stayed out of reach. Post-fix the same
+configuration fits its sampler and reaches the goal.
 
 **Takeaway.** The residual gap is not any single one of these deviations. The
 epsilon-greedy scope and the horizon cap are a **coupled pair** — a faithful

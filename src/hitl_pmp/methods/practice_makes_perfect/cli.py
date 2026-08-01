@@ -57,14 +57,16 @@ class EesCli:
             help="Gradient steps per sampler refit. predicators' own config uses "
             "100000; the default here is far lower so a run finishes in minutes.",
         )
-        # These three default TRUE to match predicators (which reproduces the paper);
-        # pass --no-... to ablate a single deviation.
+        # Three independent faithfulness switches. Only practice-target-history defaults
+        # ON; the other two default OFF for the reasons in their EesMethod field
+        # comments. Each toggles exactly one deviation -- see EesMethod's docstring.
         parser.add_argument(
             "--reproduce-predicators-double-observe",
             action=argparse.BooleanOptionalAction,
             default=EesMethod.model_fields["reproduce_predicators_double_observe"].default,
-            help="Match predicators' double-observe() (default on). --no-... counts a "
-            "practice outcome once instead of twice.",
+            help="Match predicators' double-observe() (default off: it is null on the "
+            "success curve but corrupts competence). On counts a non-random practice "
+            "outcome twice, as predicators does.",
         )
         parser.add_argument(
             "--reproduce-predicators-practice-target-history",
