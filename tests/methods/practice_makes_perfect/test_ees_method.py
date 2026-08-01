@@ -4,7 +4,17 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.core.problem.tasks.types import Goal, Task
+from hitl_pmp.core.problem.environment.types import Object
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
+from hitl_pmp.environments.ballring.environment import BallRingEnvironment
+from hitl_pmp.environments.ballring.predicates import (
+    BALL_IN_CUP,
+    IS_REACHABLE_BALL,
+    IS_REACHABLE_CUP,
+    IS_REACHABLE_SURFACE,
+)
+from hitl_pmp.environments.ballring.skill_provider import BallRingSkillProvider
+from hitl_pmp.environments.ballring.tasks import BallRingTasks
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
@@ -370,6 +380,85 @@ def test_refresh_planning_progress_plans_skips_tasks_it_cannot_plan_for() -> Non
     )
     method.refresh_planning_progress_plans()
     assert method.planning_progress_plans() == []
+
+
+# Deliberately NOT read off `Skill.ignore_effects`: this is the *reference* model,
+# transcribed from predicators' ground_truth_models/ball_and_cup_sticky_table/nsrts.py
+# (lines 84, 285, 457, 514, 526). A simulator that reads the port's own declarations
+# would validate a plan against the very model the plan was produced from, and so
+# would pass even with the declarations missing entirely.
+_REFERENCE_BALLRING_IGNORE_EFFECTS: dict[str, frozenset] = {
+    "NavigateToTable": frozenset({IS_REACHABLE_SURFACE, IS_REACHABLE_BALL, IS_REACHABLE_CUP}),
+    "NavigateToBall": frozenset({IS_REACHABLE_SURFACE, IS_REACHABLE_BALL, IS_REACHABLE_CUP}),
+    "NavigateToCup": frozenset({IS_REACHABLE_SURFACE, IS_REACHABLE_BALL, IS_REACHABLE_CUP}),
+    "PickBallFromTable": frozenset({BALL_IN_CUP}),
+    "PlaceBallOnFloor": frozenset({BALL_IN_CUP, IS_REACHABLE_BALL}),
+}
+
+
+def _apply_ground_skill(
+    *, atoms: frozenset[GroundAtom], ground_skill: GroundSkill
+) -> frozenset[GroundAtom]:
+    """The symbolic successor, ported from predicators' `utils.apply_operator`.
+    Ignore effects are dropped FIRST, so a predicate that is both ignored and added
+    (every NavigateTo*) ends up true, not false."""
+    ignored = _REFERENCE_BALLRING_IGNORE_EFFECTS.get(ground_skill.skill.name, frozenset())
+    survivors = {atom for atom in atoms if atom.predicate not in ignored}
+    return frozenset((survivors - ground_skill.delete_effects) | ground_skill.add_effects)
+
+
+def test_integration_ballring_plans_are_executable_under_the_correct_symbolic_model() -> None:
+    """INTEGRATION (shells out to a real Fast Downward). REGRESSION: before
+    `ignore_effects` existed, the Ball-Ring operator model was monotone -- navigating
+    never revoked reachability -- so FD returned plans like
+
+        NavigateToTable(robot, normal-table-1)
+        NavigateToTable(robot, sticky-table-0)   <- navigated away
+        PickBallFromTable(robot, ball, cup, normal-table-1)   <- picks where it isn't
+        PlaceBallOnTable(robot, ball, cup, sticky-table-0)
+
+    which the real environment cannot execute at step 2. Simulating the returned plan
+    under the correct model (ignore effects included) is what catches this: it is
+    strictly stronger than pattern-matching the specific bad shape above."""
+    env = BallRingEnvironment()
+    method = EesMethod(env=env, skill_provider=BallRingSkillProvider(env=env), seed=0)
+    task = BallRingTasks(env=env, seed=0).sample_test_task()
+    atoms = method.abstract_state(state=task.initial_state)
+
+    plan = method.plan_to(init_atoms=atoms, goal=task.goal.atoms, costs=method.skill_costs())
+    assert plan, "expected a non-empty plan for a reachable Ball-Ring goal"
+    for step, ground_skill in enumerate(plan):
+        unmet = ground_skill.preconditions - atoms
+        assert not unmet, (
+            f"step {step} ({ground_skill.skill.name}) has unmet preconditions {unmet}; "
+            f"plan={[(g.skill.name, [o.name for o in g.objects]) for g in plan]}"
+        )
+        atoms = _apply_ground_skill(atoms=atoms, ground_skill=ground_skill)
+    assert task.goal.atoms <= atoms
+
+
+def test_integration_ballring_plan_never_picks_from_a_table_it_navigated_away_from() -> None:
+    """The specific defect, spelled out: once a NavigateTo* intervenes, an earlier
+    NavigateToTable's IsReachableSurface no longer licenses a pick from that table."""
+    env = BallRingEnvironment()
+    method = EesMethod(env=env, skill_provider=BallRingSkillProvider(env=env), seed=0)
+    task = BallRingTasks(env=env, seed=0).sample_test_task()
+
+    plan = method.plan_to(
+        init_atoms=method.abstract_state(state=task.initial_state),
+        goal=task.goal.atoms,
+        costs=method.skill_costs(),
+    )
+    reachable_table: Object | None = None
+    for ground_skill in plan:
+        name = ground_skill.skill.name
+        if name.startswith("NavigateTo"):
+            reachable_table = ground_skill.objects[1] if name == "NavigateToTable" else None
+        elif name.endswith("FromTable") or name.endswith("OnTable"):
+            assert ground_skill.objects[-1] == reachable_table, (
+                f"{name} acts on {ground_skill.objects[-1].name} but the robot is at "
+                f"{reachable_table.name if reachable_table else 'no table'}"
+            )
 
 
 def test_the_four_unreachable_method_hooks_raise() -> None:

@@ -52,6 +52,34 @@ _MOVE = Skill(
     param_dim=0,
 )
 
+# Non-monotone: teleporting leaves the robot in exactly one cell, and no `(not
+# (InCell ?robot ?c))` over this skill's own parameters can say "and not in any of
+# the others" -- that is what ignore_effects is for.
+_TELEPORT = Skill(
+    name="Teleport",
+    parameters=(_ROBOT_VAR, _TARGET_VAR),
+    preconditions=frozenset(),
+    add_effects=frozenset({LiftedAtom(predicate=_IN_CELL, variables=(_ROBOT_VAR, _TARGET_VAR))}),
+    delete_effects=frozenset(),
+    ignore_effects=frozenset({_IN_CELL, _HANDS_FREE}),
+    param_dim=0,
+)
+
+_X0_VAR = Variable(name="x0", type=_ROBOT_TYPE)
+_X1_VAR = Variable(name="x1", type=_CELL_TYPE)
+
+# Parameters named exactly what predicators hardcodes for its `forall` quantifiers,
+# so the collision-avoidance branch is the one exercised.
+_COLLIDE = Skill(
+    name="Collide",
+    parameters=(_X0_VAR, _X1_VAR),
+    preconditions=frozenset(),
+    add_effects=frozenset({LiftedAtom(predicate=_IN_CELL, variables=(_X0_VAR, _X1_VAR))}),
+    delete_effects=frozenset(),
+    ignore_effects=frozenset({_IN_CELL}),
+    param_dim=0,
+)
+
 _WAIT = Skill(
     name="Wait",
     parameters=(_ROBOT_VAR,),
@@ -127,6 +155,46 @@ def test_domain_str_omits_negation_block_when_a_skill_has_no_delete_effects() ->
     domain = _domain()
     wait_action = domain.split("(:action Wait")[1]
     assert "(not " not in wait_action
+
+
+def test_domain_str_emits_ignore_effects_as_universally_quantified_negations() -> None:
+    """An `ignore_effects` predicate is "false for *every* object tuple afterwards",
+    which only a `forall`-negation can say -- a plain `(not ...)` would have to name
+    objects the action's parameters do not mention. Mirrors predicators'
+    `STRIPSOperator.pddl_str`."""
+    domain = PddlWriter.domain_str(
+        skills=(_TELEPORT,), predicates=(_IN_CELL, _HANDS_FREE), types=(_ROBOT_TYPE, _CELL_TYPE)
+    )
+    effect = domain.split(":effect (and ")[1]
+    assert "(forall (?x0 - robot ?x1 - cell) (not (InCell ?x0 ?x1)))" in effect
+    # Ignore effects come after the add/delete blocks, as in predicators.
+    assert effect.index("(InCell ?robot ?target_cell)") < effect.index("(forall ")
+
+
+def test_domain_str_writes_a_zero_arity_ignore_effect_as_a_plain_negation() -> None:
+    """`(forall () ...)` is not legal PDDL, and a 0-arity predicate has exactly one
+    ground atom anyway, so the universal delete degenerates to `(not (P))`."""
+    domain = PddlWriter.domain_str(
+        skills=(_TELEPORT,), predicates=(_IN_CELL, _HANDS_FREE), types=(_ROBOT_TYPE, _CELL_TYPE)
+    )
+    assert "(not (HandsFree))" in domain
+    assert "(forall ()" not in domain
+
+
+def test_domain_str_ignore_effect_quantifiers_cannot_shadow_a_parameter_name() -> None:
+    """predicators hardcodes `?x0`/`?x1` for the quantified variables; an action whose
+    own parameter is named `?x0` would have it silently shadowed by the `forall`,
+    wiping every atom of that predicate. Here the prefix grows until it is unique --
+    by repeating the letter, since a PDDL name must begin with one."""
+    domain = PddlWriter.domain_str(
+        skills=(_COLLIDE,), predicates=(_IN_CELL,), types=(_ROBOT_TYPE, _CELL_TYPE)
+    )
+    assert ":parameters (?x0 - robot ?x1 - cell)" in domain
+    assert "(forall (?xx0 - robot ?xx1 - cell) (not (InCell ?xx0 ?xx1)))" in domain
+
+
+def test_domain_str_omits_the_forall_block_when_a_skill_has_no_ignore_effects() -> None:
+    assert "forall" not in _domain()
 
 
 def test_domain_str_is_deterministic_regardless_of_input_order() -> None:
@@ -207,10 +275,26 @@ def _lightswitch_pddl(*, grid_size: int) -> tuple[str, str, tuple[Object, ...]]:
     return domain, problem, objects
 
 
-def test_integration_fd_translator_accepts_the_emitted_lightswitch_pddl() -> None:
-    """INTEGRATION (shells out to a real Fast Downward): a round trip proving the
-    emitted domain+problem actually parse, not merely that they look right."""
-    domain, problem, _ = _lightswitch_pddl(grid_size=4)
+def test_lightswitch_declares_no_ignore_effects_so_its_pddl_is_unchanged() -> None:
+    """All four `grid_row` NSRTs pass an empty `ignore_effects` in predicators, so
+    adding the field must leave Light Switch's emitted domain byte-identical -- no
+    `forall` anywhere."""
+    assert all(
+        skill.ignore_effects == frozenset()
+        for skill in (
+            LightSwitchSkills.MOVE_ROBOT,
+            LightSwitchSkills.TURN_ON_LIGHT,
+            LightSwitchSkills.TURN_OFF_LIGHT,
+            LightSwitchSkills.JUMP_TO_LIGHT,
+        )
+    )
+    domain, _, _ = _lightswitch_pddl(grid_size=4)
+    assert "forall" not in domain
+
+
+def _translate(*, domain: str, problem: str) -> str:
+    """Run a real Fast Downward translator over the emitted PDDL and return the SAS
+    text -- proof that it actually parses, not merely that it looks right."""
     with tempfile.TemporaryDirectory() as tmp:
         dom_file = Path(tmp) / "domain.pddl"
         prob_file = Path(tmp) / "problem.pddl"
@@ -237,4 +321,32 @@ def test_integration_fd_translator_accepts_the_emitted_lightswitch_pddl() -> Non
         output = result.stdout + result.stderr
         assert "Driver aborting" not in output, output
         assert sas_file.exists(), output
-        assert "begin_operator" in sas_file.read_text(encoding="utf-8")
+        return sas_file.read_text(encoding="utf-8")
+
+
+def test_integration_fd_translator_accepts_the_emitted_lightswitch_pddl() -> None:
+    """INTEGRATION (shells out to a real Fast Downward)."""
+    domain, problem, _ = _lightswitch_pddl(grid_size=4)
+    assert "begin_operator" in _translate(domain=domain, problem=problem)
+
+
+def test_integration_fd_translator_accepts_ignore_effect_forall_syntax() -> None:
+    """INTEGRATION (shells out to a real Fast Downward). Both quantifier spellings
+    must parse: the plain `?x0` predicators emits, and the escalated `?xx0` this
+    writer falls back to when the action's own parameters would shadow it (a PDDL
+    name has to start with a letter, so the fallback repeats one rather than
+    prefixing punctuation). The escalated form is otherwise unreachable in this repo,
+    which is exactly why no parser would ever see it without this test."""
+    for skill in (_TELEPORT, _COLLIDE):
+        domain = PddlWriter.domain_str(
+            skills=(skill,),
+            predicates=(_IN_CELL, _HANDS_FREE),
+            types=(_ROBOT_TYPE, _CELL_TYPE),
+        )
+        problem = PddlWriter.problem_str(
+            objects=(_ROBOT, _CELL0, _CELL1),
+            init_atoms=frozenset({GroundAtom(predicate=_IN_CELL, objects=(_ROBOT, _CELL0))}),
+            goal=frozenset({GroundAtom(predicate=_IN_CELL, objects=(_ROBOT, _CELL1))}),
+        )
+        assert "forall" in domain
+        assert "begin_operator" in _translate(domain=domain, problem=problem)

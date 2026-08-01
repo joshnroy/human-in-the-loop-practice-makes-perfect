@@ -61,7 +61,19 @@ class Skill(BaseModel):
     NSRT/STRIPSOperator: preconditions/add_effects/delete_effects are LiftedAtoms
     over this skill's own Variables (`parameters`), realizing the Variable/
     LiftedAtom layer this type deliberately deferred until a real planner (PMP's
-    reproduction, planning/) needed to task-plan over skills symbolically."""
+    reproduction, planning/) needed to task-plan over skills symbolically.
+
+    `ignore_effects` is predicators' fourth effect field (`STRIPSOperator`) and is
+    *not* a LiftedAtom set: it holds bare Predicates, and means "after this skill
+    runs, every ground atom of these predicates becomes unknown/false, whatever its
+    objects". It is what makes a non-monotone skill expressible -- Ball-Ring's
+    NavigateTo* wipe *all* reachability atoms, not just the one they add, so a robot
+    cannot be reachable-to two tables at once. Without it a planner happily emits a
+    plan that navigates away and then picks from the table it left. In PDDL this
+    becomes a universally-quantified delete (`PddlWriter._action_str`); when applying
+    an operator symbolically the atoms are dropped *before* delete/add effects, so a
+    predicate that is both ignored and added stays true (predicators'
+    `utils.apply_operator`)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -70,6 +82,9 @@ class Skill(BaseModel):
     preconditions: frozenset[LiftedAtom]
     add_effects: frozenset[LiftedAtom]
     delete_effects: frozenset[LiftedAtom]
+    # Deliberately absent from _check_variables_are_declared_parameters below: these
+    # are Predicates, not LiftedAtoms -- they bind no variable to check.
+    ignore_effects: frozenset[Predicate] = frozenset()
     param_dim: int
 
     @model_validator(mode="after")
@@ -95,7 +110,8 @@ class GroundSkill(BaseModel):
     already-consumed param value, matching predicators' _GroundNSRT.sample_option().
     Mirrors GroundAtom's shape (predicate + objects) in problem/tasks/types.py.
     preconditions/add_effects/delete_effects ground the underlying Skill's
-    LiftedAtoms by substituting objects for parameters positionally -- this is what
+    LiftedAtoms by substituting objects for parameters positionally (ignore_effects
+    is forwarded ungrounded -- it names Predicates, not atoms) -- this is what
     lets planning/ check a candidate plan step's preconditions against the current
     state, and what lets a Method check whether execute_skill actually achieved
     add_effects (competence bookkeeping)."""
@@ -142,6 +158,14 @@ class GroundSkill(BaseModel):
         return frozenset(
             atom.ground(substitution=self._substitution) for atom in self.skill.delete_effects
         )
+
+    @property
+    def ignore_effects(self) -> frozenset[Predicate]:
+        """Passed straight through, ungrounded -- an ignore effect names a whole
+        Predicate, so there is nothing to substitute objects into. Mirrors
+        predicators' `_GroundNSRT.ignore_effects`, which likewise just forwards its
+        parent operator's set."""
+        return self.skill.ignore_effects
 
 
 class Variable(BaseModel):

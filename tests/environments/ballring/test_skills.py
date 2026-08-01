@@ -46,6 +46,29 @@ def test_all_skills_are_the_sixteen_named_operators() -> None:
     assert "PlaceBallOnTable" in names  # the "impossible" skill
 
 
+def test_ignore_effects_match_predicators_nsrts_exactly() -> None:
+    """Pins the whole table against
+    ``ground_truth_models/ball_and_cup_sticky_table/nsrts.py``: only five of the
+    sixteen operators declare ignore effects there, and every other one passes
+    ``set()``. Getting this wrong is invisible in unit tests of individual skills but
+    silently makes the symbolic model monotone, which lets the planner emit
+    unexecutable plans (see test_ees_method.py's Ball-Ring plan-validity test)."""
+    reachability = frozenset({IS_REACHABLE_SURFACE, IS_REACHABLE_BALL, IS_REACHABLE_CUP})
+    expected = {
+        "NavigateToTable": reachability,
+        "NavigateToBall": reachability,
+        "NavigateToCup": reachability,
+        "PickBallFromTable": frozenset({BALL_IN_CUP}),
+        "PlaceBallOnFloor": frozenset({BALL_IN_CUP, IS_REACHABLE_BALL}),
+    }
+    actual = {
+        skill.name: skill.ignore_effects
+        for skill in BallRingSkills.all_skills()
+        if skill.ignore_effects
+    }
+    assert actual == expected
+
+
 def test_place_on_table_skills_have_two_continuous_params_others_zero() -> None:
     for skill in BallRingSkills.all_skills():
         expected = 2 if skill.name in ("PlaceBallOnTable", "PlaceCupWithoutBallOnTable") else 0
