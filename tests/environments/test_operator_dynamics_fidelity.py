@@ -231,21 +231,19 @@ _BALL_RING_NAVIGATION_TO_AN_OBJECT_OFF_THE_FLOOR = Exemption(
     applies=Guards.ball_ring_navigation_target_is_not_on_the_floor,
 )
 
-# Named here so the xfail reason below stays honest about scope: fixing only the
-# headline PICKUP defect will NOT flip the Tossing Room case to passing.
-_TOSSINGROOM_DEFECTS = (
-    "(a) Pickup's preconditions are {RobotInRoom(robot, ?room), HandEmpty(robot)} for "
-    "ANY room, but TossingRoomEnvironment._apply_pickup only acts when "
-    "robot_room == self.start_room, so a pickup planned in any other room is a silent "
-    "no-op; (b) Throw's preconditions bind ?bin to any bin in the robot's room, but "
-    "_apply_throw routes by the HELD item's kind (bin_room_for_kind), so throwing "
-    "trash while standing in the recycling bin's room can never succeed at any force; "
-    "(c) MoveRoom's only spatial precondition is Adjacent(?from, ?to), which is "
-    "symmetric, but _apply_move blocks the one-way ledge rightward "
-    "(robot_room == blocked_right_from -> blocked_right_from + 1), so that step is a "
-    "silent no-op. All three are the same defect class as Ball-Ring's missing "
-    "ignore_effects; fixing them is a separate PR."
-)
+# The three Tossing Room defects this walk found while they were still live, kept as
+# the record of what it is for. All are fixed on main (#28), so the domain is a plain
+# parametrization below rather than an xfail:
+#   (a) Pickup's preconditions were {RobotInRoom(robot, ?room), HandEmpty(robot)} for
+#       ANY room, while _apply_pickup only acts when robot_room == start_room.
+#   (b) Throw bound ?bin to any bin in the robot's room, while _apply_throw routes by
+#       the HELD item's kind, so a mismatched bin could never succeed at any force.
+#   (c) MoveRoom's only spatial precondition was symmetric Adjacent, while _apply_move
+#       blocks the one-way ledge rightward.
+# All three are the same defect class as Ball-Ring's missing ignore_effects: an
+# over-permissive operator model yielding plans that look valid and cannot execute.
+# Measured cost of (a)-(c) together: EES solved 1/10 Tossing Room tasks before the fix
+# and 10/10 after.
 
 
 class DomainCases:
@@ -564,19 +562,7 @@ _DOMAINS = ["lightswitch", "ballring", "tossingroom"]
     [
         "lightswitch",
         "ballring",
-        pytest.param(
-            "tossingroom",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason=(
-                    "KNOWN, UNFIXED: Tossing Room's operator models permit more than "
-                    f"TossingRoomEnvironment's dynamics allow. {_TOSSINGROOM_DEFECTS} "
-                    "This xfail flips to a failure -- i.e. the suite goes red, telling "
-                    "you to delete the marker -- the moment ALL THREE are fixed, not "
-                    "just the headline Pickup one."
-                ),
-            ),
-        ),
+        "tossingroom",
     ],
 )
 def test_applicable_ground_skills_are_never_silently_ignored(*, domain: str) -> None:
