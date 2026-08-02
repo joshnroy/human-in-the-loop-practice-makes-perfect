@@ -16,9 +16,16 @@ plots as three EES curves on one axis. Every arm must have been run over the sam
 transition budget, since the x-axis is shared -- that is exactly what makes the
 curves comparable, and it is why `PracticeCycleCli` gives EES and random-skills the
 same two protocol flags.
+
+Arms share their seed set, so every comparison here is **paired** and is tested as
+such -- an unpaired test on a paired design has already produced a wrong p-value in
+this project. The test is an exact Wilcoxon signed-rank (all 2^n sign assignments
+enumerated), not the normal approximation and not a t-test: n = 10 on a bounded,
+ceiling-clipped percentage is neither large nor normal.
 """
 
 import argparse
+import itertools
 import json
 import statistics
 from pathlib import Path
@@ -71,15 +78,22 @@ class TossingRoomComparison:
         return out
 
     @staticmethod
-    def summarize(*, root: Path, method: str) -> dict[str, float]:
+    def summarize(*, root: Path, method: str, threshold: float = 100.0) -> dict[str, float]:
         """The statistics this project reports alongside a mean -- variance and the
         worst seed, because a collapse-to-zero seed has repeatedly been the most
-        informative signal here and a mean hides it entirely."""
+        informative signal here and a mean hides it entirely -- plus how quickly a
+        typical seed reaches `threshold`, which is the only thing left to compare once
+        the arms saturate at the endpoint."""
         curves = TossingRoomComparison.per_seed_curves(root=root, method=method)
         if not curves:
             return {}
         first = [curve[min(curve)] for curve in curves.values()]
         final = [curve[max(curve)] for curve in curves.values()]
+        reached = [
+            TossingRoomComparison.transitions_to_reach(curve=curve, threshold=threshold)
+            for curve in curves.values()
+        ]
+        arrived = [value for value in reached if value is not None]
         downward = sum(
             1
             for curve in curves.values()
@@ -94,7 +108,129 @@ class TossingRoomComparison:
             "worst_seed": min(final),
             "seeds_at_zero": sum(1 for value in final if value == 0.0),
             "downward_steps": downward,
+            # -1 rather than None so the row formatter stays a plain float format; the
+            # companion "never" count is what makes the -1 readable.
+            "median_reach": float(statistics.median(arrived)) if arrived else -1.0,
+            "never_reached": float(len(reached) - len(arrived)),
         }
+
+    @staticmethod
+    def transitions_to_reach(*, curve: dict[int, float], threshold: float) -> int | None:
+        """The first transition count at which this seed's curve reaches `threshold`,
+        or None if it never does.
+
+        The endpoint alone is a poor statistic on this domain: a run that saturates at
+        100% partway through and one that only just gets there both score 100, and the
+        interesting difference between sampler budgets is *how fast* the throw force is
+        pinned down, not whether it eventually is. Reported alongside the endpoint, not
+        instead of it -- a seed that never reaches the threshold shows up as None here
+        and has to be reported as such rather than silently dropped."""
+        for transitions in sorted(curve):
+            if curve[transitions] >= threshold:
+                return transitions
+        return None
+
+    @staticmethod
+    def wilcoxon_signed_rank(*, first: list[float], second: list[float]) -> dict:
+        """Exact two-sided Wilcoxon signed-rank test on paired samples.
+
+        Exact by full enumeration of all 2^n sign assignments rather than the normal
+        approximation, because n here is 10: the approximation is not trustworthy at
+        that size, and 2^10 = 1024 is free. Zero differences are dropped (the standard
+        Pratt-vs-Wilcoxon choice made the conservative way), so the effective n is
+        reported -- with a shared seed set and a saturating metric, ties are common and
+        a test quietly run on three pairs must not be read as one run on ten.
+
+        Note the floor this puts on any claim: with n non-zero pairs the smallest
+        attainable two-sided p is 2 / 2^n, so n = 10 can reach p = 0.002 but n = 4
+        cannot go below 0.125 no matter how large the effect."""
+        differences = [a - b for a, b in zip(first, second, strict=True) if a != b]
+        num_pairs = len(differences)
+        if num_pairs == 0:
+            return {"n": 0, "statistic": None, "p": 1.0}
+        # Ranks of |d|, averaged over ties -- the standard signed-rank construction.
+        order = sorted(range(num_pairs), key=lambda i: abs(differences[i]))
+        ranks = [0.0] * num_pairs
+        index = 0
+        while index < num_pairs:
+            stop = index
+            while stop + 1 < num_pairs and abs(differences[order[stop + 1]]) == abs(
+                differences[order[index]]
+            ):
+                stop += 1
+            shared = (index + stop) / 2 + 1
+            for position in range(index, stop + 1):
+                ranks[order[position]] = shared
+            index = stop + 1
+        observed = sum(rank for rank, d in zip(ranks, differences, strict=True) if d > 0)
+        total = sum(ranks)
+        # Under the null the signs are exchangeable, so enumerate every assignment.
+        extreme = 0
+        for signs in itertools.product((0, 1), repeat=num_pairs):
+            statistic = sum(rank for rank, sign in zip(ranks, signs, strict=True) if sign)
+            if abs(statistic - total / 2) >= abs(observed - total / 2):
+                extreme += 1
+        return {"n": num_pairs, "statistic": observed, "p": extreme / 2**num_pairs}
+
+    @staticmethod
+    def print_paired_tests(*, arms: list[tuple[str, Path]], threshold: float) -> None:
+        """Every arm pair, on both the endpoint and the transitions-to-threshold speed
+        statistic, over the seeds the two arms actually share."""
+        curves = {
+            label: TossingRoomComparison.per_seed_curves(root=root, method="ees")
+            for label, root in arms
+        }
+        print()
+        print(f"paired comparisons (exact Wilcoxon signed-rank; threshold {threshold:.0f}%)")
+        header = f"{'pair':<40}{'metric':<26}{'n':>4}{'median diff':>13}{'p':>9}"
+        print(header)
+        print("-" * len(header))
+        for (first_label, _), (second_label, _) in itertools.combinations(arms, 2):
+            shared = sorted(set(curves[first_label]) & set(curves[second_label]))
+            if not shared:
+                continue
+            pair = f"{first_label} vs {second_label}"
+            finals = [
+                [curves[label][seed][max(curves[label][seed])] for seed in shared]
+                for label in (first_label, second_label)
+            ]
+            speeds = [
+                [
+                    TossingRoomComparison.transitions_to_reach(
+                        curve=curves[label][seed], threshold=threshold
+                    )
+                    for seed in shared
+                ]
+                for label in (first_label, second_label)
+            ]
+            TossingRoomComparison._print_test(
+                pair=pair, metric="final % solved", first=finals[0], second=finals[1]
+            )
+            # A seed that never reaches the threshold has no speed to compare, so the
+            # pair is dropped and n falls -- reported, never silently imputed.
+            paired_speeds = [
+                (a, b)
+                for a, b in zip(speeds[0], speeds[1], strict=True)
+                if a is not None and b is not None
+            ]
+            never = len(shared) - len(paired_speeds)
+            TossingRoomComparison._print_test(
+                pair=pair,
+                metric=f"transitions to {threshold:.0f}%" + (f" ({never} never)" if never else ""),
+                first=[float(a) for a, _ in paired_speeds],
+                second=[float(b) for _, b in paired_speeds],
+            )
+
+    @staticmethod
+    def _print_test(*, pair: str, metric: str, first: list[float], second: list[float]) -> None:
+        if not first:
+            print(f"{pair:<40}{metric:<26}{'--':>4}{'(no comparable seeds)':>22}")
+            return
+        result = TossingRoomComparison.wilcoxon_signed_rank(first=first, second=second)
+        median_difference = statistics.median(a - b for a, b in zip(first, second, strict=True))
+        print(
+            f"{pair:<40}{metric:<26}{result['n']:>4}{median_difference:>13.1f}{result['p']:>9.3f}"
+        )
 
     @staticmethod
     def _plot_curve(*, ax, curve: dict[int, tuple[float, float]], label: str, **kwargs) -> None:
@@ -154,18 +290,136 @@ class TossingRoomComparison:
         fig.savefig(output, dpi=150)
 
     @staticmethod
-    def print_table(*, arms: list[tuple[str, Path]], random_skills_root: Path | None) -> None:
+    def render_grid(*, arms: list[tuple[str, Path]], output: Path, threshold: float) -> None:
+        """The sampler-iteration grid: the curves *and* the per-seed endpoints, in one
+        figure, because reporting only one of them misleads in opposite directions.
+
+        The mean curves alone hide that the endpoint is **censored** -- nearly every
+        seed is pinned at the oracle's 100%, so the arms cannot differ there no matter
+        what the sampler budget does. The endpoints alone hide the shape of the run
+        that produced them. Hence three panels: the curves, then the same seed's
+        endpoint under each arm joined by a line (a paired design drawn as a paired
+        figure), then the only statistic with any headroom left -- how many online
+        transitions that seed needed before it first hit the threshold."""
+        curves = {
+            label: TossingRoomComparison.per_seed_curves(root=root, method="ees")
+            for label, root in arms
+        }
+        labels = [label for label, _ in arms]
+        seeds = sorted(set.intersection(*(set(curves[label]) for label in labels)), key=int)
+        fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.3))
+
+        axes[0].axhline(100.0, color="grey", linestyle=(0, (2, 3)), linewidth=1.4)
+        for index, label in enumerate(labels):
+            color, linestyle = _ARM_STYLES[index % len(_ARM_STYLES)]
+            TossingRoomComparison._plot_curve(
+                ax=axes[0],
+                curve=TossingRoomComparison.mean_curve(root=dict(arms)[label], method="ees"),
+                label=label,
+                color=color,
+                linestyle=linestyle,
+            )
+        axes[0].set_xlabel("Number of online transitions")
+        axes[0].set_ylabel("% evaluation tasks solved")
+        axes[0].set_title("Learning curves (mean ± stderr)", fontsize=10)
+        axes[0].legend(loc="lower right", fontsize=8, framealpha=0.9)
+
+        finals = {
+            label: [curves[label][seed][max(curves[label][seed])] for seed in seeds]
+            for label in labels
+        }
+        TossingRoomComparison._plot_paired(
+            ax=axes[1], labels=labels, per_seed={k: list(v) for k, v in finals.items()}
+        )
+        axes[1].axhline(100.0, color="grey", linestyle=(0, (2, 3)), linewidth=1.4)
+        axes[1].set_ylabel("% evaluation tasks solved (final sweep)")
+        axes[1].set_title(f"Final result, per seed (n = {len(seeds)})", fontsize=10)
+
+        speeds = {
+            label: [
+                TossingRoomComparison.transitions_to_reach(
+                    curve=curves[label][seed], threshold=threshold
+                )
+                for seed in seeds
+            ]
+            for label in labels
+        }
+        # A seed that never reached the threshold under *any* arm has no line to draw;
+        # dropping it is reported in the axis title rather than imputed to the budget.
+        drawable = [
+            index
+            for index in range(len(seeds))
+            if all(speeds[label][index] is not None for label in labels)
+        ]
+        TossingRoomComparison._plot_paired(
+            ax=axes[2],
+            labels=labels,
+            per_seed={label: [float(speeds[label][i]) for i in drawable] for label in labels},
+        )
+        axes[2].set_ylabel(f"online transitions to first reach {threshold:.0f}%")
+        axes[2].set_title(
+            f"Speed to {threshold:.0f}%, per seed ({len(drawable)}/{len(seeds)} in every arm)",
+            fontsize=10,
+        )
+
+        for ax in axes:
+            ax.grid(True, alpha=0.25, linewidth=0.6)
+            for spine in ("top", "right"):
+                ax.spines[spine].set_visible(False)
+        fig.tight_layout()
+        fig.savefig(output, dpi=150)
+
+    @staticmethod
+    def _plot_paired(*, ax, labels: list[str], per_seed: dict[str, list[float]]) -> None:
+        """One line per seed across the arms, plus each arm's mean as a heavy marker.
+
+        Lines rather than separate box plots because the seeds are shared: the question
+        is whether a *given* seed moves when the budget changes, which a marginal
+        distribution cannot show. Points are jittered horizontally only, so no vertical
+        value is ever displaced."""
+        positions = list(range(len(labels)))
+        count = len(next(iter(per_seed.values()))) if per_seed else 0
+        for index in range(count):
+            offsets = [position + (index - (count - 1) / 2) * 0.02 for position in positions]
+            ax.plot(
+                offsets,
+                [per_seed[label][index] for label in labels],
+                color="tab:grey",
+                alpha=0.55,
+                linewidth=1.0,
+                marker="o",
+                markersize=3.5,
+            )
+        for position, label in zip(positions, labels, strict=True):
+            values = per_seed[label]
+            if values:
+                ax.plot(
+                    [position],
+                    [statistics.mean(values)],
+                    marker="D",
+                    markersize=8,
+                    color=_ARM_STYLES[positions.index(position) % len(_ARM_STYLES)][0],
+                    zorder=5,
+                )
+        ax.set_xticks(positions)
+        ax.set_xticklabels(labels, fontsize=8)
+        ax.set_xlim(-0.5, len(labels) - 0.5)
+
+    @staticmethod
+    def print_table(
+        *, arms: list[tuple[str, Path]], random_skills_root: Path | None, threshold: float = 100.0
+    ) -> None:
         rows = [(label, root, "ees") for label, root in arms]
         if random_skills_root is not None:
             rows.append(("random skills", random_skills_root, "random-skills"))
         header = (
             f"{'arm':<28}{'seeds':>6}{'first':>8}{'final':>8}"
-            f"{'sd':>7}{'worst':>7}{'zeros':>7}{'down':>6}"
+            f"{'sd':>7}{'worst':>7}{'zeros':>7}{'down':>6}{'reach':>8}{'never':>7}"
         )
         print(header)
         print("-" * len(header))
         for label, root, method in rows:
-            summary = TossingRoomComparison.summarize(root=root, method=method)
+            summary = TossingRoomComparison.summarize(root=root, method=method, threshold=threshold)
             if not summary:
                 print(f"{label:<28}{'(no stats.json found)':>42}")
                 continue
@@ -173,8 +427,13 @@ class TossingRoomComparison:
                 f"{label:<28}{summary['seeds']:>6.0f}{summary['first_mean']:>8.1f}"
                 f"{summary['final_mean']:>8.1f}{summary['final_sd']:>7.1f}"
                 f"{summary['worst_seed']:>7.1f}{summary['seeds_at_zero']:>7.0f}"
-                f"{summary['downward_steps']:>6.0f}"
+                f"{summary['downward_steps']:>6.0f}{summary['median_reach']:>8.0f}"
+                f"{summary['never_reached']:>7.0f}"
             )
+        print(
+            f"  reach = median transitions to first reach {threshold:.0f}% "
+            "(-1 if no seed ever did); never = seeds that never reached it"
+        )
 
 
 def _parse_arm(*, raw: str) -> tuple[str, Path]:
@@ -194,7 +453,25 @@ def _parse_args() -> argparse.Namespace:
         help='Repeatable, "label=results-root". One EES curve per arm.',
     )
     parser.add_argument("--random-skills-root", type=Path, default=None)
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=100.0,
+        help=(
+            "Success rate a seed must reach for the speed statistic. Defaults to 100 "
+            "because this domain's arms saturate, which makes the endpoint blind."
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--grid-output",
+        type=Path,
+        default=None,
+        help=(
+            "If given, also render the sampler-iteration grid figure there: the EES "
+            "arms' curves plus their per-seed endpoints and speeds, paired."
+        ),
+    )
     parser.add_argument("--title", default="Tossing Room: EES vs. the random-skills lower bound")
     return parser.parse_args()
 
@@ -202,13 +479,20 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     arms = [_parse_arm(raw=raw) for raw in args.arm]
-    TossingRoomComparison.print_table(arms=arms, random_skills_root=args.random_skills_root)
+    TossingRoomComparison.print_table(
+        arms=arms, random_skills_root=args.random_skills_root, threshold=args.threshold
+    )
+    TossingRoomComparison.print_paired_tests(arms=arms, threshold=args.threshold)
     TossingRoomComparison.render(
         arms=arms,
         random_skills_root=args.random_skills_root,
         output=args.output,
         title=args.title,
     )
+    if args.grid_output is not None:
+        TossingRoomComparison.render_grid(
+            arms=arms, output=args.grid_output, threshold=args.threshold
+        )
 
 
 if __name__ == "__main__":

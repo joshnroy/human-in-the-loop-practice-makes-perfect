@@ -31,9 +31,11 @@ class TossingRoomProblem(Problem):
         the very next step replans to `Throw` again. Every spare step is therefore
         another free draw at the ~0.19-probability window a uniformly random force
         lands in, and the horizon silently sets how many draws the evaluation grants.
-        At `2 * num_rooms + 2 = 16` an *unpracticed* EES scored 93% on 30 test tasks
-        purely by retrying (measured: 243 Throw actions across 60 episodes, up to 13
-        in one), which leaves a learned sampler no headroom to demonstrate anything.
+        At `2 * num_rooms + 2 = 16` an *unpracticed* EES scored 94.7% purely by
+        retrying, versus 62.7% at 7 (measured over 300 episodes, 10 seeds x 30 test
+        tasks: 1133 Throw actions against 648, up to 13 in a single episode, with the
+        non-stochastic skill counts identical at both horizons). 94.7% leaves a
+        learned sampler no headroom at all to demonstrate anything.
         Two spare actions is what Light Switch's `grid_size + 2` grants -- its solve
         is `grid_size - 1` moves plus one toggle -- so this ports the *spare budget*,
         which is the load-bearing quantity, rather than the coincidental room count.
