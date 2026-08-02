@@ -108,6 +108,29 @@ def test_skill_declares_parameters_preconditions_effects_and_param_dim() -> None
     assert skill.param_dim == 0
 
 
+def test_skill_ignore_effects_default_to_empty() -> None:
+    """Most operators are monotone, so `ignore_effects` is opt-in -- every existing
+    Skill construction keeps working unchanged."""
+    skill, *_ = _move_skill()
+    assert skill.ignore_effects == frozenset()
+
+
+def test_skill_accepts_ignore_effects_as_bare_predicates() -> None:
+    """Unlike the other three effect fields, ignore effects are Predicates, not
+    LiftedAtoms: they name a whole predicate, with no variables to bind."""
+    robot = Variable(name="robot", type=_BLOCK)
+    skill = Skill(
+        name="Teleport",
+        parameters=(robot,),
+        preconditions=frozenset(),
+        add_effects=frozenset(),
+        delete_effects=frozenset(),
+        ignore_effects=frozenset({_AT}),
+        param_dim=0,
+    )
+    assert skill.ignore_effects == frozenset({_AT})
+
+
 def test_skill_rejects_a_precondition_variable_not_in_parameters() -> None:
     robot = Variable(name="robot", type=_BLOCK)
     stray = Variable(name="stray", type=_BLOCK)
@@ -184,6 +207,23 @@ def test_ground_skill_grounds_delete_effects_by_substituting_objects_for_paramet
     assert ground_skill.delete_effects == frozenset({
         GroundAtom(predicate=_AT, objects=(_OBJ, _OBJ2))
     })
+
+
+def test_ground_skill_forwards_ignore_effects_ungrounded() -> None:
+    """There is nothing to substitute into an ignore effect -- it names a Predicate,
+    not an atom -- so grounding passes it straight through, like predicators'
+    `_GroundNSRT.ignore_effects`."""
+    robot = Variable(name="robot", type=_BLOCK)
+    skill = Skill(
+        name="Teleport",
+        parameters=(robot,),
+        preconditions=frozenset(),
+        add_effects=frozenset(),
+        delete_effects=frozenset(),
+        ignore_effects=frozenset({_AT}),
+        param_dim=0,
+    )
+    assert GroundSkill(skill=skill, objects=(_OBJ,)).ignore_effects == frozenset({_AT})
 
 
 def test_ground_skills_with_equal_content_are_equal_and_hashable() -> None:

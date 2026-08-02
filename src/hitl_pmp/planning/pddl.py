@@ -14,7 +14,8 @@ class PddlWriter:
     Only `FastDownwardPlanner` (fast_downward.py) consumes this -- it writes the two
     strings to temp files and hands them to a real Fast Downward.
 
-    Two deliberate deviations from predicators, both forced by type differences:
+    Three deliberate deviations from predicators, the first two forced by type
+    differences:
 
     1. **The "?" prefix.** predicators' `Variable.name` is required to already start
        with "?" (its `pddl_str` just interpolates `p.name`), while ours are plain
@@ -29,6 +30,16 @@ class PddlWriter:
        string (atoms, whose leading token is the predicate name anyway). That is this
        codebase's deterministic-ordering choice: the same inputs in any order always
        produce the identical file, which is what determinism is actually for.
+    3. **Ignore-effect quantifier names.** An `ignore_effects` predicate becomes a
+       universally-quantified delete, `(forall (?x0 - t0 ...) (not (P ?x0 ...)))`,
+       exactly as predicators writes it -- except that predicators hardcodes the
+       `?x{i}` names, which a `forall` would silently *shadow* if the action itself
+       declared a parameter named `?x0` (wiping every atom of that predicate rather
+       than only the intended ones). Here the prefix is lengthened until it cannot
+       collide with any of that action's own parameter names; for every skill in this
+       repo it stays plain `x`, so the emitted text is identical to predicators'. A
+       0-arity ignore effect has nothing to quantify over, so it is written as the
+       plain `(not (P))` it is equivalent to -- `(forall () ...)` is not legal PDDL.
 
     No type hierarchy is emitted, because `Type` has no `parent` (see
     `core/problem/environment/types.py`) -- predicators' `create_pddl_types_str`
@@ -118,11 +129,45 @@ class PddlWriter:
                 f"(not {atom_str})"
                 for atom_str in PddlWriter._sorted_lifted_atom_strs(atoms=skill.delete_effects)
             )
+        if skill.ignore_effects:
+            if effects_str:
+                effects_str += "\n        "
+            prefix = PddlWriter._quantified_variable_prefix(skill=skill)
+            effects_str += "\n        ".join(
+                PddlWriter._ignore_effect_str(predicate=predicate, prefix=prefix)
+                for predicate in sorted(skill.ignore_effects, key=lambda p: p.name)
+            )
         return f"""(:action {skill.name}
     :parameters ({params_str})
     :precondition (and {preconds_str})
     :effect (and {effects_str})
   )"""
+
+    @staticmethod
+    def _ignore_effect_str(*, predicate: Predicate, prefix: str) -> str:
+        """One `ignore_effects` predicate as a universally-quantified delete: "after
+        this action, no atom of this predicate holds, whatever its objects". Mirrors
+        predicators' `STRIPSOperator.pddl_str`, apart from the quantifier naming and
+        the 0-arity case (see this class's docstring, deviation 3)."""
+        if not predicate.types:
+            return f"(not ({predicate.name}))"
+        slots_str = " ".join(f"?{prefix}{i} - {t.name}" for i, t in enumerate(predicate.types))
+        refs_str = " ".join(f"?{prefix}{i}" for i in range(len(predicate.types)))
+        return f"(forall ({slots_str}) (not ({predicate.name} {refs_str})))"
+
+    @staticmethod
+    def _quantified_variable_prefix(*, skill: Skill) -> str:
+        """A base name for an ignore effect's `forall` variables that none of this
+        action's own parameters can shadow -- `"x"` (matching predicators) unless the
+        action really does declare a parameter named `x0`/`x1`/..., in which case the
+        prefix grows (`xx`, `xxx`, ...) until it is unique. It grows by repeating a
+        letter rather than prepending punctuation because PDDL names must *begin* with
+        a letter."""
+        reserved = {parameter.name for parameter in skill.parameters}
+        prefix = "x"
+        while any(name.startswith(prefix) and name[len(prefix) :].isdigit() for name in reserved):
+            prefix = f"{prefix}x"
+        return prefix
 
     @staticmethod
     def _sorted_lifted_atom_strs(*, atoms: frozenset[LiftedAtom]) -> list[str]:

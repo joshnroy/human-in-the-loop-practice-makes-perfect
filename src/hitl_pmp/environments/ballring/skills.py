@@ -4,6 +4,7 @@ import numpy as np
 
 from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, Object, State
+from hitl_pmp.core.problem.tasks.types import Predicate
 
 from .environment import BallRingEnvironment
 from .predicates import (
@@ -27,6 +28,17 @@ _robot = Variable(name="robot", type=_E.robot_type)
 _ball = Variable(name="ball", type=_E.ball_type)
 _cup = Variable(name="cup", type=_E.cup_type)
 _table = Variable(name="table", type=_E.table_type)
+
+# The robot has one pose, so it can be within reach of exactly one thing at a time:
+# every NavigateTo* invalidates *all three* reachability predicates, not only the one
+# it re-establishes. That is inexpressible as delete effects (which object would they
+# name?), hence `ignore_effects` -- see `Skill`'s docstring in core/method/types.py.
+# Ported from predicators' three NavigateTo* NSRTs.
+_NAVIGATE_IGNORE_EFFECTS: frozenset[Predicate] = frozenset({
+    IS_REACHABLE_SURFACE,
+    IS_REACHABLE_BALL,
+    IS_REACHABLE_CUP,
+})
 
 
 class BallRingSkills:
@@ -73,6 +85,7 @@ class BallRingSkills:
             LiftedAtom(predicate=IS_REACHABLE_SURFACE, variables=(_robot, _table))
         }),
         delete_effects=frozenset(),
+        ignore_effects=_NAVIGATE_IGNORE_EFFECTS,
         param_dim=0,
     )
     NAVIGATE_TO_BALL: ClassVar[Skill] = Skill(
@@ -81,6 +94,7 @@ class BallRingSkills:
         preconditions=frozenset(),
         add_effects=frozenset({LiftedAtom(predicate=IS_REACHABLE_BALL, variables=(_robot, _ball))}),
         delete_effects=frozenset(),
+        ignore_effects=_NAVIGATE_IGNORE_EFFECTS,
         param_dim=0,
     )
     NAVIGATE_TO_CUP: ClassVar[Skill] = Skill(
@@ -89,6 +103,7 @@ class BallRingSkills:
         preconditions=frozenset(),
         add_effects=frozenset({LiftedAtom(predicate=IS_REACHABLE_CUP, variables=(_robot, _cup))}),
         delete_effects=frozenset(),
+        ignore_effects=_NAVIGATE_IGNORE_EFFECTS,
         param_dim=0,
     )
 
@@ -107,6 +122,9 @@ class BallRingSkills:
             LiftedAtom(predicate=BALL_ON_TABLE, variables=(_ball, _table)),
             LiftedAtom(predicate=HAND_EMPTY, variables=()),
         }),
+        # Lifting a ball off a table takes it out of whatever cup it was in --
+        # including cups this skill's parameters never name.
+        ignore_effects=frozenset({BALL_IN_CUP}),
         param_dim=0,
     )
     PICK_BALL_FROM_FLOOR: ClassVar[Skill] = Skill(
@@ -230,6 +248,9 @@ class BallRingSkills:
             LiftedAtom(predicate=BALL_ON_FLOOR, variables=(_ball,)),
         }),
         delete_effects=frozenset({LiftedAtom(predicate=HOLDING_BALL, variables=(_ball,))}),
+        # The ball lands somewhere in the middle of the room: out of every cup, and
+        # no longer where the robot was standing when it was reachable.
+        ignore_effects=frozenset({BALL_IN_CUP, IS_REACHABLE_BALL}),
         param_dim=0,
     )
     PLACE_BALL_IN_CUP_ON_FLOOR: ClassVar[Skill] = Skill(

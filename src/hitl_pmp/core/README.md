@@ -296,12 +296,13 @@ distinction only exists inside a domain's own `Predicate.holds` classifiers.
 
 ## `Skill`/`GroundSkill` are a lifted/grounded pair, like `Predicate`/`GroundAtom`
 
-`Skill` (name + `parameters` + `preconditions`/`add_effects`/`delete_effects` +
-`param_dim`) is a lifted template — what a `Method` can select before being bound to
-concrete objects; `GroundSkill` (`skill` + `objects`) binds one to a specific object
-tuple, mirroring `GroundAtom`'s shape in `problem/tasks/types.py` exactly, and
-exposes `.preconditions`/`.add_effects`/`.delete_effects` as *grounded* `GroundAtom`s
-(substituting `objects` for `skill.parameters` positionally). Continuous parameters
+`Skill` (name + `parameters` + `preconditions`/`add_effects`/`delete_effects`/
+`ignore_effects` + `param_dim`) is a lifted template — what a `Method` can select
+before being bound to concrete objects; `GroundSkill` (`skill` + `objects`) binds one
+to a specific object tuple, mirroring `GroundAtom`'s shape in `problem/tasks/types.py`
+exactly, and exposes `.preconditions`/`.add_effects`/`.delete_effects` as *grounded*
+`GroundAtom`s (substituting `objects` for `skill.parameters` positionally).
+Continuous parameters
 are deliberately **not** part of `GroundSkill` — per `predicators`'
 `_Option`/`_GroundNSRT.sample_option()` precedent, params are sampled fresh each
 execution (a concrete `Method`'s job, inside `execute_skill`), so
@@ -314,7 +315,16 @@ This was deliberately deferred until a real consumer existed; `methods/
 practice_makes_perfect/` (reproducing the original PMP/EES paper) is that consumer —
 it needs real STRIPS operators to task-plan over via Fast Downward (`planning/`).
 `LiftedAtom.ground(*, substitution)` produces a `GroundAtom`, mirroring
-`Predicate.__call__`. See `environments/lightswitch/skills.py` for a concrete
+`Predicate.__call__`. `ignore_effects` is the one effect field that is *not*
+`LiftedAtom`s: it holds bare `Predicate`s, meaning "every ground atom of these
+predicates becomes false afterward, whatever its objects" — the only way to express a
+non-monotone operator whose sweep reaches objects its own parameters never name (Ball-
+Ring's `NavigateTo*` revoke *all* reachability, not just the one they add). `GroundSkill`
+forwards it ungrounded, `PddlWriter` emits it as a `forall`-negation, and applying an
+operator symbolically drops it *before* delete/add effects so an ignored-and-added
+predicate stays true (predicators' `utils.apply_operator`). Nothing in `src/` computes a
+symbolic successor today — Fast Downward does it — so that ordering matters only to the
+PDDL and to any future in-Python simulation. See `environments/lightswitch/skills.py` for a concrete
 instantiation (`MoveRobot`, `TurnOnLight`, `TurnOffLight`, `JumpToLight`) and its
 `sample_params`/`compute_action` static methods, which round out the lifted →
 grounded → raw-`Action` pipeline these types describe.
