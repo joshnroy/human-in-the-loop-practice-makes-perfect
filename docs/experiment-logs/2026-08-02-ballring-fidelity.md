@@ -215,6 +215,22 @@ The new rule is also far less knife-edge than the old one. Across 6 perturbation
 walk parameters (6/8/12 walks, 30/40/60 steps, oracle horizon 8/12, oracle length 8/12/24)
 all three domains report `missing=[]` and `violations=0` every time.
 
+**The detector was re-verified, not just observed to be quiet.** `missing=[]` and
+`violations=0` are *negative* results: they say the test does not fire, not that it still
+can — and the change makes the walk deliberately less undirected, which is precisely what
+the module docstring credits with finding bug #1. So both bugs this file exists to catch
+were reconstructed in-process (no checkout) and re-run under the **new** rule:
+
+| reconstructed model | violations |
+|---|---|
+| pre-#27 Ball-Ring: `ignore_effects` dropped from every `NavigateTo*` | **656** |
+| pre-#28 Tossing Room: `PileInRoom` dropped from `Pickup` | **388** |
+| both current models (control) | 0 |
+
+The new advance rule still catches both. (This is what the Tossing Room log meant by "a
+green assertion that can never fire is worse than no assertion" — after changing a
+detector, confirm it still detects.)
+
 ---
 
 ## Result: a clean null

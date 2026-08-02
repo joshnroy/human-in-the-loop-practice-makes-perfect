@@ -90,9 +90,14 @@ from hitl_pmp.planning.grounding import SkillGrounder
 # draw changes the state.)
 _PARAM_DRAWS = 30
 
-# Walks seeded from freshly sampled train tasks. These are the ones that find bug #1's
-# shape: only an undirected ramble navigates somewhere, navigates somewhere else, and
-# then tries to act on the first place.
+# Walks seeded from freshly sampled train tasks. These undirected *seeds* are what find
+# bug #1's shape: something has to navigate somewhere, navigate somewhere else, and then
+# try to act on the first place. (The advance rule within a walk is NOT undirected -- see
+# `_reachable_execution_count` -- but the states these seeds drop it into are, and that is
+# what matters here. Confirmed still true after that rule changed: reconstructing the
+# pre-#27 Ball-Ring model in-process, with `ignore_effects` dropped from every
+# `NavigateTo*`, makes this file report 656 violations, and dropping `PileInRoom` from
+# Tossing Room's `Pickup` reproduces bug #2 at 388 -- against 0 for both current models.)
 _NUM_RANDOM_WALKS = 8
 _RANDOM_WALK_LENGTH = 40
 
