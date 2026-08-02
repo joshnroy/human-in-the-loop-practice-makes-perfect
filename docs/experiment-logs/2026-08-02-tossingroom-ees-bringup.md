@@ -24,9 +24,11 @@ cannot matter before any training has happened.
 ![The throw force converges onto each task's target](2026-08-02-tossingroom-throw-convergence.png)
 
 The mechanism, from inside the same runs (3 seeds, 10k sampler iterations): the median
-greedy throw error crosses into the `throw_tolerance` band at around 700 transitions,
-and the retry count falls toward one throw per episode as it does. Detail and per-seed
-numbers in [the section below](#does-ees-learn-yes--it-stops-missing-so-it-stops-retrying).
+greedy throw error first crosses into the `throw_tolerance` band at 750 transitions,
+comes back out at 900, and settles below it from 1050 on — and the retry count falls
+toward one throw per episode as it does. The non-monotonicity is real and is discussed
+below, not smoothed away. Detail and per-seed numbers in
+[the section below](#does-ees-learn-yes--it-stops-missing-so-it-stops-retrying).
 
 ## The bracket
 
