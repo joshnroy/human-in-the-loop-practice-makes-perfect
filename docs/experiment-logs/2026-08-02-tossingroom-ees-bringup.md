@@ -1,13 +1,17 @@
 # Tossing Room: EES learns the throw force, and the evaluation horizon was hiding it
 
-**Result.** EES's learned sampler drives `Throw`'s force onto each task's own
-`target_force`: the median greedy error falls from 0.34 (chance) to 0.03, and the
-per-throw hit rate goes 19% → 100%. The success-rate curve could not show this,
-because `TossingRoomProblem.max_episode_steps` was `2 * num_rooms + 2 = 16` against a
-5-skill solve — eleven spare steps, every one of them a free retry of the single
-stochastic skill. An **unpracticed** EES scored 94.7% that way (every one of 10 seeds
-between 87% and 100%). Porting Light Switch's `H_eval` convention (longest shortest
-solve + 2 = 7) makes the curve legible without touching a single practice step.
+**Result.** `TossingRoomProblem.max_episode_steps` was `2 * num_rooms + 2 = 16` against
+a 5-skill solve — eleven spare steps, every one of them a free retry of the domain's
+single stochastic skill. An **unpracticed** EES scored **94.7%** that way, five points
+under the skill oracle, having learned nothing at all; at the corrected horizon it
+scores 62.7%. Porting Light Switch's `H_eval` convention (longest shortest solve + 2 =
+7) makes the curve legible without touching a single practice step.
+
+With the metric fixed, EES's learned sampler is visibly doing the thing it is supposed
+to do: it drives `Throw`'s force onto each task's own `target_force`, median greedy
+error **0.253 → 0.053** (the tolerance is 0.1), per-throw hit rate **22% → 78%** against
+a 19% chance rate, and greedy throws per throw-episode **2.57 → 1.28** against a floor
+of 1. It stops retrying because it stops missing.
 
 ![EES vs. the random-skills lower bound](2026-08-02-tossingroom-ees-curves.png)
 
@@ -18,6 +22,11 @@ same first sweep to the decimal (62.3%), which is the sanity check that the budg
 cannot matter before any training has happened.
 
 ![The throw force converges onto each task's target](2026-08-02-tossingroom-throw-convergence.png)
+
+The mechanism, from inside the same runs (3 seeds, 10k sampler iterations): the median
+greedy throw error crosses into the `throw_tolerance` band at around 700 transitions,
+and the retry count falls toward one throw per episode as it does. Detail and per-seed
+numbers in [the section below](#does-ees-learn-yes--it-stops-missing-so-it-stops-retrying).
 
 ## The bracket
 
@@ -139,37 +148,73 @@ that all fail against `2 * num_rooms + 2`, including one that pins the property 
 formula got wrong — padding a layout with rooms nobody walks to must not buy extra
 attempts (`num_rooms=40` still gives 7).
 
-## Does EES learn? Yes — and this is horizon-independent
+## Does EES learn? Yes — it stops missing, so it stops retrying
 
-Measured *before* the horizon change, so it cannot be an artifact of it. Every `Throw`
-issued during an evaluation sweep, greedy only (epsilon never fires at evaluation
-time), seed 0, 10 cycles × 150 steps, 30 test tasks, 10000 sampler iterations:
+The success rate says *that* EES improves; it does not say the improvement is the throw
+force rather than something else. This looks directly at the learned quantity. Every
+`Throw` issued during an evaluation sweep, greedy only (epsilon never fires at
+evaluation time), at the shipped `H = 7`, 3 seeds × 10 cycles × 150 steps, 30 test
+tasks, 10000 sampler iterations:
 
-| sweep | greedy throws | mean \|force − target\| | within tolerance |
-|---|---|---|---|
-| 0 (pre-practice) | 124 | 0.339 | 19% |
-| 1 | 101 | 0.272 | 21% |
-| 2 | 107 | 0.322 | 20% |
-| 3 | 205 | 0.328 | **6%** |
-| 4 | 209 | 0.332 | **6%** |
-| 5 | 40 | 0.102 | 65% |
-| 6 | 27 | 0.043 | 96% |
-| 7 | 29 | 0.053 | 90% |
-| 8 | 26 | 0.034 | 100% |
-| 9 | 26 | 0.036 | 100% |
-| 10 | 26 | 0.033 | 100% |
+| transitions | solved % | median \|force − target\| | within tolerance | greedy throws per throw-episode |
+|---|---|---|---|---|
+| 0 (pre-practice) | 64.4 | 0.253 | 22% | 2.57 |
+| 150 | 57.8 | 0.249 | **18%** | 2.67 |
+| 300 | 75.6 | 0.188 | 36% | 1.98 |
+| 450 | 76.7 | 0.233 | 38% | 1.97 |
+| 600 | 70.0 | 0.188 | 34% | 2.04 |
+| 750 | 96.7 | 0.048 | 84% | 1.22 |
+| 900 | 86.7 | 0.125 | 48% | 1.79 |
+| 1050 | 94.4 | 0.069 | 63% | 1.50 |
+| 1200 | 93.3 | 0.063 | 66% | 1.42 |
+| 1350 | 98.9 | 0.048 | 84% | 1.19 |
+| 1500 | 96.7 | 0.053 | 78% | 1.28 |
 
-Two things worth naming:
+The learned quantity moves, and it moves in the direction the success rate needs.
+Median greedy error falls **0.253 → 0.053**, from a quarter of the force range down to
+half the tolerance — i.e. from outside the band the throw has to land in, to inside it.
+The per-throw hit rate goes **22% → 78%** against a chance rate of 19%, and the policy
+correspondingly stops retrying: **2.57 → 1.28** greedy throws per throw-episode, against
+a floor of exactly 1.
 
-1. **The count is the tell.** 26 greedy throws across 30 test tasks is one throw per
-   throw-goal task (the rest are the `EMPTY` family, which needs none). The policy
-   went from needing 124 attempts to needing 26 — i.e. it stopped retrying, because it
-   stopped missing.
-2. **It gets worse before it gets better.** At sweeps 3–4 the classifier's argmax is
-   *below* chance (6% versus 19%) and attempts nearly double. An underconstrained
-   classifier confidently picking a wrong region is worse than picking at random. This
-   is the same instability the Ball-Ring convergence work saw, and it is what the
-   dip at 600 transitions in the success curve below is made of.
+**That last column is the horizon-robust version of the claim**, and the one worth
+keeping: a policy that has learned the force needs one throw, and a policy that is
+guessing needs however many the horizon allows. It halved while the solve rate went
+64% → 97%. It stopped retrying because it stopped missing.
+
+**Convergence is noisy, not clean.** The 900-transition sweep gives back most of the
+750 sweep's gain (84% → 48% within tolerance, median error 0.048 → 0.125) before
+recovering. And every one of the three seeds has at least one sweep where the greedy
+sampler is *below* its own 19% chance rate — seed 1 at 150 transitions (13%), seed 2 at
+150 (17%), seed 0 at 600 (15%) — which is what an underconstrained classifier
+confidently picking a wrong region looks like. Those excursions land at *different*
+sweeps per seed, so they mostly wash out of the population curve: the ten-seed 10k arm's
+mean has exactly one substantial downward step, at 150 transitions (62.3% → 56.7%), and
+after that climbs steadily to 99.0% with only two sub-half-point wobbles once it is up
+against the ceiling. **The per-seed instability is real; the mean curve is not made of
+it** — in particular, no dip appears at 450–600 where seed 0's excursion sits.
+
+**Provenance.** These traces come from the same runs that produced the curves above,
+not a re-implementation: `TracingEesMethod`/`TracingEnvironment` are ordinary subclass
+overrides driven through the real `PracticeLoop`, and seed 0's per-sweep success
+sequence — 18, 19, 21, 20, 14, 27, 27, 30, 29, 29, 30 out of 30 — comes out *identical*
+to `results/tossingroom-10000/ees/0/stats.json` from the CLI-driven arm. The
+instrumentation does not perturb the run it measures.
+
+**These numbers are not comparable to the same table taken at `H = 16`.** The per-sweep
+statistic pools every greedy throw in the sweep, and a task the policy is bad at
+contributes more throws than one it is good at — so a longer horizon over-samples the
+failures and reports a worse median error and a lower hit rate for the *same* policy.
+The old horizon's version of this table is superseded, not carried forward.
+
+**A consistency check on the whole story.** The same retry arithmetic that explained the
+unpracticed score, run forward with the *learned* hit rate instead of the chance one,
+predicts `0.4(1 − 0.22³) + 0.4(1 − 0.22⁴) + 0.2 ≈ 99.5%` at `H = 7` — against 96.7%
+measured on these three seeds and 99.0% on the full ten-seed arm. Consistent to within
+what 90 and 300 episodes can resolve, though this direction of the argument is the
+weaker one: a *learned* greedy sampler's retries are not independent draws the way a
+random sampler's are, since re-throwing at a task the classifier has wrong tends to
+reproduce the same wrong force. Treat it as corroboration, not as a second derivation.
 
 ## The sampler-iteration grid: a null, and an underpowered one
 
@@ -197,12 +242,23 @@ approximation nor a t-test applies):
 | 10k vs 100k | final % solved | 3 | 0.0 | 0.750 |
 | 10k vs 100k | transitions to 100% | 7 | 0.0 | 0.906 |
 
-**This is the opposite of Ball-Ring**, where the same grid found 10 000 beating 1 000
-by **+33 points (p = 0.016)**. The domains differ in exactly the way that predicts it:
-Ball-Ring's sampler has to learn a 2-D grasp/place parameterisation against geometric
-constraints, while Tossing Room's has to learn a **single scalar** — one throw force
-against one per-task target, on a 1-D interval where the answer is 20% of the range
-wide. A thousand iterations already finds it, so more cannot help.
+**This is the opposite of Ball-Ring.** The same three-value grid there
+([2026-07-29-eval-protocol-fidelity.md](2026-07-29-eval-protocol-fidelity.md)) found
+10 000 beating 1 000 by **+33 points** — 34% → 67% mean, worst seed 0% → 30%, and
+*three* seeds collapsed to 0% at 1 000 against none at 10 000 — reported there at
+p = 0.016. (That log does not record which test produced the p; the effect size and the
+collapse counts are what this comparison rests on, and those are unambiguous.)
+
+The domains differ in exactly the way that predicts it: Ball-Ring's sampler has to
+learn a 2-D grasp/place parameterisation against geometric constraints, while Tossing
+Room's has to learn a **single scalar** — one throw force against one per-task target,
+on a 1-D interval where the answer is 20% of the range wide. A thousand iterations
+already finds it, so more cannot help.
+
+Tossing Room is not the first domain here to behave this way. That same grid found
+Light Switch saturating identically (final means 100 / 100 / 99, "the domain saturates,
+so it cannot discriminate these settings at all"). Two of three domains cannot see this
+lever; the one that can is the one with the hardest sampler.
 
 **How underpowered is this, exactly?** The honest answer is not an MDE from a t-test,
 because the limiting factor is not sample size but **censoring**. Nine or ten of ten
@@ -213,9 +269,10 @@ cannot produce a two-sided p below `2 / 2ⁿ`, so **`n = 3` has a p floor of 0.2
 0.05. The endpoint on this domain is not a low-power measurement; it is an unusable
 one.
 
-That is also the honest contrast with Ball-Ring: +33 points at p = 0.016 means the
-effect was near-unanimous in sign across seeds, which is what a signed-rank needs.
-Tossing Room has no headroom in which to be unanimous.
+That is also the honest contrast with Ball-Ring: a +33-point effect on an arm whose
+seeds ranged from 0% to well below the ceiling had room to move consistently in one
+direction across seeds, which is exactly what a signed-rank needs to reach a small p.
+Tossing Room has no headroom in which to be consistent.
 
 The `transitions to 100%` column exists for exactly this reason — it is the only
 statistic left with any range once the endpoint saturates, since a seed that reaches
