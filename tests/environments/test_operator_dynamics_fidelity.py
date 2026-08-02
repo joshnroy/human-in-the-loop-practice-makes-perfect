@@ -338,12 +338,13 @@ class OperatorDynamicsFidelity:
         violations: list[str] = []
         exercised: set[str] = set()
         checked: set[str] = set()
-        # Global across walks: the walk always advances with the least-executed skill it
-        # can, which turns a random ramble into a coverage-seeking one (Ball-Ring's
-        # three NavigateTo* have empty preconditions and would otherwise swamp every
-        # candidate set). Ties are broken by a seeded draw, not lexicographically --
-        # a lexicographic tie-break makes a Light Switch walk ping-pong between two
-        # cells forever.
+        # Global across walks: the walk always advances toward the least-executed skill
+        # it can reach within one more step (`_reachable_execution_count`), which turns
+        # a random ramble into a coverage-seeking one (Ball-Ring's three NavigateTo*
+        # have empty preconditions and would otherwise swamp every candidate set).
+        # Ties are broken by the candidate's own execution count and then by a seeded
+        # draw, not lexicographically -- a lexicographic tie-break makes a Light Switch
+        # walk ping-pong between two cells forever.
         executions: dict[str, int] = {skill.name: 0 for skill in case.provider.skills()}
 
         for index, start in enumerate(OperatorDynamicsFidelity._starts(case=case)):
@@ -445,7 +446,16 @@ class OperatorDynamicsFidelity:
             return None
         ground_skill, params = min(
             zip(advanceable, rng.random(len(advanceable)), strict=True),
-            key=lambda pair: (executions[pair[0][0].skill.name], float(pair[1])),
+            key=lambda pair: (
+                OperatorDynamicsFidelity._reachable_execution_count(
+                    case=case,
+                    believed=believed,
+                    ground_skill=pair[0][0],
+                    executions=executions,
+                ),
+                executions[pair[0][0].skill.name],
+                float(pair[1]),
+            ),
         )[0]
         case.env.take_action(
             action=case.provider.compute_action(
@@ -454,6 +464,61 @@ class OperatorDynamicsFidelity:
         )
         executions[ground_skill.skill.name] += 1
         return OperatorDynamicsFidelity.apply(atoms=believed, ground_skill=ground_skill)
+
+    @staticmethod
+    def _reachable_execution_count(
+        *,
+        case: DomainCase,
+        believed: frozenset[GroundAtom],
+        ground_skill: GroundSkill,
+        executions: dict[str, int],
+    ) -> int:
+        """The advance rule's primary sort key: the execution count of the
+        least-executed skill reachable by taking `ground_skill` and then one more step.
+        One-step lookahead over the *symbolic* model only -- no environment execution,
+        so this costs one extra grounding pass per candidate and nothing else.
+
+        It is the same "always advance toward the least-executed skill" rule as before,
+        relaxed by one step: a candidate that is itself well-worn still wins if it is
+        the only way to reach something rare. A *binary* "does this unlock a
+        never-executed skill" flag was tried first and is too greedy -- it chases each
+        new skill the instant it appears and then abandons the rest, which cost
+        Ball-Ring coverage of `PickBallFromFloor` and `PickCupWithBallFromFloor`.
+
+        WHY the plain least-executed rule is not enough. Ball-Ring's
+        `PlaceBallInCupOnFloor` needs `HoldingBall and IsReachableCup` believed at once.
+        Every ball-acquiring skill requires `IsReachableBall`/`IsReachableSurface`, and
+        every `NavigateTo*` wipes all three reachability atoms via `ignore_effects`, so
+        the ONLY believed route is a `NavigateToCup` executed *while already holding the
+        ball*. `NavigateTo*` have empty preconditions and are therefore executed
+        constantly, so they are never the least-executed candidate at that one moment --
+        the very deprioritization that keeps them from swamping the walk is what locks
+        this state out. `PlaceBallInCupOnFloor` can then never be enumerated, so its own
+        count stays 0 forever and the least-executed rule cannot rescue it either.
+
+        This is not a hypothetical. Before the place-on-floor jitter was restored, both
+        floor placements landed on the exact room center, so a robot standing next to
+        the floor cup was also next to the ball: `IsReachableCup` came for free at pick
+        time and the walk reached this state 12 times without ever navigating to the cup
+        while holding the ball. Restoring the jitter (correctly) removed that
+        coincidence and the count went to 0 -- structurally, not stochastically: 8->16
+        walks, 40->80 steps and oracle horizon 12->24 all left it at 0. Note the
+        navigation involved is NOT covered by
+        `_BALL_RING_NAVIGATION_TO_AN_OBJECT_OFF_THE_FLOOR`, which is scoped to the cup
+        being off the floor; here the cup is on the floor and the navigation genuinely
+        works. So this was a reachability gap in the search, never a licensed no-op."""
+        successor = OperatorDynamicsFidelity.apply(atoms=believed, ground_skill=ground_skill)
+        return min(
+            [executions[ground_skill.skill.name]]
+            + [
+                executions[candidate.skill.name]
+                for candidate in SkillGrounder.applicable_ground_skills(
+                    skills=case.provider.skills(),
+                    objects=case.provider.objects(),
+                    true_atoms=successor,
+                )
+            ]
+        )
 
     @staticmethod
     def _trial(
