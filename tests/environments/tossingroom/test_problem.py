@@ -41,8 +41,39 @@ def test_problem_requires_its_own_domains_types() -> None:
         )
 
 
-def test_max_episode_steps_scales_with_num_rooms() -> None:
-    assert _build_problem(num_rooms=7).max_episode_steps() == 16
+def test_max_episode_steps_is_the_longest_shortest_solve_plus_two() -> None:
+    """The paper's H_eval convention (Appendix F), the same one
+    LightSwitchProblem cites: exactly two spare actions beyond the longest solve
+    this layout admits. On the default layout the longest is TRASH -- Pickup, three
+    MoveRooms (3->4->5->6), Throw = 5 -- so the horizon is 7."""
+    assert _build_problem().max_episode_steps() == 7
+
+
+def test_max_episode_steps_tracks_the_layout_not_the_room_count() -> None:
+    """Padding a layout with rooms nobody has to walk to must not buy extra
+    attempts. This is the property the old `2 * num_rooms + 2` got wrong: it grew
+    with rooms the robot never visits, and every extra step is a free retry of the
+    one stochastic skill (Throw), which is what the evaluation is supposed to
+    measure."""
+    assert _build_problem(num_rooms=40).max_episode_steps() == 7
+
+
+def test_max_episode_steps_grows_when_a_bin_moves_further_away() -> None:
+    env = TossingRoomEnvironment(num_rooms=12, trash_bin_room=11, button_room=11)
+    problem = TossingRoomProblem(env=env, tasks=TossingRoomTasks(env=env))
+    # Pickup + 8 MoveRooms (3->11) + Throw = 10, plus the two spare.
+    assert problem.max_episode_steps() == 12
+
+
+def test_max_episode_steps_ignores_a_target_the_one_way_ledge_makes_unreachable() -> None:
+    """A room behind the ledge in the blocked direction cannot be reached at any
+    horizon, so it must not inflate the budget for the goals that *are* solvable."""
+    env = TossingRoomEnvironment(
+        num_rooms=12, start_room=1, blocked_right_from=2, trash_bin_room=11, button_room=11
+    )
+    problem = TossingRoomProblem(env=env, tasks=TossingRoomTasks(env=env))
+    # Only the recycling bin (room 1, distance 0) is reachable: Pickup + Throw = 2.
+    assert problem.max_episode_steps() == 4
 
 
 def test_run_task_episode_solves_a_recycling_task_with_the_oracle() -> None:

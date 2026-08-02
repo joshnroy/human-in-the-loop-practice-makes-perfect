@@ -20,11 +20,60 @@ class TossingRoomProblem(Problem):
     tasks: TossingRoomTasks
 
     def max_episode_steps(self) -> int:
-        """A generous bound on any goal's forward-only solve: Pickup + at most
-        num_rooms moves + Throw (or a walk to the button + Press). 2 * num_rooms + 2
-        comfortably covers all three families for any layout. Computed fresh each call
-        so an overridden self.env.num_rooms is respected."""
-        return 2 * self.env.num_rooms + 2
+        """The paper's H_eval convention (Appendix F), the same one
+        LightSwitchProblem cites: the **longest shortest solve this layout admits,
+        plus exactly two spare actions**. Computed fresh each call so overridden
+        layout config is respected.
+
+        This was `2 * num_rooms + 2` -- self-described as "a generous bound". The
+        generosity is not free, because `Throw` is the domain's one *stochastic*
+        skill: a failed throw leaves the robot holding the item in the bin room, so
+        the very next step replans to `Throw` again. Every spare step is therefore
+        another free draw at the ~0.19-probability window a uniformly random force
+        lands in, and the horizon silently sets how many draws the evaluation grants.
+        At `2 * num_rooms + 2 = 16` an *unpracticed* EES scored 93% on 30 test tasks
+        purely by retrying (measured: 243 Throw actions across 60 episodes, up to 13
+        in one), which leaves a learned sampler no headroom to demonstrate anything.
+        Two spare actions is what Light Switch's `grid_size + 2` grants -- its solve
+        is `grid_size - 1` moves plus one toggle -- so this ports the *spare budget*,
+        which is the load-bearing quantity, rather than the coincidental room count.
+
+        Note this bounds only the EVALUATION episode. An interaction period's length
+        is `--max-steps-per-interaction`, untouched by this, so tightening the horizon
+        cannot change how much practice experience any Method receives.
+        """
+        return self.longest_shortest_solve() + 2
+
+    def longest_shortest_solve(self) -> int:
+        """Skills in the longest of this layout's three goal families' shortest
+        solves: a throw goal is Pickup + walk to that item's bin room + Throw, and the
+        empty goal is walk to the button room + Press. Targets the one-way ledge makes
+        unreachable are skipped -- they are unsolvable at *any* horizon, so letting
+        them set the budget would only hand the solvable goals extra retries."""
+        lengths: list[int] = []
+        for bin_room in (self.env.recycling_bin_room, self.env.trash_bin_room):
+            distance = self.rooms_to_walk(room=bin_room)
+            if distance is not None:
+                lengths.append(1 + distance + 1)
+        distance = self.rooms_to_walk(room=self.env.button_room)
+        if distance is not None:
+            lengths.append(distance + 1)
+        # default=1 only for a degenerate layout with nothing reachable at all; the
+        # horizon still has to be positive for run_task_episode's goal check to run.
+        return max(lengths, default=1)
+
+    def rooms_to_walk(self, *, room: int) -> int | None:
+        """MoveRoom steps from the start room to `room`, or None if the one-way ledge
+        blocks it. Closed form rather than a graph search: the rooms are a 1-D hallway
+        whose single blocked edge is the rightward step out of `blocked_right_from`,
+        so leftward is always free and rightward is free unless the walk crosses that
+        edge."""
+        start = self.env.start_room
+        if room <= start:
+            return start - room
+        if start <= self.env.blocked_right_from < room:
+            return None
+        return room - start
 
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
