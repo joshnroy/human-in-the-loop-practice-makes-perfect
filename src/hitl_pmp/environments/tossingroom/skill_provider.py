@@ -8,12 +8,15 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 from .environment import TossingRoomEnvironment
 from .predicates import (
     ADJACENT,
+    BIN_ACCEPTS_ITEM,
     BIN_EMPTY,
     BIN_IN_ROOM,
     BUTTON_IN_ROOM,
+    CAN_MOVE_ROOM,
     HAND_EMPTY,
     HOLDING,
     ITEM_IN_BIN,
+    PILE_IN_ROOM,
     ROBOT_IN_ROOM,
 )
 from .skill_oracle_policy import SkillOraclePolicy
@@ -46,6 +49,9 @@ class TossingRoomSkillProvider(SkillProvider):
             BIN_EMPTY,
             BIN_IN_ROOM,
             BUTTON_IN_ROOM,
+            PILE_IN_ROOM,
+            BIN_ACCEPTS_ITEM,
+            CAN_MOVE_ROOM,
         )
 
     def types(self) -> tuple[Type, ...]:
@@ -55,6 +61,7 @@ class TossingRoomSkillProvider(SkillProvider):
             TossingRoomEnvironment.bin_type,
             TossingRoomEnvironment.button_type,
             TossingRoomEnvironment.item_type,
+            TossingRoomEnvironment.pile_type,
         )
 
     def objects(self) -> tuple[Object, ...]:
@@ -64,6 +71,7 @@ class TossingRoomSkillProvider(SkillProvider):
             env.recycling_bin,
             env.trash_bin,
             env.button,
+            env.pile,
             env.trash,
             env.recycling,
             *env.get_rooms(),

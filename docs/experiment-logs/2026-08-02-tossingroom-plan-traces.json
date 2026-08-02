@@ -1,0 +1,486 @@
+{
+ "before": [
+  {
+   "task": 0,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  },
+  {
+   "task": 1,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  },
+  {
+   "task": 2,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  },
+  {
+   "task": 3,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  },
+  {
+   "task": 4,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  },
+  {
+   "task": 5,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  },
+  {
+   "task": 6,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  },
+  {
+   "task": 7,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Press",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 8,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  },
+  {
+   "task": 9,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Pickup",
+     "bad": true
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": false
+  }
+ ],
+ "after": [
+  {
+   "task": 0,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 1,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 2,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 3,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 4,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 5,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 6,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 7,
+   "steps": [
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Press",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 8,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  },
+  {
+   "task": 9,
+   "steps": [
+    {
+     "name": "Pickup",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "MoveRoom",
+     "bad": false
+    },
+    {
+     "name": "Throw",
+     "bad": false
+    }
+   ],
+   "solved": true
+  }
+ ]
+}

@@ -71,6 +71,45 @@ class BinInRoomClassifier:
         return bin_room == room_index
 
 
+class BinAcceptsItemClassifier:
+    """True when this bin takes this item's kind. `_apply_throw` routes purely by the
+    HELD item's kind and ignores the bound bin, so without this Throw was applicable
+    with a mismatched bin and could never succeed at any force."""
+
+    @staticmethod
+    def holds(*, state: State, item: Object, bin_obj: Object) -> bool:
+        item_kind = int(round(state.get(obj=item, feature_name="kind")))
+        bin_kind = int(round(state.get(obj=bin_obj, feature_name="kind")))
+        return item_kind == bin_kind
+
+
+class CanMoveRoomClassifier:
+    """Adjacency, minus the one-way ledge. `Adjacent` is symmetric, but `_apply_move`
+    refuses the RIGHTWARD step across the ledge, so a symmetric precondition let the
+    planner schedule a move the dynamics silently drop."""
+
+    @staticmethod
+    def holds(*, state: State, from_room: Object, to_room: Object) -> bool:
+        if not AdjacentClassifier.holds(state=state, room1=from_room, room2=to_room):
+            return False
+        from_index = int(round(state.get(obj=from_room, feature_name="index")))
+        to_index = int(round(state.get(obj=to_room, feature_name="index")))
+        blocks_right = int(round(state.get(obj=from_room, feature_name="blocks_right"))) == 1
+        return not (blocks_right and to_index == from_index + 1)
+
+
+class PileInRoomClassifier:
+    """True when the item pile sits in this room. The pile is a state object rather
+    than env config precisely so this classifier can exist -- see
+    TossingRoomEnvironment.pile_type."""
+
+    @staticmethod
+    def holds(*, state: State, pile: Object, room: Object) -> bool:
+        pile_room = int(round(state.get(obj=pile, feature_name="room")))
+        room_index = int(round(state.get(obj=room, feature_name="index")))
+        return pile_room == room_index
+
+
 class ButtonInRoomClassifier:
     @staticmethod
     def holds(*, state: State, button: Object, room: Object) -> bool:
@@ -132,6 +171,30 @@ BIN_IN_ROOM = Predicate(
     types=(TossingRoomEnvironment.bin_type, TossingRoomEnvironment.room_type),
     holds=lambda state, objects: BinInRoomClassifier.holds(
         state=state, bin_obj=objects[0], room=objects[1]
+    ),
+)
+
+BIN_ACCEPTS_ITEM = Predicate(
+    name="BinAcceptsItem",
+    types=(TossingRoomEnvironment.item_type, TossingRoomEnvironment.bin_type),
+    holds=lambda state, objects: BinAcceptsItemClassifier.holds(
+        state=state, item=objects[0], bin_obj=objects[1]
+    ),
+)
+
+CAN_MOVE_ROOM = Predicate(
+    name="CanMoveRoom",
+    types=(TossingRoomEnvironment.room_type, TossingRoomEnvironment.room_type),
+    holds=lambda state, objects: CanMoveRoomClassifier.holds(
+        state=state, from_room=objects[0], to_room=objects[1]
+    ),
+)
+
+PILE_IN_ROOM = Predicate(
+    name="PileInRoom",
+    types=(TossingRoomEnvironment.pile_type, TossingRoomEnvironment.room_type),
+    holds=lambda state, objects: PileInRoomClassifier.holds(
+        state=state, pile=objects[0], room=objects[1]
     ),
 )
 

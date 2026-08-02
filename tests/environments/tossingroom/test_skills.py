@@ -5,13 +5,17 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
 from hitl_pmp.environments.tossingroom.predicates import (
-    ADJACENT,
+    CAN_MOVE_ROOM,
     HAND_EMPTY,
     HOLDING,
     ITEM_IN_BIN,
+    PILE_IN_ROOM,
     ROBOT_IN_ROOM,
 )
+from hitl_pmp.environments.tossingroom.skill_provider import TossingRoomSkillProvider
 from hitl_pmp.environments.tossingroom.skills import TossingRoomSkills
+from hitl_pmp.environments.tossingroom.tasks import TossingRoomTasks
+from hitl_pmp.planning.grounding import SkillGrounder
 
 _ENV = TossingRoomEnvironment()
 _ROBOT = TossingRoomEnvironment.robot
@@ -27,23 +31,30 @@ def test_pickup_declares_its_parameters_and_effects() -> None:
     skill = TossingRoomSkills.PICKUP
     assert skill.name == "Pickup"
     assert skill.param_dim == 0
-    robot, item, room = skill.parameters
+    robot, item, room, pile = skill.parameters
     assert skill.preconditions == frozenset({
         LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(robot, room)),
+        # The pile precondition is what stops the planner scheduling a pickup in
+        # a room the dynamics refuse to pick up in -- see
+        # TestPickupIsRestrictedToThePileRoom.
+        LiftedAtom(predicate=PILE_IN_ROOM, variables=(pile, room)),
         LiftedAtom(predicate=HAND_EMPTY, variables=(robot,)),
     })
     assert skill.add_effects == frozenset({LiftedAtom(predicate=HOLDING, variables=(robot, item))})
     assert skill.delete_effects == frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(robot,))})
 
 
-def test_move_room_requires_adjacency() -> None:
+def test_move_room_requires_a_traversable_step() -> None:
     skill = TossingRoomSkills.MOVE_ROOM
     assert skill.name == "MoveRoom"
     assert skill.param_dim == 0
     robot, from_room, to_room = skill.parameters
     assert skill.preconditions == frozenset({
         LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(robot, from_room)),
-        LiftedAtom(predicate=ADJACENT, variables=(from_room, to_room)),
+        # CanMoveRoom rather than Adjacent: adjacency is symmetric, but _apply_move
+        # refuses the rightward step across the one-way ledge, so a symmetric
+        # precondition let the planner schedule a move the dynamics drop.
+        LiftedAtom(predicate=CAN_MOVE_ROOM, variables=(from_room, to_room)),
     })
     assert skill.add_effects == frozenset({
         LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(robot, to_room))
@@ -92,7 +103,8 @@ def test_sample_params_for_throw_is_a_single_value_in_unit_interval() -> None:
 def test_compute_action_for_pickup_encodes_the_item_kind() -> None:
     state = _state()
     ground_skill = GroundSkill(
-        skill=TossingRoomSkills.PICKUP, objects=(_ROBOT, _RECYCLING, _ENV.get_rooms()[3])
+        skill=TossingRoomSkills.PICKUP,
+        objects=(_ROBOT, _RECYCLING, _ENV.get_rooms()[3], _ENV.pile),
     )
     action = TossingRoomSkills.compute_action(
         ground_skill=ground_skill, params=np.zeros(0), state=state
@@ -177,3 +189,133 @@ def test_move_room_ground_skill_grounds_preconditions() -> None:
     assert ground_skill.add_effects == frozenset({
         GroundAtom(predicate=ROBOT_IN_ROOM, objects=(_ROBOT, rooms[2]))
     })
+
+
+class TestPickupIsRestrictedToThePileRoom:
+    """Pickup's lifted model must not permit what the dynamics deny.
+
+    `TossingRoomEnvironment._apply_pickup` only acts when `robot_room == start_room`
+    (there is a single limitless pile there), but Pickup's preconditions used to say
+    only "robot is in some room + hand empty". Because pickup-early and pickup-late use
+    the identical multiset of skills, the two orderings are *exactly cost-tied*, so Fast
+    Downward broke the tie arbitrarily and routinely emitted plans that walk away from
+    the pile and then pick up in the bin room -- a silent no-op. Measured on the default
+    task distribution before the fix: 9 of 10 plans contained an unexecutable Pickup and
+    only 1 of 10 tasks was solved (the one Press-only goal).
+
+    This is the same defect class as the Ball-Ring `ignore_effects` bug: an
+    over-permissive symbolic model producing plans that look valid and cannot execute.
+    """
+
+    @staticmethod
+    def test_pickup_is_not_applicable_outside_the_pile_room() -> None:
+        env = TossingRoomEnvironment()
+        tasks = TossingRoomTasks(env=env, seed=0)
+        provider = TossingRoomSkillProvider(env=env)
+        state = tasks.sample_test_task().initial_state
+        other_room = (env.start_room + 1) % env.num_rooms
+        state.set(obj=env.robot, feature_name="room", feature_val=float(other_room))
+        state.set(obj=env.robot, feature_name="holding", feature_val=0.0)
+
+        atoms = SkillGrounder.abstract_state(
+            state=state, objects=provider.objects(), predicates=provider.predicates()
+        )
+        applicable = SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
+        )
+        pickups = [g for g in applicable if g.skill.name == "Pickup"]
+        assert not pickups, (
+            f"Pickup is applicable in room {other_room}, but the pile is in "
+            f"room {env.start_room}; executing it is a silent no-op."
+        )
+
+    @staticmethod
+    def test_pickup_is_applicable_in_the_pile_room() -> None:
+        """The complement, so the fix cannot be 'make Pickup never applicable'."""
+        env = TossingRoomEnvironment()
+        tasks = TossingRoomTasks(env=env, seed=0)
+        provider = TossingRoomSkillProvider(env=env)
+        state = tasks.sample_test_task().initial_state
+        state.set(obj=env.robot, feature_name="room", feature_val=float(env.start_room))
+        state.set(obj=env.robot, feature_name="holding", feature_val=0.0)
+
+        atoms = SkillGrounder.abstract_state(
+            state=state, objects=provider.objects(), predicates=provider.predicates()
+        )
+        applicable = SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
+        )
+        assert [g for g in applicable if g.skill.name == "Pickup"]
+
+
+class TestOperatorsMatchTheDynamics:
+    """Two more places the lifted models permitted what the environment denies, found
+    by the cross-domain operator-fidelity walk. Same defect class as Pickup: the
+    planner emits a plan that looks valid and executes as a silent no-op."""
+
+    @staticmethod
+    def _applicable(*, env, provider, state):
+        atoms = SkillGrounder.abstract_state(
+            state=state, objects=provider.objects(), predicates=provider.predicates()
+        )
+        return SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
+        )
+
+    @staticmethod
+    def test_throw_requires_a_bin_that_accepts_the_held_item() -> None:
+        """`_apply_throw` routes by the HELD item's kind and ignores the bound bin
+        entirely, so Throw(trash -> recycling_bin) can never succeed at any force. The
+        model bound ?bin to any bin in the room."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        state = TossingRoomTasks(env=env, seed=0).sample_test_task().initial_state
+        # hold trash, stand in the recycling bin's room
+        state.set(obj=env.robot, feature_name="holding", feature_val=float(env.TRASH_KIND))
+        state.set(obj=env.robot, feature_name="room", feature_val=float(env.recycling_bin_room))
+
+        mismatched = [
+            g
+            for g in TestOperatorsMatchTheDynamics._applicable(
+                env=env, provider=provider, state=state
+            )
+            if g.skill.name == "Throw" and g.objects[2] is env.recycling_bin
+        ]
+        assert not mismatched, "Throw is applicable with a bin that cannot accept the held item"
+
+    @staticmethod
+    def test_move_room_cannot_cross_the_ledge_rightward() -> None:
+        """`Adjacent` is symmetric, but `_apply_move` blocks stepping RIGHT across the
+        one-way ledge. Unlike Pickup, this divergence was never acknowledged."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        state = TossingRoomTasks(env=env, seed=0).sample_test_task().initial_state
+        state.set(obj=env.robot, feature_name="room", feature_val=float(env.blocked_right_from))
+
+        rooms = env.get_rooms()
+        blocked = [
+            g
+            for g in TestOperatorsMatchTheDynamics._applicable(
+                env=env, provider=provider, state=state
+            )
+            if g.skill.name == "MoveRoom"
+            and g.objects[1] == rooms[env.blocked_right_from]
+            and g.objects[2] == rooms[env.blocked_right_from + 1]
+        ]
+        assert not blocked, "MoveRoom is applicable across the one-way ledge rightward"
+
+    @staticmethod
+    def test_move_room_can_still_cross_the_ledge_leftward() -> None:
+        """The complement: only the rightward step is blocked."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        state = TossingRoomTasks(env=env, seed=0).sample_test_task().initial_state
+        state.set(obj=env.robot, feature_name="room", feature_val=float(env.blocked_right_from + 1))
+        rooms = env.get_rooms()
+        assert [
+            g
+            for g in TestOperatorsMatchTheDynamics._applicable(
+                env=env, provider=provider, state=state
+            )
+            if g.skill.name == "MoveRoom" and g.objects[2] == rooms[env.blocked_right_from]
+        ]
