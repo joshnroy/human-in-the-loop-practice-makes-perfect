@@ -7,10 +7,11 @@ from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import TossingRoomEnvironment
 from .predicates import (
-    ADJACENT,
+    BIN_ACCEPTS_ITEM,
     BIN_EMPTY,
     BIN_IN_ROOM,
     BUTTON_IN_ROOM,
+    CAN_MOVE_ROOM,
     HAND_EMPTY,
     HOLDING,
     ITEM_IN_BIN,
@@ -80,7 +81,9 @@ class TossingRoomSkills:
         parameters=(_robot, _from_room, _to_room),
         preconditions=frozenset({
             LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(_robot, _from_room)),
-            LiftedAtom(predicate=ADJACENT, variables=(_from_room, _to_room)),
+            # CanMoveRoom, not Adjacent: adjacency is symmetric but _apply_move
+            # refuses the rightward step across the one-way ledge.
+            LiftedAtom(predicate=CAN_MOVE_ROOM, variables=(_from_room, _to_room)),
         }),
         add_effects=frozenset({LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(_robot, _to_room))}),
         delete_effects=frozenset({
@@ -95,6 +98,9 @@ class TossingRoomSkills:
             LiftedAtom(predicate=HOLDING, variables=(_robot, _item)),
             LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(_robot, _room)),
             LiftedAtom(predicate=BIN_IN_ROOM, variables=(_bin, _room)),
+            # _apply_throw routes by the HELD item's kind and ignores the bound
+            # bin, so a mismatched bin can never succeed at any force.
+            LiftedAtom(predicate=BIN_ACCEPTS_ITEM, variables=(_item, _bin)),
         }),
         add_effects=frozenset({
             LiftedAtom(predicate=ITEM_IN_BIN, variables=(_item, _bin)),

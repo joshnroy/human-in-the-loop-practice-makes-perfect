@@ -5,7 +5,7 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
 from hitl_pmp.environments.tossingroom.predicates import (
-    ADJACENT,
+    CAN_MOVE_ROOM,
     HAND_EMPTY,
     HOLDING,
     ITEM_IN_BIN,
@@ -44,14 +44,17 @@ def test_pickup_declares_its_parameters_and_effects() -> None:
     assert skill.delete_effects == frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(robot,))})
 
 
-def test_move_room_requires_adjacency() -> None:
+def test_move_room_requires_a_traversable_step() -> None:
     skill = TossingRoomSkills.MOVE_ROOM
     assert skill.name == "MoveRoom"
     assert skill.param_dim == 0
     robot, from_room, to_room = skill.parameters
     assert skill.preconditions == frozenset({
         LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(robot, from_room)),
-        LiftedAtom(predicate=ADJACENT, variables=(from_room, to_room)),
+        # CanMoveRoom rather than Adjacent: adjacency is symmetric, but _apply_move
+        # refuses the rightward step across the one-way ledge, so a symmetric
+        # precondition let the planner schedule a move the dynamics drop.
+        LiftedAtom(predicate=CAN_MOVE_ROOM, variables=(from_room, to_room)),
     })
     assert skill.add_effects == frozenset({
         LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(robot, to_room))
@@ -243,3 +246,76 @@ class TestPickupIsRestrictedToThePileRoom:
             skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
         )
         assert [g for g in applicable if g.skill.name == "Pickup"]
+
+
+class TestOperatorsMatchTheDynamics:
+    """Two more places the lifted models permitted what the environment denies, found
+    by the cross-domain operator-fidelity walk. Same defect class as Pickup: the
+    planner emits a plan that looks valid and executes as a silent no-op."""
+
+    @staticmethod
+    def _applicable(*, env, provider, state):
+        atoms = SkillGrounder.abstract_state(
+            state=state, objects=provider.objects(), predicates=provider.predicates()
+        )
+        return SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
+        )
+
+    @staticmethod
+    def test_throw_requires_a_bin_that_accepts_the_held_item() -> None:
+        """`_apply_throw` routes by the HELD item's kind and ignores the bound bin
+        entirely, so Throw(trash -> recycling_bin) can never succeed at any force. The
+        model bound ?bin to any bin in the room."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        state = TossingRoomTasks(env=env, seed=0).sample_test_task().initial_state
+        # hold trash, stand in the recycling bin's room
+        state.set(obj=env.robot, feature_name="holding", feature_val=float(env.TRASH_KIND))
+        state.set(obj=env.robot, feature_name="room", feature_val=float(env.recycling_bin_room))
+
+        mismatched = [
+            g
+            for g in TestOperatorsMatchTheDynamics._applicable(
+                env=env, provider=provider, state=state
+            )
+            if g.skill.name == "Throw" and g.objects[2] is env.recycling_bin
+        ]
+        assert not mismatched, "Throw is applicable with a bin that cannot accept the held item"
+
+    @staticmethod
+    def test_move_room_cannot_cross_the_ledge_rightward() -> None:
+        """`Adjacent` is symmetric, but `_apply_move` blocks stepping RIGHT across the
+        one-way ledge. Unlike Pickup, this divergence was never acknowledged."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        state = TossingRoomTasks(env=env, seed=0).sample_test_task().initial_state
+        state.set(obj=env.robot, feature_name="room", feature_val=float(env.blocked_right_from))
+
+        rooms = env.get_rooms()
+        blocked = [
+            g
+            for g in TestOperatorsMatchTheDynamics._applicable(
+                env=env, provider=provider, state=state
+            )
+            if g.skill.name == "MoveRoom"
+            and g.objects[1] == rooms[env.blocked_right_from]
+            and g.objects[2] == rooms[env.blocked_right_from + 1]
+        ]
+        assert not blocked, "MoveRoom is applicable across the one-way ledge rightward"
+
+    @staticmethod
+    def test_move_room_can_still_cross_the_ledge_leftward() -> None:
+        """The complement: only the rightward step is blocked."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        state = TossingRoomTasks(env=env, seed=0).sample_test_task().initial_state
+        state.set(obj=env.robot, feature_name="room", feature_val=float(env.blocked_right_from + 1))
+        rooms = env.get_rooms()
+        assert [
+            g
+            for g in TestOperatorsMatchTheDynamics._applicable(
+                env=env, provider=provider, state=state
+            )
+            if g.skill.name == "MoveRoom" and g.objects[2] == rooms[env.blocked_right_from]
+        ]

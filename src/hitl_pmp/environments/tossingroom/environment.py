@@ -71,7 +71,11 @@ class TossingRoomEnvironment(Environment):
     canonical_target_force: float = 0.5
 
     robot_type: ClassVar[Type] = Type(name="robot", feature_names=("room", "holding"))
-    room_type: ClassVar[Type] = Type(name="room", feature_names=("index",))
+    # blocks_right marks the one-way ledge. Like the pile's room, this lives in the
+    # STATE rather than in config so a module-level Predicate -- whose signature is
+    # only (state, objects) -- can read it and keep MoveRoom's model as strong as
+    # _apply_move's guard.
+    room_type: ClassVar[Type] = Type(name="room", feature_names=("index", "blocks_right"))
     bin_type: ClassVar[Type] = Type(name="bin", feature_names=("count", "room", "kind"))
     button_type: ClassVar[Type] = Type(name="button", feature_names=("room",))
     # The limitless item pile. Modelled as a real object with a room feature -- the
@@ -143,7 +147,7 @@ class TossingRoomEnvironment(Environment):
             self.recycling: np.array([float(self.RECYCLING_KIND), float(recycling_target_force)]),
         }
         for i, room in enumerate(self.get_rooms()):
-            data[room] = np.array([float(i)])
+            data[room] = np.array([float(i), float(i == self.blocked_right_from)])
         return State(data=data)
 
     def take_action(self, *, action: Action) -> State:
