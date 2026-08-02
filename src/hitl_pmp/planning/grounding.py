@@ -26,12 +26,19 @@ class SkillGrounder:
     `get_object_combinations` applies no distinctness filter, and the real
     FastDownwardPlanner this must stay consistent with doesn't apply one
     either (its generated PDDL has no explicit (not (= ?x ?y)) constraints).
-    For Light Switch specifically, preconditions like Adjacent already rule
-    out same-cell bindings on their own (Adjacent(c, c) is never true), so
-    nothing is lost by leaving distinctness unenforced here; neither Light
-    Switch nor Ball-Ring currently has a predicate taking two slots of the
-    same type, so this is latent for them -- but it is shared `planning/`
-    code and a same-type-twice predicate must abstract correctly."""
+    Same-type-twice predicates DO exist here -- Light Switch's
+    `Adjacent(cell, cell)` and Tossing Room's `Adjacent(room, room)` /
+    `CanMoveRoom(room, room)` -- so the filter was not dead code. It was
+    merely *inert*: none of those relations ever holds reflexively
+    (Adjacent(c, c) and CanMoveRoom(r, r) are both always false), so the
+    repeated-object combinations it skipped were exactly the ones
+    `predicate.holds` would have rejected anyway. Measured over 60 sampled
+    initial states per domain, dropping the filter changes the abstraction of
+    zero states across all three. Ball-Ring has no same-type-twice predicate
+    at all. So nothing observable changes today -- but this is shared
+    `planning/` code, and the first reflexive relation anyone adds (a
+    `SameRoom`, an `Equal`) must abstract correctly rather than silently lose
+    its diagonal."""
 
     @staticmethod
     def abstract_state(
