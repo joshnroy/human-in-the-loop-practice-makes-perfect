@@ -122,17 +122,28 @@ def test_abstract_state_finds_true_ground_atoms_and_excludes_false_ones() -> Non
     assert atoms == frozenset({GroundAtom(predicate=_ROBOT_NEAR_A, objects=(_ROBOT,))})
 
 
-def test_abstract_state_never_repeats_an_object_within_one_atom() -> None:
-    always_true = Predicate(
-        name="SameBlock", types=(_BLOCK, _BLOCK), holds=lambda state, objects: True
+def test_abstract_state_allows_a_repeated_object_within_one_atom() -> None:
+    """predicators' `abstract()` documents "Duplicate arguments in predicates are
+    allowed." and its `get_object_combinations` applies no distinctness filter, so a
+    predicate taking two slots of the same type must yield its repeated-object ground
+    atoms whenever they actually hold. Neither Light Switch nor Ball-Ring has such a
+    predicate today, so this synthetic one is the only thing pinning the shared
+    `planning/` behavior -- and it returned an *empty* set before the filter was
+    removed."""
+    same_x = Predicate(
+        name="SameX",
+        types=(_BLOCK, _BLOCK),
+        holds=lambda state, objects: bool(
+            state.get(obj=objects[0], feature_name="x")
+            == state.get(obj=objects[1], feature_name="x")
+        ),
     )
-    state = _simple_state()
+    # The two blocks sit at different x, so SameX holds *only* reflexively.
+    state = State(data={_BLOCK_A: np.array([1.0]), _BLOCK_B: np.array([2.0])})
     atoms = SkillGrounder.abstract_state(
-        state=state, objects=(_BLOCK_A, _BLOCK_B), predicates=(always_true,)
+        state=state, objects=(_BLOCK_A, _BLOCK_B), predicates=(same_x,)
     )
-    # (block_a, block_a) and (block_b, block_b) are skipped -- only the two
-    # distinct-object orderings remain.
     assert atoms == frozenset({
-        GroundAtom(predicate=always_true, objects=(_BLOCK_A, _BLOCK_B)),
-        GroundAtom(predicate=always_true, objects=(_BLOCK_B, _BLOCK_A)),
+        GroundAtom(predicate=same_x, objects=(_BLOCK_A, _BLOCK_A)),
+        GroundAtom(predicate=same_x, objects=(_BLOCK_B, _BLOCK_B)),
     })

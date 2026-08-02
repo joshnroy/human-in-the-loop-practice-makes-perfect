@@ -53,20 +53,40 @@ class BallRingSkills:
     the full action vector), with all geometry in the NSRT samplers. This port keeps
     the same split Light Switch uses -- ``sample_params`` draws the state-independent
     continuous degrees of freedom and ``compute_action`` realizes them against the
-    state. Only the two **place-on-table** skills carry continuous parameters
-    ``param_dim=2`` (a fractional radius ``u`` in [0, 1] and an angle ``theta``): they
-    are what a learning Method (EES) must tune. Everything else is ``param_dim=0``:
+    state. The five **placement** skills (two place-on-table, three place-on-floor)
+    carry continuous parameters ``param_dim=2`` (a fractional radius ``u`` in [0, 1]
+    and an angle ``theta``): they are what a learning Method (EES) must tune.
+    Everything else is ``param_dim=0``:
 
     - **Picks / place-in-cup** are deterministic (target the object's own center /
-      the cup's center) -- under the paper's deterministic config a correctly aimed
-      pick always grasps, so there is nothing to learn.
-    - **Place-on-floor** targets the room center (always the floor, never a table),
-      which always succeeds; matching predicators' small random disk there would add
-      no learnable signal.
-    - **Navigation** deterministically scans angles for a collision-free pose within
-      ``reachable_thresh`` of the target -- the faithful *effect* of predicators'
-      "sample a valid pose until one works" rejection sampler, without a failure mode
-      the experiment doesn't care about.
+      the cup's center). predicators' ``pick_obj_sampler`` does draw a point, but
+      *every* point it can draw succeeds: it offsets by ``(radius/2, radius/2)`` and
+      jitters by up to ``radius/4``, so the worst case is
+      ``radius*sqrt(2)/2 + radius/4 = 0.957 * radius`` from the object's center --
+      inside ``object_contains_point``'s ``radius`` disk with 4.3% of the radius to
+      spare -- and the paper config's ``pick_success_prob = 1.0`` then grasps
+      unconditionally. A competence model over a skill that succeeds for every
+      parameter value learns the same 1.0 either way, so there is nothing to learn.
+    - **Navigation** deterministically scans angles across the
+      ``(radius, reachable_thresh]`` annulus for a collision-free pose (see
+      ``navigate_action``). This is sound only because that scan, like predicators'
+      rejection sampler, always finds *some* valid pose: which one it finds is
+      unobservable to the symbolic layer, since every ``NavigateTo*`` wipes all three
+      reachability predicates via ``ignore_effects`` and placement only tests
+      ``euclidean_reachable`` to the target. Scanning a single distance in the
+      annulus did *not* always find one, which is what made the earlier version of
+      this argument false.
+
+    The place-on-floor skills' jitter is *not* cosmetic. predicators'
+    ``place_on_floor_sampler`` scatters the placed object in a disk of radius
+    ``2 * radius(obj)`` about the room center; targeting the exact center instead put
+    a floor-placed cup and a floor-placed ball at the *identical* point, and at this
+    domain's geometry ``BallInCup`` only needs the two centers within
+    ``cup_radius - ball_radius`` (~0.0024 at ``num_tables=5``). That made ``BallInCup``
+    hold with probability 1 after "place the cup on the floor, then place the ball on
+    the floor" (~0.6% with the jitter restored) -- handing the agent a free
+    ball-in-cup and recording a spurious *failure* for ``PlaceBallOnFloor``, whose
+    ``BallNotInCup`` add-effect then never held.
 
     ``PlaceBallOnTable`` is an "impossible" skill under the deterministic config: a
     bare ball placed on any table always falls (``place_ball_fall_prob=1.0``), so its
@@ -251,7 +271,7 @@ class BallRingSkills:
         # The ball lands somewhere in the middle of the room: out of every cup, and
         # no longer where the robot was standing when it was reachable.
         ignore_effects=frozenset({BALL_IN_CUP, IS_REACHABLE_BALL}),
-        param_dim=0,
+        param_dim=2,
     )
     PLACE_BALL_IN_CUP_ON_FLOOR: ClassVar[Skill] = Skill(
         name="PlaceBallInCupOnFloor",
@@ -322,7 +342,7 @@ class BallRingSkills:
             LiftedAtom(predicate=HAND_EMPTY, variables=()),
         }),
         delete_effects=frozenset({LiftedAtom(predicate=HOLDING_CUP, variables=(_cup,))}),
-        param_dim=0,
+        param_dim=2,
     )
     PLACE_CUP_WITH_BALL_ON_FLOOR: ClassVar[Skill] = Skill(
         name="PlaceCupWithBallOnFloor",
@@ -340,7 +360,7 @@ class BallRingSkills:
             LiftedAtom(predicate=HOLDING_CUP, variables=(_cup,)),
             LiftedAtom(predicate=HOLDING_BALL, variables=(_ball,)),
         }),
-        param_dim=0,
+        param_dim=2,
     )
 
     @staticmethod
@@ -377,6 +397,12 @@ class BallRingSkills:
         "PlaceBallOnTable",
         "PlaceCupWithoutBallOnTable",
     })
+    # predicators routes all three through one `place_on_floor_sampler`.
+    _PLACE_ON_FLOOR_NAMES: ClassVar[frozenset[str]] = frozenset({
+        "PlaceBallOnFloor",
+        "PlaceCupWithoutBallOnFloor",
+        "PlaceCupWithBallOnFloor",
+    })
     _NAVIGATE_NAMES: ClassVar[frozenset[str]] = frozenset({
         "NavigateToTable",
         "NavigateToBall",
@@ -385,11 +411,14 @@ class BallRingSkills:
 
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        """State-independent draw of the continuous parameters. Only the two
-        place-on-table skills have any (param_dim=2): a fractional radius ``u`` in
-        [0, 1) and an angle ``theta`` in [0, 2*pi) -- ``compute_action`` scales ``u``
-        by the (state-dependent) usable table radius, reproducing predicators'
-        ``dist = uniform(0, table_radius - size)`` / ``theta = uniform(0, 2*pi)``."""
+        """State-independent draw of the continuous parameters. The five placement
+        skills have any (param_dim=2): a fractional radius ``u`` in [0, 1) and an
+        angle ``theta`` in [0, 2*pi). ``compute_action`` scales ``u`` by the
+        state-dependent maximum distance, reproducing predicators' two samplers --
+        ``dist = uniform(0, table_radius - size)`` for place-on-table
+        (``place_on_table_sampler``) and ``dist = uniform(0, size)`` about the room
+        center for place-on-floor (``place_on_floor_sampler``), both with
+        ``theta = uniform(0, 2*pi)``."""
         if ground_skill.skill.param_dim == 0:
             return np.zeros(0)
         return np.array([rng.uniform(0.0, 1.0), rng.uniform(0.0, 2 * np.pi)])
@@ -426,13 +455,14 @@ class BallRingSkills:
                 ground_skill=ground_skill, params=params, state=state
             )
 
-        if name == "PlaceBallOnFloor":
-            x, y = skills._room_center(env=env)
-            return np.array([1.0, 0.0, 1.0, x, y])  # ball_only=1: place just the ball
-
-        if name in ("PlaceCupWithoutBallOnFloor", "PlaceCupWithBallOnFloor"):
-            x, y = skills._room_center(env=env)
-            return np.array([1.0, 0.0, 0.0, x, y])
+        if name in skills._PLACE_ON_FLOOR_NAMES:
+            x, y = skills.place_on_floor_xy(
+                ground_skill=ground_skill, params=params, state=state, env=env
+            )
+            # ball_only=1 for PlaceBallOnFloor: place just the ball, not the cup
+            # (predicators' `place_ball_on_floor_sampler` sets `sample_arr[2] = 1.0`).
+            ball_only = 1.0 if name == "PlaceBallOnFloor" else 0.0
+            return np.array([1.0, 0.0, ball_only, x, y])
 
         if name in ("PlaceBallInCupOnFloor", "PlaceBallInCupOnTable"):
             cup = objects[2]
@@ -449,6 +479,36 @@ class BallRingSkills:
     @staticmethod
     def _room_center(*, env: BallRingEnvironment) -> tuple[float, float]:
         return (env.x_lb + env.x_ub) / 2, (env.y_lb + env.y_ub) / 2
+
+    @staticmethod
+    def place_on_floor_xy(
+        *,
+        ground_skill: GroundSkill,
+        params: np.ndarray,
+        state: State,
+        env: BallRingEnvironment,
+    ) -> tuple[float, float]:
+        """The concrete floor point a place-on-floor skill's `(u, theta)` resolve to:
+        a small random disk about the room center, of radius `2 * radius(obj)` where
+        `obj` is the object being placed. Ported from predicators'
+        `place_on_floor_sampler` (`size = radius * 2; dist = uniform(0, size);
+        theta = uniform(0, 2*pi); x = x_c + dist*cos(theta)`).
+
+        The placed object is `ground_skill.objects[-1]`, matching predicators'
+        `obj_to_place = objs[-1]`: the ball for `PlaceBallOnFloor` (parameters
+        `[robot, cup, ball]`) and the cup for both `PlaceCup*OnFloor` (parameters
+        `[robot, ball, cup]`).
+
+        The disk never overlaps a table (at `num_tables=5` the ring sits `~0.235`
+        clear of the largest jitter), so a floor place still always lands on the
+        floor -- the jitter only decouples two successive floor placements, which
+        previously coincided exactly."""
+        obj = ground_skill.objects[-1]
+        u, theta = float(params[0]), float(params[1])
+        size = state.get(obj=obj, feature_name="radius") * 2
+        dist = u * size
+        x_c, y_c = BallRingSkills._room_center(env=env)
+        return float(x_c + dist * np.cos(theta)), float(y_c + dist * np.sin(theta))
 
     @staticmethod
     def place_on_table_xy(
@@ -537,29 +597,51 @@ class BallRingSkills:
     _NAV_ANGLES: ClassVar[tuple[float, ...]] = tuple(
         float(a) for a in np.linspace(0.0, 2 * np.pi, num=24, endpoint=False)
     )
+    # Fractions of the way across the (radius, reachable_thresh] annulus, tried in
+    # order. 0.5 first, so every navigation that already worked returns the exact
+    # same pose it always did; the rest only ever run when 0.5 finds nothing.
+    # Never 1.0: a pose at exactly reachable_thresh can round to just over it and
+    # read as unreachable, so the outermost probe stops at 0.99.
+    _NAV_ANNULUS_FRACTIONS: ClassVar[tuple[float, ...]] = (0.5, 0.7, 0.85, 0.95, 0.99)
 
     @staticmethod
     def navigate_action(*, state: State, env: BallRingEnvironment, target: Object) -> Action:
         """A collision-free robot pose within ``reachable_thresh`` of ``target`` --
         the deterministic realization of a NavigateTo* skill (also reused by the
-        privileged oracle). Scans a fixed set of angles at the annulus distance and
-        returns the first in-bounds, non-colliding pose."""
+        privileged oracle). Scans angles at a series of distances strictly inside the
+        (target radius, ``reachable_thresh``] annulus and returns the first in-bounds,
+        non-colliding pose.
+
+        Scanning the annulus rather than one distance in it is what makes this a
+        faithful stand-in for predicators' ``navigate_to_obj_sampler``, which
+        rejection-samples ``dist ~ U(radius, reachable_thresh)`` until a pose is
+        collision-free (and then *asserts* the reachability predicate, so it never
+        gives up). At a single distance the scan genuinely fails whenever the target
+        sits on a table: every angle at 0.5 of the annulus is still inside the
+        table's own circle, so all 24 candidates collide -- measured on 300 initial
+        states, that was 153 of 2100 target poses, all of them the ball on its start
+        table. The old fallback then returned a colliding pose *unchecked*, which
+        ``_simulate`` rejects, silently turning ``NavigateToBall`` into a no-op that
+        records a failure predicators cannot produce. The extra fractions bring that
+        to 0 of 2100."""
         tx = state.get(obj=target, feature_name="x")
         ty = state.get(obj=target, feature_name="y")
         radius = state.get(obj=target, feature_name="radius")
-        # A distance strictly greater than the target's radius (no collision) but
-        # within reachable_thresh (reachable), matching the thin annulus a large
-        # table leaves. Scan angles for the first in-bounds, collision-free pose.
-        dist = radius + 0.5 * (env.reachable_thresh - radius)
-        best = (tx + dist, ty)
-        for theta in BallRingSkills._NAV_ANGLES:
-            x = tx + dist * np.cos(theta)
-            y = ty + dist * np.sin(theta)
-            if not (env.x_lb <= x <= env.x_ub and env.y_lb <= y <= env.y_ub):
-                continue
-            trial = state.model_copy(deep=True)
-            trial.set(obj=env.robot, feature_name="x", feature_val=x)
-            trial.set(obj=env.robot, feature_name="y", feature_val=y)
-            if not env.exists_robot_collision(state=trial):
-                return np.array([0.0, 0.0, 0.0, x, y])
-        return np.array([0.0, 0.0, 0.0, best[0], best[1]])
+        span = env.reachable_thresh - radius
+        # Distances strictly greater than the target's radius (no collision with the
+        # target itself) but within reachable_thresh (reachable), matching the thin
+        # annulus a large table leaves.
+        fallback = (tx + radius + 0.5 * span, ty)
+        for fraction in BallRingSkills._NAV_ANNULUS_FRACTIONS:
+            dist = radius + fraction * span
+            for theta in BallRingSkills._NAV_ANGLES:
+                x = tx + dist * np.cos(theta)
+                y = ty + dist * np.sin(theta)
+                if not (env.x_lb <= x <= env.x_ub and env.y_lb <= y <= env.y_ub):
+                    continue
+                trial = state.model_copy(deep=True)
+                trial.set(obj=env.robot, feature_name="x", feature_val=x)
+                trial.set(obj=env.robot, feature_name="y", feature_val=y)
+                if not env.exists_robot_collision(state=trial):
+                    return np.array([0.0, 0.0, 0.0, x, y])
+        return np.array([0.0, 0.0, 0.0, fallback[0], fallback[1]])
