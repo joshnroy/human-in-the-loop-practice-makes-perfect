@@ -14,6 +14,7 @@ from .predicates import (
     HAND_EMPTY,
     HOLDING,
     ITEM_IN_BIN,
+    PILE_IN_ROOM,
     ROBOT_IN_ROOM,
 )
 
@@ -25,14 +26,20 @@ class TossingRoomSkills:
     Method could task-plan over them. A static-method container, never instantiated,
     same as every other business-logic class in this project.
 
-    The lifted models are deliberately a touch more permissive than the raw dynamics
-    in a couple of spots -- Pickup's precondition says only "robot in some room + hand
-    empty" rather than encoding "the start room" symbolically (no predicate marks the
-    pile room, and start_room is per-instance config a module-level Predicate can't
-    read), and Press does not delete ItemInBin. No planner consumes these yet, and the
-    raw environment enforces the full geometry regardless; the skill-oracle always
-    grounds them with the correct objects. This matches the precedent set by Light
-    Switch's JumpToLight, whose lifted model also diverges from what its option does.
+    These models are kept exactly as strong as the raw dynamics, no more. They were
+    once deliberately more permissive -- Pickup said only "robot in some room + hand
+    empty", justified by "no planner consumes these yet" -- and that justification
+    expired the moment EES task-planned over them: Fast Downward emitted plans that
+    walked past the pile and picked up in the bin room, a silent no-op, solving 1/10
+    tasks. Pickup now requires PileInRoom (the pile is a state object precisely so a
+    module-level Predicate can read it), and Press declares ignore_effects={ItemInBin}
+    because _apply_press empties both bins. See
+    docs/experiment-logs/2026-08-02-tossingroom-pickup-precondition.md.
+
+    Light Switch's JumpToLight is NOT a precedent for weakening this: it is a
+    deliberate trap whose option provably cannot achieve its effect, which EES is meant
+    to discover. An operator that claims applicability the dynamics deny is a different
+    thing -- it corrupts planning rather than being learnable.
     """
 
     _robot: ClassVar[Variable] = Variable(name="robot", type=TossingRoomEnvironment.robot_type)
@@ -50,12 +57,18 @@ class TossingRoomSkills:
         name="trash_bin", type=TossingRoomEnvironment.bin_type
     )
     _button: ClassVar[Variable] = Variable(name="button", type=TossingRoomEnvironment.button_type)
+    _pile: ClassVar[Variable] = Variable(name="pile", type=TossingRoomEnvironment.pile_type)
 
     PICKUP: ClassVar[Skill] = Skill(
         name="Pickup",
-        parameters=(_robot, _item, _room),
+        parameters=(_robot, _item, _room, _pile),
         preconditions=frozenset({
             LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(_robot, _room)),
+            # Without this the model permits picking up ANYWHERE while
+            # _apply_pickup only acts in the pile room, so the planner emitted
+            # plans that walk past the pile and pick up in the bin room -- a
+            # silent no-op. See TestPickupIsRestrictedToThePileRoom.
+            LiftedAtom(predicate=PILE_IN_ROOM, variables=(_pile, _room)),
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
         }),
         add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _item))}),
@@ -102,6 +115,11 @@ class TossingRoomSkills:
             LiftedAtom(predicate=BIN_EMPTY, variables=(_trash_bin,)),
         }),
         delete_effects=frozenset(),
+        # _apply_press empties BOTH bins, so every ItemInBin becomes false --
+        # a universal delete no per-item delete_effect can express, since Press
+        # takes no item parameter. Previously omitted, leaving the model
+        # believing items survive a press.
+        ignore_effects=frozenset({ITEM_IN_BIN}),
         param_dim=0,
     )
 
@@ -125,7 +143,7 @@ class TossingRoomSkills:
         skill = ground_skill.skill
 
         if skill == skills.PICKUP:
-            _robot, item, _room = ground_skill.objects
+            _robot, item, _room, _pile = ground_skill.objects
             kind = state.get(obj=item, feature_name="kind")
             return np.array([float(env.SKILL_PICKUP), kind, 0.0])
 

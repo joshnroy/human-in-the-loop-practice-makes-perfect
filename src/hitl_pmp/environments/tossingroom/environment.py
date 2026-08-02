@@ -74,12 +74,19 @@ class TossingRoomEnvironment(Environment):
     room_type: ClassVar[Type] = Type(name="room", feature_names=("index",))
     bin_type: ClassVar[Type] = Type(name="bin", feature_names=("count", "room", "kind"))
     button_type: ClassVar[Type] = Type(name="button", feature_names=("room",))
+    # The limitless item pile. Modelled as a real object with a room feature -- the
+    # same shape as `button` -- so a module-level Predicate can tell which room it is
+    # in. `start_room` is per-instance config, which a Predicate (whose signature is
+    # only (state, objects)) cannot read; putting the pile in the STATE is what lets
+    # Pickup's symbolic precondition be exactly as strong as _apply_pickup's guard.
+    pile_type: ClassVar[Type] = Type(name="pile", feature_names=("room",))
     item_type: ClassVar[Type] = Type(name="item", feature_names=("kind", "target_force"))
 
     robot: ClassVar[Object] = Object(name="robot", type=robot_type)
     recycling_bin: ClassVar[Object] = Object(name="recycling_bin", type=bin_type)
     trash_bin: ClassVar[Object] = Object(name="trash_bin", type=bin_type)
     button: ClassVar[Object] = Object(name="button", type=button_type)
+    pile: ClassVar[Object] = Object(name="pile", type=pile_type)
     # Singleton discriminator objects, so skills/predicates/goals have a concrete
     # Object to bind their "item" argument to. Their kind feature is what maps a held
     # item back to the right bin/room.
@@ -131,6 +138,7 @@ class TossingRoomEnvironment(Environment):
                 float(self.TRASH_KIND),
             ]),
             self.button: np.array([float(self.button_room)]),
+            self.pile: np.array([float(self.start_room)]),
             self.trash: np.array([float(self.TRASH_KIND), float(trash_target_force)]),
             self.recycling: np.array([float(self.RECYCLING_KIND), float(recycling_target_force)]),
         }

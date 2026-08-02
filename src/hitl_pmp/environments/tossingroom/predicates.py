@@ -71,6 +71,18 @@ class BinInRoomClassifier:
         return bin_room == room_index
 
 
+class PileInRoomClassifier:
+    """True when the item pile sits in this room. The pile is a state object rather
+    than env config precisely so this classifier can exist -- see
+    TossingRoomEnvironment.pile_type."""
+
+    @staticmethod
+    def holds(*, state: State, pile: Object, room: Object) -> bool:
+        pile_room = int(round(state.get(obj=pile, feature_name="room")))
+        room_index = int(round(state.get(obj=room, feature_name="index")))
+        return pile_room == room_index
+
+
 class ButtonInRoomClassifier:
     @staticmethod
     def holds(*, state: State, button: Object, room: Object) -> bool:
@@ -132,6 +144,14 @@ BIN_IN_ROOM = Predicate(
     types=(TossingRoomEnvironment.bin_type, TossingRoomEnvironment.room_type),
     holds=lambda state, objects: BinInRoomClassifier.holds(
         state=state, bin_obj=objects[0], room=objects[1]
+    ),
+)
+
+PILE_IN_ROOM = Predicate(
+    name="PileInRoom",
+    types=(TossingRoomEnvironment.pile_type, TossingRoomEnvironment.room_type),
+    holds=lambda state, objects: PileInRoomClassifier.holds(
+        state=state, pile=objects[0], room=objects[1]
     ),
 )
 

@@ -80,7 +80,8 @@ class SkillOraclePolicy:
         if holding != kind:
             # Pick the item up from the pile at start (where the robot begins).
             ground_skill = GroundSkill(
-                skill=TossingRoomSkills.PICKUP, objects=(env.robot, item, rooms[robot_room])
+                skill=TossingRoomSkills.PICKUP,
+                objects=(env.robot, item, rooms[robot_room], env.pile),
             )
             return ground_skill, np.zeros(0)
         if robot_room != bin_room:
