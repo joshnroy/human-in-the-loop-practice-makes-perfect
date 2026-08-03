@@ -23,6 +23,23 @@ class Goal(BaseModel):
     def is_satisfied(self, *, state: State) -> bool:
         return all(atom.predicate.holds(state, atom.objects) for atom in self.atoms)
 
+    def describe(self) -> str:
+        """A stable, human-readable rendering, for grouping/reporting tasks by
+        what they ask for (see core.metrics.types.TaskOutcome).
+
+        Sorted, because atoms is a frozenset and its iteration order is not
+        stable across processes -- an unsorted join would render the same
+        multi-atom goal differently from run to run and split one task family
+        into several. Names only: two Goals that ask the same thing describe
+        identically even when their GroundAtoms are separately-constructed
+        objects."""
+        return " & ".join(
+            sorted(
+                f"{atom.predicate.name}({', '.join(obj.name for obj in atom.objects)})"
+                for atom in self.atoms
+            )
+        )
+
 
 class Predicate(BaseModel):
     """A named, typed relation with a state-dependent truth classifier (holds),

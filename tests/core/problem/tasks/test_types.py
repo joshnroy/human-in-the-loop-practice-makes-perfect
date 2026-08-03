@@ -63,3 +63,48 @@ def test_task_bundles_initial_state_and_goal() -> None:
     task = Task(initial_state=state, goal=goal)
     assert task.initial_state is state
     assert task.goal is goal
+
+
+def _atom(*, name: str, objects: tuple[Object, ...]) -> GroundAtom:
+    predicate = Predicate(
+        name=name, types=tuple(obj.type for obj in objects), holds=lambda s, o: True
+    )
+    return GroundAtom(predicate=predicate, objects=objects)
+
+
+def test_describe_renders_predicate_and_object_names() -> None:
+    goal = Goal(atoms=frozenset({_atom(name="On", objects=(_OBJ,))}))
+    assert goal.describe() == "On(block1)"
+
+
+def test_describe_is_sorted_so_atom_order_cannot_change_the_rendering() -> None:
+    """atoms is a frozenset, whose iteration order is not stable across
+    processes -- an unsorted join would split one task family into several."""
+    a = _atom(name="BinEmpty", objects=(Object(name="trash_bin", type=_BLOCK),))
+    b = _atom(name="BinEmpty", objects=(Object(name="recycling_bin", type=_BLOCK),))
+    rendered = Goal(atoms=frozenset({a, b})).describe()
+    assert rendered == Goal(atoms=frozenset({b, a})).describe()
+    assert rendered.split(" & ") == sorted(rendered.split(" & "))
+
+
+def test_describe_ignores_object_identity_so_equal_goals_render_equally() -> None:
+    """Objects are value-compared, and domains rebuild them per call (the
+    get_rooms() trap) -- two separately-constructed but equal Goals must group
+    together, not as two families."""
+    first = Goal(atoms=frozenset({_atom(name="In", objects=(Object(name="a", type=_BLOCK),))}))
+    second = Goal(atoms=frozenset({_atom(name="In", objects=(Object(name="a", type=_BLOCK),))}))
+    assert first.describe() == second.describe() == "In(a)"
+
+
+def test_describe_distinguishes_goals_that_differ_only_by_object() -> None:
+    """The Tossing Room case that motivated this: TRASH and RECYCLING share the
+    predicate and differ only in the bin."""
+    trash = Goal(
+        atoms=frozenset({_atom(name="ItemInBin", objects=(Object(name="trash_bin", type=_BLOCK),))})
+    )
+    recycling = Goal(
+        atoms=frozenset({
+            _atom(name="ItemInBin", objects=(Object(name="recycling_bin", type=_BLOCK),))
+        })
+    )
+    assert trash.describe() != recycling.describe()
