@@ -7,6 +7,7 @@ import numpy as np
 
 from hitl_pmp.core.method.method import InteractionComplete, Method
 from hitl_pmp.core.metrics.metrics import Metrics
+from hitl_pmp.core.metrics.types import TaskOutcome
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
@@ -245,6 +246,7 @@ class PracticeLoop:
     ) -> list[np.ndarray]:
         num_solved = 0
         frames: list[np.ndarray] = []
+        outcomes: list[TaskOutcome] = []
         for i, task in enumerate(test_tasks):
             solved, task_frames = problem.run_task_episode(
                 task=task,
@@ -254,10 +256,15 @@ class PracticeLoop:
             if i == 0 and renderer is not None:
                 frames = task_frames
             num_solved += int(solved)
+            # test_tasks is drawn once for the whole run, so i identifies the
+            # same Task at every checkpoint -- a task can be followed across the
+            # curve, not just counted within one sweep.
+            outcomes.append(TaskOutcome(task_index=i, goal=task.goal.describe(), solved=solved))
         metrics.record_evaluation(
             num_online_transitions=num_online_transitions,
             num_solved=num_solved,
             num_total=len(test_tasks),
+            outcomes=tuple(outcomes),
         )
         return frames
 

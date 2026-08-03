@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from .types import EvaluationBreakdown, TaskOutcome
+
 
 class Metrics(BaseModel):
     """Evaluation protocol -- a fully concrete, directly-usable instance now (not a
@@ -25,14 +27,63 @@ class Metrics(BaseModel):
 
     # Each tuple is (transitions, solved, total).
     evaluations: list[tuple[int, int, int]] = Field(default_factory=list)
+    # Per-task detail behind each evaluations entry, when the caller supplies it.
+    # Defaults to empty, so every stats.json written before this field existed
+    # still loads, and a caller that only has aggregate counts stays valid.
+    breakdowns: list[EvaluationBreakdown] = Field(default_factory=list)
     task_name: str = "default"
 
     def record_evaluation(
-        self, *, num_online_transitions: int, num_solved: int, num_total: int
+        self,
+        *,
+        num_online_transitions: int,
+        num_solved: int,
+        num_total: int,
+        outcomes: tuple[TaskOutcome, ...] | None = None,
     ) -> None:
         """Records one evaluation checkpoint (e.g. after an online-learning cycle) --
-        the building block task_training_curve() reports back out."""
+        the building block task_training_curve() reports back out.
+
+        outcomes is optional per-task detail; when given it must agree with
+        num_solved/num_total, since the aggregate stays the primary record and a
+        silent disagreement between the two would be undetectable downstream."""
+        breakdown = (
+            None
+            if outcomes is None
+            else EvaluationBreakdown(
+                num_online_transitions=num_online_transitions, outcomes=outcomes
+            )
+        )
+        # Validated before either list is appended to, so a rejected call leaves
+        # this Metrics untouched rather than half-updated with the aggregate.
+        if breakdown is not None and (
+            len(breakdown.outcomes) != num_total or breakdown.num_solved() != num_solved
+        ):
+            raise ValueError(
+                f"per-task outcomes disagree with the aggregate: got "
+                f"{breakdown.num_solved()}/{len(breakdown.outcomes)} from outcomes, "
+                f"{num_solved}/{num_total} from the counts"
+            )
         self.evaluations.append((num_online_transitions, num_solved, num_total))
+        if breakdown is not None:
+            self.breakdowns.append(breakdown)
+
+    def failures_by_goal(self) -> dict[str, tuple[int, int]]:
+        """{goal description: (num_failed, num_total)} for the final evaluation
+        sweep -- the "*which* tasks is it still failing?" view the aggregate
+        curve cannot give. Empty when no per-task outcomes were recorded.
+
+        Grouped by goal rather than listed per task because the useful unit is
+        the task *family*: goal descriptions repeat across a test set, and a
+        family that fails structurally (rather than by unlucky sampling) shows
+        up as a whole group failing."""
+        if not self.breakdowns:
+            return {}
+        grouped: dict[str, tuple[int, int]] = {}
+        for outcome in self.breakdowns[-1].outcomes:
+            failed, total = grouped.get(outcome.goal, (0, 0))
+            grouped[outcome.goal] = (failed + int(not outcome.solved), total + 1)
+        return grouped
 
     def task_training_curve(self) -> list[tuple[int, float]]:
         """(num_online_transitions, percentage_solved) pairs, in recorded order --
