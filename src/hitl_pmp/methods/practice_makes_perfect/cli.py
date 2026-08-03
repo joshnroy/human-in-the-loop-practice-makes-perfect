@@ -54,9 +54,9 @@ class EesCli:
             "--sampler-max-train-iters",
             type=int,
             default=EesMethod.model_fields["sampler_max_train_iters"].default,
-            help="Gradient steps per sampler refit. predicators' own config uses "
-            "100000, but a 10-seed Ball-Ring sweep found the endpoint peaks at the "
-            "default 10000 and falls off on both sides -- 100000 overfits.",
+            help="Gradient steps per sampler refit. The default 10000 matches "
+            "predicators' settings.py default; the paper's launch configs override it "
+            "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
         # These three default TRUE to match predicators (which reproduces the paper);
         # pass --no-... to ablate a single deviation.

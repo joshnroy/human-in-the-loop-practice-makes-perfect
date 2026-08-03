@@ -21,6 +21,13 @@ convert into a comparison is exactly how the too-strong reading survives. sd is 
 quantity that matters for choosing a default -- an arm that is right on average but
 wildly variable is not a good default.
 
+That panel also scatters every individual seed behind the error bars, because the mean
+and sd actively hide the most informative thing in this data: the 3000 arm's 90.0% is not
+nine-ish tasks solved on a typical seed, it is *nine seeds at 90-100% plus one seed at
+10%*. A single collapsed seed, not a broad spread. Worst-seed is printed alongside mean
+and sd for the same reason -- on this project's history, collapse-to-zero and bimodality
+have carried more signal than any difference in means.
+
 The p-values are computed elsewhere (scipy is not a dependency of this project) and
 quoted as constants here; see the experiment log for the command that produced them.
 """
@@ -102,13 +109,18 @@ class BallRingSamplerIters:
     @staticmethod
     def summary_table(
         *, arms: dict[str, dict[str, list[list[int]]]]
-    ) -> list[tuple[int, float, float]]:
-        """(iters, mean %, sd %) per arm, ascending in iters."""
+    ) -> list[tuple[int, float, float, float]]:
+        """(iters, mean %, sd %, worst-seed %) per arm, ascending in iters.
+
+        Worst-seed is carried alongside the mean because it is the statistic that
+        separates "uniformly a bit lower" from "one seed collapsed": the 3000 arm's
+        sd of 28.3 is one seed at 10%, not a wide spread.
+        """
         rows = []
         for arm, iters in sorted(_ARM_ITERS.items(), key=lambda item: item[1]):
             percents = BallRingSamplerIters.endpoint_percents(seed_curves=arms[arm])
             sd = statistics.stdev(percents) if len(percents) > 1 else 0.0
-            rows.append((iters, statistics.mean(percents), sd))
+            rows.append((iters, statistics.mean(percents), sd, min(percents)))
         return rows
 
     @staticmethod
@@ -162,6 +174,19 @@ class BallRingSamplerIters:
             linewidth=1.5,
             label=f"predicators reference ({_REFERENCE_MEAN:.0f}% +- {_REFERENCE_SD:.0f})",
         )
+        # Every seed, behind the summary: the 3000 arm's sd is one collapsed seed at 10%,
+        # not a wide spread, and no mean/sd rendering can show that difference.
+        for arm, arm_iters in ordered:
+            percents = BallRingSamplerIters.endpoint_percents(seed_curves=arms[arm])
+            endpoint_ax.scatter(
+                [arm_iters * 1.12] * len(percents),
+                percents,
+                s=14,
+                color="tab:blue",
+                alpha=0.35,
+                zorder=1,
+                label="individual seeds" if arm_iters == min(iters) else None,
+            )
         endpoint_ax.errorbar(
             iters,
             means,
@@ -170,11 +195,12 @@ class BallRingSamplerIters:
             capsize=4,
             color="tab:blue",
             linewidth=2,
+            zorder=3,
             label="ours (mean +- sd over 10 seeds)",
         )
         # Label each arm with its paired p-value against the 10000 arm, rather than
         # calling 10000 "the optimum": every one of these is above 0.05.
-        for arm_iters, mean, sd in table:
+        for arm_iters, mean, sd, _worst in table:
             p_value = _PAIRED_P_VS_10K.get(arm_iters)
             if p_value is None:
                 continue
@@ -217,10 +243,11 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     BallRingSamplerIters.render(arms_json=args.arms_json, output=args.output)
-    for iters, mean, sd in BallRingSamplerIters.summary_table(
+    print(f"{'iters':>7}  {'mean':>5}  {'sd':>5}  {'worst':>5}")
+    for iters, mean, sd, worst in BallRingSamplerIters.summary_table(
         arms=BallRingSamplerIters.load_arms(json_path=args.arms_json)
     ):
-        print(f"{iters:>7,}  {mean:5.1f}  +- {sd:4.1f}")
+        print(f"{iters:>7,}  {mean:5.1f}  +-{sd:4.1f}  {worst:5.1f}")
 
 
 if __name__ == "__main__":

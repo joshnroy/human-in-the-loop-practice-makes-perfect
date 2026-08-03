@@ -25,10 +25,12 @@ Defaults come from `predicators/settings.py` (`active_sampler_learning_num_sampl
 = 100`, `active_sampler_learning_exploration_epsilon = 0.5`,
 `active_sampler_learning_object_specific_samplers = False`,
 `mlp_classifier_hid_sizes = [32, 32]`, `learning_rate = 1e-3`, `weight_decay = 0`,
-`mlp_classifier_n_iter_no_change = 5000`) as overridden by
-`scripts/configs/active_sampler_learning.yaml` (`sampler_mlp_classifier_max_itr:
-100000`, `mlp_classifier_balance_data: False`) -- the config the paper's own
-experiments were launched with.
+`mlp_classifier_n_iter_no_change = 5000`, `sampler_mlp_classifier_max_itr = 10000`)
+as overridden by `scripts/configs/active_sampler_learning.yaml`
+(`sampler_mlp_classifier_max_itr: 100000`, `mlp_classifier_balance_data: False`) --
+the config the paper's own experiments were launched with. Note that
+`sampler_mlp_classifier_max_itr` therefore has *two* reference values: predicators'
+library default of 10000, and the paper launch config's 100000.
 
 Scope: this file owns *only* parameter selection for a single skill. There is one
 `LearnedSkillSampler` per skill *name* (parameterized option), never per grounding,
@@ -38,18 +40,28 @@ elsewhere.
 
 Deviations from predicators, all deliberate:
 
-1. `max_train_iters` defaults to 1000 here, not the paper config's 100000. 100000
-   full-batch steps per skill per learning cycle is minutes of CPU per refit and
-   makes the test suite unusable, so this class -- which is constructed directly
-   only by unit tests -- keeps the cheap value. Nothing else about the optimizer
-   differs.
+1. `max_train_iters` defaults to 1000 on the two classes in this file, matching
+   neither predicators' settings.py default (10000) nor the paper config's 100000.
+   100000 full-batch steps per skill per learning cycle is minutes of CPU per refit
+   and makes the test suite unusable, so these classes keep the cheap value.
+   Nothing else about the optimizer differs.
 
-   Do NOT read this as "raise it to 100000 for real experiments". A 10-seed
-   Ball-Ring sweep (docs/experiment-logs/2026-08-03-ballring-iters.md) found the
-   endpoint peaks at 10000 and is worse at both 30000 and 100000: more training
-   drives the training loss down (BCE 5.9e-3 at 10000 vs 2.8e-5 at 100000) while
-   held-out argmax success falls (0.988 vs 0.930). Real runs come through
-   `EesMethod.sampler_max_train_iters`, whose default is that measured optimum.
+   That default is never reached in a real run: `EesMethod._refit_samplers` always
+   passes `max_train_iters=self.sampler_max_train_iters` explicitly, and the only
+   code that constructs `LearnedSkillSampler`/`MlpBinaryClassifier` without it is
+   `tests/methods/practice_makes_perfect/`, which overrides it anyway. So the
+   observation that 1000 sits below `n_iter_no_change` -- which is what motivated
+   raising `EesMethod.sampler_max_train_iters` off 1000 -- is harmless here: unit
+   tests want a fixed cheap step count, not early stopping.
+
+   Do NOT read this as "raise it to 100000 for real experiments", which is what an
+   earlier version of this docstring said. Real runs come through
+   `EesMethod.sampler_max_train_iters`, whose default of 10000 is predicators' own
+   settings.py default. More training measurably overfits the decisive Ball-Ring
+   cup-placement classifier: train BCE 5.9e-3 at 10000 against 2.8e-5 at 100000
+   (i.e. it interpolates the training set) while held-out argmax success falls from
+   0.988 to 0.930 (paired, t = 5.67, 10/10 seeds).
+   See docs/experiment-logs/2026-08-03-ballring-iters.md.
 2. The best-loss checkpoint is kept in memory (`copy.deepcopy` of the state dict)
    rather than round-tripped through a `tempfile.NamedTemporaryFile` as
    `_train_pytorch_model` does. Same weights, no stray temp files.
@@ -105,7 +117,8 @@ class MlpBinaryClassifier(BaseModel):
     seed: int = 0
     # predicators settings.py: mlp_classifier_hid_sizes = [32, 32].
     hid_sizes: tuple[int, ...] = (32, 32)
-    # See deviation 1 in the module docstring: the paper config uses 100000.
+    # See deviation 1 in the module docstring: predicators' settings.py default is
+    # 10000 and the paper config uses 100000. Real runs always pass this explicitly.
     max_train_iters: int = 1000
     # predicators settings.py: learning_rate = 1e-3, weight_decay = 0.
     learning_rate: float = 1e-3
@@ -293,6 +306,7 @@ class LearnedSkillSampler(BaseModel):
     exploration_epsilon: float = 0.5
     seed: int = 0
     hid_sizes: tuple[int, ...] = (32, 32)
+    # See deviation 1: cheap test-only default, always overridden by EesMethod.
     max_train_iters: int = 1000
     learning_rate: float = 1e-3
     weight_decay: float = 0.0
