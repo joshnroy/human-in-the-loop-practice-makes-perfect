@@ -38,11 +38,18 @@ elsewhere.
 
 Deviations from predicators, all deliberate:
 
-1. `max_train_iters` defaults to 1000, not the paper config's 100000. 100000
+1. `max_train_iters` defaults to 1000 here, not the paper config's 100000. 100000
    full-batch steps per skill per learning cycle is minutes of CPU per refit and
-   makes the test suite unusable; the caller should raise it for real experiments
-   (`LearnedSkillSampler(..., max_train_iters=100000)`). Nothing else about the
-   optimizer differs.
+   makes the test suite unusable, so this class -- which is constructed directly
+   only by unit tests -- keeps the cheap value. Nothing else about the optimizer
+   differs.
+
+   Do NOT read this as "raise it to 100000 for real experiments". A 10-seed
+   Ball-Ring sweep (docs/experiment-logs/2026-08-03-ballring-iters.md) found the
+   endpoint peaks at 10000 and is worse at both 30000 and 100000: more training
+   drives the training loss down (BCE 5.9e-3 at 10000 vs 2.8e-5 at 100000) while
+   held-out argmax success falls (0.988 vs 0.930). Real runs come through
+   `EesMethod.sampler_max_train_iters`, whose default is that measured optimum.
 2. The best-loss checkpoint is kept in memory (`copy.deepcopy` of the state dict)
    rather than round-tripped through a `tempfile.NamedTemporaryFile` as
    `_train_pytorch_model` does. Same weights, no stray temp files.

@@ -169,7 +169,24 @@ class EesMethod(Method):
     # the paper's own config for that domain.
     goal_pursuit_horizon: int | None = None
     planning_timeout: float = 10.0
-    sampler_max_train_iters: int = 1000
+    # The operative reason for 10000 over the old default of 1000 is STRUCTURAL, not a
+    # score comparison: 1000 sits below `n_iter_no_change = 5000`, so the early-stopping
+    # branch in MlpBinaryClassifier._fit provably never fired. Any value above that floor
+    # fixes it; 10000 is the argmax of the evidence we have among values that do.
+    #
+    # That evidence is weaker than it looks, and is deliberately NOT the justification.
+    # Ball-Ring endpoints, 10 seeds/arm (docs/experiment-logs/2026-08-03-ballring-iters.md):
+    # 1000 -> 83.0% +- 22.1, 3000 -> 90.0 +- 28.3, 10000 -> 99.0 +- 3.2,
+    # 30000 -> 91.0 +- 12.0, 100000 -> 89.0 +- 16.0. The point estimates trace an
+    # inverted U, but NO pairwise difference is significant at n=10 (paired, vs 10000:
+    # 1000 p=0.057, 30000 p=0.070, 100000 p=0.085, 3000 p=0.350). Resolving any of those
+    # pairs needs ~18-22 seeds. Do not cite this sweep as having established an optimum.
+    #
+    # Separately, it is NOT a defect that this differs from predicators' configured
+    # 100000 (active_sampler_learning.yaml: sampler_mlp_classifier_max_itr): running at
+    # 100000 reproduces predicators' own score (89.0 vs its 91.0), which is the evidence
+    # that the port is faithful.
+    sampler_max_train_iters: int = 10000
 
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
