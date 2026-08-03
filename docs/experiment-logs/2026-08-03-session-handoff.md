@@ -39,6 +39,14 @@ Resolving a 7-point difference at that variance needs ~26 seeds per group; we ha
 mechanistic hypotheses were generated and killed before anyone ran this test — the lesson
 being that power analysis belongs on the *motivating* comparison, not only on the fix arms.
 
+> **Superseded — see `2026-08-03-ballring-iters.md` for the corrected figures.** The
+> p-value, CI and seed count in the paragraph above were computed with **normal**
+> quantiles rather than Welch's t. With the Welch–Satterthwaite df of 11.2 the correct
+> values are **p = 0.109**, 95% CI **−1.8 to +15.8**, ~27 seeds per group. The t statistic
+> of 1.74 is right, and the correction moves the result *further* from significance, so
+> the conclusion in this section is unchanged and if anything stronger. The numbers are
+> left in place rather than rewritten because this file is a point-in-time record.
+
 ### The Ball-Ring sampler-iteration curve (10 seeds/arm, current `main`)
 
 Committed as `2026-08-03-ballring-arms.json` (per-seed, per-sweep, all arms).
@@ -55,6 +63,14 @@ An **inverted U** — 10000 is the optimum on both mean *and* variance, and both
 more iterations are worse. Note our class default is still **1000** (`ees_method.py`), which
 sits below the `n_iter_no_change = 5000` floor so early stopping provably never fires. The
 default has never been changed despite the evidence; see "next steps".
+
+> **Superseded — see `2026-08-03-ballring-iters.md`.** "10000 is the optimum" overstates
+> this table: the point estimates order that way, but **no** pairwise difference is
+> significant at n=10 (paired, vs 10000: 1000 p=0.057, 30000 p=0.070, 100000 p=0.085,
+> 3000 p=0.350), and every arm lies inside predicators' own ±1sd band. 3000 and 10000 are
+> frankly indistinguishable. The default did move to 10000, but on the structural grounds
+> noted here (the `n_iter_no_change` floor) plus the fact that 10000 is predicators' own
+> `settings.py` default — **not** because this curve established an optimum.
 
 ## Hypotheses tested and REFUTED (do not re-tread)
 
@@ -91,6 +107,9 @@ so they are safe to land; none is *demonstrated* to help.
    (`2026-08-03-ballring-arms.json`); the write-up and figure were not finished. The
    substantive change is the class default `sampler_max_train_iters` **1000 → 10000**,
    which the curve above and the earlier Light Switch grid both support.
+   *(Done — see `2026-08-03-ballring-iters.md`. Note the justification that shipped is
+   the `n_iter_no_change` floor plus predicators' own 10000 default, not the curve:
+   the curve supports nothing at n=10.)*
 2. **Review/merge PR #31.**
 3. **Decide on the three `ees-*` null branches** — `decouple` is worth landing on
    correctness grounds (one flag currently gates both ε-exploration *and* whether the

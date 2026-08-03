@@ -38,9 +38,10 @@ two-sample t-test:
 
 Neither reaches significance, so the retraction does not depend on which of the two
 98-99% arms you call "ours". Detecting an effect of that size at that variance needs
-roughly **20-27 seeds per group**; we ran 10. At n=10 the smallest difference resolvable
-against predicators' sd of 12.0 is about 14 points — larger than the gap being argued
-about.
+roughly **20-27 seeds per group**; we ran 10. Turned around: at n=10 per group, with the
+observed sds of 4.2 (ours) and 12.0 (predicators), the smallest difference this design
+could have detected at 80% power is about **12 points** — larger than the 7-8 point gap
+being argued about. The design could not have resolved the claim it was used to make.
 
 > **Correction to the numbers previously circulated for this comparison.** The
 > `fix_ignore_effects` row was earlier recorded as *p ≈ 0.081, 95% CI −0.9 to +14.9,
