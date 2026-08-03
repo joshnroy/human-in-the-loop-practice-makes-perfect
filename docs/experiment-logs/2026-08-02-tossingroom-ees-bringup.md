@@ -411,3 +411,123 @@ makes the budget mean something.
 Note one further behavioural consequence: throwing in the *wrong* room also releases the
 item now. That follows from "throwing is a release"; only an empty-handed throw remains a
 true no-op.
+
+### What the trained policy actually does, one clip per goal family
+
+The clips below are **not fresh demo runs**. Each is the `10000`-iteration arm's own run
+at that seed, re-run with `--num-render-checkpoints 2` and verified to reproduce
+`results-release/ees10000/ees/<seed>/stats.json` **evaluation-for-evaluation** — so these
+are literally the policies behind the table above, at its final sweep (25 cycles, 2500
+transitions), on that run's first test task. Sampler budget is the `main` default,
+**10000** (`--sampler-max-train-iters` left unset).
+
+**Seed rule: the lowest seed whose first test task belongs to that family.** A seed fixes
+the whole test set, so which family test task 0 lands in is fixed too (families are drawn
+`0.4/0.4/0.2`); that gives TRASH → seed 0, RECYCLING → seed 5, EMPTY → seed 4. The rule is
+deliberately not success-selected — **seed 0 is the arm's worst seed** (25/30 = 83.3%
+final, the low end of the `83-100` range quoted above), and it is used anyway.
+
+Success is read off the bin-count badge in the last frame (`T:1` / `R:1` / `R:0 T:0`), not
+off the frame count; the force in each label is rounded to 2dp by the renderer, so it is
+quoted approximately.
+
+**TRASH, trained** — `Pickup(trash)`, `MoveRoom` 3→4→5→6, `Throw` at ≈0.77 against this
+task's `target_force` 0.712. Five actions, the shortest solve this family admits, and the
+throw lands (`T:1`): the learned force is inside the 0.1 tolerance window on the first
+attempt, so there is no second attempt to make.
+
+![EES, trained, TRASH](2026-08-03-tossingroom-ees-trash.gif)
+
+**TRASH, unpracticed** (same seed, same task, the sweep *before* any practice) — the same
+five-action plan, `Throw` at ≈0.73, and it **also lands**. Shown deliberately rather than
+quietly dropped: a uniform force lands within 0.1 of 0.712 about 19% of the time, and this
+is one of those times. It is the whole thesis of this PR in one frame — an unpracticed
+policy's apparent competence here is a coin flip, not a learned sampler, and at the old
+horizon it also had eleven more coin flips to spend.
+
+![EES, unpracticed, TRASH](2026-08-03-tossingroom-ees-trash-untrained.gif)
+
+**RECYCLING, trained** — `Pickup(recycling)`, `MoveRoom` 3→2→1, `Throw` at ≈0.95 against
+`target_force` 0.988, error ≈0.04 against a 0.1 tolerance. Four actions, again the shortest
+solve, `R:1`.
+
+![EES, trained, RECYCLING](2026-08-03-tossingroom-ees-recycling.gif)
+
+**RECYCLING, unpracticed** — the same approach, then `Throw` at ≈0.38 against 0.988: a miss
+by 0.6, the item is released, and the remaining three frames are `no-op (no plan)`. Fast
+Downward is right that there is no plan. The pile is in room 3, the recycling bin in room 1,
+and `blocked_right_from = 2` makes stepping right from room 2 back into room 3 impossible —
+so **for the RECYCLING family a missed throw is terminal at any horizon**, not merely
+expensive. The "fetch a fresh item" retry route the release change leaves open exists only
+for TRASH, whose bin (room 6) sits on the reachable side of the ledge.
+
+![EES, unpracticed, RECYCLING](2026-08-03-tossingroom-ees-recycling-untrained.gif)
+
+**EMPTY, trained** — `MoveRoom` 3→4→5→6 then `Press`, four actions, both bins to zero
+(`R:0 T:0`). This family contains no `Throw` at all, so it is deterministic and neither the
+release change nor the horizon change touches it; its unpracticed clip is identical and is
+not reproduced here.
+
+![EES, trained, EMPTY](2026-08-03-tossingroom-ees-empty.gif)
+
+These are 1280x240 at 2 fps, against the July skill-oracle clips'
+(`2026-07-24-tossingroom-oracle-*.gif`) 1000x188 at ~6 fps — a `TossingRoomRenderer`
+figure-size and `render_fps` difference, not a regression. File sizes match that precedent
+(22-26 KB each).
+
+#### Reproducing the clips
+
+```bash
+# one run per family; `--num-render-checkpoints 2` records the pre-practice sweep as
+# episode_000000.mp4 and the final one as episode_002500.mp4. Run these ONE AT A TIME.
+for seed in 0 5 4; do
+  python -m hitl_pmp.cli --env tossingroom --method ees --seed $seed \
+    --num-test-tasks 30 --num-cycles 25 --max-steps-per-interaction 100 \
+    --sampler-max-train-iters 10000 --num-render-checkpoints 2 \
+    --output-dir results/demo-$seed
+done
+```
+
+Each run's `stats.json` `evaluations` must equal `results-release/ees10000/ees/$seed/`'s
+exactly; all three did. The mp4 → gif step quantises to a shared 64-colour palette before
+writing, which is what keeps these at the ~25 KB of the oracle precedent rather than
+~130 KB: an mp4 round trip adds per-pixel compression noise everywhere, which defeats GIF's
+inter-frame delta encoding until the palette collapses it again.
+
+```python
+import imageio
+import numpy as np
+from PIL import Image
+
+frames = [np.asarray(f) for f in imageio.get_reader(video_path)]
+palette = Image.fromarray(np.concatenate(frames, axis=0)).quantize(
+    colors=64, method=Image.Quantize.MEDIANCUT
+)
+images = [Image.fromarray(f).quantize(palette=palette, dither=Image.Dither.NONE) for f in frames]
+images[0].save(
+    gif_path,
+    save_all=True,
+    append_images=images[1:],
+    duration=500,  # 2 fps, matching TossingRoomCli.render_fps
+    loop=0,
+    optimize=True,
+    disposal=1,
+)
+```
+
+`VideoWriter.write_gif` remains the plain mp4 → gif path; this is a post-processing step on
+top of the same frames, deliberately kept in this log rather than pushed into `core/` —
+this PR's source diff is two files, and a rendering-size tweak does not belong in it.
+
+#### A negative result: `--goal-type` is not the right way to make these
+
+The obvious approach — `--goal-type trash` to force a deterministic single-family demo — is
+wrong, and expensively so. `forced_goal_type` pins **training** tasks as well as test ones,
+which is a different experiment from any arm in this log. Run at seed 0 with the protocol
+above it scores **2/30**, with a sweep sequence that flips between 30/30 and 2/30 to the
+end (its last seven sweeps are `30, 2, 30, 30, 2, 30, 2`): a test set that is 100% throw
+tasks amplifies the
+sampler's per-seed instability into an all-or-nothing signal, where the mixed distribution's
+20% `Press`-only tasks would have floored it around 6/30. Use `--goal-type` for a
+*deterministic* demo of a fixed policy (the skill oracle, as in PR #25); do not use it to
+demonstrate a learning method.
