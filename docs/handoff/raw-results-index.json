@@ -1,0 +1,422 @@
+[
+  {
+    "arm": "fix-results/combo_decouple/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 96.0,
+    "final_sd": 7.0,
+    "recorded": "2026-08-01 07:59"
+  },
+  {
+    "arm": "fix-results/combo_goal/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 96.0,
+    "final_sd": 7.0,
+    "recorded": "2026-08-01 07:54"
+  },
+  {
+    "arm": "fix-results/combo_scoring/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 100.0,
+    "final_sd": 0.0,
+    "recorded": "2026-08-01 08:06"
+  },
+  {
+    "arm": "fix-results/control/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 67.0,
+    "final_sd": 24.5,
+    "recorded": "2026-08-01 07:15"
+  },
+  {
+    "arm": "fix-results/decouple/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 70.0,
+    "final_sd": 29.4,
+    "recorded": "2026-08-01 07:38"
+  },
+  {
+    "arm": "fix-results/envfix/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 99.0,
+    "final_sd": 3.2,
+    "recorded": "2026-08-01 09:34"
+  },
+  {
+    "arm": "fix-results/goal_interval/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 20.0,
+    "final_sd": 33.3,
+    "recorded": "2026-08-01 07:29"
+  },
+  {
+    "arm": "fix-results/ignore_effects/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 98.0,
+    "final_sd": 4.2,
+    "recorded": "2026-08-01 07:20"
+  },
+  {
+    "arm": "fix-results/scoring/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 78.0,
+    "final_sd": 34.3,
+    "recorded": "2026-08-01 07:48"
+  },
+  {
+    "arm": "iters-results/ballring/1000/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 34.0,
+    "final_sd": 35.7,
+    "recorded": "2026-07-31 18:38"
+  },
+  {
+    "arm": "iters-results/ballring/10000/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 67.0,
+    "final_sd": 24.5,
+    "recorded": "2026-07-31 18:47"
+  },
+  {
+    "arm": "iters-results/ballring/100000/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 53.0,
+    "final_sd": 25.4,
+    "recorded": "2026-07-31 19:03"
+  },
+  {
+    "arm": "iters-results/lightswitch/1000/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 100.0,
+    "final_sd": 0.0,
+    "recorded": "2026-07-29 05:00"
+  },
+  {
+    "arm": "iters-results/lightswitch/10000/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 100.0,
+    "final_sd": 0.0,
+    "recorded": "2026-07-29 05:03"
+  },
+  {
+    "arm": "iters-results/lightswitch/100000/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 99.0,
+    "final_sd": 3.2,
+    "recorded": "2026-07-31 18:30"
+  },
+  {
+    "arm": "results-release/ees1000/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 38.7,
+    "final_mean": 93.3,
+    "final_sd": 14.8,
+    "recorded": "2026-08-02 20:25"
+  },
+  {
+    "arm": "results-release/ees10000/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 38.7,
+    "final_mean": 95.0,
+    "final_sd": 5.0,
+    "recorded": "2026-08-02 20:25"
+  },
+  {
+    "arm": "results-release/ees100000/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 38.7,
+    "final_mean": 94.0,
+    "final_sd": 6.0,
+    "recorded": "2026-08-02 20:25"
+  },
+  {
+    "arm": "results-release/random/random-skills",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 3.3,
+    "final_mean": 3.7,
+    "final_sd": 4.0,
+    "recorded": "2026-08-02 20:25"
+  },
+  {
+    "arm": "repo-results/ees-double-observe/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 100.0,
+    "final_sd": 0.0,
+    "recorded": "2026-07-21 18:30"
+  },
+  {
+    "arm": "repo-results/ees-grid100/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 98.0,
+    "final_sd": 6.3,
+    "recorded": "2026-07-21 18:22"
+  },
+  {
+    "arm": "repo-results/ees/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 100.0,
+    "final_sd": 0.0,
+    "recorded": "2026-07-21 18:30"
+  },
+  {
+    "arm": "repo-results/ees/random-skills",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 0.0,
+    "final_sd": 0.0,
+    "recorded": "2026-07-21 18:11"
+  },
+  {
+    "arm": "repo-results/ees/skill-oracle",
+    "seeds": 10,
+    "sweeps": [
+      1
+    ],
+    "transitions_final": 0,
+    "unpracticed_mean": 100.0,
+    "final_mean": 100.0,
+    "final_sd": 0.0,
+    "recorded": "2026-07-21 18:11"
+  },
+  {
+    "arm": "samp1/iters100k/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 89.0,
+    "final_sd": 16.0,
+    "recorded": "2026-08-02 16:51"
+  },
+  {
+    "arm": "samp1/iters10k/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 99.0,
+    "final_sd": 3.2,
+    "recorded": "2026-08-02 16:37"
+  },
+  {
+    "arm": "samp1/iters1k/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 83.0,
+    "final_sd": 22.1,
+    "recorded": "2026-08-02 16:56"
+  },
+  {
+    "arm": "samp1/iters30k/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 91.0,
+    "final_sd": 12.0,
+    "recorded": "2026-08-02 17:09"
+  },
+  {
+    "arm": "samp1/iters3k/ees",
+    "seeds": 10,
+    "sweeps": [
+      26
+    ],
+    "transitions_final": 2500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 90.0,
+    "final_sd": 28.3,
+    "recorded": "2026-08-02 17:01"
+  },
+  {
+    "arm": "target-history/ees-baseline/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 100.0,
+    "final_sd": 0.0,
+    "recorded": "2026-07-24 05:48"
+  },
+  {
+    "arm": "target-history/ees-target-history/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 0.0,
+    "final_mean": 100.0,
+    "final_sd": 0.0,
+    "recorded": "2026-07-24 05:50"
+  },
+  {
+    "arm": "tossingroom/tossingroom-1000/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 62.3,
+    "final_mean": 99.0,
+    "final_sd": 3.2,
+    "recorded": "2026-08-02 12:44"
+  },
+  {
+    "arm": "tossingroom/tossingroom-10000/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 62.3,
+    "final_mean": 99.0,
+    "final_sd": 3.2,
+    "recorded": "2026-08-02 13:33"
+  },
+  {
+    "arm": "tossingroom/tossingroom-100000/ees",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 62.3,
+    "final_mean": 98.3,
+    "final_sd": 4.2,
+    "recorded": "2026-08-02 14:58"
+  },
+  {
+    "arm": "tossingroom/tossingroom-random/random-skills",
+    "seeds": 10,
+    "sweeps": [
+      11
+    ],
+    "transitions_final": 1500,
+    "unpracticed_mean": 3.7,
+    "final_mean": 6.7,
+    "final_sd": 2.7,
+    "recorded": "2026-08-02 15:00"
+  }
+]
