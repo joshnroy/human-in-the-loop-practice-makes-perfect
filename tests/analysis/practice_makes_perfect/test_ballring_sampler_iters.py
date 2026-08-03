@@ -53,11 +53,12 @@ def test_three_thousand_arm_is_bimodal_not_broadly_spread():
 
 
 def test_ten_thousand_has_the_best_point_estimate_and_lowest_spread():
-    """10000 is the argmax of this sweep on BOTH mean and sd, which is why it was picked
-    among the values above the `n_iter_no_change = 5000` floor.
+    """10000 is the argmax of this sweep on BOTH mean and sd.
 
-    This is a point-estimate statement only. No pairwise difference in this sweep is
-    significant at n=10 (paired, vs 10000: 1000 p=0.057, 30000 p=0.070, 100000 p=0.085,
+    This is a point-estimate statement only, and it is NOT why 10000 was chosen as the
+    default -- that rests on 1000 sitting below the `n_iter_no_change = 5000` floor and on
+    10000 being predicators' own settings.py default. No pairwise difference in this sweep
+    is significant at n=10 (paired, vs 10000: 1000 p=0.057, 30000 p=0.070, 100000 p=0.085,
     3000 p=0.350), so this test asserts an ordering, NOT that an optimum was established.
     """
     table = BallRingSamplerIters.summary_table(
