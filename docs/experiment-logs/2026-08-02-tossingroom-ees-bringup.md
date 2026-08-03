@@ -336,3 +336,78 @@ exactly the comparison being made. Every arm above is seeded 0..9 by `run_sweep`
 both probe scripts fix their own seeds the same way, so the horizon table reproduces
 bit-for-bit: it was re-derived from scratch for this writeup and came back identical to
 the run that motivated the change.
+
+---
+
+## Follow-up: a missed `Throw` now releases the item
+
+The horizon fix above treats the symptom. The **mechanism** was that a miss cost nothing:
+`_apply_throw` only mutated state on success, so after a miss the robot still held the
+item and still stood in the bin room — a bit-identical state, and the very next step
+re-threw for free. The horizon merely set how many free re-rolls the evaluation granted.
+
+Throwing now releases the item whether or not it lands:
+
+```python
++ next_state.set(obj=self.robot, feature_name="holding", feature_val=0.0)
+  if robot_room == bin_room and abs(raw_force - target) < self.throw_tolerance:
+      next_state.set(obj=bin_obj, feature_name="count", feature_val=count + 1.0)
+- next_state.set(obj=self.robot, feature_name="holding", feature_val=0.0)
+```
+
+The thrown item is **gone, not recoverable**. Items are singleton discriminators carrying
+only `(kind, target_force)` with no position, so "it is lying near the bin" is not
+representable — and making it so would reintroduce exactly the cheap retry this removes.
+The only way to try again is a fresh item from the limitless pile, costing a round trip
+to the start room: affordable inside a 100-step practice period, impossible inside an
+evaluation horizon of longest-solve + 2. Same dynamics in both modes; the **budget** does
+the work, which is how Ball-Ring already makes a failed placement terminal.
+
+### Effect on an unpracticed policy
+
+| | miss was free | miss releases |
+|---|---|---|
+| unpracticed EES | 62.7% | **38.7%** |
+| `Throw` actions / 300 episodes | 648 | **240** |
+| throws per episode | 2.16 | **0.80** |
+
+`0.80` is the confirmation: exactly one throw per throw-task, zero for the `EMPTY` family
+(20% of tasks, solved by `Press`). The retry channel is closed. 38.7% is what a single
+attempt predicts — `0.2 x 100 + 0.8 x 19 = 35.2%`, against a standard error of ~2.8pp.
+
+### The sampler-iteration grid is now a *valid* null, not a censored one
+
+10 seeds, 30 test tasks, 25 cycles x 100 steps:
+
+| arm | mean | sd | worst seed | seeds at ceiling |
+|---|---|---|---|---|
+| random skills | 3.7 | 4.0 | 0.0 | 0/10 |
+| EES, 1000 | 93.3 | **14.8** | **56.7** | 8/10 |
+| EES, 10000 | **95.0** | **5.0** | 83.3 | 3/10 |
+| EES, 100000 | 94.0 | 6.0 | 83.3 | 3/10 |
+
+Paired over the same seeds: all comparisons p ~ 0.68-0.91, with only 2/10 ties.
+
+That last column is why this null is worth more than the previous one. Under the old
+dynamics 9-10 of 10 seeds sat exactly on the ceiling, so paired seeds tied, the effective
+n collapsed to 2-3 and the exact Wilcoxon floored at p = 0.25 — the endpoint could not
+have detected an effect of any size. Now the arms have real spread and the test reports a
+genuine null: **on this domain the sampler-iteration count does not change the success
+rate.** That remains the opposite of Ball-Ring, where 10000 beat 1000 by +33 points.
+
+One signal the old metric could not show: **1000 iterations is bimodal.** Its per-seed
+finals are `[56, 76, 100 x 8]` — eight perfect runs and two poor ones — against
+`83-100` for 10000. Same mean, but **8.7x the variance** (sd 14.8 vs 5.0) and a worst seed
+27 points lower. Reporting only the mean would call these identical; they are not, and the
+more-trained sampler is the more *reliable* one even though fewer of its seeds are perfect.
+
+### What this does not change
+
+The horizon fix stands on its own: a 16-step budget for a 5-skill solve is miscalibrated
+regardless, and `longest_shortest_solve() + 2` ports Light Switch's `H_eval` convention.
+The two changes are complementary — the horizon sets an honest budget, and the release
+makes the budget mean something.
+
+Note one further behavioural consequence: throwing in the *wrong* room also releases the
+item now. That follows from "throwing is a release"; only an empty-handed throw remains a
+true no-op.

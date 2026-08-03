@@ -219,13 +219,26 @@ class TossingRoomEnvironment(Environment):
         item_obj = self.item_for_kind(kind=holding)
         bin_room = self.bin_room_for_kind(kind=holding)
         target = state.get(obj=item_obj, feature_name="target_force")
-        # Throw succeeds only in the item's own bin room, and only when the dial is
-        # within tolerance of that item's target (Light Switch's LightOn logic, but
-        # within a single room -- the throw never crosses rooms).
+        # Throwing always releases the item, whether or not it lands. It lands only in
+        # the item's own bin room and only when the dial is within tolerance of that
+        # item's target (Light Switch's LightOn logic, but within a single room -- the
+        # throw never crosses rooms).
+        #
+        # The release is what makes a miss cost something. A miss used to change
+        # nothing at all, so the robot still held the item and still stood in the bin
+        # room and the very next step re-threw for free -- which quietly turned the
+        # evaluation horizon into a "number of attempts" dial (an unpracticed EES
+        # scored 94.7%, purely by re-rolling a ~0.19 chance). The thrown item is gone
+        # rather than recoverable: items are singleton discriminators carrying only
+        # (kind, target_force) with no position, so "it is lying near the bin" is not
+        # representable, and making it so would just restore a cheap retry. Trying
+        # again therefore means a fresh item from the limitless pile, which costs a
+        # round trip to the start room -- affordable inside a 100-step practice
+        # period, and not inside an evaluation horizon of longest-solve + 2.
+        next_state.set(obj=self.robot, feature_name="holding", feature_val=0.0)
         if robot_room == bin_room and abs(raw_force - target) < self.throw_tolerance:
             count = state.get(obj=bin_obj, feature_name="count")
             next_state.set(obj=bin_obj, feature_name="count", feature_val=count + 1.0)
-            next_state.set(obj=self.robot, feature_name="holding", feature_val=0.0)
 
     def _apply_press(self, *, next_state: State, robot_room: int) -> None:
         if robot_room == self.button_room:
