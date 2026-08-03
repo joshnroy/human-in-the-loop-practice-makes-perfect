@@ -169,7 +169,32 @@ class EesMethod(Method):
     # the paper's own config for that domain.
     goal_pursuit_horizon: int | None = None
     planning_timeout: float = 10.0
-    sampler_max_train_iters: int = 1000
+    # Two reasons for 10000 over the old default of 1000, neither of which is a score
+    # comparison:
+    #
+    # 1. STRUCTURAL. 1000 sits below `n_iter_no_change = 5000`, so the early-stopping
+    #    branch in MlpBinaryClassifier._fit provably never fired -- not rarely, never.
+    #    Every refit ran exactly 1000 full-batch steps whether or not the loss had
+    #    stopped moving, making a mechanism ported from predicators dead code.
+    # 2. IT IS PREDICATORS' OWN DEFAULT. `predicators/settings.py` L572 sets
+    #    `sampler_mlp_classifier_max_itr = 10000`. The paper's launch configs override
+    #    it to 100000 (`scripts/configs/active_sampler_learning.yaml` L112), which is
+    #    why 100000 is the number this codebase used to contrast against -- but the
+    #    library default a caller gets without a config is 10000, so matching the
+    #    reference argues for exactly this value.
+    #
+    # The Ball-Ring sweep is consistent with 10000 but does NOT establish it as an
+    # optimum, and is deliberately not the justification. Endpoints, 10 seeds/arm
+    # (docs/experiment-logs/2026-08-03-ballring-iters.md): 1000 -> 83.0% +- 22.1,
+    # 3000 -> 90.0 +- 28.3, 10000 -> 99.0 +- 3.2, 30000 -> 91.0 +- 12.0,
+    # 100000 -> 89.0 +- 16.0. The point estimates trace an inverted U, but NO pairwise
+    # difference is significant at n=10 (paired, vs 10000: 1000 p=0.057, 30000 p=0.070,
+    # 100000 p=0.085, 3000 p=0.350). Resolving any of those pairs needs ~19-23 seeds.
+    # Do not cite this sweep as having established an optimum.
+    #
+    # Running at the paper config's 100000 reproduces predicators' own score
+    # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
+    sampler_max_train_iters: int = 10000
 
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
