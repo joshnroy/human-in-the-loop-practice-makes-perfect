@@ -71,7 +71,11 @@ if they're conceptually part of the same effort.
   `<results-root>/<method>/<seed>/` layout `analysis/` globs for, with fixed
   (never randomly drawn) seeds. Use it rather than hand-rolling a shell loop; a
   single `--seed` fully determines a run, pinned end-to-end by
-  `tests/scripts/test_reproducibility.py`.
+  `tests/scripts/test_reproducibility.py`. Each run also gets a `timing.json`
+  beside its `stats.json` (wall-clock, exit status, and both the sweep-local and
+  machine-wide concurrency it ran against) — deliberately a *separate* file, since
+  `stats.json`'s byte-stability is what verifies a change didn't alter results, and
+  timestamps in it would break that. Read it back with `analysis/run_timing.py`.
 - `analysis/` scripts are **post-run analysis only** — they read `--output-dir`
   output back in and produce plots/tables/reports; they never run a simulation
   or drive a `Method` themselves. That's `hitl_pmp/cli.py`'s job (`python -m
