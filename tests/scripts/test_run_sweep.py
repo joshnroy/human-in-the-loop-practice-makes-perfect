@@ -217,7 +217,7 @@ def test_timing_is_written_even_when_the_child_cannot_be_launched(*, tmp_path: P
     """subprocess.run itself raising (no such executable) is the one path that
     would otherwise skip the record entirely -- hence the try/finally."""
     run = _fake_run(tmp_path=tmp_path, seed=0, command=["definitely-not-a-real-executable"])
-    outcomes = SweepRunner.execute(runs=[run], max_workers=1)
+    outcomes = SweepRunner.execute(runs=[run], max_workers=1, retry_policy=_NO_BACKOFF)
     assert outcomes[0].returncode == -1
     timing = _timing_of(run=run)
     assert timing.returncode == -1
@@ -237,7 +237,8 @@ def test_a_run_that_cannot_be_launched_is_reported_not_raised(*, tmp_path: Path)
     healthy = _fake_run(tmp_path=tmp_path, seed=1, command=[sys.executable, "-c", "print('fine')"])
 
     outcomes = sorted(
-        SweepRunner.execute(runs=[broken, healthy], max_workers=2), key=lambda o: o.run.seed
+        SweepRunner.execute(runs=[broken, healthy], max_workers=2, retry_policy=_NO_BACKOFF),
+        key=lambda o: o.run.seed,
     )
 
     # The failed spawn is reported as an ordinary failed outcome...
@@ -260,7 +261,7 @@ def test_a_run_that_cannot_be_launched_still_fails_the_sweep(*, tmp_path: Path) 
     """Reporting instead of raising must not downgrade a hard failure to a silent
     pass: `main` exits non-zero if any outcome failed, and rc=-1 is a failure."""
     run = _fake_run(tmp_path=tmp_path, seed=0, command=["definitely-not-a-real-executable"])
-    outcomes = SweepRunner.execute(runs=[run], max_workers=1)
+    outcomes = SweepRunner.execute(runs=[run], max_workers=1, retry_policy=_NO_BACKOFF)
     assert [outcome for outcome in outcomes if not outcome.succeeded] == outcomes
 
 

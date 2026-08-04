@@ -40,7 +40,44 @@ python -m scripts.run_sweep \
   `tests/scripts/test_reproducibility.py`.
 - A failing run is reported, not raised: one bad seed must not abort the other
   29. The command exits non-zero if any run failed, and each run's stdout/stderr
-  is saved to its own `log.txt`.
+  is saved to its own `log.txt`. That covers a run that never *started* too — a
+  spawn that raises is reported as `returncode == -1` with the traceback as its
+  output, rather than escaping and taking the sweep down with it.
+- `--max-spawn-attempts` (default 3) retries a run that could not be **launched**.
+  See below — the distinction it draws is the important part.
+
+## Retrying a failed *launch*, never a failed *run*
+
+`subprocess.run` **raising** means the child never started. On this box the real
+case is memory pressure making `fork()` raise `OSError`, and it is transient: a
+sibling worker finishing frees gigabytes within seconds, so the same command
+would very likely launch a moment later. Losing a ~40-minute run to that is pure
+waste, so it is retried — 3 attempts by default, backing off 2s then 4s.
+`--max-spawn-attempts 1` disables retrying entirely.
+
+**A child that started and exited non-zero is never retried.** `--seed` fully
+determines a run (`tests/scripts/test_reproducibility.py` pins this), so
+re-running it would burn another ~40 minutes reproducing the identical failure. A
+sweep with one genuinely broken seed must cost 1x, not 3x. Conflating the two
+events is the expensive mistake here, and
+`test_a_run_that_started_and_exited_non_zero_is_never_retried` pins that exactly
+one spawn happens on that path.
+
+Retries are recorded, never silent — a sweep that quietly retried a dozen times
+is a machine-health signal someone needs to see:
+
+- each retry prints a `[retry] <method> seed=N: spawn attempt i/3 raised OSError`
+  line, and the run's own status line gains `(3 spawn attempts)`;
+- every failed attempt's traceback (not just the last) is prepended to `log.txt`;
+- `spawn_attempts` is recorded in `timing.json`;
+- the sweep summary reports how many runs needed more than one spawn.
+
+**Retrying cannot change results.** A retried attempt is the identical command
+with the identical `--seed`, so a run that launches on attempt 2 produces exactly
+what attempt 1 would have. The one measurement it perturbs is `elapsed_seconds`,
+which includes the backoff by design — that is genuinely time the sweep spent —
+so `spawn_attempts > 1` is how a wall-clock analysis identifies (and if wanted,
+excludes) such a run.
 
 ## `timing.json`: how long a run took, and against how much load
 
@@ -83,7 +120,9 @@ comparing them adds one — `analysis/run_timing.py` does.
 `cli_processes` is `null` rather than `0` where there is no `/proc` (macOS) —
 "unknown" and "none in flight" are different facts. Elapsed comes from
 `time.monotonic()`, not from subtracting the timestamps, so an NTP step mid-run
-can't corrupt it.
+can't corrupt it — though it *does* include any spawn-retry backoff, which is
+what `spawn_attempts` (defaulted to 1, so records written before retrying existed
+still read truthfully) is there to let you spot.
 
 ## Seeds are fixed
 
