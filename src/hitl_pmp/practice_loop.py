@@ -105,9 +105,9 @@ class PracticeLoop:
 
     **Rendered frames are always streamed, never accumulated.** Each sweep's
     frames are handed to on_checkpoint_frames the moment that sweep finishes and
-    then dropped; run() returns nothing, and there is no code path anywhere in
-    this class that holds a frame past the sweep that produced it. Peak retention
-    is therefore one sweep regardless of how long a run is.
+    then dropped; run() returns nothing, and nothing in this class accumulates
+    frames across sweeps. Peak retention is therefore one sweep's worth,
+    regardless of how long a run is.
 
     That is not a default, it is the only behaviour, and deliberately so.
     Retaining every rendered checkpoint until the run ends is an unbounded buffer
