@@ -1,0 +1,195 @@
+---
+name: hitl-env
+description: Set up and verify the hitl-pmp environment - conda activation, FD_EXEC_PATH, the PYTHONPATH worktree trap, and the five-check verification gate. Use before running any Python, pytest, mypy, ruff, lint-imports, or sweep command in this repo.
+when_to_use: Before the first Python/pytest/mypy/ruff/lint-imports command in a session or worktree; when an import resolves to the wrong checkout; when a ModuleNotFoundError appears; before pushing a branch; before launching a sweep.
+---
+
+# hitl-pmp environment and verification
+
+One source of truth for setup, the import hazard, and the verification gate. Preloaded
+into the `hitl-experiment` agent type; also invocable directly as `/hitl-env`.
+
+## 1. Environment setup
+
+Run this once per shell, from the root of the checkout or worktree you are working in:
+
+```bash
+source $HOME/miniconda3/etc/profile.d/conda.sh && conda activate hitl-pmp
+export FD_EXEC_PATH=/home/josh/Documents/repos/research/downward
+export PYTHONPATH="$PWD/src"
+```
+
+`conda activate` alone is not enough in a non-interactive shell — without sourcing
+`conda.sh` first, a persistent shell silently falls back to `base`, which has mismatched
+dependency versions and produces confusing failures. `FD_EXEC_PATH` is only needed by
+planning-based methods (`--method ees`) and `planning/`'s own tests.
+
+`export PYTHONPATH="$PWD/src"` is only correct while the shell's cwd is the worktree
+root. If you `cd` anywhere, or you are unsure, use the cwd-independent form:
+
+```bash
+export PYTHONPATH="$(git rev-parse --show-toplevel)/src"
+```
+
+## 2. The PYTHONPATH trap — the load-bearing line
+
+**A git worktree silently imports the *main* checkout's library unless `PYTHONPATH` is set.**
+
+The editable install's `.pth` file points at an absolute path: the main checkout's `src/`.
+So in a worktree, `import hitl_pmp` resolves to someone else's code, while
+`python -m scripts.run_sweep` loads the driver from cwd. A worktree can therefore run
+its own driver against a different worktree's library, and nothing errors — the run just
+measures the wrong thing. This has already produced one near-invalid measurement.
+
+Measured in a fresh worktree on this machine:
+
+```text
+WITHOUT PYTHONPATH -> <main checkout>/src/hitl_pmp/__init__.py     # WRONG: the main checkout
+WITH    PYTHONPATH -> <this worktree>/src/hitl_pmp/__init__.py     # correct
+```
+
+### Sanity check — run this before trusting any result
+
+```bash
+python -c "import hitl_pmp; print(hitl_pmp.__file__)"
+```
+
+The printed path **must** start with the directory you are working in. If it names a
+different checkout, stop and fix `PYTHONPATH` before running anything else.
+
+Note that `PYTHONPATH=src` (relative) appears in older transcripts. It works only while
+cwd is the worktree root and breaks silently otherwise. Prefer an absolute path.
+
+## 3. The verification gate
+
+CI (`.github/workflows/ci.yml`) runs all of these on every push and PR to `main`. Run
+the whole gate locally before pushing:
+
+```bash
+pytest ; ruff check . ; ruff format --check . ; mypy src ; lint-imports
+```
+
+Use `;` rather than `&&` so that one failure does not hide the others.
+
+`lint-imports` must print exactly:
+
+```text
+Contracts: 1 kept, 0 broken.
+```
+
+"0 kept, 1 broken" means the `core` / `environments` / `methods` dependency direction was
+violated — a real architectural error, not a lint nit.
+
+## 4. Verification budget
+
+The full suite is **618 tests, about 2 min 20 s** (measured 2026-08-04). Lint, typecheck
+and import-linter are cheap once warm (~0.3 s total); `mypy` costs ~10 s cold in a fresh
+worktree.
+
+Across one measured session, 20 subagents ran the full suite 38 times — 28 of those were
+repeats within a single agent, an estimated **55-68 minutes** of wall clock.
+
+Guidance, not a prohibition:
+
+- **While iterating**, run targeted tests: `pytest tests/<path>/test_<file>.py`, or
+  `pytest -k <expr>`. Add `-x` to stop at the first failure.
+- **Once, before pushing**, run the full gate above.
+- Re-running the full suite *is* correct when you are chasing a real failure whose blast
+  radius you do not yet know, or after a change that touches shared `core/` interfaces.
+  Some of those 28 repeats were agents legitimately iterating. The waste is re-running
+  597 tests to check a change you already know is local.
+- Never skip the full suite entirely before reporting done — CI will run it anyway, and
+  finding out from CI costs more than finding out locally.
+
+"Push and let CI check it" is **not** a cheap substitute for the local gate. CI is about
+**4.5 min wall-clock** (lint 73-83 s, typecheck 102-115 s, test 252-281 s, run in
+parallel) — roughly what the local gate costs. You pay the same wait, just less
+immediately and with a slower path back to a fix.
+
+## 5. Known sharp edges
+
+- **`ruff format` reformats Python inside Markdown.** Verified on ruff 0.16.1: a
+  ```` ```python ```` block in any `.md` file is formatted like a source file, so a
+  deliberately-ugly snippet in a README will fail `ruff format --check .`. Run
+  `ruff format` on Markdown files you edit, or use a non-`python` fence (`text`,
+  `console`) for code that must stay verbatim.
+- **The `lint-imports` pre-commit hook is fragile on PATH.** `.pre-commit-config.yaml`
+  declares `import-linter` as a `local` hook with `language: system`, so it resolves
+  `lint-imports` from the ambient PATH. That binary exists only inside the `hitl-pmp`
+  conda env, so the hook fails whenever the env is not active in the committing shell.
+  Use `git commit --no-verify` and rely on the manual gate in §3, which is what CI runs
+  anyway. (`pre-commit install` is optional and is not currently installed in this repo's
+  `.git/hooks/`, so you may not hit this at all.)
+- **`pgrep -cf hitl_pmp.cli` self-matches.** The command's own wrapper shell has the
+  pattern in its command line, so the naive form reports a phantom running job. Run
+  `pgrep -af '[h]itl_pmp\.cli'` **directly** — not inside `$(...)`, which spawns another
+  shell that reintroduces the self-match.
+
+## 6. Running sweeps
+
+Drive runs through `scripts/run_sweep.py` (fixed seeds, the
+`<results-root>/<method>/<seed>/` layout `analysis/` globs for), never a hand-rolled
+shell loop. `analysis/` scripts are post-run only: they read `--output-dir` output back
+in and never drive a `Method` themselves.
+
+### Always run a sweep in a memory-capped cgroup
+
+```bash
+systemd-run --user --scope -p MemoryMax=16G -p OOMPolicy=continue \
+  python -m scripts.run_sweep --output-dir <dir> ...
+```
+
+This is not optional hygiene — it prevents a whole class of session loss. A tmux pane
+runs in its own systemd scope, and both the system and user managers here have
+`DefaultOOMPolicy=stop` (verified). Under that policy, when the kernel OOM-kills *any*
+process in the unit, systemd tears down the **entire unit**. On 2026-08-03 one leaking
+process reached ~48 GB and took down the whole session — two mid-flight agents plus hours
+of sweep compute. The journal recorded
+`tmux-spawn-….scope: The kernel OOM killer killed some processes in this unit`, then
+`Failed with result 'oom-kill'` two seconds later; scope peak was 57.5 G memory and
+7.9 G swap.
+
+There is no headroom to absorb a spike: **swap is 100% consumed and all of it is tmpfs**
+(process anonymous swap is 0.00 GB), so a spike goes straight to the OOM killer.
+
+Running under `systemd-run --user --scope` with `OOMPolicy=continue` was verified
+end-to-end to kill only the child (exit 137) while the shell and the tmux scope survive.
+
+Sizing: about **450 MB cgroup-charged per worker** in normal operation. Use `16G` for a
+full sweep, and **2-8 G for probes and one-off runs** so a leak hits a wall in seconds
+rather than minutes. `systemd-run` is at `/usr/bin/systemd-run`.
+
+### Budget concurrency across all agents, not per sweep
+
+`scripts/run_sweep.py`'s `--max-workers` defaults to `os.cpu_count()`, which is **24 on
+this machine — per sweep**. Two agents each taking the default put 48 runs on 24 cores.
+At 28 concurrent runs each run gets 0.665 of a core: **1.4x slower with zero throughput
+gain.**
+
+- **Check before launching**, every time:
+
+  ```bash
+  pgrep -af '[h]itl_pmp\.cli'
+  cat /proc/loadavg
+  ```
+
+  (Use this form, not `pgrep -cf hitl_pmp.cli` — see §5 on the self-match.)
+
+- **Target roughly 22 concurrent runs in total across every agent on the box**, not per
+  sweep. Treat ~22 as a working budget, not a measured optimum: it is derived from the
+  saturation arithmetic above, **not directly observed**. Finding the true knee needs a
+  quiet machine for ~90 minutes, which has not been done.
+- **Pass `--max-workers` explicitly** whenever another agent is already running. Do not
+  take the default by omission.
+- **Yielding is always safe.** Concurrency has been measured *not* to perturb results:
+  13,105 FD process observations showed max lifetime 0 s against a 10 s budget, and
+  `stats.json` was byte-identical between a low-load probe and a 20-way concurrent sweep.
+  Staggering costs wall-clock only, never validity — so when in doubt, take fewer workers.
+
+### Known limitation
+
+`run_sweep` records **no run start time** anywhere: output directories are created only
+~100 ms before `stats.json` is written, so there is no way to reconstruct which runs
+overlapped. That blocks an otherwise-free historical concurrency-vs-wall-clock analysis.
+If you are modifying `run_sweep` for another reason, recording start/end timestamps and
+the worker count would enable it. Do not make that change on its own account.
