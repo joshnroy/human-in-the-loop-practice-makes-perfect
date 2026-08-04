@@ -9,7 +9,20 @@ Expected values below are computed by enumeration on paper, not by running the c
 recording what it said.
 """
 
+import json
+from pathlib import Path
+
+import pytest
+
 from analysis.practice_makes_perfect.tossingroom_comparison import TossingRoomComparison
+
+
+def _write_run(*, root: Path, seed: int, num_total: int) -> None:
+    directory = root / "ees" / str(seed)
+    directory.mkdir(parents=True)
+    (directory / "stats.json").write_text(
+        json.dumps({"evaluations": [[0, 1, num_total], [100, 2, num_total]], "task_name": "t"})
+    )
 
 
 def test_wilcoxon_reaches_its_floor_when_every_pair_moves_the_same_way() -> None:
@@ -97,3 +110,25 @@ def test_realised_test_composition_needs_num_test_tasks_to_match_the_run() -> No
     ten = TossingRoomComparison.realised_test_composition(num_test_tasks=10, seeds=["0"])
     assert ten == {"TRASH": 4, "RECYCLING": 4, "EMPTY": 2}
     assert sum(ten.values()) == 10
+
+
+def test_composition_check_rejects_runs_scored_on_a_different_test_set(*, tmp_path: Path) -> None:
+    """The composition is replicated from TossingRoomTasks, not read out of the runs, so
+    on its own it would happily describe a test set the arms were never scored on. Every
+    evaluation records its own num_total, so the two are cross-checked -- this is the
+    guard against explaining a page of percentages with the wrong denominator."""
+    root = tmp_path / "arm"
+    _write_run(root=root, seed=0, num_total=10)
+    with pytest.raises(ValueError, match="does not match the runs being read"):
+        TossingRoomComparison.print_test_composition(
+            num_test_tasks=30, seeds=["0"], arms=[("arm", root)]
+        )
+
+
+def test_composition_check_passes_when_the_runs_agree(*, tmp_path: Path) -> None:
+    """The complement, so the guard above cannot degenerate into always raising."""
+    root = tmp_path / "arm"
+    _write_run(root=root, seed=0, num_total=30)
+    TossingRoomComparison.print_test_composition(
+        num_test_tasks=30, seeds=["0"], arms=[("arm", root)]
+    )

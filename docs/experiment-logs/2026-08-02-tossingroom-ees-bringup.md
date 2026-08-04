@@ -19,10 +19,10 @@
 > move**, and if anything move slightly up rather than down; the harder test set costs
 > them little because a trained sampler already lands most throws. The numbers, the
 > direction, and the noise floor are in
-> [the release-arm table](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one).
+> [the release-arm table](#the-sampler-iteration-grid-the-null-is-withdrawn-and-this-design-cannot-resolve-it).
 >
 > **One conclusion did not survive**: the sampler-iteration grid's null. See the ⚠ box in
-> [that section](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one).
+> [that section](#the-sampler-iteration-grid-the-null-is-withdrawn-and-this-design-cannot-resolve-it).
 >
 > **Two sections here are older than that, and are marked superseded in place rather
 > than re-run**: the pre-release measurements taken when a missed `Throw` was still
@@ -71,7 +71,7 @@ smoothed away. Detail and per-seed numbers in
 was previously read as a genuine null ("the iteration count does not change the success
 rate"). On the corrected evaluation set 1000 iterations lands **19 points below** 10000,
 p = 0.156 — not significant, but no longer a null either. That claim is withdrawn in
-[its own section](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one);
+[its own section](#the-sampler-iteration-grid-the-null-is-withdrawn-and-this-design-cannot-resolve-it);
 everything else here survived.
 
 ## The bracket
@@ -80,7 +80,7 @@ everything else here survived.
 > 150-step** arm measured *before* a missed `Throw` released the item, on the *sampled*
 > test-set composition. Both of those have since changed, so no row reproduces against
 > current code. The live version of this bracket is the release-arm table in
-> [the follow-up](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one),
+> [the follow-up](#the-sampler-iteration-grid-the-null-is-withdrawn-and-this-design-cannot-resolve-it),
 > which is the 25-cycle × 100-step protocol and is what was re-run. This table is kept
 > because the *contrast* it sets up — an unpracticed policy sitting five points under
 > the oracle — is the observation the whole PR turned on.
@@ -401,14 +401,21 @@ reproduce the same wrong force. Treat it as corroboration, not as a second deriv
 > **Superseded twice; not re-run (2026-08-04).** The table and tests below are the
 > **10-cycle × 150-step, pre-release** grid on the sampled test composition. The live
 > grid is
-> [the release-arm one in the follow-up](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one),
+> [the release-arm one in the follow-up](#the-sampler-iteration-grid-the-null-is-withdrawn-and-this-design-cannot-resolve-it),
 > which is what was re-run. This section is kept for one reason: its *censoring*
 > argument — 9–10 of 10 seeds pinned to the ceiling, effective `n` collapsing to 2–3,
 > exact Wilcoxon flooring at p = 0.25 — is the diagnosis that the release change was
-> meant to cure, and the follow-up's claim to a *valid* null is only meaningful against
-> it. The figure it links has since been regenerated from the release arms, so the
-> figure and this table no longer describe the same runs; read the figure with the
-> follow-up.
+> meant to cure, and the follow-up's discussion of what this design can and cannot
+> resolve is only meaningful against it. The figure it links has since been regenerated
+> from the release arms, so the figure and this table no longer describe the same runs;
+> read the figure with the follow-up.
+>
+> **Its "this is the opposite of Ball-Ring" reading is withdrawn too**, not merely its
+> numbers. On the corrected evaluation set Tossing Room's point estimate favours 10000
+> over 1000 by 19 points — the *same* direction as Ball-Ring's +33, not the opposite —
+> so the "two of three domains cannot see this lever" framing below no longer holds
+> either. What survives is the observation that Tossing Room's endpoint saturates and
+> that saturation limits what any of these comparisons can show.
 
 ![The sampler-iteration grid](2026-08-02-tossingroom-sampler-grid.png)
 
@@ -534,7 +541,15 @@ python -m analysis.practice_makes_perfect.tossingroom_throw_convergence \
 
 Every JSON is committed next to this file, so each table and figure here regenerates
 from the `analysis/` half alone — no re-run, and no chance of a number drifting from the
-data that produced it. `tossingroom_comparison` now also prints the realised
+data that produced it.
+
+Two JSONs beside this file are **historical records, not inputs to anything above**, and
+are kept deliberately rather than deleted:
+`2026-08-02-tossingroom-horizon-sweep.json` and
+`2026-08-02-tossingroom-throw-traces.json`. Both were collected before a missed `Throw`
+released the item, so neither can be reproduced by current code at any composition —
+they are the evidence for the defect that change fixed, and the only surviving record of
+what the domain did before it. `tossingroom_comparison` now also prints the realised
 goal-family composition and **refuses to continue if it is not identical on every
 seed**, which is the check that would have caught this whole class of staleness at
 read time.
@@ -622,7 +637,7 @@ one a bespoke probe and one the real CLI through `PracticeLoop`. The earlier pra
 deriving it from a longer rollout gave 24.0% here, and is wrong for reasons set out
 below.
 
-### The sampler-iteration grid is now a *valid* null, not a censored one
+### The sampler-iteration grid: the null is withdrawn, and this design cannot resolve it
 
 > ### ⚠ This section's headline claim did not survive the re-run
 >
@@ -670,16 +685,33 @@ Paired over the same ten seeds, exact Wilcoxon signed-rank on the endpoint:
 changed is that the *point estimate* moved from ≈0 to −19 points, which is a large
 effect in the same direction Ball-Ring found (+33 points for 10000 over 1000). The
 previous "genuine null" reading was an over-read of a non-significant result even at the
-time; with the corrected evaluation set the data actively point the other way, and the
-correct summary is that **this design cannot resolve the question.**
+time; with the corrected evaluation set the data actively point the other way.
 
-**How underpowered, concretely.** The paired differences have mean −19.0pp and sd
-31.3pp, i.e. Cohen's `dz` ≈ 0.61. A paired design needs roughly **21 seeds** for 80%
-power at that effect size — twice what was run. (An approximation: the endpoint is
-bounded and ceiling-clipped, so this is a guide to the order of magnitude, not a
-sample-size calculation to be quoted precisely.) The median difference is 0.0 in every pair
-because 4 of 10 seeds tie at exactly 100% — the censoring that motivated the release
-change is reduced but not gone.
+**Why p is high, precisely — and it is not simply "too few seeds".** At n = 6 non-tied
+pairs the exact signed-rank floor is `2 / 2⁶ = 0.031`, which is below 0.05. **This test
+had the resolution to reach significance and did not** — unlike the pre-release design,
+where n collapsed to 2–3 and the floor of 0.25 made an effect of *any* size undetectable.
+The reason is that the **sign is inconsistent**, not that the sample is small:
+
+| seed's paired difference (1000 − 10000) | |
+|---|---|
+| toward 10000 | −46.7, −43.4, −76.7, −46.7 (4 seeds) |
+| toward 1000 | +6.7, +16.7 (2 seeds) |
+| tied at 100% | 4 seeds |
+
+A signed-rank test asks whether seeds move *consistently* in one direction, and these do
+not. So the −19pp mean is a **tail effect, not a shift in central tendency**: 1000
+iterations is a wash on six seeds and fails catastrophically on four. That is the same
+fact the bimodality section below reports, arrived at from the test rather than from the
+spread — one story, two views, and it is the reason the median difference is 0.0 while
+the mean is −19.0.
+
+Sample size for a hypothetical *mean* shift of this size: the paired differences have sd
+31.3pp, i.e. Cohen's `dz` ≈ 0.61, so a paired design would need roughly **21 seeds** for
+80% power. That number is worth little here precisely because the effect is not a mean
+shift — quoted for completeness, not as the design recommendation. What would actually
+resolve this domain is more seeds *and* a statistic sensitive to the lower tail rather
+than the average.
 
 **What this does *not* license.** "1000 is enough for Tossing Room" is no longer
 supported — it was the previous section's conclusion and it is withdrawn. "10000 beats
@@ -710,11 +742,13 @@ the 10000 arm moved *up* slightly (95.0 → 97.3) while the 1000 arm moved *down
 
 ### The random-skills floor
 
-**1.7%** (previously 3.7%), sd 1.8, and **five of ten seeds solved nothing at all**
-(previously the worst seed alone was 0). This is the shape of a genuine floor rather than
-a weak method, and it fell for the same reason the unpracticed EES score did: the free
-`EMPTY` tasks that a random skill sequence occasionally stumbles into are now 2 of 30
-rather than ~6. No seed ever reached 100%, at any point in training.
+**1.7%** (previously 3.7%), sd 1.8, and **five of ten seeds solved nothing at all**. The
+previous run's per-seed values were not recorded — only mean 3.7 / sd 4.0 / worst 0.0 —
+so the zero-count is not comparable across the two, and only the mean and sd are. This is
+the shape of a genuine floor rather than a weak method, and it fell for the same reason
+the unpracticed EES score did: the free `EMPTY` tasks that a random skill sequence
+occasionally stumbles into are now 2 of 30 rather than ~6. No seed ever reached 100%, at
+any point in training.
 
 ### What this does not change
 

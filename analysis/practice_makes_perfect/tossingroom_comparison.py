@@ -189,19 +189,42 @@ class TossingRoomComparison:
         return composition
 
     @staticmethod
-    def print_test_composition(*, num_test_tasks: int, seeds: list[str]) -> None:
+    def print_test_composition(
+        *, num_test_tasks: int, seeds: list[str], arms: list[tuple[str, Path]]
+    ) -> None:
         """Print the realised composition, and fail loudly if it is not identical on
         every seed -- a per-seed-varying denominator is exactly the defect the fixed
-        composition removed, and it must not come back unnoticed."""
+        composition removed, and it must not come back unnoticed.
+
+        Also cross-checks the replicated composition against the runs actually being
+        read: every evaluation in every `stats.json` records its own `num_total`, and if
+        that disagrees with the number of tasks this composition divides up then the
+        arms were run with a different `--num-test-tasks` than the one passed here, and
+        every percentage on the page is being explained by the wrong denominator. That
+        is precisely the mismatch that silently gave two `scripts/` probes a 12/12/6 test
+        set, so it is checked rather than assumed."""
         if not seeds:
             return
         composition = TossingRoomComparison.realised_test_composition(
             num_test_tasks=num_test_tasks, seeds=seeds
         )
+        totals = {
+            num_total
+            for _, root in arms
+            for stats_path in root.glob("*/*/stats.json")
+            for _, _, num_total in json.loads(stats_path.read_text())["evaluations"]
+        }
+        if totals and totals != {num_test_tasks}:
+            raise ValueError(
+                f"--num-test-tasks {num_test_tasks} does not match the runs being read, "
+                f"whose evaluations report num_total in {sorted(totals)}; the composition "
+                "below would describe a different test set than the arms were scored on"
+            )
         rendered = " / ".join(f"{count} {name}" for name, count in sorted(composition.items()))
         print(
             f"test set: {rendered} on every one of {len(seeds)} seeds "
-            f"({num_test_tasks} tasks; replicated from TossingRoomTasks, not read back)"
+            f"({num_test_tasks} tasks; replicated from TossingRoomTasks, and checked "
+            f"against every run's own num_total)"
         )
 
     @staticmethod
@@ -566,8 +589,11 @@ def main() -> None:
     seeds: set[str] = set()
     for _, root in arms:
         seeds |= set(TossingRoomComparison.per_seed_curves(root=root, method="ees"))
+    all_arms = arms + (
+        [("random skills", args.random_skills_root)] if args.random_skills_root else []
+    )
     TossingRoomComparison.print_test_composition(
-        num_test_tasks=args.num_test_tasks, seeds=sorted(seeds)
+        num_test_tasks=args.num_test_tasks, seeds=sorted(seeds), arms=all_arms
     )
     TossingRoomComparison.print_table(
         arms=arms, random_skills_root=args.random_skills_root, threshold=args.threshold
