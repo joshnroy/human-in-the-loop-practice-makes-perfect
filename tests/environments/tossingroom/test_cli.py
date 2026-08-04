@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from hitl_pmp.cli import Cli
+from hitl_pmp.environments.tossingroom import cli as tossingroom_cli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
 from hitl_pmp.environments.tossingroom.tasks import TossingRoomTasks
@@ -32,6 +34,38 @@ def test_add_arguments_defaults_match_live_class_values() -> None:
     assert args.throw_tolerance == fields["throw_tolerance"].default
     assert args.target_low == TossingRoomTasks.model_fields["target_low"].default
     assert args.goal_type is None
+
+
+def test_num_test_tasks_field_default_matches_the_global_flag_default() -> None:
+    """Two independent literals (hitl_pmp/cli.py's --num-test-tasks and this domain's
+    Tasks field) that must agree, since the field is what the fixed test-set composition
+    is divided out of."""
+    parser = argparse.ArgumentParser()
+    Cli.add_global_arguments(parser=parser)
+    args = parser.parse_args(["--env", "tossingroom", "--method", "skill-oracle"])
+    assert args.num_test_tasks == TossingRoomTasks.model_fields["num_test_tasks"].default
+
+
+def test_run_method_passes_num_test_tasks_into_tasks(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The composition is only fixed if Tasks knows how many test tasks the harness
+    will draw -- so --num-test-tasks has to reach the constructor."""
+    captured: dict[str, object] = {}
+    build = tossingroom_cli.TossingRoomTasks
+    # Parsed before the patch: add_arguments reads defaults off the real class.
+    args = _build_parser().parse_args(["--num-test-tasks", "7"])
+
+    def spy(**kwargs) -> TossingRoomTasks:
+        captured.update(kwargs)
+        return build(**kwargs)
+
+    monkeypatch.setattr(tossingroom_cli, "TossingRoomTasks", spy)
+    TossingRoomCli.run_method(
+        args=args,
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    assert captured["num_test_tasks"] == 7
 
 
 def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[str]) -> None:
