@@ -32,6 +32,19 @@ python -m analysis.practice_makes_perfect.ees \
 python -m analysis.practice_makes_perfect.tossing3d_comparison --results-root <root>
 ```
 
+**Every success rate below is the count of evaluation episodes solved**, `x/y`, with a
+percentage alongside only where it aids reading. The counts are not derived from the
+percentages — they are what `Metrics` recorded in the first place: `record_evaluation`
+writes `(num_online_transitions, num_solved, num_total)` triples, and those triples are
+committed here as
+[`2026-08-04-tossing3d-arms.json`](2026-08-04-tossing3d-arms.json) — every seed of
+both arms at all 11 checkpoints, copied verbatim out of the runs' own `stats.json`, so
+each number in this log can be re-derived from a file in this repo rather than from a
+results directory that no longer exists.
+
+*Differences* of rates stay in percentage points throughout — paired differences, sds
+and gaps are not counts of anything, and no denominator is invented for them.
+
 ## Running it at all: the integration needed a fix first
 
 The committed integration was green on everything CI runs, but CI does not have
@@ -97,13 +110,20 @@ every swing, so it measures the Pick.
 Fraction of the 10 held-out evaluation tasks solved vs online transitions; solid = mean
 over seeds 0..9, shading = standard error. The paper's Figure 4 view.
 
-| arm | seeds | pre-practice | end of training | sd | min | max |
+| arm | seeds | pre-practice | end of training | sd | worst seed | best seed |
 | --- | --- | --- | --- | --- | --- | --- |
-| **EES** | 10 | 33.0% | **67.0%** | 22.1 | 40% | 100% |
-| random skills | 10 | 14.0% | 21.0% | 7.4 | 10% | 30% |
+| **EES** | 10 | 33/100 (33.0%) | **67/100** (67.0%) | 22.1 | 4/10 | 10/10 |
+| random skills | 10 | 14/100 (14.0%) | 21/100 (21.0%) | 7.4 | 1/10 | 3/10 |
 
-Per-seed end-of-training, EES: `[70, 60, 90, 80, 40, 50, 50, 40, 100, 90]`.
-Per-seed end-of-training, random skills: `[30, 20, 30, 10, 20, 20, 20, 30, 10, 20]`.
+Each arm evaluates 10 held-out tasks per seed on 10 seeds, so the arm column is a
+genuine pooled count of 100 evaluation episodes, not a mean of rates given a
+denominator after the fact. The `sd` is the spread of the ten per-seed rates in points
+— it is *not* a binomial spread on the pooled count, and should not be read as one.
+
+Per-seed end-of-training, EES: `[7/10, 6/10, 9/10, 8/10, 4/10, 5/10, 5/10, 4/10, 10/10, 9/10]`
+— as percentages, `[70, 60, 90, 80, 40, 50, 50, 40, 100, 90]`.
+Per-seed end-of-training, random skills: `[3/10, 2/10, 3/10, 1/10, 2/10, 2/10, 2/10, 3/10, 1/10, 2/10]`
+— as percentages, `[30, 20, 30, 10, 20, 20, 20, 30, 10, 20]`.
 
 Arms share seeds 0..9, so both comparisons are paired and are tested with the exact
 Wilcoxon signed-rank (all 2^n sign assignments enumerated).
@@ -139,12 +159,17 @@ So: the dip is a feature of this sample's mean, not a demonstrated effect.
 `tossing3d_comparison.py` runs this test on every invocation so the claim cannot drift
 back into being asserted.
 
-The checkpoint means, for reference:
+The checkpoints, for reference — evaluation episodes solved out of the 100 run at each
+(10 held-out tasks x 10 seeds):
 
 | transitions | 0 | 150 | 300 | 450 | 600 | 750 | 900 | 1050 | 1200 | 1350 | 1500 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| EES | 33% | 21% | 20% | 25% | 49% | 40% | 64% | 58% | 59% | 61% | **67%** |
-| random skills | 14% | 22% | 23% | 24% | 22% | 24% | 18% | 26% | 22% | 21% | 21% |
+| EES | 33/100 | 21/100 | 20/100 | 25/100 | 49/100 | 40/100 | 64/100 | 58/100 | 59/100 | 61/100 | **67/100** |
+| random skills | 14/100 | 22/100 | 23/100 | 24/100 | 22/100 | 24/100 | 18/100 | 26/100 | 22/100 | 21/100 | 21/100 |
+
+Each denominator is 100 because every seed contributes the same 10 tasks; the pooled
+rate and the mean of the ten per-seed rates therefore coincide exactly, and the plotted
+percentages above are these counts over 100.
 
 This still matters for reading short runs, whether or not the dip is real: a pilot at 90
 transitions showed 6/10 -> 1/10 and looked like EES actively degrading. Whatever that

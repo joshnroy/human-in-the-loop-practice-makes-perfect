@@ -26,6 +26,15 @@ Where a comparison does not reach p < 0.05 it is reported as **not established**
 the sample size a paired design would need for 80% power at the observed effect and
 spread -- rather than as a trend, which is how two results here were overclaimed and
 then retracted.
+
+**Every success rate prints as the counts behind it** (`7/10`, `67/100`), with the
+percentage in parentheses where it helps. Those counts are read straight off the
+`evaluations` triples in each run's `stats.json` -- `Metrics.record_evaluation` writes
+`num_solved`/`num_total` as the primary record -- so a reader never has to multiply a
+rate back out to recover what was measured, and a rounded percentage can never be
+mistaken for the measurement. *Differences* of rates stay in percentage points: a gap,
+an sd or a paired difference is not a count of anything and inventing a denominator for
+one would be worse than leaving it a percentage.
 """
 
 import argparse
@@ -57,6 +66,45 @@ class Tossing3DComparison:
                 for transitions, fraction in metrics.task_training_curve()
             }
         return curves
+
+    @staticmethod
+    def per_seed_counts(*, root: Path, method: str) -> dict[int, dict[int, tuple[int, int]]]:
+        """`{seed: {transitions: (num_solved, num_total)}}`, copied verbatim off the
+        `evaluations` triples `Metrics` writes into `stats.json`.
+
+        A success rate is reported as the counts behind it, never as a percentage a
+        reader would have to multiply back out: `Metrics.record_evaluation` records
+        `num_solved`/`num_total` as the primary record (and validates any per-task
+        `breakdowns` against them), so the numerator and denominator are both already
+        on disk and nothing here reconstructs either. `per_seed_curves` above still
+        supplies the percentages the tests and the plot consume -- the two views come
+        from the same triples."""
+        counts: dict[int, dict[int, tuple[int, int]]] = {}
+        method_dir = root / method
+        if not method_dir.is_dir():
+            return counts
+        for stats_path in sorted(method_dir.glob("*/stats.json")):
+            metrics = Metrics.model_validate_json(stats_path.read_text())
+            counts[int(stats_path.parent.name)] = {
+                transitions: (solved, total) for transitions, solved, total in metrics.evaluations
+            }
+        return counts
+
+    @staticmethod
+    def pooled(
+        *, counts: dict[int, dict[int, tuple[int, int]]], transitions: int
+    ) -> tuple[int, int]:
+        """`(solved, total)` summed across seeds at one checkpoint -- a real count of
+        evaluation episodes, not a mean of per-seed rates dressed up as one. Every seed
+        here evaluates the same number of tasks, so the pooled rate and the mean of the
+        per-seed rates coincide; the pooled count is reported because it is the thing
+        actually measured."""
+        pairs = [
+            seed_counts[transitions]
+            for seed_counts in counts.values()
+            if transitions in seed_counts
+        ]
+        return (sum(solved for solved, _ in pairs), sum(total for _, total in pairs))
 
     @staticmethod
     def endpoints(*, curves: dict[int, dict[int, float]]) -> dict[int, tuple[float, float]]:
@@ -147,7 +195,10 @@ class Tossing3DComparison:
     @staticmethod
     def print_report(*, root: Path, arms: list[str]) -> None:
         per_arm = {arm: Tossing3DComparison.per_seed_curves(root=root, method=arm) for arm in arms}
-        header = f"{'arm':<18}{'seeds':>6}{'first':>9}{'final':>9}{'sd':>7}{'min':>7}{'max':>7}"
+        per_arm_counts = {
+            arm: Tossing3DComparison.per_seed_counts(root=root, method=arm) for arm in arms
+        }
+        header = f"{'arm':<18}{'seeds':>6}{'first':>12}{'final':>12}{'sd':>7}{'min':>9}{'max':>9}"
         print(header)
         print("-" * len(header))
         for arm, curves in per_arm.items():
@@ -157,19 +208,42 @@ class Tossing3DComparison:
                 continue
             firsts = [first for first, _ in ends.values()]
             finals = [final for _, final in ends.values()]
-            print(
-                f"{arm:<18}{len(ends):>6}{statistics.fmean(firsts):>9.1f}"
-                f"{statistics.fmean(finals):>9.1f}"
-                f"{(statistics.stdev(finals) if len(finals) > 1 else 0.0):>7.1f}"
-                f"{min(finals):>7.1f}{max(finals):>7.1f}"
+            counts = per_arm_counts[arm]
+            checkpoints = sorted(next(iter(counts.values())))
+            first_pooled = Tossing3DComparison.pooled(counts=counts, transitions=checkpoints[0])
+            final_pooled = Tossing3DComparison.pooled(counts=counts, transitions=checkpoints[-1])
+            worst = min(
+                counts.values(), key=lambda c: c[checkpoints[-1]][0] / c[checkpoints[-1]][1]
             )
-        print("\n(first = pre-practice checkpoint at 0 transitions; final = end of training)")
+            best = max(counts.values(), key=lambda c: c[checkpoints[-1]][0] / c[checkpoints[-1]][1])
+            print(
+                f"{arm:<18}{len(ends):>6}"
+                f"{f'{first_pooled[0]}/{first_pooled[1]}':>12}"
+                f"{f'{final_pooled[0]}/{final_pooled[1]}':>12}"
+                f"{(statistics.stdev(finals) if len(finals) > 1 else 0.0):>7.1f}"
+                f"{f'{worst[checkpoints[-1]][0]}/{worst[checkpoints[-1]][1]}':>9}"
+                f"{f'{best[checkpoints[-1]][0]}/{best[checkpoints[-1]][1]}':>9}"
+            )
+            print(
+                f"{'':<18}{'':>6}{f'({statistics.fmean(firsts):.1f}%)':>12}"
+                f"{f'({statistics.fmean(finals):.1f}%)':>12}"
+            )
+        print("\n(first = pre-practice checkpoint at 0 transitions; final = end of training.")
+        print("first/final/min/max are counts of evaluation episodes solved, pooled across")
+        print("seeds where shown; sd is the spread of the per-seed rates in points, not a")
+        print("binomial spread on the pooled count.)")
 
         for arm, curves in per_arm.items():
             ends = Tossing3DComparison.endpoints(curves=curves)
             if len(ends) > 1:
                 seeds = sorted(ends)
-                print(f"\nper-seed final % solved, {arm}: " + str([ends[s][1] for s in seeds]))
+                counts = per_arm_counts[arm]
+                last = sorted(next(iter(counts.values())))[-1]
+                print(
+                    f"\nper-seed final solved, {arm}: "
+                    + str([f"{counts[s][last][0]}/{counts[s][last][1]}" for s in seeds])
+                )
+                print(f"  as percentages: {[ends[s][1] for s in seeds]}")
                 Tossing3DComparison.describe_paired(
                     label=f"[{arm}] end of training vs its own pre-practice checkpoint",
                     first=[ends[s][1] for s in seeds],
