@@ -147,7 +147,20 @@ def test_throw_within_tolerance_lands_in_the_bin_and_empties_the_hand() -> None:
     assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
 
 
-def test_throw_outside_tolerance_is_a_no_op() -> None:
+def test_throw_outside_tolerance_consumes_the_item_without_binning_it() -> None:
+    """A missed throw releases the item: nothing lands in the bin, but the hand
+    empties. Previously a miss changed nothing at all, which made it a *free retry* --
+    the robot still held the item and still stood in the bin room, so the very next
+    step re-threw at zero cost. That turned the evaluation horizon into a silent
+    "number of attempts" dial: an unpracticed EES scored 94.7% purely by re-rolling.
+
+    The thrown item is gone rather than recoverable. Items are singleton
+    discriminators with features (kind, target_force) and no position, so "it is lying
+    on the floor near the bin" is not representable -- and making it so would
+    reintroduce the cheap retry this fixes. The only way to try again is a fresh item
+    from the limitless pile, which costs a round trip to the start room. That is what
+    makes an evaluation miss terminal while practice, with a 100-step budget, can
+    still afford to retry."""
     env = _env()
     _carry_to_recycling_room(env=env)
     # target is 0.5, tolerance 0.1 -> a force of 0.9 misses.
@@ -155,12 +168,31 @@ def test_throw_outside_tolerance_is_a_no_op() -> None:
         action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.9)
     )
     assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
-    assert (
-        next_state.get(obj=_ROBOT, feature_name="holding") == TossingRoomEnvironment.RECYCLING_KIND
+    assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
+
+
+def test_a_missed_throw_can_be_retried_only_by_fetching_a_fresh_item() -> None:
+    """The complement to the above: after a miss the robot cannot re-throw in place
+    (its hand is empty) and cannot pick up where it stands (the pile is in the start
+    room), so a retry costs the walk back."""
+    env = _env()
+    _carry_to_recycling_room(env=env)
+    env.take_action(action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.9))
+    # Picking up in the bin room does nothing: the pile is in the start room.
+    after_pickup = env.take_action(
+        action=np.array([
+            float(TossingRoomEnvironment.SKILL_PICKUP),
+            float(TossingRoomEnvironment.RECYCLING_KIND),
+            0.0,
+        ])
     )
+    assert after_pickup.get(obj=_ROBOT, feature_name="holding") == 0.0
 
 
-def test_throw_in_the_wrong_room_is_a_no_op() -> None:
+def test_throw_in_the_wrong_room_still_releases_the_item() -> None:
+    """Throwing is a release wherever you do it -- the item does not land in a bin you
+    are not standing next to, but it does leave your hand. Only an empty-handed throw
+    is a true no-op, since there is nothing to release."""
     env = _env()
     state = env.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
     state.set(
@@ -172,6 +204,7 @@ def test_throw_in_the_wrong_room_is_a_no_op() -> None:
         action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5)
     )
     assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
+    assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
 
 
 def test_throw_with_an_empty_hand_is_a_no_op() -> None:
