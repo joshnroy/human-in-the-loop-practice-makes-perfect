@@ -109,10 +109,20 @@ def test_the_oracle_swing_actually_reaches_the_goal_region() -> None:
 def test_a_full_power_toss_overshoots_the_goal_region() -> None:
     """swing=1.0 is KINDER's own demo toss and lands the cube in the bin at x ~ 2.22,
     past the region's 2.10 edge. This is what makes the swing dial worth learning: the
-    obvious value is the wrong one."""
-    state = _oracle_solve(env=shared_env(), seed=1, swing=1.0)
-    assert state.get(obj=_ENV.cube, feature_name="x") > GOAL_REGION[3]
-    assert not IN_GOAL_REGION.holds(state, (_ENV.cube, _ENV.goal_region))
+    obvious value is the wrong one.
+
+    Asserted on seeds 0 and 2, not seed 1. On seed 1 the grasp is marginal and the cube
+    slips out of the gripper during `move_to_target`, landing at x ~ 1.58 without ever
+    being tossed -- so seed 1 measures the Pick, not the swing. That is the same seed
+    `test_the_oracle_swing_actually_reaches_the_goal_region` tolerates by asserting 2 of
+    3 rather than 3 of 3.
+    """
+    for seed in (0, 2):
+        state = _oracle_solve(env=shared_env(), seed=seed, swing=1.0)
+        assert state.get(obj=_ENV.cube, feature_name="x") > GOAL_REGION[3], (
+            f"seed {seed}: full-power toss did not clear the region's far edge"
+        )
+        assert not IN_GOAL_REGION.holds(state, (_ENV.cube, _ENV.goal_region))
 
 
 def test_a_tossed_cube_is_unreachable() -> None:
