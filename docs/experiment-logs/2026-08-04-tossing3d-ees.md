@@ -136,8 +136,12 @@ Wilcoxon signed-rank (all 2^n sign assignments enumerated).
 
 So EES learns on this domain: it roughly doubles its own untrained success rate, and
 ends three times the non-learning floor. The floor itself is flat within noise across
-the whole budget (21–26% at every checkpoint after the first), which is what a floor
-should look like.
+the whole budget (18/100 – 26/100 at every checkpoint after the first), which is what a
+floor should look like. *(This range previously read "21–26%", which understated it: the
+900-transition checkpoint is 18/100, as the checkpoint table below has always recorded.
+Corrected in place rather than deleted. The reading is unchanged — at p ≈ 0.22 on 100
+draws the binomial sd is ~4.1 points, so 18–26 sits inside ±1 sd and "flat within noise"
+stands, as does the separately-reported +7.0 pp rise being **not established**.)*
 
 ### The mean dips before it climbs — but the dip is not established
 
