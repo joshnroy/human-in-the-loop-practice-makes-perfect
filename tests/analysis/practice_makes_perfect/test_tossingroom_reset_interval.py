@@ -303,3 +303,164 @@ def test_the_final_gap_null_is_measured_at_a_ceiling_not_at_precision():
         floor = ResetIntervalReport.predicted_gap_noise(arms=arms, arm=arm)
         assert statistics.stdev(gaps) < floor
         assert sum(1 for gap in gaps if gap == 0.0) >= 13
+
+
+def test_every_final_success_count_quoted_in_the_log_comes_from_the_committed_data():
+    """Every success rate on this project is reported as `solved/attempted`, and
+    these are the exact counts the log and the PR quote.
+
+    Pinned as counts rather than as percentages on purpose: the counts are what
+    `Metrics.breakdowns` recorded, and a percentage is a lossy rendering of them.
+    `EMPTY` at 40/40 against 280 tasks per throw family is the case this makes
+    visible -- as `100.0` next to `99.3` the two look like comparable evidence."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    assert {
+        arm: {
+            family: ResetIntervalReport.pooled_counts(arms=arms, arm=arm, family=family)
+            for family in ("TRASH", "RECYCLING", "EMPTY")
+        }
+        for arm in _ARM_INTERVAL
+    } == {
+        "armA": {"TRASH": (278, 280), "RECYCLING": (273, 280), "EMPTY": (40, 40)},
+        "armB": {"TRASH": (268, 280), "RECYCLING": (266, 280), "EMPTY": (40, 40)},
+        "armC": {"TRASH": (274, 280), "RECYCLING": (273, 280), "EMPTY": (40, 40)},
+        "armD": {"TRASH": (273, 280), "RECYCLING": (267, 280), "EMPTY": (40, 40)},
+    }
+
+
+def test_the_percentage_rendering_never_disagrees_with_the_count():
+    """`pooled_rate` exists only as a rendering of `pooled_counts`. If the two ever
+    came from different code paths, the log could quote a count and a percentage
+    that do not describe the same thing."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    for arm in _ARM_INTERVAL:
+        for family in ("TRASH", "RECYCLING", "EMPTY"):
+            solved, total = ResetIntervalReport.pooled_counts(arms=arms, arm=arm, family=family)
+            assert ResetIntervalReport.pooled_rate(
+                arms=arms, arm=arm, family=family
+            ) == pytest.approx(100.0 * solved / total)
+
+
+def test_the_area_under_the_curve_counts_agree_with_the_per_seed_means():
+    """The AUC is quoted as a count (tasks solved over 26 checkpoints x 20 seeds).
+    That is only the same quantity as the per-seed mean rate the paired tests use
+    because every checkpoint has the same denominator -- so the two are checked
+    against each other rather than one being assumed to summarise the other."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    expected = {
+        "armA": {"RECYCLING": (5528, 7280), "TRASH": (5763, 7280), "EMPTY": (1040, 1040)},
+        "armB": {"RECYCLING": (4967, 7280), "TRASH": (5654, 7280), "EMPTY": (1040, 1040)},
+        "armC": {"RECYCLING": (4423, 7280), "TRASH": (5427, 7280), "EMPTY": (1040, 1040)},
+        "armD": {"RECYCLING": (4187, 7280), "TRASH": (4957, 7280), "EMPTY": (1040, 1040)},
+    }
+    for arm, families in expected.items():
+        for family, counts in families.items():
+            solved, total = ResetIntervalReport.curve_counts(arms=arms, arm=arm, family=family)
+            assert (solved, total) == counts
+            per_seed = ResetIntervalReport.mean_rate_over_training(
+                arms=arms, arm=arm, family=family
+            )
+            assert statistics.mean(per_seed) == pytest.approx(100.0 * solved / total, abs=1e-9)
+
+
+def test_the_untrained_baseline_is_the_same_in_every_arm_and_is_far_from_the_ceiling():
+    """Checkpoint 0 is taken before any arm has acted, so all four arms evaluate the
+    same untrained policy -- which is what makes it an honest in-panel floor.
+
+    It is also the answer to "are these tasks just easy?": an untrained EES solves
+    58/280 TRASH and 55/280 RECYCLING, so the ~278/280 the arms end at is learned,
+    not given. Pinned because the log and the PR both quote it as the reason no
+    separate random-skills arm was run here."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    for family, counts in (("TRASH", (58, 280)), ("RECYCLING", (55, 280)), ("EMPTY", (40, 40))):
+        for arm in _ARM_INTERVAL:
+            assert ResetIntervalReport.untrained_counts(arms=arms, arm=arm, family=family) == counts
+
+
+def test_the_presaturation_checkpoint_is_chosen_by_the_stated_resolution_rule():
+    """The rule is "the last checkpoint before at least half the runs have both
+    throw families at their ceiling", and nothing about any outcome enters it.
+
+    Pinned by re-deriving the crossing from the data rather than by asserting 1600
+    alone, so the test fails if the *rule* stops matching the *checkpoint*."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    index = ResetIntervalReport.presaturation_index(arms=arms)
+    assert ResetIntervalReport.checkpoint_transitions(arms=arms, index=index) == 1600
+    assert ResetIntervalReport.saturated_fraction(arms=arms, index=index) < 0.5
+    assert ResetIntervalReport.saturated_fraction(arms=arms, index=index + 1) >= 0.5
+    for earlier in range(index):
+        assert ResetIntervalReport.saturated_fraction(arms=arms, index=earlier) < 0.5
+
+
+def test_the_presaturation_view_is_confounded_by_progress_and_cannot_be_promoted():
+    """The reason the pre-saturation section is supporting analysis and not the
+    headline: at 1600 transitions the arms are NOT equally trained.
+
+    `RECYCLING` differs by ~29pp between armA and armD there (p < 0.05), which is
+    PR #39's confound exactly. This pins the caveat so a later edit cannot quietly
+    promote the pre-saturation gap result to a claim about reset frequency."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    index = ResetIntervalReport.presaturation_index(arms=arms)
+    differences = ResetIntervalReport.family_differences(
+        arms=arms, family="RECYCLING", from_arm="armA", to_arm="armD", index=index
+    )
+    assert statistics.mean(differences) == pytest.approx(-28.9, abs=0.05)
+    assert PairedTests.wilcoxon_signed_rank(differences=differences).p_value < 0.05
+    # And the gap contrast it produces is smaller than the design's own MDE there,
+    # so even its p < 0.05 is not a robust finding.
+    extremes = [
+        d - a
+        for a, d in zip(
+            ResetIntervalReport.gaps(arms=arms, arm="armA", index=index),
+            ResetIntervalReport.gaps(arms=arms, arm="armD", index=index),
+            strict=True,
+        )
+    ]
+    assert statistics.mean(extremes) == pytest.approx(19.29, abs=0.05)
+    assert PairedTests.wilcoxon_signed_rank(differences=extremes).p_value == pytest.approx(
+        0.0401, abs=0.0001
+    )
+    assert PairedTests.minimum_detectable_effect(differences=extremes) > statistics.mean(extremes)
+    slopes = ResetIntervalReport.trend_slopes(arms=arms, index=index)
+    assert statistics.mean(slopes) == pytest.approx(6.16, abs=0.01)
+    assert PairedTests.wilcoxon_signed_rank(differences=slopes).p_value == pytest.approx(
+        0.0209, abs=0.0001
+    )
+
+
+def test_the_presaturation_counts_quoted_in_the_log_come_from_the_committed_data():
+    """The 1600-transition table, pinned as counts. The 189/280 against 270/280 on
+    RECYCLING is the whole point of the section: mid-curve the arms are 81 tasks
+    apart, and by 2500 they are 6 apart."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    index = ResetIntervalReport.presaturation_index(arms=arms)
+    assert {
+        arm: {
+            family: ResetIntervalReport.pooled_counts(
+                arms=arms, arm=arm, family=family, index=index
+            )
+            for family in ("TRASH", "RECYCLING", "EMPTY")
+        }
+        for arm in _ARM_INTERVAL
+    } == {
+        "armA": {"TRASH": (274, 280), "RECYCLING": (270, 280), "EMPTY": (40, 40)},
+        "armB": {"TRASH": (272, 280), "RECYCLING": (270, 280), "EMPTY": (40, 40)},
+        "armC": {"TRASH": (263, 280), "RECYCLING": (228, 280), "EMPTY": (40, 40)},
+        "armD": {"TRASH": (247, 280), "RECYCLING": (189, 280), "EMPTY": (40, 40)},
+    }
+
+
+def test_the_per_family_curves_are_steps_rather_than_ramps():
+    """The descriptive finding the log reports: a family's 14 tasks succeed and fail
+    together, so most checkpoints sit within one task of 0/14 or 14/14.
+
+    It matters beyond being interesting -- 14 tasks per seed are not 14 independent
+    observations, so the binomial noise floor computed elsewhere in this file is a
+    lower bound on the real per-seed noise, not an estimate of it."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    assert ResetIntervalReport.extreme_checkpoints(arms=arms, family="RECYCLING") == (1296, 2080)
+    assert ResetIntervalReport.extreme_checkpoints(arms=arms, family="TRASH") == (1338, 2080)
+    assert ResetIntervalReport.single_step_runs(arms=arms, family="RECYCLING") == (26, 80)
+    assert ResetIntervalReport.single_step_runs(arms=arms, family="TRASH") == (33, 80)
+    assert ResetIntervalReport.ceiling_collapses(arms=arms, family="RECYCLING") == 4
+    assert ResetIntervalReport.ceiling_collapses(arms=arms, family="TRASH") == 2

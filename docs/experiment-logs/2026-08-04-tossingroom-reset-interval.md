@@ -9,27 +9,40 @@ means are +1.8 / +0.7 / +0.4 / +2.1 pp for reset intervals of 10/25/50/100 steps
 No trend: per-seed slope +0.03pp per doubling, **p = 0.7959**.
 
 **But the null is measured at a ceiling, and that matters.** By 2500 transitions
-every arm sits at 95–99% on both throw families, so the final gap has almost
-nowhere to move. The tight sds (3.2–12.5pp against an 18.9pp noise floor) are
-saturation, not precision — 13–16 of 20 seeds have a gap of *exactly* zero. The
-design's minimum detectable effect on the extreme contrast is 9.35pp, so a gap
-effect that large is excluded and a smaller one is not.
+every arm solves **268–278 of 280** TRASH tasks and **266–273 of 280** RECYCLING
+tasks, so the final gap has almost nowhere to move. The tight sds (3.2–12.5pp
+against an 18.9pp noise floor) are saturation, not precision — 13–16 of 20 seeds
+have a gap of *exactly* zero, because both families are at 14/14. The design's
+minimum detectable effect on the extreme contrast is 9.35pp, so a gap effect that
+large is excluded and a smaller one is not.
+
+**Every success rate in this log is a count.** The evaluation set is a fixed 14
+TRASH / 14 RECYCLING / 2 EMPTY per seed, so one task is 7.1pp on a throw family and
+50pp on `EMPTY`. Written as percentages, `EMPTY 100.0` sits next to `TRASH 99.3` as
+though the two carried the same weight; written as counts they are **40/40** and
+**278/280**, and the difference is obvious. Counts also make the resolution
+visible: a throw family can only score in 7.1pp steps, which `13/14` says and
+`92.9%` hides. Every count below is read out of `Metrics.breakdowns` in each run's
+own `stats.json` — none is reconstructed by multiplying a percentage by *n*.
+Differences of two rates (the T−R gap, slopes, MDEs, the noise floor) stay in
+percentage points, which is their correct unit.
 
 **The methodological result is the one worth keeping: the confound that sank PR #39
 is gone.** Paired armD − armA, final competence differs by **−1.8pp on TRASH
 (p = 0.3750)** and **−2.1pp on RECYCLING (p = 0.5156)** — against #39's −40.4 and
 −44.7pp at p = 0.0156. Transitions are 2500 in every seed of every arm, sd 0.
-`EMPTY` is exactly 100% everywhere, sd 0. The arms differ in reset frequency and
+`EMPTY` is 40/40 in every arm, sd 0. The arms differ in reset frequency and
 in nothing else that was measured.
 
 **And post-hoc, reset frequency turns out to matter a great deal — just not to the
 endpoint.** Resetting every 10 steps instead of every 100 raises the area under
 the learning curve by **+18.4pp on RECYCLING (p = 0.0001)** and **+11.1pp on TRASH
-(p = 0.0007)**, and by **exactly 0.0pp on the deterministic `EMPTY` control**. The
-harness's reset frequency is a real driver of sample efficiency on the stochastic
-families. Whether it is *specifically* about irreversibility is **not
-established**: RECYCLING gains 7.3pp more than TRASH, but p = 0.0623, and ~49
-seeds would be needed for 80% power.
+(p = 0.0007)**, and by **exactly 0.0pp on the deterministic `EMPTY` control**. In
+counts, RECYCLING goes from **4187/7280** tasks solved across the whole curve at
+interval 100 to **5528/7280** at interval 10. The harness's reset frequency is a
+real driver of sample efficiency on the stochastic families. Whether it is
+*specifically* about irreversibility is **not established**: RECYCLING gains 7.3pp
+more than TRASH, but p = 0.0623, and ~49 seeds would be needed for 80% power.
 
 ![gap vs reset interval](./2026-08-04-tossingroom-reset-interval-gap.png)
 
@@ -104,6 +117,36 @@ frequency with training pinned. 20 paired seeds (0..19, fixed by `run_sweep`),
 **Primary metric, fixed before the runs: the within-arm (TRASH − RECYCLING) final
 success gap, paired by seed.** Prediction if the hypothesis holds: the gap shrinks
 from D toward A.
+
+### Baselines: what this compares against, and what it deliberately does not
+
+All four arms are `--method ees`. **No separate baseline method was run**, and
+that is the design rather than an omission — but it changes how the numbers below
+should be read, so it is stated here rather than left to be inferred.
+
+* **Arm D is the behavioural baseline.** Its interval (100) equals the period
+  length, so it reproduces exactly the behaviour that shipped before
+  `--practice-reset-interval` existed — verified byte-for-byte against a run with
+  the flag omitted entirely, not merely argued. For a question about *reset
+  frequency*, "the frequency we already used" is the right control.
+* **The comparison is within-arm and paired.** The metric is a difference between
+  two task families measured inside the same run, and every arm ran the same fixed
+  seeds 0..19, so each contrast is 20 paired differences. Nothing here is compared
+  against an external absolute.
+* **Each learning curve carries its own floor in-panel.** Checkpoint 0 is the
+  evaluation sweep taken *before* any practice step, so all four arms evaluate
+  literally the same untrained policy there: **58/280 TRASH**, **55/280
+  RECYCLING**, **40/40 EMPTY**, identical in every arm. That is the answer to "is
+  95–99% impressive, or are the tasks just easy?" — an untrained EES (real
+  planner, untrained samplers) solves about one throw task in five, and the ~278/280
+  the arms end at is learned, not given.
+* **No random-skills floor was run here**, because the question is the difference
+  *between* arms, not absolute competence. That floor is measured elsewhere, twice:
+  `docs/experiment-logs/2026-08-02-tossingroom-ees-bringup.md` reports **6.7%**
+  (10 seeds) on the pre-#41 sampled test set, and PR #52 re-measures it at **1.7%**
+  (sd 1.8, worst seed 0.0) on this experiment's fixed 14/14/2 composition. Both sit
+  far below the 19.6–20.7% untrained-EES checkpoint 0 above, which is itself far
+  below where every arm ends.
 
 ### Not comparable to PR #39
 
@@ -189,19 +232,39 @@ cross-arm gap comparison was confounded at a magnitude far larger than anything 
 reported. These arms are level, so a cross-arm gap difference here would be
 attributable to reset frequency.
 
-`EMPTY` is again a **perfect control** — 100% in every seed of every arm, sd
-exactly 0. Whatever moves is confined to the two families that use the stochastic
-`Throw`. It is also the reason the control cannot do more work than that: an
-untrained policy already solves it, so it sits on the ceiling.
+`EMPTY` is again a **perfect control** — **2/2 in every seed of every arm**, so
+40/40 per arm, sd exactly 0. Whatever moves is confined to the two families that
+use the stochastic `Throw`. The count is also the reason the control cannot do more
+work than that: **2 tasks per seed is almost no evidence**, and an untrained policy
+already solves both, so it sits on the ceiling from the first checkpoint. As a
+percentage `100.0` looks like the strongest number in every table below; as
+`40/40` against `278/280` it is visibly the weakest.
 
 ## Result 2: the final gap does not move with reset frequency
 
+Success as tasks solved over all 20 seeds (280 per throw family, 40 for `EMPTY`),
+with the percentage in brackets as a rendering of it:
+
 | arm | interval | resets | final TRASH | final RECYCLING | final EMPTY | **gap (T−R)** |
 |---|---|---|---|---|---|---|
-| A | 10 | 250 | 99.3 ± 2.2 | 97.5 ± 5.8 | 100.0 ± 0.0 | **+1.8 ± 6.5** |
-| B | 25 | 100 | 95.7 ± 17.6 | 95.0 ± 17.5 | 100.0 ± 0.0 | **+0.7 ± 3.2** |
-| C | 50 | 50 | 97.9 ± 4.7 | 97.5 ± 4.8 | 100.0 ± 0.0 | **+0.4 ± 4.9** |
-| D | 100 | 25 | 97.5 ± 5.8 | 95.4 ± 10.4 | 100.0 ± 0.0 | **+2.1 ± 12.5** |
+| A | 10 | 250 | **278/280** (99.3%) | **273/280** (97.5%) | 40/40 (100%) | **+1.8 ± 6.5pp** |
+| B | 25 | 100 | **268/280** (95.7%) | **266/280** (95.0%) | 40/40 (100%) | **+0.7 ± 3.2pp** |
+| C | 50 | 50 | **274/280** (97.9%) | **273/280** (97.5%) | 40/40 (100%) | **+0.4 ± 4.9pp** |
+| D | 100 | 25 | **273/280** (97.5%) | **267/280** (95.4%) | 40/40 (100%) | **+2.1 ± 12.5pp** |
+
+The pooled count and the per-seed spread are different quantities and are kept
+apart. Per seed, as a mean count out of the 14 / 14 / 2 each seed holds:
+
+| arm | TRASH per seed | RECYCLING per seed | EMPTY per seed |
+|---|---|---|---|
+| A | 13.90/14 ± 0.31 | 13.65/14 ± 0.81 | 2.00/2 ± 0.00 |
+| B | 13.40/14 ± 2.46 | 13.30/14 ± 2.45 | 2.00/2 ± 0.00 |
+| C | 13.70/14 ± 0.66 | 13.65/14 ± 0.67 | 2.00/2 ± 0.00 |
+| D | 13.65/14 ± 0.81 | 13.35/14 ± 1.46 | 2.00/2 ± 0.00 |
+
+Arm B's sds of ~2.45 tasks are one seed, not a broad spread — seed 12 scores 3/14
+on *both* throw families while every other seed is at 13/14 or 14/14. The per-seed
+blocks below are there so that is readable rather than inferred.
 
 **Trend tests**, all paired on the same 20 seeds, all exact by enumeration:
 
@@ -230,21 +293,31 @@ No arm establishes even the premise at the final checkpoint.
 **Noise floor against observed sd.** Every arm is *below* the 18.9pp floor —
 6.5 / 3.2 / 4.9 / 12.5, i.e. 34% / 17% / 26% / 66% of it. **That is saturation,
 not precision.** A gap of exactly zero is forced whenever both families are at
-100%, and 13–16 of 20 seeds are in that state. This is the same trap PR #39's log
+14/14, and 13–16 of 20 seeds are in that state. This is the same trap PR #39's log
 flagged for its own arm A, and it applies to all four arms here.
 
-**Per-seed final RECYCLING %, because an sd here is often one collapsed seed:**
+**Per-seed final tasks solved, out of 14, because an sd here is often one collapsed
+seed** (seeds 0..19 left to right):
 
 ```text
-armA  100 100 100 100 100 100 100  93 100 100  86 100 100  93 100  79 100 100 100 100
-armB   93 100 100 100 100 100  93 100 100 100  93 100  21 100 100 100 100 100 100 100
-armC   93 100 100  86  86 100 100 100 100 100 100  93 100 100 100  93 100 100 100 100
-armD  100 100 100  86 100 100  64 100 100 100 100 100  71 100  86 100 100 100 100 100
+RECYCLING, out of 14
+armA   14  14  14  14  14  14  14  13  14  14  12  14  14  13  14  11  14  14  14  14
+armB   13  14  14  14  14  14  13  14  14  14  13  14   3  14  14  14  14  14  14  14
+armC   13  14  14  12  12  14  14  14  14  14  14  13  14  14  14  13  14  14  14  14
+armD   14  14  14  12  14  14   9  14  14  14  14  14  10  14  12  14  14  14  14  14
+
+TRASH, out of 14
+armA   14  14  14  13  14  14  14  14  14  14  14  14  14  14  13  14  14  14  14  14
+armB   14  14  14  14  14  14  14  14  14  14  14  13   3  14  14  14  14  14  14  14
+armC   12  14  14  14  13  14  14  14  14  14  14  12  14  14  13  14  14  14  14  14
+armD   14  14  13  14  14  14  14  14  14  14  14  14  14  14  13  14  11  14  12  14
 ```
 
-One seed in arm B collapses to 21%; arm D has two seeds at 64% and 71%. Arm A's
-worst is 79%. That ordering is directionally consistent with the hypothesis and
-far too thin to claim anything from.
+One seed in arm B collapses to 3/14 — on *both* families, which is what its 2.46
+and 2.45 per-seed sds are made of. Arm D has two RECYCLING seeds at 9/14 and 10/14.
+Arm A's worst is 11/14. That ordering is directionally consistent with the
+hypothesis and far too thin to claim anything from: arm A's entire final-checkpoint
+advantage over arm D is **5 TRASH tasks and 6 RECYCLING tasks out of 280 each**.
 
 ![per-family learning curves](./2026-08-04-tossingroom-reset-interval-curves.png)
 
@@ -257,8 +330,9 @@ measured at a ceiling, and carries correspondingly less evidential weight.
 The statistic is the **normalised area under each seed's learning curve** — the
 mean success rate over all 26 checkpoints. Chosen over "transitions to reach X%"
 because that one is censored: a seed that never reaches the threshold has no value
-(one ends at 21%), which would silently drop the worst seeds and flatter whichever
-arm they fall in. Averaging the curve is defined for every seed.
+(arm B seed 12 ends at 3/14 on both throw families), which would silently drop the
+worst seeds and flatter whichever arm they fall in. Averaging the curve is defined
+for every seed.
 
 An unweighted mean over checkpoints is only comparable across arms if checkpoint
 *i* sits at the same transition count in every arm. It does: across all 80 runs
@@ -267,12 +341,21 @@ and all three families there is exactly **one** distinct transition grid,
 that ended early and was made up later would land on 2500 while sampling the curve
 at different x.
 
+As a count, the area under the curve is just *tasks solved summed over every
+checkpoint of every seed*: 26 checkpoints × 20 seeds × 14 tasks = **7280** per
+throw family, and × 2 = **1040** for `EMPTY`. That is the same quantity as the mean
+of the per-seed mean rates only because every checkpoint has the same denominator
+— which the composition check establishes — so both renderings are given and the
+analysis asserts they agree.
+
 | arm | interval | RECYCLING AUC | TRASH AUC | EMPTY AUC |
 |---|---|---|---|---|
-| A | 10 | **75.9 ± 12.2** | **79.2 ± 9.9** | 100.0 ± 0.0 |
-| B | 25 | 68.2 ± 16.8 | 77.7 ± 11.6 | 100.0 ± 0.0 |
-| C | 50 | 60.8 ± 18.2 | 74.5 ± 12.3 | 100.0 ± 0.0 |
-| D | 100 | 57.5 ± 14.9 | 68.1 ± 9.5 | 100.0 ± 0.0 |
+| A | 10 | **5528/7280** (75.9% ± 12.2) | **5763/7280** (79.2% ± 9.9) | 1040/1040 (100% ± 0.0) |
+| B | 25 | 4967/7280 (68.2% ± 16.8) | 5654/7280 (77.7% ± 11.6) | 1040/1040 (100% ± 0.0) |
+| C | 50 | 4423/7280 (60.8% ± 18.2) | 5427/7280 (74.5% ± 12.3) | 1040/1040 (100% ± 0.0) |
+| D | 100 | 4187/7280 (57.5% ± 14.9) | 4957/7280 (68.1% ± 9.5) | 1040/1040 (100% ± 0.0) |
+
+(The `±` is the sd across the 20 per-seed means, not a spread on the pooled count.)
 
 **Monotone in reset frequency on both throw families, and flat on the control.**
 Paired armA (10) minus armD (100), exact:
@@ -317,6 +400,120 @@ final checkpoint could not establish. And the arm with the most frequent resets 
 the one where that gap is smallest and indistinguishable from zero. But armD − armA
 is +7.3pp at **p = 0.0623** (the same contrast as the differential above, as it
 must be), and the ordering is non-monotone (C > D). **Not established.**
+
+## Result 4 (POST-HOC, descriptive): the curves are steps, not ramps
+
+Noticed while reading per-checkpoint counts, and reported because it changes how
+everything above should be read. A single seed's `RECYCLING` trace — arm A, seed 0,
+tasks solved out of 14 at each of the 26 checkpoints:
+
+```text
+transitions   0  100  200  300  400  500  600  700  800  900 1000 1100 1200
+solved /14    3    3    5    2    1    3    1    0    1    6    3    2    0
+transitions 1300 1400 1500 1600 1700 1800 1900 2000 2100 2200 2300 2400 2500
+solved /14    14   14   14   13   14   14   14   14   14   14   14   14   14
+```
+
+Nothing, then everything, in one 100-transition step. That is not one seed being
+unusual:
+
+| | `RECYCLING` | `TRASH` |
+|---|---|---|
+| checkpoints within one task of 0/14 or 14/14 | **1296/2080** (62.3%) | **1338/2080** (64.3%) |
+| runs covering ≥80% of their own range in one 100-transition step | **26/80** | **33/80** |
+| runs that reached the ceiling and later fell back to ≤1 task | 4/80 | 2/80 |
+
+**The 14 tasks of a family are not 14 independent observations.** They share a goal
+predicate and differ only in initial state, and the sampler either can hit that bin
+or cannot, so they succeed and fail together. Two consequences, both of which make
+the report above more conservative rather than less:
+
+* the **18.9pp binomial noise floor is a lower bound**, not an estimate — it assumes
+  independence within a family, and the observed within-family correlation is close
+  to total. The real per-seed noise is larger, so "every arm's sd is below the
+  floor" understates how much of the spread is sampling rather than learning;
+* the effective sample size is much nearer **20 (the seeds)** than 20 × 14, which is
+  a further reason not to read a 5-task difference out of 280 as a finding.
+
+It also explains the degenerate final gap directly: once both families have flipped
+on, both are at 14/14 and the gap is exactly zero by construction.
+
+No claim is made here about *why* the flip happens; that would need per-skill
+sampler diagnostics this aggregate does not carry.
+
+## Result 5 (POST-HOC): the pre-specified metric, re-read before saturation
+
+The final-checkpoint null is measured where the metric has almost no resolution.
+Every run already recorded **26 evaluation sweeps with full per-task breakdowns**,
+so the same metric can be read at an earlier point on the very same runs — **no new
+simulation, zero additional compute**. (That is worth carrying forward: since PR #44
+landed `Metrics.breakdowns`, an experiment's committed aggregate can answer
+questions that were not asked when it ran.)
+
+**Selection rule, fixed before looking at any outcome.** One checkpoint, applied to
+all four arms, chosen purely by *resolution*: a run with both throw families at
+14/14 contributes a gap of exactly zero no matter what its policy is like, so the
+checkpoint is **the last one before the share of such runs first reaches one half**.
+That is **1600 transitions** (41.2% of the 80 runs saturated, against 52.5% at the
+next checkpoint). No effect size or p-value enters the rule.
+
+**This choice was made after seeing the final result was saturated. It is
+exploratory, and it does not replace the pre-specified result above.**
+
+**Read the progress-match check first — it is why this cannot be promoted.**
+Paired, armD minus armA, at 1600 transitions:
+
+| family | mean difference | sd | Wilcoxon p |
+|---|---|---|---|
+| `RECYCLING` | **−28.9pp** | 34.0 | **0.0004** |
+| `TRASH` | −9.6pp | 20.6 | 0.0547 |
+| `EMPTY` | +0.0pp | 0.0 | 1.0000 |
+
+At 2500 transitions the arms are level (−2.1 and −1.8pp, both p > 0.3) because the
+design pins cycles, steps and refits. **At 1600 they are not**, and they cannot be:
+Result 3 established that the arms learn at *different speeds*, so any pre-final
+checkpoint necessarily catches them at different points on their own curves. The
+gap is a hump-shaped function of training progress, so a cross-arm gap comparison
+here is confounded by progress — **the exact confound PR #39 died of**, reintroduced
+by the choice of checkpoint rather than by the design.
+
+With that stated, the numbers at 1600 transitions:
+
+| arm | interval | TRASH | RECYCLING | EMPTY | **gap (T−R)** | zero gaps |
+|---|---|---|---|---|---|---|
+| A | 10 | 274/280 (97.9%) | 270/280 (96.4%) | 40/40 (100%) | +1.4 ± 7.2pp | 12/20 |
+| B | 25 | 272/280 (97.1%) | 270/280 (96.4%) | 40/40 (100%) | +0.7 ± 8.6pp | 11/20 |
+| C | 50 | 263/280 (93.9%) | 228/280 (81.4%) | 40/40 (100%) | +12.5 ± 31.0pp | 7/20 |
+| D | 100 | 247/280 (88.2%) | 189/280 (67.5%) | 40/40 (100%) | +20.7 ± 38.3pp | 4/20 |
+
+Per-seed `RECYCLING` tasks solved out of 14 at 1600 transitions (seeds 0..19):
+
+```text
+armA   13  14  14  14  14  14  14  14  14  12  12  14  14  14  12  12  14  13  14  14
+armB   12  13  13  14  14  14  13  14  14  14  14  14  14  13  14  14  14  13  14  11
+armC    9  14  14  13  14  14   9  14  14  14   6  14  14  13   0  12  14   1  11  14
+armD   14  14   2  12  12  14  14  13   4  10   2  14  10  14   6   5  14   3  12   0
+```
+
+The gap contrast is `armD − armA = +19.29pp, sd 37.01, exact Wilcoxon p = 0.0401`,
+in the hypothesised direction, and the per-seed trend slope is +6.16pp per doubling
+(p = 0.0209). **Do not read that as support for the hypothesis**, for three
+independent reasons:
+
+1. the arms are not progress-matched at this checkpoint (table above), so the
+   contrast is the training difference asserting itself, not reset frequency;
+2. the checkpoint was chosen post-hoc, after the pre-specified analysis returned a
+   null;
+3. the observed effect (19.3pp) is **smaller than the design's own MDE at this
+   checkpoint (23.2pp)**. An effect below what the design can reliably detect is not
+   a robust result even at p < 0.05.
+
+What the pre-saturation view *does* establish is the fact Result 3 already showed
+from the other direction: **the arms are far apart mid-curve and converge by the
+end.** At 1600 transitions arm D has solved 189/280 RECYCLING tasks and arm A has
+solved 270/280 — an 81-task difference that has shrunk to 6 by 2500. The right
+follow-up is a design whose *budget* ends before saturation, so the endpoint and the
+progress match coincide; that is a new experiment, not a re-reading of this one.
 
 ## Concurrency and reproducibility, measured
 
@@ -394,11 +591,24 @@ comparisons should be made at arm level.
   ~9pp of resolution and roughly nothing to resolve. A future version of this
   experiment should either shorten the budget or harden the domain so the final
   checkpoint is not on the ceiling — the right move is probably to stop the run
-  around 1200–1500 transitions, where the curves are still separated.
-* **Everything in Result 3 is post-hoc.** The area-under-curve statistics were
-  chosen after seeing that the endpoint metric was saturated. They are reported
-  because the effect is large and the control is clean, not because they were
-  planned.
+  around 1200–1500 transitions, where the curves are still separated. Note that
+  simply *reading* the existing runs earlier (Result 5) is not a substitute: it
+  breaks the progress match, whereas a shorter budget keeps it.
+* **Everything in Results 3, 4 and 5 is post-hoc.** The area-under-curve
+  statistics, the curve-shape description and the 1600-transition re-read were all
+  chosen after seeing that the endpoint metric was saturated. Result 3 is reported
+  because the effect is large and the control is clean; Result 5 is reported
+  *despite* reaching p < 0.05, because its progress-match check fails and its effect
+  is below the design's MDE there.
+* **No baseline method was re-run.** All four arms are `ees`; arm D reproduces the
+  pre-flag behaviour and is the control, and the comparison is within-arm and
+  paired. Absolute competence is bounded instead by checkpoint 0 of these very runs
+  (58/280 TRASH, 55/280 RECYCLING untrained) and by the random-skills floor measured
+  in `2026-08-02-tossingroom-ees-bringup.md` and re-measured on the fixed
+  composition in PR #52.
+* **The 14 tasks inside a family are not independent** (Result 4), so the 18.9pp
+  binomial floor is a lower bound and the effective sample size is nearer 20 than
+  280.
 * **The irreversibility-specific claim is unestablished** (p = 0.0623, ~49 seeds
   needed). A generic "a reset saves wasted traversal, which helps any throw
   family" mechanism explains the headline speed-up just as well, and this design

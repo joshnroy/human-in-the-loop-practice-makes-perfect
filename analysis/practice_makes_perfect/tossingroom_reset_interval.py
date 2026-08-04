@@ -143,6 +143,11 @@ _FAMILY_STYLE = {
     "EMPTY": ("#009E73", "^"),
 }
 
+# Vertical fan, in typographic points, for the end-of-curve count labels. By 2500
+# transitions all three families finish within ~5 points of each other, which is
+# less than one line of text, so unfanned labels overprint one another.
+_LABEL_OFFSET = {"RECYCLING": -11.0, "TRASH": 0.0, "EMPTY": 11.0}
+
 # z_{0.975} and z_{0.80}, for the "how many seeds would 80% power need?" line that
 # every non-significant result on this project is required to carry, and for the
 # minimum detectable effect this design actually had.
@@ -243,21 +248,113 @@ class ResetIntervalReport:
         return _NUM_CYCLES * (_PERIOD_STEPS // _ARM_INTERVAL[arm])
 
     @staticmethod
+    def counts_at(
+        *, arms: dict, arm: str, family: str, index: int | None = None
+    ) -> list[tuple[int, int]]:
+        """Per-seed `(solved, total)` for one family at one evaluation sweep --
+        `index=None` meaning the LAST one -- ordered by seed so the lists across
+        arms are index-aligned.
+
+        The counts are what `Metrics.breakdowns` actually recorded; every rate in
+        this file is derived *from* these rather than the other way round. Reporting
+        them is not cosmetic: at 14 tasks per throw family a rate can only land on
+        multiples of ~7.1pp, and `13/14` says that where `92.9%` hides it. It also
+        keeps the weight of the evidence visible -- `EMPTY` is 2 tasks per seed, so
+        its perfect score is `2/2`, not the same kind of claim as `TRASH`'s `14/14`.
+
+        Indexing by checkpoint is safe only because every run is measured on one
+        identical transition grid; `test_every_arm_is_measured_on_an_identical_`
+        `transition_grid` asserts that, and the final sweep is still taken by
+        `max` on the transition count rather than by position.
+        """
+        counts = []
+        for seed in ResetIntervalReport.seeds(arms=arms):
+            triples = arms[arm][seed]["families"][family]
+            triple = max(triples, key=lambda t: t[0]) if index is None else triples[index]
+            counts.append((triple[1], triple[2]))
+        return counts
+
+    @staticmethod
+    def final_counts(*, arms: dict, arm: str, family: str) -> list[tuple[int, int]]:
+        """Per-seed `(solved, total)` at the arm's last evaluation sweep."""
+        return ResetIntervalReport.counts_at(arms=arms, arm=arm, family=family)
+
+    @staticmethod
+    def rates_at(*, arms: dict, arm: str, family: str, index: int | None = None) -> list[float]:
+        """Per-seed % solved for one family at one sweep (`None` = the last)."""
+        return [
+            100.0 * solved / total if total else 0.0
+            for solved, total in ResetIntervalReport.counts_at(
+                arms=arms, arm=arm, family=family, index=index
+            )
+        ]
+
+    @staticmethod
     def final_rates(*, arms: dict, arm: str, family: str) -> list[float]:
         """Per-seed % solved for one family at the arm's LAST evaluation sweep,
         ordered by seed so the lists across arms are index-aligned for pairing."""
-        rates = []
-        for seed in ResetIntervalReport.seeds(arms=arms):
-            _transitions, solved, total = max(
-                arms[arm][seed]["families"][family], key=lambda triple: triple[0]
-            )
-            rates.append(100.0 * solved / total if total else 0.0)
-        return rates
+        return ResetIntervalReport.rates_at(arms=arms, arm=arm, family=family)
 
     @staticmethod
-    def gaps(*, arms: dict, arm: str) -> list[float]:
-        """Per-seed (TRASH - RECYCLING) final-sweep gap, in percentage points --
-        the primary metric.
+    def pooled_counts(
+        *, arms: dict, arm: str, family: str, index: int | None = None
+    ) -> tuple[int, int]:
+        """`(solved, total)` at one sweep (`None` = the last), summed over every
+        shared seed -- the cross-seed aggregate in its lossless form (20 seeds x 14
+        tasks = 280).
+
+        Descriptive only, exactly as `pooled_rate` is: pooling destroys the pairing
+        every test here relies on. It is reported because a summed count is the
+        honest rendering of "how much evidence is behind this number", which a
+        percentage discards -- `EMPTY`'s perfect score is 40/40 over an arm, against
+        280 tasks for each throw family.
+        """
+        solved = total = 0
+        for seed_solved, seed_total in ResetIntervalReport.counts_at(
+            arms=arms, arm=arm, family=family, index=index
+        ):
+            solved += seed_solved
+            total += seed_total
+        return (solved, total)
+
+    @staticmethod
+    def untrained_counts(*, arms: dict, arm: str, family: str) -> tuple[int, int]:
+        """`(solved, total)` at checkpoint 0 -- the evaluation sweep taken *before*
+        any practice transition -- summed over seeds.
+
+        This is the in-panel baseline for every learning curve: whatever the
+        untrained EES policy (real planner, untrained samplers) already solves is
+        not attributable to practice. It is not the random-skills floor, which is
+        lower and is measured separately in the Tossing Room bring-up log; it is
+        the floor that matters for reading *these* curves, because it is measured
+        in these very runs and is identical across arms by construction -- no arm
+        has taken a practice step yet at checkpoint 0, so the four arms' checkpoint
+        0 is literally the same policy evaluated four times.
+        """
+        return ResetIntervalReport.pooled_counts(arms=arms, arm=arm, family=family, index=0)
+
+    @staticmethod
+    def curve_counts(*, arms: dict, arm: str, family: str) -> tuple[int, int]:
+        """`(solved, total)` summed over every checkpoint of every seed -- the count
+        form of `mean_rate_over_training`'s area under the learning curve.
+
+        Equal to the mean of the per-seed means *only* because every checkpoint of
+        every seed has the same denominator (the composition is deterministic, and
+        `composition_violations` asserts it). If it ever stopped being equal, the
+        per-seed mean is the statistic the tests use and this is the descriptive
+        summary; the discrepancy would itself be the bug report.
+        """
+        solved = total = 0
+        for seed in ResetIntervalReport.seeds(arms=arms):
+            for _transitions, seed_solved, seed_total in arms[arm][seed]["families"][family]:
+                solved += seed_solved
+                total += seed_total
+        return (solved, total)
+
+    @staticmethod
+    def gaps(*, arms: dict, arm: str, index: int | None = None) -> list[float]:
+        """Per-seed (TRASH - RECYCLING) gap at one sweep (`None` = the last), in
+        percentage points -- the primary metric.
 
         Within-arm by construction, so it cancels anything that shifts both
         families' level together. Unlike the previous experiment, that is not the
@@ -265,15 +362,147 @@ class ResetIntervalReport:
         transitions, so the arms should sit at the same point on the
         gap-versus-progress hump to begin with -- which `family_differences`
         checks rather than assumes.
+
+        That argument holds *at the final sweep only*. At any earlier checkpoint the
+        arms are by construction at different points on their own learning curves,
+        so a cross-arm comparison of `index != None` gaps is confounded by progress
+        in exactly the way PR #39's was -- see `presaturation_index`.
         """
-        trash = ResetIntervalReport.final_rates(arms=arms, arm=arm, family="TRASH")
-        recycling = ResetIntervalReport.final_rates(arms=arms, arm=arm, family="RECYCLING")
+        trash = ResetIntervalReport.rates_at(arms=arms, arm=arm, family="TRASH", index=index)
+        recycling = ResetIntervalReport.rates_at(
+            arms=arms, arm=arm, family="RECYCLING", index=index
+        )
         return [t - r for t, r in zip(trash, recycling, strict=True)]
 
     @staticmethod
-    def family_differences(*, arms: dict, family: str, from_arm: str, to_arm: str) -> list[float]:
-        """Per-seed (to_arm - from_arm) difference in one family's final success
-        rate -- paired, since every arm ran the same fixed seeds.
+    def saturated_fraction(*, arms: dict, index: int) -> float:
+        """Fraction of ALL runs (every arm x every shared seed) that have both throw
+        families at their ceiling at one checkpoint.
+
+        A run in that state contributes a (TRASH - RECYCLING) gap of exactly zero no
+        matter what the policy is like, so this is the share of the sample on which
+        the pre-specified metric has no resolution at all.
+        """
+        saturated = runs = 0
+        for arm in _ARM_INTERVAL:
+            for seed in ResetIntervalReport.seeds(arms=arms):
+                runs += 1
+                at_ceiling = True
+                for family in ("TRASH", "RECYCLING"):
+                    _transitions, solved, total = arms[arm][seed]["families"][family][index]
+                    at_ceiling = at_ceiling and solved == total
+                saturated += int(at_ceiling)
+        return saturated / runs if runs else 0.0
+
+    @staticmethod
+    def presaturation_index(*, arms: dict) -> int:
+        """**POST-HOC.** The checkpoint the pre-saturation view is read at: the last
+        one *before* `saturated_fraction` first reaches one half.
+
+        The rule, stated so the checkpoint is not chosen by its p-value:
+
+        1. it is a single checkpoint applied to all four arms, so no arm is read at
+           a different training budget than another;
+        2. it is defined purely by *resolution* -- what share of runs are pinned to
+           a gap of exactly zero by both families being at their ceiling -- and
+           never by any outcome, effect size or p-value;
+        3. it is the last such checkpoint, i.e. the most-trained point at which a
+           majority of runs still had any resolution left.
+
+        This choice was made **after** seeing that the pre-specified final-checkpoint
+        result was measured at a ceiling. It is exploratory and is labelled as such
+        everywhere it is reported. It also cannot inherit the design's headline
+        defence: the arms are progress-matched at 2500 transitions by construction
+        and demonstrably are *not* matched earlier, which is the confound PR #39
+        died of. `_print_presaturation` therefore prints the progress-match check at
+        this checkpoint immediately, before anything else.
+        """
+        num_sweeps = min(
+            len(arms[arm][seed]["families"]["TRASH"])
+            for arm in _ARM_INTERVAL
+            for seed in ResetIntervalReport.seeds(arms=arms)
+        )
+        for index in range(num_sweeps):
+            if ResetIntervalReport.saturated_fraction(arms=arms, index=index) >= 0.5:
+                return max(index - 1, 0)
+        return num_sweeps - 1
+
+    @staticmethod
+    def checkpoint_transitions(*, arms: dict, index: int) -> int:
+        """The transition count checkpoint `index` sits at. Every run shares one
+        grid (asserted in the tests), so a single number is well defined."""
+        seed = ResetIntervalReport.seeds(arms=arms)[0]
+        return int(arms["armA"][seed]["families"]["TRASH"][index][0])
+
+    @staticmethod
+    def extreme_checkpoints(*, arms: dict, family: str) -> tuple[int, int]:
+        """`(checkpoints within one task of an extreme, checkpoints in total)` for
+        one family, over every arm and seed.
+
+        The shape question. If a family's per-checkpoint count were an average over
+        14 loosely-related tasks, intermediate values would dominate. If instead the
+        whole family flips together -- the sampler either can hit that bin or cannot
+        -- almost every checkpoint sits at 0/14 or 14/14. Which of those is true
+        decides how much evidence 14 tasks per seed really carry, so it is measured
+        rather than assumed.
+        """
+        extreme = total = 0
+        for arm in _ARM_INTERVAL:
+            for seed in ResetIntervalReport.seeds(arms=arms):
+                for _transitions, solved, tasks in arms[arm][seed]["families"][family]:
+                    total += 1
+                    extreme += int(solved <= 1 or solved >= tasks - 1)
+        return (extreme, total)
+
+    @staticmethod
+    def single_step_runs(*, arms: dict, family: str) -> tuple[int, int]:
+        """`(runs covering at least 80% of their own range in one 100-transition
+        step, runs whose count moved at all)`.
+
+        The companion to `extreme_checkpoints`: a curve can sit at extremes and
+        still climb through them gradually. This asks whether the transition itself
+        is a step.
+        """
+        abrupt = moving = 0
+        for arm in _ARM_INTERVAL:
+            for seed in ResetIntervalReport.seeds(arms=arms):
+                counts = [solved for _t, solved, _n in arms[arm][seed]["families"][family]]
+                span = max(counts) - min(counts)
+                if span == 0:
+                    continue
+                moving += 1
+                largest = max(b - a for a, b in zip(counts, counts[1:], strict=False))
+                abrupt += int(largest >= 0.8 * span)
+        return (abrupt, moving)
+
+    @staticmethod
+    def ceiling_collapses(*, arms: dict, family: str) -> int:
+        """Runs that reached within one task of solving the family and later fell to
+        within one task of solving none of it.
+
+        A capability that is lost again is not a monotone learning curve, and it
+        matters here because `end_cycle()` refits the samplers 25 times per run: a
+        refit can move the policy in either direction.
+        """
+        collapses = 0
+        for arm in _ARM_INTERVAL:
+            for seed in ResetIntervalReport.seeds(arms=arms):
+                reached = False
+                for _transitions, solved, tasks in arms[arm][seed]["families"][family]:
+                    if solved >= tasks - 1:
+                        reached = True
+                    elif reached and solved <= 1:
+                        collapses += 1
+                        break
+        return collapses
+
+    @staticmethod
+    def family_differences(
+        *, arms: dict, family: str, from_arm: str, to_arm: str, index: int | None = None
+    ) -> list[float]:
+        """Per-seed (to_arm - from_arm) difference in one family's success rate at
+        one sweep (`None` = the last) -- paired, since every arm ran the same fixed
+        seeds.
 
         The progress-match check. Run on TRASH and RECYCLING it asks "are the arms
         equally trained?", which decides whether a cross-arm gap difference is
@@ -283,8 +512,8 @@ class ResetIntervalReport:
         return [
             t - f
             for f, t in zip(
-                ResetIntervalReport.final_rates(arms=arms, arm=from_arm, family=family),
-                ResetIntervalReport.final_rates(arms=arms, arm=to_arm, family=family),
+                ResetIntervalReport.rates_at(arms=arms, arm=from_arm, family=family, index=index),
+                ResetIntervalReport.rates_at(arms=arms, arm=to_arm, family=family, index=index),
                 strict=True,
             )
         ]
@@ -303,7 +532,7 @@ class ResetIntervalReport:
 
         Chosen over "transitions to reach X%" precisely because that one is
         censored -- a seed that never reaches the threshold has no value, and at
-        least one here ends at 21% -- which would silently drop the worst seeds
+        least one here ends at 3/14 -- which would silently drop the worst seeds
         from the comparison and flatter the arm they fall in. Averaging the curve
         is defined for every seed.
         """
@@ -343,14 +572,11 @@ class ResetIntervalReport:
         pooling destroys the pairing. Reported because the per-seed mean averages
         20 proportions with denominators of 14, so it carries more sampling noise
         than the 280-task pooled figure while estimating the same quantity.
+
+        The percentage is a *rendering* of `pooled_counts`, never a substitute for
+        it: every report below prints the count and puts this in brackets after it.
         """
-        solved = total = 0
-        for seed in ResetIntervalReport.seeds(arms=arms):
-            _transitions, seed_solved, seed_total = max(
-                arms[arm][seed]["families"][family], key=lambda triple: triple[0]
-            )
-            solved += seed_solved
-            total += seed_total
+        solved, total = ResetIntervalReport.pooled_counts(arms=arms, arm=arm, family=family)
         return 100.0 * solved / total if total else 0.0
 
     @staticmethod
@@ -458,9 +684,9 @@ class ResetIntervalReport:
         ]
 
     @staticmethod
-    def trend_slopes(*, arms: dict) -> list[float]:
+    def trend_slopes(*, arms: dict, index: int | None = None) -> list[float]:
         """One OLS slope per seed: gap (pp) regressed on log2(reset interval),
-        across all four arms.
+        across all four arms, at one checkpoint (`None` = the last).
 
         A rank correlation over four *arm means* cannot reach p < 0.05 -- Spearman
         at n = 4 bottoms out at p = 0.083 even for perfect monotonicity -- so the
@@ -473,7 +699,7 @@ class ResetIntervalReport:
         mean_x = statistics.mean(xs)
         denominator = sum((x - mean_x) ** 2 for x in xs)
         slopes = []
-        for ys in ResetIntervalReport._gaps_per_seed(arms=arms):
+        for ys in ResetIntervalReport._gaps_per_seed(arms=arms, index=index):
             mean_y = statistics.mean(ys)
             slopes.append(
                 sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys, strict=True)) / denominator
@@ -507,11 +733,11 @@ class ResetIntervalReport:
         ]
 
     @staticmethod
-    def _gaps_per_seed(*, arms: dict) -> list[list[float]]:
+    def _gaps_per_seed(*, arms: dict, index: int | None = None) -> list[list[float]]:
         """One list of four arm-ordered gaps per seed -- the paired unit both trend
         statistics are computed inside."""
         per_arm = [
-            ResetIntervalReport.gaps(arms=arms, arm=arm)
+            ResetIntervalReport.gaps(arms=arms, arm=arm, index=index)
             for arm in sorted(_ARM_INTERVAL, key=lambda arm: _ARM_INTERVAL[arm])
         ]
         return [[gaps[index] for gaps in per_arm] for index in range(len(per_arm[0]))]
@@ -545,6 +771,7 @@ class ResetIntervalReport:
         everywhere) -- which is exactly why it has to be shown rather than claimed.
         """
         arms_ordered = sorted(_ARM_INTERVAL, key=lambda arm: _ARM_INTERVAL[arm])
+        denominators = expected_denominators()
         fig, (ax, progress_ax) = plt.subplots(1, 2, figsize=(14, 5.5))
         intervals = [_ARM_INTERVAL[arm] for arm in arms_ordered]
         means, lows, highs = [], [], []
@@ -629,7 +856,13 @@ class ResetIntervalReport:
             for arm, interval in zip(arms_ordered, intervals, strict=True)
         ])
         ax.set_xlabel("Steps between free resets (log scale) -- rarer rescues to the right")
-        ax.set_ylabel("TRASH - RECYCLING final success gap (pp)")
+        # A difference of two rates, so percentage points is the right unit -- but the
+        # resolution has to be said out loud, since 14 tasks per family means the gap
+        # can only land on multiples of 100/14.
+        ax.set_ylabel(
+            "TRASH - RECYCLING final success gap (pp)\n"
+            f"one task = {100.0 / denominators['TRASH']:.1f}pp"
+        )
         ax.set_title(
             "The designed comparison: final gap vs reset interval\n"
             "(25 refits and 2500 transitions in every arm)"
@@ -661,6 +894,22 @@ class ResetIntervalReport:
                 color=color,
                 label=family,
             )
+            # The count the bar is a rendering of, written inside it: "100%" on 2
+            # EMPTY tasks per seed and "99.3%" on 14 TRASH tasks per seed look
+            # equivalent as bar heights and are not remotely equivalent as evidence.
+            for position, arm in zip(positions, arms_ordered, strict=True):
+                solved, total = ResetIntervalReport.pooled_counts(arms=arms, arm=arm, family=family)
+                progress_ax.text(
+                    position + (index - 1) * width,
+                    50.0,
+                    f"{solved}/{total}",
+                    rotation=90,
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                    color="white",
+                    fontweight="bold",
+                )
         progress_ax.set_xticks(positions)
         progress_ax.set_xticklabels([
             f"{_ARM_INTERVAL[arm]}\n{arm}" + ("\n(old behaviour)" if arm == _BASELINE_ARM else "")
@@ -668,9 +917,15 @@ class ResetIntervalReport:
         ])
         progress_ax.set_ylim(0, 105)
         progress_ax.set_xlabel("Steps between free resets")
-        progress_ax.set_ylabel("% final evaluation tasks solved")
+        progress_ax.set_ylabel(
+            "Final evaluation tasks solved (%)\n"
+            + ", ".join(f"{count} {family}" for family, count in denominators.items())
+            + " per seed"
+        )
         progress_ax.set_title(
-            "The precondition: are the arms equally trained?\n(bars = mean over seeds, 1 s.e.)"
+            "The precondition: are the arms equally trained?\n"
+            f"(bars = mean over seeds, 1 s.e.; labels = tasks solved over all "
+            f"{len(ResetIntervalReport.seeds(arms=arms))} seeds)"
         )
         progress_ax.grid(True, axis="y", alpha=0.3)
         progress_ax.legend(loc="lower right", fontsize=9)
@@ -694,7 +949,9 @@ class ResetIntervalReport:
         how often the robot was rescued.
         """
         arms_ordered = sorted(_ARM_INTERVAL, key=lambda arm: _ARM_INTERVAL[arm])
-        fig, axes = plt.subplots(1, len(arms_ordered), figsize=(16, 4.4), sharey=True)
+        denominators = expected_denominators()
+        seeds = ResetIntervalReport.seeds(arms=arms)
+        fig, axes = plt.subplots(1, len(arms_ordered), figsize=(16, 4.8), sharey=True)
         for ax, arm in zip(axes, arms_ordered, strict=True):
             for family, (color, marker) in _FAMILY_STYLE.items():
                 curve = ResetIntervalReport.family_curve(arms=arms, arm=arm, family=family)
@@ -718,20 +975,57 @@ class ResetIntervalReport:
                     color=color,
                     alpha=0.15,
                 )
+                # The endpoint as a count, so the panel can be read without doing
+                # arithmetic on a percentage whose denominator differs by family.
+                # The three families finish within a few points of each other, so
+                # the labels are fanned vertically rather than left to collide.
+                solved, total = ResetIntervalReport.pooled_counts(arms=arms, arm=arm, family=family)
+                ax.annotate(
+                    f"{solved}/{total}",
+                    xy=(xs[-1], means[-1]),
+                    xytext=(5, _LABEL_OFFSET[family]),
+                    textcoords="offset points",
+                    ha="left",
+                    va="center",
+                    fontsize=7.5,
+                    color=color,
+                    fontweight="bold",
+                )
             ax.set_title(
                 f"reset every {_ARM_INTERVAL[arm]} steps "
                 f"({ResetIntervalReport.expected_resets(arm=arm)} total)"
                 + ("\n(old behaviour)" if arm == _BASELINE_ARM else "")
             )
             ax.set_xlabel("Online transitions")
-            ax.set_ylim(-3, 103)
+            ax.set_ylim(-4, 112)
+            ax.set_xlim(-80, 3050)
             ax.grid(True, alpha=0.3)
-        axes[0].set_ylabel("% evaluation tasks solved")
+        axes[0].set_ylabel(
+            "Evaluation tasks solved (%)\n"
+            + ", ".join(f"{count} {family}" for family, count in denominators.items())
+            + " per seed"
+        )
         axes[0].legend(loc="lower right", fontsize=9)
+        # The untrained floor is identical in all four arms -- checkpoint 0 is taken
+        # before any arm has acted -- so it belongs in the suptitle rather than being
+        # repeated four times. Without it a reader cannot tell a learned 278/280 from
+        # a domain that was always nearly solved.
+        untrained = ", ".join(
+            "{}/{} {}".format(
+                *ResetIntervalReport.untrained_counts(
+                    arms=arms, arm=arms_ordered[0], family=family
+                ),
+                family,
+            )
+            for family in _FAMILY_STYLE
+        )
         fig.suptitle(
             "Tossing Room per-family learning curves, mean +- standard error over "
-            f"{len(ResetIntervalReport.seeds(arms=arms))} seeds "
-            "(panels ARE comparable: same cycles, transitions and refits in every arm)"
+            f"{len(seeds)} seeds "
+            "(panels ARE comparable: same cycles, transitions and refits in every arm)\n"
+            f"end-of-curve labels are tasks solved over all {len(seeds)} seeds; "
+            f"every arm starts from the same untrained policy at 0 transitions ({untrained})",
+            fontsize=10,
         )
         fig.tight_layout()
         fig.savefig(output, dpi=150)
@@ -943,45 +1237,72 @@ def _print_report(*, arms: dict) -> None:
     seeds = ResetIntervalReport.seeds(arms=arms)
     _print_manipulation_checks(arms=arms)
 
-    print(f"\n{'arm':>5} {'interval':>9} {'resets':>7}", end="")
+    # Counts, not bare percentages: 14 tasks per throw family means a rate can only
+    # land on multiples of ~7.1pp, and 2 tasks means EMPTY's perfect score rests on
+    # 2 tasks per seed. Both facts are invisible in "100.0" and obvious in "2/2".
+    denominators = expected_denominators()
+    print(
+        f"\nFINAL SUCCESS, pooled over the {len(seeds)} shared seeds "
+        "(evaluation tasks solved / attempted):"
+    )
+    print(f"{'arm':>5} {'interval':>9} {'resets':>7}", end="")
     for family in _FAMILY_STYLE:
-        print(f" {family:>18}", end="")
-    print(f" {'gap (T-R)':>16}")
+        print(f" {family:>19}", end="")
+    print(f" {'gap (T-R), pp':>17}")
     for arm in arms_ordered:
         print(
             f"{arm:>5} {_ARM_INTERVAL[arm]:>9} {ResetIntervalReport.expected_resets(arm=arm):>7}",
             end="",
         )
         for family in _FAMILY_STYLE:
-            rates = ResetIntervalReport.final_rates(arms=arms, arm=arm, family=family)
-            print(f" {statistics.mean(rates):>10.1f} +-{statistics.stdev(rates):<5.1f}", end="")
+            solved, total = ResetIntervalReport.pooled_counts(arms=arms, arm=arm, family=family)
+            print(f" {f'{solved}/{total}':>11} ({100.0 * solved / total:>4.1f}%)", end="")
         gaps = ResetIntervalReport.gaps(arms=arms, arm=arm)
-        print(f" {statistics.mean(gaps):>8.1f} +-{statistics.stdev(gaps):<6.1f}")
+        print(f" {statistics.mean(gaps):>9.1f} +-{statistics.stdev(gaps):<6.1f}")
 
-    print("\nPer-seed (TRASH - RECYCLING) gap, pp:")
+    print(
+        "\nFINAL SUCCESS, per-seed mean count (the paired unit; denominators "
+        + ", ".join(f"{count} {family}" for family, count in denominators.items())
+        + " per seed):"
+    )
+    for arm in arms_ordered:
+        print(f"{arm:>5}", end="")
+        for family in _FAMILY_STYLE:
+            counts = [
+                solved
+                for solved, _total in ResetIntervalReport.final_counts(
+                    arms=arms, arm=arm, family=family
+                )
+            ]
+            cell = f"{statistics.mean(counts):.2f}/{denominators[family]}"
+            print(f" {cell:>10} +-{statistics.stdev(counts):<5.2f}", end="")
+        print()
+
+    print("\nPer-seed (TRASH - RECYCLING) gap, pp (a difference of rates, so pp is the unit):")
     print(f"{'arm':>5} " + " ".join(f"{('s' + seed):>6}" for seed in seeds))
     for arm in arms_ordered:
         gaps = ResetIntervalReport.gaps(arms=arms, arm=arm)
         print(f"{arm:>5} " + " ".join(f"{gap:>6.1f}" for gap in gaps))
 
-    print("\nPer-seed final RECYCLING %, because an sd here is often one collapsed seed:")
-    for arm in arms_ordered:
-        rates = ResetIntervalReport.final_rates(arms=arms, arm=arm, family="RECYCLING")
-        print(f"{arm:>5} " + " ".join(f"{rate:>6.0f}" for rate in rates))
+    for family in ("RECYCLING", "TRASH"):
+        print(
+            f"\nPer-seed final {family} tasks solved, out of {denominators[family]} "
+            "-- because an sd here is often one collapsed seed:"
+        )
+        for arm in arms_ordered:
+            counts = ResetIntervalReport.final_counts(arms=arms, arm=arm, family=family)
+            print(f"{arm:>5} " + " ".join(f"{solved:>3}" for solved, _total in counts))
 
     print(
-        f"\nPooled final rate (total solved / total tasks over all {len(seeds)} seeds, "
-        "descriptive only):"
+        "\nUNTRAINED BASELINE -- checkpoint 0, before any practice step, pooled over "
+        f"{len(seeds)} seeds.\nIdentical in all four arms by construction (no arm has "
+        "acted yet), so it is the in-panel\nfloor every learning curve rises from:"
     )
-    print(f"{'arm':>5} " + " ".join(f"{family:>11}" for family in _FAMILY_STYLE))
-    for arm in arms_ordered:
-        print(
-            f"{arm:>5} "
-            + " ".join(
-                f"{ResetIntervalReport.pooled_rate(arms=arms, arm=arm, family=family):>10.1f}%"
-                for family in _FAMILY_STYLE
-            )
+    for family in _FAMILY_STYLE:
+        solved, total = ResetIntervalReport.untrained_counts(
+            arms=arms, arm=arms_ordered[0], family=family
         )
+        print(f"  {family:>10}: {solved}/{total} ({100.0 * solved / total:.1f}%)")
 
     print("\nIs the gap's spread real, or just task-sampling noise?")
     for arm in arms_ordered:
@@ -1062,7 +1383,20 @@ def _print_report(*, arms: dict) -> None:
     # with the tests above, because a statistic chosen after seeing the curves does
     # not carry the same evidential weight as one chosen before.
     print("\n--- POST-HOC: the trajectory, not the endpoint ---")
-    print("\nMean success over all checkpoints (normalised area under the learning curve):")
+    num_sweeps = len(arms[arms_ordered[0]][seeds[0]]["families"]["TRASH"])
+    print(
+        "\nArea under the learning curve, as a count: tasks solved summed over all "
+        f"{num_sweeps} checkpoints\nof all {len(seeds)} seeds "
+        f"(so {num_sweeps} x {len(seeds)} x the per-seed denominator):"
+    )
+    print(f"{'arm':>5} " + " ".join(f"{family:>21}" for family in _FAMILY_STYLE))
+    for arm in arms_ordered:
+        print(f"{arm:>5}", end="")
+        for family in _FAMILY_STYLE:
+            solved, total = ResetIntervalReport.curve_counts(arms=arms, arm=arm, family=family)
+            print(f" {f'{solved}/{total}':>13} ({100.0 * solved / total:>4.1f}%)", end="")
+        print()
+    print("\nThe same numbers as the per-seed mean rate the paired tests use:")
     print(f"{'arm':>5} " + " ".join(f"{family:>16}" for family in _FAMILY_STYLE))
     for arm in arms_ordered:
         print(f"{arm:>5} ", end="")
@@ -1134,6 +1468,136 @@ def _print_report(*, arms: dict) -> None:
         f"  {_BASELINE_ARM} minus armA: mean {statistics.mean(mid_gap_extremes):+.1f}pp, "
         f"sd {statistics.stdev(mid_gap_extremes):.1f}, Wilcoxon p={wilcoxon.p_value:.4f}, "
         f"sign-flip p={flip.p_value:.4f}, MDE at n={len(mid_gap_extremes)}: {mde:.1f}pp"
+    )
+
+    _print_curve_shape(arms=arms)
+    _print_presaturation(arms=arms)
+
+
+def _print_curve_shape(*, arms: dict) -> None:
+    """**POST-HOC, descriptive.** What the per-family curves actually look like.
+
+    Reported because it changes how the rest of the report should be read: if a
+    family's 14 tasks succeed and fail together, then 14 tasks per seed is not 14
+    independent observations, and the binomial noise floor computed elsewhere here
+    -- which assumes they are -- is a lower bound rather than an estimate.
+    """
+    print("\n--- POST-HOC, descriptive: the curves are steps, not ramps ---")
+    denominators = expected_denominators()
+    for family in ("RECYCLING", "TRASH"):
+        extreme, total = ResetIntervalReport.extreme_checkpoints(arms=arms, family=family)
+        abrupt, moving = ResetIntervalReport.single_step_runs(arms=arms, family=family)
+        collapses = ResetIntervalReport.ceiling_collapses(arms=arms, family=family)
+        print(
+            f"  {family:>10}: {extreme}/{total} checkpoints are within one task of "
+            f"0/{denominators[family]} or {denominators[family]}/{denominators[family]} "
+            f"({100.0 * extreme / total:.1f}%);\n"
+            f"{'':>14}{abrupt}/{moving} runs cover >=80% of their own range in a single "
+            "100-transition step;\n"
+            f"{'':>14}{collapses} runs reached the ceiling and later fell back to <=1 "
+            "task solved."
+        )
+
+
+def _print_presaturation(*, arms: dict) -> None:
+    """**POST-HOC.** The pre-specified metric re-read at the last checkpoint where a
+    majority of runs still had resolution on it. See `presaturation_index` for the
+    selection rule and why it is exploratory.
+
+    The progress-match check is printed FIRST and is the reason this section cannot
+    be promoted: it is what the design guarantees at 2500 transitions and what it
+    cannot guarantee anywhere earlier.
+    """
+    arms_ordered = sorted(_ARM_INTERVAL, key=lambda arm: _ARM_INTERVAL[arm])
+    seeds = ResetIntervalReport.seeds(arms=arms)
+    denominators = expected_denominators()
+    index = ResetIntervalReport.presaturation_index(arms=arms)
+    transitions = ResetIntervalReport.checkpoint_transitions(arms=arms, index=index)
+    print(
+        "\n--- POST-HOC: the pre-specified metric, re-read before saturation ---\n"
+        f"Selection rule (resolution only, no outcome): the last checkpoint before the\n"
+        "share of runs with BOTH throw families at their ceiling -- and therefore a gap\n"
+        f"of exactly zero whatever the policy is -- first reaches one half. That is\n"
+        f"checkpoint {index} at {transitions} transitions "
+        f"({100.0 * ResetIntervalReport.saturated_fraction(arms=arms, index=index):.1f}% "
+        "saturated, against "
+        f"{100.0 * ResetIntervalReport.saturated_fraction(arms=arms, index=index + 1):.1f}% "
+        "at the next).\nChosen AFTER seeing the final-checkpoint result was saturated. "
+        "Exploratory."
+    )
+    print(
+        f"\nPROGRESS MATCH at {transitions} transitions (paired, {_BASELINE_ARM} minus armA) "
+        "-- READ THIS FIRST:"
+    )
+    for family in _FAMILY_STYLE:
+        differences = ResetIntervalReport.family_differences(
+            arms=arms, family=family, from_arm="armA", to_arm=_BASELINE_ARM, index=index
+        )
+        wilcoxon = PairedTests.wilcoxon_signed_rank(differences=differences)
+        print(
+            f"  {family:>10}: mean {statistics.mean(differences):+6.1f}pp, "
+            f"sd {statistics.stdev(differences):5.1f}, Wilcoxon p={wilcoxon.p_value:.4f}"
+        )
+    print(
+        "  A significant difference here means the arms are NOT at the same point on\n"
+        "  their learning curves at this checkpoint, so the gap comparison below is\n"
+        "  confounded by training progress in exactly the way PR #39's was."
+    )
+    print(f"\nPer-family success at {transitions} transitions, pooled over {len(seeds)} seeds:")
+    print(f"{'arm':>5} " + " ".join(f"{family:>19}" for family in _FAMILY_STYLE), end="")
+    print(f" {'gap (T-R), pp':>17} {'zero gaps':>10}")
+    for arm in arms_ordered:
+        print(f"{arm:>5}", end="")
+        for family in _FAMILY_STYLE:
+            solved, total = ResetIntervalReport.pooled_counts(
+                arms=arms, arm=arm, family=family, index=index
+            )
+            print(f" {f'{solved}/{total}':>11} ({100.0 * solved / total:>4.1f}%)", end="")
+        gaps = ResetIntervalReport.gaps(arms=arms, arm=arm, index=index)
+        zeros = sum(1 for gap in gaps if gap == 0.0)
+        print(
+            f" {statistics.mean(gaps):>9.1f} +-{statistics.stdev(gaps):<6.1f}"
+            f" {f'{zeros}/{len(gaps)}':>10}"
+        )
+    for family in ("RECYCLING", "TRASH"):
+        print(
+            f"\nPer-seed {family} tasks solved at {transitions} transitions, "
+            f"out of {denominators[family]}:"
+        )
+        for arm in arms_ordered:
+            counts = ResetIntervalReport.counts_at(arms=arms, arm=arm, family=family, index=index)
+            print(f"{arm:>5} " + " ".join(f"{solved:>3}" for solved, _total in counts))
+    extremes = [
+        d - a
+        for a, d in zip(
+            ResetIntervalReport.gaps(arms=arms, arm="armA", index=index),
+            ResetIntervalReport.gaps(arms=arms, arm=_BASELINE_ARM, index=index),
+            strict=True,
+        )
+    ]
+    wilcoxon = PairedTests.wilcoxon_signed_rank(differences=extremes)
+    flip = PairedTests.sign_flip(differences=extremes)
+    mde = PairedTests.minimum_detectable_effect(differences=extremes)
+    print(
+        f"\n  gap, {_BASELINE_ARM} (100) - armA (10) at {transitions} transitions: "
+        f"mean {statistics.mean(extremes):+.2f}pp, sd {statistics.stdev(extremes):.2f}, "
+        f"Wilcoxon p={wilcoxon.p_value:.4f}, sign-flip p={flip.p_value:.4f}, "
+        f"MDE at n={len(extremes)}: {mde:.2f}pp"
+    )
+    slopes = ResetIntervalReport.trend_slopes(arms=arms, index=index)
+    wilcoxon = PairedTests.wilcoxon_signed_rank(differences=slopes)
+    flip = PairedTests.sign_flip(differences=slopes)
+    print(
+        f"  per-seed trend slope (pp per doubling) at {transitions} transitions: "
+        f"mean {statistics.mean(slopes):+.2f}, sd {statistics.stdev(slopes):.2f}, "
+        f"Wilcoxon p={wilcoxon.p_value:.4f}, sign-flip p={flip.p_value:.4f}"
+    )
+    print(
+        "  Note the MDE against the observed effect: an effect smaller than what the\n"
+        "  design could reliably detect is not a robust finding even at p < 0.05.\n"
+        "  And neither number is interpretable while the progress-match check above\n"
+        "  fails -- they are reported so the exploratory view is not hidden, not as\n"
+        "  support for the hypothesis."
     )
 
 
