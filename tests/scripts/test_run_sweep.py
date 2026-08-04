@@ -1,11 +1,24 @@
 import json
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel, ValidationError
 
-from scripts.run_sweep import InFlightCounter, MachineSampler, RunTiming, SweepRun, SweepRunner
+from scripts.run_sweep import (
+    InFlightCounter,
+    MachineSampler,
+    RunTiming,
+    SpawnRetryPolicy,
+    SweepRun,
+    SweepRunner,
+)
+
+# Tests never wait out a real backoff -- the schedule is exercised by
+# test_backoff_grows_exponentially, not by sleeping through it.
+_NO_BACKOFF = SpawnRetryPolicy(max_attempts=3, initial_backoff_seconds=0.0)
 
 
 def test_plan_produces_one_run_per_method_seed_pair() -> None:
@@ -249,6 +262,142 @@ def test_a_run_that_cannot_be_launched_still_fails_the_sweep(*, tmp_path: Path) 
     run = _fake_run(tmp_path=tmp_path, seed=0, command=["definitely-not-a-real-executable"])
     outcomes = SweepRunner.execute(runs=[run], max_workers=1)
     assert [outcome for outcome in outcomes if not outcome.succeeded] == outcomes
+
+
+# Captured at import, before any test monkeypatches subprocess.run, so the fake
+# below can delegate to the genuine article without recursing into itself.
+_REAL_SUBPROCESS_RUN = subprocess.run
+
+
+class _FlakySpawn(BaseModel):
+    """Stands in for `subprocess.run` and fails the *spawn* of one specific
+    command on its first `failures` attempts -- what fork() does under memory
+    pressure. Any other command is handed straight to the real thing, so a single
+    sweep can contain both a flaky run and a healthy sibling.
+
+    This has to be faked rather than provoked: the real trigger is the machine
+    running out of memory, which a test may not do to the box it runs on."""
+
+    command: list[str]
+    failures: int
+    attempts: int = 0
+
+    def __call__(self, *args, **kwargs):
+        if list(args[0]) != self.command:
+            return _REAL_SUBPROCESS_RUN(*args, **kwargs)
+        self.attempts += 1
+        if self.attempts <= self.failures:
+            # Numbered so a test can prove *which* attempt's traceback survived.
+            raise OSError(f"synthetic spawn failure {self.attempts}")
+        return _REAL_SUBPROCESS_RUN(*args, **kwargs)
+
+
+def test_a_transient_spawn_failure_is_retried_until_the_run_launches(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The motivating case: fork() fails under memory pressure, a sibling worker
+    exits a second later, and the same command then launches fine. Losing a
+    ~40-minute run to that is pure waste, so it is retried."""
+    run = _fake_run(tmp_path=tmp_path, seed=0, command=[sys.executable, "-c", "print('fine')"])
+    flaky = _FlakySpawn(command=run.command, failures=2)
+    monkeypatch.setattr(subprocess, "run", flaky)
+
+    outcomes = SweepRunner.execute(runs=[run], max_workers=1, retry_policy=_NO_BACKOFF)
+
+    assert flaky.attempts == 3
+    assert outcomes[0].succeeded is True
+    assert "fine" in outcomes[0].output
+    # The retries are recorded, not silent: several runs needing them is a
+    # machine-health signal, so it has to outlive the scrollback.
+    assert outcomes[0].spawn_attempts == 3
+    assert _timing_of(run=run).spawn_attempts == 3
+    # Every failed attempt's traceback is kept, not just the last one.
+    log = (run.output_dir / "log.txt").read_text()
+    assert "synthetic spawn failure 1" in log
+    assert "synthetic spawn failure 2" in log
+
+
+def test_a_spawn_that_fails_every_attempt_is_reported_with_the_last_traceback(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exhausting the retries changes nothing about the contract: still reported
+    as rc=-1 with the traceback as output, still never raised, and the other runs
+    in the grid still complete."""
+    broken = _fake_run(tmp_path=tmp_path, seed=0, command=[sys.executable, "-c", "print('never')"])
+    healthy = _fake_run(tmp_path=tmp_path, seed=1, command=[sys.executable, "-c", "print('fine')"])
+    flaky = _FlakySpawn(command=broken.command, failures=99)
+    monkeypatch.setattr(subprocess, "run", flaky)
+
+    outcomes = sorted(
+        SweepRunner.execute(runs=[broken, healthy], max_workers=1, retry_policy=_NO_BACKOFF),
+        key=lambda outcome: outcome.run.seed,
+    )
+
+    assert flaky.attempts == 3  # bounded: it does not retry forever
+    assert outcomes[0].succeeded is False
+    assert outcomes[0].returncode == -1
+    assert outcomes[0].spawn_attempts == 3
+    # The *last* attempt's traceback is the one that has to survive -- it is the
+    # state the run was actually abandoned in.
+    assert "OSError" in outcomes[0].output
+    assert "synthetic spawn failure 3" in outcomes[0].output
+    assert "synthetic spawn failure 3" in (broken.output_dir / "log.txt").read_text()
+
+    assert outcomes[1].succeeded is True
+    assert "fine" in outcomes[1].output
+
+
+def test_a_run_that_started_and_exited_non_zero_is_never_retried(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The distinction the retry exists to respect. A child that *ran* and failed
+    is deterministic in `--seed`, so re-running it just burns another ~40 minutes
+    reproducing the identical failure -- one broken seed must cost 1x, not 3x.
+    Only a spawn that never produced an exit code at all is transient."""
+    run = _fake_run(
+        tmp_path=tmp_path, seed=0, command=[sys.executable, "-c", "raise SystemExit(3)"]
+    )
+    # failures=0: the spawn always succeeds, so every attempt here is the child
+    # itself exiting non-zero.
+    counting = _FlakySpawn(command=run.command, failures=0)
+    monkeypatch.setattr(subprocess, "run", counting)
+
+    outcomes = SweepRunner.execute(runs=[run], max_workers=1, retry_policy=_NO_BACKOFF)
+
+    assert counting.attempts == 1  # exactly one spawn, despite max_attempts=3
+    assert outcomes[0].returncode == 3
+    assert outcomes[0].spawn_attempts == 1
+
+
+def test_max_attempts_of_one_disables_retrying(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--max-spawn-attempts 1` is the documented escape hatch, so it has to
+    really mean "spawn once and report whatever happened"."""
+    run = _fake_run(tmp_path=tmp_path, seed=0, command=[sys.executable, "-c", "print('never')"])
+    flaky = _FlakySpawn(command=run.command, failures=99)
+    monkeypatch.setattr(subprocess, "run", flaky)
+
+    outcomes = SweepRunner.execute(
+        runs=[run], max_workers=1, retry_policy=SpawnRetryPolicy(max_attempts=1)
+    )
+
+    assert flaky.attempts == 1
+    assert outcomes[0].returncode == -1
+    assert outcomes[0].spawn_attempts == 1
+
+
+def test_retry_policy_backs_off_exponentially_from_a_bounded_default() -> None:
+    """Exponential rather than fixed: if the box really is out of memory, backing
+    off harder is what gives the resident workers time to drain. The bound has a
+    floor of 1 because argparse will not check it, and 0 would silently mean
+    "never even try" -- an rc=-1 with no exception to explain it."""
+    policy = SpawnRetryPolicy()
+    assert policy.max_attempts == 3
+    assert policy.backoff_seconds(attempt=1) == 2.0
+    assert policy.backoff_seconds(attempt=2) == 4.0
+    with pytest.raises(ValidationError):
+        SpawnRetryPolicy(max_attempts=0)
 
 
 def test_timing_timestamps_are_timezone_aware_iso_8601(*, tmp_path: Path) -> None:
