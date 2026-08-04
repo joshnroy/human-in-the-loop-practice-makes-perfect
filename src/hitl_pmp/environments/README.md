@@ -164,8 +164,8 @@ predicate definitions play in `predicators/envs/`.
   barrier into KINDER's own `blocks_goal_region`, and **cannot be retrieved afterwards**
   — the irreversibility the project's V1 proposal predicts EES will stall on. See
   [`tossing3d/README.md`](tossing3d/README.md) for the install, the mapping table, the
-  three things that look like bugs and are not (starting with the goal region not being
-  the bin), and the reset confound that limits what a learning curve measured here can
-  claim.
+  oracle clip that validates it end to end, the three things that look like bugs and are
+  not (starting with the goal region not being the bin), and the reset confound that
+  limits what a learning curve measured here can claim.
 - Every other domain subfolder: not started yet. The convention above describes the
   expected shape once one lands.

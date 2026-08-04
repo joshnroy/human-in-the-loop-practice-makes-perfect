@@ -130,6 +130,26 @@ kinematics has no solution, that resetting to a seed is deterministic enough for
 `set_state`'s contract, and that every swing the sampler's prior can draw is one the
 upstream controllers accept. None of them reimplement anything upstream already does.
 
+## Validating the integration: the oracle solves it
+
+The privileged oracle (`skill_oracle_policy.py`, `--method skill-oracle`) is the
+end-to-end check that the mapping above is wired correctly: if `State` is read wrong, or
+a `GroundSkill` dispatches to the wrong controller, or the goal predicate disagrees with
+KINDER's, a hand-authored three-skill plan does not land the cube in the region.
+
+![The Tossing3D oracle solving in three skills](../../../../docs/tossing3d_skill_oracle_demo.gif)
+
+One frame per skill (see `renderer.py`): the cube starts on the floor at x = 0.52,
+`Pick` lifts it (`holding`), `MoveToThrowPose` carries it to the barrier at x = 1.09,
+and `Toss` at the oracle's swing = 0.75 releases it over the barrier to **x = 1.91,
+inside `blocks_goal_region`'s [1.90, 2.10]** — `InGoalRegion` flips and the episode ends
+solved at the shortest possible length. Reproduce with:
+
+```bash
+python -m hitl_pmp.cli --env tossing3d --method skill-oracle \
+  --seed 0 --num-test-tasks 1 --output-dir /tmp/tossing3d-oracle
+```
+
 ## Three things about this domain that look like bugs and are not
 
 **The goal region is not the bin.** In the `o1` variant `blocks_goal_region` is
