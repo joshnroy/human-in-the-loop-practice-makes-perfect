@@ -131,8 +131,13 @@ is entangled and hard to extend), but its FD-invocation protocol is worth reusin
   `sas_plan`), so the extra interpreter spawn cost ~21 ms per plan and deleted
   nothing that was not about to be deleted; only the skeleton is returned
   (`Metrics`/`max_horizon`/`atoms_sequence` bookkeeping belongs to a `Method`/`Metrics`
-  here); and there is no separate `PlanningTimeout` — a timed-out run simply produces
-  no `"Solution found"` and raises `PlanningFailure`.
+  here); **`timeout=` is enforced by `subprocess` itself, not by wrapping each FD
+  command in coreutils' `timeout`** (predicators' `gtimeout` on macOS) — the same
+  wall-clock budget, minus a whole extra process spawned twice per plan purely to
+  hold a clock Python already holds, which measured **~80 ms** against a ~24 ms
+  search on Ubuntu 25.10's Rust *uutils* `timeout`; and there is no separate
+  `PlanningTimeout` — a timed-out run simply produces no `"Solution found"` (or no
+  SAS file at all) and raises `PlanningFailure`.
 
 ## Installing Fast Downward
 
@@ -150,8 +155,9 @@ falling back to a `downward/` checkout sitting **beside this repo** — the same
 sibling-repo convention `CLAUDE.md` documents for `../hitl-practice`, so the common
 case needs no environment variable and no machine-specific absolute path is baked
 into the source. A missing `fast-downward.py` raises `FileNotFoundError` with those
-instructions, never a confusing subprocess error. On macOS the GNU `timeout` wrapper is `gtimeout`
-(`brew install coreutils`); `sys.platform` picks between the two.
+instructions, never a confusing subprocess error. That checkout plus a working
+`python` is the entire dependency — there is no coreutils `timeout`/`gtimeout` to
+install (see the deviations above), so this path is identical on Linux and macOS.
 
 `tests/planning/test_fast_downward.py` genuinely shells out to that binary rather than
 mocking it (a mock would not exercise the SAS cost patching at all, which is the whole

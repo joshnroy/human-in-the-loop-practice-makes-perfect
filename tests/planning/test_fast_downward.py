@@ -3,6 +3,7 @@ shells out to a real, locally-installed Fast Downward (see planning/README.md fo
 the install steps). They are deliberately not skipped -- the cost-patching protocol
 is the load-bearing EES mechanism and a mock would not exercise it at all."""
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -117,6 +118,33 @@ def test_integration_plan_leaves_no_scratch_files_behind(
     before = set(tmp_path.iterdir())
     assert FastDownwardPlanner.plan(**_setup())
     assert set(tmp_path.iterdir()) == before
+
+
+def test_integration_plan_raises_planning_failure_when_fast_downward_times_out() -> None:
+    """A blown budget must stay a `PlanningFailure` -- the exception every calling
+    `Method` already catches -- and never escape as the `subprocess.TimeoutExpired`
+    that enforcing the budget in-process could otherwise raise. Under predicators'
+    external `timeout` wrapper this was free (the wrapper SIGTERM-ed FD and the
+    truncated output simply failed the "Solution found" check); enforcing it with
+    `subprocess`'s own `timeout=` makes it a real branch, so it is pinned here."""
+    with pytest.raises(PlanningFailure):
+        FastDownwardPlanner.plan(**_setup(), timeout=1e-3)
+
+
+def test_run_returns_partial_output_rather_than_raising_on_timeout(*, tmp_path: Path) -> None:
+    """`_run`'s half of the contract above, isolated from Fast Downward: a command
+    that outlives its budget yields whatever it printed first, as a `str`."""
+    output = FastDownwardPlanner._run(
+        args=[
+            sys.executable,
+            "-c",
+            "import sys, time; print('partial'); sys.stdout.flush(); time.sleep(30)",
+        ],
+        cwd=str(tmp_path),
+        timeout=5.0,
+    )
+    assert isinstance(output, str)
+    assert "partial" in output
 
 
 def test_fd_dir_prefers_the_fd_exec_path_environment_variable(
