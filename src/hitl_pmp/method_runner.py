@@ -1,10 +1,12 @@
 import argparse
+import os
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoWriter
 from hitl_pmp.practice_loop import PracticeLoop
+from hitl_pmp.provenance import RunProvenance
 
 
 class MethodRunner:
@@ -81,4 +83,12 @@ class MethodRunner:
                     fps=render_fps,
                 )
             (args.output_dir / "stats.json").write_text(metrics.model_dump_json(indent=2))
+            # Written alongside rather than inside stats.json: stats.json is the
+            # serialized Metrics and every archived run conforms to that shape.
+            # Collected after the run so a crash mid-run costs no results, and
+            # from `args` post-argparse so defaulted flags are recorded too.
+            provenance = RunProvenance.collect(
+                args=args, fd_exec_path=os.environ.get("FD_EXEC_PATH")
+            )
+            (args.output_dir / "provenance.json").write_text(provenance.model_dump_json(indent=2))
         return metrics
