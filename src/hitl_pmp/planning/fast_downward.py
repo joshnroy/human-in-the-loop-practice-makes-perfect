@@ -10,6 +10,7 @@ from hitl_pmp.core.problem.environment.types import Object, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 
 from .pddl import PddlWriter
+from .types import TranslationCache, TranslationResult
 
 
 class PlanningFailure(Exception):
@@ -84,6 +85,13 @@ class FastDownwardPlanner:
       the timeout is now marginally more generous. Both require an FD call to
       actually reach the budget: measured maximum FD process lifetime on this
       project's domains is 0 s against a 10 s budget, so no call has ever come close.
+    - **An optional `translation_cache`.** predicators re-runs the translator on
+      every plan call. Stage 1 reads only the domain/problem PDDL (costs arrive in
+      stage 2), and FD's translator is deterministic in those, so a run may memoize
+      it: `TranslationCache`, owned by the calling `Method` and passed in per call.
+      Default `None` reproduces predicators' behaviour exactly. This is the one
+      deviation here that changes *how much work* happens rather than only how it is
+      spawned -- the SAS text stage 2 patches is byte-identical either way.
     - No `Metrics`/`max_horizon`/`atoms_sequence` returned -- this returns just the
       skeleton (`list[GroundSkill]`). The extra bookkeeping predicators threads
       through belongs to a `Method`/`Metrics` here, not the planner.
@@ -119,12 +127,18 @@ class FastDownwardPlanner:
         cost_precision: int = 3,
         timeout: float = 10.0,
         alias: str = "seq-opt-lmcut",
+        translation_cache: TranslationCache | None = None,
     ) -> list[GroundSkill]:
         """The plan (a skeleton of `GroundSkill`s) that reaches `goal` from
         `init_atoms` at minimum total cost. Every ground skill not named in
         `ground_skill_costs` costs `default_cost`. Raises `PlanningFailure` if no
         plan exists (or FD aborts); raises `FileNotFoundError` if Fast Downward
-        isn't installed where `fd_dir()` points."""
+        isn't installed where `fd_dir()` points.
+
+        `translation_cache`, when given, memoizes stage 1 across calls -- see
+        `TranslationCache` for why the symbolic input repeats while the costs do
+        not, and why that makes this safe. Omitting it translates afresh every
+        call, so every existing caller is unaffected."""
         script = FastDownwardPlanner._fast_downward_script()
         with tempfile.TemporaryDirectory() as tmp:
             sas_file = Path(tmp) / "output.sas"
@@ -140,6 +154,7 @@ class FastDownwardPlanner:
                 tmp_dir=tmp,
                 timeout=timeout,
                 alias=alias,
+                translation_cache=translation_cache,
             )
             if ground_skill_costs is not None:
                 FastDownwardPlanner._update_sas_file_with_costs(
@@ -211,19 +226,31 @@ class FastDownwardPlanner:
         tmp_dir: str,
         timeout: float,
         alias: str,
+        translation_cache: TranslationCache | None = None,
     ) -> None:
         """Stage 1: PDDL text -> SAS file (no search yet). Mirrors predicators'
-        `generate_sas_file_for_fd`."""
+        `generate_sas_file_for_fd`.
+
+        With a `translation_cache`, a repeat of the same (domain, problem) pair
+        writes the stored SAS text straight to `sas_file` instead of spawning FD.
+        The cache is populated *here*, before `plan` patches costs into that file,
+        which is what keeps it a cache of the translator rather than of the priced
+        plan -- see `TranslationCache`."""
+        domain_str = PddlWriter.domain_str(skills=skills, predicates=predicates, types=types)
+        problem_str = PddlWriter.problem_str(objects=objects, init_atoms=init_atoms, goal=goal)
+        if translation_cache is not None:
+            cached = translation_cache.get(domain_str=domain_str, problem_str=problem_str)
+            if cached is not None:
+                if cached.sas_str is None:
+                    raise PlanningFailure(
+                        FastDownwardPlanner._translation_failure_message(output=cached.fd_output)
+                    )
+                sas_file.write_text(cached.sas_str, encoding="utf-8")
+                return
         domain_file = Path(tmp_dir) / "domain.pddl"
         problem_file = Path(tmp_dir) / "problem.pddl"
-        domain_file.write_text(
-            PddlWriter.domain_str(skills=skills, predicates=predicates, types=types),
-            encoding="utf-8",
-        )
-        problem_file.write_text(
-            PddlWriter.problem_str(objects=objects, init_atoms=init_atoms, goal=goal),
-            encoding="utf-8",
-        )
+        domain_file.write_text(domain_str, encoding="utf-8")
+        problem_file.write_text(problem_str, encoding="utf-8")
         output = FastDownwardPlanner._run(
             args=[
                 sys.executable,
@@ -238,11 +265,31 @@ class FastDownwardPlanner:
             cwd=tmp_dir,
             timeout=timeout,
         )
-        if "Driver aborting" in output or not sas_file.is_file():
-            raise PlanningFailure(
-                "Fast Downward failed to translate the PDDL to SAS -- the goal is "
-                f"likely unreachable (a dr-reachability issue). FD output:\n{output}"
+        aborted = "Driver aborting" in output or not sas_file.is_file()
+        if translation_cache is not None:
+            # Cached before the raise, and before `plan` patches costs in: a failed
+            # translation is the *common* outcome here (EES prices practice
+            # candidates by planning to preconditions that are often unreachable),
+            # so not storing it would leave most calls uncached.
+            translation_cache.put(
+                domain_str=domain_str,
+                problem_str=problem_str,
+                result=TranslationResult(
+                    sas_str=None if aborted else sas_file.read_text(encoding="utf-8"),
+                    fd_output=output,
+                ),
             )
+        if aborted:
+            raise PlanningFailure(FastDownwardPlanner._translation_failure_message(output=output))
+
+    @staticmethod
+    def _translation_failure_message(*, output: str) -> str:
+        """Shared by the fresh and the cached abort, so a cache hit reports exactly
+        what the original miss reported."""
+        return (
+            "Fast Downward failed to translate the PDDL to SAS -- the goal is "
+            f"likely unreachable (a dr-reachability issue). FD output:\n{output}"
+        )
 
     @staticmethod
     def _update_sas_file_with_costs(
