@@ -155,7 +155,8 @@ predicate definitions play in `predicators/envs/`.
   not a self-contained simulator written in this repo: it drives the real KINDER MuJoCo
   environment and KINDER's own parameterized controllers, behind one narrow seam
   (`kinder_backend.py`, which imports `kinder` lazily so the rest of the domain still
-  imports, typechecks and tests without the optional dependency). A cube must be tossed
+  imports, typechecks and tests without the optional dependency — `pyproject.toml`'s
+  `tossing3d` extra, pinned to exact upstream commits). A cube must be tossed
   over an immovable barrier into KINDER's own `blocks_goal_region`, and **cannot be
   retrieved afterwards** — the irreversibility the project's V1 proposal predicts EES
   will stall on. See [`tossing3d/README.md`](tossing3d/README.md) for the install, the

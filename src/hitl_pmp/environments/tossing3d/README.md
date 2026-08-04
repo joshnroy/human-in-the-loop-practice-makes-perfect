@@ -30,18 +30,51 @@ cannot speak to the hypothesis in either direction.
 
 ## Installing the optional dependency
 
-`kindergarden` is deliberately **not** in `pyproject.toml`: it pulls MuJoCo, PyBullet,
-`relational_structs`, `prpl_utils` and a numpy pin, none of which the rest of this repo
-needs. Install it into a separate environment alongside this package:
+KINDER is the **`tossing3d` extra** in `pyproject.toml` — declared, and pinned to exact
+upstream commits, but deliberately not a core dependency: it pulls MuJoCo, PyBullet and
+OpenCV, none of which the rest of this repo needs, and `kindergarden` caps
+`requires-python` at `<3.13` while this project sets no upper bound.
+`kinder_backend.py` imports it lazily, so everything else here imports, typechecks and
+tests without it — CI never installs the extra, and the eight simulator tests in
+`test_kinder_fidelity.py` skip there.
+
+Install it into a **separate environment**, not on top of the `hitl-pmp` dev env — the
+extra's job is to record and pin the versions, not to be layered into the environment
+every other domain runs in:
 
 ```bash
 python -m venv kinder-venv && . kinder-venv/bin/activate
-git clone https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden.git
-git clone https://github.com/Princeton-Robot-Planning-and-Learning/kinder-models.git
-pip install -e kindergarden -e kinder-models/kinder-models bilevel_planning
-pip install torch pydantic          # what hitl_pmp itself needs
-pip install --no-deps -e /path/to/this/repo
+pip install -e "/path/to/this/repo[tossing3d]"
 export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
+```
+
+Two repos, two pins, because KINDER is a live upstream that moves under this port — the
+leaked PyBullet client `KinderBackend._release` works around is an *upstream* bug, so a
+version that fixes or reshapes it would silently change what a number measured here
+means:
+
+| package | repo | pin |
+| --- | --- | --- |
+| `kindergarden` | [`kindergarden`](https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden) | `39eb7e08` (2026-07-28) — upstream `main` when the port was written |
+| `kinder_models` | [`kinder-baselines`](https://github.com/Princeton-Robot-Planning-and-Learning/kinder-baselines), subdirectory `kinder-models` | `4c731dc8` (2026-06-29) |
+
+Both SHAs are **inferred, not recorded** — nothing wrote down the KINDER commit the port
+was built on. `39eb7e08` was upstream `main` for the whole window the port was written
+in; the next upstream commit landed between the port and the EES sweep, and is excluded
+on content (it changes cluttered-retrieval sampling, which Tossing3D does not use)
+rather than on timing. `kinder-baselines` has not moved since 2026-06-29. Correct these
+if you know better — and if you re-measure against a different KINDER, move the pin and
+say so in the experiment log.
+
+`kinder_models` is the one that holds the parameterized controllers this port drives
+(`dynamic3d.shelf`, `dynamic3d.tossing`); they are not part of `kindergarden` itself,
+and it pulls `bilevel_planning` in turn. To hack on either, clone and install over the
+top:
+
+```bash
+git clone https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden.git
+git clone https://github.com/Princeton-Robot-Planning-and-Learning/kinder-baselines.git
+pip install -e kindergarden -e kinder-baselines/kinder-models
 ```
 
 `MUJOCO_GL=egl` matters: `kinder.register_all_environments()` forces `osmesa` whenever

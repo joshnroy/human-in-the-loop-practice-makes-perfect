@@ -8,9 +8,10 @@ import, typecheck and test the rest of the domain.
 
 To keep that true, **nothing here imports `kinder` at module scope**: `_ensure_env`
 does the imports on first use. Importing this file is therefore always safe; only
-actually driving the simulator needs the optional dependency (see
-`environments/tossing3d/README.md` for the install, which is deliberately not in
-`pyproject.toml` -- it pulls MuJoCo, PyBullet and a pinned numpy).
+actually driving the simulator needs the optional dependency -- `pyproject.toml`'s
+`tossing3d` extra, which pins `kindergarden` and `kinder_models` to exact upstream
+commits and is deliberately kept out of the core dependencies, since it pulls MuJoCo,
+PyBullet and OpenCV. See `environments/tossing3d/README.md` for the install.
 
 The skills are KINDER's own parameterized controllers, not reimplementations:
 `pick_shelf` from `kinder_models.dynamic3d.shelf`, and `move_to_target` /

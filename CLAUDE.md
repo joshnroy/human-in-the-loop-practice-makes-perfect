@@ -30,6 +30,22 @@ the planner does not shell out to coreutils' `timeout` (so macOS needs no
 `brew install coreutils` for `gtimeout`); the per-call budget is enforced by
 `subprocess` itself. See `planning/fast_downward.py`'s deviations list.
 
+**KINDER** is required only by `--env tossing3d`. It is declared as the `tossing3d`
+optional-dependency group in `pyproject.toml`, pinned to exact upstream commits (KINDER
+is a live upstream, and the port's numbers are only meaningful against the version it
+was measured on). It goes in a **separate** virtualenv, not in `hitl-pmp` — it pulls
+MuJoCo/PyBullet/OpenCV and caps `requires-python` at `<3.13`, and nothing but
+`tossing3d` needs it:
+
+```bash
+python -m venv kinder-venv && . kinder-venv/bin/activate
+pip install -e "/path/to/this/repo[tossing3d]"
+export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
+```
+
+CI never installs it, and `tests/environments/tossing3d/test_kinder_fidelity.py` skips
+without it. Full detail: `src/hitl_pmp/environments/tossing3d/README.md`.
+
 ## Commands
 
 ```bash
