@@ -58,6 +58,18 @@ Same 10 tasks, same seeds, the only difference being the `PileInRoom` preconditi
 The single pre-fix success is task 7 — the `EMPTY` goal, solved by `Press`, the only
 goal family needing no pickup at all. Every `RECYCLING`/`TRASH` task failed.
 
+> **Superseded numbers, deliberately not re-run (2026-08-04).** Both columns were
+> measured on a test set whose goal-family composition was *sampled per seed*. That
+> composition is now fixed (4 TRASH / 4 RECYCLING / 2 EMPTY at the 10 test tasks used
+> here, 14/14/2 at 30), so the denominators above no longer describe what the code
+> draws, and "task 7" is no longer the `EMPTY` task. The numbers are left in place
+> because **the claim does not rest on them**: it rests on the symbolic model
+> permitting a `Pickup` the dynamics refuse, which is a structural property of the
+> operator, pinned by the property tests this log describes rather than by a success
+> rate. Re-running would also require rebuilding the three pre-fix operators in-process
+> again, spending compute to re-derive a defect that no longer exists. What *is* worth
+> keeping is the shape: near-total failure before, near-total success after.
+
 ## The fix
 
 The stated blocker was real: `Predicate.holds` has signature `(state, objects)` and

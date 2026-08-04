@@ -85,7 +85,13 @@ class HorizonSweep:
         the `--num-cycles 0` arm, i.e. the floor the success metric starts from before
         any learning has happened. That floor is what the horizon inflates."""
         env = TossingRoomEnvironment()
-        tasks = TossingRoomTasks(env=env, seed=seed)
+        # num_test_tasks must be passed, not left at its default: this domain's test
+        # set has a *fixed* goal-family composition, and TossingRoomTasks divides
+        # exactly this many tasks up between the families. Drawing more than the field
+        # says silently starts a second composition block rather than failing -- 30
+        # draws against the default of 10 realises 12/12/6, not the 14/14/2 every other
+        # Tossing Room experiment is measured on.
+        tasks = TossingRoomTasks(env=env, seed=seed, num_test_tasks=num_test_tasks)
         problem = FixedHorizonProblem(env=env, tasks=tasks, horizon=horizon)
         method = EesMethod(env=env, skill_provider=TossingRoomSkillProvider(env=env), seed=seed)
         problem.hard_reset()

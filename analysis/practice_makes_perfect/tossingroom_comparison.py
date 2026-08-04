@@ -36,6 +36,12 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 
+from hitl_pmp.core.problem.tasks.types import Task  # noqa: E402
+from hitl_pmp.environments.tossingroom.environment import (  # noqa: E402
+    TossingRoomEnvironment,
+)
+from hitl_pmp.environments.tossingroom.tasks import TossingRoomTasks  # noqa: E402
+
 # Assigned in fixed order and never cycled, so an arm keeps its colour when another is
 # added or dropped. Linestyle repeats the identity as a second channel, so the arms
 # stay separable in greyscale and under colour-vision deficiency.
@@ -129,6 +135,74 @@ class TossingRoomComparison:
             if curve[transitions] >= threshold:
                 return transitions
         return None
+
+    @staticmethod
+    def goal_family(*, task: Task) -> str:
+        """Which goal family a drawn test task belongs to, read off the task's own goal
+        rather than off the schedule that produced it -- so this stays a statement about
+        the object the evaluation actually scores.
+
+        `TossingRoomTasks.build_task` gives EMPTY a two-atom `BinEmpty` goal (both bins)
+        and each throw family a single `ItemInBin` atom whose first object is the item.
+        That is the whole vocabulary, so the item's name is the family."""
+        atoms = sorted(task.goal.atoms, key=lambda atom: atom.predicate.name)
+        if len(atoms) != 1:
+            return "EMPTY"
+        return atoms[0].objects[0].name.upper()
+
+    @staticmethod
+    def realised_test_composition(*, num_test_tasks: int, seeds: list[str]) -> dict[str, int]:
+        """The goal-family composition of the test set every arm here was scored on,
+        per seed, as goal-family name -> count.
+
+        This is a **replication**, not a read-back: `stats.json` records only
+        `(transitions, num_solved, num_total)`, with no per-task family, so there is
+        nothing in a run's output to read the composition off. What this does instead is
+        rebuild a `TossingRoomTasks` at that seed and draw its test tasks exactly as
+        `PracticeLoop.run` does -- same class, same seeded stream, `sample_test_task`
+        called `num_test_tasks` times -- then classify each `Task` by its own goal. It
+        is worth doing anyway, because the composition is the denominator every
+        percentage on this page is measured against, and it changed once already (it was
+        sampled per seed before the fixed-composition change, so seed 0 got 16 TRASH /
+        10 RECYCLING / 4 EMPTY where seed 1 got 11/12/7).
+
+        `num_test_tasks` is the flag the arms were run with, and passing it is
+        load-bearing: it is what `TossingRoomTasks` divides between the families, and
+        leaving it at the field default while drawing more silently starts a second
+        composition block (30 draws against a default of 10 realises 12/12/6).
+        """
+        composition: dict[str, int] = {}
+        for seed in seeds:
+            tasks = TossingRoomTasks(
+                env=TossingRoomEnvironment(), seed=int(seed), num_test_tasks=num_test_tasks
+            )
+            counts: dict[str, int] = {}
+            for _ in range(num_test_tasks):
+                name = TossingRoomComparison.goal_family(task=tasks.sample_test_task())
+                counts[name] = counts.get(name, 0) + 1
+            if composition and counts != composition:
+                raise ValueError(
+                    f"test-set composition is not the same on every seed: {composition} "
+                    f"vs {counts} at seed {seed}"
+                )
+            composition = counts
+        return composition
+
+    @staticmethod
+    def print_test_composition(*, num_test_tasks: int, seeds: list[str]) -> None:
+        """Print the realised composition, and fail loudly if it is not identical on
+        every seed -- a per-seed-varying denominator is exactly the defect the fixed
+        composition removed, and it must not come back unnoticed."""
+        if not seeds:
+            return
+        composition = TossingRoomComparison.realised_test_composition(
+            num_test_tasks=num_test_tasks, seeds=seeds
+        )
+        rendered = " / ".join(f"{count} {name}" for name, count in sorted(composition.items()))
+        print(
+            f"test set: {rendered} on every one of {len(seeds)} seeds "
+            f"({num_test_tasks} tasks; replicated from TossingRoomTasks, not read back)"
+        )
 
     @staticmethod
     def wilcoxon_signed_rank(*, first: list[float], second: list[float]) -> dict:
@@ -462,6 +536,16 @@ def _parse_args() -> argparse.Namespace:
             "because this domain's arms saturate, which makes the endpoint blind."
         ),
     )
+    parser.add_argument(
+        "--num-test-tasks",
+        type=int,
+        default=30,
+        help=(
+            "The --num-test-tasks the arms were run with. Only used to report (and "
+            "check) the realised goal-family composition of the test set every "
+            "percentage here is measured against; see realised_test_composition."
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--grid-output",
@@ -479,6 +563,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     arms = [_parse_arm(raw=raw) for raw in args.arm]
+    seeds: set[str] = set()
+    for _, root in arms:
+        seeds |= set(TossingRoomComparison.per_seed_curves(root=root, method="ees"))
+    TossingRoomComparison.print_test_composition(
+        num_test_tasks=args.num_test_tasks, seeds=sorted(seeds)
+    )
     TossingRoomComparison.print_table(
         arms=arms, random_skills_root=args.random_skills_root, threshold=args.threshold
     )
