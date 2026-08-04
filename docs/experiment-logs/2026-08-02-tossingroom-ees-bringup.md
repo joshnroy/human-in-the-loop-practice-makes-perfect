@@ -154,28 +154,36 @@ three sampler-iteration arms.
 ### Re-measured against current code: the horizon is now flat
 
 The same probe, same 10 seeds × 30 test tasks, re-run 2026-08-04 against today's code —
-a missed `Throw` releases the item, and the test set is the fixed 14/14/2:
+a missed `Throw` releases the item, and the test set is the fixed 14/14/2. **Seven
+independent rollouts, one per horizon**, not one rollout truncated seven ways (see the
+next subsection for why that distinction is load-bearing):
 
-| horizon | solved (mean over seeds) | sd across seeds | worst seed | `Throw`/episode | max in one episode |
-|---|---|---|---|---|---|
-| 16 | 32.3% | 7.4 | 13% | 1.32 | 2 |
-| 12 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
-| 9 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
-| 8 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
-| 7 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
-| 6 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
-| 5 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
+| horizon | solved (mean over seeds) | sd across seeds | worst seed | `Throw`/episode | max in one episode | `Throw` actions |
+|---|---|---|---|---|---|---|
+| 16 | 32.3% | 7.4 | 13% | 1.32 | 2 | 397 |
+| 12 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
+| 9 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
+| 8 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
+| 7 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
+| 6 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
+| 5 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
 
-**Seven horizons, one number.** Where the old dynamics swept 42.3% → 94.7% across this
-same range, every horizon from 5 to 12 now returns *exactly* 24.0%, off *exactly* 280
-throws — the same integer at every horizon, and never more than one throw in any
-episode. The retry channel is not merely narrowed, it is closed: 280 = 28 throw tasks ×
-10 seeds, i.e. **exactly one throw per throw task and zero for the two `EMPTY` tasks**,
-with no averaging involved (the per-episode distribution is `{0 throws: 20, 1 throw:
-280}`, nothing else).
+**Six horizons, one number — and they are separate runs.** Where the old dynamics swept
+42.3% → 94.7% across this range, every horizon from 5 to 12 now returns *exactly* 25.7%,
+off *exactly* 280 `Throw` actions, at identical sd and identical worst seed. These are
+not the same trajectories re-cut: each row is its own ten-seed rollout. They agree to the
+integer because the retry channel is closed, so **every throw-episode issues exactly one
+throw whatever the budget** — which means each rollout draws the same number of values
+from the method's RNG in the same order, and the runs are therefore identical in
+outcome. The horizon is not merely a weak influence here; below the retry threshold it
+has no effect that any statistic can see.
+
+280 = 28 throw tasks × 10 seeds, i.e. exactly one throw per throw task and zero for the
+two `EMPTY` tasks, with no averaging involved: the per-episode distribution is
+`{0 throws: 20, 1 throw: 280}` and contains nothing else.
 
 The one horizon that still moves is 16, and the trajectories say exactly why. The two
-dominant action sequences over the 300 episodes are:
+dominant action sequences over its 300 episodes are:
 
 ```
 PMMTPPPPPPPPPPPP   (111 episodes)  RECYCLING, missed
@@ -184,30 +192,81 @@ PMMMTMMMPMMMTMMM   ( 92 episodes)  TRASH, missed, then a second attempt
 
 A missed `TRASH` throw costs a **round trip of exactly 8 steps** — walk back 6→5→4→3,
 `Pickup` a fresh item, walk 3→4→5→6, `Throw` — landing the second attempt on step 13.
-That is why 25 episodes solve at 13 steps, why H = 16 gains 8.3 points, and why every
-horizon below 13 gains nothing. A missed `RECYCLING` throw affords no second attempt at
-any horizon: the pile is in room 3, the recycling bin in room 1, and `blocked_right_from
-= 2` makes the return impossible, so the remaining steps are spent on a `Pickup` that
-cannot execute. The evaluation horizon of 7 sits comfortably inside the retry-free
-regime, which is precisely what `longest_shortest_solve() + 2` was supposed to buy.
+That is why 25 episodes solve at 13 steps, why H = 16 gains 6.6 points, and why every
+horizon below 13 gains nothing at all. A missed `RECYCLING` throw affords no second
+attempt at any horizon: the pile is in room 3, the recycling bin in room 1, and
+`blocked_right_from = 2` makes the return impossible, so the remaining steps go on a
+`Pickup` that cannot execute. **The shipped horizon of 7 sits comfortably inside the
+retry-free regime**, which is precisely what `longest_shortest_solve() + 2` was supposed
+to buy — and the margin is now measured (13) rather than assumed.
 
 Note the arithmetic identity has **inverted**. Under the old dynamics `Pickup`,
 `MoveRoom` and `Press` were identical at every horizon and only `Throw` moved. Now
-`Throw` is identical at every horizon ≤ 12 (280, exactly) and the *walking* counts move,
-because truncation cuts off trajectories that are wandering rather than re-throwing.
-Same diagnostic, opposite sign, and the sign is the fix.
+`Throw` is identical at every horizon ≤ 12 and the *walking* counts move instead, because
+the extra budget is spent wandering rather than re-throwing. Same diagnostic, opposite
+sign, and the sign is the fix.
 
-The measured per-throw hit rate is **0.194**, against 0.198 on the old data and the 0.19
-the geometry predicts — unchanged, as it must be, since the release change alters what a
-miss *costs*, not how often a random force lands.
+The measured per-throw hit rate is **0.204** (0.194 at H = 16, where the second attempts
+enter), against 0.198 on the old data and the 0.19 the geometry predicts — unchanged, as
+it must be, since the release change alters what a miss *costs*, not how often a random
+force lands.
 
-Every horizon in that table comes from **one** rollout set, not seven. `run_task_episode`
-checks the goal at the top of each iteration and only then calls the policy, and the
-policy replans from the current state with no history, so truncating the horizon to `H`
-stops the *same* trajectory earlier: success at `H` is exactly `steps_to_success ≤ H`.
-Running each episode once at `H = 16` and reading off prefixes therefore gives every
-horizon exactly, and perfectly paired — no seven separate runs whose RNG streams would
-diverge after the first extra throw and make the comparison unpaired.
+### The horizons are not derivable from one rollout, and this table used to assume they were
+
+`scripts/tossingroom_horizon_sweep.py` used to roll out once at `H = 16` and derive every
+shorter horizon by truncating each trajectory to its first `H` actions. Its docstring
+called this "not an approximation" and "perfectly paired". **It is neither**, and the
+error is measurable rather than theoretical.
+
+`EesMethod` draws its skill parameters from a **single RNG stream shared across the whole
+sweep**. A longer rollout issues more `Throw` actions, so it consumes more draws — and
+from episode 2 onward every episode in the long rollout sees a *different* sampled force
+than it would have in a short one. Truncation is exact only for the first episode of each
+seed.
+
+The check that settles it, against the ten-seed EES arms' own first evaluation sweep
+(unpracticed, so directly comparable):
+
+| the probe's `H = 7` figure, obtained by | seeds matching the arms, out of 10 |
+|---|---|
+| rolling out **at** `H = 7` | **10** — seed for seed |
+| truncating an `H = 16` rollout | 4 |
+
+Rolled out directly, the probe reproduces the arms exactly: 7, 9, 9, 7, 10, 6, 7, 8, 8, 6
+solved out of 30, against the same ten integers from `stats.json`. Truncated, it reports
+24.0% where the truth is 25.7% — a 1.7-point error, small enough to have gone unnoticed
+and large enough to matter for a headline figure.
+
+Two independent code paths agreeing seed-for-seed on all ten seeds is also the strongest
+validity statement available for the fixed composition itself: the bespoke probe and the
+real CLI-driven `PracticeLoop` are drawing the same test set, in the same order, and
+scoring it identically.
+
+The script now takes `--max-horizon` as *the* horizon and is run once per horizon; the
+table script takes one JSON per horizon and offers no way to ask for the old derivation.
+The cost is that horizons are no longer paired with each other — an honest cost, and a
+smaller one than a paired comparison of numbers no run produces.
+
+Every horizon in the **superseded** table above comes from one rollout set, not seven,
+and the justification given for that at the time was:
+
+> `run_task_episode` checks the goal at the top of each iteration and only then calls the
+> policy, and the policy replans from the current state with no history, so truncating
+> the horizon to `H` stops the *same* trajectory earlier: success at `H` is exactly
+> `steps_to_success ≤ H`. Running each episode once at `H = 16` and reading off prefixes
+> therefore gives every horizon exactly, and perfectly paired — no seven separate runs
+> whose RNG streams would diverge after the first extra throw and make the comparison
+> unpaired.
+
+**That reasoning is retracted.** It is correct about the *policy* — which is indeed
+memoryless — and wrong about the *method*, which is not: `EesMethod`'s parameter sampling
+runs off one RNG stream shared across the sweep, so the extra throws a longer rollout
+issues shift every later episode's draws. The last sentence even names the failure mode
+("RNG streams would diverge after the first extra throw") and then attributes it to the
+wrong design; truncation does not avoid that divergence, it bakes it in and hides it. The
+measurement that settles it is in the subsection above. The old table's *relative* shape
+— more horizon, more retries, higher score — is not in question, and neither is the
+conclusion drawn from it; only its exact per-horizon values are, by a point or two.
 
 ## The fix, and why this number
 
@@ -498,7 +557,7 @@ the work, which is how Ball-Ring already makes a failed placement terminal.
 
 | | miss was free | miss releases | miss releases, **fixed 14/14/2** |
 |---|---|---|---|
-| unpracticed EES | 62.7% | 38.7% | **24.0%** |
+| unpracticed EES | 62.7% | 38.7% | **25.7%** |
 | `Throw` actions / 300 episodes | 648 | 240 | **280** |
 | throws per episode | 2.16 | 0.80 | **0.93** |
 | free (`EMPTY`) share of the test set | ~20% | ~20% | **6.7%** |
@@ -518,16 +577,24 @@ Under the fixed composition that share is `2/30`, so the same model predicts
 (2/30) x 100 + (28/30) x 19 = 6.67 + 17.73 = 24.40%
 ```
 
-against **24.0% measured**, with a standard error of ~2.2pp. The model form did not
-change and its agreement did not weaken — if anything it tightened, from 3.5pp off to
-0.4pp off. Reading the old `35.2%` against the new measurement would have made a
-correct model look broken, which is exactly why the constant has to be re-derived
-rather than carried across.
+against **25.7% measured**, with a standard error of ~2.2pp — agreement to 0.6 standard
+errors, against 1.2 for the old pair (38.7% measured vs 35.2% predicted). The model's
+form did not change and its agreement did not weaken. Reading the old `35.2%` against the
+new measurement would have made a correct model look broken, which is exactly why the
+constant has to be re-derived rather than carried across.
 
 The underlying per-throw quantity is the cleanest statement of all, because it has no
-composition in it at all: of the 280 throw tasks, **52 were solved — 18.6%**, against
-the 19.0% a single uniform draw predicts and the 19.4% actually realised over these
-throws. That number is the same before and after, as it must be.
+composition in it: of the 280 throw tasks, **57 were solved — 20.4%**, which is exactly
+the per-throw hit rate the same runs realised (0.204) and is within one standard error
+of the 19.0% a single uniform draw predicts. That quantity is unchanged by the
+composition, as it must be — only how many of them the test set contains changed.
+
+**This number is measured, not derived.** It is the probe rolled out *at* `H = 7`, and it
+reproduces the ten-seed EES arms' own first evaluation sweep **seed for seed on all ten
+seeds** (7, 9, 9, 7, 10, 6, 7, 8, 8, 6 solved out of 30) — two independent code paths,
+one a bespoke probe and one the real CLI through `PracticeLoop`. The earlier practice of
+deriving it from a longer rollout gave 24.0% here, and is wrong for reasons set out
+below.
 
 ### The sampler-iteration grid is now a *valid* null, not a censored one
 
