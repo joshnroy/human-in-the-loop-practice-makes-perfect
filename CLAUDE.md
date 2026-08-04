@@ -23,8 +23,12 @@ found automatically if it sits beside this repo (the same sibling convention as
 
 ```bash
 cd .. && git clone https://github.com/aibasel/downward.git && cd downward && ./build.py
-brew install coreutils   # macOS only: predicators' protocol shells out to `gtimeout`
 ```
+
+A working `python` and that checkout are the whole dependency — unlike predicators,
+the planner does not shell out to coreutils' `timeout` (so macOS needs no
+`brew install coreutils` for `gtimeout`); the per-call budget is enforced by
+`subprocess` itself. See `planning/fast_downward.py`'s deviations list.
 
 ## Commands
 

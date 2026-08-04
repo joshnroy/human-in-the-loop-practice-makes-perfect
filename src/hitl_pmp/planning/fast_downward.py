@@ -34,7 +34,8 @@ class FastDownwardPlanner:
     Ported faithfully from the sibling hitl-practice repo's
     `predicators/planning.py` (`generate_sas_file_for_fd`, `_ground_op_to_sas_op`,
     `_update_sas_file_with_costs`, `fd_plan_from_sas_file`), which splits one plan
-    call into three stages:
+    call into three stages (the two FD invocations are timed out by `subprocess`
+    itself rather than by an external `timeout` binary -- see the deviations):
 
     1. **Translate.** Write the PDDL domain/problem (PddlWriter) to temp files and
        run FD with `--sas-file`, producing a SAS file but no plan yet.
@@ -63,11 +64,32 @@ class FastDownwardPlanner:
       the `sas_plan` file, so nothing downstream ever reads them. Spawning a fresh
       Python interpreter to delete files inside a directory that is about to be
       removed cost ~21 ms per successful plan (~11% of one) and bought nothing.
+    - **`subprocess`'s own `timeout=`, not a `timeout`/`gtimeout` wrapper process.**
+      predicators prefixes each FD command with coreutils' `timeout` binary (and
+      homebrew's `gtimeout` on macOS). The enforced budget is the same wall clock,
+      but the wrapper is a whole extra process spawned per FD invocation -- twice
+      per plan -- purely to hold a clock Python already holds. On Ubuntu 25.10,
+      whose `/usr/bin/timeout` is the Rust *uutils* reimplementation rather than GNU
+      coreutils, that wrapper measured **~80 ms**: on a search that itself takes
+      ~24 ms, the clock cost 3.4x the work it was timing. Dropping it also drops a
+      platform dependency (no `brew install coreutils`, no `sys.platform` split) and
+      removes a silent-misbehaviour mode, since a missing `timeout` binary used to
+      surface only as a `FileNotFoundError` from deep inside `_run`.
+
+      Two honest differences, neither reachable at this project's scale. (1) On
+      expiry `subprocess.run` sends SIGKILL and then calls `communicate()`, which
+      can block if the driver's C++ grandchild still holds the output pipe, where
+      the wrapper sent SIGTERM to the driver alone and returned immediately. (2) The
+      wrapper's own startup counted against the budget; `subprocess`'s does not, so
+      the timeout is now marginally more generous. Both require an FD call to
+      actually reach the budget: measured maximum FD process lifetime on this
+      project's domains is 0 s against a 10 s budget, so no call has ever come close.
     - No `Metrics`/`max_horizon`/`atoms_sequence` returned -- this returns just the
       skeleton (`list[GroundSkill]`). The extra bookkeeping predicators threads
       through belongs to a `Method`/`Metrics` here, not the planner.
     - `PlanningTimeout` is not a separate exception: a timed-out run simply produces
-      no "Solution found" and so raises `PlanningFailure`."""
+      no "Solution found" (or no SAS file, if it was the translator that ran out of
+      time) and so raises `PlanningFailure`."""
 
     # FD_EXEC_PATH is predicators' own convention for locating the FD checkout, so
     # the same env var works for both repos. The fallback is a `downward/` checkout
@@ -127,15 +149,9 @@ class FastDownwardPlanner:
                     cost_precision=cost_precision,
                 )
             output = FastDownwardPlanner._run(
-                args=[
-                    *FastDownwardPlanner._timeout_prefix(timeout=timeout),
-                    sys.executable,
-                    str(script),
-                    "--alias",
-                    alias,
-                    str(sas_file),
-                ],
+                args=[sys.executable, str(script), "--alias", alias, str(sas_file)],
                 cwd=tmp,
+                timeout=timeout,
             )
         return FastDownwardPlanner._parse_plan(output=output, skills=skills, objects=objects)
 
@@ -152,17 +168,33 @@ class FastDownwardPlanner:
         return script
 
     @staticmethod
-    def _timeout_prefix(*, timeout: float) -> list[str]:
-        """GNU coreutils' `timeout`, which is `gtimeout` on macOS (homebrew's
-        coreutils) -- same platform split predicators makes."""
-        command = "gtimeout" if sys.platform == "darwin" else "timeout"
-        return [command, str(timeout)]
+    def _run(*, args: list[str], cwd: str, timeout: float | None = None) -> str:
+        """One Fast Downward invocation, returning everything it printed.
 
-    @staticmethod
-    def _run(*, args: list[str], cwd: str) -> str:
-        completed = subprocess.run(  # noqa: S603
-            args, capture_output=True, text=True, cwd=cwd, check=False
-        )
+        A `timeout` is enforced by `subprocess` itself rather than by wrapping the
+        command in coreutils' `timeout` binary -- see the class docstring for why.
+        A timed-out call still returns whatever FD managed to print, so the caller's
+        "Driver aborting"/"Solution found" checks decide what it means, exactly as
+        they did when an external `timeout` SIGTERM-ed the driver mid-run. Neither
+        marker can appear in a truncated run, so both paths raise `PlanningFailure`
+        -- there is deliberately no separate `PlanningTimeout`."""
+        try:
+            completed = subprocess.run(  # noqa: S603
+                args, capture_output=True, text=True, cwd=cwd, check=False, timeout=timeout
+            )
+        except subprocess.TimeoutExpired as expired:
+            # Whatever the killed process managed to print, so a caller inspecting
+            # the output still sees a truncated run rather than nothing at all.
+            # `text=True` does NOT apply on this path: POSIX `Popen._communicate`
+            # raises with the raw byte buffers it had accumulated, before its
+            # decoding step, so these are `bytes | None` here (Windows re-reads them
+            # as `str`). Both are handled rather than assumed, and `None` means
+            # nothing was captured before the kill.
+            return "".join(
+                chunk.decode(errors="replace") if isinstance(chunk, bytes) else str(chunk)
+                for chunk in (expired.stdout, expired.stderr)
+                if chunk is not None
+            )
         return completed.stdout + completed.stderr
 
     @staticmethod
@@ -194,7 +226,6 @@ class FastDownwardPlanner:
         )
         output = FastDownwardPlanner._run(
             args=[
-                *FastDownwardPlanner._timeout_prefix(timeout=timeout),
                 sys.executable,
                 str(script),
                 "--alias",
@@ -205,6 +236,7 @@ class FastDownwardPlanner:
                 str(problem_file),
             ],
             cwd=tmp_dir,
+            timeout=timeout,
         )
         if "Driver aborting" in output or not sas_file.is_file():
             raise PlanningFailure(
