@@ -165,7 +165,12 @@ class ThrowTraceCollector:
         which is what makes `sweeps` line up one-to-one with `metrics.evaluations`."""
         log = TraceLog()
         env = TracingEnvironment(log=log)
-        tasks = TossingRoomTasks(env=env, seed=seed)
+        # num_test_tasks must be passed, not left at its default -- see the identical
+        # note in scripts/tossingroom_horizon_sweep.py. The field is what
+        # TossingRoomTasks divides between the goal families, and it has to agree with
+        # the num_test_tasks handed to PracticeLoop.run below or the run is measured on
+        # a 12/12/6 test set instead of the 14/14/2 every other experiment uses.
+        tasks = TossingRoomTasks(env=env, seed=seed, num_test_tasks=num_test_tasks)
         problem = TossingRoomProblem(env=env, tasks=tasks)
         method = TracingEesMethod(
             env=env,

@@ -234,7 +234,12 @@ class TossingRoomEnvironment(Environment):
         # representable, and making it so would just restore a cheap retry. Trying
         # again therefore means a fresh item from the limitless pile, which costs a
         # round trip to the start room -- affordable inside a 100-step practice
-        # period, and not inside an evaluation horizon of longest-solve + 2.
+        # period, and not inside an evaluation horizon of longest-solve + 2. That
+        # round trip has since been measured at exactly 8 steps for TRASH, putting a
+        # second attempt at step 13; for RECYCLING the one-way ledge makes it
+        # impossible at any horizon. The 94.7% above is the pre-release measurement
+        # that motivated this and is quoted as history -- it was taken on the sampled
+        # test-set composition too, so it does not reproduce against current code.
         next_state.set(obj=self.robot, feature_name="holding", feature_val=0.0)
         if robot_room == bin_room and abs(raw_force - target) < self.throw_tolerance:
             count = state.get(obj=bin_obj, feature_name="count")

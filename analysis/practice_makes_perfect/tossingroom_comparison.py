@@ -36,6 +36,12 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 
+from hitl_pmp.core.problem.tasks.types import Task  # noqa: E402
+from hitl_pmp.environments.tossingroom.environment import (  # noqa: E402
+    TossingRoomEnvironment,
+)
+from hitl_pmp.environments.tossingroom.tasks import TossingRoomTasks  # noqa: E402
+
 # Assigned in fixed order and never cycled, so an arm keeps its colour when another is
 # added or dropped. Linestyle repeats the identity as a second channel, so the arms
 # stay separable in greyscale and under colour-vision deficiency.
@@ -63,6 +69,44 @@ class TossingRoomComparison:
                 ]
             }
         return curves
+
+    @staticmethod
+    def per_seed_counts(*, root: Path, method: str) -> dict[str, dict[int, tuple[int, int]]]:
+        """seed -> {transitions: (num_solved, num_total)}, copied verbatim off the same
+        `evaluations` triples `per_seed_curves` divides.
+
+        A success rate belongs in the log as the counts behind it, and those counts are
+        recorded rather than reconstructed: `Metrics.record_evaluation` writes
+        `num_solved`/`num_total` as the primary record (validating any per-task
+        `breakdowns` against them), so nothing here has to multiply a rounded percentage
+        by a seed count to get back to what was measured. 23.3% cannot be inverted to
+        7/30 without knowing the denominator; 7/30 needs no inverting."""
+        counts: dict[str, dict[int, tuple[int, int]]] = {}
+        for stats_path in sorted(root.glob(f"{method}/*/stats.json")):
+            counts[stats_path.parent.name] = {
+                int(transitions): (num_solved, num_total)
+                for transitions, num_solved, num_total in json.loads(stats_path.read_text())[
+                    "evaluations"
+                ]
+            }
+        return counts
+
+    @staticmethod
+    def pooled_endpoints(*, root: Path, method: str) -> dict[str, tuple[int, int]]:
+        """`{"first": (solved, total), "final": (solved, total), "worst": ...}` --
+        evaluation episodes summed across seeds, not per-seed rates averaged. Every seed
+        runs the same number of test tasks here, so the pooled rate and the mean of the
+        per-seed rates agree; the count is reported because it is what was measured."""
+        counts = TossingRoomComparison.per_seed_counts(root=root, method=method)
+        if not counts:
+            return {}
+        firsts = [curve[min(curve)] for curve in counts.values()]
+        finals = [curve[max(curve)] for curve in counts.values()]
+        return {
+            "first": (sum(s for s, _ in firsts), sum(t for _, t in firsts)),
+            "final": (sum(s for s, _ in finals), sum(t for _, t in finals)),
+            "worst": min(finals, key=lambda pair: pair[0] / pair[1]),
+        }
 
     @staticmethod
     def mean_curve(*, root: Path, method: str) -> dict[int, tuple[float, float]]:
@@ -129,6 +173,97 @@ class TossingRoomComparison:
             if curve[transitions] >= threshold:
                 return transitions
         return None
+
+    @staticmethod
+    def goal_family(*, task: Task) -> str:
+        """Which goal family a drawn test task belongs to, read off the task's own goal
+        rather than off the schedule that produced it -- so this stays a statement about
+        the object the evaluation actually scores.
+
+        `TossingRoomTasks.build_task` gives EMPTY a two-atom `BinEmpty` goal (both bins)
+        and each throw family a single `ItemInBin` atom whose first object is the item.
+        That is the whole vocabulary, so the item's name is the family."""
+        atoms = sorted(task.goal.atoms, key=lambda atom: atom.predicate.name)
+        if len(atoms) != 1:
+            return "EMPTY"
+        return atoms[0].objects[0].name.upper()
+
+    @staticmethod
+    def realised_test_composition(*, num_test_tasks: int, seeds: list[str]) -> dict[str, int]:
+        """The goal-family composition of the test set every arm here was scored on,
+        per seed, as goal-family name -> count.
+
+        This is a **replication**, not a read-back: `stats.json` records only
+        `(transitions, num_solved, num_total)`, with no per-task family, so there is
+        nothing in a run's output to read the composition off. What this does instead is
+        rebuild a `TossingRoomTasks` at that seed and draw its test tasks exactly as
+        `PracticeLoop.run` does -- same class, same seeded stream, `sample_test_task`
+        called `num_test_tasks` times -- then classify each `Task` by its own goal. It
+        is worth doing anyway, because the composition is the denominator every
+        percentage on this page is measured against, and it changed once already (it was
+        sampled per seed before the fixed-composition change, so seed 0 got 16 TRASH /
+        10 RECYCLING / 4 EMPTY where seed 1 got 11/12/7).
+
+        `num_test_tasks` is the flag the arms were run with, and passing it is
+        load-bearing: it is what `TossingRoomTasks` divides between the families, and
+        leaving it at the field default while drawing more silently starts a second
+        composition block (30 draws against a default of 10 realises 12/12/6).
+        """
+        composition: dict[str, int] = {}
+        for seed in seeds:
+            tasks = TossingRoomTasks(
+                env=TossingRoomEnvironment(), seed=int(seed), num_test_tasks=num_test_tasks
+            )
+            counts: dict[str, int] = {}
+            for _ in range(num_test_tasks):
+                name = TossingRoomComparison.goal_family(task=tasks.sample_test_task())
+                counts[name] = counts.get(name, 0) + 1
+            if composition and counts != composition:
+                raise ValueError(
+                    f"test-set composition is not the same on every seed: {composition} "
+                    f"vs {counts} at seed {seed}"
+                )
+            composition = counts
+        return composition
+
+    @staticmethod
+    def print_test_composition(
+        *, num_test_tasks: int, seeds: list[str], arms: list[tuple[str, Path]]
+    ) -> None:
+        """Print the realised composition, and fail loudly if it is not identical on
+        every seed -- a per-seed-varying denominator is exactly the defect the fixed
+        composition removed, and it must not come back unnoticed.
+
+        Also cross-checks the replicated composition against the runs actually being
+        read: every evaluation in every `stats.json` records its own `num_total`, and if
+        that disagrees with the number of tasks this composition divides up then the
+        arms were run with a different `--num-test-tasks` than the one passed here, and
+        every percentage on the page is being explained by the wrong denominator. That
+        is precisely the mismatch that silently gave two `scripts/` probes a 12/12/6 test
+        set, so it is checked rather than assumed."""
+        if not seeds:
+            return
+        composition = TossingRoomComparison.realised_test_composition(
+            num_test_tasks=num_test_tasks, seeds=seeds
+        )
+        totals = {
+            num_total
+            for _, root in arms
+            for stats_path in root.glob("*/*/stats.json")
+            for _, _, num_total in json.loads(stats_path.read_text())["evaluations"]
+        }
+        if totals and totals != {num_test_tasks}:
+            raise ValueError(
+                f"--num-test-tasks {num_test_tasks} does not match the runs being read, "
+                f"whose evaluations report num_total in {sorted(totals)}; the composition "
+                "below would describe a different test set than the arms were scored on"
+            )
+        rendered = " / ".join(f"{count} {name}" for name, count in sorted(composition.items()))
+        print(
+            f"test set: {rendered} on every one of {len(seeds)} seeds "
+            f"({num_test_tasks} tasks; replicated from TossingRoomTasks, and checked "
+            f"against every run's own num_total)"
+        )
 
     @staticmethod
     def wilcoxon_signed_rank(*, first: list[float], second: list[float]) -> dict:
@@ -413,8 +548,8 @@ class TossingRoomComparison:
         if random_skills_root is not None:
             rows.append(("random skills", random_skills_root, "random-skills"))
         header = (
-            f"{'arm':<28}{'seeds':>6}{'first':>8}{'final':>8}"
-            f"{'sd':>7}{'worst':>7}{'zeros':>7}{'down':>6}{'reach':>8}{'never':>7}"
+            f"{'arm':<28}{'seeds':>6}{'first':>10}{'final':>10}"
+            f"{'sd':>7}{'worst':>8}{'zeros':>7}{'down':>6}{'reach':>8}{'never':>7}"
         )
         print(header)
         print("-" * len(header))
@@ -423,13 +558,25 @@ class TossingRoomComparison:
             if not summary:
                 print(f"{label:<28}{'(no stats.json found)':>42}")
                 continue
+            pooled = TossingRoomComparison.pooled_endpoints(root=root, method=method)
+            first_count = "{}/{}".format(*pooled["first"])
+            final_count = "{}/{}".format(*pooled["final"])
+            worst_count = "{}/{}".format(*pooled["worst"])
             print(
-                f"{label:<28}{summary['seeds']:>6.0f}{summary['first_mean']:>8.1f}"
-                f"{summary['final_mean']:>8.1f}{summary['final_sd']:>7.1f}"
-                f"{summary['worst_seed']:>7.1f}{summary['seeds_at_zero']:>7.0f}"
+                f"{label:<28}{summary['seeds']:>6.0f}"
+                f"{first_count:>10}{final_count:>10}"
+                f"{summary['final_sd']:>7.1f}{worst_count:>8}"
+                f"{summary['seeds_at_zero']:>7.0f}"
                 f"{summary['downward_steps']:>6.0f}{summary['median_reach']:>8.0f}"
                 f"{summary['never_reached']:>7.0f}"
             )
+            first_pct = f"({summary['first_mean']:.1f}%)"
+            final_pct = f"({summary['final_mean']:.1f}%)"
+            worst_pct = f"({summary['worst_seed']:.1f}%)"
+            print(f"{'':<28}{'':>6}{first_pct:>10}{final_pct:>10}{'':>7}{worst_pct:>8}")
+        print("  first/final/worst are evaluation episodes solved -- first and final pooled")
+        print("  across seeds, worst the single weakest seed. sd is the spread of the")
+        print("  per-seed rates in points, not a binomial spread on the pooled count.")
         print(
             f"  reach = median transitions to first reach {threshold:.0f}% "
             "(-1 if no seed ever did); never = seeds that never reached it"
@@ -462,6 +609,16 @@ def _parse_args() -> argparse.Namespace:
             "because this domain's arms saturate, which makes the endpoint blind."
         ),
     )
+    parser.add_argument(
+        "--num-test-tasks",
+        type=int,
+        default=30,
+        help=(
+            "The --num-test-tasks the arms were run with. Only used to report (and "
+            "check) the realised goal-family composition of the test set every "
+            "percentage here is measured against; see realised_test_composition."
+        ),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--grid-output",
@@ -479,6 +636,15 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     arms = [_parse_arm(raw=raw) for raw in args.arm]
+    seeds: set[str] = set()
+    for _, root in arms:
+        seeds |= set(TossingRoomComparison.per_seed_curves(root=root, method="ees"))
+    all_arms = arms + (
+        [("random skills", args.random_skills_root)] if args.random_skills_root else []
+    )
+    TossingRoomComparison.print_test_composition(
+        num_test_tasks=args.num_test_tasks, seeds=sorted(seeds), arms=all_arms
+    )
     TossingRoomComparison.print_table(
         arms=arms, random_skills_root=args.random_skills_root, threshold=args.threshold
     )

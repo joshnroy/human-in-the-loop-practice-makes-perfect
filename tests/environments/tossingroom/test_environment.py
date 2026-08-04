@@ -152,7 +152,9 @@ def test_throw_outside_tolerance_consumes_the_item_without_binning_it() -> None:
     empties. Previously a miss changed nothing at all, which made it a *free retry* --
     the robot still held the item and still stood in the bin room, so the very next
     step re-threw at zero cost. That turned the evaluation horizon into a silent
-    "number of attempts" dial: an unpracticed EES scored 94.7% purely by re-rolling.
+    "number of attempts" dial: an unpracticed EES scored 94.7% purely by re-rolling
+    (a pre-release, pre-fixed-composition figure, quoted as the history that motivated
+    this rather than as a number today's code reproduces).
 
     The thrown item is gone rather than recoverable. Items are singleton
     discriminators with features (kind, target_force) and no position, so "it is lying

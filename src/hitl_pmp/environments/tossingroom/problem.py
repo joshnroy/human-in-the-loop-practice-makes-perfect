@@ -36,6 +36,15 @@ class TossingRoomProblem(Problem):
         tasks: 1133 Throw actions against 648, up to 13 in a single episode, with the
         non-stochastic skill counts identical at both horizons). 94.7% leaves a
         learned sampler no headroom at all to demonstrate anything.
+
+        Those five figures are the *original* motivating measurement and are quoted as
+        history, not as a current result: they predate both the change that makes a
+        missed Throw release the item and the fixed 14/14/2 test-set composition, so
+        neither reproduces against today's code. Re-measured against it, an unpracticed
+        EES scores 24.0% and the horizon is *flat* from 5 through 12 -- which is the
+        stronger form of the same argument, since the retry channel the generous bound
+        was feeding is now closed outright. See
+        docs/experiment-logs/2026-08-02-tossingroom-ees-bringup.md.
         Two spare actions is what Light Switch's `grid_size + 2` grants -- its solve
         is `grid_size - 1` moves plus one toggle -- so this ports the *spare budget*,
         which is the load-bearing quantity, rather than the coincidental room count.
