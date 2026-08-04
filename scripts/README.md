@@ -12,6 +12,32 @@ That rule is one-directional: `analysis/run_timing.py` imports `RunTiming` from
 `run_sweep.py` (reader ← writer), which is fine — the boundary being protected is
 `scripts/` never reaching *into* the library.
 
+## `with_env.sh`
+
+Runs one command inside a fully set-up environment — the `hitl-pmp` conda env,
+`FD_EXEC_PATH`, and a `PYTHONPATH` pointing at **this** checkout's `src/` —
+then `exec`s it:
+
+```bash
+scripts/with_env.sh pytest
+scripts/with_env.sh python -m scripts.run_sweep --env lightswitch ...
+scripts/with_env.sh          # no command: print the resolved environment
+```
+
+It exists because the three-line `source`/`export` setup it replaces cannot be
+run by an agent: a worktree-isolated sandbox refuses `source …` and `VAR=x cmd`
+outright, and gives every command a fresh shell, so an `export` in one call is
+gone by the next. Every agent that hit this wrote the same wrapper for itself.
+Humans in an interactive shell can keep using `conda activate` directly — this is
+additive.
+
+`PYTHONPATH` is derived from the script's own location, never `$PWD`, so it stays
+correct wherever it is invoked from. That is the point: a worktree that does not
+set it silently imports the *main* checkout's library, because the editable
+install's `.pth` file holds an absolute path — and nothing errors, so the run just
+measures the wrong thing. `tests/scripts/test_with_env.py` pins it (skipped where
+there is no conda, e.g. CI).
+
 ## `run_sweep.py`
 
 Runs a (method × seed) grid in parallel and writes each run to

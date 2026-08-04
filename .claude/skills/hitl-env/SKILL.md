@@ -11,25 +11,68 @@ into the `hitl-experiment` agent type; also invocable directly as `/hitl-env`.
 
 ## 1. Environment setup
 
-Run this once per shell, from the root of the checkout or worktree you are working in:
+**Prefix every command with `scripts/with_env.sh`.** That is the whole setup:
 
 ```bash
-source $HOME/miniconda3/etc/profile.d/conda.sh && conda activate hitl-pmp
-export FD_EXEC_PATH=/home/josh/Documents/repos/research/downward
-export PYTHONPATH="$PWD/src"
+scripts/with_env.sh pytest
+scripts/with_env.sh ruff check .
+scripts/with_env.sh mypy src
+scripts/with_env.sh python -m scripts.run_sweep --env lightswitch ...
 ```
 
-`conda activate` alone is not enough in a non-interactive shell — without sourcing
-`conda.sh` first, a persistent shell silently falls back to `base`, which has mismatched
-dependency versions and produces confusing failures. `FD_EXEC_PATH` is only needed by
-planning-based methods (`--method ees`) and `planning/`'s own tests.
-
-`export PYTHONPATH="$PWD/src"` is only correct while the shell's cwd is the worktree
-root. If you `cd` anywhere, or you are unsure, use the cwd-independent form:
+The wrapper activates the `hitl-pmp` conda env, sets `FD_EXEC_PATH`, and sets
+`PYTHONPATH` to **its own** checkout's `src/` (derived from the script's location, never
+`$PWD`, so it is right wherever you invoke it from), then `exec`s your command. Run it
+with **no arguments** to print what it resolved, which doubles as the §2 sanity check:
 
 ```bash
-export PYTHONPATH="$(git rev-parse --show-toplevel)/src"
+scripts/with_env.sh
 ```
+
+```text
+REPO_ROOT     /…/worktrees/agent-…
+conda env     hitl-pmp
+python        /home/josh/miniconda3/envs/hitl-pmp/bin/python
+PYTHONPATH    /…/worktrees/agent-…/src
+FD_EXEC_PATH  /home/josh/Documents/repos/research/downward
+hitl_pmp      /…/worktrees/agent-…/src/hitl_pmp/__init__.py
+```
+
+### Why a wrapper, and not the three `source`/`export` lines this used to say
+
+Because an agent sandbox — the primary audience for this skill — **cannot execute them**.
+Measured directly in a worktree-isolated sandbox:
+
+| form | result |
+| --- | --- |
+| `source …/conda.sh && conda activate hitl-pmp` | **refused** — "runs a string through source, which can't be verified" |
+| `FD_EXEC_PATH=… some-command` | **refused** — "too complex to verify" |
+| `export PYTHONPATH=…` as its own command | runs, but **does not persist**: the next command gets a fresh shell and `printenv PYTHONPATH` exits 1 |
+| `a && b` (plain chaining, no `cd`, no `source`) | works |
+
+So the old block failed twice over: two of its three lines were refused outright, and the
+one that ran was discarded before the next command. Every agent that hit this had to
+invent the same wrapper for itself. Now it is in the repo.
+
+Note the third row: **an `export` in one call is gone by the next**, so there is no
+"run this once per shell" for an agent. The wrapper sets the environment inside the same
+process as your command, which is why it works at all.
+
+Humans in an interactive shell can keep using `conda activate` directly — the wrapper is
+additive, not a replacement. If you are in a shell where the environment really does
+persist, `conda activate hitl-pmp` plus the cwd-independent
+`export PYTHONPATH="$(git rev-parse --show-toplevel)/src"` is still fine.
+
+### Fallback if the wrapper is unavailable
+
+Call the env's binaries by absolute path — verified to work under the same restrictions:
+
+```bash
+/home/josh/miniconda3/envs/hitl-pmp/bin/python -c "import hitl_pmp; print(hitl_pmp.__file__)"
+```
+
+This gets you the right interpreter but **not** `PYTHONPATH`, so §2's trap is live: check
+the printed path before trusting anything.
 
 ## 2. The PYTHONPATH trap — the load-bearing line
 
@@ -51,8 +94,11 @@ WITH    PYTHONPATH -> <this worktree>/src/hitl_pmp/__init__.py     # correct
 ### Sanity check — run this before trusting any result
 
 ```bash
-python -c "import hitl_pmp; print(hitl_pmp.__file__)"
+scripts/with_env.sh python -c "import hitl_pmp; print(hitl_pmp.__file__)"
 ```
+
+(Bare `scripts/with_env.sh` prints the same line among the rest of the resolved
+environment — see §1.)
 
 The printed path **must** start with the directory you are working in. If it names a
 different checkout, stop and fix `PYTHONPATH` before running anything else.
@@ -66,10 +112,12 @@ CI (`.github/workflows/ci.yml`) runs all of these on every push and PR to `main`
 the whole gate locally before pushing:
 
 ```bash
-pytest ; ruff check . ; ruff format --check . ; mypy src ; lint-imports
+scripts/with_env.sh pytest ; scripts/with_env.sh ruff check . ; scripts/with_env.sh ruff format --check . ; scripts/with_env.sh mypy src ; scripts/with_env.sh lint-imports
 ```
 
-Use `;` rather than `&&` so that one failure does not hide the others.
+Use `;` rather than `&&` so that one failure does not hide the others. Each check gets
+its own `with_env.sh` because the wrapper `exec`s a single command — it is not a shell
+you stay inside.
 
 `lint-imports` must print exactly:
 
@@ -90,7 +138,7 @@ and a stale number in a skill is worse than no number, because the next agent tr
 Get the current one instead:
 
 ```bash
-pytest --collect-only -q | tail -1
+scripts/with_env.sh pytest --collect-only -q | tail -1
 ```
 
 Across one measured session, 20 subagents ran the full suite 38 times — 28 of those were
@@ -98,8 +146,9 @@ repeats within a single agent, an estimated **55-68 minutes** of wall clock.
 
 Guidance, not a prohibition:
 
-- **While iterating**, run targeted tests: `pytest tests/<path>/test_<file>.py`, or
-  `pytest -k <expr>`. Add `-x` to stop at the first failure.
+- **While iterating**, run targeted tests:
+  `scripts/with_env.sh pytest tests/<path>/test_<file>.py`, or
+  `scripts/with_env.sh pytest -k <expr>`. Add `-x` to stop at the first failure.
 - **Once, before pushing**, run the full gate above.
 - Re-running the full suite *is* correct when you are chasing a real failure whose blast
   radius you do not yet know, or after a change that touches shared `core/` interfaces.
@@ -147,7 +196,7 @@ in and never drive a `Method` themselves.
 
 ```bash
 systemd-run --user --scope -p MemoryMax=16G -p OOMPolicy=continue \
-  python -m scripts.run_sweep --output-dir <dir> ...
+  scripts/with_env.sh python -m scripts.run_sweep --output-dir <dir> ...
 ```
 
 This is not optional hygiene — it prevents a whole class of session loss. A tmux pane
@@ -217,8 +266,8 @@ mtimes (they answer a different question: when a file was last written, not when
 began):
 
 ```bash
-python analysis/run_timing.py --results-root <dir>          # aggregates
-python analysis/run_timing.py --results-root <dir> --per-run  # plus one row per run
+scripts/with_env.sh python analysis/run_timing.py --results-root <dir>
+scripts/with_env.sh python analysis/run_timing.py --results-root <dir> --per-run
 ```
 
 So "how long does a run take, and does concurrency actually help?" is answerable from
