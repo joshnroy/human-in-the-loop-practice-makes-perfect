@@ -21,12 +21,21 @@
 > direction, and the noise floor are in
 > [the release-arm table](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one).
 >
+> **One conclusion did not survive**: the sampler-iteration grid's null. See the ⚠ box in
+> [that section](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one).
+>
 > **Two sections here are older than that, and are marked superseded in place rather
 > than re-run**: the pre-release measurements taken when a missed `Throw` was still
 > free. They are the evidence for a defect that no longer exists, they cannot reproduce
 > against current code by construction, and re-running them would spend compute
 > re-deriving a fixed bug. They are kept because the argument they support is what
 > motivated the fix.
+>
+> **A confound worth stating up front.** The previous numbers were produced on different
+> hardware. Re-running the archived `ees10000` arm at its own commit on *this* machine
+> gave 96.0% against the 95.0% recorded here, so roughly a point of any arm-level change
+> below is machine, not composition. Per-seed values are machine-local; compare at arm
+> level. (Recorded on the closed PR #37 branch, `8866d9b`.)
 
 **Result.** `TossingRoomProblem.max_episode_steps` was `2 * num_rooms + 2 = 16` against
 a 5-skill solve — eleven spare steps, every one of them a free retry of the domain's
@@ -37,26 +46,33 @@ scores 62.7%. Porting Light Switch's `H_eval` convention (longest shortest solve
 
 With the metric fixed, EES's learned sampler is visibly doing the thing it is supposed
 to do: it drives `Throw`'s force onto each task's own `target_force`, median greedy
-error **0.253 → 0.053** (the tolerance is 0.1), per-throw hit rate **22% → 78%** against
-a 19% chance rate, and greedy throws per throw-episode **2.57 → 1.28** against a floor
-of 1. It stops retrying because it stops missing.
+error **0.249 → 0.041** (the tolerance is 0.1) and per-throw hit rate **23% → 99%**
+against a 19% chance rate. It stops missing.
 
 ![EES vs. the random-skills lower bound](2026-08-02-tossingroom-ees-curves.png)
 
-At the corrected horizon the curve has somewhere to go: EES starts at 62.3% — an
-unpracticed policy guessing the throw force — and ends at 99.0%, against a
-random-skills floor that never leaves 7%. All three sampler-iteration arms share the
-same first sweep to the decimal (62.3%), which is the sanity check that the budget
-cannot matter before any training has happened.
+**The live numbers, on the fixed 14/14/2 evaluation set** (25 cycles × 100 steps, ten
+seeds — the release protocol): EES starts at **25.7%**, an unpracticed policy guessing
+the throw force, and ends at **97.3%** at the default 10000 sampler iterations, against a
+random-skills floor of **1.7%** that no seed ever lifts off. All three sampler-iteration
+arms share the same first sweep *to every seed's integer*, which is the sanity check that
+the budget cannot matter before any training has happened.
 
 ![The throw force converges onto each task's target](2026-08-02-tossingroom-throw-convergence.png)
 
 The mechanism, from inside the same runs (3 seeds, 10k sampler iterations): the median
-greedy throw error first crosses into the `throw_tolerance` band at 750 transitions,
-comes back out at 900, and settles below it from 1050 on — and the retry count falls
-toward one throw per episode as it does. The non-monotonicity is real and is discussed
-below, not smoothed away. Detail and per-seed numbers in
+greedy throw error stays *outside* the `throw_tolerance` band — and briefly gets worse
+than chance — for the first 500 transitions, crosses into the band around 1400, and is
+stable there from ~1800 on. The non-monotonicity is real and is discussed below, not
+smoothed away. Detail and per-seed numbers in
 [the section below](#does-ees-learn-yes--it-stops-missing-so-it-stops-retrying).
+
+**One conclusion in this file did not survive the re-run.** The sampler-iteration grid
+was previously read as a genuine null ("the iteration count does not change the success
+rate"). On the corrected evaluation set 1000 iterations lands **19 points below** 10000,
+p = 0.156 — not significant, but no longer a null either. That claim is withdrawn in
+[its own section](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one);
+everything else here survived.
 
 ## The bracket
 
@@ -608,29 +624,97 @@ below.
 
 ### The sampler-iteration grid is now a *valid* null, not a censored one
 
-10 seeds, 30 test tasks, 25 cycles x 100 steps:
+> ### ⚠ This section's headline claim did not survive the re-run
+>
+> The previous version of this section concluded: *"on this domain the sampler-iteration
+> count does not change the success rate."* **That conclusion is withdrawn.** It rested
+> on three arms whose means sat within 1.7 points of each other. Measured on the fixed
+> 14/14/2 evaluation set, 1000 iterations comes in **19.0 points below** 10000. The
+> comparison is still not statistically significant (p = 0.156), so the honest statement
+> is *"not established, and underpowered"* — not *"no effect"*. Details below.
 
-| arm | mean | sd | worst seed | seeds at ceiling |
-|---|---|---|---|---|
-| random skills | 3.7 | 4.0 | 0.0 | 0/10 |
-| EES, 1000 | 93.3 | **14.8** | **56.7** | 8/10 |
-| EES, 10000 | **95.0** | **5.0** | 83.3 | 3/10 |
-| EES, 100000 | 94.0 | 6.0 | 83.3 | 3/10 |
+10 seeds, 30 test tasks, 25 cycles × 100 steps. Re-run 2026-08-04; the **previous**
+values, measured on the sampled composition, are given for comparison and are struck
+through in the reading, not deleted:
 
-Paired over the same seeds: all comparisons p ~ 0.68-0.91, with only 2/10 ties.
+| arm | mean | sd | worst seed | seeds at ceiling | *previously* (mean / sd / worst / ceiling) |
+|---|---|---|---|---|---|
+| random skills | **1.7** | 1.8 | 0.0 | 0/10 | *3.7 / 4.0 / 0.0 / 0-10* |
+| EES, 1000 | **78.3** | **29.3** | **23.3** | 6/10 | *93.3 / 14.8 / 56.7 / 8-10* |
+| EES, 10000 | **97.3** | **5.4** | 83.3 | 7/10 | *95.0 / 5.0 / 83.3 / 3-10* |
+| EES, 100000 | **93.0** | 13.4 | 56.7 | 5/10 | *94.0 / 6.0 / 83.3 / 3-10* |
 
-That last column is why this null is worth more than the previous one. Under the old
-dynamics 9-10 of 10 seeds sat exactly on the ceiling, so paired seeds tied, the effective
-n collapsed to 2-3 and the exact Wilcoxon floored at p = 0.25 — the endpoint could not
-have detected an effect of any size. Now the arms have real spread and the test reports a
-genuine null: **on this domain the sampler-iteration count does not change the success
-rate.** That remains the opposite of Ball-Ring, where 10000 beat 1000 by +33 points.
+Unpracticed (first sweep, shared by all three EES arms to the decimal): **25.7%**,
+previously 38.7%.
 
-One signal the old metric could not show: **1000 iterations is bimodal.** Its per-seed
-finals are `[56, 76, 100 x 8]` — eight perfect runs and two poor ones — against
-`83-100` for 10000. Same mean, but **8.7x the variance** (sd 14.8 vs 5.0) and a worst seed
-27 points lower. Reporting only the mean would call these identical; they are not, and the
-more-trained sampler is the more *reliable* one even though fewer of its seeds are perfect.
+Per-seed finals, because an sd on ten seeds can be one collapsed run:
+
+| arm | per-seed final %, sorted |
+|---|---|
+| EES, 1000 | 23.3, 53.3, 53.3, 53.3, 100, 100, 100, 100, 100, 100 |
+| EES, 10000 | 83.3, 93.3, 96.7, 100, 100, 100, 100, 100, 100, 100 |
+| EES, 100000 | 56.7, 90.0, 90.0, 96.7, 96.7, 100, 100, 100, 100, 100 |
+| random skills | 0, 0, 0, 0, 0, 3.3, 3.3, 3.3, 3.3, 3.3 |
+
+### The sampler-iteration comparison, tested
+
+Paired over the same ten seeds, exact Wilcoxon signed-rank on the endpoint:
+
+| pair | effective n | mean diff | median diff | p | *previously* |
+|---|---|---|---|---|---|
+| 1000 vs 10000 | 6 | **−19.0** | 0.0 | **0.156** | *p ≈ 0.68–0.91* |
+| 1000 vs 100000 | 6 | −14.7 | 0.0 | 0.250 | *p ≈ 0.68–0.91* |
+| 10000 vs 100000 | 6 | +4.3 | 0.0 | 0.562 | *p ≈ 0.68–0.91* |
+
+**p = 0.156 does not establish an effect, and this log does not claim one.** What
+changed is that the *point estimate* moved from ≈0 to −19 points, which is a large
+effect in the same direction Ball-Ring found (+33 points for 10000 over 1000). The
+previous "genuine null" reading was an over-read of a non-significant result even at the
+time; with the corrected evaluation set the data actively point the other way, and the
+correct summary is that **this design cannot resolve the question.**
+
+**How underpowered, concretely.** The paired differences have mean −19.0pp and sd
+31.3pp, i.e. Cohen's `dz` ≈ 0.61. A paired design needs roughly **21 seeds** for 80%
+power at that effect size — twice what was run. (An approximation: the endpoint is
+bounded and ceiling-clipped, so this is a guide to the order of magnitude, not a
+sample-size calculation to be quoted precisely.) The median difference is 0.0 in every pair
+because 4 of 10 seeds tie at exactly 100% — the censoring that motivated the release
+change is reduced but not gone.
+
+**What this does *not* license.** "1000 is enough for Tossing Room" is no longer
+supported — it was the previous section's conclusion and it is withdrawn. "10000 beats
+1000 on Tossing Room" is *also* not supported, at p = 0.156. The supported statement is
+narrower and less satisfying: *on the corrected evaluation set the 1000-iteration arm is
+much less reliable, and ten seeds cannot tell whether that is a real mean difference.*
+
+### 1000 iterations is bimodal — replicated, and larger than before
+
+This is the claim that got *stronger*. Its per-seed finals are
+`[23.3, 53.3 × 3, 100 × 6]` — six perfect runs and four poor ones, one of them at 23.3%
+— against `83.3–100` for 10000. **29.4× the variance** (sd 29.3 vs 5.4), against the
+8.7× previously reported, and a worst seed **60 points** lower rather than 27.
+
+This is a genuine replication: it survived both a change of machine (the previous figure
+was produced on different hardware — see the limitations note below) and a change of
+evaluation set, and it came back in the same direction and larger. Reporting only the
+mean would call 1000 and 100000 similar (78.3 vs 93.0 with overlapping spread); the
+per-seed column is what shows that the 1000 arm fails *completely* on four seeds rather
+than degrading gracefully on all of them.
+
+**The mechanism is visible in the composition change itself.** A harder evaluation set —
+28 throw tasks instead of ~24, and only 2 free `EMPTY` tasks instead of ~6 — cannot hurt
+a seed whose sampler converged, and cannot help one whose sampler did not. So it widens
+the gap between the two modes rather than shifting either. That is exactly what happened:
+the 10000 arm moved *up* slightly (95.0 → 97.3) while the 1000 arm moved *down* sharply
+(93.3 → 78.3).
+
+### The random-skills floor
+
+**1.7%** (previously 3.7%), sd 1.8, and **five of ten seeds solved nothing at all**
+(previously the worst seed alone was 0). This is the shape of a genuine floor rather than
+a weak method, and it fell for the same reason the unpracticed EES score did: the free
+`EMPTY` tasks that a random skill sequence occasionally stumbles into are now 2 of 30
+rather than ~6. No seed ever reached 100%, at any point in training.
 
 ### What this does not change
 
