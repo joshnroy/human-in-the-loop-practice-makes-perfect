@@ -32,11 +32,11 @@ python -m analysis.practice_makes_perfect.ees \
 python -m analysis.practice_makes_perfect.tossing3d_comparison --results-root <root>
 ```
 
-## Running it at all: the port needed a fix first
+## Running it at all: the integration needed a fix first
 
-The committed port was green on everything CI runs, but CI does not have `kindergarden`,
-so the eight tests that genuinely drive MuJoCo were skipping. Run with the optional
-dependency installed, two things showed up.
+The committed integration was green on everything CI runs, but CI does not have
+`kindergarden`, so the eight tests that genuinely drive MuJoCo were skipping. Run with
+the optional dependency installed, two things showed up.
 
 **A memory leak that made a sweep impossible.** A 40-step run reached 18.7 GB RSS and
 was still climbing at ~112 MB/s. The cause is a seam between two reasonable-looking
@@ -235,7 +235,7 @@ full-speed CPU MuJoCo, not something running slowly. Getting this on the GPU wou
 porting Tossing3D to MJX, and MJX's advantage is *thousands of environments stepped in
 parallel*, not single-environment latency; for one sequential env it is typically slower
 than the C backend. Not worth it for this config, and it would be a fidelity risk on a
-port whose whole point is matching the benchmark.
+domain whose whole point is running the benchmark's own simulator unmodified.
 
 **Rendering was the one real risk and it is already fine.** `MUJOCO_GL=egl` could
 silently fall back to a software rasteriser, which is a classic cause of render-bound
