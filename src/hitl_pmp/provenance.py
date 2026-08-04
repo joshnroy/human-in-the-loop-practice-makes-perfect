@@ -113,13 +113,32 @@ def resolve_reproducibility_scope() -> str:
     task-sampling and Fast Downward planning paths reproduce across the two machines,
     and whatever differs sits downstream of the classifier being trained.
 
-    Which specific component is NOT established here. The sampler's classifier is a
-    full-batch float32 loop whose best-loss checkpoint and early-stopping trigger are
-    both decided by exact float comparisons, which is a plausible amplifier for a
-    kernel-level difference -- but "plausible" is where the evidence stops, and this
-    codebase has been burned before by comments asserting mechanisms that turned out
-    to fire zero times. Record provenance.json, compare it across the two runs, and
-    let that decide rather than this docstring."""
+    Every version-level explanation was tested on one machine and refuted. Each was
+    run on the differing seeds against the same commit and the same explicit flags,
+    and each produced curves *bit-identical* to the control -- not merely the same
+    final score:
+
+      torch          2.5.1+cpu vs 2.13.0+cu130   identical
+      Fast Downward  5ea802478 vs 6230635        identical
+      numpy          1.26.4 vs 2.2.6             identical
+      math threads   1 vs 24                     identical
+
+    Four independent processes also agree bit-for-bit here, so PYTHONHASHSEED-style
+    set-ordering nondeterminism is out as well. The runs are genuinely deterministic
+    on a single machine; what does not carry is moving between machines.
+
+    The surviving candidate is the platform itself -- CLAUDE.md's setup includes a
+    macOS-only `brew install coreutils` step and fast_downward.py branches on
+    sys.platform == "darwin", so the archived runs were probably produced on macOS
+    against this Linux-x86_64 re-run, and torch's ARM and x86 kernels are different
+    code producing different floats from identical inputs. That is a candidate by
+    elimination, NOT a measurement: no ARM machine was available to test it, and a
+    mechanism this file cannot demonstrate does not get asserted as fact here.
+
+    The practical consequence holds regardless of which platform detail it turns out
+    to be, and it is why this file records rather than pins: no version pin would
+    have prevented an architecture difference. Treat per-seed values as machine-local
+    and arm-level aggregates as the portable unit."""
     return (
         "A fixed --seed reproduces a run exactly on the same machine with the same "
         "installed versions. Per-seed results are NOT known to be portable across "
