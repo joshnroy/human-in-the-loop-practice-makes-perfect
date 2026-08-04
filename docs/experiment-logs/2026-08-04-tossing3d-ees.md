@@ -201,13 +201,14 @@ differs from the sweep's seed 0 (`[6,3,1,1,7,7,7,7,8,9,9]` vs `[6,3,3,4,7,7,7,8,
 solved-out-of-10 per checkpoint), so they illustrate the behaviour rather than being the
 data behind the curve.
 
-**Why it differs is not known, and is specifically *not* established to be the render
-flag.** This run also invoked `hitl_pmp.cli` directly, so — exactly like the failed
-re-run check above — it missed the `OMP_NUM_THREADS=1` that `run_sweep` pins on every
-child. Thread count is at least as good an explanation as rendering, and blaming
-`--num-render-checkpoints` would be the same unsupported inference this log has already
-had to walk back once. A matched pair of `run_sweep` invocations differing only in the
-render flag would settle it; that is not done here.
+**The likely cause is thread count, not the render flag.** This run also invoked
+`hitl_pmp.cli` directly, so it missed the `OMP_NUM_THREADS=1` that `run_sweep` pins on
+every child — and the section above establishes that this alone moves a Tossing3D run
+substantially, since the invalid first re-run check diverged for exactly that reason and
+became IDENTICAL once the pinning matched. So `--num-render-checkpoints` is *not* shown
+to perturb anything; the one variable known to differ here already explains it. A
+matched pair of `run_sweep` invocations differing only in the render flag would confirm
+that, and is not done here.
 
 They are also ~60–100 KB rather than the ~25 KB of the Tossing Room precedent, using the
 same shared-64-colour-palette recipe. A 640x528 3D render with smooth shading simply has
@@ -234,23 +235,34 @@ What the evidence actually says, in descending order of strength:
   one out. This is the strongest evidence available and it says concurrency is safe.
 - **This domain, low concurrency:** two identical `run_sweep --max-workers 1`
   invocations produced bit-identical `stats.json`. The pipeline is deterministic.
-- **This domain, the re-run diff — a failed check worth recording.** Re-running EES seed
-  0 alone and diffing against its sweep result returned **DIFFERS**, and substantially
-  (`[6,3,3,4,7,7,7,8,8,9,7]` vs `[6,1,4,1,2,1,0,6,7,7,7]`). That result is **not
-  usable**, for a reason that is a lesson rather than a finding: the re-run invoked
-  `hitl_pmp.cli` directly, while `run_sweep` pins `OMP_NUM_THREADS=1` and
-  `MKL_NUM_THREADS=1` on every child (`run_sweep.py:153`). So it compared a many-thread
-  run against a one-thread run and would have blamed the difference on concurrency. It
-  also ran while two full pytest suites were loading the box. An apples-to-apples re-run
-  through `run_sweep --max-workers 1` is the correct form of this check.
+- **This domain, directly: the re-run diff came back IDENTICAL.** EES seed 0 re-run
+  alone through `run_sweep --max-workers 1` reproduced its 12-way sweep result exactly:
 
-**Bottom line for this log's numbers.** The arm-level comparison is not at risk either
-way: both arms ran interleaved inside the *same* sweep, under the same load, so any
-load effect applies equally to both and the paired differences stand. Per-seed values
-should be treated as machine- *and* load-local, which is what this repo already requires
-of them. If the pinned-thread re-run ever comes back DIFFERS, that would be a finding
-about `--seed` determinism under load and belongs in its own investigation, not a
-correction to the arm-level result above.
+  ```text
+  sweep    (12-way concurrent, OMP=1): [6, 3, 3, 4, 7, 7, 7, 8, 8, 9, 7]
+  recheck3 (1 worker,          OMP=1): [6, 3, 3, 4, 7, 7, 7, 8, 8, 9, 7]
+  ```
+
+  A starved FD would have returned a different plan and hence a different trajectory, so
+  this rules out timeout contamination for this seed.
+
+**A wrong turn worth recording, because it nearly became a finding.** The *first* attempt
+at that check returned DIFFERS, and substantially (`[6,1,4,1,2,1,0,6,7,7,7]`). It was
+invalid: it invoked `hitl_pmp.cli` **directly**, while `run_sweep` pins
+`OMP_NUM_THREADS=1` and `MKL_NUM_THREADS=1` on every child (`run_sweep.py:153`). So it
+compared a many-thread run against a one-thread run and would have reported "concurrency
+perturbs Tossing3D results" when the actual variable was torch's thread count. Re-running
+through `run_sweep` — identical in every respect except load — gave the IDENTICAL above.
+
+Two things follow. Any future re-run comparison on this repo must go through
+`run_sweep`, not the CLI, or it is not measuring what it thinks. And **the sampler's
+numerics are thread-count dependent**, so a `--seed` determines a run only at a fixed
+thread count; that is worth knowing independently of this experiment.
+
+**Bottom line for this log's numbers.** Concurrency did not contaminate the sweep. And
+the arm-level comparison would not have been at risk either way, since both arms ran
+interleaved inside the *same* sweep under the same load, so any load effect would apply
+equally to both and the paired differences would stand regardless.
 
 ## What this cannot tell us
 
@@ -298,9 +310,14 @@ that such a change would be measured against.
   something specific to this domain.
 
   What was substituted: re-running a seed alone and diffing `stats.json`, since a
-  timeout would necessarily change the plan and therefore the trajectory. See
+  timeout would necessarily change the plan and therefore the trajectory. That came back
+  IDENTICAL — see
   [Was the sweep contaminated by its own concurrency?](#was-the-sweep-contaminated-by-its-own-concurrency)
-  below for what that returned, which is less clean than hoped.
+  below, including the first, invalid attempt at it.
+- **A `--seed` determines a run only at a fixed thread count.** Established accidentally
+  (see the same section): the same seed run with and without `OMP_NUM_THREADS=1` diverges
+  substantially. `run_sweep` pins it on every child, so sweeps are consistent, but a run
+  driven straight through `hitl_pmp.cli` is not comparable to one from a sweep.
 - **10 evaluation tasks per checkpoint**, so a single seed's curve moves in 10-point
   steps. The arm-level mean over 10 seeds is the readable quantity.
 - **`o2` is not supported** (two cubes; the symbolic layer here is single-cube).
