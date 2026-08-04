@@ -196,12 +196,18 @@ Note what happens next anyway: the episode ends, the harness resets for free, an
 run recovers to 90% by 1500. That is exactly the confound described below — the picture
 shows the irreversibility, and the experiment still cannot measure its cost.
 
-**These GIFs are from a separate run, not the seed-0 run in the curve.** Enabling
-`--num-render-checkpoints` perturbs the run: same seed, same protocol, different
-trajectory (rendered `[6,3,1,1,7,7,7,7,8,9,9]` vs the sweep's
-`[6,3,3,4,7,7,7,8,8,9,7]` solved-out-of-10 per checkpoint). They are an illustration of
-the behaviour, not the data behind the curve. That the render flag is not
-outcome-neutral is worth a look on its own; it is not chased here.
+**These GIFs are from a separate run, not the seed-0 run in the curve.** Its trajectory
+differs from the sweep's seed 0 (`[6,3,1,1,7,7,7,7,8,9,9]` vs `[6,3,3,4,7,7,7,8,8,9,7]`
+solved-out-of-10 per checkpoint), so they illustrate the behaviour rather than being the
+data behind the curve.
+
+**Why it differs is not known, and is specifically *not* established to be the render
+flag.** This run also invoked `hitl_pmp.cli` directly, so — exactly like the failed
+re-run check above — it missed the `OMP_NUM_THREADS=1` that `run_sweep` pins on every
+child. Thread count is at least as good an explanation as rendering, and blaming
+`--num-render-checkpoints` would be the same unsupported inference this log has already
+had to walk back once. A matched pair of `run_sweep` invocations differing only in the
+render flag would settle it; that is not done here.
 
 They are also ~60–100 KB rather than the ~25 KB of the Tossing Room precedent, using the
 same shared-64-colour-palette recipe. A 640x528 3D render with smooth shading simply has
