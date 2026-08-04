@@ -67,6 +67,16 @@ class KinderBackend(BaseModel):
     SETTLE_STEPS: ClassVar[int] = 150
 
     variant: str = "o1"
+    # KINDER's own background scene. False selects its "simple" scene -- a bare white
+    # void -- and True selects the MimicLabs room the `Tossing3D-o1` task JSON names,
+    # which is what every clip on the benchmark's own site shows: KINDER's
+    # `scripts/docs/generate_env_docs.py` passes `scene_bg=True` for every Dynamic3D
+    # env, and `scripts/generate_demo_video.py` does the same. It defaults to False
+    # here only because a sweep pays for it (measured: 4.18 ms vs 1.36 ms per
+    # `render()`) and because every number already measured on this domain was measured
+    # with the simple scene. Verified purely cosmetic -- an oracle rollout produces a
+    # bit-identical cube trajectory either way -- so the demo renderer turns it on.
+    scene_bg: bool = False
     cube_name: str = "cube_0"
     bin_name: str = "bin_0"
     barrier_name: str = "cuboid_barrier"
@@ -85,6 +95,35 @@ class KinderBackend(BaseModel):
     # simulator exposes no "give me the current object-centric state" call that the
     # gym wrapper agrees with -- every read goes through an observation.
     _last_state: Any = PrivateAttr(default=None)
+    # Set by `capture_frames_into`, drained by nobody here. When present, every MuJoCo
+    # control tick appends one `env.render()` to it, which is how a *smooth* clip gets
+    # made -- see `capture_frames_into` for why that is a separate mode.
+    _frame_sink: list[np.ndarray] | None = PrivateAttr(default=None)
+
+    def capture_frames_into(self, *, sink: list[np.ndarray] | None) -> None:
+        """Record one KINDER frame per control tick into `sink` (None turns it off).
+
+        This is the seam that makes a KINDER-quality clip possible. KINDER's own
+        `scripts/generate_demo_video.py` renders once per `env.step()` -- one frame per
+        10 Hz control tick -- which is why the clips on the benchmark's site are smooth.
+        A `hitl_pmp` transition is a whole *skill*, several hundred ticks, so the
+        `Renderer` interface (one frame per transition, by construction) can only ever
+        produce a storyboard. Rather than widen that interface for every domain, this
+        lets a demo script tap the tick loop directly.
+
+        Off by default and never enabled during a sweep: it costs one `render()` per
+        tick (~4 ms) on top of ~8 ms of physics, i.e. roughly +50% wall-clock, for
+        frames a learning curve has no use for.
+        """
+        self._frame_sink = sink
+
+    def render_fps(self) -> int:
+        """KINDER's own `render_fps` for this env (20), so a clip written from
+        `capture_frames_into` plays at the rate the benchmark intends rather than one
+        picked here. Read from gym metadata, exactly as their scripts do
+        (`generate_demo_video.py`: `fps = env.metadata.get("render_fps", 10)`)."""
+        env = self._ensure_env()
+        return int(env.metadata.get("render_fps", 10))
 
     def _ensure_env(self) -> Any:
         """Open the MuJoCo scene and build the controllers, once.
@@ -97,8 +136,10 @@ class KinderBackend(BaseModel):
           that then dies with `'EGLPlatform' object has no attribute 'OSMesa'`. So the
           caller's choice is snapshotted and put back afterwards: whatever `MUJOCO_GL`
           the run was launched with wins.
-        * `scene_bg=False` keeps KINDER off its background-scene render path, which
-          reaches for the OSMesa context regardless of the variables above.
+        * `scene_bg` picks KINDER's background scene, and it is passed through rather
+          than pinned: an earlier version hardcoded `False` as an OSMesa workaround,
+          which is no longer needed now that the snapshot above keeps EGL. Measured
+          under `MUJOCO_GL=egl`, `scene_bg=True` loads its MimicLabs room fine.
         """
         if self._env is not None:
             return self._env
@@ -122,7 +163,9 @@ class KinderBackend(BaseModel):
             if value is not None:
                 os.environ[name] = value
         env = kinder.make(
-            f"kinder/Tossing3D-{self.variant}-v0", render_mode="rgb_array", scene_bg=False
+            f"kinder/Tossing3D-{self.variant}-v0",
+            render_mode="rgb_array",
+            scene_bg=self.scene_bg,
         )
         env.unwrapped._object_centric_env.set_render_camera(self.render_camera)
         self._env = env
@@ -133,10 +176,18 @@ class KinderBackend(BaseModel):
 
     def goal_region_bounds(self) -> tuple[float, ...]:
         """KINDER's own `blocks_goal_region` box, `(x_min, y_min, z_min, x_max, y_max,
-        z_max)`, read straight out of the variant's task JSON rather than hardcoded --
-        this is the region `_check_goals` tests `cube_0` against, so reading it is what
-        lets this domain's `InGoalRegion` predicate be the benchmark's own success
-        criterion instead of a lookalike."""
+        z_max)`, read straight out of the variant's task JSON rather than hardcoded.
+
+        KNOWN DISCREPANCY, fix pending: `_check_goals` does not compare against this
+        raw range. It goes through `Region.check_in_region`, which tests `Region.bbox`
+        -- and `_create_regions` builds that bbox by inflating the JSON range by
+        `ground_placement_threshold = 0.05` on every axis
+        (`kinder/envs/dynamic3d/objects/base.py:840, 875-880`). So the region this
+        returns is 0.05 m tighter per side than the one the benchmark actually scores.
+        `test_in_goal_region_agrees_with_kinders_own_goal_check` does not catch it
+        because no state its random walk visits happens to land in the 0.05 m band
+        where the two verdicts differ.
+        """
         env = self._ensure_env()
         ranges = env.unwrapped._object_centric_env.task_config["regions"]["blocks_goal_region"][
             "ranges"
@@ -188,6 +239,8 @@ class KinderBackend(BaseModel):
         env = self._ensure_env()
         observation, _, _, _, _ = env.step(action)
         self._last_state = env.observation_space.devectorize(observation)
+        if self._frame_sink is not None:
+            self._frame_sink.append(self.render())
 
     def execute_pick(self, *, distance: float, rot: float) -> bool:
         """KINDER's `pick_shelf`: drive the base to `(distance, rot)` relative to the
@@ -289,8 +342,16 @@ class KinderBackend(BaseModel):
         return False
 
     def render(self) -> np.ndarray:
+        """One frame from KINDER's own renderer, on whichever camera
+        `set_render_camera` selected.
+
+        Copied, not viewed: MuJoCo renders into a buffer it reuses, so `np.asarray`
+        (which does not copy an array that is already uint8) hands back a view that the
+        *next* render silently overwrites. Harmless when a caller consumes one frame at
+        a time, and a wrecked clip when `capture_frames_into` is accumulating hundreds.
+        """
         env = self._ensure_env()
-        return np.asarray(env.render(), dtype=np.uint8)
+        return np.array(env.render(), dtype=np.uint8, copy=True)
 
     def check_goals(self) -> bool:
         """KINDER's own `_check_goals`, for the fidelity test that pins this domain's

@@ -123,6 +123,11 @@ class Tossing3DEnvironment(Environment):
     # The seed hard_reset() resets to. Only ever used before a run starts; Tasks draws
     # its own per-task seeds.
     canonical_seed: int = 0
+    # Forwarded to `KinderBackend.scene_bg`: which of KINDER's background scenes the
+    # MuJoCo model loads. Purely cosmetic (verified: an oracle rollout's cube
+    # trajectory is bit-identical either way), so it is a render-time choice, not a
+    # domain one -- `scripts/render_tossing3d_demo.py` turns it on, a sweep does not.
+    scene_bg: bool = False
 
     _backend: KinderBackend | None = PrivateAttr(default=None)
     _goal_region_bounds: tuple[float, ...] | None = PrivateAttr(default=None)
@@ -133,7 +138,7 @@ class Tossing3DEnvironment(Environment):
         which is several seconds -- too expensive to pay in a constructor that tests
         call to check a feature layout."""
         if self._backend is None:
-            self._backend = KinderBackend(variant=self.variant)
+            self._backend = KinderBackend(variant=self.variant, scene_bg=self.scene_bg)
         return self._backend
 
     def goal_region_bounds(self) -> tuple[float, ...]:

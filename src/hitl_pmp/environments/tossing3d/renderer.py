@@ -28,9 +28,18 @@ class Tossing3DRenderer(Renderer):
     Consequence worth stating: one `take_action` is a whole skill execution (a few
     hundred MuJoCo ticks), so a recorded episode is a ~5-frame *storyboard* -- initial
     scene, after the pick, after moving to the throw pose, after the toss -- not a
-    smooth video of the arm swinging. That is enough to read off whether the cube ended
-    in the goal region, which is what a checkpoint comparison needs, and it costs one
-    render call per transition instead of hundreds.
+    smooth video of the arm swinging.
+
+    That is a property of `core.Renderer`, which is one frame per transition by
+    construction, not of this class: no renderer in this repo can produce more. It is
+    the right thing for what this is used for -- comparing evaluation checkpoints across
+    a learning curve, where the question is only where the cube ended up, and the cost
+    is one render per transition instead of hundreds. It is the wrong thing for a clip
+    meant to *show* the integration working, which is why
+    `scripts/render_tossing3d_demo.py` exists: it taps
+    `KinderBackend.capture_frames_into` to render once per MuJoCo control tick, the way
+    KINDER's own `scripts/generate_demo_video.py` does, and writes the GIF with KINDER's
+    own `gif_utils.optimize_gif`. 276 frames instead of 4, and no matplotlib anywhere.
 
     A static-method container, never instantiated.
     """

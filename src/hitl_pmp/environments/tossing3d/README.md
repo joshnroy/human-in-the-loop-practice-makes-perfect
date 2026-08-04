@@ -139,20 +139,52 @@ KINDER's, a hand-authored three-skill plan does not land the cube in the region.
 
 ![The Tossing3D oracle solving in three skills](../../../../docs/tossing3d_skill_oracle_demo.gif)
 
-One frame per skill (see `renderer.py`): the cube starts on the floor at x = 0.52,
-`Pick` lifts it (`holding`), `MoveToThrowPose` carries it to the barrier at x = 1.09,
-and `Toss` at the oracle's swing = 0.75 releases it over the barrier to **x = 1.91,
-inside `blocks_goal_region`'s [1.90, 2.10]** — `InGoalRegion` flips and the episode ends
-solved at the shortest possible length. Reproduce with:
+`Pick` lifts the cube off the floor, `MoveToThrowPose` carries it to the barrier, and
+`Toss` at the oracle's swing = 0.75 throws it over. **The cube comes to rest short of
+the bin and the episode is nevertheless solved** — the goal is a *region* on the floor,
+not the bin. Measured off the final `State`, not off the pixels:
+
+| quantity | value |
+| --- | --- |
+| goal atom | `InGoalRegion(cube_0, blocks_goal_region)` |
+| final cube `(x, y, z)` | `(1.9139, 0.0116, 0.0249)` |
+| `Goal.is_satisfied` | **True** — 1/1 test tasks solved |
+| bin centre x | 2.2304 |
+
+That position satisfies the goal under both this domain's current
+`blocks_goal_region` bounds and KINDER's own, so the clip is evidence the integration
+works regardless of how the discrepancy below is resolved.
+
+> **The exact region bounds are under review and not stated here.**
+> `goal_region_bounds()` reads the raw task-JSON range, but KINDER's `_check_goals`
+> compares against `Region.bbox`, which `_create_regions` builds by inflating that range
+> by `ground_placement_threshold = 0.05` on every axis
+> (`kinder/envs/dynamic3d/objects/base.py:840, 875-880`). The two therefore differ, a
+> fix is pending, and any claim about where the region's edges sit relative to the bin —
+> including the one under "Three things about this domain that look like bugs and are
+> not" below — should be read as provisional until it lands.
+
+The clip is 171 frames at 20 fps, rendered by
+[`scripts/render_tossing3d_demo.py`](../../../../scripts/render_tossing3d_demo.py) the
+way KINDER renders its own — one `env.render()` per MuJoCo control tick, `scene_bg=True`
+for the MimicLabs room, and `kinder.gif_utils.optimize_gif` for the GIF:
 
 ```bash
-python -m hitl_pmp.cli --env tossing3d --method skill-oracle \
-  --seed 0 --num-test-tasks 1 --output-dir /tmp/tossing3d-oracle
+MUJOCO_GL=egl PYOPENGL_PLATFORM=egl python -m scripts.render_tossing3d_demo \
+  --output docs/tossing3d_skill_oracle_demo.gif --seed 0
 ```
+
+`--method skill-oracle --output-dir DIR` records the same episode through the ordinary
+`core.Renderer` path instead, as a 4-frame captioned storyboard (`episode.mp4`) — one
+frame per *skill*, which is all a checkpoint comparison needs and a fraction of the cost.
 
 ## Three things about this domain that look like bugs and are not
 
-**The goal region is not the bin.** In the `o1` variant `blocks_goal_region` is
+**The goal region is not the bin.** *Provisional — see the region-bounds note above;
+`goal_region_bounds()` reads the raw JSON range while KINDER compares against a version
+of it inflated by 0.05 m per axis, which moves the far edge and so moves this
+paragraph's conclusion. Stated as it currently stands, pending that fix.*
+In the `o1` variant `blocks_goal_region` is
 x ∈ [1.90, 2.10] while `bin_init_region` puts the bin at x = 2.2305 — a 0.30 m bin, so
 its footprint is x ∈ [2.08, 2.38]. A toss hard enough to land *in* the bin therefore
 fails KINDER's own goal check, and one that stops short of it in the region passes.

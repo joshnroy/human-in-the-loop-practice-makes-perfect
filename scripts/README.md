@@ -6,11 +6,17 @@ afterwards. That split is the same one `CLAUDE.md` documents: an `analysis/`
 script must never run a simulation, so anything that launches one belongs here.
 Mirrors the sibling `hitl-practice` repo's own `scripts/` convention.
 
-Nothing here imports from `hitl_pmp` — these shell out to `python -m hitl_pmp.cli`
-— so the package's own layering contract (`lint-imports`) is unaffected by them.
-That rule is one-directional: `analysis/run_timing.py` imports `RunTiming` from
-`run_sweep.py` (reader ← writer), which is fine — the boundary being protected is
-`scripts/` never reaching *into* the library.
+Most of these shell out to `python -m hitl_pmp.cli` rather than importing
+`hitl_pmp` — `run_sweep.py` deliberately so, since a sweep is exactly a sequence
+of CLI invocations and nothing more. `render_tossing3d_demo.py` is the exception
+and says why in its own docstring: it needs an in-process handle on the live
+simulator to install a per-tick frame sink, which no command line can express.
+Either way `lint-imports`' contract is unaffected — its `root_packages` is
+`["hitl_pmp"]`, so `scripts/` sits outside it entirely.
+
+The shell-out rule is also one-directional: `analysis/run_timing.py` imports
+`RunTiming` from `run_sweep.py` (reader ← writer), which is fine — the boundary
+being protected is `scripts/` never reaching *into* the library uninvited.
 
 ## `with_env.sh`
 
@@ -188,6 +194,29 @@ comparing them adds one — `analysis/run_timing.py` does.
 can't corrupt it — though it *does* include any spawn-retry backoff, which is
 what `spawn_attempts` (defaulted to 1, so records written before retrying existed
 still read truthfully) is there to let you spot.
+
+## `render_tossing3d_demo.py`
+
+Renders one oracle episode on Tossing3D as a smooth GIF, using KINDER's own
+rendering and GIF tooling rather than this repo's `core.Renderer` path.
+
+```bash
+MUJOCO_GL=egl PYOPENGL_PLATFORM=egl python -m scripts.render_tossing3d_demo \
+    --output docs/tossing3d_skill_oracle_demo.gif --seed 0 --check-scene-bg
+```
+
+- **Why it is not `--output-dir`'s `episode.mp4`.** A `hitl_pmp` transition is a
+  whole *skill* — several hundred MuJoCo control ticks — and `core.Renderer` is
+  one frame per transition by construction, so that path can only ever produce a
+  4-frame storyboard. This taps `KinderBackend.capture_frames_into` to render per
+  tick instead, exactly as KINDER's `scripts/generate_demo_video.py` does.
+- **It needs the `tossing3d` extra**, so run it from the KINDER virtualenv (see
+  `src/hitl_pmp/environments/tossing3d/README.md`). It also wants `gifsicle` on
+  `PATH` for `kinder.gif_utils.optimize_gif`; without it KINDER prints a warning
+  and skips optimisation, which is a 12 MB GIF rather than 1.9 MB.
+- `--check-scene-bg` re-runs the rollout with KINDER's plain scene and asserts the
+  cube trajectory is bit-identical, i.e. that the background is purely cosmetic.
+  It is: that is what licenses rendering the demo with it and sweeping without.
 
 ## Seeds are fixed
 
