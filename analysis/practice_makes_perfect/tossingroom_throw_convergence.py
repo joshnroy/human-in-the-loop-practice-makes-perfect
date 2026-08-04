@@ -6,17 +6,23 @@ simulation): one JSON per arm as written by `scripts/tossingroom_throw_traces.py
 
 A success-rate curve alone cannot answer this domain's question, which is why this
 figure exists next to `tossingroom_comparison.py`. `Throw` is the only stochastic
-skill, and a failed throw leaves the robot holding the item in the bin room, so the
-next step simply replans to `Throw` again -- the evaluation horizon silently decides
-how many free retries a policy gets, and a policy that has learned nothing can still
-score well by taking enough of them. The two panels here are horizon-independent:
+skill. Both panels here are horizon-independent:
 
 * **left** -- median |chosen force - target_force| over the greedy (non-epsilon)
   throws of each evaluation sweep, against the `throw_tolerance` band a throw has to
   land inside. This is the learned quantity itself, with no retry accounting in it.
-* **right** -- greedy throw *attempts* per evaluation episode. A policy that has
-  learned the force needs one; a policy that is guessing needs however many the
-  horizon allows. It falls to 1.0 exactly when the left panel enters the band.
+  It carries the whole result.
+* **right** -- greedy throw *attempts* per evaluation episode. This panel used to be
+  the horizon-robust half of the argument, on the reasoning that a policy which has
+  learned the force needs one throw while a guessing policy needs however many the
+  horizon allows -- it fell 2.57 -> 1.28 as the left panel entered the band.
+
+  **Since a missed `Throw` releases the item, it is pinned at exactly 1.00 for the
+  whole run**, pre-practice included: there is no second greedy throw to count, whatever
+  the policy knows. It is kept because a dead-flat line at the floor is itself the
+  cleanest available picture of "the retry channel is closed" -- but it is now a
+  constant, so no trend should be read into it and none can be. The quantity that
+  replaced its diagnostic role is the no-op fraction, which `print_table` reports.
 """
 
 import argparse
@@ -140,7 +146,9 @@ class TossingRoomThrowConvergence:
             color="grey",
         )
         axes[1].set_ylabel("greedy Throw attempts per throw episode")
-        axes[1].set_title("How many retries the policy needed", fontsize=10)
+        axes[1].set_title(
+            "Retries available: none, at any competence (a miss costs the item)", fontsize=10
+        )
         for ax in axes:
             ax.set_xlabel("Number of online transitions")
             ax.set_ylim(bottom=0)

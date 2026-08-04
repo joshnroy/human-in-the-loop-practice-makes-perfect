@@ -11,11 +11,15 @@
 > moved, so the change is auditable rather than invisible.
 >
 > **What moved, and why.** `EMPTY` needs no `Throw` and is solved every time; it used to
-> be ~20% of the test set and is now 2/30 = 6.7%. Both the unpracticed floor and the
-> trained ceiling therefore fall, because a smaller share of the evaluation is free.
-> That is a change of denominator, not of behaviour — and the single-attempt model that
-> predicted the floor still predicts it, once its composition constant is re-derived
-> (see [the follow-up section](#effect-on-an-unpracticed-policy)).
+> be ~20% of the test set and is now 2/30 = 6.7%. The **unpracticed floor falls sharply**
+> — 38.7% → 25.7% — because a much smaller share of the evaluation is now free. That is a
+> change of denominator, not of behaviour, and the single-attempt model that predicted
+> the floor still predicts it once its composition constant is re-derived (see
+> [the follow-up section](#effect-on-an-unpracticed-policy)). The **trained arms barely
+> move**, and if anything move slightly up rather than down; the harder test set costs
+> them little because a trained sampler already lands most throws. The numbers, the
+> direction, and the noise floor are in
+> [the release-arm table](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one).
 >
 > **Two sections here are older than that, and are marked superseded in place rather
 > than re-run**: the pre-release measurements taken when a missed `Throw` was still
@@ -307,59 +311,65 @@ attempts (`num_rooms=40` still gives 7).
 The success rate says *that* EES improves; it does not say the improvement is the throw
 force rather than something else. This looks directly at the learned quantity. Every
 `Throw` issued during an evaluation sweep, greedy only (epsilon never fires at
-evaluation time), at the shipped `H = 7`, 3 seeds × 10 cycles × 150 steps, 30 test
-tasks, 10000 sampler iterations:
+evaluation time), at the shipped `H = 7`, **3 seeds × 25 cycles × 100 steps** — the same
+release protocol as the arms — 30 test tasks, 10000 sampler iterations. Re-collected
+2026-08-04; the previous version of this table was 10 cycles × 150 steps and was taken
+before a missed `Throw` released the item.
 
-| transitions | solved % | median \|force − target\| | within tolerance | greedy throws per throw-episode |
-|---|---|---|---|---|
-| 0 (pre-practice) | 64.4 | 0.253 | 22% | 2.57 |
-| 150 | 57.8 | 0.249 | **18%** | 2.67 |
-| 300 | 75.6 | 0.188 | 36% | 1.98 |
-| 450 | 76.7 | 0.233 | 38% | 1.97 |
-| 600 | 70.0 | 0.188 | 34% | 2.04 |
-| 750 | 96.7 | 0.048 | 84% | 1.22 |
-| 900 | 86.7 | 0.125 | 48% | 1.79 |
-| 1050 | 94.4 | 0.069 | 63% | 1.50 |
-| 1200 | 93.3 | 0.063 | 66% | 1.42 |
-| 1350 | 98.9 | 0.048 | 84% | 1.19 |
-| 1500 | 96.7 | 0.053 | 78% | 1.28 |
+| transitions | solved % | median \|force − target\| | within tolerance | greedy throws per throw-episode | no-op actions |
+|---|---|---|---|---|---|
+| 0 (pre-practice) | 27.8 | 0.249 | 23% | **1.00** | 18% |
+| 200 | 20.0 | 0.419 | **14%** | **1.00** | 20% |
+| 500 | 17.8 | 0.350 | **12%** | **1.00** | 20% |
+| 700 | 37.8 | 0.265 | 33% | **1.00** | 14% |
+| 900 | 45.6 | 0.253 | 42% | **1.00** | 12% |
+| 1000 | 74.4 | 0.218 | 73% | **1.00** | 10% |
+| 1200 | 73.3 | 0.136 | 71% | **1.00** | 12% |
+| 1400 | 68.9 | 0.077 | 67% | **1.00** | 9% |
+| 1500 | 96.7 | 0.044 | 96% | **1.00** | 1% |
+| 1800 | 100.0 | 0.031 | 100% | **1.00** | 0% |
+| 2100 | 95.6 | 0.043 | 95% | **1.00** | 1% |
+| 2500 | 98.9 | 0.041 | **99%** | **1.00** | 0% |
 
 The learned quantity moves, and it moves in the direction the success rate needs.
-Median greedy error falls **0.253 → 0.053**, from a quarter of the force range down to
-half the tolerance — i.e. from outside the band the throw has to land in, to inside it.
-The per-throw hit rate goes **22% → 78%** against a chance rate of 19%, and the policy
-correspondingly stops retrying: **2.57 → 1.28** greedy throws per throw-episode, against
-a floor of exactly 1.
+Median greedy error falls **0.249 → 0.041**, from a quarter of the force range down to
+under half the tolerance — i.e. from outside the band the throw has to land in, to well
+inside it. The per-throw hit rate goes **23% → 99%** against a chance rate of 19%.
 
-**That last column is the horizon-robust version of the claim**, and the one worth
-keeping: a policy that has learned the force needs one throw, and a policy that is
-guessing needs however many the horizon allows. It halved while the solve rate went
-64% → 97%. It stopped retrying because it stopped missing.
+**One claim from the previous version of this table is retired, not updated.** It used to
+read "greedy throws per throw-episode **2.57 → 1.28**, against a floor of exactly 1", and
+called that the horizon-robust version of the argument. Under the release dynamics that
+column is **1.00 at every single checkpoint**, from pre-practice to convergence — a
+missed throw costs the item, so there is no second greedy throw to count, whatever the
+policy knows. The statistic has no variance left and therefore carries no information;
+quoting it would be quoting a constant. What replaced it is the `no-op actions` column,
+which measures the same underlying thing the retry count used to (how much of the episode
+is wasted): **18% → 0%**. Those no-ops are overwhelmingly the unrecoverable `RECYCLING`
+miss — the robot standing in room 1 with nothing to do — so the column falls to zero
+exactly as the sampler stops missing.
 
-**Convergence is noisy, not clean.** The 900-transition sweep gives back most of the
-750 sweep's gain (84% → 48% within tolerance, median error 0.048 → 0.125) before
-recovering. And every one of the three seeds has at least one sweep where the greedy
-sampler is *below* its own 19% chance rate — seed 1 at 150 transitions (13%), seed 2 at
-150 (17%), seed 0 at 600 (15%) — which is what an underconstrained classifier
-confidently picking a wrong region looks like. Those excursions land at *different*
-sweeps per seed, so they mostly wash out of the population curve: the ten-seed 10k arm's
-mean has exactly one substantial downward step, at 150 transitions (62.3% → 56.7%), and
-after that climbs steadily to 99.0% with only two sub-half-point wobbles once it is up
-against the ceiling. **The per-seed instability is real; the mean curve is not made of
-it** — in particular, no dip appears at 450–600 where seed 0's excursion sits.
+**Convergence is noisy, not clean, and is noisier than the old table suggested.** The
+learned sampler is *below* its own 19% chance rate for the first 500 transitions (23% →
+14% → 12%) before it recovers — a real regression, not a plateau, and what an
+underconstrained classifier confidently picking a wrong region looks like. It then climbs
+unevenly: 1000 → 1100 gives back 14 points, 1500 → 1600 gives back 15. Only past ~1800
+transitions is it stable at the ceiling. The three-seed pooled curve is not smooth and is
+not presented as one.
 
-**Provenance.** These traces come from the same runs that produced the curves above,
-not a re-implementation: `TracingEesMethod`/`TracingEnvironment` are ordinary subclass
-overrides driven through the real `PracticeLoop`, and seed 0's per-sweep success
-sequence — 18, 19, 21, 20, 14, 27, 27, 30, 29, 29, 30 out of 30 — comes out *identical*
-to `results/tossingroom-10000/ees/0/stats.json` from the CLI-driven arm. The
-instrumentation does not perturb the run it measures.
+**Provenance.** These traces come from the same runs that produced the curves above, not
+a re-implementation: `TracingEesMethod`/`TracingEnvironment` are ordinary subclass
+overrides driven through the real `PracticeLoop`, and **all three seeds reproduce the
+CLI-driven `ees10000` arm sweep-for-sweep across all 26 sweeps** — seed 0's sequence is
+7, 7, 5, 8, 7, 5, 6, 15, 17, 24, 29, 30, 30, 29, 29, 30, 29, 30, 30, 30, 30, 28, 30, 30,
+30, 30 out of 30 in both. The instrumentation does not perturb the run it measures.
 
-**These numbers are not comparable to the same table taken at `H = 16`.** The per-sweep
-statistic pools every greedy throw in the sweep, and a task the policy is bad at
-contributes more throws than one it is good at — so a longer horizon over-samples the
-failures and reports a worse median error and a lower hit rate for the *same* policy.
-The old horizon's version of this table is superseded, not carried forward.
+**These numbers are not comparable to the same table taken at `H = 16`, nor to the
+pre-release version.** The per-sweep statistic pools every greedy throw in the sweep, and
+under the old dynamics a task the policy was bad at contributed more throws than one it
+was good at — so a longer horizon over-sampled the failures and reported a worse median
+error for the *same* policy. That distortion is gone now that every throw-episode
+contributes exactly one throw, which makes this table an unweighted average over tasks
+for the first time.
 
 **A consistency check on the whole story.** The same retry arithmetic that explained the
 unpracticed score, run forward with the *learned* hit rate instead of the chance one,
@@ -483,7 +493,7 @@ python -m analysis.practice_makes_perfect.tossingroom_comparison \
 
 # the horizon probe against current code: ONE ROLLOUT PER HORIZON. Deriving shorter
 # horizons from a single long rollout is invalid here -- see "the horizons are not
-# derivable from one rollout" below. The 2026-08-02 JSON beside these is the
+# derivable from one rollout" above. The 2026-08-02 JSON beside these is the
 # PRE-RELEASE record and is kept deliberately.
 for h in 5 6 7 8 9 12 16; do
   python -m scripts.tossingroom_horizon_sweep --max-horizon $h --num-seeds 10 \
