@@ -214,6 +214,42 @@ They are also ~60–100 KB rather than the ~25 KB of the Tossing Room precedent,
 same shared-64-colour-palette recipe. A 640x528 3D render with smooth shading simply has
 more entropy than a 2D storyboard; 32 colours only buys ~15%.
 
+## Can the GPU help? Rendering already uses it; nothing else can
+
+The box has an idle RTX 5090, and a Tossing3D run costs ~1.1 s per transition, so it is
+a fair question. Measured, per subsystem — **no change is warranted**:
+
+| subsystem | GPU path? | measured | verdict |
+| --- | --- | --- | --- |
+| MuJoCo physics | **none available** | 8.0 ms per env step = 200 substeps x 0.040 ms | dominant cost, and unreachable |
+| Rendering | **already on GPU** | `GL_RENDERER = NVIDIA GeForce RTX 5090/PCIe/SSE2`, 1.20 ms/frame | nothing to do |
+| PyBullet IK / motion planning | none | `p.connect(p.DIRECT)` is headless CPU by design | unreachable |
+| EES sampler MLP (torch) | possible, unwise | 44 ms per 200 full-batch steps, 1 thread | would be slower, and would break reproducibility |
+
+**Physics is the cost and has no GPU path.** GPU MuJoCo means MJX (JAX-backed), and
+`grep` finds no `mjx` and no `jax` anywhere in `kindergarden` or `kinder-models` — it is
+plain `mujoco.mj_step`. KINDER steps `SIMULATION_TIMESTEP = 0.0005 s` at
+`control_frequency = 10 Hz`, i.e. **200 substeps per env step**
+(`envs/dynamic3d/mujoco_utils.py:149`), so the 8.0 ms is 0.040 ms per substep — normal
+full-speed CPU MuJoCo, not something running slowly. Getting this on the GPU would mean
+porting Tossing3D to MJX, and MJX's advantage is *thousands of environments stepped in
+parallel*, not single-environment latency; for one sequential env it is typically slower
+than the C backend. Not worth it for this config, and it would be a fidelity risk on a
+port whose whole point is matching the benchmark.
+
+**Rendering was the one real risk and it is already fine.** `MUJOCO_GL=egl` could
+silently fall back to a software rasteriser, which is a classic cause of render-bound
+runs; it has not — the GL renderer string names the 5090. At 1.20 ms/frame against a
+storyboard of a handful of frames per recorded episode, it is not a measurable part of a
+sweep anyway.
+
+**The sampler must stay on CPU.** It is a 32x32 MLP over a few hundred rows; at that
+size transfer overhead dominates and the GPU loses. More importantly this repo verifies
+changes by byte-identical `stats.json`, and the section below is direct evidence that
+perturbing torch's numerics changes Tossing3D results *substantially* — moving the
+sampler to CUDA would do exactly that. (Incidentally the KINDER venv's torch is
+`2.13.0+cpu`, a CPU-only build, so the sweep never had a GPU option in the first place.)
+
 ## Was the sweep contaminated by its own concurrency?
 
 The sweep ran 12 concurrent runs on a 24-core box. The thing that could break under that
