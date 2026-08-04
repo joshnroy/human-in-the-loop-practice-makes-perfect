@@ -12,8 +12,17 @@ horizon (the same integers, not merely similar), because the extra steps a longe
 horizon grants are spent re-throwing and on nothing else. A table shows that; a curve
 hides it. So this prints markdown, ready to paste into the experiment log.
 
-Every horizon is derived from the single rollout set the sweep collected -- see that
-script's docstring for why prefix-truncation is exact rather than an approximation.
+**Pass one JSON per horizon**, each rolled out at that horizon. Deriving shorter
+horizons by truncating a single long rollout is *not* valid here and was measured not to
+be: `EesMethod` shares one RNG stream across a sweep, so a longer rollout issues more
+`Throw` actions, consumes more draws, and hands every episode after the first a
+different sampled force. See `scripts/tossingroom_horizon_sweep.py`'s docstring for the
+seed-for-seed measurement that establishes it.
+
+`--traces` is therefore repeatable, and each file contributes the single row for the
+horizon it was rolled out at. Truncation is still used *within* a file, but only ever
+down to that file's own horizon, where it is a no-op on the trajectories and merely
+recovers the per-skill counts.
 """
 
 import argparse
@@ -34,10 +43,13 @@ class TossingRoomHorizonTable:
 
     @staticmethod
     def row(*, seeds: list[dict], num_test_tasks: int, horizon: int) -> dict:
-        """One horizon's statistics, derived by truncating each recorded trajectory.
+        """One horizon's statistics, over a sweep rolled out at that same horizon.
 
-        Success at `horizon` is exactly `solved and steps <= horizon`; the actions that
-        would have been taken are the first `min(steps, horizon)` of the record."""
+        `horizon` is the sweep's own `max_horizon`, so the truncation below is a no-op
+        on the trajectories and merely recovers the per-skill counts. Calling this with
+        a *shorter* horizon than the sweep was rolled out at yields an unbiased estimate
+        of a different run, not this run -- see the module docstring, and note that
+        nothing in `main` offers a way to do it."""
         per_seed_percent: list[float] = []
         throws_per_episode: list[int] = []
         skill_counts: Counter = Counter()
@@ -79,19 +91,25 @@ class TossingRoomHorizonTable:
         return sum(e["solved"] for e in episodes) / throws if throws else 0.0
 
     @staticmethod
-    def print_report(*, data: dict, horizons: list[int]) -> None:
-        seeds = data["seeds"]
-        num_test_tasks = data["num_test_tasks"]
-        rows = [
-            TossingRoomHorizonTable.row(seeds=seeds, num_test_tasks=num_test_tasks, horizon=horizon)
-            for horizon in horizons
-        ]
+    def print_report(*, datasets: list[dict]) -> None:
+        """One row per input file, at that file's own rolled-out horizon."""
+        rows = []
+        for data in datasets:
+            rows.append(
+                TossingRoomHorizonTable.row(
+                    seeds=data["seeds"],
+                    num_test_tasks=data["num_test_tasks"],
+                    horizon=data["max_horizon"],
+                )
+            )
+        first = datasets[0]
         print(
-            f"{len(seeds)} seeds x {num_test_tasks} test tasks "
-            f"= {len(seeds) * num_test_tasks} episodes"
+            f"{len(first['seeds'])} seeds x {first['num_test_tasks']} test tasks "
+            f"= {len(first['seeds']) * first['num_test_tasks']} episodes per horizon"
         )
-        hit_rate = TossingRoomHorizonTable.per_throw_hit_rate(seeds=seeds)
-        print(f"measured per-throw hit rate: {hit_rate:.3f}")
+        for data in datasets:
+            hit_rate = TossingRoomHorizonTable.per_throw_hit_rate(seeds=data["seeds"])
+            print(f"  H={data['max_horizon']:>3}: measured per-throw hit rate {hit_rate:.3f}")
         print()
         print(
             "| horizon | solved (mean over seeds) | sd across seeds | worst seed "
@@ -104,34 +122,38 @@ class TossingRoomHorizonTable:
                 f"| {row['worst_percent']:.0f}% | {row['mean_throws']:.2f} | {row['max_throws']} |"
             )
         print()
-        print("skill counts by horizon (only Throw should move):")
+        print("skill counts by horizon:")
         for row in rows:
             print(f"  H={row['horizon']:>3}: {row['skill_counts']}")
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--traces", type=Path, required=True)
     parser.add_argument(
-        "--horizons",
-        type=int,
-        nargs="+",
-        default=[16, 12, 9, 8, 7, 6, 5],
-        help="Horizons to derive. Each must be <= the sweep's own max_horizon.",
+        "--traces",
+        type=Path,
+        action="append",
+        required=True,
+        help=(
+            "Repeatable: one sweep JSON per horizon, each rolled out AT that horizon. "
+            "There is deliberately no flag for deriving extra horizons from one file -- "
+            "see this module's docstring."
+        ),
     )
     return parser.parse_args()
 
 
 def main() -> None:
     args = _parse_args()
-    data = json.loads(args.traces.read_text())
-    too_long = [h for h in args.horizons if h > data["max_horizon"]]
-    if too_long:
+    datasets = [json.loads(path.read_text()) for path in args.traces]
+    datasets.sort(key=lambda data: -data["max_horizon"])
+    shapes = {(len(data["seeds"]), data["num_test_tasks"]) for data in datasets}
+    if len(shapes) > 1:
         raise ValueError(
-            f"horizons {too_long} exceed the sweep's max_horizon {data['max_horizon']}; "
-            "a longer horizon cannot be derived from a shorter rollout, only re-run"
+            f"the sweeps disagree on (seeds, test tasks): {sorted(shapes)}; rows from "
+            "different protocols must not be put in one table"
         )
-    TossingRoomHorizonTable.print_report(data=data, horizons=args.horizons)
+    TossingRoomHorizonTable.print_report(datasets=datasets)
 
 
 if __name__ == "__main__":

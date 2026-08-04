@@ -1,5 +1,29 @@
 # Tossing Room: EES learns the throw force, and the evaluation horizon was hiding it
 
+> ## Regenerated 2026-08-04 under the fixed 14/14/2 evaluation set
+>
+> The test set's goal-family composition used to be **sampled per seed** — seed 0 drew
+> 16 TRASH / 10 RECYCLING / 4 EMPTY, seed 1 drew 11/12/7, seed 2 drew 10/14/6. It is now
+> **fixed at 14 TRASH / 14 RECYCLING / 2 EMPTY on every seed** at the 30 test tasks this
+> domain's experiments use. Every percentage in this file was therefore measured against
+> a different denominator than the code now produces, so the arms were re-run and the
+> numbers below are the new ones. **Previous values are recorded inline** wherever one
+> moved, so the change is auditable rather than invisible.
+>
+> **What moved, and why.** `EMPTY` needs no `Throw` and is solved every time; it used to
+> be ~20% of the test set and is now 2/30 = 6.7%. Both the unpracticed floor and the
+> trained ceiling therefore fall, because a smaller share of the evaluation is free.
+> That is a change of denominator, not of behaviour — and the single-attempt model that
+> predicted the floor still predicts it, once its composition constant is re-derived
+> (see [the follow-up section](#effect-on-an-unpracticed-policy)).
+>
+> **Two sections here are older than that, and are marked superseded in place rather
+> than re-run**: the pre-release measurements taken when a missed `Throw` was still
+> free. They are the evidence for a defect that no longer exists, they cannot reproduce
+> against current code by construction, and re-running them would spend compute
+> re-deriving a fixed bug. They are kept because the argument they support is what
+> motivated the fix.
+
 **Result.** `TossingRoomProblem.max_episode_steps` was `2 * num_rooms + 2 = 16` against
 a 5-skill solve — eleven spare steps, every one of them a free retry of the domain's
 single stochastic skill. An **unpracticed** EES scored **94.7%** that way, five points
@@ -32,6 +56,15 @@ below, not smoothed away. Detail and per-seed numbers in
 
 ## The bracket
 
+> **Superseded twice; not re-run (2026-08-04).** Every row below is a **10-cycle ×
+> 150-step** arm measured *before* a missed `Throw` released the item, on the *sampled*
+> test-set composition. Both of those have since changed, so no row reproduces against
+> current code. The live version of this bracket is the release-arm table in
+> [the follow-up](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one),
+> which is the 25-cycle × 100-step protocol and is what was re-run. This table is kept
+> because the *contrast* it sets up — an unpracticed policy sitting five points under
+> the oracle — is the observation the whole PR turned on.
+
 | arm | % of evaluation tasks solved | source |
 |---|---|---|
 | skill oracle (upper) | **100%** (30/30) | `tests/environments/tossingroom/test_integration.py`, pinned by CI |
@@ -51,6 +84,16 @@ The problem is row four. Before the horizon change, EES's *floor* — a fresh
 room left in the metric for practice to show up in.
 
 ## Why: the horizon was buying retries, not measuring competence
+
+> **This section measures the *old* dynamics, on purpose.** It is the evidence that a
+> free retry existed, taken before the release change removed it, and on the sampled
+> test composition. It is deliberately **not** re-run: the behaviour it documents is
+> gone, so a re-run would measure something else entirely. The committed
+> `2026-08-02-tossingroom-horizon-sweep.json` is kept as that historical record. What
+> the *current* code does to the same probe is measured directly below, in
+> [Re-measured against current code](#re-measured-against-current-code-the-horizon-is-now-flat)
+> — and the result is much stronger than a smaller number: the horizon stops mattering
+> at all.
 
 `Throw` is the domain's only stochastic skill. A failed throw is not terminal — the
 robot still holds the item and is still in the bin room — so the next policy step
@@ -107,6 +150,56 @@ because the whole PR turns on it: this probe puts an unpracticed EES at **62.7%*
 the first evaluation sweep of the ten-seed EES arms below — a completely separate set
 of runs, driven through the CLI rather than this script — comes out at **62.3%** in all
 three sampler-iteration arms.
+
+### Re-measured against current code: the horizon is now flat
+
+The same probe, same 10 seeds × 30 test tasks, re-run 2026-08-04 against today's code —
+a missed `Throw` releases the item, and the test set is the fixed 14/14/2:
+
+| horizon | solved (mean over seeds) | sd across seeds | worst seed | `Throw`/episode | max in one episode |
+|---|---|---|---|---|---|
+| 16 | 32.3% | 7.4 | 13% | 1.32 | 2 |
+| 12 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
+| 9 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
+| 8 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
+| 7 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
+| 6 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
+| 5 | **24.0%** | 6.6 | 13% | **0.93** | **1** |
+
+**Seven horizons, one number.** Where the old dynamics swept 42.3% → 94.7% across this
+same range, every horizon from 5 to 12 now returns *exactly* 24.0%, off *exactly* 280
+throws — the same integer at every horizon, and never more than one throw in any
+episode. The retry channel is not merely narrowed, it is closed: 280 = 28 throw tasks ×
+10 seeds, i.e. **exactly one throw per throw task and zero for the two `EMPTY` tasks**,
+with no averaging involved (the per-episode distribution is `{0 throws: 20, 1 throw:
+280}`, nothing else).
+
+The one horizon that still moves is 16, and the trajectories say exactly why. The two
+dominant action sequences over the 300 episodes are:
+
+```
+PMMTPPPPPPPPPPPP   (111 episodes)  RECYCLING, missed
+PMMMTMMMPMMMTMMM   ( 92 episodes)  TRASH, missed, then a second attempt
+```
+
+A missed `TRASH` throw costs a **round trip of exactly 8 steps** — walk back 6→5→4→3,
+`Pickup` a fresh item, walk 3→4→5→6, `Throw` — landing the second attempt on step 13.
+That is why 25 episodes solve at 13 steps, why H = 16 gains 8.3 points, and why every
+horizon below 13 gains nothing. A missed `RECYCLING` throw affords no second attempt at
+any horizon: the pile is in room 3, the recycling bin in room 1, and `blocked_right_from
+= 2` makes the return impossible, so the remaining steps are spent on a `Pickup` that
+cannot execute. The evaluation horizon of 7 sits comfortably inside the retry-free
+regime, which is precisely what `longest_shortest_solve() + 2` was supposed to buy.
+
+Note the arithmetic identity has **inverted**. Under the old dynamics `Pickup`,
+`MoveRoom` and `Press` were identical at every horizon and only `Throw` moved. Now
+`Throw` is identical at every horizon ≤ 12 (280, exactly) and the *walking* counts move,
+because truncation cuts off trajectories that are wandering rather than re-throwing.
+Same diagnostic, opposite sign, and the sign is the fix.
+
+The measured per-throw hit rate is **0.194**, against 0.198 on the old data and the 0.19
+the geometry predicts — unchanged, as it must be, since the release change alters what a
+miss *costs*, not how often a random force lands.
 
 Every horizon in that table comes from **one** rollout set, not seven. `run_task_episode`
 checks the goal at the top of each iteration and only then calls the policy, and the
@@ -220,6 +313,18 @@ reproduce the same wrong force. Treat it as corroboration, not as a second deriv
 
 ## The sampler-iteration grid: a null, and an underpowered one
 
+> **Superseded twice; not re-run (2026-08-04).** The table and tests below are the
+> **10-cycle × 150-step, pre-release** grid on the sampled test composition. The live
+> grid is
+> [the release-arm one in the follow-up](#the-sampler-iteration-grid-is-now-a-valid-null-not-a-censored-one),
+> which is what was re-run. This section is kept for one reason: its *censoring*
+> argument — 9–10 of 10 seeds pinned to the ceiling, effective `n` collapsing to 2–3,
+> exact Wilcoxon flooring at p = 0.25 — is the diagnosis that the release change was
+> meant to cure, and the follow-up's claim to a *valid* null is only meaningful against
+> it. The figure it links has since been regenerated from the release arms, so the
+> figure and this table no longer describe the same runs; read the figure with the
+> follow-up.
+
 ![The sampler-iteration grid](2026-08-02-tossingroom-sampler-grid.png)
 
 | sampler iters | final % (mean) | sd | worst seed | per-seed final, in seed order |
@@ -289,53 +394,79 @@ codebase, and nothing here rules out a difference smaller than this design can s
 
 ## Reproducing
 
+The commands below are the **release protocol** (25 cycles × 100 steps) that every live
+number in this file was produced by, re-run 2026-08-04 under the fixed 14/14/2 test set.
+They replace an earlier set that still described the superseded 10-cycle × 150-step
+arms.
+
 ```bash
-# the bracket's lower bound and the three EES arms -- ARMS RUN ONE AT A TIME
+# the release arms: the random-skills floor and the three sampler-iteration arms
 python -m scripts.run_sweep --env tossingroom --methods random-skills --num-seeds 10 \
-  --results-root results/tossingroom-random --shared-args "--num-test-tasks 30" \
-  --method-args "random-skills=--num-cycles 10 --max-steps-per-interaction 150"
+  --results-root results-release/random --shared-args "--num-test-tasks 30" \
+  --method-args "random-skills=--num-cycles 25 --max-steps-per-interaction 100"
 for iters in 1000 10000 100000; do
   python -m scripts.run_sweep --env tossingroom --methods ees --num-seeds 10 \
-    --results-root results/tossingroom-$iters --shared-args "--num-test-tasks 30" \
-    --method-args "ees=--num-cycles 10 --max-steps-per-interaction 150 \
+    --results-root results-release/ees$iters --shared-args "--num-test-tasks 30" \
+    --method-args "ees=--num-cycles 25 --max-steps-per-interaction 100 \
                         --sampler-max-train-iters $iters"
 done
 
-# the curves, the grid figure, and the paired tests -- reads results/ only
+# the curves, the grid figure, the paired tests, and the composition check --
+# reads run output only, never simulates
 python -m analysis.practice_makes_perfect.tossingroom_comparison \
-  --arm "EES (1k sampler iters)=results/tossingroom-1000" \
-  --arm "EES (10k)=results/tossingroom-10000" \
-  --arm "EES (100k)=results/tossingroom-100000" \
-  --random-skills-root results/tossingroom-random \
+  --arm "1000 iters=results-release/ees1000" \
+  --arm "10000 iters=results-release/ees10000" \
+  --arm "100000 iters=results-release/ees100000" \
+  --random-skills-root results-release/random \
+  --num-test-tasks 30 \
   --output docs/experiment-logs/2026-08-02-tossingroom-ees-curves.png \
   --grid-output docs/experiment-logs/2026-08-02-tossingroom-sampler-grid.png
 
-# the horizon probe (JSON committed, so the table regenerates without re-running)
-python -m scripts.tossingroom_horizon_sweep --max-horizon 16 --num-seeds 10 \
-  --num-test-tasks 30 \
-  --output docs/experiment-logs/2026-08-02-tossingroom-horizon-sweep.json
+# the horizon probe against current code: ONE ROLLOUT PER HORIZON. Deriving shorter
+# horizons from a single long rollout is invalid here -- see "the horizons are not
+# derivable from one rollout" below. The 2026-08-02 JSON beside these is the
+# PRE-RELEASE record and is kept deliberately.
+for h in 5 6 7 8 9 12 16; do
+  python -m scripts.tossingroom_horizon_sweep --max-horizon $h --num-seeds 10 \
+    --num-test-tasks 30 \
+    --output docs/experiment-logs/2026-08-04-tossingroom-horizon-h$h.json
+done
 python -m analysis.practice_makes_perfect.tossingroom_horizon_table \
-  --traces docs/experiment-logs/2026-08-02-tossingroom-horizon-sweep.json
+  $(for h in 16 12 9 8 7 6 5; do
+      echo --traces docs/experiment-logs/2026-08-04-tossingroom-horizon-h$h.json
+    done)
 
-# the throw-force traces (JSON committed, likewise)
+# the throw-force traces, at the SAME release protocol as the arms, so seed 0's
+# per-sweep sequence can be checked against results-release/ees10000/ees/0/stats.json
 python -m scripts.tossingroom_throw_traces --label "EES (10k)" \
   --sampler-max-train-iters 10000 --num-seeds 3 \
-  --output docs/experiment-logs/2026-08-02-tossingroom-throw-traces.json
+  --num-cycles 25 --max-steps-per-interaction 100 --num-test-tasks 30 \
+  --output docs/experiment-logs/2026-08-04-tossingroom-throw-traces.json
 python -m analysis.practice_makes_perfect.tossingroom_throw_convergence \
-  --traces docs/experiment-logs/2026-08-02-tossingroom-throw-traces.json \
+  --traces docs/experiment-logs/2026-08-04-tossingroom-throw-traces.json \
   --output docs/experiment-logs/2026-08-02-tossingroom-throw-convergence.png
 ```
 
-Both JSONs are committed next to this file, so every table and figure here regenerates
+Every JSON is committed next to this file, so each table and figure here regenerates
 from the `analysis/` half alone — no re-run, and no chance of a number drifting from the
-data that produced it.
+data that produced it. `tossingroom_comparison` now also prints the realised
+goal-family composition and **refuses to continue if it is not identical on every
+seed**, which is the check that would have caught this whole class of staleness at
+read time.
 
-Fast Downward's timeout is wall-clock, so arms must be run **sequentially** — unequal
-CPU load between arms turns into unequal planning-failure rates and contaminates
-exactly the comparison being made. Every arm above is seeded 0..9 by `run_sweep`, and
-both probe scripts fix their own seeds the same way, so the horizon table reproduces
-bit-for-bit: it was re-derived from scratch for this writeup and came back identical to
-the run that motivated the change.
+Every arm above is seeded 0..9 by `run_sweep`, and both probe scripts fix their own
+seeds the same way. Per-seed values are machine-local and do not reproduce bit-for-bit
+across machines — compare at arm level.
+
+**On running arms concurrently.** An earlier version of this section required arms to be
+run strictly sequentially, on the theory that Fast Downward's wall-clock timeout turns
+unequal CPU load into unequal planning-failure rates. That was never measured, and it is
+wrong on this hardware: over a 180-second window at load 23.5–39.5 with 29 concurrent
+runs, **308,929 observations of live Fast Downward processes came back at a maximum
+lifetime of 0 seconds** — nothing within an order of magnitude of the 10-second budget —
+and re-running a completed configuration concurrently at that load reproduced its
+`stats.json` **byte-for-byte** (sha256 identical). Concurrency here costs wall-clock and
+nothing else. The arms above were nevertheless run one at a time, six seeds at a time.
 
 ---
 
@@ -365,15 +496,38 @@ the work, which is how Ball-Ring already makes a failed placement terminal.
 
 ### Effect on an unpracticed policy
 
-| | miss was free | miss releases |
-|---|---|---|
-| unpracticed EES | 62.7% | **38.7%** |
-| `Throw` actions / 300 episodes | 648 | **240** |
-| throws per episode | 2.16 | **0.80** |
+| | miss was free | miss releases | miss releases, **fixed 14/14/2** |
+|---|---|---|---|
+| unpracticed EES | 62.7% | 38.7% | **24.0%** |
+| `Throw` actions / 300 episodes | 648 | 240 | **280** |
+| throws per episode | 2.16 | 0.80 | **0.93** |
+| free (`EMPTY`) share of the test set | ~20% | ~20% | **6.7%** |
 
-`0.80` is the confirmation: exactly one throw per throw-task, zero for the `EMPTY` family
-(20% of tasks, solved by `Press`). The retry channel is closed. 38.7% is what a single
-attempt predicts — `0.2 x 100 + 0.8 x 19 = 35.2%`, against a standard error of ~2.8pp.
+The third column is the 2026-08-04 re-measurement; the first two are kept so the two
+changes can be read separately. **The mechanism claim is unchanged and the confirmation
+is now exact**: 280 throws over 300 episodes is 28 throw tasks × 10 seeds, and the
+per-episode distribution is `{0 throws: 20, 1 throw: 280}` with nothing else in it — so
+"exactly one throw per throw-task, zero for the `EMPTY` family" is now a property of
+every single episode rather than an average that happens to land on the right number.
+
+**The prediction moved because its composition constant was a property of the test set,
+not of the dynamics.** `0.2 x 100 + 0.8 x 19 = 35.2%` used `0.2` as the `EMPTY` share.
+Under the fixed composition that share is `2/30`, so the same model predicts
+
+```
+(2/30) x 100 + (28/30) x 19 = 6.67 + 17.73 = 24.40%
+```
+
+against **24.0% measured**, with a standard error of ~2.2pp. The model form did not
+change and its agreement did not weaken — if anything it tightened, from 3.5pp off to
+0.4pp off. Reading the old `35.2%` against the new measurement would have made a
+correct model look broken, which is exactly why the constant has to be re-derived
+rather than carried across.
+
+The underlying per-throw quantity is the cleanest statement of all, because it has no
+composition in it at all: of the 280 throw tasks, **52 were solved — 18.6%**, against
+the 19.0% a single uniform draw predicts and the 19.4% actually realised over these
+throws. That number is the same before and after, as it must be.
 
 ### The sampler-iteration grid is now a *valid* null, not a censored one
 
@@ -422,51 +576,69 @@ transitions), on that run's first test task. Sampler budget is the `main` defaul
 **10000** (`--sampler-max-train-iters` left unset).
 
 **Seed rule: the lowest seed whose first test task belongs to that family.** A seed fixes
-the whole test set, so which family test task 0 lands in is fixed too (families are drawn
-`0.4/0.4/0.2`); that gives TRASH → seed 0, RECYCLING → seed 5, EMPTY → seed 4. The rule is
-deliberately not success-selected — **seed 0 is the arm's worst seed** (25/30 = 83.3%
-final, the low end of the `83-100` range quoted above), and it is used anyway.
+the whole test set, so which family test task 0 lands in is fixed too. Under the fixed
+14/14/2 composition that rule now gives **RECYCLING → seed 0** and **TRASH → seed 1**
+(it previously gave TRASH → seed 0 and RECYCLING → seed 5, on the sampled composition).
+The rule is deliberately not success-selected.
+
+**There is no EMPTY clip under this rule, and that is stated rather than worked around.**
+`EMPTY` is 2 of 30 test tasks now, so a given seed has a 1-in-15 chance of drawing it
+first — and **no seed in 0..9 does**. The existing EMPTY clip is kept unchanged and is
+the *only* clip on this page not regenerated: it predates the fixed composition, so it is
+not test task 0 of any current run. It is kept because the family is deterministic
+(`MoveRoom` × k + `Press`, no `Throw` anywhere in it), so neither the release change nor
+the composition change alters the behaviour it shows. Forcing one with `--goal-type
+empty` was considered and rejected — see [the negative result below](#a-negative-result---goal-type-is-not-the-right-way-to-make-these).
 
 Success is read off the bin-count badge in the last frame (`T:1` / `R:1` / `R:0 T:0`), not
 off the frame count; the force in each label is rounded to 2dp by the renderer, so it is
 quoted approximately.
 
-**TRASH, trained** — `Pickup(trash)`, `MoveRoom` 3→4→5→6, `Throw` at ≈0.77 against this
-task's `target_force` 0.712. Five actions, the shortest solve this family admits, and the
-throw lands (`T:1`): the learned force is inside the 0.1 tolerance window on the first
-attempt, so there is no second attempt to make.
+**TRASH, trained** (seed 1) — `Pickup(robot, trash, room_3, pile)`, `MoveRoom` 3→4→5→6,
+`Throw` at ≈0.48 against this task's `target_force` **0.503**, an error of ≈0.02 against
+the 0.1 tolerance. Five actions, the shortest solve this family admits, and the throw
+lands (`T:1`): the learned force is inside the window on the first attempt, so there is
+no second attempt to make.
 
 ![EES, trained, TRASH](2026-08-03-tossingroom-ees-trash.gif)
 
 **TRASH, unpracticed** (same seed, same task, the sweep *before* any practice) — the same
-five-action plan, `Throw` at ≈0.73, and it **also lands**. Shown deliberately rather than
-quietly dropped: a uniform force lands within 0.1 of 0.712 about 19% of the time, and this
-is one of those times. It is the whole thesis of this PR in one frame — an unpracticed
-policy's apparent competence here is a coin flip, not a learned sampler, and at the old
-horizon it also had eleven more coin flips to spend.
+five-action approach, then `Throw` at ≈0.75 against 0.503: a **miss by 0.25**, and the
+item is released. The last two frames are `MoveRoom` 6→5 and 5→4 — the policy heading
+back to the pile for a fresh item — and then the horizon ends. **This is the 8-step round
+trip, caught mid-stride.** The retry is not forbidden, it is unaffordable: a second throw
+would land on step 13 against a budget of 7.
+
+*(The clip this replaces showed an unpracticed throw that happened to **land** — a 19%
+coin flip. That was an honest illustration of the old point, but the miss is the more
+representative outcome, and it shows the retry mechanism the release change introduced,
+which the lucky clip could not.)*
 
 ![EES, unpracticed, TRASH](2026-08-03-tossingroom-ees-trash-untrained.gif)
 
-**RECYCLING, trained** — `Pickup(recycling)`, `MoveRoom` 3→2→1, `Throw` at ≈0.95 against
-`target_force` 0.988, error ≈0.04 against a 0.1 tolerance. Four actions, again the shortest
-solve, `R:1`.
+**RECYCLING, trained** (seed 0) — `Pickup(robot, recycling, room_3, pile)`, `MoveRoom`
+3→2→1, `Throw` at ≈0.61 against `target_force` **0.557**, error ≈0.05 against a 0.1
+tolerance. Four actions, again the shortest solve, `R:1`.
 
 ![EES, trained, RECYCLING](2026-08-03-tossingroom-ees-recycling.gif)
 
-**RECYCLING, unpracticed** — the same approach, then `Throw` at ≈0.38 against 0.988: a miss
-by 0.6, the item is released, and the remaining three frames are `no-op (no plan)`. Fast
-Downward is right that there is no plan. The pile is in room 3, the recycling bin in room 1,
-and `blocked_right_from = 2` makes stepping right from room 2 back into room 3 impossible —
-so **for the RECYCLING family a missed throw is terminal at any horizon**, not merely
-expensive. The "fetch a fresh item" retry route the release change leaves open exists only
-for TRASH, whose bin (room 6) sits on the reachable side of the ledge.
+**RECYCLING, unpracticed** — the same approach, then `Throw` at ≈0.73 against 0.557: a
+miss by ≈0.17, the item is released, and the remaining three frames are `no-op (no plan)`.
+Fast Downward is right that there is no plan. The pile is in room 3, the recycling bin in
+room 1, and `blocked_right_from = 2` makes stepping right from room 2 back into room 3
+impossible — so **for the RECYCLING family a missed throw is terminal at any horizon**,
+not merely expensive. The "fetch a fresh item" retry route the release change leaves open
+exists only for TRASH, whose bin (room 6) sits on the reachable side of the ledge. Set
+these two unpracticed clips side by side and they are the two halves of the horizon
+result above: TRASH walks back and runs out of budget, RECYCLING cannot walk back at all.
 
 ![EES, unpracticed, RECYCLING](2026-08-03-tossingroom-ees-recycling-untrained.gif)
 
 **EMPTY, trained** — `MoveRoom` 3→4→5→6 then `Press`, four actions, both bins to zero
-(`R:0 T:0`). This family contains no `Throw` at all, so it is deterministic and neither the
-release change nor the horizon change touches it; its unpracticed clip is identical and is
-not reproduced here.
+(`R:0 T:0`). This family contains no `Throw` at all, so it is deterministic and neither
+the release change nor the horizon change nor the composition change touches it; its
+unpracticed clip is identical and is not reproduced here. **Provenance caveat**: unlike
+the four clips above, this one is not test task 0 of any current run — see the seed rule.
 
 ![EES, trained, EMPTY](2026-08-03-tossingroom-ees-empty.gif)
 
@@ -478,9 +650,9 @@ figure-size and `render_fps` difference, not a regression. File sizes match that
 #### Reproducing the clips
 
 ```bash
-# one run per family; `--num-render-checkpoints 2` records the pre-practice sweep as
-# episode_000000.mp4 and the final one as episode_002500.mp4. Run these ONE AT A TIME.
-for seed in 0 5 4; do
+# `--num-render-checkpoints 2` records the pre-practice sweep as episode_000000.mp4 and
+# the final one as episode_002500.mp4. Seed 0 -> RECYCLING, seed 1 -> TRASH.
+for seed in 0 1; do
   python -m hitl_pmp.cli --env tossingroom --method ees --seed $seed \
     --num-test-tasks 30 --num-cycles 25 --max-steps-per-interaction 100 \
     --sampler-max-train-iters 10000 --num-render-checkpoints 2 \
@@ -489,7 +661,9 @@ done
 ```
 
 Each run's `stats.json` `evaluations` must equal `results-release/ees10000/ees/$seed/`'s
-exactly; all three did. The mp4 → gif step quantises to a shared 64-colour palette before
+exactly; **both did**, all 26 sweeps each — so `--num-render-checkpoints` does not
+perturb the run it records, and these clips really are the arm's own policies. The
+mp4 → gif step quantises to a shared 64-colour palette before
 writing, which is what keeps these at the ~25 KB of the oracle precedent rather than
 ~130 KB: an mp4 round trip adds per-pixel compression noise everywhere, which defeats GIF's
 inter-frame delta encoding until the palette collapses it again.
