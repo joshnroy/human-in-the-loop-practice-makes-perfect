@@ -113,6 +113,38 @@ class Tossing3DComparison:
         print(f"  per-seed differences: {[round(d, 1) for d in differences]}")
 
     @staticmethod
+    def describe_trough(*, arm: str, curves: dict[int, dict[int, float]]) -> None:
+        """Test the dip, rather than only pointing at it.
+
+        EES's mean curve on this domain falls below its pre-practice checkpoint before
+        it climbs, and "gets worse before it gets better" is an *effect claim* -- the
+        exact kind this project has twice had to retract for being asserted off a mean
+        with no test behind it. So the worst post-practice checkpoint by mean is located
+        and tested, paired, against the pre-practice one.
+
+        The checkpoint is chosen by the same data it is then tested on, which inflates
+        significance; the honest reading of a p just under 0.05 here is therefore "not
+        established" anyway. It is reported so the claim has a number attached at all,
+        not to license a stronger one.
+        """
+        seeds = sorted(seed for seed, curve in curves.items() if curve)
+        if len(seeds) < 2:
+            return
+        checkpoints = sorted(curves[seeds[0]])
+        if len(checkpoints) < 2:
+            return
+        after_start = checkpoints[1:]
+        trough = min(after_start, key=lambda t: statistics.fmean(curves[s][t] for s in seeds))
+        Tossing3DComparison.describe_paired(
+            label=(
+                f"[{arm}] worst post-practice checkpoint ({trough} transitions) vs "
+                "pre-practice -- the dip, chosen post hoc"
+            ),
+            first=[curves[s][trough] for s in seeds],
+            second=[curves[s][checkpoints[0]] for s in seeds],
+        )
+
+    @staticmethod
     def print_report(*, root: Path, arms: list[str]) -> None:
         per_arm = {arm: Tossing3DComparison.per_seed_curves(root=root, method=arm) for arm in arms}
         header = f"{'arm':<18}{'seeds':>6}{'first':>9}{'final':>9}{'sd':>7}{'min':>7}{'max':>7}"
@@ -143,6 +175,7 @@ class Tossing3DComparison:
                     first=[ends[s][1] for s in seeds],
                     second=[ends[s][0] for s in seeds],
                 )
+                Tossing3DComparison.describe_trough(arm=arm, curves=curves)
 
         if len(arms) == 2:
             first_arm, second_arm = arms
