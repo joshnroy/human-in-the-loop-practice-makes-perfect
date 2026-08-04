@@ -28,13 +28,13 @@ configs differ, so read down a column rather than across a row:
 | `timeout` wrapper processes | ~46% (overlaps the above) | gone |
 | `--cleanup` spawns | 1 per successful plan | gone |
 | sampler refits | 19.6% | **60.3%** — now the dominant cost |
-| FD process spawns | 1,113 | 109 |
 | FD process spawns, full sweep arm | 15,675 | **1,638** |
 
-(The last row is the same 25-cycle run in both columns — the "before" spawn count is
-derived from its call counts, since running a full arm on `main` costs ~10 minutes and
-the count is exact arithmetic, not an estimate. The row above it is measured directly
-on both arms at the 3-cycle config.)
+(The spawn row is the same 25-cycle run in both columns. The "after" count is measured
+(`_run` = 27 translate misses + 1,611 searches); the "before" count is exact
+arithmetic over that run's own call counts — 5,421 translates + 1,611 searches + 1,611
+cleanups, of which the first two are also `timeout`-wrapped — rather than a second
+10-minute run on `main` to count the same thing.)
 
 ## Method
 
