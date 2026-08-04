@@ -103,19 +103,29 @@ class PracticeLoop:
     learns. Unrendered sweeps cost nothing, so this stays opt-in rather than
     always-on.
 
-    **Rendered frames are streamed, not accumulated.** Pass on_checkpoint_frames
-    and each sweep's frames are handed over the moment that sweep finishes, then
-    dropped; run() returns an empty dict. Without it, every frame of every
-    rendered checkpoint is retained in memory until the whole run ends -- an
-    unbounded buffer whose size is (checkpoints x episode length x frame bytes),
-    none of which this class controls. That is fine for a small 2D domain and is
-    not fine in general: a 3D domain rendering 1920x1080 RGB reaches gigabytes
-    within a few checkpoints, and on this project a runaway ~48 GB process
-    already triggered the kernel OOM killer, which -- because a tmux pane's
-    systemd scope defaults to OOMPolicy=stop -- tore down the entire session
-    rather than just the offending process. Callers that write frames to disk
-    (MethodRunner does) should always stream; the retaining path stays only for
-    tests and callers that genuinely want the frames in hand."""
+    **Rendered frames are always streamed, never accumulated.** Each sweep's
+    frames are handed to on_checkpoint_frames the moment that sweep finishes and
+    then dropped; run() returns nothing, and there is no code path anywhere in
+    this class that holds a frame past the sweep that produced it. Peak retention
+    is therefore one sweep regardless of how long a run is.
+
+    That is not a default, it is the only behaviour, and deliberately so.
+    Retaining every rendered checkpoint until the run ends is an unbounded buffer
+    whose size is (checkpoints x episode length x frame bytes), none of which this
+    class controls. It is fine for a small 2D domain and not fine in general: a 3D
+    domain rendering 1920x1080 RGB reaches gigabytes within a few checkpoints, and
+    on this project a runaway ~48 GB process already triggered the kernel OOM
+    killer, which -- because a tmux pane's systemd scope defaults to
+    OOMPolicy=stop -- tore down the entire session rather than just the offending
+    process. Retaining used to be available by simply *omitting* a sink, which
+    made reintroducing that buffer a matter of forgetting an argument; the
+    accumulation code is gone rather than merely discouraged.
+
+    **The one rule for on_checkpoint_frames**: it is required whenever renderer is
+    given, and ignored (so it may be omitted) when renderer is None, since a run
+    with no renderer produces no frames for anyone to receive. Passing a renderer
+    without a sink is a ValueError raised up front, before the run starts, rather
+    than a silent discard of every clip."""
 
     @staticmethod
     def run(
@@ -130,22 +140,30 @@ class PracticeLoop:
         renderer: type[Renderer] | None = None,
         num_render_checkpoints: int = 1,
         on_checkpoint_frames: CheckpointFramesSink | None = None,
-    ) -> dict[int, list[np.ndarray]]:
+    ) -> None:
+        # Up front, before hard_reset(), so a caller that forgot the sink finds out
+        # before the run mutates the environment rather than one sweep in.
+        if renderer is not None and on_checkpoint_frames is None:
+            raise ValueError(
+                "on_checkpoint_frames is required when renderer is given: rendered "
+                "frames are streamed to the sink and never retained, so without one "
+                "every recorded clip would be silently discarded."
+            )
         rendered_sweeps = PracticeLoop.render_sweep_indices(
             num_cycles=num_cycles, num_render_checkpoints=num_render_checkpoints
         )
-        frames_by_transitions: dict[int, list[np.ndarray]] = {}
 
-        def keep(*, transitions: int, sweep_frames: list[np.ndarray]) -> None:
-            """Hand this sweep's frames to the caller, or retain them if there is
-            no caller to hand them to. Streaming is what keeps peak memory at one
-            sweep rather than all of them -- see the class docstring."""
-            if not sweep_frames:
+        def hand_over(*, transitions: int, sweep_frames: list[np.ndarray]) -> None:
+            """Give this sweep's frames to the sink and keep no reference to them.
+
+            The empty-list guard is load-bearing, not an optimization: it is what
+            lets a renderer-free run legally have no sink at all, since every sweep
+            of such a run produces an empty list. The `is not None` check is for
+            mypy's benefit -- narrowing from the guard above does not reach into
+            this closure -- and is unreachable in practice for a non-empty list."""
+            if not sweep_frames or on_checkpoint_frames is None:
                 return
-            if on_checkpoint_frames is None:
-                frames_by_transitions[transitions] = sweep_frames
-            else:
-                on_checkpoint_frames(transitions=transitions, frames=sweep_frames)
+            on_checkpoint_frames(transitions=transitions, frames=sweep_frames)
 
         problem.hard_reset()
         # Drawn ONCE, up front -- see the class docstring's "fixed test set"
@@ -160,7 +178,7 @@ class PracticeLoop:
             num_online_transitions=num_online_transitions,
             renderer=renderer if 0 in rendered_sweeps else None,
         )
-        keep(transitions=num_online_transitions, sweep_frames=frames)
+        hand_over(transitions=num_online_transitions, sweep_frames=frames)
         for cycle in range(num_cycles):
             task = problem.sample_train_task()
             # get_practice_policy, not get_task_policy: a learning Method explores
@@ -200,8 +218,7 @@ class PracticeLoop:
                 num_online_transitions=num_online_transitions,
                 renderer=renderer if (cycle + 1) in rendered_sweeps else None,
             )
-            keep(transitions=num_online_transitions, sweep_frames=frames)
-        return frames_by_transitions
+            hand_over(transitions=num_online_transitions, sweep_frames=frames)
 
     @staticmethod
     def render_sweep_indices(*, num_cycles: int, num_render_checkpoints: int) -> frozenset[int]:
@@ -251,7 +268,10 @@ class CheckpointFramesSink(Protocol):
     A Protocol rather than a bare Callable because every parameter in this
     codebase is keyword-only (ruff PLR0917, max-positional-args = 0), which
     Callable cannot express. Implementations are expected to consume the frames
-    immediately -- writing them to disk -- and not retain them, since bounding
-    peak memory to a single sweep is the entire reason this hook exists."""
+    immediately -- writing them to disk -- and not retain them: PracticeLoop has
+    already dropped its own reference by the time this returns, so a sink that
+    accumulates reintroduces exactly the unbounded buffer that streaming exists to
+    remove. This is the only route rendered frames take out of a run; there is no
+    return value to read them from instead."""
 
     def __call__(self, *, transitions: int, frames: list[np.ndarray]) -> None: ...
