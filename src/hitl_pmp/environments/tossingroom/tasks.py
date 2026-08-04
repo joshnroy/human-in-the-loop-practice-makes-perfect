@@ -79,7 +79,10 @@ class TossingRoomTasks(Tasks):
     forced_goal_type: TossingRoomGoalType | None = None
     # Size of the fixed test set, i.e. how many test tasks the harness will draw
     # before reusing them. Wired from the global --num-test-tasks flag (whose own
-    # default this mirrors); it is what test_goal_type_counts divides up.
+    # default this mirrors); it is what test_goal_type_counts divides up. This has to
+    # move in step with PracticeLoop.run's own num_test_tasks: the two are separate
+    # values, and a harness that draws more than this says just starts another block
+    # (30 draws against a field of 10 realises 12/12/6, not 14/14/2), silently.
     num_test_tasks: int = Field(default=10, ge=1)
     # EMPTY's allocation in that fixed composition: at most max_empty_test_tasks, and
     # never more than one per min_test_tasks_per_empty test tasks, so a small test set
