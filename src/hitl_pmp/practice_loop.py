@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from collections.abc import Callable
+from typing import Protocol
 
 import numpy as np
 
@@ -91,14 +94,28 @@ class PracticeLoop:
     and its own evidence rather than riding along with a protocol fix.
 
     If renderer is given, the *first* test task of each rendered evaluation sweep
-    is recorded, and run() returns {num_online_transitions: frames}. Which sweeps
-    those are is set by num_render_checkpoints: 1 (the default) records only the
-    final sweep, i.e. a single post-hoc demo clip of the finished policy. A larger
-    value spreads recordings evenly from sweep 0 (before any practice) through the
-    last, which turns the output into a visible *progression* -- the same task
-    attempted by a policy at increasing levels of competence, which is the thing
-    worth looking at for a Method that actually learns. Unrendered sweeps cost
-    nothing, so this stays opt-in rather than always-on."""
+    is recorded. Which sweeps those are is set by num_render_checkpoints: 1 (the
+    default) records only the final sweep, i.e. a single post-hoc demo clip of the
+    finished policy. A larger value spreads recordings evenly from sweep 0 (before
+    any practice) through the last, which turns the output into a visible
+    *progression* -- the same task attempted by a policy at increasing levels of
+    competence, which is the thing worth looking at for a Method that actually
+    learns. Unrendered sweeps cost nothing, so this stays opt-in rather than
+    always-on.
+
+    **Rendered frames are streamed, not accumulated.** Pass on_checkpoint_frames
+    and each sweep's frames are handed over the moment that sweep finishes, then
+    dropped; run() returns an empty dict. Without it, every frame of every
+    rendered checkpoint is retained in memory until the whole run ends -- an
+    unbounded buffer whose size is (checkpoints x episode length x frame bytes),
+    none of which this class controls. That is fine for a small 2D domain and is
+    not fine in general: a 3D domain rendering 1920x1080 RGB reaches gigabytes
+    within a few checkpoints, and on this project a runaway ~48 GB process
+    already triggered the kernel OOM killer, which -- because a tmux pane's
+    systemd scope defaults to OOMPolicy=stop -- tore down the entire session
+    rather than just the offending process. Callers that write frames to disk
+    (MethodRunner does) should always stream; the retaining path stays only for
+    tests and callers that genuinely want the frames in hand."""
 
     @staticmethod
     def run(
@@ -112,11 +129,23 @@ class PracticeLoop:
         on_cycle_end: Callable[[], None] | None = None,
         renderer: type[Renderer] | None = None,
         num_render_checkpoints: int = 1,
+        on_checkpoint_frames: CheckpointFramesSink | None = None,
     ) -> dict[int, list[np.ndarray]]:
         rendered_sweeps = PracticeLoop.render_sweep_indices(
             num_cycles=num_cycles, num_render_checkpoints=num_render_checkpoints
         )
         frames_by_transitions: dict[int, list[np.ndarray]] = {}
+
+        def keep(*, transitions: int, sweep_frames: list[np.ndarray]) -> None:
+            """Hand this sweep's frames to the caller, or retain them if there is
+            no caller to hand them to. Streaming is what keeps peak memory at one
+            sweep rather than all of them -- see the class docstring."""
+            if not sweep_frames:
+                return
+            if on_checkpoint_frames is None:
+                frames_by_transitions[transitions] = sweep_frames
+            else:
+                on_checkpoint_frames(transitions=transitions, frames=sweep_frames)
 
         problem.hard_reset()
         # Drawn ONCE, up front -- see the class docstring's "fixed test set"
@@ -131,8 +160,7 @@ class PracticeLoop:
             num_online_transitions=num_online_transitions,
             renderer=renderer if 0 in rendered_sweeps else None,
         )
-        if frames:
-            frames_by_transitions[num_online_transitions] = frames
+        keep(transitions=num_online_transitions, sweep_frames=frames)
         for cycle in range(num_cycles):
             task = problem.sample_train_task()
             # get_practice_policy, not get_task_policy: a learning Method explores
@@ -172,8 +200,7 @@ class PracticeLoop:
                 num_online_transitions=num_online_transitions,
                 renderer=renderer if (cycle + 1) in rendered_sweeps else None,
             )
-            if frames:
-                frames_by_transitions[num_online_transitions] = frames
+            keep(transitions=num_online_transitions, sweep_frames=frames)
         return frames_by_transitions
 
     @staticmethod
@@ -216,3 +243,15 @@ class PracticeLoop:
             num_total=len(test_tasks),
         )
         return frames
+
+
+class CheckpointFramesSink(Protocol):
+    """Receives one evaluation sweep's rendered frames as soon as that sweep ends.
+
+    A Protocol rather than a bare Callable because every parameter in this
+    codebase is keyword-only (ruff PLR0917, max-positional-args = 0), which
+    Callable cannot express. Implementations are expected to consume the frames
+    immediately -- writing them to disk -- and not retain them, since bounding
+    peak memory to a single sweep is the entire reason this hook exists."""
+
+    def __call__(self, *, transitions: int, frames: list[np.ndarray]) -> None: ...

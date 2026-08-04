@@ -1,4 +1,8 @@
 import argparse
+import shutil
+from pathlib import Path
+
+import numpy as np
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.metrics.metrics import Metrics
@@ -46,7 +50,23 @@ class MethodRunner:
         num_render_checkpoints: int = 1,
     ) -> Metrics:
         metrics = Metrics()
-        frames_by_transitions = PracticeLoop.run(
+        # Written as each sweep finishes rather than collected and written at the
+        # end: holding every frame of every checkpoint until the run completes is
+        # an unbounded buffer (checkpoints x episode length x frame bytes), and a
+        # runaway one already OOM-killed a whole session on this project. Only the
+        # path is remembered between sweeps, never the pixels.
+        written_clips: dict[int, Path] = {}
+
+        def write_clip(*, transitions: int, frames: list[np.ndarray]) -> None:
+            # One clip per rendered checkpoint, named by the training progress it
+            # depicts, so a set of them reads as a progression.
+            if args.output_dir is None:
+                return
+            output_path = args.output_dir / f"episode_{transitions:06d}.mp4"
+            VideoWriter.write(frames=frames, output_path=output_path, fps=render_fps)
+            written_clips[transitions] = output_path
+
+        PracticeLoop.run(
             problem=problem,
             method=method,
             metrics=metrics,
@@ -55,6 +75,7 @@ class MethodRunner:
             num_test_tasks=args.num_test_tasks,
             renderer=renderer,
             num_render_checkpoints=num_render_checkpoints,
+            on_checkpoint_frames=write_clip,
         )
         # The LAST evaluation, not the first: with num_cycles=0 (every non-learning
         # baseline) there is exactly one sweep so the two coincide, but for a
@@ -64,21 +85,12 @@ class MethodRunner:
         print(f"success rate: {num_solved}/{num_total} ({num_solved / num_total:.0%})")
 
         if args.output_dir is not None:
-            for transitions, frames in sorted(frames_by_transitions.items()):
-                # One clip per rendered checkpoint, named by the training progress
-                # it depicts, so a set of them reads as a progression. The final
-                # one is additionally written as plain episode.mp4 -- the
-                # single-clip name callers and docs already refer to.
-                VideoWriter.write(
-                    frames=frames,
-                    output_path=args.output_dir / f"episode_{transitions:06d}.mp4",
-                    fps=render_fps,
-                )
-            if frames_by_transitions:
-                VideoWriter.write(
-                    frames=frames_by_transitions[max(frames_by_transitions)],
-                    output_path=args.output_dir / "episode.mp4",
-                    fps=render_fps,
-                )
+            if written_clips:
+                # The final checkpoint is additionally published as plain
+                # episode.mp4 -- the single-clip name callers and docs already
+                # refer to. Copied from the file just written rather than
+                # re-encoded from retained frames, which is the whole point: the
+                # frames are long gone by now.
+                shutil.copyfile(written_clips[max(written_clips)], args.output_dir / "episode.mp4")
             (args.output_dir / "stats.json").write_text(metrics.model_dump_json(indent=2))
         return metrics

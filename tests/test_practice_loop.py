@@ -586,3 +586,89 @@ def test_the_test_set_is_drawn_once_and_reused_by_every_sweep() -> None:
     # 5 sweeps happen (1 initial + 4 cycles), but only 3 test tasks are ever drawn.
     assert len(metrics.evaluations) == 5
     assert problem.tasks.test_task_count == 3
+
+
+def test_streaming_hands_over_each_sweeps_frames_and_retains_none() -> None:
+    """The memory property this hook exists for: with a sink, peak retention is
+    one sweep's frames, not every checkpoint's. Retaining all of them is an
+    unbounded buffer (checkpoints x episode length x frame bytes), and a runaway
+    one already OOM-killed a whole session on this project -- fatally, because a
+    tmux pane's systemd scope defaults to OOMPolicy=stop, so the kill took the
+    session down with it rather than just the offending process."""
+    problem, method, metrics = _build()
+    received: list[int] = []
+
+    def sink(*, transitions: int, frames: list[np.ndarray]) -> None:
+        assert frames, "a rendered sweep must hand over a non-empty frame list"
+        received.append(transitions)
+
+    retained = PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=4,
+        max_steps_per_interaction=2,
+        num_test_tasks=2,
+        renderer=_FakeRenderer,
+        num_render_checkpoints=5,
+        on_checkpoint_frames=sink,
+    )
+    # Every rendered checkpoint reached the sink...
+    assert len(received) == 5
+    assert received == sorted(received)
+    # ...and nothing was kept behind. This is the assertion that would fail if
+    # someone reintroduced accumulation alongside the callback.
+    assert retained == {}
+
+
+def test_without_a_sink_frames_are_still_returned() -> None:
+    """The retaining path stays for tests and callers that genuinely want the
+    frames in hand -- streaming is opt-in, so this must not silently break."""
+    problem, method, metrics = _build()
+    retained = PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        num_test_tasks=2,
+        renderer=_FakeRenderer,
+        num_render_checkpoints=3,
+    )
+    assert len(retained) == 3
+    assert all(frames for frames in retained.values())
+
+
+def test_streaming_hands_over_frames_as_each_sweep_ends_not_at_the_end() -> None:
+    """Ordering is the whole point: if the sink were called after run() returned,
+    the frames would have been held for the entire run and nothing would be
+    bounded. Interleaving with the evaluate events proves they are handed over
+    while the run is still going."""
+    problem, method, metrics = _build()
+
+    def sink(*, transitions: int, frames: list[np.ndarray]) -> None:
+        problem.event_log.events.append(f"frames:{transitions}")
+
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        renderer=_FakeRenderer,
+        num_render_checkpoints=3,
+        on_checkpoint_frames=sink,
+    )
+    # Each handover sits immediately after its own sweep, interleaved with
+    # end_cycle -- not batched at the tail.
+    assert problem.event_log.events == [
+        "evaluate",
+        "frames:0",
+        "end_cycle",
+        "evaluate",
+        "frames:2",
+        "end_cycle",
+        "evaluate",
+        "frames:4",
+    ]
