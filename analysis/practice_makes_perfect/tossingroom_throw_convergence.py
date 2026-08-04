@@ -169,24 +169,43 @@ class TossingRoomThrowConvergence:
         for arm in arms:
             print(f"\n{arm['label']}  ({len(arm['seeds'])} seeds)")
             header = (
-                f"{'transitions':>12}{'solved %':>10}{'med err':>9}"
+                f"{'transitions':>12}{'solved':>10}{'%':>8}{'med err':>9}"
                 f"{'within tol':>12}{'throws/ep':>11}{'no-op %':>9}"
             )
             print(header)
             print("-" * len(header))
             solved = TossingRoomThrowConvergence._solved_series(arm=arm)
+            counts = TossingRoomThrowConvergence._solved_counts(arm=arm)
             median = TossingRoomThrowConvergence.sweep_series(arm=arm, key="median_error")
             within = TossingRoomThrowConvergence.sweep_series(arm=arm, key="frac_within_tolerance")
             attempts = TossingRoomThrowConvergence.sweep_series(arm=arm, key="attempts_per_episode")
             noop = TossingRoomThrowConvergence.sweep_series(arm=arm, key="noop_fraction")
             for transitions in sorted(solved):
+                count = "{}/{}".format(*counts[transitions])
                 print(
-                    f"{transitions:>12}{solved[transitions][0]:>10.1f}"
+                    f"{transitions:>12}{count:>10}{solved[transitions][0]:>8.1f}"
                     f"{median.get(transitions, (float('nan'), 0))[0]:>9.3f}"
                     f"{100 * within.get(transitions, (float('nan'), 0))[0]:>11.0f}%"
                     f"{attempts.get(transitions, (float('nan'), 0))[0]:>11.2f}"
                     f"{100 * noop.get(transitions, (float('nan'), 0))[0]:>8.0f}%"
                 )
+
+    @staticmethod
+    def _solved_counts(*, arm: dict) -> dict[int, tuple[int, int]]:
+        """`{transitions: (solved, total)}` summed across seeds -- the episode counts the
+        traces already carry, so the table can print the rate as what was measured rather
+        than as a percentage a reader would have to multiply by the seed count to invert.
+        `_solved_series` keeps the mean and standard error of the per-seed rates, which
+        are spreads of rates and stay in points."""
+        by_transitions: dict[int, tuple[int, int]] = {}
+        for seed_run in arm["seeds"]:
+            for sweep in seed_run["sweeps"]:
+                solved, total = by_transitions.get(int(sweep["transitions"]), (0, 0))
+                by_transitions[int(sweep["transitions"])] = (
+                    solved + int(sweep["solved"]),
+                    total + int(sweep["total"]),
+                )
+        return dict(sorted(by_transitions.items()))
 
     @staticmethod
     def _solved_series(*, arm: dict) -> dict[int, tuple[float, float]]:

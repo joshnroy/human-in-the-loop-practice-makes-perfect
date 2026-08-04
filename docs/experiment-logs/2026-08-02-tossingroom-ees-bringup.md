@@ -36,6 +36,21 @@
 > gave 96.0% against the 95.0% recorded here, so roughly a point of any arm-level change
 > below is machine, not composition. Per-seed values are machine-local; compare at arm
 > level. (Recorded on the closed PR #37 branch, `8866d9b`.)
+>
+> **Every success rate from the re-run is reported as a count, `x/y`.** The numerators
+> and denominators are not derived from the percentages — they are what was recorded:
+> `Metrics.record_evaluation` writes `(num_online_transitions, num_solved, num_total)`
+> triples into each run's `stats.json` (and validates any per-task `breakdowns` against
+> exactly those two integers). The triples for all four release arms are committed as
+> [`2026-08-04-tossingroom-arms.json`](2026-08-04-tossingroom-arms.json), and the
+> horizon and throw-convergence counts are summed from the per-episode records already
+> committed as `2026-08-04-tossingroom-horizon-h*.json` and
+> `2026-08-04-tossingroom-throw-traces.json` — so every count here re-derives from a
+> file in this repo. *Differences* of rates stay in percentage points: gaps, paired
+> differences, sds and noise floors are not counts of anything. Figures carried over
+> from the **pre-release** measurements stay as percentages too, and say so where they
+> appear — no per-episode record of those runs survives, so they have no honest
+> denominator.
 
 **Result.** `TossingRoomProblem.max_episode_steps` was `2 * num_rooms + 2 = 16` against
 a 5-skill solve — eleven spare steps, every one of them a free retry of the domain's
@@ -52,11 +67,13 @@ against a 19% chance rate. It stops missing.
 ![EES vs. the random-skills lower bound](2026-08-02-tossingroom-ees-curves.png)
 
 **The live numbers, on the fixed 14/14/2 evaluation set** (25 cycles × 100 steps, ten
-seeds — the release protocol): EES starts at **25.7%**, an unpracticed policy guessing
-the throw force, and ends at **97.3%** at the default 10000 sampler iterations, against a
-random-skills floor of **1.7%** that no seed ever lifts off. All three sampler-iteration
-arms share the same first sweep *to every seed's integer*, which is the sanity check that
-the budget cannot matter before any training has happened.
+seeds — the release protocol): EES starts at **77/300** (25.7%), an unpracticed policy
+guessing the throw force, and ends at **292/300** (97.3%) at the default 10000 sampler
+iterations, against a random-skills floor of **5/300** (1.7%) that no seed ever lifts
+off. Each denominator is 30 held-out tasks × 10 seeds. All three sampler-iteration arms
+share the same first sweep *to every seed's integer*
+(`[7, 9, 9, 7, 10, 6, 7, 8, 8, 6]` out of 30), which is the sanity check that the budget
+cannot matter before any training has happened.
 
 ![The throw force converges onto each task's target](2026-08-02-tossingroom-throw-convergence.png)
 
@@ -178,15 +195,19 @@ a missed `Throw` releases the item, and the test set is the fixed 14/14/2. **Sev
 independent rollouts, one per horizon**, not one rollout truncated seven ways (see the
 next subsection for why that distinction is load-bearing):
 
-| horizon | solved (mean over seeds) | sd across seeds | worst seed | `Throw`/episode | max in one episode | `Throw` actions |
-|---|---|---|---|---|---|---|
-| 16 | 32.3% | 7.4 | 13% | 1.32 | 2 | 397 |
-| 12 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
-| 9 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
-| 8 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
-| 7 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
-| 6 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
-| 5 | **25.7%** | 4.5 | 20% | **0.93** | **1** | **280** |
+Solved is a count of the 300 episodes each rollout runs (30 test tasks × 10 seeds),
+summed from the per-episode `solved` flags in the committed
+`2026-08-04-tossingroom-horizon-h*.json`:
+
+| horizon | solved | % | sd across seeds | worst seed | `Throw`/episode | max in one episode | `Throw` actions |
+|---|---|---|---|---|---|---|---|
+| 16 | 97/300 | 32.3% | 7.4 | 4/30 | 1.32 | 2 | 397 |
+| 12 | **77/300** | **25.7%** | 4.5 | 6/30 | **0.93** | **1** | **280** |
+| 9 | **77/300** | **25.7%** | 4.5 | 6/30 | **0.93** | **1** | **280** |
+| 8 | **77/300** | **25.7%** | 4.5 | 6/30 | **0.93** | **1** | **280** |
+| 7 | **77/300** | **25.7%** | 4.5 | 6/30 | **0.93** | **1** | **280** |
+| 6 | **77/300** | **25.7%** | 4.5 | 6/30 | **0.93** | **1** | **280** |
+| 5 | **77/300** | **25.7%** | 4.5 | 6/30 | **0.93** | **1** | **280** |
 
 **Six horizons, one number — and they are separate runs.** Where the old dynamics swept
 42.3% → 94.7% across this range, every horizon from 5 to 12 now returns *exactly* 25.7%,
@@ -332,18 +353,22 @@ release protocol as the arms — 30 test tasks, 10000 sampler iterations. Re-col
 2026-08-04; the previous version of this table was 10 cycles × 150 steps and was taken
 before a missed `Throw` released the item.
 
-| transitions | solved % | median \|force − target\| | within tolerance | greedy throws per throw-episode | no-op actions |
-|---|---|---|---|---|---|
-| 0 (pre-practice) | 27.8 | 0.249 | 23% | **1.00** | 18% |
-| 200 | 20.0 | 0.419 | **14%** | **1.00** | 20% |
-| 500 | 17.8 | 0.350 | **12%** | **1.00** | 20% |
-| 700 | 37.8 | 0.265 | 33% | **1.00** | 14% |
-| 900 | 45.6 | 0.253 | 42% | **1.00** | 12% |
-| 1000 | 74.4 | 0.218 | 73% | **1.00** | 10% |
-| 1200 | 73.3 | 0.136 | 71% | **1.00** | 12% |
-| 1400 | 68.9 | 0.077 | 67% | **1.00** | 9% |
-| 1500 | 96.7 | 0.044 | 96% | **1.00** | 1% |
-| 1800 | 100.0 | 0.031 | 100% | **1.00** | 0% |
+Solved is the count of the 90 evaluation episodes each sweep runs (30 test tasks × 3
+seeds), summed from the per-sweep `solved`/`total` in the committed
+`2026-08-04-tossingroom-throw-traces.json`:
+
+| transitions | solved | % | median \|force − target\| | within tolerance | greedy throws per throw-episode | no-op actions |
+|---|---|---|---|---|---|---|
+| 0 (pre-practice) | 25/90 | 27.8 | 0.249 | 23% | **1.00** | 18% |
+| 200 | 18/90 | 20.0 | 0.419 | **14%** | **1.00** | 20% |
+| 500 | 16/90 | 17.8 | 0.350 | **12%** | **1.00** | 20% |
+| 700 | 34/90 | 37.8 | 0.265 | 33% | **1.00** | 14% |
+| 900 | 41/90 | 45.6 | 0.253 | 42% | **1.00** | 12% |
+| 1000 | 67/90 | 74.4 | 0.218 | 73% | **1.00** | 10% |
+| 1200 | 66/90 | 73.3 | 0.136 | 71% | **1.00** | 12% |
+| 1400 | 62/90 | 68.9 | 0.077 | 67% | **1.00** | 9% |
+| 1500 | 87/90 | 96.7 | 0.044 | 96% | **1.00** | 1% |
+| 1800 | 90/90 | 100.0 | 0.031 | 100% | **1.00** | 0% |
 | 2100 | 95.6 | 0.043 | 95% | **1.00** | 1% |
 | 2500 | 98.9 | 0.041 | **99%** | **1.00** | 0% |
 
@@ -598,13 +623,16 @@ the work, which is how Ball-Ring already makes a failed placement terminal.
 
 | | miss was free | miss releases | miss releases, **fixed 14/14/2** |
 |---|---|---|---|
-| unpracticed EES | 62.7% | 38.7% | **25.7%** |
+| unpracticed EES | 62.7% | 38.7% | **77/300** (25.7%) |
 | `Throw` actions / 300 episodes | 648 | 240 | **280** |
 | throws per episode | 2.16 | 0.80 | **0.93** |
 | free (`EMPTY`) share of the test set | ~20% | ~20% | **6.7%** |
 
-The third column is the 2026-08-04 re-measurement; the first two are kept so the two
-changes can be read separately. **The mechanism claim is unchanged and the confirmation
+The third column is the 2026-08-04 re-measurement and is given as its count; the first
+two are kept so the two changes can be read separately, and stay as percentages because
+they measure the **pre-release** dynamics — no per-episode record of those runs survives
+in this repo, so there is no integer count to quote and manufacturing one from the rate
+would be a reconstruction, not a record. **The mechanism claim is unchanged and the confirmation
 is now exact**: 280 throws over 300 episodes is 28 throw tasks × 10 seeds, and the
 per-episode distribution is `{0 throws: 20, 1 throw: 280}` with nothing else in it — so
 "exactly one throw per throw-task, zero for the `EMPTY` family" is now a property of
@@ -618,7 +646,8 @@ Under the fixed composition that share is `2/30`, so the same model predicts
 (2/30) x 100 + (28/30) x 19 = 6.67 + 17.73 = 24.40%
 ```
 
-against **25.7% measured**, with a standard error of ~2.2pp — agreement to 0.6 standard
+against **77/300 = 25.7% measured** (the prediction itself stays a percentage — it is a
+model output, not a count of anything), with a standard error of ~2.2pp — agreement to 0.6 standard
 errors, against 1.2 for the old pair (38.7% measured vs 35.2% predicted). The model's
 form did not change and its agreement did not weaken. Reading the old `35.2%` against the
 new measurement would have made a correct model look broken, which is exactly why the
@@ -652,24 +681,36 @@ below.
 values, measured on the sampled composition, are given for comparison and are struck
 through in the reading, not deleted:
 
-| arm | mean | sd | worst seed | seeds at ceiling | *previously* (mean / sd / worst / ceiling) |
-|---|---|---|---|---|---|
-| random skills | **1.7** | 1.8 | 0.0 | 0/10 | *3.7 / 4.0 / 0.0 / 0-10* |
-| EES, 1000 | **78.3** | **29.3** | **23.3** | 6/10 | *93.3 / 14.8 / 56.7 / 8-10* |
-| EES, 10000 | **97.3** | **5.4** | 83.3 | 7/10 | *95.0 / 5.0 / 83.3 / 3-10* |
-| EES, 100000 | **93.0** | 13.4 | 56.7 | 5/10 | *94.0 / 6.0 / 83.3 / 3-10* |
+Success rates are the counts of evaluation episodes solved: 30 held-out tasks × 10 seeds
+= 300 episodes per arm, so the arm column is a real pooled count and not a mean of rates
+given a denominator afterwards. The counts come straight out of the `evaluations`
+triples in each run's `stats.json`, committed here as
+[`2026-08-04-tossingroom-arms.json`](2026-08-04-tossingroom-arms.json).
 
-Unpracticed (first sweep, shared by all three EES arms to the decimal): **25.7%**,
-previously 38.7%.
+| arm | solved | sd | worst seed | seeds at ceiling | *previously* (mean / sd / worst / ceiling) |
+|---|---|---|---|---|---|
+| random skills | **5/300** (1.7%) | 1.8 | 0/30 | 0/10 | *3.7 / 4.0 / 0.0 / 0-10* |
+| EES, 1000 | **235/300** (78.3%) | **29.3** | **7/30** | 6/10 | *93.3 / 14.8 / 56.7 / 8-10* |
+| EES, 10000 | **292/300** (97.3%) | **5.4** | 25/30 | 7/10 | *95.0 / 5.0 / 83.3 / 3-10* |
+| EES, 100000 | **279/300** (93.0%) | 13.4 | 17/30 | 5/10 | *94.0 / 6.0 / 83.3 / 3-10* |
+
+The `sd` column is the spread of the ten per-seed **rates**, in points — it is not a
+binomial spread on the pooled count and must not be read as one. The *previously*
+column stays in percentages throughout: that run's per-seed values were never recorded
+(only its mean, sd and worst), so no integer count exists behind those figures at any
+denominator, and inventing one would be exactly the reconstruction this change removes.
+
+Unpracticed (first sweep, shared by all three EES arms task for task): **77/300**
+(25.7%), previously 38.7%.
 
 Per-seed finals, because an sd on ten seeds can be one collapsed run:
 
-| arm | per-seed final %, sorted |
-|---|---|
-| EES, 1000 | 23.3, 53.3, 53.3, 53.3, 100, 100, 100, 100, 100, 100 |
-| EES, 10000 | 83.3, 93.3, 96.7, 100, 100, 100, 100, 100, 100, 100 |
-| EES, 100000 | 56.7, 90.0, 90.0, 96.7, 96.7, 100, 100, 100, 100, 100 |
-| random skills | 0, 0, 0, 0, 0, 3.3, 3.3, 3.3, 3.3, 3.3 |
+| arm | per-seed final solved, sorted | as % |
+|---|---|---|
+| EES, 1000 | 7/30, 16/30, 16/30, 16/30, 30/30, 30/30, 30/30, 30/30, 30/30, 30/30 | 23.3, 53.3, 53.3, 53.3, 100, 100, 100, 100, 100, 100 |
+| EES, 10000 | 25/30, 28/30, 29/30, 30/30, 30/30, 30/30, 30/30, 30/30, 30/30, 30/30 | 83.3, 93.3, 96.7, 100, 100, 100, 100, 100, 100, 100 |
+| EES, 100000 | 17/30, 27/30, 27/30, 29/30, 29/30, 30/30, 30/30, 30/30, 30/30, 30/30 | 56.7, 90.0, 90.0, 96.7, 96.7, 100, 100, 100, 100, 100 |
+| random skills | 0/30, 0/30, 0/30, 0/30, 0/30, 1/30, 1/30, 1/30, 1/30, 1/30 | 0, 0, 0, 0, 0, 3.3, 3.3, 3.3, 3.3, 3.3 |
 
 ### The sampler-iteration comparison, tested
 
@@ -722,9 +763,11 @@ much less reliable, and ten seeds cannot tell whether that is a real mean differ
 ### 1000 iterations is bimodal — replicated, and larger than before
 
 This is the claim that got *stronger*. Its per-seed finals are
-`[23.3, 53.3 × 3, 100 × 6]` — six perfect runs and four poor ones, one of them at 23.3%
-— against `83.3–100` for 10000. **29.4× the variance** (sd 29.3 vs 5.4), against the
-8.7× previously reported, and a worst seed **60 points** lower rather than 27.
+`[7/30, 16/30 × 3, 30/30 × 6]` — six perfect runs and four poor ones, one of them at
+7 of 30 — against `25/30 – 30/30` for 10000. **29.4× the variance** (sd 29.3 vs 5.4),
+against the 8.7× previously reported, and a worst seed **60 points** lower rather than
+27. (The variance ratio and the 60-point gap are differences of rates and stay in
+points; the finals themselves are counts.)
 
 This is a genuine replication: it survived both a change of machine (the previous figure
 was produced on different hardware — see the limitations note below) and a change of

@@ -51,6 +51,7 @@ class TossingRoomHorizonTable:
         of a different run, not this run -- see the module docstring, and note that
         nothing in `main` offers a way to do it."""
         per_seed_percent: list[float] = []
+        per_seed_solved: list[int] = []
         throws_per_episode: list[int] = []
         skill_counts: Counter = Counter()
         for seed_run in seeds:
@@ -60,9 +61,17 @@ class TossingRoomHorizonTable:
                 solved += int(episode["solved"] and episode["steps"] <= horizon)
                 throws_per_episode.append(sum(1 for skill in prefix if skill == _THROW))
                 skill_counts.update(prefix)
+            per_seed_solved.append(solved)
             per_seed_percent.append(100.0 * solved / num_test_tasks)
         return {
             "horizon": horizon,
+            # The counts, so the table can report a rate as the episodes behind it
+            # rather than as a percentage a reader has to multiply back out. These are
+            # summed per-episode `solved` flags -- the record itself, not a derivation.
+            "solved": sum(per_seed_solved),
+            "episodes": len(per_seed_solved) * num_test_tasks,
+            "worst_solved": min(per_seed_solved),
+            "num_test_tasks": num_test_tasks,
             "mean_percent": statistics.mean(per_seed_percent),
             "sd_percent": statistics.stdev(per_seed_percent) if len(per_seed_percent) > 1 else 0.0,
             "worst_percent": min(per_seed_percent),
@@ -112,14 +121,17 @@ class TossingRoomHorizonTable:
             print(f"  H={data['max_horizon']:>3}: measured per-throw hit rate {hit_rate:.3f}")
         print()
         print(
-            "| horizon | solved (mean over seeds) | sd across seeds | worst seed "
+            "| horizon | solved | % | sd across seeds | worst seed "
             "| `Throw`/episode | max in one episode |"
         )
-        print("|---|---|---|---|---|---|")
+        print("|---|---|---|---|---|---|---|")
         for row in rows:
+            solved = f"{row['solved']}/{row['episodes']}"
+            worst = f"{row['worst_solved']}/{row['num_test_tasks']}"
             print(
-                f"| {row['horizon']} | {row['mean_percent']:.1f}% | {row['sd_percent']:.1f} "
-                f"| {row['worst_percent']:.0f}% | {row['mean_throws']:.2f} | {row['max_throws']} |"
+                f"| {row['horizon']} | {solved} | {row['mean_percent']:.1f}% "
+                f"| {row['sd_percent']:.1f} | {worst} | {row['mean_throws']:.2f} "
+                f"| {row['max_throws']} |"
             )
         print()
         print("skill counts by horizon:")

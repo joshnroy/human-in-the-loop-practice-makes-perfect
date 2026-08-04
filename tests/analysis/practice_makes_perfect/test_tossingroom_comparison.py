@@ -132,3 +132,91 @@ def test_composition_check_passes_when_the_runs_agree(*, tmp_path: Path) -> None
     TossingRoomComparison.print_test_composition(
         num_test_tasks=30, seeds=["0"], arms=[("arm", root)]
     )
+
+
+# --- the counts behind every published success rate ---------------------------------
+#
+# The log reports rates as `x/y`, and neither number is recovered by multiplying a
+# percentage by a seed count: `Metrics.record_evaluation` writes num_solved/num_total as
+# the primary record, so both integers were on disk from the start. The release arms'
+# triples are committed as `2026-08-04-tossingroom-arms.json` so that stays checkable
+# once the results directory is gone; these tests check it.
+#
+# Expected percentages are quoted from the log, not recomputed from the JSON -- a test
+# that derives its own expectation would agree with any data it was handed.
+
+ARMS_JSON = (
+    Path(__file__).resolve().parents[3]
+    / "docs"
+    / "experiment-logs"
+    / "2026-08-04-tossingroom-arms.json"
+)
+
+PUBLISHED_SORTED_FINALS = {
+    "ees-1000": [23.3, 53.3, 53.3, 53.3, 100, 100, 100, 100, 100, 100],
+    "ees-10000": [83.3, 93.3, 96.7, 100, 100, 100, 100, 100, 100, 100],
+    "ees-100000": [56.7, 90.0, 90.0, 96.7, 96.7, 100, 100, 100, 100, 100],
+    "random-skills": [0, 0, 0, 0, 0, 3.3, 3.3, 3.3, 3.3, 3.3],
+}
+PUBLISHED_POOLED_FINALS = {
+    "ees-1000": (235, 300),
+    "ees-10000": (292, 300),
+    "ees-100000": (279, 300),
+    "random-skills": (5, 300),
+}
+
+
+@pytest.mark.parametrize("arm", sorted(PUBLISHED_SORTED_FINALS))
+def test_committed_counts_reproduce_the_published_per_seed_finals(*, arm: str) -> None:
+    """Dividing the recorded numerator by the recorded denominator must give back the
+    percentage the log published, to the decimal it was rounded to. A mismatch would
+    mean a published rate was wrong -- a finding well beyond the formatting."""
+    arms = json.loads(ARMS_JSON.read_text())
+    percentages = sorted(100.0 * c[-1][1] / c[-1][2] for c in arms[arm].values())
+    assert percentages == pytest.approx(PUBLISHED_SORTED_FINALS[arm], abs=0.05)
+
+
+@pytest.mark.parametrize("arm", sorted(PUBLISHED_POOLED_FINALS))
+def test_committed_counts_pool_to_the_published_arm_totals(*, arm: str) -> None:
+    """78.3% is 235 of 300 evaluation episodes, summed rather than averaged. Every seed
+    runs the same 30 tasks, so pooling and averaging agree -- pinned here because the
+    arm table would otherwise be quoting one while claiming the other."""
+    arms = json.loads(ARMS_JSON.read_text())
+    curves = list(arms[arm].values())
+    assert {total for c in curves for _, _, total in c} == {30}
+    pooled = (sum(c[-1][1] for c in curves), sum(c[-1][2] for c in curves))
+    assert pooled == PUBLISHED_POOLED_FINALS[arm]
+
+
+def test_all_three_ees_arms_share_their_first_sweep_task_for_task() -> None:
+    """The sanity check the log leans on: the sampler-iteration budget cannot matter
+    before any training has happened, so the pre-practice counts must agree seed for
+    seed -- as counts, which a rounded 25.7% could not have shown."""
+    arms = json.loads(ARMS_JSON.read_text())
+    firsts = {
+        arm: [(c[0][1], c[0][2]) for _, c in sorted(arms[arm].items(), key=lambda kv: int(kv[0]))]
+        for arm in ["ees-1000", "ees-10000", "ees-100000"]
+    }
+    assert firsts["ees-1000"] == firsts["ees-10000"] == firsts["ees-100000"]
+    assert sum(solved for solved, _ in firsts["ees-1000"]) == 77
+
+
+def test_per_seed_counts_returns_the_recorded_integers_not_a_rounded_rate(
+    *, tmp_path: Path
+) -> None:
+    """7/30 rounds to 23.3%, and 23.3% cannot be inverted back to 7 without knowing the
+    denominator -- which is the whole reason the counts are read rather than derived."""
+    root = tmp_path / "arm"
+    directory = root / "ees" / "4"
+    directory.mkdir(parents=True)
+    (directory / "stats.json").write_text(
+        json.dumps({"evaluations": [[0, 7, 30], [100, 30, 30]], "task_name": "t"})
+    )
+    assert TossingRoomComparison.per_seed_counts(root=root, method="ees") == {
+        "4": {0: (7, 30), 100: (30, 30)}
+    }
+    assert TossingRoomComparison.pooled_endpoints(root=root, method="ees") == {
+        "first": (7, 30),
+        "final": (30, 30),
+        "worst": (30, 30),
+    }

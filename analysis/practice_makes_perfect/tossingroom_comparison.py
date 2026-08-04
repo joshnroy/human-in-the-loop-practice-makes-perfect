@@ -71,6 +71,44 @@ class TossingRoomComparison:
         return curves
 
     @staticmethod
+    def per_seed_counts(*, root: Path, method: str) -> dict[str, dict[int, tuple[int, int]]]:
+        """seed -> {transitions: (num_solved, num_total)}, copied verbatim off the same
+        `evaluations` triples `per_seed_curves` divides.
+
+        A success rate belongs in the log as the counts behind it, and those counts are
+        recorded rather than reconstructed: `Metrics.record_evaluation` writes
+        `num_solved`/`num_total` as the primary record (validating any per-task
+        `breakdowns` against them), so nothing here has to multiply a rounded percentage
+        by a seed count to get back to what was measured. 23.3% cannot be inverted to
+        7/30 without knowing the denominator; 7/30 needs no inverting."""
+        counts: dict[str, dict[int, tuple[int, int]]] = {}
+        for stats_path in sorted(root.glob(f"{method}/*/stats.json")):
+            counts[stats_path.parent.name] = {
+                int(transitions): (num_solved, num_total)
+                for transitions, num_solved, num_total in json.loads(stats_path.read_text())[
+                    "evaluations"
+                ]
+            }
+        return counts
+
+    @staticmethod
+    def pooled_endpoints(*, root: Path, method: str) -> dict[str, tuple[int, int]]:
+        """`{"first": (solved, total), "final": (solved, total), "worst": ...}` --
+        evaluation episodes summed across seeds, not per-seed rates averaged. Every seed
+        runs the same number of test tasks here, so the pooled rate and the mean of the
+        per-seed rates agree; the count is reported because it is what was measured."""
+        counts = TossingRoomComparison.per_seed_counts(root=root, method=method)
+        if not counts:
+            return {}
+        firsts = [curve[min(curve)] for curve in counts.values()]
+        finals = [curve[max(curve)] for curve in counts.values()]
+        return {
+            "first": (sum(s for s, _ in firsts), sum(t for _, t in firsts)),
+            "final": (sum(s for s, _ in finals), sum(t for _, t in finals)),
+            "worst": min(finals, key=lambda pair: pair[0] / pair[1]),
+        }
+
+    @staticmethod
     def mean_curve(*, root: Path, method: str) -> dict[int, tuple[float, float]]:
         """transitions -> (mean %, stderr %) across seeds."""
         by_transitions: dict[int, list[float]] = {}
@@ -510,8 +548,8 @@ class TossingRoomComparison:
         if random_skills_root is not None:
             rows.append(("random skills", random_skills_root, "random-skills"))
         header = (
-            f"{'arm':<28}{'seeds':>6}{'first':>8}{'final':>8}"
-            f"{'sd':>7}{'worst':>7}{'zeros':>7}{'down':>6}{'reach':>8}{'never':>7}"
+            f"{'arm':<28}{'seeds':>6}{'first':>10}{'final':>10}"
+            f"{'sd':>7}{'worst':>8}{'zeros':>7}{'down':>6}{'reach':>8}{'never':>7}"
         )
         print(header)
         print("-" * len(header))
@@ -520,13 +558,25 @@ class TossingRoomComparison:
             if not summary:
                 print(f"{label:<28}{'(no stats.json found)':>42}")
                 continue
+            pooled = TossingRoomComparison.pooled_endpoints(root=root, method=method)
+            first_count = "{}/{}".format(*pooled["first"])
+            final_count = "{}/{}".format(*pooled["final"])
+            worst_count = "{}/{}".format(*pooled["worst"])
             print(
-                f"{label:<28}{summary['seeds']:>6.0f}{summary['first_mean']:>8.1f}"
-                f"{summary['final_mean']:>8.1f}{summary['final_sd']:>7.1f}"
-                f"{summary['worst_seed']:>7.1f}{summary['seeds_at_zero']:>7.0f}"
+                f"{label:<28}{summary['seeds']:>6.0f}"
+                f"{first_count:>10}{final_count:>10}"
+                f"{summary['final_sd']:>7.1f}{worst_count:>8}"
+                f"{summary['seeds_at_zero']:>7.0f}"
                 f"{summary['downward_steps']:>6.0f}{summary['median_reach']:>8.0f}"
                 f"{summary['never_reached']:>7.0f}"
             )
+            first_pct = f"({summary['first_mean']:.1f}%)"
+            final_pct = f"({summary['final_mean']:.1f}%)"
+            worst_pct = f"({summary['worst_seed']:.1f}%)"
+            print(f"{'':<28}{'':>6}{first_pct:>10}{final_pct:>10}{'':>7}{worst_pct:>8}")
+        print("  first/final/worst are evaluation episodes solved -- first and final pooled")
+        print("  across seeds, worst the single weakest seed. sd is the spread of the")
+        print("  per-seed rates in points, not a binomial spread on the pooled count.")
         print(
             f"  reach = median transitions to first reach {threshold:.0f}% "
             "(-1 if no seed ever did); never = seeds that never reached it"
