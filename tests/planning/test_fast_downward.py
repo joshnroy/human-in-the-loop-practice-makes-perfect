@@ -106,6 +106,19 @@ def test_integration_plan_raises_planning_failure_for_an_unreachable_goal() -> N
         FastDownwardPlanner.plan(**setup)
 
 
+def test_integration_plan_leaves_no_scratch_files_behind(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """What predicators' `--cleanup` run is for, obtained instead from `cwd=` a
+    `TemporaryDirectory`: FD's `output.sas`/`sas_plan` must never survive a plan
+    call, in the caller's working directory or anywhere else. Pinning this is what
+    makes dropping the extra `--cleanup` interpreter spawn safe."""
+    monkeypatch.chdir(tmp_path)
+    before = set(tmp_path.iterdir())
+    assert FastDownwardPlanner.plan(**_setup())
+    assert set(tmp_path.iterdir()) == before
+
+
 def test_fd_dir_prefers_the_fd_exec_path_environment_variable(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:

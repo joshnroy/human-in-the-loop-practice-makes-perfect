@@ -117,14 +117,19 @@ is entangled and hard to extend), but its FD-invocation protocol is worth reusin
      Costs go in *here* rather than in the PDDL precisely because SAS operators are
      already ground: a PDDL `(:functions (total-cost))` domain could only express one
      cost per *lifted* action, which is not what EES needs.
-  3. **Search** — run FD on the patched SAS file, `--cleanup`, then parse plan lines
+  3. **Search** — run FD on the patched SAS file, then parse plan lines
      back into `GroundSkill`s by lowercased skill name + object names. No
      `"Solution found"` → `PlanningFailure`; `"Plan length: 0 step"` → `[]`.
 
   Deviations from predicators: `subprocess.run` with an argument list and `cwd=` a
   temp directory instead of `subprocess.getoutput` on an interpolated shell string
   (same commands, no shell-quoting hazards, and FD's `sas_plan`/`output.sas` scratch
-  files stay out of the caller's working directory); only the skeleton is returned
+  files stay out of the caller's working directory); **no `--cleanup` run** — that
+  exists in predicators only because it plans in the caller's working directory, and
+  the `cwd=` deviation already makes every call's scratch files die with its
+  `TemporaryDirectory` (the plan is parsed from the search's stdout, never from
+  `sas_plan`), so the extra interpreter spawn cost ~21 ms per plan and deleted
+  nothing that was not about to be deleted; only the skeleton is returned
   (`Metrics`/`max_horizon`/`atoms_sequence` bookkeeping belongs to a `Method`/`Metrics`
   here); and there is no separate `PlanningTimeout` — a timed-out run simply produces
   no `"Solution found"` and raises `PlanningFailure`.

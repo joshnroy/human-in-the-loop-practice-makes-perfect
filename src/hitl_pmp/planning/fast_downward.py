@@ -44,7 +44,9 @@ class FastDownwardPlanner:
        are already ground -- PDDL `(:functions)` could only express one cost per
        lifted action, which is not what EES needs.
     3. **Search.** Run FD again on the patched SAS file, parse the plan lines back
-       into `GroundSkill`s by lowercased skill name + lowercased object names.
+       into `GroundSkill`s by lowercased skill name + lowercased object names. FD's
+       own scratch files are discarded with the temp directory rather than by a
+       separate `--cleanup` run -- see the deviations below.
 
     Deviations from predicators, all deliberate:
 
@@ -52,6 +54,15 @@ class FastDownwardPlanner:
       `subprocess.getoutput` with an interpolated shell string. Same commands, but
       no shell quoting hazards, and FD's `sas_plan`/`output.sas` scratch files land
       in the temp directory rather than the caller's working directory.
+    - **No `--cleanup` call.** predicators needs one because it runs FD in the
+      caller's working directory, where `output.sas`/`sas_plan` would otherwise
+      accumulate and be read back by a later call. The `cwd=` deviation above
+      already removes that hazard: every `plan()` gets its own
+      `TemporaryDirectory`, whose `__exit__` deletes exactly the files `--cleanup`
+      would have, and the plan is parsed out of the search's *stdout* rather than
+      the `sas_plan` file, so nothing downstream ever reads them. Spawning a fresh
+      Python interpreter to delete files inside a directory that is about to be
+      removed cost ~21 ms per successful plan (~11% of one) and bought nothing.
     - No `Metrics`/`max_horizon`/`atoms_sequence` returned -- this returns just the
       skeleton (`list[GroundSkill]`). The extra bookkeeping predicators threads
       through belongs to a `Method`/`Metrics` here, not the planner.
@@ -126,7 +137,6 @@ class FastDownwardPlanner:
                 ],
                 cwd=tmp,
             )
-            FastDownwardPlanner._run(args=[sys.executable, str(script), "--cleanup"], cwd=tmp)
         return FastDownwardPlanner._parse_plan(output=output, skills=skills, objects=objects)
 
     @staticmethod
