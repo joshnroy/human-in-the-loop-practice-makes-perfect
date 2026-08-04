@@ -19,13 +19,22 @@ count drops from **15,675 spawns to 1,638 — 9.6×**.
 is the sampler refit at **60%**, and it is *not* reducible bit-identically. That is
 the honest floor, and it is stated in full below.
 
-| | before | after |
+Shares are of the whole run, at the config named in each column heading — the two
+configs differ, so read down a column rather than across a row:
+
+| | before (3 cyc, 10 tasks, 60.6 s) | after (25 cyc, 30 tasks, 145.1 s) |
 |---|---|---|
-| translate stage | **56.7%** of the run | **1.5%** |
-| `timeout` wrapper processes | ~46% (overlapping) | gone |
-| `--cleanup` spawns | 1,611 per full run | gone |
+| translate stage | **56.7%** | **1.5%** |
+| `timeout` wrapper processes | ~46% (overlaps the above) | gone |
+| `--cleanup` spawns | 1 per successful plan | gone |
 | sampler refits | 19.6% | **60.3%** — now the dominant cost |
-| FD process spawns, full run | 15,675 | **1,638** |
+| FD process spawns | 1,113 | 109 |
+| FD process spawns, full sweep arm | 15,675 | **1,638** |
+
+(The last row is the same 25-cycle run in both columns — the "before" spawn count is
+derived from its call counts, since running a full arm on `main` costs ~10 minutes and
+the count is exact arithmetic, not an estimate. The row above it is measured directly
+on both arms at the 3-cycle config.)
 
 ## Method
 
@@ -147,6 +156,23 @@ entries after each cycle:  6 12 19 20 20 20 20 20 21 21 21 27 27 27 …  27
 **Translator determinism was verified, not assumed**: 20 translations of one
 (domain, problem) pair under 20 different `PYTHONHASHSEED` values produce exactly one
 distinct SHA-256.
+
+**Two things the cache deliberately does not do**, both of which would have been
+invisible to the bit-identity check above (neither fires unless an FD call times out,
+and none did):
+
+- **A timed-out translation is not cached.** `"Driver aborting"` is FD's own verdict
+  on the PDDL and is reproducible; a missing SAS file *without* that message means the
+  run was killed, which is a property of the machine at that instant. Caching the
+  latter would turn one transient timeout into a permanent "this state is unreachable"
+  for the rest of the run — and the load at which a call could actually reach the 10 s
+  budget is exactly the saturated 40-run sweep this cache exists to serve. Gating the
+  store on the abort message costs nothing: the entry count at the 3-cycle config is
+  **12 either way**, so all 207 cached failures do carry it.
+- **The FD `alias` is part of the key.** `--alias` selects translator options as well
+  as search options, so two aliases can translate the same PDDL differently. Nothing
+  in this repo passes a non-default alias today, which is precisely why it is pinned
+  by a test rather than left to a future caller to discover.
 
 ## The three changes
 

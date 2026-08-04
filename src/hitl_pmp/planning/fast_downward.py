@@ -231,7 +231,7 @@ class FastDownwardPlanner:
         """Stage 1: PDDL text -> SAS file (no search yet). Mirrors predicators'
         `generate_sas_file_for_fd`.
 
-        With a `translation_cache`, a repeat of the same (domain, problem) pair
+        With a `translation_cache`, a repeat of the same (alias, domain, problem)
         writes the stored SAS text straight to `sas_file` instead of spawning FD.
         The cache is populated *here*, before `plan` patches costs into that file,
         which is what keeps it a cache of the translator rather than of the priced
@@ -239,7 +239,9 @@ class FastDownwardPlanner:
         domain_str = PddlWriter.domain_str(skills=skills, predicates=predicates, types=types)
         problem_str = PddlWriter.problem_str(objects=objects, init_atoms=init_atoms, goal=goal)
         if translation_cache is not None:
-            cached = translation_cache.get(domain_str=domain_str, problem_str=problem_str)
+            cached = translation_cache.get(
+                alias=alias, domain_str=domain_str, problem_str=problem_str
+            )
             if cached is not None:
                 if cached.sas_str is None:
                     raise PlanningFailure(
@@ -265,21 +267,35 @@ class FastDownwardPlanner:
             cwd=tmp_dir,
             timeout=timeout,
         )
-        aborted = "Driver aborting" in output or not sas_file.is_file()
-        if translation_cache is not None:
+        # "Driver aborting" is FD's own verdict on this PDDL (the dr-reachability
+        # rejection); a missing SAS file without it means the run did not finish --
+        # in practice, that it hit `timeout` and was killed. Both raise, exactly as
+        # before, but only the first is CACHEABLE. See below.
+        translator_aborted = "Driver aborting" in output
+        succeeded = not translator_aborted and sas_file.is_file()
+        if translation_cache is not None and (succeeded or translator_aborted):
             # Cached before the raise, and before `plan` patches costs in: a failed
             # translation is the *common* outcome here (EES prices practice
             # candidates by planning to preconditions that are often unreachable),
             # so not storing it would leave most calls uncached.
+            #
+            # A killed run is deliberately NOT stored. Its outcome is a property of
+            # the machine at that instant, not of the PDDL, so caching it would turn
+            # one transient timeout into a permanent verdict on that symbolic state
+            # for the rest of the run -- and the load at which a call could actually
+            # reach the budget (a saturated box running a whole sweep) is exactly the
+            # one this cache exists to serve. Uncached, a timeout costs one plan call,
+            # as it did before this cache existed.
             translation_cache.put(
+                alias=alias,
                 domain_str=domain_str,
                 problem_str=problem_str,
                 result=TranslationResult(
-                    sas_str=None if aborted else sas_file.read_text(encoding="utf-8"),
+                    sas_str=sas_file.read_text(encoding="utf-8") if succeeded else None,
                     fd_output=output,
                 ),
             )
-        if aborted:
+        if not succeeded:
             raise PlanningFailure(FastDownwardPlanner._translation_failure_message(output=output))
 
     @staticmethod

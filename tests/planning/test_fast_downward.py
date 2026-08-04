@@ -142,7 +142,7 @@ def test_run_returns_partial_output_rather_than_raising_on_timeout(*, tmp_path: 
             "import sys, time; print('partial'); sys.stdout.flush(); time.sleep(30)",
         ],
         cwd=str(tmp_path),
-        timeout=5.0,
+        timeout=1.0,
     )
     assert isinstance(output, str)
     assert "partial" in output
@@ -202,6 +202,34 @@ def test_integration_translation_cache_replays_a_failed_translation_as_a_failure
     with pytest.raises(PlanningFailure):
         FastDownwardPlanner.plan(**setup, translation_cache=cache)
     assert cache.num_entries() == 1
+
+
+def test_integration_translation_cache_does_not_store_a_timed_out_translation() -> None:
+    """A killed run must not become a permanent verdict. An abort is FD's judgement
+    on the PDDL and is reproducible; a timeout is a property of the machine at that
+    instant. Caching the latter would turn one transient failure into "this symbolic
+    state is unreachable" for the rest of the run -- and the load at which a call can
+    actually reach the budget is exactly the saturated sweep this cache exists for."""
+    cache = TranslationCache()
+    with pytest.raises(PlanningFailure):
+        FastDownwardPlanner.plan(**_setup(), timeout=1e-3, translation_cache=cache)
+    assert cache.num_entries() == 0
+    # And the state is still plannable afterwards, from a real translation.
+    assert FastDownwardPlanner.plan(**_setup(), translation_cache=cache)
+    assert cache.num_entries() == 1
+
+
+def test_integration_translation_cache_keys_on_the_fd_alias() -> None:
+    """`--alias` selects translator options, not only search options, so two aliases
+    can translate the same PDDL differently. Nothing in this repo passes a
+    non-default alias yet, which is exactly why this is pinned: a cache that ignored
+    it would silently serve one alias's SAS to another."""
+    setup = _setup()
+    cache = TranslationCache()
+    assert FastDownwardPlanner.plan(**setup, translation_cache=cache)
+    assert cache.num_entries() == 1
+    assert FastDownwardPlanner.plan(**setup, alias="lama-first", translation_cache=cache)
+    assert cache.num_entries() == 2
 
 
 def test_integration_translation_cache_separates_distinct_problems() -> None:
