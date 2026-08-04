@@ -203,9 +203,16 @@ cheaper in transitions than a failed one, biasing the x-axis of every learning c
 
 **A controller is grounded fresh for every skill execution, and the PyBullet client it
 opens is released right after.** The obvious tidy-up — memoize the grounding — is wrong
-and was tried: `PyBulletSim` carries held-object state (`base_link_to_held_obj`) that
-`reset` does not clear, so every `Pick` after the first silently fails and the cube
-never leaves its start pose. The reason the fresh grounding needs `_release` at all is
+and was tried: a KINDER controller's **progress flags survive its own `reset`**. In
+`PickShelfController`, `_navigated`/`_pre_grasp`/`_closed_gripper`/`_lifted` are set
+`False` only in `__init__` and `True` inside `step`, never by `reset`, and `terminated()`
+is just `return self._lifted`. A reused controller therefore exits after a **single step,
+reporting success**, having never navigated, approached or closed the gripper — so every
+`Pick` after the first silently no-ops and the cube never leaves its start pose. (Not
+`base_link_to_held_obj`, which an earlier version of this file blamed: `reset` reassigns
+that unconditionally from the current state, so it cannot go stale. `TossController` does
+clear its progress flag in `reset`, which is why the failure was Pick-specific.) The
+reason the fresh grounding needs `_release` at all is
 that KINDER's `ground()` mints a new controller each call and each one stands up its own
 `p.connect(p.DIRECT)` plus the Kinova URDF, which nothing on KINDER's side ever
 disconnects: unreleased, that leaked ~150 MB per `Pick` and ~315 MB per `Toss`, and took

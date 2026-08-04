@@ -35,12 +35,12 @@ class KinderBackend(BaseModel):
     objects), so a pydantic instance rather than a static-method container. Held by
     exactly one `Tossing3DEnvironment`; constructing two means two MuJoCo scenes.
 
-    The controllers are built once and reused for the whole run. That is not just
-    thrift: each `PickShelfController`/`TossController` lazily opens its own PyBullet
-    client on first `reset`, so rebuilding them per skill execution leaks one client
-    per call over the tens of thousands of executions a sweep performs. Note that
-    caching the *lifted* controllers is not enough to get that -- `ground()` mints a new
-    controller per call, so the memo in `_ground` is what actually holds the line.
+    The *lifted* controllers are built once and reused for the whole run. That caching
+    is thrift only -- it does **not** avoid the PyBullet leak, because `ground()` mints a
+    brand-new ground controller on every call and it is the *ground* controller that
+    lazily opens a client on first `reset`. What actually holds the line is `_release`,
+    which hands each client back when `_run` finishes. Reusing the ground controller
+    instead would be the other obvious fix and is wrong -- see `_ground`.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -319,9 +319,22 @@ class KinderBackend(BaseModel):
 
         Deliberately *not* memoized, even though a fresh grounding per call is what
         allocates the PyBullet client `_release` then has to reclaim. A ground
-        controller carries held-object state its own `reset` does not clear
-        (`PyBulletSim.base_link_to_held_obj`), so reusing one makes every Pick after the
-        first fail: measured, the cube never leaves its start pose again.
+        controller carries **progress flags its own `reset` never clears**:
+        `PickShelfController`'s `_navigated`/`_pre_grasp`/`_closed_gripper`/`_lifted`
+        are set False only in `__init__` (shelf/parameterized_skills.py:81-84) and True
+        inside `step` (:291, :305, :322, :329), while `terminated` is
+        `return self._lifted` (:276). So a reused controller's `step` falls straight
+        through to its last branch, `terminated` returns the stale True, and `_run`
+        exits after a **single step reporting success** -- having never navigated,
+        approached, or closed the gripper. Measured: the cube never leaves its start
+        pose again, on any swing.
+
+        Not `PyBulletSim.base_link_to_held_obj`, which an earlier version of this
+        comment blamed. `reset` reassigns that unconditionally from the current state
+        (:199), so it cannot go stale. The corroboration is that KINDER's own
+        `TossController` *does* clear its progress flag in `reset`
+        (tossing/parameterized_skills.py:371) and takes `terminated` from a
+        reset-cleared step index -- which is exactly why this failure was Pick-specific.
         """
         state = self._current_state()
         robot = list(state.get_objects(self._object_type))[0]
