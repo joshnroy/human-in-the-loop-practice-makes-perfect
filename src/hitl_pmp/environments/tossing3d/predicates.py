@@ -23,7 +23,7 @@ class InGoalRegionClassifier:
     the goal region (x in [1.90, 2.10]) sits *just short of* the bin, whose 0.30 m
     footprint spans x in [2.08, 2.38]. A toss hard enough to land in the bin therefore
     does NOT satisfy KINDER's goal, and one that stops short in the region does. This
-    port uses KINDER's criterion verbatim rather than substituting an "in the bin"
+    domain uses KINDER's criterion verbatim rather than substituting an "in the bin"
     test, so that a number reported here is a number about the benchmark.
     """
 

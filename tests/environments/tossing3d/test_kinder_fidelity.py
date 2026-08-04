@@ -1,11 +1,26 @@
 """The tests that genuinely drive KINDER.
 
-These are the ones that can go stale silently: everything else in this directory checks
-this port against itself, and only these check it against the benchmark. They are
-skipped where `kindergarden` is not installed (CI included) rather than deleted,
-because the alternative -- asserting nothing about fidelity anywhere -- is how a port
-drifts from the thing it claims to reproduce. Run them with the optional dependency
-installed; see `src/hitl_pmp/environments/tossing3d/README.md`.
+This domain integrates KINDER rather than reimplementing it, so these tests pin the
+*integration boundary* -- that what this repo's adapter reads, dispatches and asserts
+agrees with what upstream actually produces. They deliberately do NOT re-test anything
+KINDER already guarantees: there is no reimplementation of its physics or its goal check
+to check against. `test_in_goal_region_agrees_with_kinders_own_goal_check` is the shape
+of the whole file -- run the real simulator, ask upstream's `_check_goals()`, and require
+our predicate to return the same verdict.
+
+Two of them are a different kind, and are labelled as such below:
+`test_goal_region_bounds_match_the_variants_task_json` is a version tripwire against a
+literal from KINDER's task JSON, and `test_a_full_power_toss_overshoots_the_goal_region`
+characterises upstream's physics. Both are only meaningful because `pyproject.toml` pins
+KINDER to an exact commit -- they are what makes an upstream bump that moves the goal
+region or the swing dynamics fail loudly instead of silently restating every number
+measured here.
+
+Everything else in this directory checks the adapter's arithmetic against itself, which
+needs no simulator. These are skipped where `kindergarden` is not installed (CI
+included) rather than deleted, because the alternative is asserting nothing about the
+seam anywhere. Run them with the optional dependency installed; see
+`src/hitl_pmp/environments/tossing3d/README.md`.
 """
 
 import numpy as np
@@ -50,11 +65,14 @@ def _oracle_solve(*, env: Tossing3DEnvironment, seed: int, swing: float):
 
 
 def test_goal_region_bounds_match_the_variants_task_json() -> None:
+    """A version tripwire, not a differential test: `GOAL_REGION` is a literal copy of
+    the pinned KINDER's task JSON, so this fires if an upstream bump moves the region
+    out from under every number measured against it."""
     assert shared_env().goal_region_bounds() == pytest.approx(GOAL_REGION)
 
 
 def test_in_goal_region_agrees_with_kinders_own_goal_check() -> None:
-    """The fidelity property this port's headline number rests on: this domain's
+    """The fidelity property this domain's headline number rests on: this domain's
     `InGoalRegion` predicate must be KINDER's `_check_goals`, not a lookalike.
 
     Checked by driving the real simulator (a random walk of skills, which lands the cube
@@ -107,9 +125,12 @@ def test_the_oracle_swing_actually_reaches_the_goal_region() -> None:
 
 
 def test_a_full_power_toss_overshoots_the_goal_region() -> None:
-    """swing=1.0 is KINDER's own demo toss and lands the cube in the bin at x ~ 2.22,
-    past the region's 2.10 edge. This is what makes the swing dial worth learning: the
-    obvious value is the wrong one.
+    """A characterisation of upstream's physics rather than of this adapter, and sound
+    only because `pyproject.toml` pins KINDER exactly: swing=1.0 is KINDER's own demo
+    toss and lands the cube in the bin at x ~ 2.22, past the region's 2.10 edge. This is
+    what makes the swing dial worth learning: the obvious value is the wrong one, and a
+    KINDER bump that changed it would invalidate the swing table this domain's README
+    reports.
 
     Asserted on seeds 0 and 2, not seed 1. On seed 1 the grasp is marginal and the cube
     slips out of the gripper during `move_to_target`, landing at x ~ 1.58 without ever

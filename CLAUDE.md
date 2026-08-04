@@ -30,10 +30,14 @@ the planner does not shell out to coreutils' `timeout` (so macOS needs no
 `brew install coreutils` for `gtimeout`); the per-call budget is enforced by
 `subprocess` itself. See `planning/fast_downward.py`'s deviations list.
 
-**KINDER** is required only by `--env tossing3d`. It is declared as the `tossing3d`
+**KINDER** is required only by `--env tossing3d`, which does not reimplement that
+benchmark but *integrates* it: the simulator, the controllers and the success criterion
+are all upstream's, and `environments/tossing3d/` is the adapter onto this repo's
+`core.Environment`/`Skill`/`Predicate` interfaces. KINDER is declared as the `tossing3d`
 optional-dependency group in `pyproject.toml`, pinned to exact upstream commits (KINDER
-is a live upstream, and the port's numbers are only meaningful against the version it
-was measured on). It goes in a **separate** virtualenv, not in `hitl-pmp` — it pulls
+is a live upstream, and since the dynamics are entirely upstream's, a number measured
+here is only meaningful against the version it was measured on). It goes in a
+**separate** virtualenv, not in `hitl-pmp` — it pulls
 MuJoCo/PyBullet/OpenCV and caps `requires-python` at `<3.13`, and nothing but
 `tossing3d` needs it:
 

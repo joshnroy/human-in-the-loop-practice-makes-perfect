@@ -34,21 +34,25 @@ dev = [
 # this group, and `tests/environments/tossing3d/conftest.py`'s `kinder_available` skips
 # the eight simulator tests when `kinder` is absent.
 #
-# *Pinned to exact commits*, not to a branch, because KINDER is a live upstream that
-# moves under this port: the leaked PyBullet client `KinderBackend._release` works
-# around is an upstream bug, so a version that fixes or reshapes it would silently
-# change what the numbers in `docs/experiment-logs/2026-08-04-tossing3d-ees.md` mean.
+# *Pinned to exact commits*, not to a branch, because `environments/tossing3d/` does not
+# reimplement this benchmark -- it integrates it, so the dynamics, the controllers and
+# the success criterion are entirely upstream's and the version *is* the experiment.
+# KINDER is a live upstream that moves underneath it: the leaked PyBullet client
+# `KinderBackend._release` works around is an upstream bug, so a version that fixes or
+# reshapes it would silently change what the numbers in
+# `docs/experiment-logs/2026-08-04-tossing3d-ees.md` mean.
 #
 # These SHAs are *inferred*, not recorded -- nothing wrote down the KINDER commit the
-# port was actually built on. 39eb7e0 was upstream `main` continuously from 2026-07-28
-# until 2026-08-04 12:09 UTC, which covers the port's first commit (2026-08-04 03:08
-# UTC) but not the EES sweep (15:37 UTC), by which point cdf1b8b had landed. So timing
+# adapter was actually built against. 39eb7e0 was upstream `main` continuously from
+# 2026-07-28 until 2026-08-04 12:09 UTC, which covers the adapter's first commit
+# (2026-08-04 03:08 UTC) but not the EES sweep (15:37 UTC), by which point cdf1b8b had
+# landed. So timing
 # alone does not exclude the sweep having run against cdf1b8b; it is ruled out on
 # content instead -- cdf1b8b changes cluttered-retrieval initial-state sampling, which
 # Tossing3D does not use. `kinder-baselines` has not moved since 2026-06-29, so
 # 4c731dc8 is unambiguous.
 #
-# `kinder_models` holds the parameterized controllers the port actually drives
+# `kinder_models` holds the parameterized controllers this domain actually drives
 # (`dynamic3d.shelf`, `dynamic3d.tossing`); they live in the `kinder-baselines`
 # monorepo, not in `kindergarden`, so both are needed.
 #

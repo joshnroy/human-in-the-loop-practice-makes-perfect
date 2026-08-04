@@ -16,9 +16,14 @@ class Tossing3DEnvironment(Environment):
     the far side of an immovable barrier. The barrier is 5 m wide and blocks the base,
     so the cube can only get there through the air -- the robot has to *toss* it.
 
+    This class implements **no dynamics**. It is the adapter that presents KINDER's own
+    simulator as a `core.Environment`: `take_action` decodes an action into one of
+    KINDER's parameterized controllers and hands it to `KinderBackend`, and every state
+    read is KINDER's own observation reshaped into this repo's flat `State`.
+
     **The cube cannot be retrieved.** Once it crosses the barrier -- whether it lands in
     the goal region or overshoots into the bin behind it -- the robot cannot reach it
-    again. That is the property this domain was ported for: it is the concrete case the
+    again. That is the property this domain was integrated for: it is the concrete case the
     project's V1 proposal names as EES's predicted failure mode ("cannot reset the
     environment under a suboptimal policy... when the goal is reached it can't reset").
     Read `docs/experiment-logs/`'s Tossing3D entry before drawing any conclusion from a

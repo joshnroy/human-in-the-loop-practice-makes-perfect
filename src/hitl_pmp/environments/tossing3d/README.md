@@ -1,4 +1,4 @@
-# `tossing3d/` — a port of KINDER's Tossing3D
+# `tossing3d/` — KINDER's Tossing3D, integrated
 
 [Environment page](https://prpl-group.com/kinder-site/environments/tossing3d/index.html) ·
 [benchmark](https://prpl-group.com/kinder-site/) ·
@@ -8,9 +8,32 @@ A TidyBot++ mobile manipulator has to get a cube from the floor into a goal regi
 the far side of an immovable barrier. The barrier is 5 m wide and blocks the base, so
 the cube can only get there through the air: the robot must **toss** it.
 
-Unlike every other domain here, this one is not a self-contained simulator written in
-this repo — it drives the real KINDER MuJoCo environment and KINDER's own parameterized
-controllers.
+## This is an integration, not a port
+
+Unlike every other domain here, **no dynamics are written in this repo**. The simulator
+is KINDER's own: `kinder_backend.py` calls `kinder.register_all_environments()` and
+`kinder.make("kinder/Tossing3D-<variant>-v0")`, and every skill is one of KINDER's own
+parameterized controllers — `pick_shelf` from `kinder_models.dynamic3d.shelf`, and
+`move_to_target` / `move_arm_to_conf` / `toss` from `kinder_models.dynamic3d.tossing`.
+`environment.py` implements no physics; it delegates to the backend and assembles a
+`State` from what the backend reads back.
+
+What lives here is **adapter code**, and only adapter code. This repo's `Method`s
+consume `core.Environment`, `core.Skill` and `core.Predicate`; KINDER exposes a Gym
+env, an `ObjectCentricState` and imperative controllers. Everything in this folder
+exists to map the second onto the first:
+
+| KINDER gives us | this folder maps it to | why the mapping is needed |
+| --- | --- | --- |
+| a Gym `env.step(action_vector)` | `environment.py`'s `[skill_id, param0, param1]` encoding | one transition here is one *skill*, so a `Method` chooses skills, not 20 ms control ticks |
+| an `ObjectCentricState` | `environment.py`'s flat `State` over five `Object`s | predicates in this repo are pure functions of `State`, with no simulator handle |
+| `_check_goals()`, a method on the env | `predicates.py`'s `InGoalRegion` and friends | Fast Downward needs a symbolic layer it can evaluate off-simulator |
+| imperative controllers with `sample_parameters` | `skills.py`'s lifted `Skill`s with pre/add/delete effects | EES task-plans over operators; a controller is not one |
+| an episode seed | `tasks.py`'s `Task` (a seed plus a `Goal`) | the harness needs a train/test split and a restorable initial state |
+| — | `problem.py` | the `Problem` facade and `H_eval = 3 + 2` |
+
+The glue is the reviewable content. The physics, the controllers and the success
+criterion are all upstream's, used verbatim.
 
 ## Why this domain
 
@@ -48,25 +71,26 @@ pip install -e "/path/to/this/repo[tossing3d]"
 export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
 ```
 
-Two repos, two pins, because KINDER is a live upstream that moves under this port — the
-leaked PyBullet client `KinderBackend._release` works around is an *upstream* bug, so a
-version that fixes or reshapes it would silently change what a number measured here
-means:
+Two repos, two pins, because KINDER is a live upstream that moves underneath this
+integration — and since the physics and the controllers are all upstream's, the version
+*is* the experiment. The leaked PyBullet client `KinderBackend._release` works around is
+an *upstream* bug, so a version that fixes or reshapes it would silently change what a
+number measured here means:
 
 | package | repo | pin |
 | --- | --- | --- |
-| `kindergarden` | [`kindergarden`](https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden) | `39eb7e08` (2026-07-28) — upstream `main` when the port was written |
+| `kindergarden` | [`kindergarden`](https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden) | `39eb7e08` (2026-07-28) — upstream `main` when this adapter was written |
 | `kinder_models` | [`kinder-baselines`](https://github.com/Princeton-Robot-Planning-and-Learning/kinder-baselines), subdirectory `kinder-models` | `4c731dc8` (2026-06-29) |
 
-Both SHAs are **inferred, not recorded** — nothing wrote down the KINDER commit the port
-was built on. `39eb7e08` was upstream `main` for the whole window the port was written
-in; the next upstream commit landed between the port and the EES sweep, and is excluded
-on content (it changes cluttered-retrieval sampling, which Tossing3D does not use)
-rather than on timing. `kinder-baselines` has not moved since 2026-06-29. Correct these
-if you know better — and if you re-measure against a different KINDER, move the pin and
-say so in the experiment log.
+Both SHAs are **inferred, not recorded** — nothing wrote down the KINDER commit this was
+built against. `39eb7e08` was upstream `main` for the whole window the adapter was
+written in; the next upstream commit landed between that and the EES sweep, and is
+excluded on content (it changes cluttered-retrieval sampling, which Tossing3D does not
+use) rather than on timing. `kinder-baselines` has not moved since 2026-06-29. Correct
+these if you know better — and if you re-measure against a different KINDER, move the
+pin and say so in the experiment log.
 
-`kinder_models` is the one that holds the parameterized controllers this port drives
+`kinder_models` is the one that holds the parameterized controllers this domain drives
 (`dynamic3d.shelf`, `dynamic3d.tossing`); they are not part of `kindergarden` itself,
 and it pulls `bilevel_planning` in turn. To hack on either, clone and install over the
 top:
@@ -98,17 +122,21 @@ value wins — but it has to be exported.
 
 Everything except `kinder_backend.py` is pure arithmetic over feature vectors and is
 covered by ordinary CI tests. `tests/environments/tossing3d/test_kinder_fidelity.py`
-holds the tests that genuinely drive the simulator, including the property test that
-pins `InGoalRegion` against KINDER's own `_check_goals`; those skip without the
-optional dependency.
+holds the tests that genuinely drive the simulator; those skip without the optional
+dependency. They test the **integration boundary**, never KINDER itself: that
+`InGoalRegion` returns exactly what upstream's `_check_goals()` returns on every state
+a random walk of skills visits, that `take_action` stays total when upstream's inverse
+kinematics has no solution, that resetting to a seed is deterministic enough for
+`set_state`'s contract, and that every swing the sampler's prior can draw is one the
+upstream controllers accept. None of them reimplement anything upstream already does.
 
-## Three things about this port that look like bugs and are not
+## Three things about this domain that look like bugs and are not
 
 **The goal region is not the bin.** In the `o1` variant `blocks_goal_region` is
 x ∈ [1.90, 2.10] while `bin_init_region` puts the bin at x = 2.2305 — a 0.30 m bin, so
 its footprint is x ∈ [2.08, 2.38]. A toss hard enough to land *in* the bin therefore
 fails KINDER's own goal check, and one that stops short of it in the region passes.
-This port uses KINDER's criterion verbatim rather than substituting an "in the bin"
+This domain uses KINDER's criterion verbatim rather than substituting an "in the bin"
 test, so that a number reported here is a number about the benchmark. It is also what
 makes the swing dial worth learning: KINDER's own demo toss (swing = 1.0) overshoots.
 

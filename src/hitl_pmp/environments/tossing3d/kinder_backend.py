@@ -135,7 +135,7 @@ class KinderBackend(BaseModel):
         """KINDER's own `blocks_goal_region` box, `(x_min, y_min, z_min, x_max, y_max,
         z_max)`, read straight out of the variant's task JSON rather than hardcoded --
         this is the region `_check_goals` tests `cube_0` against, so reading it is what
-        lets this port's `InGoalRegion` predicate be the benchmark's own success
+        lets this domain's `InGoalRegion` predicate be the benchmark's own success
         criterion instead of a lookalike."""
         env = self._ensure_env()
         ranges = env.unwrapped._object_centric_env.task_config["regions"]["blocks_goal_region"][
@@ -293,7 +293,7 @@ class KinderBackend(BaseModel):
         return np.asarray(env.render(), dtype=np.uint8)
 
     def check_goals(self) -> bool:
-        """KINDER's own `_check_goals`, for the fidelity test that pins this port's
+        """KINDER's own `_check_goals`, for the fidelity test that pins this domain's
         `InGoalRegion` predicate against it. Nothing in the running domain calls
         this -- the predicate does the work, so that the goal test stays a pure
         function of `State` like every other predicate in the repo."""

@@ -151,17 +151,21 @@ predicate definitions play in `predicators/envs/`.
   `../../methods/oracle/cli.py`'s `SkillOracleCli`), runnable via
   `python -m hitl_pmp.cli --env lightswitch --method skill-oracle
   [--output-dir DIR]`.
-- `tossing3d/` — a port of **KINDER's `Tossing3D`**, and the one domain here that is
-  not a self-contained simulator written in this repo: it drives the real KINDER MuJoCo
-  environment and KINDER's own parameterized controllers, behind one narrow seam
-  (`kinder_backend.py`, which imports `kinder` lazily so the rest of the domain still
-  imports, typechecks and tests without the optional dependency — `pyproject.toml`'s
-  `tossing3d` extra, pinned to exact upstream commits). A cube must be tossed
-  over an immovable barrier into KINDER's own `blocks_goal_region`, and **cannot be
-  retrieved afterwards** — the irreversibility the project's V1 proposal predicts EES
-  will stall on. See [`tossing3d/README.md`](tossing3d/README.md) for the install, the
-  three things about the port that look like bugs and are not (starting with the goal
-  region not being the bin), and the reset confound that limits what a learning curve
-  measured here can claim.
+- `tossing3d/` — an **integration of KINDER's `Tossing3D`**, and the one domain here
+  that is not a simulator written in this repo. No dynamics live here: it drives the
+  real KINDER MuJoCo environment and KINDER's own parameterized controllers behind one
+  narrow seam (`kinder_backend.py`, which imports `kinder` lazily so the rest of the
+  domain still imports, typechecks and tests without the optional dependency —
+  `pyproject.toml`'s `tossing3d` extra, pinned to exact upstream commits). What the
+  other files here contain is adapter code: `environment.py`/`predicates.py`/`skills.py`/
+  `tasks.py`/`problem.py` map KINDER's Gym env, `ObjectCentricState`, `_check_goals` and
+  imperative controllers onto the `core.Environment`/`Predicate`/`Skill`/`Task`
+  interfaces this repo's `Method`s consume. A cube must be tossed over an immovable
+  barrier into KINDER's own `blocks_goal_region`, and **cannot be retrieved afterwards**
+  — the irreversibility the project's V1 proposal predicts EES will stall on. See
+  [`tossing3d/README.md`](tossing3d/README.md) for the install, the mapping table, the
+  three things that look like bugs and are not (starting with the goal region not being
+  the bin), and the reset confound that limits what a learning curve measured here can
+  claim.
 - Every other domain subfolder: not started yet. The convention above describes the
   expected shape once one lands.
