@@ -12,7 +12,8 @@ No trend: per-seed slope +0.03pp per doubling, **p = 0.7959**.
 every arm solves **268–278 of 280** TRASH tasks and **266–273 of 280** RECYCLING
 tasks, so the final gap has almost nowhere to move. The tight sds (3.2–12.5pp
 against an 18.9pp noise floor) are saturation, not precision — 13–16 of 20 seeds
-have a gap of *exactly* zero, because both families are at 14/14. The design's
+have a gap of *exactly* zero, and **56 of those 57 zero gaps are both families at
+14/14** (the one exception is arm B seed 12, which is 3/14 on both). The design's
 minimum detectable effect on the extreme contrast is 9.35pp, so a gap effect that
 large is excluded and a smaller one is not.
 
@@ -293,8 +294,10 @@ No arm establishes even the premise at the final checkpoint.
 **Noise floor against observed sd.** Every arm is *below* the 18.9pp floor —
 6.5 / 3.2 / 4.9 / 12.5, i.e. 34% / 17% / 26% / 66% of it. **That is saturation,
 not precision.** A gap of exactly zero is forced whenever both families are at
-14/14, and 13–16 of 20 seeds are in that state. This is the same trap PR #39's log
-flagged for its own arm A, and it applies to all four arms here.
+14/14, and 56 of the 57 zero gaps across the four arms are exactly that (the
+remaining one, arm B seed 12, is 3/14 on both — a tie at the floor rather than at
+the ceiling). This is the same trap PR #39's log flagged for its own arm A, and it
+applies to all four arms here.
 
 **Per-seed final tasks solved, out of 14, because an sd here is often one collapsed
 seed** (seeds 0..19 left to right):
@@ -423,23 +426,28 @@ unusual:
 | runs covering ≥80% of their own range in one 100-transition step | **26/80** | **33/80** |
 | runs that reached the ceiling and later fell back to ≤1 task | 4/80 | 2/80 |
 
-**The 14 tasks of a family are not 14 independent observations.** They share a goal
-predicate and differ only in initial state, and the sampler either can hit that bin
-or cannot, so they succeed and fail together. Two consequences, both of which make
-the report above more conservative rather than less:
+**Measured over all 26 checkpoints, the 14 tasks of a family do not behave as 14
+independent observations** — they are at an extreme together far more often than
+independent draws would be. Two consequences, both of which make the report above
+more conservative rather than less:
 
 * the **18.9pp binomial noise floor is a lower bound**, not an estimate — it assumes
-  independence within a family, and the observed within-family correlation is close
-  to total. The real per-seed noise is larger, so "every arm's sd is below the
-  floor" understates how much of the spread is sampling rather than learning;
-* the effective sample size is much nearer **20 (the seeds)** than 20 × 14, which is
-  a further reason not to read a 5-task difference out of 280 as a finding.
+  independence within a family, and the observed within-family concentration is
+  nothing like independent. The real per-seed noise is larger, so "every arm's sd is
+  below the floor" understates how much of the spread is sampling rather than
+  learning. (The 62.3% figure is measured across the whole curve; the floor is
+  applied at the final checkpoint, where saturation makes the concentration
+  stronger still, not weaker.)
+* the effective sample size behind an arm's number is therefore much smaller than
+  280, which is a further reason not to read a 5-task difference out of 280 as a
+  finding.
 
 It also explains the degenerate final gap directly: once both families have flipped
 on, both are at 14/14 and the gap is exactly zero by construction.
 
-No claim is made here about *why* the flip happens; that would need per-skill
-sampler diagnostics this aggregate does not carry.
+No claim is made here about *why* the flip happens, or about what within a family
+makes its tasks move together; either would need per-skill sampler diagnostics this
+aggregate does not carry.
 
 ## Result 5 (POST-HOC): the pre-specified metric, re-read before saturation
 

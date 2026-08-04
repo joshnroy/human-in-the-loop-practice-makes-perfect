@@ -441,10 +441,10 @@ class ResetIntervalReport:
 
         The shape question. If a family's per-checkpoint count were an average over
         14 loosely-related tasks, intermediate values would dominate. If instead the
-        whole family flips together -- the sampler either can hit that bin or cannot
-        -- almost every checkpoint sits at 0/14 or 14/14. Which of those is true
-        decides how much evidence 14 tasks per seed really carry, so it is measured
-        rather than assumed.
+        whole family moves together, almost every checkpoint sits at 0/14 or 14/14.
+        Which of those is true decides how much evidence 14 tasks per seed really
+        carry, so it is measured rather than assumed. This function only counts;
+        why a family moves together is not answerable from this aggregate.
         """
         extreme = total = 0
         for arm in _ARM_INTERVAL:
@@ -1480,7 +1480,9 @@ def _print_curve_shape(*, arms: dict) -> None:
     Reported because it changes how the rest of the report should be read: if a
     family's 14 tasks succeed and fail together, then 14 tasks per seed is not 14
     independent observations, and the binomial noise floor computed elsewhere here
-    -- which assumes they are -- is a lower bound rather than an estimate.
+    -- which assumes they are -- is a lower bound rather than an estimate. These are
+    counts of what happened, not an account of why; nothing in this aggregate
+    identifies the mechanism.
     """
     print("\n--- POST-HOC, descriptive: the curves are steps, not ramps ---")
     denominators = expected_denominators()
