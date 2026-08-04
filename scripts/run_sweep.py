@@ -479,10 +479,14 @@ class SweepRunner:
                     if attempt == retry_policy.max_attempts:
                         break
                     backoff = retry_policy.backoff_seconds(attempt=attempt)
+                    # stderr, same as a failure: a retry is a machine-health
+                    # warning rather than progress, so one stderr filter catches
+                    # everything a watcher would actually act on.
                     print(
                         f"[retry] {run.method} seed={run.seed}: spawn attempt {attempt}/"
                         f"{retry_policy.max_attempts} raised {type(error).__name__}; "
                         f"retrying in {backoff:.1f}s",
+                        file=sys.stderr,
                         flush=True,
                     )
                     time.sleep(backoff)
@@ -521,15 +525,61 @@ class SweepRunner:
                 ),
             )
         (run.output_dir / "log.txt").write_text(output)
-        status = "ok" if returncode == 0 else f"FAILED rc={returncode}"
         # A run that took more than one spawn says so on its own status line,
         # whether it eventually succeeded or gave up -- retries that only showed
         # up as a silently longer wall-clock would be exactly the wrong outcome.
         attempts_note = f" ({spawn_attempts} spawn attempts)" if spawn_attempts > 1 else ""
-        print(f"[{status}] {run.method} seed={run.seed}{attempts_note}", flush=True)
+        # Reported from *inside the worker*, the moment this run finishes -- not by
+        # the caller collecting outcomes. `execute` collects with
+        # `list(executor.map(...))`, which yields in **submission order**, so a
+        # failure in seed 3 would otherwise sit unseen until seed 0 (still running)
+        # finished. Across 40-80 runs of ~40 minutes that is the difference between
+        # cancelling a broken sweep at minute 2 and discovering at minute 90 that 60
+        # runs failed identically. Pinned by
+        # test_a_failure_is_emitted_while_the_sweep_is_still_running.
+        if returncode == 0:
+            print(f"[ok] {run.method} seed={run.seed}{attempts_note}", flush=True)
+        else:
+            # Failures go to stderr so a watcher can filter on that stream alone,
+            # while `2>&1` still interleaves everything in order for a human. One
+            # line, not the traceback: if 60 runs fail identically, 60 notices are
+            # useful and 60 tracebacks are not -- so it points at the full record
+            # instead of inlining it. flush=True because stdout/stderr are block-
+            # buffered when not a TTY, which is exactly the case when an agent is
+            # capturing the output and exactly when immediacy matters most.
+            reason = SweepRunner._failure_reason(returncode=returncode, output=output)
+            print(
+                f"[FAILED rc={returncode}] {run.method} seed={run.seed}{attempts_note}: "
+                f"{reason} -- full output: {run.output_dir / 'log.txt'}",
+                file=sys.stderr,
+                flush=True,
+            )
         return SweepOutcome(
             run=run, returncode=returncode, output=output, spawn_attempts=spawn_attempts
         )
+
+    @staticmethod
+    def _failure_reason(*, returncode: int, output: str) -> str:
+        """A short, actionable summary for the immediate notice -- enough for a
+        watcher to decide whether to cancel, not a wall of text. The full traceback
+        is already in the run's own log.txt, which the notice points at.
+
+        rc=-1 means the spawn itself failed, so the exception type is the whole
+        story and is worth naming inline. Otherwise the child's last non-empty
+        output line is the best one-line summary available (a Python traceback puts
+        its exception there, and argparse its error)."""
+        if returncode == -1:
+            for line in reversed(output.splitlines()):
+                # Traceback bodies are indented; the exception line is not.
+                if line.strip() and not line.startswith(" "):
+                    return line.strip()
+            return "the child process could not be launched"
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if not lines:
+            return "no output"
+        last = lines[-1]
+        # Bounded so one pathological line cannot flood a watcher's terminal.
+        return last if len(last) <= 200 else f"{last[:200]}..."
 
     @staticmethod
     def _write_timing(*, run: SweepRun, timing: RunTiming) -> None:
@@ -610,8 +660,19 @@ def main() -> int:
             f"({extra_spawns} spawn retries total) -- the machine was likely under "
             f"memory pressure."
         )
+    # A recap, not a re-report: every one of these was already printed to stderr
+    # in full-enough detail the moment it happened, so this only has to let a
+    # reader who scrolled past them see which runs to go look at. Re-pasting each
+    # child's output here made 60 identical failures unreadable, and put them on
+    # stdout while the live notices were on stderr. Same stream as the live
+    # notices, one line each, pointing at the log.
     for failure in failures:
-        print(f"  FAILED {failure.run.method} seed={failure.run.seed}: {failure.output[-400:]}")
+        print(
+            f"  FAILED {failure.run.method} seed={failure.run.seed} "
+            f"(rc={failure.returncode}) -- {failure.run.output_dir / 'log.txt'}",
+            file=sys.stderr,
+            flush=True,
+        )
     return 1 if failures else 0
 
 

@@ -79,6 +79,9 @@ if they're conceptually part of the same effort.
   A run that *fails to launch* (fork() under memory pressure) is retried up to
   `--max-spawn-attempts` times; a run that launched and exited non-zero never is,
   since `--seed` makes it deterministic and re-running only reproduces it.
+  Failures and retries are printed to **stderr the moment they happen** (one line
+  each, pointing at that run's `log.txt`) so a watcher can cancel a broken sweep
+  early instead of learning at the end; progress stays on stdout.
 - `analysis/` scripts are **post-run analysis only** — they read `--output-dir`
   output back in and produce plots/tables/reports; they never run a simulation
   or drive a `Method` themselves. That's `hitl_pmp/cli.py`'s job (`python -m

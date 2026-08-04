@@ -43,8 +43,46 @@ python -m scripts.run_sweep \
   is saved to its own `log.txt`. That covers a run that never *started* too — a
   spawn that raises is reported as `returncode == -1` with the traceback as its
   output, rather than escaping and taking the sweep down with it.
+- **Failures appear on stderr the moment they happen** — see below. If you are
+  watching a sweep, watch stderr.
 - `--max-spawn-attempts` (default 3) retries a run that could not be **launched**.
   See below — the distinction it draws is the important part.
+
+## Watching a sweep: failures are reported live, on stderr
+
+A sweep is 40–80 runs of ~40 minutes. If seed 3 fails two minutes in, whoever is
+watching — a human or an agent monitoring the process — needs to see it *then* and
+decide whether to cancel, not discover at minute 90 that 60 runs failed the same
+way. So:
+
+- **Failures and retry notices go to `stderr`; ordinary progress (`[ok]` lines,
+  the startup banner, the final summary) goes to `stdout`.** Filter on stderr
+  alone to see only what you might act on; `2>&1` still interleaves both in order
+  for a human.
+- **They are emitted from inside the worker, the instant that run finishes** —
+  not when the sweep ends and not when its result is collected. This matters
+  because `execute` collects with `list(executor.map(...))`, which yields in
+  **submission order**: reporting at the consumption point would hold seed 3's
+  failure until seed 0 finished. `test_a_failure_is_emitted_while_the_sweep_is_
+  still_running` pins the ordering, not merely the presence of the line.
+- **Everything is `flush=True`.** Python block-buffers stdout/stderr when they are
+  not a TTY — exactly the case when an agent captures the output, and exactly when
+  immediacy matters most. Without it a watcher sees nothing until the process
+  exits.
+- **One line per failure, not a traceback.** The notice carries the method, seed,
+  returncode, a short reason (the child's last output line, which is where a
+  Python traceback puts its exception and argparse its error), and the path to
+  that run's `log.txt`. Sixty identically-failing runs should be sixty scannable
+  notices; the full tracebacks stay in the per-run logs:
+
+```
+[FAILED rc=9] ees seed=3: RuntimeError: CUDA out of memory -- full output: results/ees/3/log.txt
+```
+
+None of this changes control flow. The sweep still runs to completion and still
+exits non-zero at the end if anything failed — this is purely about *when and
+where* the report shows up, so that cancelling early is a decision someone can
+actually make.
 
 ## Retrying a failed *launch*, never a failed *run*
 
@@ -67,7 +105,8 @@ Retries are recorded, never silent — a sweep that quietly retried a dozen time
 is a machine-health signal someone needs to see:
 
 - each retry prints a `[retry] <method> seed=N: spawn attempt i/3 raised OSError`
-  line, and the run's own status line gains `(3 spawn attempts)`;
+  line **to stderr, immediately**, and the run's own status line gains
+  `(3 spawn attempts)`;
 - every failed attempt's traceback (not just the last) is prepended to `log.txt`;
 - `spawn_attempts` is recorded in `timing.json`;
 - the sweep summary reports how many runs needed more than one spawn.
