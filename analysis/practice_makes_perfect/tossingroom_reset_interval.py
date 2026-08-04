@@ -290,6 +290,51 @@ class ResetIntervalReport:
         ]
 
     @staticmethod
+    def mean_rate_over_training(*, arms: dict, arm: str, family: str) -> list[float]:
+        """Per-seed mean success rate across *all* checkpoints for one family -- the
+        normalised area under that seed's learning curve, i.e. how fast it learned
+        rather than where it ended up.
+
+        **Post-hoc.** The pre-specified metric was the final-checkpoint gap, and it
+        returned a saturated null: by 2500 transitions every arm sits at 95-99% on
+        both throw families, so the endpoint has almost no room to differ. The
+        learning curves plainly do differ, and this is the statistic that reads
+        them without choosing a checkpoint after the fact.
+
+        Chosen over "transitions to reach X%" precisely because that one is
+        censored -- a seed that never reaches the threshold has no value, and at
+        least one here ends at 21% -- which would silently drop the worst seeds
+        from the comparison and flatter the arm they fall in. Averaging the curve
+        is defined for every seed.
+        """
+        seeds = ResetIntervalReport.seeds(arms=arms)
+        means = []
+        for seed in seeds:
+            triples = arms[arm][seed]["families"][family]
+            means.append(
+                statistics.mean(
+                    100.0 * solved / total if total else 0.0 for _t, solved, total in triples
+                )
+            )
+        return means
+
+    @staticmethod
+    def mean_gap_over_training(*, arms: dict, arm: str) -> list[float]:
+        """Per-seed mean (TRASH - RECYCLING) gap across all checkpoints.
+
+        **Post-hoc**, for the same reason as `mean_rate_over_training`: the final
+        gap is measured where both families have saturated. This asks whether
+        RECYCLING trails TRASH *along the way*, which is where a penalty for
+        irreversibility would show up if the run is long enough to wash it out by
+        the end.
+        """
+        trash = ResetIntervalReport.mean_rate_over_training(arms=arms, arm=arm, family="TRASH")
+        recycling = ResetIntervalReport.mean_rate_over_training(
+            arms=arms, arm=arm, family="RECYCLING"
+        )
+        return [t - r for t, r in zip(trash, recycling, strict=True)]
+
+    @staticmethod
     def pooled_rate(*, arms: dict, arm: str, family: str) -> float:
         """One arm's final-sweep success rate for a family, pooled over all seeds
         (total solved / total tasks) rather than averaged over per-seed rates.
@@ -1011,6 +1056,85 @@ def _print_report(*, arms: dict) -> None:
             f"  {arm}: mean {statistics.mean(gaps):+.1f}pp, Wilcoxon p={wilcoxon.p_value:.4f}, "
             f"sign-flip p={flip.p_value:.4f}, {wilcoxon.num_zero_differences} zero diffs"
         )
+
+    # Everything below is POST-HOC -- added after the pre-specified final-checkpoint
+    # metric returned a null measured at a ceiling. Labelled rather than folded in
+    # with the tests above, because a statistic chosen after seeing the curves does
+    # not carry the same evidential weight as one chosen before.
+    print("\n--- POST-HOC: the trajectory, not the endpoint ---")
+    print("\nMean success over all checkpoints (normalised area under the learning curve):")
+    print(f"{'arm':>5} " + " ".join(f"{family:>16}" for family in _FAMILY_STYLE))
+    for arm in arms_ordered:
+        print(f"{arm:>5} ", end="")
+        for family in _FAMILY_STYLE:
+            values = ResetIntervalReport.mean_rate_over_training(arms=arms, arm=arm, family=family)
+            print(f" {statistics.mean(values):>9.1f} +-{statistics.stdev(values):<4.1f}", end="")
+        print()
+
+    print(f"\nLearning speed, paired armA (10) minus {_BASELINE_ARM} (100), exact tests:")
+    speedups = {}
+    for family in _FAMILY_STYLE:
+        differences = [
+            a - d
+            for a, d in zip(
+                ResetIntervalReport.mean_rate_over_training(arms=arms, arm="armA", family=family),
+                ResetIntervalReport.mean_rate_over_training(
+                    arms=arms, arm=_BASELINE_ARM, family=family
+                ),
+                strict=True,
+            )
+        ]
+        speedups[family] = differences
+        wilcoxon = PairedTests.wilcoxon_signed_rank(differences=differences)
+        flip = PairedTests.sign_flip(differences=differences)
+        print(
+            f"  {family:>10}: mean {statistics.mean(differences):+6.1f}pp, "
+            f"sd {statistics.stdev(differences):5.1f}, "
+            f"Wilcoxon p={wilcoxon.p_value:.4f}, sign-flip p={flip.p_value:.4f}"
+        )
+
+    # The discriminating question. Frequent resets speeding BOTH throw families up
+    # equally is a general "less time wasted" effect; irreversibility predicts the
+    # terminal family benefits MORE.
+    differential = [r - t for r, t in zip(speedups["RECYCLING"], speedups["TRASH"], strict=True)]
+    wilcoxon = PairedTests.wilcoxon_signed_rank(differences=differential)
+    flip = PairedTests.sign_flip(differences=differential)
+    mde = PairedTests.minimum_detectable_effect(differences=differential)
+    needed = PairedTests.seeds_for_80_percent_power(differences=differential)
+    print(
+        "\n  Does RECYCLING gain MORE than TRASH from frequent resets? "
+        "(the irreversibility-specific claim; a generic 'less wasted motion' effect "
+        "would speed both up equally)\n"
+        f"    RECYCLING speedup minus TRASH speedup: mean {statistics.mean(differential):+.1f}pp, "
+        f"sd {statistics.stdev(differential):.1f}, Wilcoxon p={wilcoxon.p_value:.4f}, "
+        f"sign-flip p={flip.p_value:.4f}, MDE at n={len(differential)}: {mde:.1f}pp, "
+        f"n for 80% power: {needed:.0f}"
+    )
+
+    print("\nMean (TRASH - RECYCLING) gap over all checkpoints, per arm:")
+    for arm in arms_ordered:
+        values = ResetIntervalReport.mean_gap_over_training(arms=arms, arm=arm)
+        wilcoxon = PairedTests.wilcoxon_signed_rank(differences=values)
+        print(
+            f"  {arm}: mean {statistics.mean(values):+5.1f}pp, "
+            f"sd {statistics.stdev(values):4.1f}, vs zero Wilcoxon p={wilcoxon.p_value:.4f}"
+        )
+    mid_gap_extremes = [
+        d - a
+        for a, d in zip(
+            ResetIntervalReport.mean_gap_over_training(arms=arms, arm="armA"),
+            ResetIntervalReport.mean_gap_over_training(arms=arms, arm=_BASELINE_ARM),
+            strict=True,
+        )
+    ]
+    wilcoxon = PairedTests.wilcoxon_signed_rank(differences=mid_gap_extremes)
+    flip = PairedTests.sign_flip(differences=mid_gap_extremes)
+    mde = PairedTests.minimum_detectable_effect(differences=mid_gap_extremes)
+    print(
+        f"  {_BASELINE_ARM} minus armA: mean {statistics.mean(mid_gap_extremes):+.1f}pp, "
+        f"sd {statistics.stdev(mid_gap_extremes):.1f}, Wilcoxon p={wilcoxon.p_value:.4f}, "
+        f"sign-flip p={flip.p_value:.4f}, MDE at n={len(mid_gap_extremes)}: {mde:.1f}pp"
+    )
 
 
 def main() -> None:

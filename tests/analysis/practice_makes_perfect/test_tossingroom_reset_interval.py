@@ -22,6 +22,8 @@ failing.
 
 import itertools
 import math
+import statistics
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +32,10 @@ from analysis.practice_makes_perfect.tossingroom_reset_interval import (
     PairedTests,
     ResetIntervalReport,
     expected_denominators,
+)
+
+_ARMS_JSON = (
+    Path(__file__).parents[3] / "docs/experiment-logs/2026-08-04-tossingroom-reset-interval.json"
 )
 
 
@@ -134,3 +140,166 @@ def test_predicted_gap_noise_at_the_designed_composition_is_the_quoted_floor():
     assert ResetIntervalReport.predicted_gap_noise(arms=arms, arm="armA") == pytest.approx(
         18.898, abs=0.01
     )
+
+
+def test_family_labels_cover_every_goal_the_committed_aggregate_contains():
+    """Every arm/seed/sweep must carry all three families with a non-zero
+    denominator -- an unrecognised goal raises during aggregation, but a family
+    that silently vanished from the test draw would not."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    for arm, seeds in arms.items():
+        for seed, record in seeds.items():
+            assert set(record["families"]) == {"RECYCLING", "TRASH", "EMPTY"}
+            for family, triples in record["families"].items():
+                for _transitions, solved, total in triples:
+                    assert total > 0, f"{arm}/{seed} has no {family} tasks"
+                    assert 0 <= solved <= total
+
+
+def test_every_arm_shares_the_same_seeds_so_pairing_is_valid():
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    seeds = ResetIntervalReport.seeds(arms=arms)
+    assert seeds == [str(seed) for seed in range(20)]
+    for arm in arms:
+        assert sorted(arms[arm], key=int) == seeds
+
+
+def test_the_committed_data_shows_the_manipulation_actually_happened():
+    """The experiment's first claim, pinned against its own data: each arm really
+    performed the number of free resets its interval implies. A design that
+    silently did not vary what it claimed is how the previous reset experiment went
+    wrong."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    for arm in _ARM_INTERVAL:
+        expected = ResetIntervalReport.expected_resets(arm=arm)
+        assert set(ResetIntervalReport.reset_counts(arms=arms, arm=arm)) == {expected}
+
+
+def test_the_committed_data_has_the_designed_test_set_composition():
+    """14 TRASH / 14 RECYCLING / 2 EMPTY in every seed of every arm -- asserted, not
+    assumed, because it is what sets this experiment's noise floor."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    assert ResetIntervalReport.composition_violations(arms=arms) == []
+
+
+def test_every_arm_got_the_same_experience():
+    """2500 online transitions everywhere. Not automatic: a mid-period reset can
+    revive a robot that would otherwise have raised InteractionComplete, so a
+    frequently-reset arm could buy extra experience and reintroduce the progress
+    confound."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    for arm in _ARM_INTERVAL:
+        assert set(ResetIntervalReport.achieved_transitions(arms=arms, arm=arm)) == {2500.0}
+
+
+def test_the_headline_numbers_quoted_in_the_log_come_from_the_committed_data():
+    """Pins the experiment log's and PR's headline figures to the aggregate that
+    produced them, so no quoted number can drift without a test failing.
+
+    The final-gap null is the pre-specified result; the area-under-curve speed-up
+    is the post-hoc one. Both are pinned, since both are quoted."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    extremes = [
+        d - a
+        for a, d in zip(
+            ResetIntervalReport.gaps(arms=arms, arm="armA"),
+            ResetIntervalReport.gaps(arms=arms, arm="armD"),
+            strict=True,
+        )
+    ]
+    assert statistics.mean(extremes) == pytest.approx(0.36, abs=0.01)
+    assert PairedTests.wilcoxon_signed_rank(differences=extremes).p_value == pytest.approx(
+        0.9531, abs=0.0001
+    )
+
+    speedups = {}
+    for family in ("RECYCLING", "TRASH", "EMPTY"):
+        speedups[family] = [
+            a - d
+            for a, d in zip(
+                ResetIntervalReport.mean_rate_over_training(arms=arms, arm="armA", family=family),
+                ResetIntervalReport.mean_rate_over_training(arms=arms, arm="armD", family=family),
+                strict=True,
+            )
+        ]
+    assert statistics.mean(speedups["RECYCLING"]) == pytest.approx(18.4, abs=0.05)
+    assert statistics.mean(speedups["TRASH"]) == pytest.approx(11.1, abs=0.05)
+    # The control does not move at all -- the reason the speed-up is attributable
+    # to the stochastic Throw rather than to some generic harness artifact.
+    assert speedups["EMPTY"] == [0.0] * 20
+    for family in ("RECYCLING", "TRASH"):
+        assert PairedTests.wilcoxon_signed_rank(differences=speedups[family]).p_value < 0.001
+
+
+def test_the_irreversibility_specific_claim_is_reported_as_unestablished():
+    """The differential -- does the terminal family gain MORE than the recoverable
+    one? -- is the claim that would make this about irreversibility rather than
+    about wasted traversal. It does not reach p < 0.05, and this pins that, so the
+    log cannot quietly start asserting it."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    differential = [
+        (a_rec - d_rec) - (a_tra - d_tra)
+        for a_rec, d_rec, a_tra, d_tra in zip(
+            ResetIntervalReport.mean_rate_over_training(arms=arms, arm="armA", family="RECYCLING"),
+            ResetIntervalReport.mean_rate_over_training(arms=arms, arm="armD", family="RECYCLING"),
+            ResetIntervalReport.mean_rate_over_training(arms=arms, arm="armA", family="TRASH"),
+            ResetIntervalReport.mean_rate_over_training(arms=arms, arm="armD", family="TRASH"),
+            strict=True,
+        )
+    ]
+    assert statistics.mean(differential) == pytest.approx(7.3, abs=0.05)
+    p_value = PairedTests.wilcoxon_signed_rank(differences=differential).p_value
+    assert p_value == pytest.approx(0.0623, abs=0.0001)
+    assert p_value > 0.05, "the log reports this as not established"
+    assert PairedTests.seeds_for_80_percent_power(differences=differential) == pytest.approx(
+        49, abs=1
+    )
+
+
+def test_every_arm_is_measured_on_an_identical_transition_grid():
+    """What the post-hoc area-under-curve comparison rests on: an unweighted mean
+    over checkpoints is only comparable across arms if checkpoint i sits at the
+    same transition count in every arm.
+
+    Equal *totals* would not be enough -- a run whose period ended early and whose
+    later periods made the steps up could land on 2500 while sampling the curve at
+    different x -- so the whole grid is checked, not just its endpoint."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    grids = {
+        tuple(transitions for transitions, _solved, _total in triples)
+        for seeds in arms.values()
+        for record in seeds.values()
+        for triples in record["families"].values()
+    }
+    assert grids == {tuple(range(0, 2600, 100))}
+
+
+def test_the_arms_are_progress_matched_which_is_what_pr_39_could_not_achieve():
+    """The methodological headline, pinned: unlike the reset-*frequency* design,
+    these arms end at the same competence, so a cross-arm gap difference would have
+    been attributable to reset frequency."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    for family in ("TRASH", "RECYCLING"):
+        differences = ResetIntervalReport.family_differences(
+            arms=arms, family=family, from_arm="armA", to_arm="armD"
+        )
+        assert abs(statistics.mean(differences)) < 5.0
+        assert PairedTests.wilcoxon_signed_rank(differences=differences).p_value > 0.05
+    assert (
+        ResetIntervalReport.family_differences(
+            arms=arms, family="EMPTY", from_arm="armA", to_arm="armD"
+        )
+        == [0.0] * 20
+    )
+
+
+def test_the_final_gap_null_is_measured_at_a_ceiling_not_at_precision():
+    """The log's most important caveat, pinned: every arm's observed gap sd is
+    BELOW the binomial noise floor, which is saturation rather than precision --
+    most seeds have both throw families at 100% and a gap of exactly zero."""
+    arms = ResetIntervalReport.load_arms(json_path=_ARMS_JSON)
+    for arm in _ARM_INTERVAL:
+        gaps = ResetIntervalReport.gaps(arms=arms, arm=arm)
+        floor = ResetIntervalReport.predicted_gap_noise(arms=arms, arm=arm)
+        assert statistics.stdev(gaps) < floor
+        assert sum(1 for gap in gaps if gap == 0.0) >= 13
