@@ -16,6 +16,19 @@ no derived fields) — a reader reconstructs the instance via
 (`task_training_curve()`, `percentage_success_overall_test()`, etc.), so there's
 exactly one place those are computed, not a second copy living in `analysis/`.
 
+- `run_timing.py` — per-run wall-clock as a function of the concurrency a run
+  actually experienced, read back from the `timing.json` files
+  `scripts/run_sweep.py` writes beside each `stats.json` (see
+  [`../scripts/README.md`](../scripts/README.md)). Takes `--results-root DIR` laid
+  out as `DIR/<method>/<seed>/timing.json`, found by **filename glob, never by file
+  mtime**. Prints elapsed seconds bucketed by observed concurrency plus a per-sweep
+  summary; `--per-run` adds one row per run. Concurrency here means the
+  *machine-wide* `hitl_pmp.cli` count, not the sweep's own in-flight count — several
+  agents' sweeps share this box, and using the sweep-local number would credit
+  another sweep's load to this one's `--max-workers`. It is the one script here that
+  imports from `scripts/` (`RunTiming`, the record's schema): the reader validates
+  against the writer's own definition rather than keeping a second copy that can
+  drift.
 - `practice_makes_perfect/random_skills.py` — aggregates `RandomSkillsMethod`
   (and, for comparison, any other `--method`'s) test success rate across seeds and
   `--grid-size` values, given a `--results-root DIR` laid out as

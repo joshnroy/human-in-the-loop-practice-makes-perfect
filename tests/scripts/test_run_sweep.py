@@ -1,10 +1,11 @@
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from scripts.run_sweep import SweepRun, SweepRunner
+from scripts.run_sweep import InFlightCounter, MachineSampler, RunTiming, SweepRun, SweepRunner
 
 
 def test_plan_produces_one_run_per_method_seed_pair() -> None:
@@ -159,6 +160,175 @@ def test_execute_pins_single_threaded_math_in_children(*, tmp_path: Path) -> Non
     )
     SweepRunner.execute(runs=[run], max_workers=1)
     assert output.read_text() == "1"
+
+
+def _fake_run(*, tmp_path: Path, seed: int, command: list[str]) -> SweepRun:
+    return SweepRun(
+        method="fake", seed=seed, output_dir=tmp_path / "fake" / str(seed), command=command
+    )
+
+
+def _timing_of(*, run: SweepRun) -> RunTiming:
+    return RunTiming.model_validate_json((run.output_dir / "timing.json").read_text())
+
+
+def test_execute_records_timing_beside_the_run_it_timed(*, tmp_path: Path) -> None:
+    """The record exists so "how long does a run take?" is answerable from data
+    instead of re-measured by hand -- which it has been, repeatedly, because the
+    only previous signal was output-directory mtimes."""
+    run = _fake_run(
+        tmp_path=tmp_path, seed=0, command=[sys.executable, "-c", "import time; time.sleep(0.05)"]
+    )
+    SweepRunner.execute(runs=[run], max_workers=1)
+    timing = _timing_of(run=run)
+    assert timing.method == "fake"
+    assert timing.seed == 0
+    assert timing.succeeded is True
+    assert timing.returncode == 0
+    assert timing.elapsed_seconds >= 0.05
+
+
+def test_timing_is_written_for_a_failing_run_too(*, tmp_path: Path) -> None:
+    """A failed run's wall-clock is data. Dropping it would bias any later
+    concurrency analysis toward whatever happened to succeed."""
+    run = _fake_run(
+        tmp_path=tmp_path, seed=0, command=[sys.executable, "-c", "raise SystemExit(3)"]
+    )
+    SweepRunner.execute(runs=[run], max_workers=1)
+    timing = _timing_of(run=run)
+    assert timing.returncode == 3
+    assert timing.succeeded is False
+
+
+def test_timing_is_written_even_when_the_child_cannot_be_launched(*, tmp_path: Path) -> None:
+    """subprocess.run itself raising (no such executable) is the one path that
+    would otherwise skip the record entirely -- hence the try/finally."""
+    run = _fake_run(tmp_path=tmp_path, seed=0, command=["definitely-not-a-real-executable"])
+    with pytest.raises(FileNotFoundError):
+        SweepRunner.execute(runs=[run], max_workers=1)
+    timing = _timing_of(run=run)
+    assert timing.returncode == -1
+    assert timing.succeeded is False
+
+
+def test_timing_timestamps_are_timezone_aware_iso_8601(*, tmp_path: Path) -> None:
+    """A naive timestamp cannot be compared against another machine's, or across a
+    DST boundary. The epoch fields are the derived convenience, so they have to
+    agree with the primary ISO ones."""
+    run = _fake_run(tmp_path=tmp_path, seed=0, command=[sys.executable, "-c", "pass"])
+    SweepRunner.execute(runs=[run], max_workers=1)
+    timing = _timing_of(run=run)
+    start = datetime.fromisoformat(timing.start_time)
+    end = datetime.fromisoformat(timing.end_time)
+    assert start.tzinfo is not None and end.tzinfo is not None
+    assert start.timestamp() == pytest.approx(timing.start_epoch_seconds)
+    assert end >= start
+
+
+def test_elapsed_agrees_with_the_wall_clock_absent_a_clock_step(*, tmp_path: Path) -> None:
+    """Elapsed is measured with time.monotonic() rather than by subtracting the
+    two timestamps, because a 40-minute run is long enough for NTP to step the
+    wall clock underneath it. This can only check that the two agree when nothing
+    steps the clock -- the divergence it guards against is not reproducible in a
+    test -- so it is a sanity check on the units, not a proof of the clock source."""
+    run = _fake_run(
+        tmp_path=tmp_path, seed=0, command=[sys.executable, "-c", "import time; time.sleep(0.05)"]
+    )
+    SweepRunner.execute(runs=[run], max_workers=1)
+    timing = _timing_of(run=run)
+    wall_elapsed = timing.end_epoch_seconds - timing.start_epoch_seconds
+    assert timing.elapsed_seconds == pytest.approx(wall_elapsed, abs=0.5)
+
+
+def test_timing_records_both_concurrency_signals_separately(*, tmp_path: Path) -> None:
+    """The sweep-local count and the machine-wide count answer different
+    questions: other agents' sweeps load the same box, so the sweep-local number
+    is only a lower bound on what a run actually competed with. Conflating them
+    would misattribute another sweep's load to this one's --max-workers."""
+    runs = [
+        _fake_run(
+            tmp_path=tmp_path,
+            seed=seed,
+            command=[sys.executable, "-c", "import time; time.sleep(0.05)"],
+        )
+        for seed in range(3)
+    ]
+    SweepRunner.execute(runs=runs, max_workers=3)
+    for run in runs:
+        timing = _timing_of(run=run)
+        assert 1 <= timing.sweep_runs_in_flight_at_start <= 3
+        assert 1 <= timing.sweep_runs_in_flight_at_end <= 3
+        assert timing.max_workers == 3
+        # Machine-wide samples are Optional by design ("unknown" is not "zero"),
+        # but the field pair always exists at both ends of the run.
+        for sample in (timing.machine_at_start, timing.machine_at_end):
+            assert sample.cli_processes is None or sample.cli_processes >= 0
+            assert sample.load_average_1min is None or sample.load_average_1min >= 0
+
+
+def test_every_run_of_one_sweep_shares_a_sweep_id(*, tmp_path: Path) -> None:
+    """Grouping by sweep is what makes --max-workers interpretable: runs of one
+    sweep shared a worker budget, runs of two overlapping sweeps did not."""
+    runs = [
+        _fake_run(tmp_path=tmp_path, seed=seed, command=[sys.executable, "-c", "pass"])
+        for seed in range(2)
+    ]
+    SweepRunner.execute(runs=runs, max_workers=2)
+    assert len({_timing_of(run=run).sweep_id for run in runs}) == 1
+
+    second = _fake_run(tmp_path=tmp_path / "again", seed=0, command=[sys.executable, "-c", "pass"])
+    SweepRunner.execute(runs=[second], max_workers=1)
+    assert _timing_of(run=second).sweep_id != _timing_of(run=runs[0]).sweep_id
+
+
+def test_timing_does_not_touch_what_the_run_itself_wrote(*, tmp_path: Path) -> None:
+    """The reason timing lives in its own file: stats.json's byte-stability is how
+    this project verifies that a change did not alter results, so nothing here may
+    reach into it."""
+    stats = tmp_path / "fake" / "0" / "stats.json"
+    run = _fake_run(
+        tmp_path=tmp_path,
+        seed=0,
+        command=[
+            sys.executable,
+            "-c",
+            f"import pathlib; pathlib.Path({str(stats)!r}).write_text('{{\"evaluations\": []}}')",
+        ],
+    )
+    SweepRunner.execute(runs=[run], max_workers=1)
+    assert stats.read_text() == '{"evaluations": []}'
+    assert (run.output_dir / "timing.json").is_file()
+
+
+def test_in_flight_counter_reports_the_calling_run_inclusively() -> None:
+    """Entry and exit samples have to be on the same scale, or a run that starts
+    alone and finishes alone would read 1 and 0."""
+    counter = InFlightCounter()
+    assert counter.enter() == 1
+    assert counter.enter() == 2
+    assert counter.leave() == 2
+    assert counter.leave() == 1
+
+
+def test_machine_sampler_counts_cli_processes_from_a_process_table(*, tmp_path: Path) -> None:
+    """Counts every `hitl_pmp.cli` on the box, including other agents' sweeps --
+    that is the point of the machine-wide signal. Reads /proc directly rather than
+    spawning `pgrep`, whose `-c` prints 0 *and* exits non-zero on no match."""
+    for pid, cmdline in (
+        ("11", b"python\x00-m\x00hitl_pmp.cli\x00--env\x00lightswitch\x00"),
+        ("12", b"python\x00-m\x00hitl_pmp.cli\x00"),
+        ("13", b"python\x00-m\x00scripts.run_sweep\x00"),
+        ("self", b"not-a-pid-directory\x00"),
+    ):
+        (tmp_path / pid).mkdir()
+        (tmp_path / pid / "cmdline").write_bytes(cmdline)
+    assert MachineSampler.count_cli_processes(proc_dir=tmp_path) == 2
+
+
+def test_machine_sampler_reports_unknown_rather_than_zero_without_proc(*, tmp_path: Path) -> None:
+    """ "No /proc" (macOS) and "no runs in flight" are different facts, and a zero
+    in place of the first would silently corrupt a concurrency regression."""
+    assert MachineSampler.count_cli_processes(proc_dir=tmp_path / "nonexistent") is None
 
 
 def test_sweep_output_round_trips_through_the_analysis_layout(*, tmp_path: Path) -> None:
