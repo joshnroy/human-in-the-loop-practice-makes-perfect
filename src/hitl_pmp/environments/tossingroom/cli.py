@@ -140,6 +140,11 @@ class TossingRoomCli:
             target_low=args.target_low,
             target_high=args.target_high,
             forced_goal_type=forced_goal_type,
+            # The global --num-test-tasks: this domain's test set has a *fixed* goal-family
+            # composition (14 TRASH / 14 RECYCLING / 2 EMPTY at 30 tasks), so Tasks has to
+            # know how many test tasks the harness will draw in order to divide them up.
+            # See TossingRoomTasks.test_goal_type_counts.
+            num_test_tasks=args.num_test_tasks,
         )
         problem = TossingRoomProblem(env=env, tasks=tasks)
         context = DomainContext(
