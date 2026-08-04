@@ -210,10 +210,19 @@ MUJOCO_GL=egl PYOPENGL_PLATFORM=egl python -m scripts.render_tossing3d_demo \
   one frame per transition by construction, so that path can only ever produce a
   4-frame storyboard. This taps `KinderBackend.capture_frames_into` to render per
   tick instead, exactly as KINDER's `scripts/generate_demo_video.py` does.
+- **Every frame is captioned**, from the same `Tossing3DRenderer.caption` the
+  storyboard uses, with the active skill and the cube's live position against the
+  scored goal region and the bin. That is not decoration on this domain: KINDER's
+  goal region stops short of the bin, so the *solved* ending has the cube on the
+  floor with the bin untouched, and only the numbers distinguish that from a miss.
+  The per-tick cube position comes from `KinderBackend.capture_features_into`.
 - **It needs the `tossing3d` extra**, so run it from the KINDER virtualenv (see
   `src/hitl_pmp/environments/tossing3d/README.md`). It also wants `gifsicle` on
   `PATH` for `kinder.gif_utils.optimize_gif`; without it KINDER prints a warning
-  and skips optimisation, which is a 12 MB GIF rather than 1.9 MB.
+  and skips optimisation, which is a 1.2 MB GIF rather than 1.1 MB — a much
+  smaller gap than it used to be, because the frames now reach `optimize_gif`
+  already octree-quantised to 256 colours (see `draw_captions` for why: median cut
+  was dropping the green cube's palette entry).
 - `--check-scene-bg` re-runs the rollout with KINDER's plain scene and asserts the
   cube trajectory is bit-identical, i.e. that the background is purely cosmetic.
   It is: that is what licenses rendering the demo with it and sweeping without.

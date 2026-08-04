@@ -166,10 +166,13 @@ only which of them count as solved changes.
 
 The goal region is x in [1.85, 2.15] (see [the goal-region
 correction](#the-goal-region-was-wrong-and-these-numbers-are-the-re-run)). The bin's
-footprint starts at 2.08, so the region and the bin **overlap** on x in [2.08, 2.15]:
-landing in the bin is not itself a failure. What makes the dial worth learning is that
-the extremes miss on both sides — a weak swing drops short, and KINDER's own demo toss
-(swing = 1.0) sails out to 2.22, past the region's far edge.
+footprint starts at 2.08, so the region and the bin overlap on x in [2.08, 2.15] as
+arithmetic — but a later, finer sweep found that **nothing ever lands there**: the
+landing position steps straight from ~2.02 to ~2.22 with nothing in between, so in
+practice a cube in the bin is always a scored failure. The full staircase, and why, is in
+the environment README. What makes the dial worth learning is that the extremes miss on
+both sides — a weak swing drops short, and KINDER's own demo toss (swing = 1.0) sails out
+to 2.22, past the region's far edge.
 
 | swing | 0.25 | 0.50 | 0.60 | 0.75 | 0.90 | 1.00 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -479,6 +482,8 @@ that such a change would be measured against.
 - **`o2` is not supported** (two cubes; the symbolic layer here is single-cube).
 - **The goal is KINDER's `blocks_goal_region` verbatim**, not "in the bin" — and
   "verbatim" means the region KINDER *tests*, x ∈ [1.85, 2.15], which is the task JSON's
-  range inflated by `ground_placement_threshold`. The region and the bin overlap on
-  x ∈ [2.08, 2.15]; the bin does not sit past it. See the environment README and
+  range inflated by `ground_placement_threshold`. The region's far edge sits *inside* the
+  bin's footprint, but no toss rests a cube in the sliver where that matters, so every
+  success counted here is a cube on the floor short of the bin. See the environment
+  README and
   [the goal-region correction](#the-goal-region-was-wrong-and-these-numbers-are-the-re-run).

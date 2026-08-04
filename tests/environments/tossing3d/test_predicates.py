@@ -24,18 +24,24 @@ def test_in_goal_region_accepts_a_cube_inside_kinders_box() -> None:
 
 
 def test_in_goal_region_rejects_a_cube_tossed_to_the_far_end_of_the_bin() -> None:
-    """A full-power swing lands at x ~ 2.22, past the region's 2.15 edge, so it misses
-    KINDER's own goal. Note the region and the bin *overlap*: the bin's footprint spans
-    x in [2.08, 2.38], so being in the bin is not itself disqualifying -- see
-    `test_in_goal_region_accepts_a_cube_resting_in_the_near_end_of_the_bin`."""
+    """A cube that reaches the bin comes to rest at x ~ 2.22, past the region's 2.15
+    edge, so it misses KINDER's own goal. That is not an artefact of a hard swing: it is
+    where a cube ends up in this bin at *every* swing that clears its near wall -- see
+    the domain README's swing table."""
     state = build_state(cube=(2.218, -0.001, 0.044))
     assert not _holds(predicate=IN_GOAL_REGION, state=state, objects=(_ENV.cube, _ENV.goal_region))
 
 
 def test_in_goal_region_accepts_a_cube_resting_in_the_near_end_of_the_bin() -> None:
-    """Pins the overlap the docs used to deny. The goal region reaches x=2.15 and the
-    bin's near edge is x=2.08, so a cube on the bin floor (z=0.044) anywhere in between
-    satisfies KINDER's goal."""
+    """The region's far edge (2.15) is inside the bin's footprint (from 2.08), so this
+    arithmetic accepts a cube on the bin floor in between.
+
+    Kept as a statement about the *classifier*, not about the domain: no toss reaches
+    this position. The bin's near wall runs to x = 2.100 and the cube's half-extent is
+    0.025, so a cube resting inside the bin starts at x = 2.126, and the measured landing
+    positions step straight from ~2.02 to ~2.22 with nothing between them
+    (`test_kinder_fidelity.py::test_no_swing_rests_the_cube_in_the_goal_regions_overlap_with_the_bin`).
+    Read this as "the box is the box", not as "landing in the bin can succeed"."""
     state = build_state(cube=(2.12, 0.0, 0.044))
     assert _holds(predicate=IN_GOAL_REGION, state=state, objects=(_ENV.cube, _ENV.goal_region))
 

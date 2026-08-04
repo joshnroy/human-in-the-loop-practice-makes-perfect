@@ -28,12 +28,17 @@ class SkillOraclePolicy:
     # in the goal region at every swing sampled in [0.6, 0.9] and outside it at 0.5
     # (short, x ~ 1.66) and at 1.0 (long, x ~ 2.22 past the region's 2.15 edge).
     #
-    # 0.75 is *within* that band but is not its midpoint, and the endpoints are sampled
-    # values rather than measured edges: the sweep tried {0.25, 0.5, 0.6, 0.75, 0.9, 1.0},
-    # so all that is established is a solving band somewhere inside (0.5, 1.0). The band
-    # was originally bracketed against this domain's un-inflated goal box; re-checking
-    # the same landing positions against KINDER's true, 5 cm-wider box flips no sampled
-    # point in either direction, so 0.75 still solves and was not retuned.
+    # A later sweep at 0.001 resolution over the upper end (seeds 0, 2 and the demo's
+    # 1166418; table in the domain README) puts the band's far edge at 0.958-0.959,
+    # depending on the seed, so the solving band is roughly (0.5, 0.959) and 0.75 sits
+    # inside it with margin on both sides. It is not the midpoint, and it was not chosen
+    # to be: it was measured to solve and left alone.
+    #
+    # It was specifically *not* retuned toward the goal region's overlap with the bin,
+    # x in [2.08, 2.15]. That strip is arithmetic only -- no swing rests the cube there,
+    # because the landing position steps from ~2.02 straight to ~2.22 -- so aiming at it
+    # would only produce a demo that fails its own goal check. See
+    # `test_no_swing_rests_the_cube_in_the_goal_regions_overlap_with_the_bin`.
     #
     # `test_the_oracle_swing_actually_reaches_the_goal_region` is what holds this
     # honest -- it asserts the constant solves rather than trusting this comment.

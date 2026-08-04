@@ -101,6 +101,10 @@ class KinderBackend(BaseModel):
     # control tick appends one `env.render()` to it, which is how a *smooth* clip gets
     # made -- see `capture_frames_into` for why that is a separate mode.
     _frame_sink: list[np.ndarray] | None = PrivateAttr(default=None)
+    # Set by `capture_features_into`. Same tick loop, same append point as
+    # `_frame_sink`, so entry i of one describes exactly the tick that produced entry i
+    # of the other -- which is the whole reason it exists; see `capture_features_into`.
+    _feature_sink: list[dict[str, tuple[float, ...]]] | None = PrivateAttr(default=None)
 
     def capture_frames_into(self, *, sink: list[np.ndarray] | None) -> None:
         """Record one KINDER frame per control tick into `sink` (None turns it off).
@@ -118,6 +122,23 @@ class KinderBackend(BaseModel):
         frames a learning curve has no use for.
         """
         self._frame_sink = sink
+
+    def capture_features_into(self, *, sink: list[dict[str, tuple[float, ...]]] | None) -> None:
+        """Record one `read_features()` per control tick into `sink` (None turns it off).
+
+        The companion to `capture_frames_into`, and the reason a smooth clip can carry a
+        caption at all. Both sinks are appended to at the same point in `_step`, after
+        `_last_state` has advanced, so `sink[i]` is the scene that `frames[i]` is a
+        picture *of*. Without it a caption could only report the state at a transition
+        boundary -- i.e. hold the pre-toss cube position frozen across the entire flight
+        and then jump -- which is worse than no caption, because it looks live and isn't.
+
+        A separate sink rather than a tuple appended to one list, so a caller that wants
+        only pixels or only numbers pays for only that. Cheap either way: this is a
+        handful of dict lookups against the observation `_step` already devectorized, no
+        simulator call.
+        """
+        self._feature_sink = sink
 
     def render_fps(self) -> int:
         """KINDER's own `render_fps` for this env (20), so a clip written from
@@ -252,6 +273,8 @@ class KinderBackend(BaseModel):
         self._last_state = env.observation_space.devectorize(observation)
         if self._frame_sink is not None:
             self._frame_sink.append(self.render())
+        if self._feature_sink is not None:
+            self._feature_sink.append(self.read_features())
 
     def execute_pick(self, *, distance: float, rot: float) -> bool:
         """KINDER's `pick_shelf`: drive the base to `(distance, rot)` relative to the

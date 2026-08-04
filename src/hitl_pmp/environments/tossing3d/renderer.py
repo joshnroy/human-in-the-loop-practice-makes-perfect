@@ -39,7 +39,9 @@ class Tossing3DRenderer(Renderer):
     `scripts/render_tossing3d_demo.py` exists: it taps
     `KinderBackend.capture_frames_into` to render once per MuJoCo control tick, the way
     KINDER's own `scripts/generate_demo_video.py` does, and writes the GIF with KINDER's
-    own `gif_utils.optimize_gif`. 276 frames instead of 4, and no matplotlib anywhere.
+    own `gif_utils.optimize_gif`. Hundreds of frames instead of four, and no matplotlib
+    figure per frame -- but the *same* caption, from `Tossing3DRenderer.caption` below,
+    which that script imports rather than reimplements.
 
     A static-method container, never instantiated.
     """
@@ -63,7 +65,7 @@ class Tossing3DRenderer(Renderer):
         figure.text(
             0.5,
             0.95,
-            Tossing3DRenderer._caption(state=state, env=tossing_env, label=label),
+            Tossing3DRenderer.caption(state=state, env=tossing_env, label=label),
             ha="center",
             va="center",
             fontsize=11,
@@ -74,11 +76,40 @@ class Tossing3DRenderer(Renderer):
         return rendered
 
     @staticmethod
-    def _caption(*, state: State, env: Tossing3DEnvironment, label: str | None) -> str:
+    def caption(*, state: State, env: Tossing3DEnvironment, label: str | None) -> str:
+        """The one caption formatter for this domain, public because
+        `scripts/render_tossing3d_demo.py` draws the same text onto the smooth clip. Two
+        formatters would drift, and the caption is the part a reader actually verifies
+        the claim from.
+
+        `bin x` is in there deliberately, because the bin is the thing this scene most
+        invites a reader to misread. KINDER scores containment in a floor region that
+        stops ~8 cm short of the bin's near wall (see the domain README), so a clip whose
+        cube ends up short of the bin is a *solved* clip. Printing the cube's x, the
+        scored region's edges and the bin's centre together is what makes that legible
+        without judging a 3-D projection by eye.
+
+        The cube's **z**, and not the `holding` flag it used to print, for a measured
+        reason. `holding` in this domain is the height proxy `cube z > held_height`
+        (0.2 m), which is honest at a transition boundary -- where the cube either is or
+        is not in the gripper -- but wrong tick-by-tick during a toss: on the seed-0
+        oracle rollout, 24 of the smooth clip's frames read `holding` while the cube was
+        airborne, across 63 cm of flight from x = 1.08 to 1.71. z is the quantity the
+        flag is derived from, so it says the same thing without ever claiming a grasp
+        that has already been released, and it shows the arc.
+
+        Budget note for anyone adding a field: the widest caption this can produce
+        (`MoveToThrowPose` mid-carry) measures 584 px in the storyboard renderer's 640 px
+        figure at fontsize 11. Matplotlib does not warn when text runs off the canvas --
+        it just runs off -- so re-measure before adding to this line.
+        """
         cube_x = state.get(obj=env.cube, feature_name="x")
+        cube_z = state.get(obj=env.cube, feature_name="z")
         x_min = state.get(obj=env.goal_region, feature_name="x_min")
         x_max = state.get(obj=env.goal_region, feature_name="x_max")
-        holding = int(round(state.get(obj=env.robot, feature_name="holding")))
+        bin_x = state.get(obj=env.bin_object, feature_name="x")
         prefix = "start" if label is None else label
-        held = "  holding" if holding else ""
-        return f"{prefix}   cube x={cube_x:.2f}   goal x in [{x_min:.2f}, {x_max:.2f}]{held}"
+        return (
+            f"{prefix}   cube x={cube_x:.2f} z={cube_z:.2f}"
+            f"   goal x in [{x_min:.2f}, {x_max:.2f}]   bin x={bin_x:.2f}"
+        )

@@ -33,11 +33,17 @@ class InGoalRegionClassifier:
     a simulator random walk lands the cube deep inside or far outside almost every time
     and cannot see those shells).
 
-    Note that the region and the bin overlap: the bin's 0.30 m footprint spans
-    x in [2.08, 2.38], so a cube resting on the bin floor at x in [2.08, 2.15] satisfies
-    KINDER's goal, while a full-power toss out to x ~ 2.22 overshoots it. This domain
-    uses KINDER's criterion verbatim rather than substituting an "in the bin" test, so
-    that a number reported here is a number about the benchmark.
+    The region and the bin overlap on paper -- the bin's 0.30 m footprint spans
+    x in [2.08, 2.38] -- and this classifier would accept a cube resting on the bin floor
+    at x in [2.08, 2.15]. **No toss can put one there.** The bin's near wall occupies
+    x in [2.080, 2.100], so a cube resting inside starts at x = 2.126, and the swing dial
+    steps discontinuously from landing at x ~ 2.02 to landing at x ~ 2.22. Measured
+    across three seeds at a resolution of 0.001, nothing lands in between. So in practice
+    a cube in the bin is always a scored failure, and the bin is scenery: see the domain
+    README's swing table and
+    `test_kinder_fidelity.py::test_no_swing_rests_the_cube_in_the_goal_regions_overlap_with_the_bin`.
+    This domain uses KINDER's criterion verbatim rather than substituting an "in the bin"
+    test, so that a number reported here is a number about the benchmark.
     """
 
     @staticmethod

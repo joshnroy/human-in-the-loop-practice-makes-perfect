@@ -212,10 +212,13 @@ def test_a_full_power_toss_overshoots_the_goal_region() -> None:
     domain's README reports.
 
     Note the margin here is 7 cm, not the 12 cm it was when this domain mistakenly
-    scored against the un-inflated JSON range. The region and the bin *overlap* on
-    x in [2.08, 2.15] -- landing in the bin is not per se a failure -- so what this test
-    characterises is specifically that a full-power swing clears the bin's near edge too,
-    not that the bin is out of bounds.
+    scored against the un-inflated JSON range. The region's far edge (2.15) is *inside*
+    the bin's footprint (from 2.08), so what this test characterises is that a cube in
+    the bin comes to rest past that edge rather than that the bin is out of bounds. In
+    practice the two amount to the same thing --
+    `test_no_swing_rests_the_cube_in_the_goal_regions_overlap_with_the_bin` measures that
+    no swing rests a cube in the strip where they differ -- but they are different claims
+    and only the first is what this test checks.
 
     Asserted on seeds 0 and 2, not seed 1. On seed 1 the grasp is marginal and the cube
     slips out of the gripper during `move_to_target`, landing at x ~ 1.58 without ever
@@ -229,6 +232,85 @@ def test_a_full_power_toss_overshoots_the_goal_region() -> None:
             f"seed {seed}: full-power toss did not clear the region's far edge"
         )
         assert not IN_GOAL_REGION.holds(state, (_ENV.cube, _ENV.goal_region))
+
+
+def test_no_swing_rests_the_cube_in_the_goal_regions_overlap_with_the_bin() -> None:
+    """The overlap on x in [2.08, 2.15] exists on paper and is empty in practice, and
+    that is worth pinning because the arithmetic alone says the opposite.
+
+    Scope, stated precisely: **no swing, at this domain's fixed `throw_standoff` (1.35 m)
+    and `ORACLE_PICK_DISTANCE`,** rests the cube in the strip. Those are ClassVars
+    exactly so that `swing` is this domain's only throw-shaping dial, so that is the
+    space a learned sampler searches -- but it is not a claim that the strip is
+    unreachable from every base pose.
+
+    Two things squeeze it. The bin's near wall occupies x in [2.080, 2.100] (0.30 m bin
+    centred at 2.2305, 0.02 m walls), so the part of the overlap a cube can physically
+    *rest in* is only x in [2.126, 2.150] once its own 0.025 m half-extent is accounted
+    for. And the swing dial does not move the landing point continuously: `TossController`
+    both releases the gripper on the first control tick past a fixed 0.46 fraction of a
+    trapezoidal profile *and* plans the swing through PyBullet motion planning, so a
+    longer swing changes the release tick and the planned path in steps rather than
+    smoothly. Which of the two dominates is not measured here; that it steps is.
+    Measured on seed 0, the landing x is ~2.016 for every swing up to 0.959 and ~2.216
+    from 0.960 -- a 20 cm step over a 0.001 change, straddling the whole strip -- and it
+    is not even monotone: 0.962 lands short again.
+
+    So the honest statement about this domain is that a cube inside the bin is a *scored
+    failure*: it comes to rest at x ~ 2.22, and no swing puts it anywhere between. The
+    demo clip is captioned accordingly, and `ORACLE_SWING` is not retuned toward the
+    overlap, because there is nothing there to tune toward. A KINDER bump that changed
+    the release fraction, the profile or the bin's placement could open the strip up --
+    which is exactly when this test should fail and be re-measured.
+    """
+    # Two seeds, because the claim this backs is about the domain rather than about one
+    # episode -- and because the step's location moves with the seed (0.960 on seed 0,
+    # 0.959 on the demo's), so a single seed would not show that the strip stays empty
+    # wherever the step happens to fall. Seeds 1 and 3 are excluded for the reason
+    # `test_the_oracle_swing_actually_reaches_the_goal_region` tolerates 2 of 3: their
+    # grasp fails, so they measure the Pick rather than the swing.
+    bin_near_wall_x = 2.08
+    for seed in (0, 2):
+        landings = [
+            _oracle_solve(env=shared_env(), seed=seed, swing=swing).get(
+                obj=_ENV.cube, feature_name="x"
+            )
+            for swing in (0.95, 0.955, 0.958, 0.959, 0.96, 0.97, 1.0)
+        ]
+        # Not vacuous: the sampled swings really do straddle the step, so "nothing landed
+        # in the strip" is a statement about a crossing rather than about one side of it.
+        assert min(landings) < bin_near_wall_x < max(landings), (
+            f"seed {seed}: swings {landings} never crossed the bin's near wall -- "
+            "the bracket has moved"
+        )
+        in_strip = [x for x in landings if bin_near_wall_x <= x <= GOAL_REGION[3]]
+        assert not in_strip, (
+            f"seed {seed}: a swing rested the cube in the goal region's overlap with the "
+            f"bin at x={in_strip}; the README's claim that the strip is unreachable needs "
+            "re-measuring"
+        )
+
+
+def test_the_feature_sink_stays_in_lockstep_with_the_frame_sink() -> None:
+    """`scripts/render_tossing3d_demo.py` captions frame `i` with features `i`, so the
+    two sinks agreeing index-for-index is load-bearing for whether the caption on a
+    published clip is true. Both are appended in the same place in `_step`; this pins
+    that they still are, and that the last entry is the state the episode ended in."""
+    env = shared_env()
+    env.reset_to_seed(seed=0)
+    backend = env.backend()
+    frames: list[np.ndarray] = []
+    features: list[dict[str, tuple[float, ...]]] = []
+    backend.capture_frames_into(sink=frames)
+    backend.capture_features_into(sink=features)
+    try:
+        _act(env=env, skill=_ENV.SKILL_PICK, param0=SkillOraclePolicy.ORACLE_PICK_DISTANCE)
+    finally:
+        backend.capture_frames_into(sink=None)
+        backend.capture_features_into(sink=None)
+    assert len(frames) > 1
+    assert len(frames) == len(features)
+    assert features[-1] == backend.read_features()
 
 
 def test_a_tossed_cube_is_unreachable() -> None:

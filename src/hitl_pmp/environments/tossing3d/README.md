@@ -142,7 +142,8 @@ KINDER's, a hand-authored three-skill plan does not land the cube in the region.
 `Pick` lifts the cube off the floor, `MoveToThrowPose` carries it to the barrier, and
 `Toss` at the oracle's swing = 0.75 throws it over. **The cube comes to rest short of
 the bin and the episode is nevertheless solved** — the goal is a *region* on the floor,
-not the bin. Measured off the final `State`, not off the pixels:
+not the bin, and no swing puts the cube in both (see the swing table below). Measured off
+the final `State`, not off the pixels:
 
 | quantity | value |
 | --- | --- |
@@ -155,7 +156,17 @@ not the bin. Measured off the final `State`, not off the pixels:
 That position sits inside KINDER's region — and inside the raw task-JSON range too — so
 this clip is unaffected by the goal-region correction described below.
 
-The clip is 171 frames at 20 fps, rendered by
+**Every frame carries those numbers as a caption**, and on this domain that is the
+difference between a clip that shows the task and a clip a reader has to take on trust:
+the honest ending *looks* like a miss, a green cube on the floor with the yellow bin
+plainly untouched, and only `cube x=1.91` against `goal x in [1.85, 2.15]` and
+`bin x=2.23` says otherwise. The caption comes from `Tossing3DRenderer.caption` — the
+same formatter the storyboard uses, so the two cannot disagree — and its cube position is
+per control tick, via `KinderBackend.capture_features_into`, so it tracks the flight
+rather than freezing between skills.
+
+The clip is 171 frames at 20 fps, 640x512 (KINDER's 640x480 `task_view` plus the caption
+strip), 1.2 MB, rendered by
 [`scripts/render_tossing3d_demo.py`](../../../../scripts/render_tossing3d_demo.py) the
 way KINDER renders its own — one `env.render()` per MuJoCo control tick, `scene_bg=True`
 for the MimicLabs room, and `kinder.gif_utils.optimize_gif` for the GIF:
@@ -191,15 +202,75 @@ This domain shipped its first Tossing3D results scoring against the raw range, w
 corrected box moved 6 of 2200 evaluation episodes and changed no reported statistic; see
 `docs/experiment-logs/2026-08-04-tossing3d-ees.md` for the measured effect.
 
-**The goal region overlaps the bin, but a full-power toss still overshoots.**
-`bin_init_region` puts the 0.30 m bin at x = 2.2305, so its footprint is x ∈ [2.08,
-2.38] — which *overlaps* the goal region on x ∈ [2.08, 2.15]. A cube resting on the bin
-floor (z = 0.044) in that strip does satisfy KINDER's goal; landing in the bin is not
-itself a failure. What makes the swing dial worth learning is that KINDER's own demo
-toss (swing = 1.0) lands at x ≈ 2.22, past the region's far edge, so the obvious value
-is still the wrong one. This domain uses KINDER's criterion verbatim rather than
+**The bin is scenery. A cube that lands in it is a scored failure, every time.**
+
+This is the single most misreadable thing about this domain, so it is worth stating
+without hedging. KINDER's `o1` goal is one predicate — `["on", "cube_0",
+"blocks_goal_region"]` ([`Tossing3D-o1.json:81`][o1]) — evaluated by
+[`envs.py:1053-1167`][checkgoals] as containment of the cube's `(x, y, z)` in a **ground
+region**, via `MujocoGround.check_in_region` ([`base.py:1006-1030`][ground]). No bin
+body, no bin site, no second condition. `blocks_goal_region` defines exactly one box
+([`Tossing3D-o1.json:25`][o1]), so `check_in_region`'s any-of over a list has one element
+to consider.
+
+The arithmetic *looks* like the region and the bin overlap: the 0.30 m bin sits at
+x = 2.2305, footprint x ∈ [2.080, 2.380], against the region's x ∈ [1.85, 2.15]. The
+overlap is empty in practice, for two reasons that compound.
+
+- The bin's near wall occupies x ∈ [2.080, 2.100] (0.02 m walls,
+  [`primitive_objects.py:368-380`][bin]), so the part of the overlap a cube can *rest*
+  in, once its own 0.025 m half-extent is counted, is only x ∈ [2.126, 2.150] — 2.4 cm.
+- The swing dial does not move the landing point continuously. `TossController` releases
+  the gripper on the first control tick past a fixed 0.46 fraction of a trapezoidal
+  profile, and plans the swing with PyBullet motion planning, so a longer swing changes
+  the release *tick* and the planned path in jumps rather than smoothly.
+
+Measured through this domain's own oracle (fixed `throw_standoff` = 1.35 and
+`ORACLE_PICK_DISTANCE` = 0.55, so `swing` is the only thing varying), landing x and
+KINDER's own `_check_goals()`:
+
+| swing | seed 0 | seed 2 | seed 1166418 (the demo's) |
+| --- | --- | --- | --- |
+| 0.50 | 1.657 ✗ short | 1.657 ✗ short | 1.656 ✗ short |
+| 0.60 | 1.990 ✓ | 1.989 ✓ | 1.989 ✓ |
+| 0.75 (oracle) | 1.914 ✓ | 1.915 ✓ | 1.914 ✓ |
+| 0.90 | 2.015 ✓ | 2.014 ✓ | 1.960 ✓ |
+| 0.958 | 2.017 ✓ | 2.015 ✓ | 1.961 ✓ |
+| 0.959 | 2.016 ✓ | 2.015 ✓ | **2.220 ✗ in the bin** |
+| 0.960 | **2.216 ✗ in the bin** | **2.215 ✗ in the bin** | **2.220 ✗ in the bin** |
+| 0.962 | 2.016 ✓ | 2.015 ✓ | 1.961 ✓ |
+| 1.00 | 2.216 ✗ in the bin | 2.216 ✗ in the bin | 2.219 ✗ in the bin |
+| 1.25 | 2.217 ✗ in the bin | 2.219 ✗ in the bin | 2.217 ✗ in the bin |
+
+Two things to read off it. It is a **staircase, not a curve** — 0.962 lands short again
+after 0.960 cleared the wall — and **nothing lands between x = 2.017 and x = 2.215**, at
+a sweep resolution of 0.001 across the step. Every in-bin resting position (identifiable
+by z = 0.044, the bin's interior floor, against 0.025 on the ground) is 6.5–7 cm past the
+region's far edge, and upstream's own goal check calls all of them failures.
+`test_no_swing_rests_the_cube_in_the_goal_regions_overlap_with_the_bin` pins this.
+
+**Upstream's own prose describes an earlier version of the scene, not this one.** The
+benchmark's docs say the robot "must toss the object into a bin, since it cannot reach
+the goal position due to an immovable obstacle" ([`docs/envs/Tossing3D.md:8`][doc]).
+That was true when it was written: at KINDER's initial commit the bin sat at x = 2.0005,
+giving it a footprint of x ∈ [1.8505, 2.1505] — the inflated goal region x ∈ [1.85, 2.15]
+to within half a millimetre, and the same on y. The region *was* the bin. Commit
+[`1183de7`][moved] ("merge final changes from prpl-mono", 2026-03-20) moved
+`bin_init_region` from 2.0 to 2.23 and left `blocks_goal_region` where it was. So the
+region is a floor strip whose position is a leftover, and the description is stale rather
+than loose.
+
+None of that is changed here. This domain uses KINDER's criterion verbatim rather than
 substituting an "in the bin" test, so that a number reported here is a number about the
-benchmark.
+benchmark — and the oracle's swing is not retuned toward the overlap, because there is
+nothing in it to reach.
+
+[o1]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/blob/main/src/kinder/envs/dynamic3d/tasks/Tossing3D/Tossing3D-o1.json
+[checkgoals]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/blob/main/src/kinder/envs/dynamic3d/envs.py
+[ground]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/blob/main/src/kinder/envs/dynamic3d/objects/base.py
+[bin]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/blob/main/src/kinder/envs/dynamic3d/objects/primitive_objects.py
+[doc]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/blob/main/docs/envs/Tossing3D.md
+[moved]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/commit/1183de734b2b3e1b71ebb905aca20a955caf9ed8
 
 **One transition is one skill, not one control tick.** A `take_action` runs a KINDER
 controller for a few hundred MuJoCo steps. This matches every other domain here, and it
