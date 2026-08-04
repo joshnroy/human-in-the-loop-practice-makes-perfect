@@ -77,9 +77,9 @@ x = 2.216.
 
 ### The goal region was wrong, and these numbers are the re-run
 
-The first version of this experiment scored success against the wrong box, and every
-number in it understated the truth. Recording it here because the correction is the
-reason this log's results changed, not a footnote to them.
+The first version of this experiment scored success against the wrong box. The bug was
+real and the fix is real; **its measured effect on this experiment turned out to be
+negligible**, and saying so plainly is the point of this section.
 
 `blocks_goal_region`'s task JSON reads `ranges[0] = [1.9, -0.1, 0.0, 2.1, 0.1, 0.1]`,
 and this domain's `InGoalRegion` predicate tested the cube against that literal. **KINDER
@@ -97,9 +97,8 @@ stores the result as `Region.bbox` — which is what `Region.check_in_region`
 
 Confirmed against the live simulator on both variants, and by both of `Region.bbox`'s
 code paths (the MuJoCo-site read and the XML fallback) agreeing. Our box was 2/3 of the
-true width on x — the axis a toss controls — so the error was systematic and
-one-directional: every landing in the two 5 cm shells was a KINDER success scored here
-as a failure.
+true width on x — the axis a toss controls — and the error was one-directional: a
+landing in either 5 cm shell was a KINDER success scored here as a failure.
 
 `goal_region_bounds()` now reads `Region.bbox` back from upstream rather than
 re-deriving the inflation, so the two cannot drift apart again, and a fidelity test pins
@@ -108,13 +107,48 @@ walked 12 random states, and a random walk of whole skills essentially never lan
 cube in a 5 cm boundary shell. Tests that deliberately probe those shells were added
 alongside the fix.
 
-**This required a re-run, not a rescore.** The predicate is the goal atom
-(`tasks.py:66-69`) and a `Toss` add-effect (`skills.py:73`), and `run_task_episode`
-returns early on `is_satisfied` — so the corrected box changes which episodes get run,
-what EES's competence signal sees, and how long episodes last, not merely how finished
-trajectories are scored. Both arms were re-run from scratch in a single sweep. Every
-number below is from that re-run; the superseded figures are given as *was → now* where
-the comparison is informative.
+**It was re-run rather than rescored, because it could have changed behaviour.** The
+predicate is the goal atom (`tasks.py:66-69`) and a `Toss` add-effect (`skills.py:73`),
+and `run_task_episode` returns early on `is_satisfied`, so a wider box could change
+which episodes get run, what EES's competence signal sees, and how long episodes last.
+Rescoring the old trajectories would have assumed that away. Both arms were therefore
+re-run from scratch, in a single sweep, with the same invocation as before.
+
+**Empirically, behaviour did not change.** Of the 220 `(transitions, solved, total)`
+triples the two arms record — 11 checkpoints x 10 seeds x 2 arms, 2200 evaluation
+episodes — **214 are identical to the previous run and 6 moved, every one by exactly
++1**, which is the only direction possible given the corrected box strictly contains the
+old one:
+
+| arm | seed | transitions | was | now |
+| --- | --- | --- | --- | --- |
+| EES | 7 | 750 | 2/10 | 3/10 |
+| EES | 9 | 150 | 3/10 | 4/10 |
+| random skills | 2 | 150 | 0/10 | 1/10 |
+| random skills | 3 | 450 | 1/10 | 2/10 |
+| random skills | 3 | 1350 | 2/10 | 3/10 |
+| random skills | 6 | 1350 | 1/10 | 2/10 |
+
+The evidence that these are *scoring* flips and not behavioural divergence is that they
+are **isolated and non-cascading**: EES seed 7 differs at 750 transitions and then
+matches the old run exactly at 900, 1050, 1200, 1350 and 1500; EES seed 9 differs at 150
+and matches everywhere after. A changed practice-phase abstract state would have altered
+the sampler's training data and compounded from that point on, not healed itself at the
+next checkpoint.
+
+A plausible mechanism, stated as a hypothesis because it was not verified: after a toss
+the cube is past the barrier and no skill applies, so the agent no-ops for the rest of
+the episode (the 450-transition demo below is literally labelled `no-op (no plan)`).
+If the actions taken are the same whether or not `InGoalRegion` holds, then flipping that
+atom changes what gets *recorded* without changing what gets *done*.
+
+**No reported statistic changed.** Pre-practice and end-of-training are identical for
+both arms (33/100 and 67/100; 14/100 and 21/100), every per-seed final is identical, and
+all four significance tests return exactly what they did before — including EES vs the
+floor at +46.0 pp, p = 0.0020. The five pooled checkpoint cells that moved are marked in
+the checkpoint table below. So: the fidelity defect was worth fixing on its own terms —
+the code claimed a verified equivalence it did not have — but this experiment's
+conclusions never depended on it.
 
 **One genuinely red fidelity test.**
 `test_a_full_power_toss_overshoots_the_goal_region` asserted the overshoot on seed 1 —
@@ -221,8 +255,12 @@ The checkpoints, for reference — evaluation episodes solved out of the 100 run
 
 | transitions | 0 | 150 | 300 | 450 | 600 | 750 | 900 | 1050 | 1200 | 1350 | 1500 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| EES | 33/100 | 21/100 | 20/100 | 25/100 | 49/100 | 40/100 | 64/100 | 58/100 | 59/100 | 61/100 | **67/100** |
-| random skills | 14/100 | 22/100 | 23/100 | 24/100 | 22/100 | 24/100 | 18/100 | 26/100 | 22/100 | 21/100 | 21/100 |
+| EES | 33/100 | _22/100_ | 20/100 | 25/100 | 49/100 | _41/100_ | 64/100 | 58/100 | 59/100 | 61/100 | **67/100** |
+| random skills | 14/100 | _23/100_ | 23/100 | _25/100_ | 22/100 | 24/100 | 18/100 | 26/100 | 22/100 | _23/100_ | 21/100 |
+
+_Italicised_ cells are the five that moved under the goal-region correction (each by a
+single episode); every other cell is identical to the pre-correction run. See
+[the goal-region correction](#the-goal-region-was-wrong-and-these-numbers-are-the-re-run).
 
 Each denominator is 100 because every seed contributes the same 10 tasks; the pooled
 rate and the mean of the ten per-seed rates therefore coincide exactly, and the plotted
@@ -257,7 +295,7 @@ and the cube's resulting x against the goal region.
 | --- | --- |
 | **0** | `Pick(params=[0.59, -0.37])` fails outright; the cube never leaves the floor at x = 0.48. Runs the full horizon. |
 | **450** | Tossed clean past everything to x = 2.86, then `no-op (no plan)`. The cube is unreachable and nothing recovers it. |
-| **1050** | `Toss(params=[0.89])` → cube at x = **2.01**, inside [1.90, 2.10]. Solved in the minimum 3 skills. |
+| **1050** | `Toss(params=[0.89])` → cube at x = **2.01**, inside [1.85, 2.15]. Solved in the minimum 3 skills. |
 | **1500** | `Toss(params=[0.84])` → cube at x = **2.00**. Solved in 3. |
 
 ![0 transitions — the Pick fails](2026-08-04-tossing3d-ees-000000.gif)

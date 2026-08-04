@@ -186,8 +186,10 @@ the result as `Region.bbox`, which is what `Region.check_in_region` — and henc
 `KinderBackend.goal_region_bounds()` reads `Region.bbox` back rather than re-deriving
 the inflation, so the two cannot drift apart; a fidelity test pins them element-wise.
 This domain shipped its first Tossing3D results scoring against the raw range, which is
-2/3 of the true width on x — the axis a toss controls — and so understated every success
-rate. See `docs/experiment-logs/2026-08-04-tossing3d-ees.md` for the corrected numbers.
+2/3 of the true width on x — the axis a toss controls — so any landing in the resulting
+5 cm shells was a KINDER success scored as a failure. Re-running both arms against the
+corrected box moved 6 of 2200 evaluation episodes and changed no reported statistic; see
+`docs/experiment-logs/2026-08-04-tossing3d-ees.md` for the measured effect.
 
 **The goal region overlaps the bin, but a full-power toss still overshoots.**
 `bin_init_region` puts the 0.30 m bin at x = 2.2305, so its footprint is x ∈ [2.08,
