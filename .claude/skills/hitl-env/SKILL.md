@@ -82,9 +82,16 @@ violated — a real architectural error, not a lint nit.
 
 ## 4. Verification budget
 
-The full suite is **618 tests, about 2 min 20 s** (measured 2026-08-04). Lint, typecheck
-and import-linter are cheap once warm (~0.3 s total); `mypy` costs ~10 s cold in a fresh
-worktree.
+The full suite takes **about 2 min 20 s**. Lint, typecheck and import-linter are cheap
+once warm (~0.3 s total); `mypy` costs ~10 s cold in a fresh worktree.
+
+An exact test count is deliberately **not** pinned here — it goes stale on every merge,
+and a stale number in a skill is worse than no number, because the next agent trusts it.
+Get the current one instead:
+
+```bash
+pytest --collect-only -q | tail -1
+```
 
 Across one measured session, 20 subagents ran the full suite 38 times — 28 of those were
 repeats within a single agent, an estimated **55-68 minutes** of wall clock.
@@ -97,7 +104,7 @@ Guidance, not a prohibition:
 - Re-running the full suite *is* correct when you are chasing a real failure whose blast
   radius you do not yet know, or after a change that touches shared `core/` interfaces.
   Some of those 28 repeats were agents legitimately iterating. The waste is re-running
-  597 tests to check a change you already know is local.
+  the whole suite to check a change you already know is local.
 - Never skip the full suite entirely before reporting done — CI will run it anyway, and
   finding out from CI costs more than finding out locally.
 
@@ -190,10 +197,33 @@ gain.**
   `stats.json` was byte-identical between a low-load probe and a 20-way concurrent sweep.
   Staggering costs wall-clock only, never validity — so when in doubt, take fewer workers.
 
-### Known limitation
+### Every run is already timed — read it, do not re-measure it
 
-`run_sweep` records **no run start time** anywhere: output directories are created only
-~100 ms before `stats.json` is written, so there is no way to reconstruct which runs
-overlapped. That blocks an otherwise-free historical concurrency-vs-wall-clock analysis.
-If you are modifying `run_sweep` for another reason, recording start/end timestamps and
-the worker count would enable it. Do not make that change on its own account.
+`run_sweep` writes a **`timing.json` beside each run's `stats.json`**, inside that run's
+own `--output-dir`. It records start and end time (timezone-aware ISO 8601, plus epoch
+seconds), `elapsed_seconds` from `time.monotonic()`, the exit status, `--max-workers` and
+the CPU count, and **two separate concurrency signals**: this sweep's own in-flight child
+count, and a machine-wide sample (`hitl_pmp.cli` process count and 1-minute load average)
+that includes every *other* agent's runs too. Do not conflate those two — regressing
+wall-clock on the sweep-local count while the box was shared attributes someone else's
+load to your `--max-workers`.
+
+It is a separate file on purpose: `stats.json`'s byte-stability is what verifies a change
+did not alter results, and a timestamp inside it would break that for every open PR.
+Nothing in `timing.json` is ever an input to a reproducibility comparison.
+
+Read it back with the post-run analysis script — never by hand, and never from directory
+mtimes (they answer a different question: when a file was last written, not when its run
+began):
+
+```bash
+python analysis/run_timing.py --results-root <dir>          # aggregates
+python analysis/run_timing.py --results-root <dir> --per-run  # plus one row per run
+```
+
+So "how long does a run take, and does concurrency actually help?" is answerable from
+recorded data. It prints `No timing.json found ...` for sweeps that predate the record.
+
+**Do not add timing instrumentation to `run_sweep` — it is already there** (PR #56). An
+earlier version of this skill listed its absence as a known limitation and suggested
+adding it; that work has shipped.
