@@ -14,9 +14,15 @@ import pytest
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 
-# KINDER's blocks_goal_region for both Tossing3D variants, as it appears in the task
-# JSON: (x_min, y_min, z_min, x_max, y_max, z_max).
-GOAL_REGION = (1.90, -0.10, 0.0, 2.10, 0.10, 0.10)
+# KINDER's blocks_goal_region for both Tossing3D variants, as `Region.check_in_region`
+# actually tests it: (x_min, y_min, z_min, x_max, y_max, z_max). This is the task JSON's
+# range [1.9, -0.1, 0.0, 2.1, 0.1, 0.1] inflated by `ground_placement_threshold` (0.05 m)
+# on every side with z clamped at 0, which is what `MujocoGround._create_regions` builds
+# the region's bbox from. Pinned against the live simulator by
+# `test_kinder_fidelity.py::test_goal_region_bounds_match_kinders_own_region`.
+GOAL_REGION = (1.85, -0.15, 0.0, 2.15, 0.15, 0.15)
+# The 5 cm inflation itself, so boundary tests can address the shells by name.
+GROUND_PLACEMENT_THRESHOLD = 0.05
 # The barrier's x from the same JSON's barrier_init_region.
 BARRIER_X = 1.3
 # KINDER's bin_init_region x for the o1 variant.

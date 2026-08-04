@@ -9,8 +9,9 @@ of the whole file -- run the real simulator, ask upstream's `_check_goals()`, an
 our predicate to return the same verdict.
 
 Two of them are a different kind, and are labelled as such below:
-`test_goal_region_bounds_match_the_variants_task_json` is a version tripwire against a
-literal from KINDER's task JSON, and `test_a_full_power_toss_overshoots_the_goal_region`
+`test_goal_region_bounds_match_kinders_own_region` is a version tripwire pinning the
+goal box element-wise against upstream's own computed `Region.bbox`, and
+`test_a_full_power_toss_overshoots_the_goal_region`
 characterises upstream's physics. Both are only meaningful because `pyproject.toml` pins
 KINDER to an exact commit -- they are what makes an upstream bump that moves the goal
 region or the swing dynamics fail loudly instead of silently restating every number
@@ -32,7 +33,7 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import IN_GOAL_REGION, REACHABLE
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import SkillOraclePolicy
 
-from .conftest import GOAL_REGION, kinder_available
+from .conftest import GOAL_REGION, build_state, kinder_available
 
 _ENV = Tossing3DEnvironment
 
@@ -66,21 +67,51 @@ def _oracle_solve(*, env: Tossing3DEnvironment, seed: int, swing: float):
     return state
 
 
-def test_goal_region_bounds_match_the_variants_task_json() -> None:
-    """A version tripwire, not a differential test: `GOAL_REGION` is a literal copy of
-    the pinned KINDER's task JSON, so this fires if an upstream bump moves the region
-    out from under every number measured against it."""
-    assert shared_env().goal_region_bounds() == pytest.approx(GOAL_REGION)
+def test_goal_region_bounds_match_kinders_own_region() -> None:
+    """The element-wise pin, and the *only* check here that can catch a wrong box.
+
+    `goal_region_bounds()` must be upstream's own `Region.bbox` -- the exact list
+    `Region.check_in_region` compares a cube position against -- not a re-derivation of
+    it and not the task JSON's raw `ranges[0]`. Reading it back from the same attribute
+    means the two cannot drift; asserting it here means an upstream bump that moves the
+    region fires a test rather than silently moving every number measured against it.
+
+    This test exists because the differential random walk below cannot do this job: the
+    JSON-vs-bbox discrepancy is confined to two 5 cm shells at the region boundary, and
+    a random walk of whole skills essentially never lands the cube in one. The bug this
+    replaces asserted the *JSON* literal was correct, which pinned a real error in
+    place.
+    """
+    backend = shared_env().backend()
+    upstream = backend._ensure_env().unwrapped._object_centric_env._ground_fixture
+    expected = upstream.region_objects["blocks_goal_region"][0].bbox
+    assert backend.goal_region_bounds() == pytest.approx(tuple(float(v) for v in expected))
+    # And, for readability, the value that pin currently resolves to: the task JSON range
+    # inflated by `ground_placement_threshold` = 0.05 on every side, z clamped at 0.
+    assert backend.goal_region_bounds() == pytest.approx(GOAL_REGION)
 
 
 def test_in_goal_region_agrees_with_kinders_own_goal_check() -> None:
     """The fidelity property this domain's headline number rests on: this domain's
-    `InGoalRegion` predicate must be KINDER's `_check_goals`, not a lookalike.
+    `InGoalRegion` predicate must agree with KINDER's `_check_goals`, not merely
+    resemble it.
 
-    Checked by driving the real simulator (a random walk of skills, which lands the cube
-    anywhere from its start pose to inside the bin) and comparing the two verdicts on
-    every state visited -- rather than by asserting on synthetic positions, which would
-    only test this file's own arithmetic.
+    Two complementary sources of states, because neither alone is sufficient:
+
+    * A random walk of whole skills in the real simulator, which lands the cube anywhere
+      from its start pose to inside the bin. This exercises real physics but samples the
+      boundary essentially never.
+    * Cube positions placed **deliberately inside the two 5 cm inflation shells** -- just
+      inside and just outside each face of the box -- compared against
+      `MujocoGround.check_in_region`, which is precisely the call `_check_goals`
+      delegates the containment decision to. These are the positions where a box built
+      by the wrong rule disagrees, and the random walk above cannot reach them.
+
+    The second half deliberately does not go through `_check_goals`: that reads the
+    cube's pose out of live MuJoCo, so exercising it at a chosen position would mean
+    teleporting the cube, and the containment logic under test is downstream of the pose
+    either way. Comparing against `check_in_region` tests the same arithmetic against
+    the same box with nothing mocked on either side.
     """
     env = shared_env()
     backend = env.backend()
@@ -99,6 +130,52 @@ def test_in_goal_region_agrees_with_kinders_own_goal_check() -> None:
             )
             compared += 1
     assert compared == 12
+
+    # The boundary shells the random walk cannot reach. Each pair straddles one face of
+    # the true box by 2 cm, so every one of them lies strictly inside a 5 cm inflation
+    # shell -- i.e. every "inside" case here would be scored a failure by the old,
+    # un-inflated box.
+    x_min, y_min, _z_min, x_max, y_max, z_max = GOAL_REGION
+    boundary_positions = [
+        (x_min + 0.02, 0.0, 0.05),  # inside the -x shell, outside the JSON range
+        (x_min - 0.02, 0.0, 0.05),  # outside the true box entirely
+        (x_max - 0.02, 0.0, 0.05),  # inside the +x shell, outside the JSON range
+        (x_max + 0.02, 0.0, 0.05),  # outside the true box entirely
+        (2.0, y_min + 0.02, 0.05),  # inside the -y shell
+        (2.0, y_min - 0.02, 0.05),  # outside
+        (2.0, y_max - 0.02, 0.05),  # inside the +y shell
+        (2.0, y_max + 0.02, 0.05),  # outside
+        (2.0, 0.0, z_max - 0.02),  # inside the +z shell
+        (2.0, 0.0, z_max + 0.02),  # outside
+    ]
+    unwrapped = backend._ensure_env().unwrapped._object_centric_env
+    ground = unwrapped._ground_fixture
+    for position in boundary_positions:
+        state = build_state(env=env, cube=position)
+        ours = IN_GOAL_REGION.holds(state, (_ENV.cube, _ENV.goal_region))
+        theirs = ground.check_in_region(
+            np.array(position, dtype=np.float32), "blocks_goal_region", unwrapped._robot_env
+        )
+        assert ours == bool(theirs), (
+            f"cube at {position}: InGoalRegion said {ours}, check_in_region said {theirs}"
+        )
+        compared += 1
+    assert compared == 22
+
+    # And the shells are genuinely discriminating: every "inside" case above is a
+    # position the pre-fix, un-inflated box would have scored as a miss. If this ever
+    # stops holding, the boundary list has drifted off the shells it is meant to probe.
+    json_range = unwrapped.task_config["regions"]["blocks_goal_region"]["ranges"][0]
+    json_low, json_high = np.array(json_range[:3]), np.array(json_range[3:])
+    inside_shell = [
+        position
+        for position in boundary_positions
+        if ground.check_in_region(
+            np.array(position, dtype=np.float32), "blocks_goal_region", unwrapped._robot_env
+        )
+        and not (np.all(np.array(position) >= json_low) and np.all(np.array(position) <= json_high))
+    ]
+    assert len(inside_shell) == 5, inside_shell
 
 
 def test_reset_to_the_same_seed_reproduces_the_same_initial_state() -> None:
@@ -129,10 +206,16 @@ def test_the_oracle_swing_actually_reaches_the_goal_region() -> None:
 def test_a_full_power_toss_overshoots_the_goal_region() -> None:
     """A characterisation of upstream's physics rather than of this adapter, and sound
     only because `pyproject.toml` pins KINDER exactly: swing=1.0 is KINDER's own demo
-    toss and lands the cube in the bin at x ~ 2.22, past the region's 2.10 edge. This is
-    what makes the swing dial worth learning: the obvious value is the wrong one, and a
-    KINDER bump that changed it would invalidate the swing table this domain's README
-    reports.
+    toss and lands the cube deep in the bin at x ~ 2.22, past the region's 2.15 edge.
+    This is what makes the swing dial worth learning: the obvious value is the wrong
+    one, and a KINDER bump that changed it would invalidate the swing table this
+    domain's README reports.
+
+    Note the margin here is 7 cm, not the 12 cm it was when this domain mistakenly
+    scored against the un-inflated JSON range. The region and the bin *overlap* on
+    x in [2.08, 2.15] -- landing in the bin is not per se a failure -- so what this test
+    characterises is specifically that a full-power swing clears the bin's near edge too,
+    not that the bin is out of bounds.
 
     Asserted on seeds 0 and 2, not seed 1. On seed 1 the grasp is marginal and the cube
     slips out of the gripper during `move_to_target`, landing at x ~ 1.58 without ever

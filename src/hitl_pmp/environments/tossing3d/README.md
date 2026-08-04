@@ -149,20 +149,11 @@ not the bin. Measured off the final `State`, not off the pixels:
 | goal atom | `InGoalRegion(cube_0, blocks_goal_region)` |
 | final cube `(x, y, z)` | `(1.9139, 0.0116, 0.0249)` |
 | `Goal.is_satisfied` | **True** — 1/1 test tasks solved |
+| goal region x | [1.85, 2.15] |
 | bin centre x | 2.2304 |
 
-That position satisfies the goal under both this domain's current
-`blocks_goal_region` bounds and KINDER's own, so the clip is evidence the integration
-works regardless of how the discrepancy below is resolved.
-
-> **The exact region bounds are under review and not stated here.**
-> `goal_region_bounds()` reads the raw task-JSON range, but KINDER's `_check_goals`
-> compares against `Region.bbox`, which `_create_regions` builds by inflating that range
-> by `ground_placement_threshold = 0.05` on every axis
-> (`kinder/envs/dynamic3d/objects/base.py:840, 875-880`). The two therefore differ, a
-> fix is pending, and any claim about where the region's edges sit relative to the bin —
-> including the one under "Three things about this domain that look like bugs and are
-> not" below — should be read as provisional until it lands.
+That position sits inside KINDER's region — and inside the raw task-JSON range too — so
+this clip is unaffected by the goal-region correction described below.
 
 The clip is 171 frames at 20 fps, rendered by
 [`scripts/render_tossing3d_demo.py`](../../../../scripts/render_tossing3d_demo.py) the
@@ -178,19 +169,35 @@ MUJOCO_GL=egl PYOPENGL_PLATFORM=egl python -m scripts.render_tossing3d_demo \
 `core.Renderer` path instead, as a 4-frame captioned storyboard (`episode.mp4`) — one
 frame per *skill*, which is all a checkpoint comparison needs and a fraction of the cost.
 
-## Three things about this domain that look like bugs and are not
+## Things about this domain that look like bugs and are not
 
-**The goal region is not the bin.** *Provisional — see the region-bounds note above;
-`goal_region_bounds()` reads the raw JSON range while KINDER compares against a version
-of it inflated by 0.05 m per axis, which moves the far edge and so moves this
-paragraph's conclusion. Stated as it currently stands, pending that fix.*
-In the `o1` variant `blocks_goal_region` is
-x ∈ [1.90, 2.10] while `bin_init_region` puts the bin at x = 2.2305 — a 0.30 m bin, so
-its footprint is x ∈ [2.08, 2.38]. A toss hard enough to land *in* the bin therefore
-fails KINDER's own goal check, and one that stops short of it in the region passes.
-This domain uses KINDER's criterion verbatim rather than substituting an "in the bin"
-test, so that a number reported here is a number about the benchmark. It is also what
-makes the swing dial worth learning: KINDER's own demo toss (swing = 1.0) overshoots.
+**The goal region is the task JSON's range inflated by 5 cm, not the range itself.**
+`blocks_goal_region`'s `ranges[0]` reads `[1.9, -0.1, 0.0, 2.1, 0.1, 0.1]`, but KINDER
+never compares a position against that literal: `MujocoGround._create_regions` inflates
+it by `ground_placement_threshold` = 0.05 m on every side (z clamped at 0) and stores
+the result as `Region.bbox`, which is what `Region.check_in_region` — and hence
+`_check_goals` — actually tests. The real `o1` region is therefore
+
+| | x | y | z |
+| --- | --- | --- | --- |
+| task JSON `ranges[0]` | [1.90, 2.10] | [-0.10, 0.10] | [0.00, 0.10] |
+| **what KINDER tests** | **[1.85, 2.15]** | **[-0.15, 0.15]** | **[0.00, 0.15]** |
+
+`KinderBackend.goal_region_bounds()` reads `Region.bbox` back rather than re-deriving
+the inflation, so the two cannot drift apart; a fidelity test pins them element-wise.
+This domain shipped its first Tossing3D results scoring against the raw range, which is
+2/3 of the true width on x — the axis a toss controls — and so understated every success
+rate. See `docs/experiment-logs/2026-08-04-tossing3d-ees.md` for the corrected numbers.
+
+**The goal region overlaps the bin, but a full-power toss still overshoots.**
+`bin_init_region` puts the 0.30 m bin at x = 2.2305, so its footprint is x ∈ [2.08,
+2.38] — which *overlaps* the goal region on x ∈ [2.08, 2.15]. A cube resting on the bin
+floor (z = 0.044) in that strip does satisfy KINDER's goal; landing in the bin is not
+itself a failure. What makes the swing dial worth learning is that KINDER's own demo
+toss (swing = 1.0) lands at x ≈ 2.22, past the region's far edge, so the obvious value
+is still the wrong one. This domain uses KINDER's criterion verbatim rather than
+substituting an "in the bin" test, so that a number reported here is a number about the
+benchmark.
 
 **One transition is one skill, not one control tick.** A `take_action` runs a KINDER
 controller for a few hundred MuJoCo steps. This matches every other domain here, and it

@@ -23,12 +23,50 @@ def test_in_goal_region_accepts_a_cube_inside_kinders_box() -> None:
     assert _holds(predicate=IN_GOAL_REGION, state=state, objects=(_ENV.cube, _ENV.goal_region))
 
 
-def test_in_goal_region_rejects_a_cube_that_landed_in_the_bin() -> None:
-    """The o1 goal region stops at x=2.10 but the bin sits at x=2.23, so a toss hard
-    enough to land IN the bin misses KINDER's own goal. This is the benchmark's
-    behaviour, not a porting choice -- see InGoalRegionClassifier's docstring."""
+def test_in_goal_region_rejects_a_cube_tossed_to_the_far_end_of_the_bin() -> None:
+    """A full-power swing lands at x ~ 2.22, past the region's 2.15 edge, so it misses
+    KINDER's own goal. Note the region and the bin *overlap*: the bin's footprint spans
+    x in [2.08, 2.38], so being in the bin is not itself disqualifying -- see
+    `test_in_goal_region_accepts_a_cube_resting_in_the_near_end_of_the_bin`."""
     state = build_state(cube=(2.218, -0.001, 0.044))
     assert not _holds(predicate=IN_GOAL_REGION, state=state, objects=(_ENV.cube, _ENV.goal_region))
+
+
+def test_in_goal_region_accepts_a_cube_resting_in_the_near_end_of_the_bin() -> None:
+    """Pins the overlap the docs used to deny. The goal region reaches x=2.15 and the
+    bin's near edge is x=2.08, so a cube on the bin floor (z=0.044) anywhere in between
+    satisfies KINDER's goal."""
+    state = build_state(cube=(2.12, 0.0, 0.044))
+    assert _holds(predicate=IN_GOAL_REGION, state=state, objects=(_ENV.cube, _ENV.goal_region))
+
+
+def test_in_goal_region_covers_the_inflation_shells_the_raw_json_range_omits() -> None:
+    """The regression test for the bug this domain shipped with.
+
+    KINDER inflates the task JSON's range by `ground_placement_threshold` (0.05 m) per
+    side before testing containment; this domain originally scored against the raw range
+    and so counted every landing in the resulting 5 cm shells as a miss. Each position
+    below is inside the true box and outside the raw JSON range, i.e. exactly the set
+    that used to be mis-scored.
+
+    This is offline arithmetic against whatever box `conftest` supplies -- it cannot
+    catch a *wrong box*. `test_kinder_fidelity.py::test_goal_region_bounds_match_kinders_own_region`
+    is what does that.
+    """
+    json_range = (1.90, -0.10, 0.0, 2.10, 0.10, 0.10)
+    for position in (
+        (1.87, 0.0, 0.05),  # -x shell
+        (2.12, 0.0, 0.05),  # +x shell
+        (2.0, -0.12, 0.05),  # -y shell
+        (2.0, 0.12, 0.05),  # +y shell
+        (2.0, 0.0, 0.13),  # +z shell
+    ):
+        outside_json = not all(
+            json_range[axis] <= position[axis] <= json_range[axis + 3] for axis in range(3)
+        )
+        assert outside_json, f"{position} is not in a shell; this test has drifted"
+        state = build_state(cube=position)
+        assert _holds(predicate=IN_GOAL_REGION, state=state, objects=(_ENV.cube, _ENV.goal_region))
 
 
 def test_in_goal_region_rejects_a_cube_that_fell_short() -> None:

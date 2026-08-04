@@ -13,18 +13,31 @@ from .environment import Tossing3DEnvironment
 class InGoalRegionClassifier:
     """Whether the cube is inside KINDER's `blocks_goal_region` axis-aligned box.
 
-    This is the benchmark's own success criterion, not a lookalike: the box comes from
-    the variant's task JSON (via `KinderBackend.goal_region_bounds`) and lands in the
-    state as `goal_region`'s features, and this test is the same containment check
-    `_check_goals` performs through `check_in_region`. A property test pins the two
-    against each other over random cube positions whenever KINDER is installed.
+    This is the benchmark's own success criterion: the inclusive per-axis test below is
+    the one `Region.check_in_region` performs, and the box it runs against is upstream's
+    own computed `Region.bbox`, read by `KinderBackend.goal_region_bounds` and carried
+    into the state as `goal_region`'s features.
 
-    Worth stating plainly, because it looks like a bug otherwise: in the `o1` variant
-    the goal region (x in [1.90, 2.10]) sits *just short of* the bin, whose 0.30 m
-    footprint spans x in [2.08, 2.38]. A toss hard enough to land in the bin therefore
-    does NOT satisfy KINDER's goal, and one that stops short in the region does. This
-    domain uses KINDER's criterion verbatim rather than substituting an "in the bin"
-    test, so that a number reported here is a number about the benchmark.
+    That box is **not** the task JSON's `ranges[0]` -- KINDER inflates the range by
+    `ground_placement_threshold` (0.05 m) per side before testing anything, so for `o1`
+    the real region is x in [1.85, 2.15], y in [-0.15, 0.15], z in [0, 0.15], not the
+    JSON's [1.90, 2.10] x [-0.10, 0.10] x [0, 0.10]. This file used to claim verified
+    equivalence while reading the raw JSON, which understated every success rate; the
+    equivalence is only true now that the bbox is read directly.
+
+    Two tests guard different halves of that, and neither substitutes for the other:
+    `test_goal_region_bounds_match_kinders_own_region` pins the box element-wise against
+    upstream's `Region.bbox` (the only check that catches a *wrong box*), while the
+    offline boundary tests in `test_predicates.py` pin this containment arithmetic
+    inside the 5 cm inflation shells (the only checks that catch wrong *comparisons* --
+    a simulator random walk lands the cube deep inside or far outside almost every time
+    and cannot see those shells).
+
+    Note that the region and the bin overlap: the bin's 0.30 m footprint spans
+    x in [2.08, 2.38], so a cube resting on the bin floor at x in [2.08, 2.15] satisfies
+    KINDER's goal, while a full-power toss out to x ~ 2.22 overshoots it. This domain
+    uses KINDER's criterion verbatim rather than substituting an "in the bin" test, so
+    that a number reported here is a number about the benchmark.
     """
 
     @staticmethod

@@ -75,6 +75,47 @@ Releasing only frees a resource, so the physics are unchanged: seeds 0 and 2 rep
 the pre-fix landing positions to three decimals, including the swing = 1.0 overshoot to
 x = 2.216.
 
+### The goal region was wrong, and these numbers are the re-run
+
+The first version of this experiment scored success against the wrong box, and every
+number in it understated the truth. Recording it here because the correction is the
+reason this log's results changed, not a footnote to them.
+
+`blocks_goal_region`'s task JSON reads `ranges[0] = [1.9, -0.1, 0.0, 2.1, 0.1, 0.1]`,
+and this domain's `InGoalRegion` predicate tested the cube against that literal. **KINDER
+never compares anything against it.** `MujocoGround._create_regions`
+(`envs/dynamic3d/objects/base.py:874-881`) inflates the range by
+`ground_placement_threshold = 0.05` (`base.py:840`) on every side, clamping z at 0, and
+stores the result as `Region.bbox` — which is what `Region.check_in_region`
+(`base.py:148-185`) does its inclusive per-axis test on, and what `_check_goals`
+(`envs.py:1053-1167`) therefore decides success by.
+
+| | x | y | z |
+| --- | --- | --- | --- |
+| what we tested | [1.90, 2.10] | [-0.10, 0.10] | [0.00, 0.10] |
+| **what KINDER tests** | **[1.85, 2.15]** | **[-0.15, 0.15]** | **[0.00, 0.15]** |
+
+Confirmed against the live simulator on both variants, and by both of `Region.bbox`'s
+code paths (the MuJoCo-site read and the XML fallback) agreeing. Our box was 2/3 of the
+true width on x — the axis a toss controls — so the error was systematic and
+one-directional: every landing in the two 5 cm shells was a KINDER success scored here
+as a failure.
+
+`goal_region_bounds()` now reads `Region.bbox` back from upstream rather than
+re-deriving the inflation, so the two cannot drift apart again, and a fidelity test pins
+them element-wise. The old test suite could not have caught this: its property test
+walked 12 random states, and a random walk of whole skills essentially never lands the
+cube in a 5 cm boundary shell. Tests that deliberately probe those shells were added
+alongside the fix.
+
+**This required a re-run, not a rescore.** The predicate is the goal atom
+(`tasks.py:66-69`) and a `Toss` add-effect (`skills.py:73`), and `run_task_episode`
+returns early on `is_satisfied` — so the corrected box changes which episodes get run,
+what EES's competence signal sees, and how long episodes last, not merely how finished
+trajectories are scored. Both arms were re-run from scratch in a single sweep. Every
+number below is from that re-run; the superseded figures are given as *was → now* where
+the comparison is informative.
+
 **One genuinely red fidelity test.**
 `test_a_full_power_toss_overshoots_the_goal_region` asserted the overshoot on seed 1 —
 the one seed where it does not happen. There the grasp is marginal and the cube slips
@@ -85,20 +126,32 @@ asserting 2 of 3 rather than 3 of 3.
 
 ### The swing dial, measured
 
-Landing x after the oracle's Pick and MoveToThrowPose, per swing, post-fix. The goal
-region is x in [1.90, 2.10]; the bin's footprint starts at 2.08 — so a toss hard enough
-to land *in the bin* fails KINDER's own goal check, which is what makes the dial worth
-learning.
+Landing x after the oracle's Pick and MoveToThrowPose, per swing. These are landing
+positions — pure physics — so they are unchanged by the goal-region correction below;
+only which of them count as solved changes.
+
+The goal region is x in [1.85, 2.15] (see [the goal-region
+correction](#the-goal-region-was-wrong-and-these-numbers-are-the-re-run)). The bin's
+footprint starts at 2.08, so the region and the bin **overlap** on x in [2.08, 2.15]:
+landing in the bin is not itself a failure. What makes the dial worth learning is that
+the extremes miss on both sides — a weak swing drops short, and KINDER's own demo toss
+(swing = 1.0) sails out to 2.22, past the region's far edge.
 
 | swing | 0.25 | 0.50 | 0.60 | 0.75 | 0.90 | 1.00 |
 | --- | --- | --- | --- | --- | --- | --- |
 | seed 0 | 1.418 | 1.657 | **1.990** | **1.914** | **2.015** | 2.216 |
 | seed 2 | 1.424 | 1.656 | **1.989** | **1.915** | **2.014** | 2.216 |
 
-Bold = inside the goal region. The band is roughly swing in [0.57, 0.93], about 36% of
-the sampler's `[0.25, 1.25]` prior — which is why this domain's **pre-practice**
-checkpoint is not near zero, and why EES's own starting point, not just the
-random-skills floor, is the reference that matters.
+Bold = inside the goal region. **No sampled swing changes verdict under the corrected
+box** — 1.657 is short of 1.85 and 2.216 is past 2.15 — so this table reads identically
+either way, and `ORACLE_SWING = 0.75` was re-checked rather than retuned.
+
+That also means the sampled points only bracket the solving band to somewhere inside
+(0.50, 1.00); the finer `[0.57, 0.93]` figure previously quoted was interpolation
+against the narrow box, not a measurement, and is not restated. Roughly half the
+sampler's `[0.25, 1.25]` prior lands in the region — which is why this domain's
+**pre-practice** checkpoint is not near zero, and why EES's own starting point, not just
+the random-skills floor, is the reference that matters.
 
 Seed 1 is absent because its grasp is marginal and it drops the cube during the move for
 every swing, so it measures the Pick.
@@ -386,5 +439,8 @@ that such a change would be measured against.
 - **10 evaluation tasks per checkpoint**, so a single seed's curve moves in 10-point
   steps. The arm-level mean over 10 seeds is the readable quantity.
 - **`o2` is not supported** (two cubes; the symbolic layer here is single-cube).
-- **The goal is KINDER's `blocks_goal_region` verbatim**, not "in the bin". See the
-  environment README — this is the benchmark's own criterion, and the bin sits past it.
+- **The goal is KINDER's `blocks_goal_region` verbatim**, not "in the bin" — and
+  "verbatim" means the region KINDER *tests*, x ∈ [1.85, 2.15], which is the task JSON's
+  range inflated by `ground_placement_threshold`. The region and the bin overlap on
+  x ∈ [2.08, 2.15]; the bin does not sit past it. See the environment README and
+  [the goal-region correction](#the-goal-region-was-wrong-and-these-numbers-are-the-re-run).

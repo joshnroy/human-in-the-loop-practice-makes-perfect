@@ -178,23 +178,32 @@ class KinderBackend(BaseModel):
 
     def goal_region_bounds(self) -> tuple[float, ...]:
         """KINDER's own `blocks_goal_region` box, `(x_min, y_min, z_min, x_max, y_max,
-        z_max)`, read straight out of the variant's task JSON rather than hardcoded.
+        z_max)`, read from the `Region` object `_check_goals` actually tests against.
 
-        KNOWN DISCREPANCY, fix pending: `_check_goals` does not compare against this
-        raw range. It goes through `Region.check_in_region`, which tests `Region.bbox`
-        -- and `_create_regions` builds that bbox by inflating the JSON range by
-        `ground_placement_threshold = 0.05` on every axis
-        (`kinder/envs/dynamic3d/objects/base.py:840, 875-880`). So the region this
-        returns is 0.05 m tighter per side than the one the benchmark actually scores.
-        `test_in_goal_region_agrees_with_kinders_own_goal_check` does not catch it
-        because no state its random walk visits happens to land in the 0.05 m band
-        where the two verdicts differ.
+        Deliberately **not** the task JSON's `ranges[0]`. KINDER never compares a
+        position against that literal: `MujocoGround._create_regions` inflates the range
+        by `ground_placement_threshold` (0.05 m) on every side, clamping z at 0, and it
+        is that inflated `Region.bbox` which `Region.check_in_region` does its inclusive
+        per-axis test on. Reading `bbox` back rather than re-deriving it means no
+        arithmetic happens on our side and the two cannot drift apart again.
+
+        For the `o1`/`o2` variants the JSON range `[1.9, -0.1, 0.0, 2.1, 0.1, 0.1]`
+        therefore becomes `(1.85, -0.15, 0.0, 2.15, 0.15, 0.15)` -- half again as wide in
+        x, the axis a toss controls. `test_goal_region_bounds_match_kinders_own_region`
+        pins this element-wise against upstream.
         """
         env = self._ensure_env()
-        ranges = env.unwrapped._object_centric_env.task_config["regions"]["blocks_goal_region"][
-            "ranges"
-        ]
-        return tuple(float(value) for value in ranges[0])
+        ground = env.unwrapped._object_centric_env._ground_fixture
+        regions = ground.region_objects["blocks_goal_region"]
+        # `MujocoGround.check_in_region` is an any-of over this list, which a single
+        # 6-tuple can only represent while there is exactly one box. Both shipped
+        # variants define one; fail loudly rather than silently dropping the rest.
+        if len(regions) != 1:
+            raise ValueError(
+                f"blocks_goal_region has {len(regions)} boxes; goal_region_bounds() "
+                "represents exactly one"
+            )
+        return tuple(float(value) for value in regions[0].bbox)
 
     def reset(self, *, seed: int) -> dict[str, tuple[float, ...]]:
         """Reset the scene to `seed`'s initial state and read the features back.

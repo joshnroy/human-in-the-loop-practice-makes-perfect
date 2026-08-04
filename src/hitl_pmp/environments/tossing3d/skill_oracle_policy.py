@@ -25,9 +25,18 @@ class SkillOraclePolicy:
     """
 
     # Measured, not guessed: sweeping the swing dial over KINDER seeds 0-2 put the cube
-    # in the goal region for every swing in [0.6, 0.9] and outside it (into the bin at
-    # x ~ 2.22, past the region's 2.10 edge) from 1.0 up. 0.75 is the middle of the
-    # band that worked on every seed tried.
+    # in the goal region at every swing sampled in [0.6, 0.9] and outside it at 0.5
+    # (short, x ~ 1.66) and at 1.0 (long, x ~ 2.22 past the region's 2.15 edge).
+    #
+    # 0.75 is *within* that band but is not its midpoint, and the endpoints are sampled
+    # values rather than measured edges: the sweep tried {0.25, 0.5, 0.6, 0.75, 0.9, 1.0},
+    # so all that is established is a solving band somewhere inside (0.5, 1.0). The band
+    # was originally bracketed against this domain's un-inflated goal box; re-checking
+    # the same landing positions against KINDER's true, 5 cm-wider box flips no sampled
+    # point in either direction, so 0.75 still solves and was not retuned.
+    #
+    # `test_the_oracle_swing_actually_reaches_the_goal_region` is what holds this
+    # honest -- it asserts the constant solves rather than trusting this comment.
     ORACLE_SWING: ClassVar[float] = 0.75
     # Mid-range of KINDER's own MOVE_TO_TARGET_DISTANCE_BOUNDS, and no rotation offset:
     # the pick pose its own sampler is centred on.
