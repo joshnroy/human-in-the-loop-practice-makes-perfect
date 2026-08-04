@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from pydantic import ConfigDict, Field
 
 from hitl_pmp.core.method.method import InteractionComplete, Method
@@ -18,6 +19,22 @@ _OBJ = Object(name="thing", type=_BLOCK)
 
 def _state(*, x: float) -> State:
     return State(data={_OBJ: np.array([x])})
+
+
+class _CollectingSink:
+    """A CheckpointFramesSink that keeps what it is handed, so a test can assert on
+    frames without PracticeLoop retaining any itself.
+
+    Production code streams frames straight to disk; a test that wants them in hand
+    collects them here instead. That is deliberately the *same* code path production
+    uses -- there is no parallel retaining mode inside PracticeLoop to exercise
+    instead, and reintroducing one is the bug this arrangement exists to prevent."""
+
+    def __init__(self) -> None:
+        self.frames_by_transitions: dict[int, list[np.ndarray]] = {}
+
+    def __call__(self, *, transitions: int, frames: list[np.ndarray]) -> None:
+        self.frames_by_transitions[transitions] = frames
 
 
 class _EventLog:
@@ -307,23 +324,26 @@ def test_run_without_a_num_cycles_zero_still_runs_the_initial_evaluation() -> No
     assert metrics.evaluations == [(0, 2, 2)]
 
 
-def test_run_without_a_renderer_returns_no_frames() -> None:
+def test_run_without_a_renderer_renders_nothing() -> None:
     problem, method, metrics = _build()
-    frames = PracticeLoop.run(
-        problem=problem,
-        method=method,
-        metrics=metrics,
-        num_cycles=2,
-        max_steps_per_interaction=1,
-        num_test_tasks=2,
+    assert (
+        PracticeLoop.run(
+            problem=problem,
+            method=method,
+            metrics=metrics,
+            num_cycles=2,
+            max_steps_per_interaction=1,
+            num_test_tasks=2,
+        )
+        is None
     )
-    assert frames == {}
     assert problem.renderer_calls == [False] * (2 * 3)  # 3 evaluations x 2 test tasks
 
 
 def test_run_with_a_renderer_and_zero_cycles_renders_the_initial_evaluation() -> None:
     problem, method, metrics = _build()
-    frames = PracticeLoop.run(
+    sink = _CollectingSink()
+    PracticeLoop.run(
         problem=problem,
         method=method,
         metrics=metrics,
@@ -331,8 +351,9 @@ def test_run_with_a_renderer_and_zero_cycles_renders_the_initial_evaluation() ->
         max_steps_per_interaction=1,
         num_test_tasks=3,
         renderer=_FakeRenderer,
+        on_checkpoint_frames=sink,
     )
-    assert len(frames) == 1
+    assert len(sink.frames_by_transitions) == 1
     # Only the first test task of the (sole) evaluation sweep renders.
     assert problem.renderer_calls == [True, False, False]
 
@@ -347,6 +368,7 @@ def test_run_with_a_renderer_renders_only_the_last_evaluation_sweeps_first_task(
         max_steps_per_interaction=1,
         num_test_tasks=2,
         renderer=_FakeRenderer,
+        on_checkpoint_frames=_CollectingSink(),
     )
     # 3 evaluation sweeps of 2 test tasks each: initial, after cycle 1, after
     # cycle 2. Only the very first task of the very last sweep renders.
@@ -390,9 +412,10 @@ def test_render_sweep_indices_never_exceeds_the_number_of_sweeps() -> None:
     })
 
 
-def test_run_returns_frames_keyed_by_transitions_for_each_checkpoint() -> None:
+def test_each_checkpoints_frames_reach_the_sink_keyed_by_transitions() -> None:
     problem, method, metrics = _build()
-    frames_by_transitions = PracticeLoop.run(
+    sink = _CollectingSink()
+    PracticeLoop.run(
         problem=problem,
         method=method,
         metrics=metrics,
@@ -401,26 +424,30 @@ def test_run_returns_frames_keyed_by_transitions_for_each_checkpoint() -> None:
         num_test_tasks=1,
         renderer=_FakeRenderer,
         num_render_checkpoints=3,
+        on_checkpoint_frames=sink,
     )
     # Sweeps 0, 2, 4 -> 0, 4, 8 transitions at 2 steps per cycle.
-    assert sorted(frames_by_transitions) == [0, 4, 8]
-    assert all(frames for frames in frames_by_transitions.values())
+    assert sorted(sink.frames_by_transitions) == [0, 4, 8]
+    assert all(frames for frames in sink.frames_by_transitions.values())
 
 
-def test_run_without_a_renderer_returns_nothing_even_with_checkpoints_requested() -> None:
+def test_without_a_renderer_the_sink_is_never_called_even_with_checkpoints_requested() -> None:
+    """Checkpoints select which *sweeps* would record; with no renderer none of
+    them produce a frame, so the sink must stay untouched rather than being handed
+    empty lists."""
     problem, method, metrics = _build()
-    assert (
-        PracticeLoop.run(
-            problem=problem,
-            method=method,
-            metrics=metrics,
-            num_cycles=4,
-            max_steps_per_interaction=1,
-            num_test_tasks=1,
-            num_render_checkpoints=5,
-        )
-        == {}
+    sink = _CollectingSink()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=4,
+        max_steps_per_interaction=1,
+        num_test_tasks=1,
+        num_render_checkpoints=5,
+        on_checkpoint_frames=sink,
     )
+    assert sink.frames_by_transitions == {}
 
 
 def test_run_uses_practice_policy_for_interaction_and_task_policy_for_evaluation() -> None:
@@ -586,3 +613,91 @@ def test_the_test_set_is_drawn_once_and_reused_by_every_sweep() -> None:
     # 5 sweeps happen (1 initial + 4 cycles), but only 3 test tasks are ever drawn.
     assert len(metrics.evaluations) == 5
     assert problem.tasks.test_task_count == 3
+
+
+def test_streaming_hands_over_every_rendered_checkpoint_and_returns_nothing() -> None:
+    """The memory property streaming exists for: peak retention is one sweep's
+    frames, not every checkpoint's. Retaining all of them is an unbounded buffer
+    (checkpoints x episode length x frame bytes), and a runaway one already
+    OOM-killed a whole session on this project -- fatally, because a tmux pane's
+    systemd scope defaults to OOMPolicy=stop, so the kill took the session down
+    with it rather than just the offending process."""
+    problem, method, metrics = _build()
+    received: list[int] = []
+
+    def sink(*, transitions: int, frames: list[np.ndarray]) -> None:
+        assert frames, "a rendered sweep must hand over a non-empty frame list"
+        received.append(transitions)
+
+    returned = PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=4,
+        max_steps_per_interaction=2,
+        num_test_tasks=2,
+        renderer=_FakeRenderer,
+        num_render_checkpoints=5,
+        on_checkpoint_frames=sink,
+    )
+    # Every rendered checkpoint reached the sink...
+    assert len(received) == 5
+    assert received == sorted(received)
+    # ...and run() hands back nothing, because there is no longer anywhere for
+    # frames to accumulate. This fails if someone reintroduces a retaining path.
+    assert returned is None
+
+
+def test_a_renderer_without_a_sink_is_rejected_before_the_run_starts() -> None:
+    """Streaming is the only path, so a renderer with nowhere to send its frames is
+    a caller error rather than a silent discard -- and it is caught up front, before
+    hard_reset(), so the environment is untouched when it raises."""
+    problem, method, metrics = _build()
+    with pytest.raises(ValueError, match="on_checkpoint_frames is required"):
+        PracticeLoop.run(
+            problem=problem,
+            method=method,
+            metrics=metrics,
+            num_cycles=2,
+            max_steps_per_interaction=2,
+            num_test_tasks=2,
+            renderer=_FakeRenderer,
+            num_render_checkpoints=3,
+        )
+    assert problem.env.hard_reset_count == 0
+    assert metrics.evaluations == []
+
+
+def test_streaming_hands_over_frames_as_each_sweep_ends_not_at_the_end() -> None:
+    """Ordering is the whole point: if the sink were called after run() finished,
+    the frames would have been held for the entire run and nothing would be
+    bounded. Interleaving with the evaluate events proves they are handed over
+    while the run is still going."""
+    problem, method, metrics = _build()
+
+    def sink(*, transitions: int, frames: list[np.ndarray]) -> None:
+        problem.event_log.events.append(f"frames:{transitions}")
+
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        renderer=_FakeRenderer,
+        num_render_checkpoints=3,
+        on_checkpoint_frames=sink,
+    )
+    # Each handover sits immediately after its own sweep, interleaved with
+    # end_cycle -- not batched at the tail.
+    assert problem.event_log.events == [
+        "evaluate",
+        "frames:0",
+        "end_cycle",
+        "evaluate",
+        "frames:2",
+        "end_cycle",
+        "evaluate",
+        "frames:4",
+    ]
