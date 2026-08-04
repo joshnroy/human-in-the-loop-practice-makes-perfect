@@ -201,17 +201,35 @@ passes. An interaction period runs its full length regardless — a solved state
 absorbing (the cube is past the barrier), and ending early would make a solved period
 cheaper in transitions than a failed one, biasing the x-axis of every learning curve.
 
+**A controller is grounded fresh for every skill execution, and the PyBullet client it
+opens is released right after.** The obvious tidy-up — memoize the grounding — is wrong
+and was tried: `PyBulletSim` carries held-object state (`base_link_to_held_obj`) that
+`reset` does not clear, so every `Pick` after the first silently fails and the cube
+never leaves its start pose. The reason the fresh grounding needs `_release` at all is
+that KINDER's `ground()` mints a new controller each call and each one stands up its own
+`p.connect(p.DIRECT)` plus the Kinova URDF, which nothing on KINDER's side ever
+disconnects: unreleased, that leaked ~150 MB per `Pick` and ~315 MB per `Toss`, and took
+a 40-step run to 18.7 GB. Released, 600 skill executions sit flat at ~0.66 GB.
+`test_skill_executions_do_not_leak_memory` pins it.
+
 ## Known limitations
 
 - **`o2` is not supported.** It requires two cubes in the goal region; the symbolic
   layer here is single-cube. The CLI accepts `--variant o2` because the backend does,
   but the goal would be under-specified.
-- **Episodes are deterministic given the whole run's history, not per-episode.**
-  Resetting to a seed reproduces the initial state bit-for-bit (pinned by
-  `test_reset_to_the_same_seed_reproduces_the_same_initial_state`), but a *marginal*
-  grasp can still flip on residual MuJoCo solver state left by whatever the simulator
-  did before. A run with a fixed `--seed` reproduces; the same episode embedded in a
-  different run may not.
+- **A fixed `--seed` fully determines a run.** Verified: two identical
+  `scripts/run_sweep.py` invocations produced bit-identical `stats.json`. Resetting to a
+  seed also reproduces the initial state bit-for-bit (pinned by
+  `test_reset_to_the_same_seed_reproduces_the_same_initial_state`). This is a
+  determinism claim about one machine, not a portability one — per-seed numbers are
+  machine-local and arms should be compared at arm level.
+
+  An earlier version of this file warned that a *marginal* grasp could flip on residual
+  MuJoCo solver state. That diagnosis was wrong. The flipping was the leaked PyBullet
+  clients described above — before `_release`, seed 1's grasp survived the base move or
+  not depending on run history even with a fresh environment per trial; after it, seed 1
+  drops the cube on every swing, deterministically. A marginal seed here is
+  reproducibly marginal, not flaky.
 - **No `HumanOracle`.** The domain is the one in this repo that most needs one. Until
   it exists, `Metrics.num_human_interventions()` reports `(0.0, 0)` here as everywhere
   else — not because no intervention was needed, but because none is representable.

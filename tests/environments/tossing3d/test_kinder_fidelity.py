@@ -23,6 +23,8 @@ seam anywhere. Run them with the optional dependency installed; see
 `src/hitl_pmp/environments/tossing3d/README.md`.
 """
 
+import resource
+
 import numpy as np
 import pytest
 
@@ -170,3 +172,32 @@ def test_every_swing_the_prior_can_draw_stays_executable() -> None:
     env = shared_env()
     for swing in (env.swing_low, 0.5, env.swing_high):
         assert _oracle_solve(env=env, seed=0, swing=swing) is not None
+
+
+def test_skill_executions_do_not_leak_memory() -> None:
+    """`KinderBackend._release` has to reclaim the PyBullet client each grounded
+    controller opens, or a sweep OOMs the machine rather than finishing.
+
+    This is a regression test for a real incident, not a hypothetical: grounding a
+    controller per skill execution leaked one live `p.connect(p.DIRECT)` plus the Kinova
+    URDF and meshes -- ~150 MB per Pick, ~315 MB per Toss -- which took a 40-step run to
+    18.7 GB and put a 60 GB box on an OOM trajectory.
+
+    Peak RSS via `resource`, so no dependency beyond the stdlib, and the threshold sits
+    with enormous margin on both sides: leaking costs >6 GB over these 40 executions,
+    while reclaiming holds growth to roughly nothing.
+    """
+    env = shared_env()
+    env.reset_to_seed(seed=0)
+    # Warm up first: the one-off cost of the first grounding of each controller is not
+    # the leak, and folding it into the measurement would only add noise.
+    for skill in (_ENV.SKILL_PICK, _ENV.SKILL_MOVE_TO_THROW_POSE, _ENV.SKILL_TOSS):
+        _act(env=env, skill=skill, param0=0.5)
+    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    for index in range(40):
+        env.reset_to_seed(seed=index % 3)
+        _act(env=env, skill=_ENV.SKILL_PICK, param0=0.55)
+        _act(env=env, skill=_ENV.SKILL_TOSS, param0=0.75)
+    # ru_maxrss is in kilobytes on Linux.
+    grew_mb = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) / 1024
+    assert grew_mb < 500, f"peak RSS grew {grew_mb:.0f} MB over 40 skill executions"

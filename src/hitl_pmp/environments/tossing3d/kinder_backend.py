@@ -38,7 +38,9 @@ class KinderBackend(BaseModel):
     The controllers are built once and reused for the whole run. That is not just
     thrift: each `PickShelfController`/`TossController` lazily opens its own PyBullet
     client on first `reset`, so rebuilding them per skill execution leaks one client
-    per call over the tens of thousands of executions a sweep performs.
+    per call over the tens of thousands of executions a sweep performs. Note that
+    caching the *lifted* controllers is not enough to get that -- `ground()` mints a new
+    controller per call, so the memo in `_ground` is what actually holds the line.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -313,6 +315,14 @@ class KinderBackend(BaseModel):
         )
 
     def _ground(self, *, controllers: Any, name: str, with_target: bool) -> Any:
+        """Ground a lifted controller on this scene's objects.
+
+        Deliberately *not* memoized, even though a fresh grounding per call is what
+        allocates the PyBullet client `_release` then has to reclaim. A ground
+        controller carries held-object state its own `reset` does not clear
+        (`PyBulletSim.base_link_to_held_obj`), so reusing one makes every Pick after the
+        first fail: measured, the cube never leaves its start pose again.
+        """
         state = self._current_state()
         robot = list(state.get_objects(self._object_type))[0]
         if not with_target:
@@ -325,21 +335,62 @@ class KinderBackend(BaseModel):
         no inverse-kinematics solution, motion planning returning None, a controller
         that never terminates -- is funnelled into a `False` return so that
         `Environment.take_action` stays total over the whole action space, the same
-        contract every other domain here holds to."""
+        contract every other domain here holds to.
+
+        The `finally` is not tidiness, it is what makes a sweep runnable at all -- see
+        `_release`."""
         try:
-            controller.reset(self._current_state(), params=params, **kwargs)
-        except Exception:  # noqa: BLE001 -- see docstring: a planning failure is a skill failure
-            return False
-        for _ in range(max_steps):
             try:
-                action = controller.step()
-            except Exception:  # noqa: BLE001
+                controller.reset(self._current_state(), params=params, **kwargs)
+            except Exception:  # noqa: BLE001 -- see docstring: a planning failure is a skill failure
                 return False
-            self._step(action=action)
-            controller.observe(self._current_state())
-            if controller.terminated():
-                return True
-        return False
+            for _ in range(max_steps):
+                try:
+                    action = controller.step()
+                except Exception:  # noqa: BLE001
+                    return False
+                self._step(action=action)
+                controller.observe(self._current_state())
+                if controller.terminated():
+                    return True
+            return False
+        finally:
+            self._release(controller=controller)
+
+    @staticmethod
+    def _release(*, controller: Any) -> None:
+        """Disconnect the PyBullet client this controller opened, if it opened one.
+
+        KINDER's controllers stand up a whole `PyBulletSim` on first `reset` -- a
+        `p.connect(p.DIRECT)` plus the Kinova URDF and its meshes -- and nothing on
+        their side ever disconnects it. Since a controller is grounded fresh per skill
+        execution (`_ground` explains why it has to be), that is a leak of one live
+        physics client per transition: measured at ~150 MB per Pick and ~315 MB per
+        Toss, taking a 40-step run to 18.7 GB and putting the machine on an OOM
+        trajectory. Reclaiming the client here holds a 600-execution run flat at ~1.0 GB.
+
+        This only frees a resource -- the controller is never touched again after `_run`
+        returns -- so the physics of a skill execution are bit-for-bit what they were
+        before, unlike reusing the controller, which silently breaks Pick.
+
+        Note this is an *upstream* defect, not a misuse of the API from here: KINDER's
+        own `KinDERParameterizedSkillEnv.step` re-grounds per step identically, and
+        `PyBulletSim.close` -- which is exactly the `p.disconnect` below -- ships with
+        zero callers anywhere in the package. Calling their `close()` rather than
+        reaching for `p.disconnect` ourselves keeps this correct if the teardown ever
+        grows past a bare disconnect. A failed skill leaks just as much as a successful
+        one, since the sim is built at the top of `reset` before motion planning can
+        raise, so early training -- when EES fails constantly -- is the worst case.
+        """
+        sim = getattr(controller, "_pybullet_sim", None)
+        if sim is None:
+            return
+        import contextlib  # noqa: PLC0415
+
+        # An already-dead client is exactly as good as one this call closes.
+        with contextlib.suppress(Exception):
+            sim.close()
+        controller._pybullet_sim = None  # noqa: SLF001 -- so a retry rebuilds it
 
     def render(self) -> np.ndarray:
         """One frame from KINDER's own renderer, on whichever camera
