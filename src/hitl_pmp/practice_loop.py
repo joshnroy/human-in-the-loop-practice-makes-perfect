@@ -43,8 +43,8 @@ class PracticeLoop:
     `end_cycle()`. The two were previously welded to the same loop boundary, so
     `num_cycles` set how often the robot is rescued and how often the samplers
     refit with a single number -- and an experiment varying one necessarily varied
-    the other (see `docs/experiment-logs/2026-08-03-tossingroom-reset-frequency.md`,
-    where the arms ended ~40 competence points apart on identical experience). It
+    the other (PR #39's Tossing Room reset-frequency experiment, whose arms ended
+    ~40 competence points apart on identical experience). It
     resets to the same task rather than sampling a new one, so the train-task
     distribution is untouched; resets are not charged as transitions, matching how
     the per-period reset is already uncharged; and `Metrics.num_practice_resets`
