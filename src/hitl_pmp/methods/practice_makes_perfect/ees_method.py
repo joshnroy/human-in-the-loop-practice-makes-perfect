@@ -19,6 +19,7 @@ from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
+from hitl_pmp.planning.types import TranslationCache
 
 from .competence_models import OptimisticSkillCompetenceModel
 from .wrapped_sampler import LearnedSkillSampler
@@ -208,6 +209,9 @@ class EesMethod(Method):
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
     _cached_plans: list[list[GroundSkill]] = PrivateAttr()
     _score_calls: int = PrivateAttr()
+    # Scoped to this Method instance, so it lives exactly as long as one run and is
+    # never shared between runs, processes, or tests. See `plan_to`.
+    _translation_cache: TranslationCache = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -217,6 +221,7 @@ class EesMethod(Method):
         self._seen_tasks = []
         self._cached_plans = []
         self._score_calls = 0
+        self._translation_cache = TranslationCache()
 
     # ------------------------------------------------------------------ domain
 
@@ -347,6 +352,12 @@ class EesMethod(Method):
         goal: frozenset[GroundAtom],
         costs: dict[GroundSkill, float],
     ) -> list[GroundSkill]:
+        """Costs change on nearly every call, but `init_atoms`/`goal` repeat heavily
+        -- the test set is fixed for the whole run, and practice replans toward the
+        same few candidates' preconditions -- so this hands the planner a per-run
+        `TranslationCache` to skip re-translating PDDL it has already seen. Costs are
+        patched into the SAS *after* translation, so caching that stage cannot change
+        the plan; see `TranslationCache`."""
         return FastDownwardPlanner.plan(
             skills=self.skills(),
             predicates=self.predicates(),
@@ -357,6 +368,7 @@ class EesMethod(Method):
             ground_skill_costs=costs,
             default_cost=self.default_cost(),
             timeout=self.planning_timeout,
+            translation_cache=self._translation_cache,
         )
 
     def record_seen_task(

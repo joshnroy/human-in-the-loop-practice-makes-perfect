@@ -22,6 +22,7 @@ from hitl_pmp.environments.lightswitch.predicates import (
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
+from hitl_pmp.planning.types import TranslationCache
 
 _PREDICATES: tuple[Predicate, ...] = (ADJACENT, LIGHT_IN_CELL, LIGHT_OFF, LIGHT_ON, ROBOT_IN_CELL)
 _SKILLS = (
@@ -141,10 +142,132 @@ def test_run_returns_partial_output_rather_than_raising_on_timeout(*, tmp_path: 
             "import sys, time; print('partial'); sys.stdout.flush(); time.sleep(30)",
         ],
         cwd=str(tmp_path),
-        timeout=5.0,
+        timeout=1.0,
     )
     assert isinstance(output, str)
     assert "partial" in output
+
+
+def test_integration_translation_cache_returns_the_identical_plan() -> None:
+    """The cache's whole safety claim: hitting it must produce exactly the plan a
+    fresh translation would, *including* under a cost dict that changes between the
+    miss and the hit -- costs are patched into the SAS after translation, so they
+    must still steer search on a cached SAS."""
+    setup = _setup()
+    objects = setup["objects"]
+    expensive_jump = GroundSkill(
+        skill=LightSwitchSkills.JUMP_TO_LIGHT,
+        objects=(
+            LightSwitchEnvironment.robot,
+            _cell(objects=objects, index=2),
+            _cell(objects=objects, index=3),
+            _cell(objects=objects, index=4),
+            LightSwitchEnvironment.light,
+        ),
+    )
+    cache = TranslationCache()
+    assert cache.num_entries() == 0
+
+    uncached_cheap = FastDownwardPlanner.plan(**setup)
+    uncached_costly = FastDownwardPlanner.plan(**setup, ground_skill_costs={expensive_jump: 100.0})
+
+    cached_cheap = FastDownwardPlanner.plan(**setup, translation_cache=cache)
+    assert cache.num_entries() == 1
+    cached_costly = FastDownwardPlanner.plan(
+        **setup, ground_skill_costs={expensive_jump: 100.0}, translation_cache=cache
+    )
+
+    assert cached_cheap == uncached_cheap
+    assert cached_costly == uncached_costly
+    assert cached_cheap != cached_costly, "the second call must have re-priced the cached SAS"
+    # Both calls shared one (domain, problem) pair, so the differing cost dict must
+    # not have added an entry.
+    assert cache.num_entries() == 1
+
+
+def test_integration_translation_cache_replays_a_failed_translation_as_a_failure() -> None:
+    """A cached abort must re-raise, not degrade into an empty plan -- and on this
+    domain most translations DO abort (EES prices practice candidates by planning to
+    preconditions that are frequently unreachable), so this is the common path."""
+    setup = _setup()
+    light = LightSwitchEnvironment.light
+    setup["goal"] = frozenset({
+        GroundAtom(predicate=LIGHT_ON, objects=(light,)),
+        GroundAtom(predicate=LIGHT_OFF, objects=(light,)),
+    })
+    cache = TranslationCache()
+    with pytest.raises(PlanningFailure):
+        FastDownwardPlanner.plan(**setup, translation_cache=cache)
+    assert cache.num_entries() == 1
+    with pytest.raises(PlanningFailure):
+        FastDownwardPlanner.plan(**setup, translation_cache=cache)
+    assert cache.num_entries() == 1
+
+
+def test_integration_translation_cache_does_not_store_a_timed_out_translation() -> None:
+    """A killed run must not become a permanent verdict. An abort is FD's judgement
+    on the PDDL and is reproducible; a timeout is a property of the machine at that
+    instant. Caching the latter would turn one transient failure into "this symbolic
+    state is unreachable" for the rest of the run -- and the load at which a call can
+    actually reach the budget is exactly the saturated sweep this cache exists for."""
+    cache = TranslationCache()
+    with pytest.raises(PlanningFailure):
+        FastDownwardPlanner.plan(**_setup(), timeout=1e-3, translation_cache=cache)
+    assert cache.num_entries() == 0
+    # And the state is still plannable afterwards, from a real translation.
+    assert FastDownwardPlanner.plan(**_setup(), translation_cache=cache)
+    assert cache.num_entries() == 1
+
+
+def test_integration_translation_cache_keys_on_the_fd_alias() -> None:
+    """`--alias` selects translator options, not only search options, so two aliases
+    can translate the same PDDL differently. Nothing in this repo passes a
+    non-default alias yet, which is exactly why this is pinned: a cache that ignored
+    it would silently serve one alias's SAS to another."""
+    setup = _setup()
+    cache = TranslationCache()
+    assert FastDownwardPlanner.plan(**setup, translation_cache=cache)
+    assert cache.num_entries() == 1
+    assert FastDownwardPlanner.plan(**setup, alias="lama-first", translation_cache=cache)
+    assert cache.num_entries() == 2
+
+
+def test_integration_translation_cache_separates_distinct_problems() -> None:
+    """Keyed on the PDDL text, so two goals that translate differently cannot share
+    an entry -- the failure mode that would silently hand one task another's plan."""
+    cache = TranslationCache()
+    reachable = _setup()
+    already_satisfied = _setup(light_level=0.8, light_target=0.8)
+    assert FastDownwardPlanner.plan(**reachable, translation_cache=cache)
+    assert FastDownwardPlanner.plan(**already_satisfied, translation_cache=cache) == []
+    assert cache.num_entries() == 2
+    # Replayed from cache, still distinct.
+    assert FastDownwardPlanner.plan(**reachable, translation_cache=cache)
+    assert FastDownwardPlanner.plan(**already_satisfied, translation_cache=cache) == []
+    assert cache.num_entries() == 2
+
+
+def test_integration_translation_cache_spawns_fast_downward_once_per_distinct_problem(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The point of the cache, asserted directly rather than inferred from a clock:
+    N calls over one (domain, problem) pair run the translator once."""
+    setup = _setup()
+    cache = TranslationCache()
+    runs: list[list[str]] = []
+    original_run = FastDownwardPlanner._run
+
+    def counting_run(*, args: list[str], cwd: str, timeout: float | None = None) -> str:
+        runs.append(args)
+        return original_run(args=args, cwd=cwd, timeout=timeout)
+
+    monkeypatch.setattr(FastDownwardPlanner, "_run", staticmethod(counting_run))
+    for _ in range(3):
+        FastDownwardPlanner.plan(**setup, translation_cache=cache)
+    translate_runs = [args for args in runs if "--sas-file" in args]
+    assert len(translate_runs) == 1
+    # The search still runs every time -- costs could have changed.
+    assert len(runs) - len(translate_runs) == 3
 
 
 def test_fd_dir_prefers_the_fd_exec_path_environment_variable(

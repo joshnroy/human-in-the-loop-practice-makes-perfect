@@ -104,6 +104,7 @@ is entangled and hard to extend), but its FD-invocation protocol is worth reusin
       ground_skill_costs: dict[GroundSkill, float] | None = None,
       default_cost: float = 1.0, cost_precision: int = 3,
       timeout: float = 10.0, alias: str = "seq-opt-lmcut",
+      translation_cache: TranslationCache | None = None,
   ) -> list[GroundSkill]
   ```
 
@@ -138,6 +139,22 @@ is entangled and hard to extend), but its FD-invocation protocol is worth reusin
   search on Ubuntu 25.10's Rust *uutils* `timeout`; and there is no separate
   `PlanningTimeout` — a timed-out run simply produces no `"Solution found"` (or no
   SAS file at all) and raises `PlanningFailure`.
+
+- `types.py` — `TranslationCache` (plus `TranslationResult`), the optional per-run
+  memo for stage 1. Stage 1's entire input is the domain/problem PDDL, since costs
+  are injected in stage 2, and FD's translator is deterministic in that input
+  (verified: 20 translations of one pair under 20 different `PYTHONHASHSEED` values
+  give one SHA-256), so repeating a pair can only reproduce a byte-identical SAS
+  file. It repeats constantly — the evaluation test set is fixed for a whole run and
+  practice replans toward the same handful of candidate preconditions — while the
+  cost vector almost never does; measured on Tossing Room / EES, **304 plan calls
+  drew on 12 distinct pairs (96% hit rate)**, against 21% for a key that included
+  costs. Aborted translations are cached too (207 of those 304, since EES scores
+  practice candidates by planning to often-unreachable preconditions) and re-raise
+  `PlanningFailure` on a hit rather than degrading into an empty plan. It is an
+  *instance* the calling `Method` owns and passes in (`EesMethod._translation_cache`),
+  never class-level state, so nothing is shared between runs; `plan()` without one
+  translates afresh every call, exactly as predicators does.
 
 ## Installing Fast Downward
 
