@@ -51,6 +51,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -75,7 +76,10 @@ class SweepRun(BaseModel):
 class SweepOutcome(BaseModel):
     """What actually happened to one run. A failure is reported, not raised: one
     bad seed must not abort the other 29, since an interrupted sweep costs far
-    more to recover from than a single missing datapoint."""
+    more to recover from than a single missing datapoint. That holds for a run
+    that never *started* too -- a failed spawn is reported as `returncode == -1`
+    with the traceback as `output`, not as an exception out of the sweep (see
+    `SweepRunner._execute_one`)."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -354,15 +358,35 @@ class SweepRunner:
         start_time = datetime.now().astimezone()
         start_monotonic = time.monotonic()
         # -1 stands for "the child never reported a status", i.e. subprocess.run
-        # itself raised. That run's timing is still written by the finally below:
-        # a failed run is data, and losing its timing would silently bias any
-        # later wall-clock analysis toward runs that happened to succeed.
+        # itself raised -- the spawn failed, so there was never an exit code to
+        # collect. `check=False` means a child that runs and *fails* comes back
+        # normally with its own non-zero code; only failing to start lands here.
+        # That is not hypothetical on this box: memory pressure makes fork()
+        # raise OSError, and the runs most likely to hit it are the ones started
+        # while every other worker is already resident.
+        #
+        # It is caught rather than allowed to propagate because propagating
+        # breaks this module's central promise -- `list(executor.map(...))`
+        # re-raises the first exception any worker raised, so one failed spawn
+        # would abort the other 29 runs mid-sweep. See SweepOutcome's docstring:
+        # a failure is reported, not raised. The traceback becomes the outcome's
+        # `output`, so the original exception is *reported*, never swallowed:
+        # it is printed in the failure summary and written to that run's
+        # log.txt, exactly like a child's own stderr would be.
+        #
+        # The timing is written either way by the finally below: a failed run is
+        # data, and losing its timing would silently bias any later wall-clock
+        # analysis toward runs that happened to succeed.
         returncode = -1
+        output = ""
         try:
             completed = subprocess.run(  # noqa: S603
                 run.command, capture_output=True, text=True, env=child_env, check=False
             )
             returncode = completed.returncode
+            output = completed.stdout + completed.stderr
+        except Exception:  # noqa: BLE001 -- deliberately broad; see above
+            output = traceback.format_exc()
         finally:
             elapsed_seconds = time.monotonic() - start_monotonic
             end_time = datetime.now().astimezone()
@@ -389,7 +413,6 @@ class SweepRunner:
                     machine_at_end=machine_at_end,
                 ),
             )
-        output = completed.stdout + completed.stderr
         (run.output_dir / "log.txt").write_text(output)
         status = "ok" if returncode == 0 else f"FAILED rc={returncode}"
         print(f"[{status}] {run.method} seed={run.seed}", flush=True)

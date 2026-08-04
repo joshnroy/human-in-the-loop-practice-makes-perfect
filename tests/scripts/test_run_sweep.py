@@ -204,11 +204,51 @@ def test_timing_is_written_even_when_the_child_cannot_be_launched(*, tmp_path: P
     """subprocess.run itself raising (no such executable) is the one path that
     would otherwise skip the record entirely -- hence the try/finally."""
     run = _fake_run(tmp_path=tmp_path, seed=0, command=["definitely-not-a-real-executable"])
-    with pytest.raises(FileNotFoundError):
-        SweepRunner.execute(runs=[run], max_workers=1)
+    outcomes = SweepRunner.execute(runs=[run], max_workers=1)
+    assert outcomes[0].returncode == -1
     timing = _timing_of(run=run)
     assert timing.returncode == -1
     assert timing.succeeded is False
+
+
+def test_a_run_that_cannot_be_launched_is_reported_not_raised(*, tmp_path: Path) -> None:
+    """A spawn that raises must not abort the sweep. `executor.map` re-raises the
+    first exception any worker raised, so letting it out would take down every
+    other run in the grid -- the exact opposite of SweepOutcome's contract, and
+    reachable in practice: under memory pressure fork() raises OSError.
+
+    The original exception has to survive as data, not be swallowed: the whole
+    point of catching it is that the sweep continues, so the traceback is the
+    only remaining evidence of what went wrong."""
+    broken = _fake_run(tmp_path=tmp_path, seed=0, command=["definitely-not-a-real-executable"])
+    healthy = _fake_run(tmp_path=tmp_path, seed=1, command=[sys.executable, "-c", "print('fine')"])
+
+    outcomes = sorted(
+        SweepRunner.execute(runs=[broken, healthy], max_workers=2), key=lambda o: o.run.seed
+    )
+
+    # The failed spawn is reported as an ordinary failed outcome...
+    assert outcomes[0].succeeded is False
+    assert outcomes[0].returncode == -1
+    # ...carrying the original exception, not a substitute for it. Nothing here
+    # may mention UnboundLocalError: that would mean the real cause was masked.
+    assert "FileNotFoundError" in outcomes[0].output
+    assert "UnboundLocalError" not in outcomes[0].output
+    # ...written to that run's log.txt, exactly as a child's own stderr would be.
+    assert "FileNotFoundError" in (broken.output_dir / "log.txt").read_text()
+
+    # ...and the sibling run in the same sweep still ran to completion. This is
+    # the assertion that pins the actual contract.
+    assert outcomes[1].succeeded is True
+    assert "fine" in outcomes[1].output
+
+
+def test_a_run_that_cannot_be_launched_still_fails_the_sweep(*, tmp_path: Path) -> None:
+    """Reporting instead of raising must not downgrade a hard failure to a silent
+    pass: `main` exits non-zero if any outcome failed, and rc=-1 is a failure."""
+    run = _fake_run(tmp_path=tmp_path, seed=0, command=["definitely-not-a-real-executable"])
+    outcomes = SweepRunner.execute(runs=[run], max_workers=1)
+    assert [outcome for outcome in outcomes if not outcome.succeeded] == outcomes
 
 
 def test_timing_timestamps_are_timezone_aware_iso_8601(*, tmp_path: Path) -> None:
