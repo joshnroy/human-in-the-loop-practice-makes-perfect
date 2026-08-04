@@ -51,12 +51,13 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 
 class SweepRun(BaseModel):
@@ -75,17 +76,70 @@ class SweepRun(BaseModel):
 class SweepOutcome(BaseModel):
     """What actually happened to one run. A failure is reported, not raised: one
     bad seed must not abort the other 29, since an interrupted sweep costs far
-    more to recover from than a single missing datapoint."""
+    more to recover from than a single missing datapoint. That holds for a run
+    that never *started* too -- a failed spawn is reported as `returncode == -1`
+    with the traceback as `output`, not as an exception out of the sweep (see
+    `SweepRunner._execute_one`), after `SpawnRetryPolicy`'s retries are
+    exhausted."""
 
     model_config = ConfigDict(frozen=True)
 
     run: SweepRun
     returncode: int
     output: str
+    # How many times the child was *spawned* for this run: 1 normally, more if a
+    # spawn failed and was retried. Deliberately part of the outcome rather than
+    # only a print, because a sweep in which several runs needed retries is a
+    # machine-health signal (memory pressure) that has to survive the scrollback.
+    spawn_attempts: int
 
     @property
     def succeeded(self) -> bool:
         return self.returncode == 0
+
+
+class SpawnRetryPolicy(BaseModel):
+    """How many times to re-attempt a run whose child could not be **launched**,
+    and how long to wait in between.
+
+    **Only a failed launch is retried; a run that failed is never re-run.** The
+    two are not the same event and must not be conflated:
+
+    - `subprocess.run` *raising* means the child never started. On this box the
+      real case is memory pressure making fork() raise OSError, which is
+      transient: a sibling worker finishing frees gigabytes within seconds, so
+      the same command would very likely succeed a moment later. Losing a
+      ~40-minute run to that is pure waste, and retrying is nearly free.
+    - A child that *started* and exited non-zero is deterministic. `--seed` fully
+      determines a run (`tests/scripts/test_reproducibility.py` pins this), so
+      re-running it burns another ~40 minutes to reproduce the identical failure.
+      `check=False` keeps that path returning normally, and it is never retried:
+      a sweep with one genuinely broken seed must cost 1x, not 3x.
+
+    **Why these numbers.** 3 attempts = the original plus 2 retries, with a 2s
+    backoff doubling to 4s (6s of waiting worst case). The failure being covered
+    resolves on the timescale of one worker exiting -- seconds, not minutes -- so
+    a longer schedule would not catch anything a short one misses. And the cost
+    of the bound being wrong is asymmetric: 6s wasted per run on a command that
+    is genuinely broken (a typo'd executable retries too -- the catch is broad on
+    purpose) against ~40 minutes recovered per run that would have succeeded.
+    `max_attempts=1` disables retrying entirely, which is the documented floor.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    # ge=1: argparse will not check this, and 0 would silently mean "never even
+    # try", producing a returncode of -1 with no exception to explain it.
+    max_attempts: int = Field(default=3, ge=1)
+    # Settable mainly so tests do not actually sleep. Not a CLI flag: the bound
+    # is the knob a caller has a reason to change, the schedule is not.
+    initial_backoff_seconds: float = Field(default=2.0, ge=0.0)
+
+    def backoff_seconds(self, *, attempt: int) -> float:
+        """Exponential: attempt 1 waits the initial delay, attempt 2 twice that.
+        Exponential rather than fixed because if the box really is out of memory,
+        backing off harder is what gives the resident workers time to drain."""
+        return self.initial_backoff_seconds * (2 ** (attempt - 1))
 
 
 class RunTiming(BaseModel):
@@ -130,10 +184,20 @@ class RunTiming(BaseModel):
     # Measured with time.monotonic(), NOT end_epoch - start_epoch: the wall clock
     # can be stepped by NTP mid-run, and a 40-minute run is long enough for that
     # to matter. The two will disagree slightly; monotonic is the truthful one.
+    #
+    # This spans the whole slot, including any spawn-retry backoff (see
+    # SpawnRetryPolicy), because that is genuinely how long the sweep spent on
+    # this run. A retried run's elapsed is therefore inflated by up to the
+    # backoff total, which matters to `analysis/run_timing.py`'s wall-clock
+    # regression: `spawn_attempts > 1` is how such a run is identified and, if
+    # the analyst wants a clean per-run duration, excluded.
     elapsed_seconds: float
 
     returncode: int
     succeeded: bool
+    # Defaulted, unlike SweepOutcome's identical field: `timing.json` files
+    # already on disk predate retrying, and 1 is the truthful value for them.
+    spawn_attempts: int = 1
 
     # The sweep's own configuration, so a record is interpretable on its own.
     max_workers: int
@@ -320,11 +384,16 @@ class SweepRunner:
 
     @staticmethod
     def execute(
-        *, runs: list[SweepRun], max_workers: int, sweep_id: str | None = None
+        *,
+        runs: list[SweepRun],
+        max_workers: int,
+        sweep_id: str | None = None,
+        retry_policy: SpawnRetryPolicy | None = None,
     ) -> list[SweepOutcome]:
         """Runs every command concurrently. Threads (not processes) because each
         worker only waits on a subprocess, so the GIL is never the bottleneck."""
         resolved_sweep_id = sweep_id if sweep_id is not None else SweepRunner.new_sweep_id()
+        resolved_retry_policy = retry_policy if retry_policy is not None else SpawnRetryPolicy()
         in_flight = InFlightCounter()
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             return list(
@@ -334,6 +403,7 @@ class SweepRunner:
                         sweep_id=resolved_sweep_id,
                         max_workers=max_workers,
                         in_flight=in_flight,
+                        retry_policy=resolved_retry_policy,
                     ),
                     runs,
                 )
@@ -341,7 +411,12 @@ class SweepRunner:
 
     @staticmethod
     def _execute_one(
-        *, run: SweepRun, sweep_id: str, max_workers: int, in_flight: InFlightCounter
+        *,
+        run: SweepRun,
+        sweep_id: str,
+        max_workers: int,
+        in_flight: InFlightCounter,
+        retry_policy: SpawnRetryPolicy,
     ) -> SweepOutcome:
         run.output_dir.mkdir(parents=True, exist_ok=True)
         # Pin each child to one math thread: workers already run concurrently, so
@@ -354,15 +429,74 @@ class SweepRunner:
         start_time = datetime.now().astimezone()
         start_monotonic = time.monotonic()
         # -1 stands for "the child never reported a status", i.e. subprocess.run
-        # itself raised. That run's timing is still written by the finally below:
-        # a failed run is data, and losing its timing would silently bias any
-        # later wall-clock analysis toward runs that happened to succeed.
+        # itself raised -- the spawn failed, so there was never an exit code to
+        # collect. `check=False` means a child that runs and *fails* comes back
+        # normally with its own non-zero code; only failing to start lands here.
+        # That is not hypothetical on this box: memory pressure makes fork()
+        # raise OSError, and the runs most likely to hit it are the ones started
+        # while every other worker is already resident.
+        #
+        # It is caught rather than allowed to propagate because propagating
+        # breaks this module's central promise -- `list(executor.map(...))`
+        # re-raises the first exception any worker raised, so one failed spawn
+        # would abort the other 29 runs mid-sweep. See SweepOutcome's docstring:
+        # a failure is reported, not raised. The traceback becomes the outcome's
+        # `output`, so the original exception is *reported*, never swallowed:
+        # it is printed in the failure summary and written to that run's
+        # log.txt, exactly like a child's own stderr would be.
+        #
+        # Before giving up it is retried, bounded, per SpawnRetryPolicy -- read
+        # that docstring for why a failed *launch* is retried and a failed *run*
+        # never is. A retried attempt re-runs the identical command with the
+        # identical `--seed`, so a run that succeeds on attempt 2 produces
+        # exactly the result attempt 1 would have, had it launched. Retrying
+        # cannot perturb `stats.json`.
+        #
+        # The outer try/finally is still needed even though the spawn's own
+        # except now lives inside the loop: a Ctrl-C landing in the backoff sleep
+        # must still write this run's timing. A failed run is data, and losing
+        # its timing would silently bias any later wall-clock analysis toward
+        # runs that happened to succeed.
         returncode = -1
+        output = ""
+        spawn_attempts = 0
+        # Every failed attempt's traceback is kept, not just the last: a run that
+        # quietly needed three attempts is exactly the machine-health evidence
+        # someone has to be able to read back out of log.txt afterwards.
+        spawn_failures: list[str] = []
         try:
-            completed = subprocess.run(  # noqa: S603
-                run.command, capture_output=True, text=True, env=child_env, check=False
-            )
-            returncode = completed.returncode
+            for attempt in range(1, retry_policy.max_attempts + 1):
+                spawn_attempts = attempt
+                try:
+                    completed = subprocess.run(  # noqa: S603
+                        run.command, capture_output=True, text=True, env=child_env, check=False
+                    )
+                except Exception as error:  # noqa: BLE001 -- deliberately broad; see above
+                    spawn_failures.append(
+                        f"[spawn attempt {attempt}/{retry_policy.max_attempts} failed]\n"
+                        f"{traceback.format_exc()}"
+                    )
+                    if attempt == retry_policy.max_attempts:
+                        break
+                    backoff = retry_policy.backoff_seconds(attempt=attempt)
+                    # stderr, same as a failure: a retry is a machine-health
+                    # warning rather than progress, so one stderr filter catches
+                    # everything a watcher would actually act on.
+                    print(
+                        f"[retry] {run.method} seed={run.seed}: spawn attempt {attempt}/"
+                        f"{retry_policy.max_attempts} raised {type(error).__name__}; "
+                        f"retrying in {backoff:.1f}s",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    time.sleep(backoff)
+                    continue
+                # The child *started*. Whatever it exited with is its own answer
+                # and is deterministic in `--seed`, so it is never retried.
+                returncode = completed.returncode
+                output = completed.stdout + completed.stderr
+                break
+            output = "".join(spawn_failures) + output
         finally:
             elapsed_seconds = time.monotonic() - start_monotonic
             end_time = datetime.now().astimezone()
@@ -381,6 +515,7 @@ class SweepRunner:
                     elapsed_seconds=elapsed_seconds,
                     returncode=returncode,
                     succeeded=returncode == 0,
+                    spawn_attempts=spawn_attempts,
                     max_workers=max_workers,
                     cpu_count=os.cpu_count(),
                     sweep_runs_in_flight_at_start=in_flight_at_start,
@@ -389,11 +524,62 @@ class SweepRunner:
                     machine_at_end=machine_at_end,
                 ),
             )
-        output = completed.stdout + completed.stderr
         (run.output_dir / "log.txt").write_text(output)
-        status = "ok" if returncode == 0 else f"FAILED rc={returncode}"
-        print(f"[{status}] {run.method} seed={run.seed}", flush=True)
-        return SweepOutcome(run=run, returncode=returncode, output=output)
+        # A run that took more than one spawn says so on its own status line,
+        # whether it eventually succeeded or gave up -- retries that only showed
+        # up as a silently longer wall-clock would be exactly the wrong outcome.
+        attempts_note = f" ({spawn_attempts} spawn attempts)" if spawn_attempts > 1 else ""
+        # Reported from *inside the worker*, the moment this run finishes -- not by
+        # the caller collecting outcomes. `execute` collects with
+        # `list(executor.map(...))`, which yields in **submission order**, so a
+        # failure in seed 3 would otherwise sit unseen until seed 0 (still running)
+        # finished. Across 40-80 runs of ~40 minutes that is the difference between
+        # cancelling a broken sweep at minute 2 and discovering at minute 90 that 60
+        # runs failed identically. Pinned by
+        # test_a_failure_is_emitted_while_the_sweep_is_still_running.
+        if returncode == 0:
+            print(f"[ok] {run.method} seed={run.seed}{attempts_note}", flush=True)
+        else:
+            # Failures go to stderr so a watcher can filter on that stream alone,
+            # while `2>&1` still interleaves everything in order for a human. One
+            # line, not the traceback: if 60 runs fail identically, 60 notices are
+            # useful and 60 tracebacks are not -- so it points at the full record
+            # instead of inlining it. flush=True because stdout/stderr are block-
+            # buffered when not a TTY, which is exactly the case when an agent is
+            # capturing the output and exactly when immediacy matters most.
+            reason = SweepRunner._failure_reason(returncode=returncode, output=output)
+            print(
+                f"[FAILED rc={returncode}] {run.method} seed={run.seed}{attempts_note}: "
+                f"{reason} -- full output: {run.output_dir / 'log.txt'}",
+                file=sys.stderr,
+                flush=True,
+            )
+        return SweepOutcome(
+            run=run, returncode=returncode, output=output, spawn_attempts=spawn_attempts
+        )
+
+    @staticmethod
+    def _failure_reason(*, returncode: int, output: str) -> str:
+        """A short, actionable summary for the immediate notice -- enough for a
+        watcher to decide whether to cancel, not a wall of text. The full traceback
+        is already in the run's own log.txt, which the notice points at.
+
+        rc=-1 means the spawn itself failed, so the exception type is the whole
+        story and is worth naming inline. Otherwise the child's last non-empty
+        output line is the best one-line summary available (a Python traceback puts
+        its exception there, and argparse its error)."""
+        if returncode == -1:
+            for line in reversed(output.splitlines()):
+                # Traceback bodies are indented; the exception line is not.
+                if line.strip() and not line.startswith(" "):
+                    return line.strip()
+            return "the child process could not be launched"
+        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        if not lines:
+            return "no output"
+        last = lines[-1]
+        # Bounded so one pathological line cannot flood a watcher's terminal.
+        return last if len(last) <= 200 else f"{last[:200]}..."
 
     @staticmethod
     def _write_timing(*, run: SweepRun, timing: RunTiming) -> None:
@@ -425,6 +611,17 @@ def _parse_args() -> argparse.Namespace:
         default=os.cpu_count() or 1,
         help="Concurrent runs. Defaults to the CPU count.",
     )
+    parser.add_argument(
+        "--max-spawn-attempts",
+        type=int,
+        default=SpawnRetryPolicy().max_attempts,
+        help=(
+            "How many times to try to *launch* a run whose child process fails to "
+            "start (a transient, e.g. fork() failing under memory pressure). 1 "
+            "disables retrying. A run that starts and exits non-zero is never "
+            "retried -- see SpawnRetryPolicy."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -443,12 +640,39 @@ def main() -> int:
         f"Running {len(runs)} runs with {args.max_workers} workers (sweep {sweep_id})...",
         flush=True,
     )
-    outcomes = SweepRunner.execute(runs=runs, max_workers=args.max_workers, sweep_id=sweep_id)
+    outcomes = SweepRunner.execute(
+        runs=runs,
+        max_workers=args.max_workers,
+        sweep_id=sweep_id,
+        retry_policy=SpawnRetryPolicy(max_attempts=args.max_spawn_attempts),
+    )
 
     failures = [outcome for outcome in outcomes if not outcome.succeeded]
     print(f"\n{len(outcomes) - len(failures)}/{len(outcomes)} runs succeeded.")
+    # Surfaced in the summary, not only per run: a sweep that retried a dozen
+    # times mostly succeeded, so nothing else here would mention it -- and "this
+    # box could not fork" is precisely the thing someone needs to be told.
+    retried = [outcome for outcome in outcomes if outcome.spawn_attempts > 1]
+    if retried:
+        extra_spawns = sum(outcome.spawn_attempts - 1 for outcome in retried)
+        print(
+            f"{len(retried)}/{len(outcomes)} runs could not be launched first try "
+            f"({extra_spawns} spawn retries total) -- the machine was likely under "
+            f"memory pressure."
+        )
+    # A recap, not a re-report: every one of these was already printed to stderr
+    # in full-enough detail the moment it happened, so this only has to let a
+    # reader who scrolled past them see which runs to go look at. Re-pasting each
+    # child's output here made 60 identical failures unreadable, and put them on
+    # stdout while the live notices were on stderr. Same stream as the live
+    # notices, one line each, pointing at the log.
     for failure in failures:
-        print(f"  FAILED {failure.run.method} seed={failure.run.seed}: {failure.output[-400:]}")
+        print(
+            f"  FAILED {failure.run.method} seed={failure.run.seed} "
+            f"(rc={failure.returncode}) -- {failure.run.output_dir / 'log.txt'}",
+            file=sys.stderr,
+            flush=True,
+        )
     return 1 if failures else 0
 
 
