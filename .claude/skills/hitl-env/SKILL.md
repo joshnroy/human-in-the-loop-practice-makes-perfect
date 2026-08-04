@@ -113,13 +113,17 @@ immediately and with a slower path back to a fix.
   deliberately-ugly snippet in a README will fail `ruff format --check .`. Run
   `ruff format` on Markdown files you edit, or use a non-`python` fence (`text`,
   `console`) for code that must stay verbatim.
-- **The `lint-imports` pre-commit hook is fragile on PATH.** `.pre-commit-config.yaml`
-  declares `import-linter` as a `local` hook with `language: system`, so it resolves
-  `lint-imports` from the ambient PATH. That binary exists only inside the `hitl-pmp`
-  conda env, so the hook fails whenever the env is not active in the committing shell.
-  Use `git commit --no-verify` and rely on the manual gate in §3, which is what CI runs
-  anyway. (`pre-commit install` is optional and is not currently installed in this repo's
-  `.git/hooks/`, so you may not hit this at all.)
+- **Plain `git commit` works — but the `lint-imports` pre-commit hook is fragile on PATH
+  if you enable it.** `pre-commit install` is optional and is **not** currently installed
+  (`.git/hooks/pre-commit` does not exist, and commits here succeed without any flag), so
+  do not reach for `--no-verify` by default.
+
+  *If* you or someone else runs `pre-commit install`: `.pre-commit-config.yaml` declares
+  `import-linter` as a `local` hook with `language: system`, so it resolves `lint-imports`
+  from the ambient PATH. That binary exists only inside the `hitl-pmp` conda env, so the
+  hook fails whenever the env is not active in the committing shell — which is common in
+  an agent shell. In that situation, and only then, use `git commit --no-verify` and rely
+  on the manual gate in §3, which is what CI runs anyway.
 - **`pgrep -cf hitl_pmp.cli` self-matches.** The command's own wrapper shell has the
   pattern in its command line, so the naive form reports a phantom running job. Run
   `pgrep -af '[h]itl_pmp\.cli'` **directly** — not inside `$(...)`, which spawns another
