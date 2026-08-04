@@ -73,6 +73,11 @@ class MethodRunner:
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
             num_test_tasks=args.num_test_tasks,
+            # Read off args rather than threaded through every environment-CLI's
+            # run_method, exactly like num_render_checkpoints above it: both are
+            # harness knobs owned by cli.py's global flags, not per-domain or
+            # per-method configuration.
+            practice_reset_interval=getattr(args, "practice_reset_interval", None),
             renderer=renderer,
             num_render_checkpoints=num_render_checkpoints,
             on_checkpoint_frames=write_clip,

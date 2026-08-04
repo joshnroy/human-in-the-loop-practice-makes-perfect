@@ -71,6 +71,30 @@ class Method(BaseModel, abc.ABC):
         _create_explorer is only ever consulted for interaction requests)."""
         return self.get_task_policy(task=task)
 
+    def observe_environment_reset(self, *, state: State) -> None:
+        """Called by practice_loop.py immediately *before* it resets the
+        environment part-way through an interaction period
+        (`practice_reset_interval`), handing over the state the environment is
+        about to leave -- the last chance to score whatever the policy has in
+        flight against what actually happened.
+
+        Without this, a mid-period reset silently corrupts the very data it is
+        supposed to leave alone. A Method that judges a skill by checking its
+        effects on the *next* state it sees (EesMethod does) would check them
+        against the post-reset initial state instead, which almost never
+        satisfies them -- so every skill executed just before a reset gets
+        recorded as a failure. That mislabelling scales with how often the
+        harness resets, which is exactly the quantity an experiment varying
+        `practice_reset_interval` is trying to isolate.
+
+        Concrete no-op by default, for the same reason as end_cycle: a Method
+        with nothing in flight has nothing to settle. NOT called at the
+        interaction period's own boundary -- that would change long-standing
+        behaviour (the last skill of a period has always gone unobserved), and
+        keeping it uncalled there is what makes every arm of a reset-interval
+        sweep drop exactly one observation per period rather than a number that
+        varies with the interval."""
+
     def end_cycle(self) -> None:
         """Called by practice_loop.py once after each interaction period, before
         that cycle's evaluation sweep -- the hook where a learning Method

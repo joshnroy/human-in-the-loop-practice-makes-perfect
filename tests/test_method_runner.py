@@ -200,3 +200,38 @@ def test_run_reports_the_final_evaluation_not_the_first(
     assert len(metrics.evaluations) == 3
     _transitions, num_solved, num_total = metrics.evaluations[-1]
     assert f"success rate: {num_solved}/{num_total}" in capsys.readouterr().out
+
+
+def test_run_forwards_the_practice_reset_interval_from_args() -> None:
+    """--practice-reset-interval is a global flag read off args here, the same way
+    --num-render-checkpoints is, rather than threaded through every environment's
+    run_method. Pinned because a silently dropped flag would produce a sweep whose
+    arms are identical and whose null looks real."""
+    problem = _build_problem()
+    args = _args(num_test_tasks=1)
+    args.practice_reset_interval = 2
+    metrics = MethodRunner.run(
+        args=args,
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=2,
+        max_steps_per_interaction=6,
+        renderer=None,
+        render_fps=2,
+    )
+    # 6 // 2 = 3 resets per period, over 2 cycles.
+    assert metrics.num_practice_resets == 6
+
+
+def test_run_without_a_practice_reset_interval_resets_only_per_cycle() -> None:
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(num_test_tasks=1),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=2,
+        max_steps_per_interaction=6,
+        renderer=None,
+        render_fps=2,
+    )
+    assert metrics.num_practice_resets == 2

@@ -141,6 +141,10 @@ class _FakeMethod(Method):
     task_policy_calls: int = 0
     practice_policy_calls: int = 0
     end_cycle_calls: int = 0
+    # x observed at each observe_environment_reset call, in call order -- lets a
+    # test check the Method is handed the state the harness is about to discard
+    # rather than the one it is about to reset to.
+    reset_observation_xs: list[float] = Field(default_factory=list)
     # Shared with _FakeProblem -- see its own event_log comment.
     event_log: _EventLog = Field(default_factory=_EventLog)
 
@@ -164,6 +168,10 @@ class _FakeMethod(Method):
     def end_cycle(self) -> None:
         self.end_cycle_calls += 1
         self.event_log.record(event="end_cycle")
+
+    def observe_environment_reset(self, *, state: State) -> None:
+        self.reset_observation_xs.append(float(state[_OBJ][0]))
+        self.event_log.record(event="observe_environment_reset")
 
     def _get_action(self, *, state: State) -> LabeledAction:
         del state
@@ -701,3 +709,208 @@ def test_streaming_hands_over_frames_as_each_sweep_ends_not_at_the_end() -> None
         "evaluate",
         "frames:4",
     ]
+
+
+def test_practice_reset_interval_defaults_to_the_cycle_boundary_only() -> None:
+    """The default (None) is exactly the behaviour that shipped before the knob
+    existed: one reset per cycle, at the top of the period, and nothing inside it.
+
+    Asserted on the recorded count rather than only on the state trace, because
+    the count is what an experiment varying this knob reads back out of
+    stats.json to check the manipulation happened."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=4,
+        num_test_tasks=1,
+    )
+    assert metrics.num_practice_resets == 3
+    assert method.reset_observation_xs == []
+
+
+def test_practice_reset_interval_restarts_the_period_partway_through() -> None:
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=6,
+        num_test_tasks=1,
+        practice_reset_interval=2,
+    )
+    # Train tasks start at x=100 and every step adds 1, so an interval of 2 shows
+    # up as 100 -> 101, reset, 100 -> 101, reset, 100 -> 101 (the last reset, after
+    # step 6, is suppressed as the period's final step).
+    assert problem.env.pre_action_xs == [100.0, 101.0, 100.0, 101.0, 100.0, 101.0]
+
+
+def test_practice_reset_interval_returns_to_the_same_task_not_a_fresh_one() -> None:
+    """Sampling a new train task at each within-period reset would change the
+    train-task distribution along with the reset rate, reintroducing exactly the
+    kind of confound this knob exists to remove."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=6,
+        num_test_tasks=1,
+        practice_reset_interval=2,
+    )
+    assert problem.tasks.train_task_count == 2
+
+
+def test_practice_reset_interval_counts_every_reset_it_performs() -> None:
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=10,
+        num_test_tasks=1,
+        practice_reset_interval=5,
+    )
+    # 10 // 5 = 2 resets per period (the period-opening one plus one mid-period),
+    # times 3 cycles.
+    assert metrics.num_practice_resets == 6
+
+
+def test_practice_reset_interval_equal_to_the_period_reproduces_the_default() -> None:
+    """The arm that is meant to be "today's behaviour, stated explicitly" has to
+    actually be today's behaviour -- otherwise a sweep's control arm differs from
+    its baseline for a reason nobody wrote down."""
+    problem_default, method_default, metrics_default = _build()
+    PracticeLoop.run(
+        problem=problem_default,
+        method=method_default,
+        metrics=metrics_default,
+        num_cycles=2,
+        max_steps_per_interaction=4,
+        num_test_tasks=1,
+    )
+    problem_explicit, method_explicit, metrics_explicit = _build()
+    PracticeLoop.run(
+        problem=problem_explicit,
+        method=method_explicit,
+        metrics=metrics_explicit,
+        num_cycles=2,
+        max_steps_per_interaction=4,
+        num_test_tasks=1,
+        practice_reset_interval=4,
+    )
+    assert problem_explicit.env.pre_action_xs == problem_default.env.pre_action_xs
+    assert metrics_explicit.num_practice_resets == metrics_default.num_practice_resets
+    assert method_explicit.reset_observation_xs == []
+
+
+def test_practice_reset_interval_does_not_end_the_cycle_or_retrain() -> None:
+    """The whole point: reset frequency and refit frequency come apart. A
+    within-period reset must not fire end_cycle(), must not ask for a fresh
+    practice policy, and must not trigger an evaluation sweep."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=8,
+        num_test_tasks=1,
+        practice_reset_interval=2,
+    )
+    assert method.end_cycle_calls == 2
+    assert method.practice_policy_calls == 2
+    assert len(metrics.evaluations) == 3  # initial + one per cycle
+
+
+def test_practice_reset_interval_does_not_charge_resets_as_transitions() -> None:
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=8,
+        num_test_tasks=1,
+        practice_reset_interval=2,
+    )
+    assert [transitions for transitions, _, _ in metrics.evaluations] == [0, 8, 16]
+
+
+def test_practice_reset_interval_tells_the_method_before_each_within_period_reset() -> None:
+    """The Method is handed the state the environment is about to leave, before it
+    leaves it. Without this, a Method that scores a skill by checking its effects
+    on the next state it sees would score every pre-reset skill against a freshly
+    reset environment -- one mislabelled outcome per reset, scaling with exactly
+    the quantity a reset-interval sweep varies."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=6,
+        num_test_tasks=1,
+        practice_reset_interval=2,
+    )
+    # Two mid-period resets, each observed at x=102 (the train task's 100 plus the
+    # two steps taken since the last reset) -- not at the post-reset 100.
+    assert method.reset_observation_xs == [102.0, 102.0]
+
+
+def test_practice_reset_interval_leaves_the_period_boundary_unannounced() -> None:
+    """observe_environment_reset fires only inside a period, never at its end.
+    Firing at the boundary too would change long-standing behaviour, and it is
+    what keeps every arm of a reset-interval sweep dropping exactly one
+    observation per period instead of a number that varies with the interval."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=4,
+        num_test_tasks=1,
+        practice_reset_interval=2,
+    )
+    # One mid-period reset per period (after step 2; the one after step 4 is the
+    # boundary and is suppressed), so three announcements for three cycles.
+    assert len(method.reset_observation_xs) == 3
+    assert method.event_log.events.count("observe_environment_reset") == 3
+
+
+def test_reset_is_due_never_fires_on_the_periods_last_step() -> None:
+    assert not PracticeLoop._reset_is_due(
+        step=9, max_steps_per_interaction=10, practice_reset_interval=10
+    )
+    assert not PracticeLoop._reset_is_due(
+        step=9, max_steps_per_interaction=10, practice_reset_interval=5
+    )
+
+
+def test_reset_is_due_is_never_due_without_an_interval() -> None:
+    assert not any(
+        PracticeLoop._reset_is_due(
+            step=step, max_steps_per_interaction=10, practice_reset_interval=None
+        )
+        for step in range(10)
+    )
+
+
+def test_reset_is_due_yields_the_designed_resets_per_period() -> None:
+    """The exact per-arm reset counts a reset-frequency sweep is designed around:
+    at a 100-step period, intervals of 10/25/50/100 give 10/4/2/1 resets per
+    period once the period-opening reset is counted."""
+    for interval, expected_per_period in ((10, 10), (25, 4), (50, 2), (100, 1)):
+        within_period = sum(
+            PracticeLoop._reset_is_due(
+                step=step, max_steps_per_interaction=100, practice_reset_interval=interval
+            )
+            for step in range(100)
+        )
+        assert within_period + 1 == expected_per_period

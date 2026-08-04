@@ -43,6 +43,25 @@ def _move_robot_backwards(*, env: LightSwitchEnvironment) -> GroundSkill:
     return GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, cells[2], cells[1]))
 
 
+class _CountingEesMethod(EesMethod):
+    """EesMethod that counts how many skill outcomes it was actually asked to
+    score. observe_outcome fires once per observed skill regardless of whether the
+    epsilon-greedy branch fired, so this counts observations even where
+    total_observations() (competence only, random attempts excluded) would not."""
+
+    observe_outcome_calls: int = 0
+
+    def observe_outcome(
+        self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
+    ) -> None:
+        self.observe_outcome_calls += 1
+        super().observe_outcome(
+            ground_skill=ground_skill,
+            success=success,
+            was_random_exploration=was_random_exploration,
+        )
+
+
 def _record_one_seen_task(*, method: EesMethod, env: LightSwitchEnvironment) -> None:
     tasks = LightSwitchTasks(env=env, seed=0)
     task = tasks.sample_train_task()
@@ -739,3 +758,101 @@ def test_flag_does_not_change_competence_in_either_state() -> None:
     assert off_model.num_observations == 20
     assert on_model.num_observations == 20
     assert off_model.get_current_competence() == on_model.get_current_competence()
+
+
+def test_observe_environment_reset_scores_the_pending_skill_against_the_true_outcome() -> None:
+    """The state handed in is the one the skill actually produced, so a skill that
+    worked is recorded as a success.
+
+    The paired test below shows the alternative -- scoring against the state the
+    harness is about to reset *to* -- records the same successful skill as a
+    failure. That is the whole reason the hook exists."""
+    method, env = _build()
+    tasks = LightSwitchTasks(env=env, seed=0)
+    task = tasks.sample_train_task()
+    env.set_state(state=task.initial_state)
+    policy = method.get_practice_policy(task=task)
+    executed_state = env.take_action(action=policy(env.get_current_state()).action)
+
+    method.observe_environment_reset(state=executed_state)
+
+    assert method.total_observations() == 1
+
+
+def test_scoring_a_pending_skill_against_a_reset_state_would_record_a_false_failure() -> None:
+    """Pins the failure mode Method.observe_environment_reset prevents, so the hook
+    cannot be quietly removed as redundant: judged against a freshly reset
+    environment, the very same successful skill comes out a failure, and a
+    reset-frequency sweep would inject one such mislabel per reset."""
+    method, env = _build()
+    tasks = LightSwitchTasks(env=env, seed=0)
+    task = tasks.sample_train_task()
+    env.set_state(state=task.initial_state)
+    policy = method.get_practice_policy(task=task)
+    executed_state = env.take_action(action=policy(env.get_current_state()).action)
+    executed_skill = method._practice_episode._pending
+    assert executed_skill is not None
+
+    method.observe_environment_reset(state=executed_state)
+    truthful_rate = method.competence_model(ground_skill=executed_skill).get_current_competence()
+
+    rewound, rewound_env = _build()
+    rewound_env.set_state(state=task.initial_state)
+    rewound_policy = rewound.get_practice_policy(task=task)
+    rewound_env.take_action(action=rewound_policy(rewound_env.get_current_state()).action)
+    rewound.observe_environment_reset(state=task.initial_state)
+    mislabelled_rate = rewound.competence_model(
+        ground_skill=executed_skill
+    ).get_current_competence()
+
+    assert mislabelled_rate < truthful_rate
+
+
+def test_observe_environment_reset_is_a_no_op_before_any_practice_period() -> None:
+    method, env = _build()
+    tasks = LightSwitchTasks(env=env, seed=0)
+    method.observe_environment_reset(state=tasks.sample_train_task().initial_state)
+    assert method.total_observations() == 0
+
+
+def test_the_number_of_observed_outcomes_does_not_depend_on_the_reset_interval() -> None:
+    """The invariant that makes a reset-interval sweep interpretable: every arm
+    must learn from the same number of skill outcomes, so the arms differ only in
+    how often the robot is rescued.
+
+    A period of n steps yields n - 1 observations at every interval -- the last
+    skill of a period is still never observed (this port's deviation 2), and every
+    mid-period reset settles its in-flight skill instead of dropping or
+    mislabelling it. If this count moved with the interval, the manipulation would
+    be confounded with how much training data each arm collected."""
+    import argparse
+
+    from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
+    from hitl_pmp.method_runner import MethodRunner
+
+    observed: dict[int | None, int] = {}
+    for interval in (None, 2, 4, 8):
+        env = LightSwitchEnvironment(grid_size=4)
+        problem = LightSwitchProblem(env=env, tasks=LightSwitchTasks(env=env, seed=0))
+        method = _CountingEesMethod(
+            env=env,
+            skill_provider=LightSwitchSkillProvider(env=env),
+            seed=0,
+            sampler_max_train_iters=10,
+        )
+        metrics = MethodRunner.run(
+            args=argparse.Namespace(
+                num_test_tasks=1, output_dir=None, practice_reset_interval=interval
+            ),
+            method=method,
+            problem=problem,
+            num_cycles=2,
+            max_steps_per_interaction=8,
+            renderer=None,
+            render_fps=2,
+        )
+        # Guards the comparison itself: an arm that ended a period early would have
+        # fewer steps to observe for reasons unrelated to the reset interval.
+        assert metrics.evaluations[-1][0] == 16
+        observed[interval] = method.observe_outcome_calls
+    assert set(observed.values()) == {2 * (8 - 1)}, observed

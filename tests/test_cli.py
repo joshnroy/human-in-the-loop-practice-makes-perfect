@@ -142,3 +142,24 @@ def test_parse_args_help_after_method_shows_method_specific_flags(
 def test_main_dispatches_to_the_selected_methods_own_run() -> None:
     Cli.main(argv=["--env", "lightswitch", "--method", "fake-method"])
     assert len(_FakeMethodCli.run_calls) == 1
+
+
+def test_parse_args_defaults_practice_reset_interval_to_none() -> None:
+    """None is "reset only at the cycle boundary", i.e. exactly the behaviour that
+    predates the flag -- every run that does not ask for it is unchanged."""
+    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
+    assert args.practice_reset_interval is None
+
+
+def test_parse_args_accepts_a_practice_reset_interval() -> None:
+    args = Cli.parse_args(
+        argv=["--env", "tossingroom", "--method", "ees", "--practice-reset-interval", "10"]
+    )
+    assert args.practice_reset_interval == 10
+
+
+def test_parse_args_rejects_a_non_positive_practice_reset_interval() -> None:
+    with pytest.raises(SystemExit):
+        Cli.parse_args(
+            argv=["--env", "tossingroom", "--method", "ees", "--practice-reset-interval", "0"]
+        )

@@ -128,3 +128,26 @@ def test_record_evaluation_rejects_outcomes_that_disagree_with_the_aggregate() -
         )
     assert metrics.evaluations == []
     assert metrics.breakdowns == []
+
+
+def test_num_practice_resets_starts_at_zero_and_counts_up() -> None:
+    metrics = Metrics()
+    assert metrics.num_practice_resets == 0
+    metrics.record_practice_reset()
+    metrics.record_practice_reset()
+    assert metrics.num_practice_resets == 2
+
+
+def test_num_practice_resets_survives_a_round_trip_through_stats_json() -> None:
+    """It has to reach the analysis side: an experiment that varies how often the
+    robot is rescued verifies the manipulation by reading this back out of a run's
+    own stats.json, not by trusting the flag it passed in."""
+    metrics = Metrics()
+    metrics.record_practice_reset()
+    restored = Metrics.model_validate_json(metrics.model_dump_json())
+    assert restored.num_practice_resets == 1
+
+
+def test_a_stats_json_written_before_practice_resets_existed_still_loads() -> None:
+    restored = Metrics.model_validate_json('{"evaluations": [[0, 1, 2]], "task_name": "default"}')
+    assert restored.num_practice_resets == 0

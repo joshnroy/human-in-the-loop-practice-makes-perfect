@@ -36,6 +36,23 @@ class PracticeLoop:
     every step of its budget practicing the toggle. That inflates practice
     throughput per period and makes grid_size stop affecting results at all.
 
+    **Reset frequency, decoupled from refit frequency.** `practice_reset_interval`
+    (None by default, i.e. exactly the behaviour described above) additionally puts
+    the environment back to the *current* practice task's initial state every k
+    steps *within* a period, without ending the cycle and therefore without firing
+    `end_cycle()`. The two were previously welded to the same loop boundary, so
+    `num_cycles` set how often the robot is rescued and how often the samplers
+    refit with a single number -- and an experiment varying one necessarily varied
+    the other (see `docs/experiment-logs/2026-08-03-tossingroom-reset-frequency.md`,
+    where the arms ended ~40 competence points apart on identical experience). It
+    resets to the same task rather than sampling a new one, so the train-task
+    distribution is untouched; resets are not charged as transitions, matching how
+    the per-period reset is already uncharged; and `Metrics.num_practice_resets`
+    counts what actually happened, so the manipulation is measurable from a run's
+    own output rather than inferred from the flag. Immediately before each such
+    reset the Method is told (`observe_environment_reset`) -- see that method for
+    why skipping it silently mislabels one skill outcome per reset.
+
     Domain- and Method-agnostic (any core.Problem/core.Method/core.Metrics
     triple) -- lives at the top level, alongside cli.py, since it's the one
     execution harness every core.Method runs through, not something specific
@@ -137,6 +154,7 @@ class PracticeLoop:
         num_cycles: int,
         max_steps_per_interaction: int,
         num_test_tasks: int,
+        practice_reset_interval: int | None = None,
         on_cycle_end: Callable[[], None] | None = None,
         renderer: type[Renderer] | None = None,
         num_render_checkpoints: int = 1,
@@ -195,7 +213,8 @@ class PracticeLoop:
             # environment in a *solved* state, so resuming from it would hand every
             # free period a head start it never earned.
             state = problem.reset_to_task(task=task)
-            for _ in range(max_steps_per_interaction):
+            metrics.record_practice_reset()
+            for step in range(max_steps_per_interaction):
                 try:
                     labeled_action = policy(state)
                 except InteractionComplete:
@@ -206,6 +225,21 @@ class PracticeLoop:
                     break
                 state = problem.take_action(action=labeled_action.action)
                 num_online_transitions += 1
+                if PracticeLoop._reset_is_due(
+                    step=step,
+                    max_steps_per_interaction=max_steps_per_interaction,
+                    practice_reset_interval=practice_reset_interval,
+                ):
+                    # Hand back what the environment is about to lose, so a Method
+                    # scoring an in-flight skill scores it against what really
+                    # happened rather than against the initial state it is about to
+                    # be teleported to -- see Method.observe_environment_reset.
+                    method.observe_environment_reset(state=state)
+                    # The SAME task, deliberately: sampling a fresh one here would
+                    # change the train-task distribution along with the reset rate,
+                    # which is the confound this knob exists to avoid.
+                    state = problem.reset_to_task(task=task)
+                    metrics.record_practice_reset()
             # Before this cycle's evaluation, so the sweep actually measures what
             # the Method just learned rather than lagging a cycle behind.
             method.end_cycle()
@@ -233,6 +267,25 @@ class PracticeLoop:
             return frozenset({num_cycles})
         step = num_cycles / (checkpoints - 1)
         return frozenset(round(index * step) for index in range(checkpoints))
+
+    @staticmethod
+    def _reset_is_due(
+        *, step: int, max_steps_per_interaction: int, practice_reset_interval: int | None
+    ) -> bool:
+        """Whether the interaction period should be put back to its task's initial
+        state after the (0-indexed) step just taken.
+
+        Never on the period's last step: the next period opens with its own reset,
+        so firing here would double-count a reset that changes nothing. With
+        practice_reset_interval == max_steps_per_interaction that leaves exactly
+        one reset per period -- today's behaviour, reached by an explicit interval
+        rather than by the default -- and an interval k that divides the period
+        length n leaves exactly n // k resets per period."""
+        if practice_reset_interval is None:
+            return False
+        if step + 1 >= max_steps_per_interaction:
+            return False
+        return (step + 1) % practice_reset_interval == 0
 
     @staticmethod
     def _evaluate(
