@@ -27,6 +27,11 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 from hitl_pmp.core.metrics.metrics import Metrics  # noqa: E402
 
+# The domain this view was first written for. Kept as the default so existing Light
+# Switch invocations are unchanged, but the axes are domain-agnostic -- every other
+# domain plots through here too and passes its own --title.
+_DEFAULT_TITLE = "Light Switch (25 cells): EES vs. baselines"
+
 
 class EesAnalysis:
     """A static-method container, never instantiated, same as every other
@@ -85,7 +90,12 @@ class EesAnalysis:
                 )
 
     @staticmethod
-    def plot(*, summary: dict[str, list[list[tuple[int, float]]]], output_path: Path) -> None:
+    def plot(
+        *,
+        summary: dict[str, list[list[tuple[int, float]]]],
+        output_path: Path,
+        title: str = _DEFAULT_TITLE,
+    ) -> None:
         fig, ax = plt.subplots(figsize=(7, 5))
         try:
             max_transitions = max(
@@ -116,7 +126,7 @@ class EesAnalysis:
             ax.set_ylabel("Fraction of evaluation tasks solved")
             ax.set_ylim(-0.05, 1.05)
             ax.set_xlim(0, max_transitions if max_transitions else None)
-            ax.set_title("Light Switch (25 cells): EES vs. baselines")
+            ax.set_title(title)
             ax.legend()
             fig.tight_layout()
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -131,6 +141,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output", type=Path, default=None, help="Optional learning-curve PNG path."
     )
+    parser.add_argument(
+        "--title",
+        default=_DEFAULT_TITLE,
+        help="Plot title. Defaults to the Light Switch wording this view started as.",
+    )
     return parser.parse_args()
 
 
@@ -139,7 +154,7 @@ def main() -> None:
     summary = EesAnalysis.summarize(results_root=args.results_root)
     EesAnalysis.print_table(summary=summary)
     if args.output is not None:
-        EesAnalysis.plot(summary=summary, output_path=args.output)
+        EesAnalysis.plot(summary=summary, output_path=args.output, title=args.title)
         print(f"\nWrote plot to {args.output}")
 
 
