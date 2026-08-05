@@ -543,3 +543,202 @@ class TestHowMuchSlower:
         assert TossingRoomSplitThrowRates.area_under_curve(
             traces=[{"label": "ees", "seeds": runs}], skill="ThrowTrash"
         ) == [0.5]
+
+
+def _family_seed(*, seed: int, trash_solved: list[int], recycling_solved: list[int]) -> dict:
+    """One seed whose per-sweep family counts are given directly, out of 14 each -- the
+    real composition. `periods` and `competence` are present but empty, because the
+    statistics under test read only the evaluation record."""
+    return {
+        "seed": seed,
+        "horizon": 12,
+        "sweeps": [
+            {
+                "transitions": 100 * index,
+                "solved": t + r,
+                "total": 28,
+                "families": {_TRASH: [t, 14], _RECYCLING: [r, 14]},
+            }
+            for index, (t, r) in enumerate(zip(trash_solved, recycling_solved, strict=True))
+        ],
+        "periods": [],
+        "competence": [],
+    }
+
+
+class TestLearningIsASwitchNotACurve:
+    """A mean-over-seeds curve that rises smoothly can be produced by seeds that never sit
+    anywhere but 0/14 and 14/14 and flip between them at different times. The two are
+    different findings and the pooled line cannot tell them apart, so the split has to be
+    counted per (seed, checkpoint) rather than inferred from the shape of the mean."""
+
+    @staticmethod
+    def test_a_seed_checkpoint_is_extreme_at_or_beyond_either_threshold() -> None:
+        runs = [
+            # 0/14 and 14/14 are extreme low and high; 7/14 is the middle; 12/14 and 4/14
+            # sit exactly ON the thresholds and are extreme, because the thresholds are
+            # inclusive.
+            _family_seed(
+                seed=0,
+                trash_solved=[0, 14, 7, 12, 4],
+                recycling_solved=[0, 0, 0, 0, 0],
+            )
+        ]
+        split = TossingRoomSplitThrowRates.seed_checkpoint_extremes(
+            traces=[{"label": "ees", "seeds": runs}], skill="ThrowTrash", high=12, low=4
+        )
+        assert split == {"extreme": 4, "middle": 1, "total": 5}
+
+    @staticmethod
+    def test_every_seed_contributes_its_own_checkpoints() -> None:
+        """Non-vacuity for the pooling: a version that read only the first seed would give
+        the same answer on a one-seed fixture."""
+        runs = [
+            _family_seed(seed=0, trash_solved=[0, 0], recycling_solved=[0, 0]),
+            _family_seed(seed=1, trash_solved=[7, 8], recycling_solved=[0, 0]),
+        ]
+        split = TossingRoomSplitThrowRates.seed_checkpoint_extremes(
+            traces=[{"label": "ees", "seeds": runs}], skill="ThrowTrash", high=12, low=4
+        )
+        assert split == {"extreme": 2, "middle": 2, "total": 4}
+
+    @staticmethod
+    def test_a_seed_that_falls_back_out_is_reported_as_its_peak_and_its_endpoint() -> None:
+        """The Tossing Room baseline found a seed that reached 10/14 mid-run and ended at
+        3/14. A table of final scores alone cannot show that, so the peak is carried
+        alongside the endpoint."""
+        runs = [
+            _family_seed(seed=0, trash_solved=[0, 0, 0], recycling_solved=[0, 10, 3]),
+            _family_seed(seed=1, trash_solved=[0, 0, 0], recycling_solved=[0, 1, 2]),
+        ]
+        peaks = TossingRoomSplitThrowRates.per_seed_family_peaks(
+            traces=[{"label": "ees", "seeds": runs}], skill="ThrowRecycling"
+        )
+        assert peaks == {
+            0: {"peak": 10, "final": 3, "total": 14},
+            1: {"peak": 2, "final": 2, "total": 14},
+        }
+
+
+class TestWhatTheSamplerActuallyAnswered:
+    """`attempts` counts how often a sampler was asked. The mechanism claim -- a sampler
+    that has convinced itself of a wrong force, with one datapoint per period to
+    unconvince it -- is about WHAT it answered, and needs the forces themselves.
+
+    A target force is drawn `U(target_low, target_high)` = `U(0.5, 1.0)` and the tolerance
+    is 0.1, so any force below `0.5 - 0.1 = 0.4` misses whatever task it was aiming at.
+    That makes "chose an unreachable force" a property of the choice alone, with no
+    reference to the particular target -- which is what lets it be counted."""
+
+    @staticmethod
+    def test_forces_below_the_reachable_band_are_counted_against_all_greedy_draws() -> None:
+        runs = [
+            {
+                "seed": 0,
+                "horizon": 12,
+                "sweeps": [{"transitions": 0, "solved": 0, "total": 2, "families": {}}],
+                "periods": [
+                    {
+                        "skills": {
+                            "ThrowRecycling": {
+                                "attempts": 5,
+                                "successes": 0,
+                                "random_attempts": 1,
+                                "random_successes": 0,
+                                "landed": 0,
+                                "landed_random": 0,
+                                "prefilled": 0,
+                                # 0.00, 0.02 and 0.39 are unreachable; 0.40 and 0.83 are not.
+                                "greedy_forces": [0.0, 0.02, 0.39, 0.4, 0.83],
+                                "greedy_targets": [0.7, 0.7, 0.7, 0.5, 0.83],
+                            }
+                        }
+                    }
+                ],
+                "competence": [{}],
+            }
+        ]
+        summary = TossingRoomSplitThrowRates.unreachable_force_totals(
+            traces=[{"label": "ees", "seeds": runs}], floor=0.4
+        )
+        assert summary["ThrowRecycling"] == (3, 5)
+
+    @staticmethod
+    def test_a_sampler_choosing_only_reachable_forces_counts_zero() -> None:
+        """Non-vacuity: the statistic must be able to come out at 0, or "recycling is
+        pinned below the band" would be unfalsifiable."""
+        runs = [
+            {
+                "seed": 0,
+                "horizon": 12,
+                "sweeps": [{"transitions": 0, "solved": 0, "total": 2, "families": {}}],
+                "periods": [
+                    {
+                        "skills": {
+                            "ThrowTrash": {
+                                "attempts": 2,
+                                "successes": 2,
+                                "random_attempts": 0,
+                                "random_successes": 0,
+                                "landed": 2,
+                                "landed_random": 0,
+                                "prefilled": 0,
+                                "greedy_forces": [0.55, 0.91],
+                                "greedy_targets": [0.55, 0.91],
+                            }
+                        }
+                    }
+                ],
+                "competence": [{}],
+            }
+        ]
+        summary = TossingRoomSplitThrowRates.unreachable_force_totals(
+            traces=[{"label": "ees", "seeds": runs}], floor=0.4
+        )
+        assert summary["ThrowTrash"] == (0, 2)
+
+    @staticmethod
+    def test_the_longest_consecutive_run_of_all_missing_periods_is_reported_per_seed() -> None:
+        """ "Stuck" is a claim about consecutive periods, not about a pooled rate: the same
+        miss count spread evenly is a sampler still searching, and concentrated is a
+        sampler that stopped moving. A period with no greedy attempt breaks nothing and
+        contributes nothing -- it is not evidence either way."""
+        runs = [
+            {
+                "seed": 4,
+                "horizon": 12,
+                "sweeps": [{"transitions": 0, "solved": 0, "total": 2, "families": {}}],
+                "periods": [
+                    {"skills": {"ThrowRecycling": _throw(forces=[0.02], targets=[0.7])}},
+                    {"skills": {}},
+                    {"skills": {"ThrowRecycling": _throw(forces=[0.01], targets=[0.8])}},
+                    {"skills": {"ThrowRecycling": _throw(forces=[0.79], targets=[0.8])}},
+                    {"skills": {"ThrowRecycling": _throw(forces=[0.03], targets=[0.6])}},
+                ],
+                "competence": [{}],
+            }
+        ]
+        streaks = TossingRoomSplitThrowRates.longest_missing_streaks(
+            traces=[{"label": "ees", "seeds": runs}], skill="ThrowRecycling"
+        )
+        # Periods 0 and 2 both miss and the empty period 1 does not interrupt them, so the
+        # streak is 2; period 3 lands and resets it; period 4 starts a streak of 1.
+        assert streaks == {4: 2}
+
+
+def _throw(*, forces: list[float], targets: list[float]) -> dict:
+    """A throw tally whose greedy draws are given, with `landed` derived from the same
+    0.1 tolerance the environment uses -- so a fixture cannot claim a landing its numbers
+    do not support."""
+    landed = sum(1 for f, t in zip(forces, targets, strict=True) if abs(f - t) < 0.1)
+    return {
+        "attempts": len(forces),
+        "successes": landed,
+        "random_attempts": 0,
+        "random_successes": 0,
+        "landed": landed,
+        "landed_random": 0,
+        "prefilled": 0,
+        "greedy_forces": forces,
+        "greedy_targets": targets,
+    }

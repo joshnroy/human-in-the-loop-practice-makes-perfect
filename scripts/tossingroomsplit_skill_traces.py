@@ -27,11 +27,12 @@ files before reporting anything.
 It lives in `scripts/` because it *drives* simulations, which `analysis/` may never do
 (CLAUDE.md). Seeds are fixed (0..num_seeds-1), never randomly drawn, same as run_sweep.
 
-**The committed 2026-08-05 traces predate a change to the DYNAMICS** -- capacity-1 bins,
-a throw refused at a full bin, one emptying button per bin, a one-item-per-bin EMPTY
-prefill that is now an ordering task, and an evaluation horizon of 12 rather than 7. This
-collector runs against the current domain, but a trace taken now and one taken then are
-measurements of two different worlds and must not be pooled or compared.
+**The committed 2026-08-05 traces are the CAPACITY-1 run.** An earlier set predating that
+change to the DYNAMICS -- capacity-1 bins, a throw refused at a full bin, one emptying
+button per bin, a one-item-per-bin EMPTY prefill that is now an ordering task, and an
+evaluation horizon of 12 rather than 7 -- has been withdrawn and replaced rather than
+re-scored. A trace taken before that change and one taken after are measurements of two
+different worlds and must not be pooled or compared.
 """
 
 import argparse
@@ -75,8 +76,7 @@ class SkillTally(BaseModel):
     item, each throw carries its bin's empty precondition, and `_apply_throw` REFUSES a
     throw at a full bin. So a throw is never issued at a non-empty bin, `prefilled` should
     be 0 for both skills, and a nonzero value is a regression rather than a datum. The
-    committed 2026-08-05 run PREDATES that redesign, and its `prefilled` counts are large
-    and asymmetric for exactly the reason above; it has not been re-run here."""
+    committed 2026-08-05 run is post-redesign and reads 0/618 and 0/163."""
 
     attempts: int = 0
     successes: int = 0
@@ -95,6 +95,14 @@ class SkillTally(BaseModel):
     # guaranteed before the force was chosen; now the dynamics refuse them outright and
     # the operator is inapplicable, so this should be 0 on any fresh run.
     prefilled: int = 0
+    # Throws only, LEARNED-sampler draws only: the force the sampler chose and the target
+    # it was aiming at, one entry each per greedy attempt. `attempts` says how often a
+    # sampler was asked; these say what it answered, which is what separates "a sampler
+    # stuck on a confident wrong value" from "a sampler scattering". The epsilon-random
+    # draws are excluded rather than flagged, because a coin flip carries no belief and
+    # pooling the two would wash the signal out.
+    greedy_forces: list[float] = Field(default_factory=list)
+    greedy_targets: list[float] = Field(default_factory=list)
 
 
 class PeriodLog(BaseModel):
@@ -123,6 +131,9 @@ class PeriodLog(BaseModel):
             tally.prefilled += int(throw.prefilled)
             if was_random:
                 tally.landed_random += int(throw.landed)
+            else:
+                tally.greedy_forces.append(throw.force)
+                tally.greedy_targets.append(throw.target)
 
     def drain(self) -> dict:
         snapshot = {"skills": {name: tally.model_dump() for name, tally in self.skills.items()}}
@@ -143,6 +154,11 @@ class ThrowObservation(BaseModel):
 
     landed: bool
     prefilled: bool
+    # The force actually issued and the item's own `target_force`. Kept alongside the
+    # verdict rather than derived from it: `landed` collapses everything about a throw
+    # into one bit, and "missed by 0.02" and "missed by 0.75" are different findings.
+    force: float
+    target: float
 
 
 class TracingEesMethod(EesMethod):
@@ -205,6 +221,8 @@ class TracingEesMethod(EesMethod):
                 not refused and robot_room == bin_room and abs(force - target) < env.throw_tolerance
             ),
             prefilled=count >= 1,
+            force=force,
+            target=target,
         )
 
     def observe_outcome(

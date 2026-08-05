@@ -29,6 +29,7 @@ from hitl_pmp.practice_loop import PracticeLoop
 from scripts.tossingroomsplit_skill_traces import (
     PeriodLog,
     SkillTraceCollector,
+    ThrowObservation,
     TracingEesMethod,
 )
 
@@ -115,11 +116,10 @@ class TestAScoredSuccessIsNotTheSameThingAsALanding:
     **That channel is closed on the current domain**: a bin holds at most one item, each
     throw carries its bin's empty precondition, and `_apply_throw` REFUSES a throw at a
     full bin instead of swallowing the item. The traces still record `landed` and
-    `prefilled` separately from what EES scored, for two reasons: the committed
-    2026-08-05 run predates the redesign and its numbers only make sense read that way,
-    and `landed` re-implements the dynamics' own condition, so it has to include the
-    capacity refusal or it would silently report a landing for a throw that never
-    released anything.
+    `prefilled` separately from what EES scored, as the standing check that it stays
+    closed -- and because `landed` re-implements the dynamics' own condition, so it has to
+    include the capacity refusal or it would silently report a landing for a throw that
+    never released anything.
     """
 
     @staticmethod
@@ -211,6 +211,63 @@ class TestAScoredSuccessIsNotTheSameThingAsALanding:
         assert tally.successes == 0
         assert tally.landed == 0  # refused, so nothing landed however good the force
         assert tally.prefilled == 1  # and the full bin is why
+
+
+class TestTheForceEachSamplerChose:
+    """`attempts` says how often a sampler was asked; it cannot say WHAT it answered.
+
+    The mechanism this experiment is about is a sampler that has convinced itself of a
+    wrong force and gets one datapoint per practice period to unconvince it. Distinguishing
+    that from noise needs the chosen force itself, next to the target it was aiming at --
+    a run of consecutive periods at a stable, badly wrong force is a different fact from
+    the same landing rate produced by scatter.
+
+    Only the LEARNED-sampler draws are recorded. An epsilon-random force is a coin flip
+    and says nothing about what the sampler believes, so pooling the two would wash out
+    exactly the signal being looked for."""
+
+    @staticmethod
+    def test_each_greedy_throw_records_the_force_it_chose_and_the_target_it_aimed_at() -> None:
+        trace = _traced()
+        seen = 0
+        for period in trace["periods"]:
+            for name, record in period["skills"].items():
+                if not name.startswith("Throw"):
+                    continue
+                forces = record["greedy_forces"]
+                targets = record["greedy_targets"]
+                assert len(forces) == len(targets), name
+                assert len(forces) == record["attempts"] - record["random_attempts"], name
+                assert all(0.0 <= force <= 1.0 for force in forces), name
+                assert all(0.5 <= target <= 1.0 for target in targets), name
+                seen += len(forces)
+        # Non-vacuity: a run in which no throw was ever chosen greedily would satisfy
+        # every assertion above.
+        assert seen > 0
+
+    @staticmethod
+    def test_an_epsilon_random_draw_is_not_recorded_as_a_sampler_choice() -> None:
+        """Non-vacuity for the split, constructed rather than sampled: the same throw
+        recorded once greedily and once as a random draw must leave exactly one force
+        behind."""
+        log = PeriodLog()
+        log.record(
+            name="ThrowRecycling",
+            success=False,
+            was_random=False,
+            throw=ThrowObservation(landed=False, prefilled=False, force=0.02, target=0.83),
+        )
+        log.record(
+            name="ThrowRecycling",
+            success=True,
+            was_random=True,
+            throw=ThrowObservation(landed=True, prefilled=False, force=0.83, target=0.83),
+        )
+        tally = log.skills["ThrowRecycling"]
+        assert tally.attempts == 2
+        assert tally.random_attempts == 1
+        assert tally.greedy_forces == [0.02]
+        assert tally.greedy_targets == [0.83]
 
 
 def test_every_sweep_carries_a_per_goal_family_breakdown_that_sums_to_the_total() -> None:

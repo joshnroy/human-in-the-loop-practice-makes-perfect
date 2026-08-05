@@ -29,15 +29,14 @@ it is exact-by-enumeration, already pinned against hand-computed values in
 `tests/analysis/practice_makes_perfect/test_tossingroom_comparison.py`, and a second
 copy of a hand-rolled significance test is exactly how a sign error gets published.
 
-**READ THE COMMITTED 2026-08-05 TRACES AS A PRE-REDESIGN RECORD.** They were produced
-before Tossing Room's capacity-1 bins and per-bin buttons were ported into this domain,
-which changed the DYNAMICS: a bin now holds at most one item, a throw at a full one is
-refused, EMPTY prefills exactly one item per bin and needs both buttons pressed in the
-one order the ledge permits, and the evaluation horizon went 7 -> 12. Every number this
-file computes from those traces -- attempts, the attempt ratio, per-period attempt
-distributions, landings, competence and the endpoint scores alike -- is therefore
-**not re-scorable, it is incomparable**, and is pending a re-run. The code here is kept
-running against the new domain so that re-run is a matter of launching it.
+**The committed 2026-08-05 traces are the CAPACITY-1 run.** An earlier set, taken before
+Tossing Room's capacity-1 bins and per-bin buttons were ported into this domain, has been
+withdrawn and replaced rather than re-scored: that port changed the DYNAMICS (a bin holds
+at most one item, a throw at a full one is refused, EMPTY prefills one item per bin and
+needs both buttons pressed in the one order the ledge permits, and the evaluation horizon
+went 7 -> 12), so no number computed from the old traces was comparable to one computed
+from these. Do not pool a trace taken before that port with one taken after; they are
+measurements of two different worlds.
 """
 
 import argparse
@@ -301,6 +300,115 @@ class TossingRoomSplitThrowRates:
             return None
         return totals.get("ThrowTrash", 0) / recycling
 
+    # --------------------------------------------------- is the curve a curve at all
+
+    @staticmethod
+    def seed_checkpoint_extremes(
+        *, traces: list[dict], skill: str, high: int, low: int
+    ) -> dict[str, int]:
+        """How many (seed, checkpoint) pairs sit at an extreme of this family's score, and
+        how many sit anywhere in between.
+
+        A pooled mean-over-seeds curve that rises smoothly is consistent with two entirely
+        different worlds: seeds that improve gradually, and seeds that sit at 0/14 until
+        they snap to 14/14 at a seed-specific moment. The mean cannot separate them, and
+        describing the second as "still climbing" would be an artifact of the averaging.
+        Counting how rarely a seed is observed *between* the extremes is what separates
+        them, so this is a count over seed-checkpoints rather than a property of a line.
+
+        Both thresholds are inclusive and are counts, not rates -- `high=12, low=4` on a
+        14-task family. A seed-checkpoint at exactly 12/14 is at the top extreme."""
+        counts = {"extreme": 0, "middle": 0, "total": 0}
+        goal = _FAMILY_GOALS[skill]
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            for sweep in run["sweeps"]:
+                solved, total = sweep["families"].get(goal, (0, 0))
+                if not total:
+                    continue
+                counts["total"] += 1
+                counts["extreme" if solved >= high or solved <= low else "middle"] += 1
+        return counts
+
+    @staticmethod
+    def per_seed_family_peaks(*, traces: list[dict], skill: str) -> dict[int, dict[str, int]]:
+        """`{seed: {peak, final, total}}` in counts, for one goal family.
+
+        The peak is carried next to the endpoint because a seed can reach a high score and
+        fall back out of it, and a table of final scores alone reports that seed as one
+        that never learned. `total` travels with both so neither is ever read as a bare
+        number."""
+        goal = _FAMILY_GOALS[skill]
+        peaks: dict[int, dict[str, int]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            scores = [sweep["families"].get(goal, (0, 0)) for sweep in run["sweeps"]]
+            solved = [count for count, _total in scores]
+            totals = {total for _count, total in scores if total}
+            peaks[run["seed"]] = {
+                "peak": max(solved) if solved else 0,
+                "final": solved[-1] if solved else 0,
+                "total": max(totals) if totals else 0,
+            }
+        return peaks
+
+    # ------------------------------------------- what the sampler actually answered
+
+    @staticmethod
+    def unreachable_force_totals(*, traces: list[dict], floor: float) -> dict[str, tuple[int, int]]:
+        """`{skill: (greedy draws below `floor`, greedy draws)}`.
+
+        A target force is drawn `U(target_low, target_high)` = `U(0.5, 1.0)` and the
+        tolerance is `throw_tolerance` = 0.1, so a force below `0.5 - 0.1 = 0.4` misses
+        whatever task it was aiming at. That makes "the sampler chose a force no task in
+        this domain could have wanted" a property of the choice alone, countable without
+        reference to any particular target -- which is what distinguishes a sampler that
+        has converged on a wrong answer from one that is merely inaccurate.
+
+        Greedy draws only. An epsilon-random force is a coin flip and carries no belief;
+        the collector does not record them for this reason."""
+        totals: dict[str, tuple[int, int]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            for period in run["periods"]:
+                for name, tally in period["skills"].items():
+                    forces = tally.get("greedy_forces")
+                    if forces is None:
+                        continue
+                    below, drawn = totals.get(name, (0, 0))
+                    totals[name] = (
+                        below + sum(1 for force in forces if force < floor),
+                        drawn + len(forces),
+                    )
+        return totals
+
+    @staticmethod
+    def longest_missing_streaks(*, traces: list[dict], skill: str) -> dict[int, int]:
+        """`{seed: longest run of consecutive practice periods in which every greedy
+        attempt of this skill missed}`.
+
+        "Stuck" is a claim about consecutive periods, not a pooled rate: the same number
+        of misses spread evenly is a sampler still searching, and concentrated is a
+        sampler that has stopped moving. A period in which the skill was never practiced
+        greedily is evidence of neither, so it neither extends nor breaks a streak -- and
+        for a skill the layout affords one attempt per period, those periods are common.
+
+        `landed` is the miss test rather than `successes`, for the same reason
+        `greedy_landing_curve` uses it: what the dynamics did, not what EES scored."""
+        streaks: dict[int, int] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            longest = 0
+            current = 0
+            for period in run["periods"]:
+                tally = period["skills"].get(skill)
+                if tally is None:
+                    continue
+                greedy = tally["attempts"] - tally.get("random_attempts", 0)
+                if greedy == 0:
+                    continue
+                landed = tally.get("landed", 0) - tally.get("landed_random", 0)
+                current = current + 1 if landed == 0 else 0
+                longest = max(longest, current)
+            streaks[run["seed"]] = longest
+        return streaks
+
     # ------------------------------------------------------------------- the curves
 
     @staticmethod
@@ -493,6 +601,17 @@ class TossingRoomSplitThrowRates:
         for skill in _SKILL_STYLES:
             made, tried = successes.get(skill, (0, 0))
             print(f"{skill:>18}{f'{made}/{tried}':>22}{tried / len(runs):>16.1f}")
+        # Every lifted skill, not just the two throws: the ratio between the throws is
+        # only interpretable next to how much of the practice budget went anywhere else.
+        print("\nEvery lifted skill's observed practice attempts")
+        header = f"{'skill':>18}{'attempts':>12}{'share of all attempts':>25}"
+        print(header)
+        print("-" * len(header))
+        observed = sum(attempts.values())
+        for name, count in sorted(attempts.items(), key=lambda item: -item[1]):
+            print(f"{name:>18}{count:>12}{f'{count}/{observed}':>25}")
+        print(f"{'TOTAL':>18}{observed:>12}")
+
         ratio = TossingRoomSplitThrowRates.attempt_ratio(traces=traces)
         trash, recycling = attempts.get("ThrowTrash", 0), attempts.get("ThrowRecycling", 0)
         if ratio is None:
@@ -631,23 +750,234 @@ class TossingRoomSplitThrowRates:
             print(f"  minimum detectable effect (80%)  {100 * mde:.2f}pp")
 
         TossingRoomSplitThrowRates.print_landing_audit(traces=traces)
+        TossingRoomSplitThrowRates.print_switch_audit(traces=traces)
+        TossingRoomSplitThrowRates.print_sampler_answers(traces=traces)
+
+    @staticmethod
+    def print_switch_audit(*, traces: list[dict]) -> None:
+        """Whether the per-family curve is a curve at all, or a mean over seeds that are
+        each at one end or the other.
+
+        Thresholds are 12/14 and 4/14, the same ones the Tossing Room baseline used, so
+        the two domains' splits are read on the same scale."""
+        print("\nIs the curve a curve? Every (seed, checkpoint) scored against 12/14 and 4/14")
+        header = f"{'skill':>18}{'at an extreme':>16}{'in between':>14}{'seed-checkpoints':>19}"
+        print(header)
+        print("-" * len(header))
+        for skill in _SKILL_STYLES:
+            split = TossingRoomSplitThrowRates.seed_checkpoint_extremes(
+                traces=traces, skill=skill, high=12, low=4
+            )
+            extreme = f"{split['extreme']}/{split['total']}"
+            middle = f"{split['middle']}/{split['total']}"
+            print(f"{skill:>18}{extreme:>16}{middle:>14}{split['total']:>19}")
+
+        print("\nPer seed: the peak that family reached, and where it ended")
+        header = (
+            f"{'seed':>6}{'TRASH peak':>13}{'TRASH final':>14}"
+            f"{'RECYCLING peak':>17}{'RECYCLING final':>18}"
+        )
+        print(header)
+        print("-" * len(header))
+        trash_peaks = TossingRoomSplitThrowRates.per_seed_family_peaks(
+            traces=traces, skill="ThrowTrash"
+        )
+        recyc_peaks = TossingRoomSplitThrowRates.per_seed_family_peaks(
+            traces=traces, skill="ThrowRecycling"
+        )
+        for seed in sorted(trash_peaks):
+            t, r = trash_peaks[seed], recyc_peaks[seed]
+            t_peak, t_final = f"{t['peak']}/{t['total']}", f"{t['final']}/{t['total']}"
+            r_peak, r_final = f"{r['peak']}/{r['total']}", f"{r['final']}/{r['total']}"
+            print(f"{seed:>6}{t_peak:>13}{t_final:>14}{r_peak:>17}{r_final:>18}")
+
+    @staticmethod
+    def print_sampler_answers(*, traces: list[dict]) -> None:
+        """What each sampler answered, not just how often it was asked.
+
+        The floor is `target_low - throw_tolerance` = 0.4: below it a throw misses
+        whatever task it was aiming at, so the count needs no reference to a target."""
+        unreachable = TossingRoomSplitThrowRates.unreachable_force_totals(traces=traces, floor=0.4)
+        if not any(drawn for _below, drawn in unreachable.values()):
+            print("\nNo greedy forces recorded -- these traces predate the force instrumentation.")
+            return
+        print("\nWhat each sampler answered (greedy draws only; a force < 0.4 cannot land)")
+        header = f"{'skill':>18}{'force < 0.4':>16}{'longest all-miss streak, per seed':>36}"
+        print(header)
+        print("-" * len(header))
+        for skill in _SKILL_STYLES:
+            below, drawn = unreachable.get(skill, (0, 0))
+            streaks = TossingRoomSplitThrowRates.longest_missing_streaks(traces=traces, skill=skill)
+            shown = ", ".join(str(streaks[seed]) for seed in sorted(streaks))
+            print(f"{skill:>18}{f'{below}/{drawn}':>16}{shown:>36}")
+
+    # ---------------------------------------------------------- the per-seed figure
+
+    @staticmethod
+    def per_seed_family_series(
+        *, traces: list[dict], skill: str
+    ) -> dict[int, list[tuple[int, int]]]:
+        """`{seed: [(transitions, solved), ...]}` in counts, for one goal family. The
+        per-seed lines a mean would hide."""
+        goal = _FAMILY_GOALS[skill]
+        series: dict[int, list[tuple[int, int]]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            series[run["seed"]] = [
+                (int(sweep["transitions"]), sweep["families"].get(goal, (0, 0))[0])
+                for sweep in run["sweeps"]
+            ]
+        return series
+
+    @staticmethod
+    def per_seed_force_series(
+        *, traces: list[dict], skill: str
+    ) -> dict[int, list[tuple[int, float]]]:
+        """`{seed: [(period index, mean greedy force that period), ...]}`. Periods with no
+        greedy draw are omitted rather than interpolated -- for the throw the layout
+        rations, most periods have none, and drawing a line through them would invent
+        exactly the smoothness under examination."""
+        series: dict[int, list[tuple[int, float]]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            points: list[tuple[int, float]] = []
+            for index, period in enumerate(run["periods"]):
+                forces = period["skills"].get(skill, {}).get("greedy_forces") or []
+                if forces:
+                    points.append((index, statistics.mean(forces)))
+            series[run["seed"]] = points
+        return series
+
+    @staticmethod
+    def render_per_seed(*, traces: list[dict], output: Path) -> None:
+        """The spread a mean hides: one line per seed for each family, the distribution of
+        every seed-checkpoint score, and what each sampler answered period by period."""
+        fig, axes = plt.subplots(2, 2, figsize=(12.5, 8.4))
+        trash_ax, recyc_ax, spread_ax, force_ax = axes[0][0], axes[0][1], axes[1][0], axes[1][1]
+
+        for ax, skill in ((trash_ax, "ThrowTrash"), (recyc_ax, "ThrowRecycling")):
+            color, _linestyle = _SKILL_STYLES[skill]
+            series = TossingRoomSplitThrowRates.per_seed_family_series(traces=traces, skill=skill)
+            for seed, points in series.items():
+                ax.plot(
+                    [transitions for transitions, _solved in points],
+                    [solved for _transitions, solved in points],
+                    linewidth=1.1,
+                    alpha=0.75,
+                    color=color,
+                )
+                ax.annotate(
+                    str(seed),
+                    xy=points[-1],
+                    fontsize=7,
+                    color=color,
+                    xytext=(3, -2),
+                    textcoords="offset points",
+                )
+            ax.set_ylim(-0.5, 14.5)
+            ax.set_yticks(range(0, 15, 2))
+            ax.set_ylabel("tasks solved out of 14")
+            ax.set_xlabel("Number of online transitions")
+            ax.axhline(12, color="0.4", linewidth=0.8, linestyle="--")
+            ax.axhline(4, color="0.4", linewidth=0.8, linestyle="--")
+            split = TossingRoomSplitThrowRates.seed_checkpoint_extremes(
+                traces=traces, skill=skill, high=12, low=4
+            )
+            ax.set_title(
+                f"{skill}, one line per seed\n{split['extreme']}/{split['total']} "
+                f"seed-checkpoints at an extreme ({split['middle']}/{split['total']} in "
+                "between the dashed lines)",
+                fontsize=9,
+            )
+
+        width = 0.4
+        for offset, skill in zip((-width / 2, width / 2), _SKILL_STYLES, strict=True):
+            color, _linestyle = _SKILL_STYLES[skill]
+            goal = _FAMILY_GOALS[skill]
+            histogram = {score: 0 for score in range(15)}
+            for run in TossingRoomSplitThrowRates.runs(traces=traces):
+                for sweep in run["sweeps"]:
+                    solved, total = sweep["families"].get(goal, (0, 0))
+                    if total:
+                        histogram[solved] += 1
+            spread_ax.bar(
+                [score + offset for score in histogram],
+                list(histogram.values()),
+                width=width,
+                color=color,
+                label=skill,
+            )
+        spread_ax.set_xlabel("tasks solved out of 14, at one (seed, checkpoint)")
+        spread_ax.set_ylabel("number of seed-checkpoints")
+        spread_ax.set_xticks(range(0, 15, 2))
+        spread_ax.set_title(
+            "Every seed-checkpoint, as a distribution: the ends are where the mass is",
+            fontsize=9,
+        )
+
+        for skill in _SKILL_STYLES:
+            color, _linestyle = _SKILL_STYLES[skill]
+            series = TossingRoomSplitThrowRates.per_seed_force_series(traces=traces, skill=skill)
+            for points in series.values():
+                force_ax.plot(
+                    [index for index, _force in points],
+                    [force for _index, force in points],
+                    linewidth=0.9,
+                    alpha=0.5,
+                    color=color,
+                )
+        force_ax.axhspan(0.4, 1.0, color="0.6", alpha=0.15, linewidth=0)
+        force_ax.set_ylim(0, 1.02)
+        force_ax.set_xlabel("practice period (0-24)")
+        force_ax.set_ylabel("mean greedy force chosen that period")
+        below_trash = TossingRoomSplitThrowRates.unreachable_force_totals(traces=traces, floor=0.4)
+        trash_below, trash_drawn = below_trash.get("ThrowTrash", (0, 0))
+        recyc_below, recyc_drawn = below_trash.get("ThrowRecycling", (0, 0))
+        force_ax.set_title(
+            "What each sampler answered — shaded band is reachable; below 0.4 nothing "
+            f"can land\nTRASH {trash_below}/{trash_drawn} draws below it, "
+            f"RECYCLING {recyc_below}/{recyc_drawn}",
+            fontsize=9,
+        )
+
+        for ax in (trash_ax, recyc_ax, spread_ax, force_ax):
+            ax.grid(True, alpha=0.25, linewidth=0.6)
+            for spine in ("top", "right"):
+                ax.spines[spine].set_visible(False)
+        spread_ax.legend(fontsize=8, framealpha=0.9, loc="best")
+        # Built by hand: every seed is drawn as its own line, so asking matplotlib for the
+        # labels would produce ten identical entries per skill.
+        force_ax.legend(
+            handles=[
+                plt.Line2D([], [], color=_SKILL_STYLES[skill][0], label=skill)
+                for skill in _SKILL_STYLES
+            ],
+            fontsize=8,
+            framealpha=0.9,
+            loc="best",
+        )
+        fig.suptitle(
+            "Tossing Room (split throws), capacity-1: the per-seed spread a mean hides "
+            "(10 seeds, 14 tasks per throw family)",
+            fontsize=12,
+        )
+        fig.tight_layout()
+        fig.savefig(output, dpi=150)
 
     @staticmethod
     def print_landing_audit(*, traces: list[dict]) -> None:
         """What EES scored against what the environment actually did.
 
         A throw's add effects are `{<Kind>InBin(item, bin), HandEmpty(robot)}`, and on the
-        pre-redesign domain a throw always released the item, so a throw into an ALREADY
+        pre-capacity-1 domain a throw always released the item, so a throw into an ALREADY
         non-empty bin was scored a success at any force. The trash bin could be in that
-        state and the recycling bin could not, so on the committed 2026-08-05 traces this
-        audit is not a footnote -- it is the difference between the two skills' success
-        signals being comparable and not.
+        state and the recycling bin could not, which made the two skills' success signals
+        incomparable and inverted the per-attempt comparison that was published from them.
 
-        On the CURRENT domain the same audit is a regression check: capacity-1 bins, the
-        bin-empty precondition on each throw and the dynamics' refusal of a throw at a
-        full bin together mean the `prefilled bin` and `scored, missed` columns should
-        both read 0 for both skills. They are printed rather than dropped precisely so a
-        reader can see that, and so a future change that reopens the channel is loud."""
+        On the CURRENT domain this is a regression check: capacity-1 bins, the bin-empty
+        precondition on each throw and the dynamics' refusal of a throw at a full bin
+        together mean the `prefilled bin` and `scored, missed` columns must read 0 for both
+        skills -- as they do on the committed traces. They are printed rather than dropped
+        precisely so a reader can see that, and so a future change that reopens the channel
+        is loud rather than silent."""
         landings = TossingRoomSplitThrowRates.landing_totals(traces=traces)
         prefilled = TossingRoomSplitThrowRates.prefilled_totals(traces=traces)
         inflated = TossingRoomSplitThrowRates.inflated_successes(traces=traces)
@@ -802,8 +1132,8 @@ class TossingRoomSplitThrowRates:
             for spine in ("top", "right"):
                 ax.spines[spine].set_visible(False)
         fig.suptitle(
-            "Tossing Room (split throws): two lifted skills, two samplers, very "
-            "different practice budgets (mean ± stderr over 10 seeds)",
+            "Tossing Room (split throws), capacity-1: two lifted skills, two samplers, "
+            "very different practice budgets (mean ± stderr over 10 seeds)",
             fontsize=12,
         )
         fig.tight_layout()
@@ -827,6 +1157,13 @@ def _parse_args() -> argparse.Namespace:
         "traced-vs-swept consistency gate.",
     )
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--per-seed-output",
+        type=Path,
+        default=None,
+        help="Second figure: one line per seed rather than a mean, the distribution of "
+        "every seed-checkpoint score, and the force each sampler actually chose.",
+    )
     return parser.parse_args()
 
 
@@ -849,6 +1186,10 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     TossingRoomSplitThrowRates.render(traces=traces, output=args.output)
     print(f"\nwrote {args.output}")
+    if args.per_seed_output is not None:
+        args.per_seed_output.parent.mkdir(parents=True, exist_ok=True)
+        TossingRoomSplitThrowRates.render_per_seed(traces=traces, output=args.per_seed_output)
+        print(f"wrote {args.per_seed_output}")
     return 0
 
 

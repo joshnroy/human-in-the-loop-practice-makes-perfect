@@ -1,131 +1,145 @@
-# Two throws, two samplers: recycling learns 4x slower on the clock, and is the better sampler
+# Two throws, two samplers on the capacity-1 domain: recycling gets 83/430 of the learned-sampler draws, and its learning is a switch one seed never flips
 
-> ## ⚠ EVERY NUMBER BELOW WAS MEASURED BEFORE THE CAPACITY-1 REDESIGN, AND IS PENDING A RE-RUN
->
-> This run was collected against the pre-redesign `tossingroomsplit` domain. The domain
-> has since been brought into line with Tossing Room's capacity-1 bins
-> ([#74](https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/74)),
-> which changed the **dynamics**, not merely the scoring:
->
-> * a bin holds **at most one item**, and a throw at a full one is **refused** — the item
->   stays in hand and nothing happens;
-> * each bin has **its own emptying button** beside it, and a press empties only that bin;
-> * both throws carry their bin's empty atom as a **precondition and a delete effect**, so
->   a throw at a full bin is not even applicable;
-> * `EMPTY` prefills **exactly one item per bin** (replacing the 1–3 sample) and became an
->   **ordering** task — the recycling button is behind the one-way ledge, so it must be
->   pressed last;
-> * the evaluation horizon went **7 → 12**, because `EMPTY`'s shortest solve is now 10.
->
-> Because those are dynamics changes, the results here are **not re-scorable — they are
-> incomparable**, and that includes the figures this log argues are *structural*: the
-> **799:200 = 4.0:1** attempt ratio, "recycling is never attempted twice in a period",
-> the **91.5%** `MoveRoom` share, and the per-period attempt distributions. All of them
-> count executions of operators whose applicability the redesign changed. #74's own
-> measurement is that trash gets **12 attempts per 100-step period** under capacity 1,
-> which is not the number this log's ratio was computed from.
->
-> The one thing that can be said without a re-run is that the **defect this log
-> diagnoses is closed**: on the current domain a throw is never issued at a non-empty
-> bin, so the `prefilled` and `scored-but-missed` columns are 0 for both skills by
-> construction. Nothing else here has been re-measured. **Do not quote any figure below
-> as current.**
+**TL;DR.** Re-run of PR #71's split-throw experiment against the **capacity-1**
+`tossingroomsplit` domain, replacing a pre-#74 run whose every number is withdrawn.
+Vanilla EES, 10 fixed seeds, 2500 online transitions each, 14 TRASH / 14 RECYCLING / 2
+EMPTY per seed. Four things.
 
-**The prediction is registered in full below, before any result.** In short: on
-`environments/tossingroomsplit`, where `Throw` is split into `ThrowTrash` and
-`ThrowRecycling` with a separate `LearnedSkillSampler` each, recycling should learn far
-more slowly than trash, at roughly the ratio of practice attempts the layout affords each
-— and, with the shared-sampler transfer channel now removed, possibly not at all within a
-practice budget.
-
-**Three results, and only the first is the one that was predicted.**
-
-1. **The rate prediction held, and held precisely.** Recycling reaches each early success
-   level at **4.0x** the transitions trash needs, against a measured attempt ratio of
-   **799:200 = 4.0:1**. The predicted *value* of that ratio (~12:1) was wrong; the
-   predicted *relationship* was right to two significant figures at both thresholds.
-2. **The "not at all" prediction is refuted, and the endpoint is a null result.**
-   Recycling ends at **122/140** against trash's **127/140** — a **+3.57pp** gap against
-   a **16.74pp** minimum detectable effect, paired Wilcoxon **p = 0.8125**. Anyone reading
-   only final success rates would conclude the split changes nothing.
-3. **The unpredicted result, and the one worth keeping: per practice attempt,
-   `ThrowRecycling` is the BETTER sampler.** Greedy attempts that actually landed in the
-   bin: **51/94 (54.3%) for recycling against 152/433 (35.1%) for trash** — a
-   **−19.15pp** gap against a 15.94pp MDE, i.e. detectable and in the opposite direction
-   to everything above. Recycling is slower only because it gets four times fewer
-   attempts; each attempt teaches it more.
-
-**And there is a reason for (3) that is a defect, not a curiosity.** `ThrowTrash`'s
-training labels are largely fabricated: **414/799** of its attempts were thrown into a bin
-that was *already* non-empty, and every one of those is scored a success whatever force it
-used — so **313 of its 532 "successes" (58.8%) are throws that missed**. `ThrowRecycling`
-suffers none of this: **0/200** prefilled, **0 of 65** spurious. The trash sampler is
-being trained on ~59% false-positive labels, and the recycling sampler on none.
+1. **The structural claim survives, and it is the only one that does.** Across 250 practice
+   periods `ThrowRecycling` was attempted **0 or 1 times and never twice** — 163 periods at
+   1, 87 at 0. `ThrowTrash`'s ceiling is again exactly **12**. The measured attempt ratio is
+   **618:163 = 3.79:1**, close to the pre-#74 run's 4.0:1 and nowhere near the predicted
+   12:1.
+2. **The pre-#74 headline is reversed.** Per learned-sampler attempt, `ThrowTrash` lands
+   **224/347** against `ThrowRecycling`'s **37/83** — **+19.98pp** against a **17.12pp** MDE.
+   Trash is the better sampler. The old log's "recycling is the better sampler" was the
+   scoring defect talking, and the audit now reads **0/618** and **0/163** prefilled with
+   **0/286** and **0/50** scored-but-missed: the channel is closed, measured rather than
+   assumed.
+3. **Learning is a switch, not a curve — the same shape the Tossing Room baseline found.**
+   **227/260** TRASH seed-checkpoints and **209/260** RECYCLING seed-checkpoints sit at an
+   extreme (≥12/14 or ≤4/14); only 33/260 and 51/260 are anywhere in between. Seed 1's
+   RECYCLING reaches **9/14** at 100 transitions and ends at **1/14**, frozen there for the
+   last 19 of 26 checkpoints. The pooled RECYCLING line must **not** be read as a family
+   climbing steadily.
+4. **And there is a mechanism, in the data rather than in a video.** The recycling sampler
+   gets **83/430** of the two throws' learned-sampler draws — **5 to 11 per seed (median
+   7.5) in an entire 2500-transition run**, against trash's 25 to 52 (median 34). **24/83**
+   of them are forces below **0.4**, which no task in this domain can want. Its longest run
+   of consecutive all-missing practice periods reaches **9** (seed 2) against trash's worst
+   of **2**. A recycling sampler that convinces itself wrong gets roughly one datapoint per
+   period to unconvince it; trash gets up to twelve.
 
 ![per-skill throw rates](./2026-08-05-tossingroomsplit-throw-rates.png)
 
-## Pre-registration
+![per-seed spread](./2026-08-05-tossingroomsplit-throw-rates-per-seed.png)
 
-Written before the sweep was launched, and reproduced here unedited.
+## Question / goal
 
-> **Prediction.** `ThrowTrash` and `ThrowRecycling` are two lifted skills with two
-> independent samplers of identical architecture (verified in PR #70). The Tossing Room
-> layout affords them wildly different practice budgets:
->
-> * **Trash** is a round trip — `PickupTrash` in room 3, three `MoveRoom`s right to room
->   6, `ThrowTrash`, three `MoveRoom`s back for a fresh item. Eight steps per attempt, so
->   a 100-step practice period should buy roughly **12 attempts**.
-> * **Recycling** is one-way — `PickupRecycling` in room 3, one `MoveRoom` LEFT across
->   the ledge into room 2, one more into room 1, `ThrowRecycling`. The ledge makes the
->   return to room 3 impossible and the pile is the only source of items, so once that
->   throw is spent there is no second attempt at any horizon: **exactly 1 attempt per
->   practice period, ever**.
->
-> Expected attempt ratio therefore **≈ 1:12**. **Recycling should learn far more slowly
-> than trash, at roughly that ratio** — and, since splitting the skills removes the
-> shared sampler that previously let trash experience transfer to recycling, **possibly
-> not at all within a practice budget.**
->
-> **This is to be measured, not asserted.** The 1:12 figure is arithmetic on the layout,
-> not an observation, and EES chooses what to practise for itself.
+`ThrowTrash` and `ThrowRecycling` are two lifted skills with two independent samplers of
+identical architecture. The layout gives them wildly different practice budgets — trash is a
+retryable round trip, recycling is one-way across a ledge that closes behind the robot. **Do
+they learn at correspondingly different rates, and what does the difference actually consist
+of?**
 
-## Design, and what it can detect
+## Background
 
-| | |
-|---|---|
-| domain | `tossingroomsplit` (PR #70) — Tossing Room's world verbatim, `Throw` split in two |
-| method | `ees`, vanilla. **One experiment, no arms** — the comparison is between two skills within the same runs |
-| seeds | 10, fixed at 0–9 (`scripts/run_sweep.py`, never randomly drawn) |
-| protocol | `--num-cycles 25 --max-steps-per-interaction 100` → exactly **2500 online transitions** in every seed |
-| evaluation | `--num-test-tasks 30`, fixed composition **14 TRASH / 14 RECYCLING / 2 EMPTY** per seed, drawn once and reused for the whole run |
-| horizon | `longest_shortest_solve() + 2` = 7 |
+### The earlier numbers were withdrawn, and why
 
-**Seed count and the noise floor.** The two throw families are compared at 14 tasks per
-seed, so 10 seeds give n = 140 per family. The binomial noise floor
-`sqrt(0.25/n_a + 0.25/n_b)` is then **5.98pp**, and the effect this design has 80% power
-to detect two-sided at α = 0.05 is `2.80 × 5.98 =` **16.74pp**. That is coarse: one task is
-7.1pp on a throw family, so the design can only resolve differences of about two and a half
-tasks per seed. **This is why the endpoint null below is "cannot tell them apart" and not
-"they are the same".**
+This page previously carried a run collected against the **pre-capacity-1**
+`tossingroomsplit`. [#74](https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/74)
+then changed the **dynamics**, not merely the scoring:
 
-At the **practice-attempt** level the denominators are what the experiment produced rather
-than what it chose — 433 greedy trash attempts against 94 greedy recycling ones — giving a
-floor of 5.69pp and an MDE of **15.94pp**. The asymmetry does not help: the floor is driven
-by the *smaller* arm, so piling on more trash attempts cannot buy resolution the recycling
-side does not have.
+* a bin holds **at most one item**, and a throw at a full one is **refused** — the item stays
+  in hand and nothing happens;
+* each bin has **its own emptying button** beside it, and a press empties only that bin;
+* both throws carry their bin's empty atom as a **precondition and a delete effect**;
+* `EMPTY` prefills **exactly one item per bin** and became an **ordering** task;
+* the evaluation horizon went **7 → 12**, derived from `EMPTY`'s new 10-action shortest solve.
 
-**Every rate below is a count.** Differences of two rates (gaps, floors, MDEs) stay in
-percentage points, which is their correct unit.
+Because those are dynamics changes the old results were **not re-scorable — they were
+incomparable**, and that included the figures the old log argued were structural. The
+withdrawn numbers, kept here as history so the record of what was claimed is not deleted:
+
+| withdrawn claim (pre-#74) | what it said | what this re-run measures |
+|---|---|---|
+| attempt ratio | **799:200 = 4.0:1** | **618:163 = 3.79:1** — survives in substance |
+| recycling never attempted twice in a period | 200 at 1, 50 at 0 | **163 at 1, 87 at 0** — survives exactly |
+| `MoveRoom` share of practice | **22,648/24,750** | **19,224/24,750** — moved, and `PressRecycling` went 55 → **3,684** |
+| endpoint | TRASH 127/140, RECYCLING 122/140 | **TRASH 140/140, RECYCLING 124/140** |
+| per greedy attempt | recycling **better**, 51/94 vs 152/433 | **reversed** — trash 224/347 vs recycling 37/83 |
+| scored successes that missed | **313/532** for trash | **0/286** — the defect is closed |
+| competence ranks the two skills **backwards** | 0.859 trash vs 0.844 recycling | **does not survive** — 0.927 vs 0.800, the correct order |
+| AUC difference | +12.94pp, p = 0.1934 | **+41.13pp, p = 0.0020** |
+
+Two instrumentation defects were fixed before this re-run and are not results: `_observe_throw`
+used to record a **refused** throw as a landing whenever the force was good, and a
+non-vacuity test constructed the now-closed defect.
+
+### Why the split exists at all
+
+`EesMethod.sampler` keys its `LearnedSkillSampler` dict by `skill_name`, so two names give two
+classifiers with independent weights on the same architecture. Each throw learns only from its
+own attempts, with no transfer from the other. The layout then decides how many attempts each
+gets: trash is a retryable round trip from the pile; recycling sits behind a one-way ledge, and
+since a throw always releases the item, reaching the recycling bin ends that period's chance of
+another go.
+
+## Hypothesis
+
+Registered before the original sweep and reproduced unedited, because a re-run does not get to
+rewrite what was predicted:
+
+> Trash: pickup → walk 3 rooms → throw → walk back = 8 steps, so a 100-step period should buy
+> roughly **12 attempts**. Recycling: pickup → step across the ledge → throw, with no way back
+> and no second item, so **exactly 1 attempt per practice period, ever**. Expected ratio
+> **≈ 1:12**. Recycling should learn far more slowly, **at roughly that ratio** — and, with the
+> shared-sampler transfer channel removed, **possibly not at all within a practice budget.**
+
+Carried into the re-run, from what the fresh Tossing Room baseline found on the sibling domain:
+that per-family learning would prove to be a **switch** rather than a curve, and that
+recycling's disadvantage would show up as a sampler stuck on a confident wrong force.
+
+## Guidance given
+
+- Re-run the whole experiment against the capacity-1 domain; **rewrite everything that reports
+  a number**, and state any deviation from the original protocol.
+- Fixed seeds via `scripts/run_sweep.py`, never randomly drawn. **Time one seed first.**
+- **Counts as `x/y` everywhere** — prose, tables, axis labels, annotations. Never a bare
+  percentage.
+- **Figures, not just tables**, with **per-seed spread**: a bar chart of two means hides one
+  seed driving the effect.
+- Check for the two things the fresh Tossing Room baseline found: **learning as a switch**
+  (per-seed extremes, not a pooled mean described as "still climbing"), and **RECYCLING's
+  mechanism** — a sampler pinned on a wrong force with one datapoint per period to escape it.
+- Report the binomial noise floor `sqrt(0.25/n_a + 0.25/n_b)` and the MDE the design can
+  detect. **Do not claim a difference below it.**
+- Background must **record that the earlier numbers were withdrawn and why** — do not delete
+  that history.
+- Results must land somewhere durable, outside the agent worktree.
 
 ## Methods
 
-Two commands, and they are **the same ten runs measured twice**, not two experiments.
+| | |
+|---|---|
+| domain | `tossingroomsplit` at capacity-1 (PR #70, tracking #74) |
+| method | `ees`, vanilla. **One experiment, no arms** — the comparison is between two skills inside the same runs |
+| seeds | 10, fixed at 0–9 (`scripts/run_sweep.py`, never randomly drawn) |
+| protocol | `--num-cycles 25 --max-steps-per-interaction 100` → exactly **2500** online transitions in every seed |
+| evaluation | `--num-test-tasks 30`, fixed composition **14 TRASH / 14 RECYCLING / 2 EMPTY** per seed |
+| horizon | `longest_shortest_solve() + 2` = **12**, confirmed in every trace |
+
+**Deviations from the original protocol: one, and it is additive.** The trace collector now
+also records, per learned-sampler throw, the **force it chose and the target it was aiming at**.
+Nothing else changed — same seeds, same cycles, same steps, same test-task count and
+composition. The collector consumes no randomness and changes no control flow, and the
+traced/swept consistency gate below is what checks that.
 
 ```bash
 # 1. The sweep. Writes results/<root>/ees/<seed>/{stats.json,timing.json,config_snapshot.json}.
 python -m scripts.run_sweep \
   --env tossingroomsplit --methods ees --num-seeds 10 \
-  --results-root results/tossingroomsplit-throws \
+  --results-root results/tossingroomsplit-cap1-throws \
   --shared-args "--num-test-tasks 30" \
   --method-args "ees=--num-cycles 25 --max-steps-per-interaction 100" \
   --max-workers 10
@@ -134,229 +148,406 @@ python -m scripts.run_sweep \
 python -m scripts.tossingroomsplit_skill_traces \
   --label ees --seeds <k> --num-cycles 25 \
   --max-steps-per-interaction 100 --num-test-tasks 30 \
-  --output results/tossingroomsplit-traces/shard-<k>.json
+  --output results/tossingroomsplit-cap1-traces/shard-<k>.json
 
 # 3. The analysis. Post-run only; it never drives a simulation.
 python -m analysis.practice_makes_perfect.tossingroomsplit_throw_rates \
-  --traces results/tossingroomsplit-traces/shard-{0..9}.json \
-  --results-root results/tossingroomsplit-throws \
-  --output docs/experiment-logs/2026-08-05-tossingroomsplit-throw-rates.png
+  --traces results/tossingroomsplit-cap1-traces/shard-{0..9}.json \
+  --results-root results/tossingroomsplit-cap1-throws \
+  --output docs/experiment-logs/2026-08-05-tossingroomsplit-throw-rates.png \
+  --per-seed-output docs/experiment-logs/2026-08-05-tossingroomsplit-throw-rates-per-seed.png
 ```
 
-**Why step 2 exists at all.** `stats.json` is the serialized `core.Metrics`: tasks solved,
-per sweep, with a per-task goal breakdown. That is the right record of outcomes, and it is
-what the sweep produces. But the question here is about the two *skills* — how often each
-was practised, how often each succeeded, and whether it actually landed — and none of that
-leaves `EesMethod`'s internals. So the collector subclasses the real method to read it out,
-exactly as `scripts/tossingroom_throw_traces.py` already does for the throw force, and for
-the reason that file gives: there is no CLI surface for a method's internal decisions, and
-adding one purely for a diagnostic would put trace plumbing in the shipped `Method`.
+### Compute, measured rather than guessed
 
-**Why that is legitimate, and how it is checked.** A run is fully determined by its
-`--seed`; the tracing subclass overrides only recording hooks, consumes no randomness and
-changes no control flow. So the traced seed-*k* run reproduces the swept seed-*k* run step
-for step. This is not left as an argument:
+| | wall clock | per-run range |
+|---|---|---|
+| single-seed calibration (alone, 1 worker) | **2 min 42 s** (162.4 s) | — |
+| sweep, 10 seeds at 10 workers | **4 min 0 s** (240.3 s) | 179.2 s – 240.1 s |
+| traces, 10 processes | **3 min 43 s** (223 s) | — |
+
+10/10 runs succeeded; no launch failures and no retries were printed to stderr. The per-run
+range runs *above* the 162.4 s the same work took alone because a first batch of trace processes
+was launched while the sweep was still live and then killed — up to 20 runs were briefly
+resident. The sweep's own numbers are unaffected (a run is determined by its `--seed`); only its
+wall clock is.
+
+### Why step 2 exists, and how it is checked
+
+`stats.json` is the serialized `core.Metrics`: tasks solved per sweep with a per-task goal
+breakdown. That is the right record of outcomes. But the question here is about the two
+*skills* — how often each was practised, how often each succeeded, whether it actually landed,
+and now what force it chose — and none of that leaves `EesMethod`'s internals. So the collector
+subclasses the real method to read it out, exactly as `scripts/tossingroom_throw_traces.py`
+already does.
+
+That the two are the **same ten runs** is a checked fact, not an argument from determinism:
 
 * `tests/scripts/test_tossingroomsplit_skill_traces.py::test_tracing_does_not_perturb_the_run`
-  runs a traced and an untraced run at the same seed and requires the per-sweep
-  `(transitions, solved, total)` triples to be **equal**.
-* The analysis re-checks it against the real data before reporting anything.
-  `check_against_sweep` compares every traced seed against that seed's actual `stats.json`
-  and **refuses to print** on any disagreement — and treats a traced seed *missing* from
-  the sweep as a disagreement rather than a skip, because a gate that quietly checks zero
-  seeds passes.
+  requires a traced and an untraced run at the same seed to produce **equal** per-sweep
+  `(transitions, solved, total)` triples.
+* The analysis **refuses to print** unless every traced seed reproduces its real `stats.json`
+  exactly, and treats a traced seed *missing* from the sweep as a disagreement rather than a
+  skip. It reported: `consistency gate: all 10 traced seeds reproduce their swept stats.json
+  exactly`.
 
-It reported: `consistency gate: all 10 traced seeds reproduce their swept stats.json
-exactly`.
+**One further reconciliation, exact.** 250 practice periods × 100 steps = 25,000 transitions;
+EES leaves the last skill of each period unobserved by construction, so 250 outcomes are
+unobservable. Observed practice attempts across all skills total **24,750** — 25,000 − 250, to
+the unit.
 
-**One further integrity check, which reconciles exactly.** 250 practice periods × 100
-steps = 25,000 transitions. EES leaves the last skill of each period unobserved by
-construction (its deviation 2), so 250 outcomes are unobservable. Observed practice
-attempts across all skills total **24,750** — 25,000 − 250, to the unit.
+### What this design can detect
+
+Every gap below is quoted against the floor `sqrt(0.25/n_a + 0.25/n_b)` and the 80%-power
+two-sided MDE, which is 2.80 of them.
+
+| comparison | denominators | noise floor | MDE |
+|---|---|---|---|
+| goal family, final sweep | 140 vs 140 | 5.98pp | **16.74pp** |
+| all practice attempts | 618 vs 163 | 4.40pp | **12.33pp** |
+| learned-sampler attempts | 347 vs 83 | 6.11pp | **17.12pp** |
+| epsilon-random draws | 271 vs 80 | 6.36pp | **17.82pp** |
+
+The family MDE is coarse — one task is 7.1pp on a 14-task family, so the design resolves about
+two and a half tasks per seed. The floor is driven by the **smaller** arm throughout, so piling
+on more trash attempts cannot buy resolution the recycling side does not have.
 
 ## Results
 
-### 1. The attempt budget: the structural claim is exactly right, the arithmetic is not
+### 1. The attempt budget: the structural claim survives the redesign intact
 
 | skill | attempts per period | periods |
 |---|---|---|
-| `ThrowRecycling` | **0 or 1, and never more** | 200 at 1, 50 at 0 |
-| `ThrowTrash` | 0 through **12** | 124 at 0, 33 at 1, … 20 at 11, 30 at 12 |
+| `ThrowRecycling` | **0 or 1, and never more** | 163 at 1, 87 at 0 |
+| `ThrowTrash` | 0 through **12** | 144 at 0, 35 at 1, 12 at 2, 8 at 3, 1 at 4, 4 at 5, 3 at 6, 2 at 7, 1 at 9, 10 at 11, 30 at 12 |
 
-The recycling half of the prediction is **confirmed exactly**: across 250 practice periods
-there is **not one** period with two recycling attempts. The one-way ledge does what the
-layout said it would. And the trash ceiling is exactly 12, as predicted — 12 is the largest
-value observed, and 50 of the 250 periods sit at 11 or 12.
+Across 250 practice periods there is **not one** with two recycling attempts, and trash's
+ceiling is again exactly **12** — reached in 30 of 250 periods. Both of those were flagged as
+*pending* by the withdrawal, and both come back unchanged. The one-way ledge does what the
+layout said it would, and capacity-1 did not alter it.
 
-**But the ratio is 799:200 = 4.0:1, not 12:1**, and the reason is the part the arithmetic
-did not model: **EES does not choose to practise trash in most periods.** 124 of 250
-periods contain zero trash attempts. Where the prediction implicitly assumed the robot
-spends every period doing trash round trips, the actual distribution of practice is:
+**The ratio is 618:163 = 3.79:1, not 12:1.** The reason is unchanged from the pre-#74 run and is
+the part the arithmetic never modelled: EES does not choose to practise trash in most periods
+(144 of 250 have zero trash attempts), and almost all of the practice budget goes on walking.
 
 | skill | observed practice attempts |
 |---|---|
-| `MoveRoom` | 22,648 |
-| `PickupTrash` | 846 |
-| `ThrowTrash` | **799** |
-| `PickupRecycling` | 202 |
-| `ThrowRecycling` | **200** |
-| `Press` | 55 |
+| `MoveRoom` | **19,224/24,750** |
+| `PressRecycling` | **3,684/24,750** |
+| `PickupTrash` | 636/24,750 |
+| `ThrowTrash` | **618/24,750** |
+| `PressTrash` | 262/24,750 |
+| `PickupRecycling` | 163/24,750 |
+| `ThrowRecycling` | **163/24,750** |
 
-**91.5% of every practice action is walking.** That is the layout doing to the *agent*
-what it was designed to do to the *skill*, and it is the single biggest reason the ratio
-came out at a third of the predicted value.
+**`PressRecycling` at 3,684/24,750 is new and it is the largest change in this table.** Pre-#74
+there was one shared `Press` at 55/24,750 total. Capacity-1 gave each bin its own button, put
+the recycling one in room 1 behind the ledge, and the result is that a robot stranded on the far
+side spends its remaining steps pressing an already-empty recycling button — which is exactly
+the late-practice behaviour the Tossing Room baseline's full-loop recording showed and could
+only describe qualitatively. Here it is a count: **3,684 of 24,750 practice actions**, against
+163 recycling throws.
 
-Per seed the ratio ranges from **2.1** (seed 7: 51 vs 24) to **12.0** (seed 1: 156 vs 13),
-so the pooled 4.0 is a genuine central value rather than one run's accident — but the
-spread is wide, and a single-seed reading of this domain would have been badly misleading
-in either direction.
+Per seed the ratio ranges from **2.5** (seed 6, 40 vs 16) to **5.5** (seed 9, 83 vs 15), so the
+pooled 3.79 is a genuine central value rather than one run's accident — but a single-seed reading
+of this domain would still mislead by a factor of two in either direction.
 
-### 2. The learning-rate result: 4.0x slower, matching the attempt ratio
+### 2. The learning-rate result: roughly 4x slower, roughly matching the attempt ratio
 
 Transitions at which each family first reaches a given share of its own 140 test tasks:
 
 | level | TRASH | RECYCLING | ratio |
 |---|---|---|---|
-| 25% | 100 | 400 | **4.0x** |
-| 50% | 300 | 1200 | **4.0x** |
-| 75% | 1300 | 1700 | 1.3x |
-| 90% | 1400 | **never** | — |
+| 25% | 100 | 500 | **5.0x** |
+| 50% | 400 | 1700 | **4.2x** |
+| 75% | 600 | 2100 | 3.5x |
+| 90% | 600 | **never** | — |
 
-**This is the predicted finding, and it held.** The slowdown factor is 4.0 at both early
-thresholds, against a measured attempt ratio of 4.0. What was wrong was the predicted value
-of the ratio itself, not the relationship.
+Against a measured attempt ratio of **3.79:1**. The predicted *relationship* holds — recycling is
+slower by roughly the factor by which it is practised less — but the pre-#74 log's claim that it
+held **"to two significant figures at both thresholds"** does **not** survive: the ratios here
+are 5.0x, 4.2x and 3.5x against 3.79, and they drift monotonically downward as the threshold
+rises. The honest statement is "the same order, matching within about 30%", and the drift is the
+convergence in (4) seen from the other side.
 
-The convergence at 75% is the other half of the story: the gap closes late, so the further
-along the curve you measure, the smaller the effect looks.
+### 3. Per practice attempt, trash is the better sampler — the opposite of what the defective run said
 
-### 3. A scored success is not a landing, and the difference is wildly asymmetric
-
-This section exists because the obvious per-attempt comparison is wrong, and wrong in a way
-that would have flattered exactly the conclusion being tested.
-
-A throw's `add_effects` are `{<Kind>InBin(item, bin), HandEmpty(robot)}`. `<Kind>InBin` is
-`count >= 1`, and `HandEmpty` always holds after a throw because a throw always releases the
-item. **So a throw made into an already-non-empty bin is scored a success at any force at
-all.** The trash bin reaches that state constantly (the robot walks back for another item,
-and an `EMPTY`-family train task starts with 1–3 items already in each bin); the recycling
-bin, behind the one-way ledge with one throw per period, never does.
+The add-effect audit first, because it is what makes the rest readable. On the pre-#74 run a
+throw into an already-non-empty bin was scored a success at any force, and it happened to trash
+constantly and to recycling never. **Capacity-1 closed that, and this run measures it closed
+rather than assuming it:**
 
 | skill | landed / attempts | EES scored / attempts | thrown into a prefilled bin | scored successes that missed |
 |---|---|---|---|---|
-| `ThrowTrash` | **219/799** | 532/799 | **414/799** | **313/532** |
-| `ThrowRecycling` | **65/200** | 65/200 | **0/200** | **0/65** |
+| `ThrowTrash` | **286/618** | **286/618** | **0/618** | **0/286** |
+| `ThrowRecycling` | **50/163** | **50/163** | **0/163** | **0/50** |
 
-**58.8% of `ThrowTrash`'s recorded successes are throws that did not land.**
-`ThrowRecycling`'s record is exact. This is inherited from Tossing Room's effect structure
-rather than introduced by the split — but its *asymmetry* is created by precisely the layout
-asymmetry this experiment is about, so it cannot be waved away as a shared constant.
+Landed and scored are now the *same column*. In the top-right panel of the first figure the
+"EES scored a success" line sits exactly underneath "actually landed" for both skills, which is
+what a closed channel looks like.
 
-It is not a footnote to a per-attempt claim; it **reverses** it:
+With the labels honest, the per-attempt comparison reverses:
 
 | per greedy (learned-sampler) attempt | `ThrowTrash` | `ThrowRecycling` | gap | MDE |
 |---|---|---|---|---|
-| EES *scored* a success | 317/433 (73.2%) | 51/94 (54.3%) | **+18.95pp** | 15.94pp |
-| actually **landed** | **152/433 (35.1%)** | **51/94 (54.3%)** | **−19.15pp** | 15.94pp |
+| landed | **224/347** (64.6%) | **37/83** (44.6%) | **+19.98pp** | 17.12pp |
 
-**On the honest metric, recycling's sampler is the better one, by a detectable margin, on
-a quarter of the data.**
+**+19.98pp against a 17.12pp MDE: detectable, and pointing the other way from the pre-#74 run's
+−19.15pp.** The old finding — "recycling is the better sampler" — was an artifact of 313 of
+trash's 532 recorded successes being throws that missed. It is withdrawn.
 
-The epsilon-random draws are the control that makes this readable: `ThrowTrash` lands
-**67/366 (18.3%)** and `ThrowRecycling` **14/106 (13.2%)** on randomly chosen forces, both
-close to the ~19% first-principles base rate for a `U(0, 1)` force against a `U(0.5, 1.0)`
-target at tolerance 0.1. **The two throws are comparably hard.** The difference is entirely
-in what each sampler learned — and the trash sampler is the one being trained on ~59%
-false-positive labels.
+The epsilon-random draws remain the control, and they still say the two throws are comparably
+hard: `ThrowTrash` lands **62/271** on randomly chosen forces and `ThrowRecycling` **13/80**, a
+6.6pp gap against a **17.82pp** MDE — well inside it, so **no difference in intrinsic difficulty
+is claimed**. Both sit near the ~19% first-principles base rate for a `U(0, 1)` force against a
+`U(0.5, 1.0)` target at tolerance 0.1. The difference between the two skills is in what each
+sampler learned, and now the sampler with more practice is the better one.
 
-### 4. The endpoint: a null result, and the wrong place to look
+### 4. The endpoint is still a null result, and the per-seed test cannot even fire
 
 | | final sweep |
 |---|---|
-| TRASH | **127/140** |
-| RECYCLING | **122/140** |
-| gap | +3.57pp |
+| TRASH | **140/140** |
+| RECYCLING | **124/140** |
+| gap | +11.43pp |
 | binomial noise floor | 5.98pp |
-| minimum detectable effect (80%) | 16.74pp |
-| paired Wilcoxon over seeds | n = 6 after ties, W = 12.0, **p = 0.8125** |
+| minimum detectable effect (80%) | **16.74pp** |
+| paired Wilcoxon over seeds | n = 3 after ties, W = 6.0, **p = 0.2500** |
 
-**Reported loudly because it is the result most likely to be misread.** At 2500 transitions
-the two families are indistinguishable, and a +3.57pp gap sits far inside a 16.74pp MDE —
-this is "not enough data to tell them apart at the endpoint", not "they are the same". Four
-of ten seeds tie exactly, dropping the effective n to 6 and the attainable p floor to 0.031.
+**+11.43pp sits below the 16.74pp MDE, so the endpoint gap is not established** — and this is a
+different null from the pre-#74 one (+3.57pp), for a different reason. Seven of ten seeds tie
+exactly, at 14/14 against 14/14, which drops the Wilcoxon's effective n to 3 and its **attainable
+p floor to 0.2500** — the same number the test actually returned. **At this n the test could not
+have rejected under any outcome whatsoever**, so its p-value carries no information and should
+not be quoted as evidence of anything.
 
-Across the *whole* curve the picture is different but still not significant at this n:
-mean area under the per-family curve is **68.68** for TRASH against **55.74** for
-RECYCLING, a **+12.94pp** difference, paired Wilcoxon n = 10, **p = 0.1934**. Resolving that
-would need substantially more than 10 seeds.
+**Across the whole curve the picture is different, and this time it is significant.** Mean area
+under the per-family curve is **84.23** for TRASH against **43.10** for RECYCLING, a **+41.13pp**
+difference, paired Wilcoxon n = 10, **p = 0.0020**. The pre-#74 run measured +12.94pp at
+p = 0.1934 and could not resolve it. This one can, and by a wide margin — the entire effect lives
+in the shape of the curve, exactly where the old log said to look.
 
-`EMPTY` is **20/20** in the final sweep of every seed, sd exactly 0 — the deterministic
-control behaving as it should.
+`EMPTY` is **20/20 at every one of the 26 evaluation sweeps of every seed**, pre-practice
+included — 260/260 seed-checkpoints. It is the deterministic control, and it measures the
+symbolic model rather than either sampler.
 
-### 5. Competence is not a usable learning curve here, and it is actively misleading
+### 5. Learning is a switch, not a curve — per skill, and one seed never flips it
 
-The bottom-left panel plots three things per skill: what actually landed, what EES scored,
-and what EES's competence model believes. All three disagree.
+The pooled RECYCLING line in the first figure climbs from 22/140 to 124/140 and looks like a
+family improving steadily. It is not. Scoring every (seed, checkpoint) against 12/14 and 4/14 —
+the same thresholds the Tossing Room baseline used:
 
-* **Both competence lines sit far above everything else for the whole run.** At the end,
-  competence says 0.859 (trash) and 0.844 (recycling); the measured greedy *landing* rates
-  are 0.35 and 0.54. `OptimisticSkillCompetenceModel` is a windowed estimate under a
-  Beta(10, 1) prior whose mean is 0.909, and a skill with few observations barely moves off
-  it.
-* **Worse, the ranking inverts — twice over.** From transition 100 through 700, competence
-  rates `ThrowRecycling` *above* `ThrowTrash` (0.871/0.844/0.825/0.827/0.820/0.807/0.792
-  against 0.867/0.827/0.797/0.779/0.784/0.775/0.783). By the endpoint it has flipped to
-  rating trash above recycling (0.859 vs 0.844) — at which point recycling is in fact
-  landing 54.3% of its greedy throws against trash's 35.1%. **The estimate ends up ranking
-  the two skills backwards.**
+| skill | at an extreme (≥12/14 or ≤4/14) | anywhere in between | seed-checkpoints |
+|---|---|---|---|
+| `ThrowTrash` | **227/260** | 33/260 | 260 |
+| `ThrowRecycling` | **209/260** | 51/260 | 260 |
 
-**This is not cosmetic.** Competence is what `skill_costs()` turns into `-log(competence)`
-plan edge costs, and what `score_ground_skill` extrapolates when choosing what to practise.
-Here it is corrupted from both ends: the prior dominates the skill with few observations,
-and the add-effect check feeds it fabricated successes for the skill with many.
+The split domain shows the same shape as `tossingroom`, on both skills; the Tossing Room
+baseline reports 221/260 there, which is quoted from that log rather than re-measured here. Seeds
+sit at one end or the other and snap between them at a seed-specific moment; the smooth pooled
+line is an averaging artifact, and **describing RECYCLING as "still climbing" would be a
+statement about the mean rather than about any seed.**
+
+Per seed, the peak each family reached and where it ended:
+
+| seed | TRASH peak | TRASH final | RECYCLING peak | RECYCLING final |
+|---|---|---|---|---|
+| 0 | 14/14 | 14/14 | 14/14 | 14/14 |
+| 1 | 14/14 | 14/14 | **9/14** | **1/14** |
+| 2 | 14/14 | 14/14 | 14/14 | 14/14 |
+| 3 | 14/14 | 14/14 | 13/14 | 13/14 |
+| 4 | 14/14 | 14/14 | 14/14 | 14/14 |
+| 5 | 14/14 | 14/14 | 14/14 | 14/14 |
+| 6 | 14/14 | 14/14 | 14/14 | 14/14 |
+| 7 | 14/14 | 14/14 | 14/14 | 14/14 |
+| 8 | 14/14 | 14/14 | 14/14 | **12/14** |
+| 9 | 14/14 | 14/14 | 14/14 | 14/14 |
+
+**Every one of the ten seeds finishes TRASH at 14/14.** RECYCLING is eight seeds at 14/14, one
+at 13/14, and **seed 1 at 1/14**. Seed 1 is not a slow learner: its RECYCLING score across the 26
+checkpoints is `6, 9, 0, 6, 3, 8, 1, 1, 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1` —
+it reached **9/14 at 100 transitions**, fell out, and sat at **1/14 for the last 19 of 26
+checkpoints**. That is the split domain's version of the Tossing Room seed that reached 10/14
+mid-run and ended at 3/14, and the whole of the pooled 124/140 rather than 140/140 is that one
+seed plus two tasks elsewhere.
+
+### 6. The mechanism: eight learned-sampler datapoints per run, and one of them is enough to get stuck
+
+This is the sharpest thing the experiment says, and it is now measured rather than inferred from
+a video.
+
+**How little the recycling sampler is ever asked.** Of the two throws' **430** learned-sampler
+draws across all ten seeds, recycling gets **83**:
+
+| seed | greedy `ThrowTrash` draws | greedy `ThrowRecycling` draws |
+|---|---|---|
+| 0 | 34 | 11 |
+| 1 | 30 | 11 |
+| 2 | 39 | 11 |
+| 3 | 30 | 7 |
+| 4 | 34 | 8 |
+| 5 | 40 | 7 |
+| 6 | 25 | 5 |
+| 7 | 29 | 10 |
+| 8 | 34 | 6 |
+| 9 | 52 | 7 |
+| **total** | **347/430** | **83/430** |
+
+**A whole 2500-transition run gives the recycling sampler between 5 and 11 chances to correct
+itself, median 7.5.** With `--exploration-epsilon 0.5` half of every attempt is a coin flip that teaches the
+classifier nothing about its own belief, so the 163 recycling attempts become 83 learned draws,
+and those 83 are spread over 25 practice periods × 10 seeds.
+
+**What it answers with them.** A target force is drawn `U(0.5, 1.0)` and the tolerance is 0.1, so
+**any force below 0.4 misses whatever task it was aiming at** — a wrong answer that needs no
+reference to the particular target.
+
+| skill | greedy draws below 0.4 | longest run of consecutive all-missing practice periods, per seed |
+|---|---|---|
+| `ThrowTrash` | **44/347** | 1, 1, 1, 0, 0, 1, 0, 1, 1, 2 |
+| `ThrowRecycling` | **24/83** | **5, 7, 9, 3, 1, 1, 1, 2, 4, 5** |
+
+**Trash's worst run of all-missing periods across ten seeds is 2. Recycling reaches 9.** The
+bottom-right panel of the per-seed figure is this table drawn: several orange traces leave the
+reachable band entirely and stay near 0.00 for the middle third of the run, while no blue trace
+does.
+
+Seed 1 is the case in full. Its eleven greedy recycling forces, in practice-period order:
+
+| period | 3 | 4 | 5 | 7 | 9 | 10 | 11 | 17 | 18 | 21 | 22 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| force | 0.40 | 0.65 | 0.89 | **0.03** | **0.00** | **0.23** | **0.01** | **0.17** | **0.15** | 0.67 | **0.28** |
+
+**Eight of eleven are below the reachable band, and seven of those are consecutive draws spanning
+periods 7 to 18** — a confident, stable, wrong answer, not scatter. Its RECYCLING score is frozen
+at 1/14 across exactly that stretch. This is the same picture the Tossing Room baseline's video
+showed (a sampler pinned near 0.00 force for four consecutive checkpoints); the difference is
+that here it is 11 numbers from the trace rather than six frames.
+
+**The asymmetry is the finding.** A trash sampler that convinces itself of a wrong force gets up
+to twelve corrections in the next 100-step period. A recycling sampler gets **one**, and only in
+periods where EES chooses to practise it at all — so the same wrong belief costs the two skills
+completely different amounts of time to escape, and for one seed in ten it never was escaped
+inside the budget.
+
+### 7. Competence, re-measured: no longer backwards, still an overestimate
+
+| | final competence | measured greedy landing rate |
+|---|---|---|
+| `ThrowTrash` | 0.927 | 224/347 (64.6%) |
+| `ThrowRecycling` | 0.800 | 37/83 (44.6%) |
+
+**The pre-#74 finding that EES's competence estimate ranks the two skills backwards does not
+survive.** It ranked trash 0.859 below recycling's measured performance then because the
+add-effect defect was feeding trash fabricated successes; with the defect closed, competence
+ranks the two in the correct order at the endpoint and throughout the second half of the run.
+
+Two things about it are still worth recording. It remains a substantial **overestimate** of both
+— 0.927 against a measured 64.6% and 0.800 against 44.6% — because `OptimisticSkillCompetenceModel`
+is a windowed estimate under a Beta(10, 1) prior whose mean is 0.909. And the overestimate is
+**worse for the skill with fewer observations**: recycling's competence never falls below 0.742
+across the whole run, while trash's drops to 0.543 at 500 transitions and then climbs, which is
+what an estimate that is actually tracking data looks like. Competence is what `skill_costs()`
+turns into `-log(competence)` plan edge costs and what `score_ground_skill` extrapolates when
+choosing what to practise, so a skill whose estimate never moves off the prior is a skill the
+planner has no reason to prioritise.
+
+## Video
+
+[`2026-08-05-tossingroomsplit-cap1-eval-progression-recycling.mp4`](./2026-08-05-tossingroomsplit-cap1-eval-progression-recycling.mp4)
+— seed 5's own evaluation of its test task 0 at 0 / 500 / 1000 / 1500 / 2000 / 2500 transitions,
+each segment preceded by a title card naming its transition count.
+
+**Seed choice is a rule, not a selection:** the lowest seed whose test task 0 belongs to the
+RECYCLING family. Seeds 0, 5 and 7 qualify; seed 5 is used because it is the one whose
+per-checkpoint scores show the switch flipping *inside* the recorded window — `3, 5, 6, 8, 6,
+14` across transitions 1500–2000 — so the clip contains both sides of it rather than only the
+trained end. It is deliberately not success-selected: every seed but seed 1 ends this family at
+13/14 or 14/14.
+
+The recorded run reproduces `results/tossingroomsplit-cap1-throws/ees/5/stats.json`
+**byte-for-byte** (identical SHA-256), so rendering did not perturb the run it recorded.
+
+**Every number below is read off the frames.** This task's recycling `target_force` is
+**0.72**, so with `throw_tolerance` 0.1 the winning window is 0.62–0.82.
+
+| checkpoint | thrown force | frames | outcome |
+|---|---|---|---|
+| 0 | **0.38** | 13 | miss — below the reachable band |
+| 500 | **0.30** | 13 | miss — below the reachable band |
+| 1000 | **0.84** | 13 | miss — inside the band, over *this* target |
+| 1500 | **0.92** | 13 | miss — inside the band, over *this* target |
+| 2000 | **0.77** | 5 | **solved** |
+| 2500 | **0.74** | 5 | **solved** |
+
+The approach is identical at all six: `PickupRecycling(robot, recycling, room_3, pile)`,
+`MoveRoom` 3→2, `MoveRoom` 2→1, `ThrowRecycling`. Only the force changes, and the whole
+progression is legible in that one number. **Every failure ends the same way** — the item is
+released, room 3 becomes unreachable across the one-way ledge, Fast Downward correctly reports
+no plan, and the episode spends its remaining **eight frames** emitting `no-op (no plan)` until
+the horizon of 12 expires. A missed recycling throw is terminal at any horizon, which is why
+this family cannot retry inside an evaluation episode either, not just inside a practice period.
+
+Two things the clip shows that the tables cannot. The first two checkpoints are the
+**pinned-below-the-band** regime the trace counts (24/83 of all greedy recycling draws): 0.38
+and 0.30 are wrong for *every* task in the domain, not just this one. The middle two are a
+different failure — 0.84 and 0.92 are perfectly reachable forces that simply overshoot this
+task's 0.72, i.e. a sampler that has escaped the wrong region but not yet learned to condition
+on the target. The switch between 1500 and 2000 is the sampler crossing from the second regime
+into the tolerance window, and the episode collapses from 13 frames to 5 the moment it does.
 
 ## Verdict on the prediction
 
 | claim | verdict |
 |---|---|
-| recycling gets **exactly 1 attempt per practice period, ever** | **held exactly** — 0 or 1 in all 250 periods, never 2 |
-| trash gets **~12 attempts** in a 100-step period | **held, conditionally** — 12 is the observed ceiling, reached in 30 periods, but 124 of 250 periods have zero |
-| attempt ratio **≈ 1:12** | **refuted** — measured **4.0:1** (799:200); EES spends 91.5% of practice actions walking |
-| recycling learns **far slower, at roughly the attempt ratio** | **held, and precisely** — 4.0x slower to both the 25% and 50% levels, against a 4.0:1 attempt ratio |
-| **possibly not at all** within a practice budget | **refuted** — recycling reaches 122/140, statistically indistinguishable from trash's 127/140 |
-| *(unpredicted)* the two samplers are comparably good per attempt | **refuted, in recycling's favour** — 51/94 vs 152/433 landings, −19.15pp against a 15.94pp MDE |
+| recycling gets **exactly 1 attempt per practice period, ever** | **held exactly** — 0 or 1 in all 250 periods, never 2 (163 at 1, 87 at 0) |
+| trash gets **~12 attempts** in a 100-step period | **held, conditionally** — 12 is the observed ceiling, reached in 30 periods, but 144 of 250 have zero |
+| attempt ratio **≈ 1:12** | **refuted** — measured **3.79:1** (618:163) |
+| recycling learns **far slower, at roughly the attempt ratio** | **held, loosely** — 5.0x / 4.2x / 3.5x against a 3.79:1 ratio. The pre-#74 "two significant figures" version is withdrawn |
+| **possibly not at all** within a practice budget | **refuted for 9 seeds, held for 1** — 124/140 pooled, but seed 1 ends at 1/14 having peaked at 9/14 |
+| *(pre-#74, now withdrawn)* recycling is the **better** sampler per attempt | **reversed** — trash 224/347 vs recycling 37/83, +19.98pp against a 17.12pp MDE |
+| *(pre-#74, now withdrawn)* competence ranks the two skills **backwards** | **does not survive** — 0.927 vs 0.800 is the correct order |
+| *(new)* learning is a **switch**, not a curve | **held** — 227/260 and 209/260 seed-checkpoints at an extreme |
 
 ## Recommendation
 
-1. **Fix the `ItemInBin` success inflation, in Tossing Room as well as here.** This is the
-   most actionable finding. A throw into an already-non-empty bin is currently scored a
-   success at any force, corrupting both the sampler's training labels and the competence
-   estimate, and doing so *asymmetrically* between the two families. 313/532 of one skill's
-   successes are fabricated and 0/65 of the other's. Every per-attempt number this project
-   has published on Tossing Room's `Throw` is affected. A goal-relative fix (score against
-   the bin count *increasing*, not against `count >= 1`) is the obvious direction, and needs
-   its own PR and its own evidence.
-2. **Do not read this domain at its endpoint.** The pre-specified endpoint comparison is a
-   null result and would be reported as "the split changes nothing". Every real effect is in
-   the shape of the curve. Any future experiment here should pre-specify a curve statistic
-   (transitions-to-threshold, or area under the curve) rather than a final success rate.
-3. **The competence-model finding deserves its own investigation.** It is not specific to
-   this domain — it is `OptimisticSkillCompetenceModel` under a Beta(10, 1) prior meeting a
-   skill with few observations, and it plausibly affects Ball-Ring and Tossing Room wherever
-   one skill is much rarer than another. Here it ends up ranking the two skills backwards.
-4. **10 seeds is not enough for the AUC comparison** (p = 0.1934 on a +12.94pp difference).
-   The transitions-to-threshold result does not need more seeds — it is a structural 4.0x —
-   but any claim about the size of the endpoint or AUC gap does.
-5. **Nothing here argues for or against the split as a design.** The split is what made the
-   question askable; it is not itself under test, and no shared-sampler arm was run. In
-   particular, result (3) should not be read as "separate samplers are better" — it is a
-   statement about two skills within one run, not a comparison of two architectures.
+1. **Report this domain by curve statistic, never by endpoint.** The pre-specified endpoint is a
+   null result at +11.43pp against a 16.74pp MDE, and the per-seed Wilcoxon cannot fire at all
+   (7 of 10 seeds tie, p floor 0.2500 = the p returned). The AUC comparison resolves the same
+   effect at **+41.13pp, p = 0.0020**. Pre-specify AUC or transitions-to-threshold next time.
+2. **The recycling sampler's problem is sample count, and it is measurable now.** 83/430 of the
+   learned-sampler draws, 5-11 per run against trash's 25-52, 24/83 of them outside the reachable
+   band, and
+   all-missing streaks up to 9 periods. The obvious intervention is a **cheaper reset** — the
+   per-cycle `PERIOD` reset is the only thing that returns the robot to the pile, so the
+   recycling budget is exactly one throw per cycle by construction. A reset-interval arm on this
+   domain would test it directly, and `--practice-reset-interval` already exists.
+3. **`PressRecycling` at 3,684/24,750 is worth its own look.** It is 22x the recycling throw count
+   and is almost entirely a stranded robot pressing an already-empty button. That is practice
+   budget being spent on a no-op, and it is the largest single change the capacity-1 redesign made
+   to what practice *does* in this domain.
+4. **Do not quote the competence model as a learning curve**, even now that it ranks correctly. It
+   overestimates both skills by 20–30 points and never moves off the Beta(10, 1) prior for the
+   skill with few observations — which is the skill the planner most needs a real estimate of.
+5. **10 seeds is enough for the AUC claim and not for the endpoint one.** The +41.13pp AUC
+   difference is resolved at p = 0.0020; the +11.43pp endpoint gap needs roughly four times the
+   seeds, and would still be measuring the wrong thing.
+6. **Nothing here argues for or against the split as a design.** No shared-sampler arm was run.
+   Result (3) compares two skills within one run, not two architectures.
 
 ## Raw data
 
 * [`2026-08-05-tossingroomsplit-throw-rates.json`](./2026-08-05-tossingroomsplit-throw-rates.json)
   — all ten seeds' per-period skill tallies (attempts, successes, landings, prefilled-bin
-  attempts, and the epsilon-random split of each), per-cycle competence, and per-sweep
-  evaluation records with their goal-family breakdowns. **Every count in this file
-  re-derives from it**, and none is reconstructed by multiplying a percentage by *n*.
+  attempts, the epsilon-random split of each, and every learned-sampler force with the target it
+  aimed at), per-cycle competence, and per-sweep evaluation records with their goal-family
+  breakdowns. **Every count on this page re-derives from it**, and none is reconstructed by
+  multiplying a percentage by *n*. Checked rather than asserted: re-running the analysis with
+  `--traces` pointing at this one committed file instead of the ten shards produces a
+  **byte-identical** report.
 * [`2026-08-05-tossingroomsplit-throw-rates.png`](./2026-08-05-tossingroomsplit-throw-rates.png)
-  — the figure above.
+  — the pooled figure.
+* [`2026-08-05-tossingroomsplit-throw-rates-per-seed.png`](./2026-08-05-tossingroomsplit-throw-rates-per-seed.png)
+  — the per-seed spread, the seed-checkpoint distribution, and what each sampler answered.
+* [`2026-08-05-tossingroomsplit-cap1-eval-progression-recycling.mp4`](./2026-08-05-tossingroomsplit-cap1-eval-progression-recycling.mp4)
+  — the video above.
