@@ -28,7 +28,9 @@ _RECYCLING_BIN = TossingRoomEnvironment.recycling_bin
 
 
 def _state():
-    return _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    return _ENV.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
 
 
 def test_pickup_declares_its_parameters_and_effects() -> None:
@@ -331,7 +333,11 @@ class TestAThrowIsScoredASuccessOnlyWhenItLands:
     @staticmethod
     def _at_the_recycling_bin(*, env, count: int):
         state = env.build_initial_state(
-            trash_target_force=0.5, recycling_target_force=0.5, recycling_count=count
+            trash_weight=1.0,
+            recycling_weight=1.0,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+            recycling_count=count,
         )
         state.set(obj=env.robot, feature_name="room", feature_val=float(env.recycling_bin_room))
         state.set(obj=env.robot, feature_name="holding", feature_val=float(env.RECYCLING_KIND))

@@ -152,10 +152,14 @@ class TossingRoomSkills:
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         """Uniform(0, 1) per continuous dim -- only Throw has one (the force). The
-        range is a plausible force band but is NOT concentrated on any item's target,
-        so a random draw usually misses the throw_tolerance window: that's the point,
-        leaving the throw skill something a future learning Method could specialize.
-        The oracle bypasses this entirely, setting force to the known target."""
+        range is a plausible force band but is NOT concentrated on the force any
+        particular task requires, so a random draw usually misses the throw_tolerance
+        window (measured 16/80 over applicable groundings): that's the point, leaving the
+        throw skill something a learning Method must specialize. There is no single
+        force that works everywhere -- the requirement is an unobserved function of the
+        bin's throw_distance and the item's weight, so a sampler that ignores the state
+        cannot beat that 16/80. The oracle bypasses this entirely via
+        `TossingRoomEnvironment.required_force`, which it is privileged to know."""
         return rng.uniform(0.0, 1.0, size=ground_skill.skill.param_dim)
 
     @staticmethod

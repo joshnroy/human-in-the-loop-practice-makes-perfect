@@ -4,8 +4,9 @@ every evaluation sweep and every interaction period, dumped as JSON for
 
 Why this exists rather than being read off `--output-dir`: `stats.json` records the
 *outcome* (tasks solved), and the question this domain poses is about the one
-continuous parameter EES has to learn -- `Throw`'s force, against a per-task
-`target_force` -- which never leaves the method's internals. So this hooks the two
+continuous parameter EES has to learn -- `Throw`'s force, against the force each
+grounding actually requires (an unobserved function of the bin's `throw_distance` and
+the item's `weight`) -- which never leaves the method's internals. So this hooks the two
 places the numbers live: `EesMethod.execute_ground_skill` (which force was chosen, and
 whether the epsilon-greedy random branch chose it) and `Environment.take_action`
 (whether the action changed the state at all, i.e. was a silent no-op -- the failure
@@ -53,7 +54,7 @@ class Bucket(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # |chosen force - that task's target_force|, split by whether the epsilon-greedy
+    # |chosen force - that grounding's required force|, split by whether the epsilon-greedy
     # random branch made the choice: only the greedy ones say anything about what the
     # classifier has learned, which is why the two are never pooled.
     greedy_throw_errors: list[float] = Field(default_factory=list)
@@ -116,9 +117,15 @@ class TracingEnvironment(TossingRoomEnvironment):
 
 
 class TracingEesMethod(EesMethod):
-    """Records every skill executed and, for `Throw`, the error between the chosen
-    force and the held item's own target -- plus the phase boundaries the buckets need.
-    """
+    """Records every skill executed and, for `Throw`, the error between the chosen force
+    and the force that grounding actually required -- plus the phase boundaries the
+    buckets need.
+
+    The required force is not a state feature (that was the defect the throw
+    representation change removed); it is `TossingRoomEnvironment.required_force` of the
+    bound bin's `throw_distance` and the bound item's `weight`. Reading it here is
+    privileged instrumentation, exactly as reading `target_force` used to be -- the
+    method under test never sees the coefficients."""
 
     log: TraceLog
 
@@ -140,9 +147,13 @@ class TracingEesMethod(EesMethod):
         name = ground_skill.skill.name
         bucket.skill_counts[name] = bucket.skill_counts.get(name, 0) + 1
         if ground_skill.skill == TossingRoomSkills.THROW:
-            _robot, item, _bin, _room = ground_skill.objects
-            target = float(state.get(obj=item, feature_name="target_force"))
-            error = abs(float(labeled.action[2]) - target)
+            _robot, item, bin_obj, _room = ground_skill.objects
+            assert isinstance(self.env, TossingRoomEnvironment)
+            required = self.env.required_force(
+                throw_distance=float(state.get(obj=bin_obj, feature_name="throw_distance")),
+                item_weight=float(state.get(obj=item, feature_name="weight")),
+            )
+            error = abs(float(labeled.action[2]) - required)
             if record is not None and record.was_random_exploration:
                 bucket.random_throw_errors.append(error)
             else:

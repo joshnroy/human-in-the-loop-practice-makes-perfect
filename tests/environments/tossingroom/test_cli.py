@@ -39,8 +39,31 @@ def test_add_arguments_defaults_match_live_class_values() -> None:
     assert args.trash_bin_room == fields["trash_bin_room"].default
     assert args.blocked_right_from == fields["blocked_right_from"].default
     assert args.throw_tolerance == fields["throw_tolerance"].default
-    assert args.target_low == TossingRoomTasks.model_fields["target_low"].default
+    # The (unobserved) required-force relation, in reference form.
+    assert args.reference_force == fields["reference_force"].default
+    assert args.reference_distance == fields["reference_distance"].default
+    assert args.reference_weight == fields["reference_weight"].default
+    assert args.distance_coefficient == fields["distance_coefficient"].default
+    assert args.weight_coefficient == fields["weight_coefficient"].default
+    assert args.canonical_throw_distance == fields["canonical_throw_distance"].default
+    assert args.canonical_item_weight == fields["canonical_item_weight"].default
+    # ...and the two per-task cause ranges it consumes.
+    task_fields = TossingRoomTasks.model_fields
+    assert args.distance_low == task_fields["distance_low"].default
+    assert args.distance_high == task_fields["distance_high"].default
+    assert args.weight_low == task_fields["weight_low"].default
+    assert args.weight_high == task_fields["weight_high"].default
     assert args.goal_type is None
+
+
+def test_there_is_no_target_force_flag() -> None:
+    """The force a throw needs is not configurable per item and not in the state: it is
+    derived from the bin's throw_distance and the item's weight by a relation only the
+    environment knows. A --canonical-target-force flag would be a fourth way to set it."""
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["--canonical-target-force", "0.5"])
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["--target-low", "0.5"])
 
 
 def test_num_test_tasks_field_default_matches_the_global_flag_default() -> None:
@@ -108,8 +131,13 @@ def test_run_method_applies_seed_deterministically() -> None:
     a = TossingRoomTasks(env=TossingRoomEnvironment(), seed=99).sample_test_task()
     b = TossingRoomTasks(env=TossingRoomEnvironment(), seed=99).sample_test_task()
     assert a.initial_state.get(
-        obj=TossingRoomEnvironment.recycling, feature_name="target_force"
-    ) == b.initial_state.get(obj=TossingRoomEnvironment.recycling, feature_name="target_force")
+        obj=TossingRoomEnvironment.recycling, feature_name="weight"
+    ) == b.initial_state.get(obj=TossingRoomEnvironment.recycling, feature_name="weight")
+    assert a.initial_state.get(
+        obj=TossingRoomEnvironment.recycling_bin, feature_name="throw_distance"
+    ) == b.initial_state.get(
+        obj=TossingRoomEnvironment.recycling_bin, feature_name="throw_distance"
+    )
 
 
 def test_run_method_respects_a_larger_layout(*, capsys: pytest.CaptureFixture[str]) -> None:

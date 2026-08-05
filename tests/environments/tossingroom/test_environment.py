@@ -14,7 +14,9 @@ def _env() -> TossingRoomEnvironment:
 
 
 def _fresh_state(*, env: TossingRoomEnvironment):
-    state = env.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = env.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     env.set_state(state=state)
     return state
 
@@ -49,16 +51,27 @@ def test_hard_reset_sets_canonical_starting_state() -> None:
 
 def test_build_initial_state_places_bins_and_buttons_in_their_rooms() -> None:
     env = _env()
-    state = env.build_initial_state(trash_target_force=0.7, recycling_target_force=0.3)
+    state = env.build_initial_state(
+        trash_weight=0.7,
+        recycling_weight=0.3,
+        trash_bin_distance=1.5,
+        recycling_bin_distance=2.5,
+    )
     assert state.get(obj=_RECYCLING_BIN, feature_name="room") == env.recycling_bin_room
     assert state.get(obj=_TRASH_BIN, feature_name="room") == env.trash_bin_room
-    assert state.get(obj=TossingRoomEnvironment.trash, feature_name="target_force") == 0.7
-    assert state.get(obj=TossingRoomEnvironment.recycling, feature_name="target_force") == 0.3
+    # The two per-task CAUSES of the required throw force land on the objects that own
+    # them -- the weight on the item, the distance on the bin. Neither is the force.
+    assert state.get(obj=TossingRoomEnvironment.trash, feature_name="weight") == 0.7
+    assert state.get(obj=TossingRoomEnvironment.recycling, feature_name="weight") == 0.3
+    assert state.get(obj=_TRASH_BIN, feature_name="throw_distance") == 1.5
+    assert state.get(obj=_RECYCLING_BIN, feature_name="throw_distance") == 2.5
 
 
 def test_build_initial_state_lays_out_room_indices() -> None:
     env = TossingRoomEnvironment(num_rooms=5)
-    state = env.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = env.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     rooms = env.get_rooms()
     assert len(rooms) == 5
     for i, room in enumerate(rooms):
@@ -130,7 +143,9 @@ def test_ledge_allows_stepping_left_across_it() -> None:
 
 
 def _carry_to_recycling_room(*, env: TossingRoomEnvironment):
-    state = env.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = env.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.recycling_bin_room))
     state.set(
         obj=_ROBOT, feature_name="holding", feature_val=float(TossingRoomEnvironment.RECYCLING_KIND)
@@ -159,7 +174,7 @@ def test_throw_outside_tolerance_consumes_the_item_without_binning_it() -> None:
     this rather than as a number today's code reproduces).
 
     The thrown item is gone rather than recoverable. Items are singleton
-    discriminators with features (kind, target_force) and no position, so "it is lying
+    discriminators with features (kind, weight) and no position, so "it is lying
     on the floor near the bin" is not representable -- and making it so would
     reintroduce the cheap retry this fixes. The only way to try again is a fresh item
     from the limitless pile, which costs a round trip to the start room. That is what
@@ -167,7 +182,8 @@ def test_throw_outside_tolerance_consumes_the_item_without_binning_it() -> None:
     still afford to retry."""
     env = _env()
     _carry_to_recycling_room(env=env)
-    # target is 0.5, tolerance 0.1 -> a force of 0.9 misses.
+    # The helper builds the reference throw (weight 1.0, distance 2.0), whose required
+    # force is 0.5; with tolerance 0.1 a force of 0.9 misses.
     next_state = env.take_action(
         action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.9)
     )
@@ -198,7 +214,9 @@ def test_throw_in_the_wrong_room_still_releases_the_item() -> None:
     are not standing next to, but it does leave your hand. Only an empty-handed throw
     is a true no-op, since there is nothing to release."""
     env = _env()
-    state = env.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = env.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     state.set(
         obj=_ROBOT, feature_name="holding", feature_val=float(TossingRoomEnvironment.RECYCLING_KIND)
     )
@@ -223,7 +241,12 @@ def test_throw_with_an_empty_hand_is_a_no_op() -> None:
 def test_press_outside_a_button_room_is_a_no_op() -> None:
     env = _env()
     state = env.build_initial_state(
-        trash_target_force=0.5, recycling_target_force=0.5, recycling_count=1, trash_count=1
+        trash_weight=1.0,
+        recycling_weight=1.0,
+        trash_bin_distance=2.0,
+        recycling_bin_distance=2.0,
+        recycling_count=1,
+        trash_count=1,
     )
     # Robot at start_room, which holds neither bin's button.
     env.set_state(state=state)
@@ -244,7 +267,11 @@ class TestBinsHoldAtMostOneItem:
     @staticmethod
     def _at_the_full_recycling_bin(*, env: TossingRoomEnvironment):
         state = env.build_initial_state(
-            trash_target_force=0.5, recycling_target_force=0.5, recycling_count=1
+            trash_weight=1.0,
+            recycling_weight=1.0,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+            recycling_count=1,
         )
         state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.recycling_bin_room))
         state.set(
@@ -293,7 +320,11 @@ class TestBinsHoldAtMostOneItem:
     def test_build_initial_state_rejects_a_count_beyond_capacity() -> None:
         with pytest.raises(ValueError, match="at most one item"):
             _env().build_initial_state(
-                trash_target_force=0.5, recycling_target_force=0.5, trash_count=2
+                trash_weight=1.0,
+                recycling_weight=1.0,
+                trash_bin_distance=2.0,
+                recycling_bin_distance=2.0,
+                trash_count=2,
             )
 
 
@@ -306,8 +337,10 @@ class TestEachBinHasItsOwnButtonBesideIt:
     @staticmethod
     def _both_bins_full(*, env: TossingRoomEnvironment):
         state = env.build_initial_state(
-            trash_target_force=0.5,
-            recycling_target_force=0.5,
+            trash_weight=1.0,
+            recycling_weight=1.0,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
             recycling_count=1,
             trash_count=1,
         )

@@ -126,12 +126,19 @@ class SkillOraclePolicy:
             return SkillOraclePolicy._move_toward(
                 rooms=rooms, robot_room=robot_room, target_room=bin_room
             )
-        # In the bin's room, holding the item: throw with force set to the known target.
-        target = state.get(obj=item, feature_name="target_force")
+        # In the bin's room, holding the item: throw with the force the environment's own
+        # relation says this (distance, weight) pair needs. The oracle is privileged
+        # twice over here -- it reads the two causes out of the State like anyone could,
+        # AND it knows the coefficients, which no learner does. Calling
+        # env.required_force rather than re-deriving it keeps the relation in one place.
+        required = env.required_force(
+            throw_distance=float(state.get(obj=bin_obj, feature_name="throw_distance")),
+            item_weight=float(state.get(obj=item, feature_name="weight")),
+        )
         ground_skill = GroundSkill(
             skill=TossingRoomSkills.THROW, objects=(env.robot, item, bin_obj, rooms[robot_room])
         )
-        return ground_skill, np.array([target])
+        return ground_skill, np.array([required])
 
     @staticmethod
     def _move_toward(
