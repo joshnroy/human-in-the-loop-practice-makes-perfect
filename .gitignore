@@ -218,3 +218,13 @@ __marimo__/
 .streamlit/secrets.toml
 results/
 .claude/worktrees/
+
+# Third-party reference checkouts, for coding-style/API reference only. Never committed:
+# 1.9GB, and an embedded git repo inside this one confuses `git add -A`.
+reference/
+
+# Local working area: drafts under review, raw evidence behind a report, one-off probes.
+# Deliberately in-repo rather than /tmp so a draft survives a reboot and sits beside the
+# code it is about -- but never committed, because none of it has been through review.
+# Anything here that turns out to matter gets promoted to docs/ in its own PR.
+scratch/
