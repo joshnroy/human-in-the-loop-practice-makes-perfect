@@ -81,7 +81,9 @@ class SkillOraclePolicy:
             # Pick the item up from the pile at start (where the robot begins).
             ground_skill = GroundSkill(
                 skill=TossingRoomSkills.PICKUP,
-                objects=(env.robot, item, rooms[robot_room], env.pile),
+                # ?bin is the item's own bin: Pickup's model deletes ItemInBin for the
+                # item it replaces, and BinAcceptsItem pins the binding.
+                objects=(env.robot, item, rooms[robot_room], env.pile, bin_obj),
             )
             return ground_skill, np.zeros(0)
         if robot_room != bin_room:

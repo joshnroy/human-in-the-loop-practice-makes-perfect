@@ -1,5 +1,6 @@
 from collections import Counter
 
+import numpy as np
 import pytest
 
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
@@ -74,6 +75,50 @@ def test_empty_goal_starts_with_both_bins_non_empty() -> None:
         >= 1.0
     )
     assert task.initial_state.get(obj=TossingRoomEnvironment.trash_bin, feature_name="count") >= 1.0
+
+
+def test_a_prefilled_bin_does_not_already_satisfy_a_throw_goal() -> None:
+    """An EMPTY-goal task prefills both bins (1..3 items), and a practice period runs
+    those tasks back to back without a reset. `ItemInBin` is both a throw goal AND
+    `Throw`'s add effect, so a count-based reading made every throw task that follows
+    an EMPTY task already-solved at reset -- and, worse, made every `Throw` executed in
+    that period score a success at any force. The goal must be about THIS item, not
+    about whether the bin happens to hold something."""
+    empty_task = _tasks(seed=2, forced_goal_type=TossingRoomGoalType.EMPTY).sample_train_task()
+    prefilled = empty_task.initial_state
+    # Non-vacuity: this really is a prefilled state, and the EMPTY goal really is open.
+    assert prefilled.get(obj=TossingRoomEnvironment.trash_bin, feature_name="count") >= 1.0
+    assert prefilled.get(obj=TossingRoomEnvironment.recycling_bin, feature_name="count") >= 1.0
+    assert empty_task.goal.is_satisfied(state=prefilled) is False
+
+    for goal_type in (TossingRoomGoalType.TRASH, TossingRoomGoalType.RECYCLING):
+        throw_task = _tasks(seed=2, forced_goal_type=goal_type).sample_train_task()
+        assert throw_task.goal.is_satisfied(state=prefilled) is False, (
+            f"the {goal_type.value} goal reads as already solved in a state whose only "
+            f"claim is that the bins were prefilled by an EMPTY task"
+        )
+
+
+def test_the_empty_goal_still_works_off_the_bin_counts() -> None:
+    """The EMPTY family must stay count-based: `BinEmpty` is about the bin, not about
+    any one item, and pressing the button is what satisfies it."""
+    env = TossingRoomEnvironment()
+    task = TossingRoomTasks(
+        env=env, seed=2, forced_goal_type=TossingRoomGoalType.EMPTY
+    ).sample_train_task()
+    press = np.array([float(TossingRoomEnvironment.SKILL_PRESS), 0.0, 0.0])
+    state = task.initial_state
+    assert task.goal.is_satisfied(state=state) is False  # non-vacuity: starts unsatisfied
+    env.set_state(state=state)
+    # The robot starts away from the button, so this press is a no-op.
+    assert task.goal.is_satisfied(state=env.take_action(action=press)) is False
+    state = env.get_current_state()
+    state.set(obj=env.robot, feature_name="room", feature_val=float(env.button_room))
+    env.set_state(state=state)
+    pressed = env.take_action(action=press)
+    assert pressed.get(obj=env.recycling_bin, feature_name="count") == 0.0
+    assert pressed.get(obj=env.trash_bin, feature_name="count") == 0.0
+    assert task.goal.is_satisfied(state=pressed) is True
 
 
 def test_target_force_is_within_the_sampled_range() -> None:

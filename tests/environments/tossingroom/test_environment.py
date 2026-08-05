@@ -242,6 +242,79 @@ def test_press_outside_the_button_room_is_a_no_op() -> None:
     assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 2.0
 
 
+class TestTheInBinFlagTracksThisItemNotTheBinContents:
+    """`in_bin` is what `ItemInBin` -- `Throw`'s add effect, and therefore EES's
+    per-attempt success label -- reads. It must be true for exactly the throws that
+    landed, so it is set only by a landing, and cleared by the two things that replace
+    or destroy the item in play: fetching a fresh one off the pile, and incinerating
+    the bins."""
+
+    @staticmethod
+    def _in_bin(*, state, item) -> float:
+        return state.get(obj=item, feature_name="in_bin")
+
+    @staticmethod
+    def test_build_initial_state_never_starts_an_item_in_a_bin_even_when_prefilled() -> None:
+        env = _env()
+        state = env.build_initial_state(
+            trash_target_force=0.5, recycling_target_force=0.5, recycling_count=3, trash_count=2
+        )
+        # Non-vacuity: the bins really are prefilled, exactly as an EMPTY task's are.
+        assert state.get(obj=_RECYCLING_BIN, feature_name="count") == 3.0
+        assert state.get(obj=_TRASH_BIN, feature_name="count") == 2.0
+        cls = TestTheInBinFlagTracksThisItemNotTheBinContents
+        assert cls._in_bin(state=state, item=TossingRoomEnvironment.recycling) == 0.0
+        assert cls._in_bin(state=state, item=TossingRoomEnvironment.trash) == 0.0
+
+    @staticmethod
+    def test_a_landed_throw_sets_the_flag_and_a_miss_leaves_it_clear() -> None:
+        cls = TestTheInBinFlagTracksThisItemNotTheBinContents
+        for force, expected_flag, expected_count in ((0.5, 1.0, 1.0), (0.9, 0.0, 0.0)):
+            env = _env()
+            _carry_to_recycling_room(env=env)
+            next_state = env.take_action(
+                action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=force)
+            )
+            # Non-vacuity: the two forces really do straddle the tolerance window.
+            assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == expected_count
+            assert cls._in_bin(state=next_state, item=TossingRoomEnvironment.recycling) == (
+                expected_flag
+            )
+
+    @staticmethod
+    def test_pickup_clears_the_flag_of_the_item_it_fetches() -> None:
+        """The item drawn off the limitless pile is a fresh one, so whatever an earlier
+        throw of that kind achieved does not carry over -- this is what stops the first
+        landed throw of a practice period making every later one score free."""
+        env = _env()
+        state = _fresh_state(env=env)
+        state.set(obj=TossingRoomEnvironment.trash, feature_name="in_bin", feature_val=1.0)
+        state.set(obj=TossingRoomEnvironment.recycling, feature_name="in_bin", feature_val=1.0)
+        env.set_state(state=state)
+        next_state = env.take_action(action=_pickup(kind=TossingRoomEnvironment.TRASH_KIND))
+        cls = TestTheInBinFlagTracksThisItemNotTheBinContents
+        assert cls._in_bin(state=next_state, item=TossingRoomEnvironment.trash) == 0.0
+        # Only the fetched item's flag: picking up trash says nothing about recycling.
+        assert cls._in_bin(state=next_state, item=TossingRoomEnvironment.recycling) == 1.0
+
+    @staticmethod
+    def test_press_clears_both_flags_along_with_the_counts() -> None:
+        """Press's ignore_effects={ItemInBin} claims a press destroys whatever was in
+        the bins. The dynamics have to make that true."""
+        env = _env()
+        state = env.build_initial_state(
+            trash_target_force=0.5, recycling_target_force=0.5, recycling_count=3, trash_count=2
+        )
+        state.set(obj=TossingRoomEnvironment.trash, feature_name="in_bin", feature_val=1.0)
+        state.set(obj=TossingRoomEnvironment.recycling, feature_name="in_bin", feature_val=1.0)
+        state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.button_room))
+        env.set_state(state=state)
+        next_state = env.take_action(action=_press())
+        cls = TestTheInBinFlagTracksThisItemNotTheBinContents
+        assert cls._in_bin(state=next_state, item=TossingRoomEnvironment.trash) == 0.0
+        assert cls._in_bin(state=next_state, item=TossingRoomEnvironment.recycling) == 0.0
+
+
 def test_take_action_updates_current_state() -> None:
     env = _env()
     _fresh_state(env=env)

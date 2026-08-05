@@ -5,6 +5,7 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
 from hitl_pmp.environments.tossingroom.predicates import (
+    BIN_ACCEPTS_ITEM,
     CAN_MOVE_ROOM,
     HAND_EMPTY,
     HOLDING,
@@ -31,7 +32,7 @@ def test_pickup_declares_its_parameters_and_effects() -> None:
     skill = TossingRoomSkills.PICKUP
     assert skill.name == "Pickup"
     assert skill.param_dim == 0
-    robot, item, room, pile = skill.parameters
+    robot, item, room, pile, bin_var = skill.parameters
     assert skill.preconditions == frozenset({
         LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(robot, room)),
         # The pile precondition is what stops the planner scheduling a pickup in
@@ -39,9 +40,18 @@ def test_pickup_declares_its_parameters_and_effects() -> None:
         # TestPickupIsRestrictedToThePileRoom.
         LiftedAtom(predicate=PILE_IN_ROOM, variables=(pile, room)),
         LiftedAtom(predicate=HAND_EMPTY, variables=(robot,)),
+        # Pins ?bin to the item's own bin, so the delete effect below costs one
+        # grounding per item rather than widening what Pickup is applicable to.
+        LiftedAtom(predicate=BIN_ACCEPTS_ITEM, variables=(item, bin_var)),
     })
     assert skill.add_effects == frozenset({LiftedAtom(predicate=HOLDING, variables=(robot, item))})
-    assert skill.delete_effects == frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(robot,))})
+    # _apply_pickup clears the fetched item's in_bin flag -- a fresh item off the pile
+    # is not in any bin -- and the model has to say so, or a planner believes an item
+    # survives being replaced.
+    assert skill.delete_effects == frozenset({
+        LiftedAtom(predicate=HAND_EMPTY, variables=(robot,)),
+        LiftedAtom(predicate=ITEM_IN_BIN, variables=(item, bin_var)),
+    })
 
 
 def test_move_room_requires_a_traversable_step() -> None:
@@ -104,7 +114,7 @@ def test_compute_action_for_pickup_encodes_the_item_kind() -> None:
     state = _state()
     ground_skill = GroundSkill(
         skill=TossingRoomSkills.PICKUP,
-        objects=(_ROBOT, _RECYCLING, _ENV.get_rooms()[3], _ENV.pile),
+        objects=(_ROBOT, _RECYCLING, _ENV.get_rooms()[3], _ENV.pile, _RECYCLING_BIN),
     )
     action = TossingRoomSkills.compute_action(
         ground_skill=ground_skill, params=np.zeros(0), state=state
@@ -319,3 +329,190 @@ class TestOperatorsMatchTheDynamics:
             )
             if g.skill.name == "MoveRoom" and g.objects[2] == rooms[env.blocked_right_from]
         ]
+
+
+class TestOnlyALandedThrowSatisfiesTheThrowAddEffects:
+    """`Throw`'s add effect is `ItemInBin`, and EES scores a skill attempt by
+    `ground_skill.add_effects <= abstract_state(next_state)` (`ees_method.py`'s
+    `observe_pending`/`observe_outcome`) -- that boolean is both the competence
+    observation and the sampler's training label.
+
+    A `Throw` ALWAYS releases the item, landed or not. So an `ItemInBin` that means
+    only "this bin holds at least one item of that kind" scores *every* throw into an
+    already-non-empty bin a success at any force whatsoever. Two mechanisms make a bin
+    non-empty, and both are exercised below: an EMPTY-goal task prefills both bins
+    (`tasks.py`, `initial_count_low=1`), and within one practice period the first
+    landed throw of a kind makes every later throw of that kind free.
+
+    The damage is asymmetric, which is why this corrupts competence *ranking* and not
+    just level: only the trash bin sits on the reachable side of the one-way ledge, so
+    only trash throws can be repeated within a period.
+    """
+
+    @staticmethod
+    def _atoms(*, env: TossingRoomEnvironment, provider: TossingRoomSkillProvider):
+        return SkillGrounder.abstract_state(
+            state=env.get_current_state(),
+            objects=provider.objects(),
+            predicates=provider.predicates(),
+        )
+
+    @staticmethod
+    def _walk(*, env: TossingRoomEnvironment, from_room: int, to_room: int) -> None:
+        step = 1 if to_room > from_room else -1
+        for room in range(from_room + step, to_room + step, step):
+            env.take_action(
+                action=np.array([float(TossingRoomEnvironment.SKILL_MOVE_ROOM), float(room), 0.0])
+            )
+
+    @staticmethod
+    def _robot_room(*, env: TossingRoomEnvironment) -> int:
+        state = env.get_current_state()
+        return int(round(state.get(obj=TossingRoomEnvironment.robot, feature_name="room")))
+
+    @staticmethod
+    def _bin_count(*, env: TossingRoomEnvironment, bin_obj) -> float:
+        return env.get_current_state().get(obj=bin_obj, feature_name="count")
+
+    @staticmethod
+    def _fetch_and_carry(*, env: TossingRoomEnvironment, item, bin_room: int) -> None:
+        """Pick the item up from the pile at the start room and walk it to its bin's
+        room, entirely through the real dynamics -- no privileged `set_state`, so the
+        `Holding`/room facts the throw is scored against are ones the agent could
+        genuinely have produced."""
+        cls = TestOnlyALandedThrowSatisfiesTheThrowAddEffects
+        kind = int(round(env.get_current_state().get(obj=item, feature_name="kind")))
+        env.take_action(
+            action=np.array([float(TossingRoomEnvironment.SKILL_PICKUP), float(kind), 0.0])
+        )
+        cls._walk(env=env, from_room=cls._robot_room(env=env), to_room=bin_room)
+
+    @staticmethod
+    def _score_throw(
+        *,
+        env: TossingRoomEnvironment,
+        provider: TossingRoomSkillProvider,
+        item,
+        bin_obj,
+        force: float,
+    ) -> bool:
+        """Execute one `Throw` exactly the way `EESMethod` does and return the success
+        boolean it would record."""
+        rooms = env.get_rooms()
+        robot_room = TestOnlyALandedThrowSatisfiesTheThrowAddEffects._robot_room(env=env)
+        ground_skill = GroundSkill(
+            skill=TossingRoomSkills.THROW,
+            objects=(TossingRoomEnvironment.robot, item, bin_obj, rooms[robot_room]),
+        )
+        env.take_action(
+            action=provider.compute_action(
+                ground_skill=ground_skill,
+                params=np.array([force]),
+                state=env.get_current_state(),
+            )
+        )
+        return ground_skill.add_effects <= TestOnlyALandedThrowSatisfiesTheThrowAddEffects._atoms(
+            env=env, provider=provider
+        )
+
+    @staticmethod
+    def test_a_landed_throw_is_scored_a_success() -> None:
+        """The complement, so the fix cannot be 'never score a throw a success'."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        env.set_state(
+            state=env.build_initial_state(trash_target_force=0.62, recycling_target_force=0.5)
+        )
+        cls = TestOnlyALandedThrowSatisfiesTheThrowAddEffects
+        cls._fetch_and_carry(
+            env=env, item=TossingRoomEnvironment.trash, bin_room=env.trash_bin_room
+        )
+        before = cls._bin_count(env=env, bin_obj=TossingRoomEnvironment.trash_bin)
+        assert before == 0.0, "non-vacuity: this case must start from an EMPTY bin"
+        scored = cls._score_throw(
+            env=env,
+            provider=provider,
+            item=TossingRoomEnvironment.trash,
+            bin_obj=TossingRoomEnvironment.trash_bin,
+            force=0.62,
+        )
+        after = cls._bin_count(env=env, bin_obj=TossingRoomEnvironment.trash_bin)
+        assert after == before + 1.0, "non-vacuity: this throw must genuinely have LANDED"
+        assert scored is True
+
+    @staticmethod
+    def test_a_missed_throw_into_a_prefilled_bin_is_not_scored_a_success() -> None:
+        """Mechanism 1: an EMPTY-goal task prefills both bins with 1..3 items, so every
+        throw taken in the same period lands in an already-non-empty bin."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        env.set_state(
+            state=env.build_initial_state(
+                trash_target_force=0.62, recycling_target_force=0.5, trash_count=2
+            )
+        )
+        cls = TestOnlyALandedThrowSatisfiesTheThrowAddEffects
+        cls._fetch_and_carry(
+            env=env, item=TossingRoomEnvironment.trash, bin_room=env.trash_bin_room
+        )
+        before = cls._bin_count(env=env, bin_obj=TossingRoomEnvironment.trash_bin)
+        assert before >= 1.0, "non-vacuity: this case must start from a NON-EMPTY bin"
+        # target 0.62, throw_tolerance 0.1 -> a force of 0.05 misses by a mile.
+        scored = cls._score_throw(
+            env=env,
+            provider=provider,
+            item=TossingRoomEnvironment.trash,
+            bin_obj=TossingRoomEnvironment.trash_bin,
+            force=0.05,
+        )
+        after = cls._bin_count(env=env, bin_obj=TossingRoomEnvironment.trash_bin)
+        assert after == before, "non-vacuity: this throw must genuinely have MISSED"
+        assert scored is False, (
+            "a throw that missed was scored a success purely because the bin was "
+            "already non-empty -- this is the competence/sampler-label corruption"
+        )
+
+    @staticmethod
+    def test_a_missed_throw_after_an_earlier_landed_one_is_not_scored_a_success() -> None:
+        """Mechanism 2: within one practice period there is no reset, so the first
+        landed trash throw leaves the trash bin non-empty and every later trash throw
+        in that period scores free. Only trash can do this -- the recycling bin sits
+        behind the one-way ledge, so a period never gets a second recycling attempt --
+        which is exactly why the inflation is asymmetric between the two skills."""
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
+        env.set_state(
+            state=env.build_initial_state(trash_target_force=0.62, recycling_target_force=0.5)
+        )
+        cls = TestOnlyALandedThrowSatisfiesTheThrowAddEffects
+        cls._fetch_and_carry(
+            env=env, item=TossingRoomEnvironment.trash, bin_room=env.trash_bin_room
+        )
+        assert cls._score_throw(
+            env=env,
+            provider=provider,
+            item=TossingRoomEnvironment.trash,
+            bin_obj=TossingRoomEnvironment.trash_bin,
+            force=0.62,
+        ), "non-vacuity: the first throw of this period must genuinely have landed"
+
+        # Walk back for a fresh item and throw again, badly.
+        cls._walk(env=env, from_room=env.trash_bin_room, to_room=env.start_room)
+        cls._fetch_and_carry(
+            env=env, item=TossingRoomEnvironment.trash, bin_room=env.trash_bin_room
+        )
+        before = cls._bin_count(env=env, bin_obj=TossingRoomEnvironment.trash_bin)
+        assert before >= 1.0, "non-vacuity: the earlier throw must have left the bin non-empty"
+        scored = cls._score_throw(
+            env=env,
+            provider=provider,
+            item=TossingRoomEnvironment.trash,
+            bin_obj=TossingRoomEnvironment.trash_bin,
+            force=0.05,
+        )
+        after = cls._bin_count(env=env, bin_obj=TossingRoomEnvironment.trash_bin)
+        assert after == before, "non-vacuity: the second throw must genuinely have MISSED"
+        assert scored is False, (
+            "the second throw of the period missed but was scored a success, because "
+            "the first one had already made the bin non-empty"
+        )

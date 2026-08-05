@@ -62,7 +62,13 @@ class TossingRoomSkills:
 
     PICKUP: ClassVar[Skill] = Skill(
         name="Pickup",
-        parameters=(_robot, _item, _room, _pile),
+        # ?bin exists only so the ItemInBin delete effect below can be expressed:
+        # _apply_pickup clears the fetched item's in_bin flag, and an operator that
+        # did not say so would leave a planner believing an item survives being
+        # replaced -- the same defect Press's ignore_effects fixed in the other
+        # direction. BinAcceptsItem pins ?bin to the item's own bin, so this adds
+        # exactly one grounding per item rather than widening applicability.
+        parameters=(_robot, _item, _room, _pile, _bin),
         preconditions=frozenset({
             LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(_robot, _room)),
             # Without this the model permits picking up ANYWHERE while
@@ -71,9 +77,13 @@ class TossingRoomSkills:
             # silent no-op. See TestPickupIsRestrictedToThePileRoom.
             LiftedAtom(predicate=PILE_IN_ROOM, variables=(_pile, _room)),
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=BIN_ACCEPTS_ITEM, variables=(_item, _bin)),
         }),
         add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _item))}),
-        delete_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
+        delete_effects=frozenset({
+            LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=ITEM_IN_BIN, variables=(_item, _bin)),
+        }),
         param_dim=0,
     )
     MOVE_ROOM: ClassVar[Skill] = Skill(
@@ -149,7 +159,7 @@ class TossingRoomSkills:
         skill = ground_skill.skill
 
         if skill == skills.PICKUP:
-            _robot, item, _room, _pile = ground_skill.objects
+            _robot, item, _room, _pile, _bin = ground_skill.objects
             kind = state.get(obj=item, feature_name="kind")
             return np.array([float(env.SKILL_PICKUP), kind, 0.0])
 

@@ -84,7 +84,15 @@ class TossingRoomEnvironment(Environment):
     # only (state, objects)) cannot read; putting the pile in the STATE is what lets
     # Pickup's symbolic precondition be exactly as strong as _apply_pickup's guard.
     pile_type: ClassVar[Type] = Type(name="pile", feature_names=("room",))
-    item_type: ClassVar[Type] = Type(name="item", feature_names=("kind", "target_force"))
+    # in_bin marks THIS item as having landed in its bin. It is per-item rather than
+    # read off the bin's count because ItemInBin is Throw's add effect, and EES scores
+    # a skill by `add_effects <= atoms(next_state)`: a throw always releases the item
+    # whether or not it lands, so a count-based ItemInBin scored EVERY throw into an
+    # already-non-empty bin a success at any force. Set only by a landed throw, cleared
+    # by Pickup (a fresh item off the pile is by definition not in a bin) and by Press
+    # (the incinerator). BinEmpty stays count-based -- that predicate really is about
+    # the bin. See _apply_throw and predicates.ItemInBinClassifier.
+    item_type: ClassVar[Type] = Type(name="item", feature_names=("kind", "target_force", "in_bin"))
 
     robot: ClassVar[Object] = Object(name="robot", type=robot_type)
     recycling_bin: ClassVar[Object] = Object(name="recycling_bin", type=bin_type)
@@ -128,7 +136,12 @@ class TossingRoomEnvironment(Environment):
         sit in their configured rooms. Only the per-item throw targets and the initial
         bin counts vary between callers -- hard_reset uses canonical values with empty
         bins, Tasks samples targets per episode (and non-empty counts for the
-        empty-buckets goal). Mirrors LightSwitchEnvironment.build_initial_state."""
+        empty-buckets goal). Mirrors LightSwitchEnvironment.build_initial_state.
+
+        Neither item ever starts in_bin, including for the empty-buckets goal: a
+        prefilled bin means "the bin holds some items", never "the item in play is in
+        it". That separation is what stops a prefill from making a throw goal
+        already-solved, and from making a throw into that bin score free."""
         data: dict[Object, np.ndarray] = {
             self.robot: np.array([float(self.start_room), 0.0]),
             self.recycling_bin: np.array([
@@ -143,8 +156,12 @@ class TossingRoomEnvironment(Environment):
             ]),
             self.button: np.array([float(self.button_room)]),
             self.pile: np.array([float(self.start_room)]),
-            self.trash: np.array([float(self.TRASH_KIND), float(trash_target_force)]),
-            self.recycling: np.array([float(self.RECYCLING_KIND), float(recycling_target_force)]),
+            self.trash: np.array([float(self.TRASH_KIND), float(trash_target_force), 0.0]),
+            self.recycling: np.array([
+                float(self.RECYCLING_KIND),
+                float(recycling_target_force),
+                0.0,
+            ]),
         }
         for i, room in enumerate(self.get_rooms()):
             data[room] = np.array([float(i), float(i == self.blocked_right_from)])
@@ -192,6 +209,13 @@ class TossingRoomEnvironment(Environment):
             and arg in (self.TRASH_KIND, self.RECYCLING_KIND)
         ):
             next_state.set(obj=self.robot, feature_name="holding", feature_val=float(arg))
+            # The item drawn off the pile is a FRESH one, so it is not in any bin --
+            # whatever an earlier throw of this kind achieved belongs to that earlier
+            # item. Clearing here is what stops the first landed throw of a practice
+            # period from making every later throw of the same kind score free.
+            # Pickup declares this as a real delete_effect (see skills.py), which is
+            # why Pickup carries a ?bin parameter it otherwise would not need.
+            next_state.set(obj=self.item_for_kind(kind=arg), feature_name="in_bin", feature_val=0.0)
 
     def _apply_move(self, *, next_state: State, robot_room: int, to_room: int) -> None:
         if 0 <= to_room < self.num_rooms and abs(to_room - robot_room) == 1:
@@ -244,11 +268,25 @@ class TossingRoomEnvironment(Environment):
         if robot_room == bin_room and abs(raw_force - target) < self.throw_tolerance:
             count = state.get(obj=bin_obj, feature_name="count")
             next_state.set(obj=bin_obj, feature_name="count", feature_val=count + 1.0)
+            # The item's own flag, not just the bin's count: ItemInBin is this skill's
+            # add effect and EES scores an attempt by whether its add effects hold
+            # afterward, so it must be true for exactly the throws that landed. A miss
+            # writes nothing -- Pickup is the only route to Holding and it clears the
+            # flag, so in_bin is provably already 0 at every throw, and leaving it
+            # untouched keeps Throw's model (add ItemInBin, no conditional delete of
+            # it) exactly as strong as this guard.
+            next_state.set(obj=item_obj, feature_name="in_bin", feature_val=1.0)
 
     def _apply_press(self, *, next_state: State, robot_room: int) -> None:
         if robot_room == self.button_room:
             next_state.set(obj=self.recycling_bin, feature_name="count", feature_val=0.0)
             next_state.set(obj=self.trash_bin, feature_name="count", feature_val=0.0)
+            # Incinerating a bin destroys whatever was in it, the item in play
+            # included -- which is exactly what Press's ignore_effects={ItemInBin}
+            # claims. Without this the flags would survive a press and the model would
+            # be lying in the other direction.
+            next_state.set(obj=self.trash, feature_name="in_bin", feature_val=0.0)
+            next_state.set(obj=self.recycling, feature_name="in_bin", feature_val=0.0)
 
     def get_valid_actions(self) -> list[Action]:
         # The force dimension is continuous and unbounded (matches Light Switch's

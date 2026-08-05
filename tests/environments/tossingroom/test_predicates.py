@@ -28,6 +28,13 @@ def _state(*, recycling_count: int = 0, trash_count: int = 0):
     )
 
 
+def _landed(*, state, item):
+    """The state as it would be after a throw of `item` LANDED. Only the item's own
+    in_bin flag distinguishes that from a bin that merely holds something."""
+    state.set(obj=item, feature_name="in_bin", feature_val=1.0)
+    return state
+
+
 def test_robot_in_room_holds_for_the_start_room() -> None:
     state = _state()
     rooms = _ENV.get_rooms()
@@ -67,11 +74,11 @@ def test_adjacent_holds_only_for_consecutive_rooms() -> None:
     assert ADJACENT.holds(state, (rooms[2], rooms[4])) is False
 
 
-def test_item_in_bin_requires_a_matching_non_empty_bin() -> None:
-    state = _state(recycling_count=1)
+def test_item_in_bin_requires_a_matching_bin() -> None:
+    state = _landed(state=_state(recycling_count=1), item=_RECYCLING)
     assert ITEM_IN_BIN.holds(state, (_RECYCLING, _RECYCLING_BIN)) is True
-    # Trash is not in the (recycling) bin even though that bin is non-empty: the kind
-    # must match.
+    # Trash is not in the (recycling) bin even though that bin holds something: the
+    # kind must match.
     assert ITEM_IN_BIN.holds(state, (_TRASH, _RECYCLING_BIN)) is False
 
 
@@ -80,11 +87,30 @@ def test_item_in_bin_is_false_for_an_empty_bin() -> None:
     assert ITEM_IN_BIN.holds(state, (_RECYCLING, _RECYCLING_BIN)) is False
 
 
+def test_item_in_bin_reads_the_item_flag_not_the_bin_count() -> None:
+    """The scoring defect this predicate was fixed for: ItemInBin is Throw's add
+    effect, and EES scores an attempt by `add_effects <= atoms(next_state)`. A count
+    reading made every throw into an already-non-empty bin a success at any force.
+    Both states below have a genuinely NON-EMPTY bin -- only the flag differs."""
+    landed = _landed(state=_state(recycling_count=3), item=_RECYCLING)
+    prefilled_only = _state(recycling_count=3)
+    # Non-vacuity: the two cases straddle the flag, not the count.
+    assert prefilled_only.get(obj=_RECYCLING_BIN, feature_name="count") >= 1.0
+    assert landed.get(obj=_RECYCLING_BIN, feature_name="count") >= 1.0
+    assert ITEM_IN_BIN.holds(landed, (_RECYCLING, _RECYCLING_BIN)) is True
+    assert ITEM_IN_BIN.holds(prefilled_only, (_RECYCLING, _RECYCLING_BIN)) is False
+
+
 def test_bin_empty_holds_only_when_count_is_zero() -> None:
+    """BinEmpty deliberately stays count-based -- it is about the bin, not about the
+    item in play -- so the EMPTY goal is untouched by ItemInBin's item-flag reading."""
     empty = _state(recycling_count=0)
     non_empty = _state(recycling_count=2)
     assert BIN_EMPTY.holds(empty, (_RECYCLING_BIN,)) is True
     assert BIN_EMPTY.holds(non_empty, (_RECYCLING_BIN,)) is False
+    # The item flag does not enter into it, in either direction.
+    assert BIN_EMPTY.holds(_landed(state=empty, item=_RECYCLING), (_RECYCLING_BIN,)) is True
+    assert BIN_EMPTY.holds(_landed(state=non_empty, item=_RECYCLING), (_RECYCLING_BIN,)) is False
 
 
 def test_bin_in_room_and_button_in_room_are_static_placements() -> None:

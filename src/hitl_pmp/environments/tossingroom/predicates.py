@@ -44,17 +44,30 @@ class AdjacentClassifier:
 
 
 class ItemInBinClassifier:
-    """Whether an item of this kind is in the (matching) bin: the bin holds at least
-    one item AND it is the correct bin for the item (item.kind == bin.kind). The kind
-    match is what makes ItemInBin(trash, recycling_bin) false even when the recycling
-    bin is non-empty."""
+    """Whether THIS item is in the (matching) bin: the item's own in_bin flag is set
+    AND it is the correct bin for it (item.kind == bin.kind). The kind match is what
+    makes ItemInBin(trash, recycling_bin) false even when the recycling bin holds the
+    recycling item.
+
+    It reads the item's flag rather than the bin's `count` because this predicate is
+    Throw's add effect, and EES scores a skill attempt by
+    `add_effects <= atoms(next_state)` -- that one boolean is both the competence
+    observation and the sampler's training label. A Throw always releases the item
+    whether or not it lands, so "count >= 1" scored EVERY throw into an already-
+    non-empty bin a success at any force whatsoever. Two mechanisms made bins
+    non-empty: EMPTY-goal tasks prefill them, and within a practice period the first
+    landed throw of a kind made every later throw of that kind free. Only the trash
+    bin is reachable twice in a period (the recycling bin sits behind the one-way
+    ledge), so the inflation was asymmetric and corrupted competence *ranking*, not
+    just level. BinEmpty below keeps the count reading -- that predicate really is
+    about the bin, and the EMPTY goal it serves is unaffected."""
 
     @staticmethod
     def holds(*, state: State, item: Object, bin_obj: Object) -> bool:
-        count = int(round(state.get(obj=bin_obj, feature_name="count")))
+        in_bin = int(round(state.get(obj=item, feature_name="in_bin")))
         item_kind = int(round(state.get(obj=item, feature_name="kind")))
         bin_kind = int(round(state.get(obj=bin_obj, feature_name="kind")))
-        return count >= 1 and item_kind == bin_kind
+        return in_bin == 1 and item_kind == bin_kind
 
 
 class BinEmptyClassifier:
