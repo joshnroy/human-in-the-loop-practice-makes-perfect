@@ -119,6 +119,7 @@ value wins — but it has to be exported.
 | `skill_oracle_policy.py` | The privileged solve, with a measured swing constant. |
 | `renderer.py` | KINDER's `task_view` camera, one frame per skill (a storyboard, not a smooth video). |
 | `cli.py` | `python -m hitl_pmp.cli --env tossing3d --method ees ...` |
+| `task_configs/` | This repo's own KINDER task config — the one scene here that is *not* upstream's, loaded only under `--coincident-bin-goal`. Data, not code, so it sits in its own folder rather than beside the modules; `task_configs/` rather than `tasks/` because `tasks.py` is already this domain's `Tasks` implementation and the two are unrelated. |
 
 Everything except `kinder_backend.py` is pure arithmetic over feature vectors and is
 covered by ordinary CI tests. `tests/environments/tossing3d/test_kinder_fidelity.py`
@@ -260,10 +261,12 @@ to within half a millimetre, and the same on y. The region *was* the bin. Commit
 region is a floor strip whose position is a leftover, and the description is stale rather
 than loose.
 
-None of that is changed here. This domain uses KINDER's criterion verbatim rather than
-substituting an "in the bin" test, so that a number reported here is a number about the
-benchmark — and the oracle's swing is not retuned toward the overlap, because there is
-nothing in it to reach.
+None of that is changed here **by default**. This domain uses KINDER's criterion verbatim
+rather than substituting an "in the bin" test, so that a number reported here is a number
+about the benchmark — and the oracle's swing is not retuned toward the overlap, because
+there is nothing in it to reach. A scene in which the bin and the region *do* coincide is
+available opt-in; see [the bin and the goal region, made to
+coincide](#the-bin-and-the-goal-region-made-to-coincide-opt-in) below.
 
 [o1]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/blob/main/src/kinder/envs/dynamic3d/tasks/Tossing3D/Tossing3D-o1.json
 [checkgoals]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/blob/main/src/kinder/envs/dynamic3d/envs.py
@@ -291,6 +294,85 @@ that KINDER's `ground()` mints a new controller each call and each one stands up
 disconnects: unreleased, that leaked ~150 MB per `Pick` and ~315 MB per `Toss`, and took
 a 40-step run to 18.7 GB. Released, 600 skill executions sit flat at ~0.66 GB.
 `test_skill_executions_do_not_leak_memory` pins it.
+
+## The bin and the goal region, made to coincide (opt-in)
+
+The section above establishes that on stock `o1` the bin is scenery: a cube that lands
+**in the bin** is a scored failure, and one resting on the open floor short of it is a
+pass. That is faithful to the benchmark, and it is also a demo that reads as a miss while
+being a success — and a domain where the obvious English description of the task ("get
+the cube into the bin") is not the thing being scored.
+
+`task_configs/tossing3d-o1-coincident-bin.json` is this repo's own task config in which
+the two are the same place. It is **not** the default:
+
+```bash
+python -m hitl_pmp.cli --env tossing3d --method skill-oracle --coincident-bin-goal ...
+```
+```python
+Tossing3DEnvironment(coincident_bin_goal=True)
+```
+
+**Which region moved, and why.** The bin. `bin_init_region` goes back to x = 2.0, leaving
+`blocks_goal_region` byte-identical to upstream's. Three reasons that is the better of
+the two available edits:
+
+- It is not a new scene. x = 2.0 is exactly what upstream's **own `Tossing3D-o2.json`
+  still ships**, and o2's `blocks_goal_region` is byte-identical to o1's — so this pairing
+  of bin and region is a configuration upstream already publishes, not one invented here.
+  It is also what o1 itself had before commit [`1183de7`][moved] moved the bin.
+- It reverts the edit that caused the mismatch, rather than compensating for it. The goal
+  region is the *task specification*; the bin's position is scenery that drifted away from
+  it. Moving the specification to chase the scenery would redefine what success means.
+- Moving `blocks_goal_region` to the bin instead would have implied a goal box at
+  x ∈ [2.13, 2.33] after inflation — a region no upstream variant has ever used, which
+  extends 18 cm past the bin's far wall onto open floor behind it, so a cube that
+  *overshot* the bin entirely would score as a success. The defect would have changed
+  shape rather than gone away.
+
+**What it buys, measured.** Oracle solve (`throw_standoff` = 1.35, `ORACLE_PICK_DISTANCE`
+= 0.55, so `swing` is the only thing varying), landing position and KINDER's own
+`_check_goals()`, seeds 0 and 2:
+
+| | stock `o1` | coincident |
+| --- | --- | --- |
+| goal box x (live `Region.bbox`) | [1.8500, 2.1500] | [1.8500, 2.1500] |
+| bin footprint x (live MuJoCo geoms) | [2.0807, 2.3807] | **[1.8502, 2.1502]** |
+| tosses landing in the bin | 6/6 scored **failure** | 6/6 scored **success** |
+| tosses scored a success | 6/12, all resting on open floor | 6/12, **all inside the bin** |
+
+Under the coincident config, "in the bin" and "in the goal region" are the same event in
+all 12 of 12 rollouts — the goal is satisfied by exactly the tosses that land in the bin
+and by no others.
+
+**It changes the physics, not just the scoring.** Worth being explicit about, because it
+is easy to assume a task-config edit is a relabelling. Moving the bin 23 cm nearer puts it
+where the cube used to land, so it is now an obstacle in the flight path: at swing 0.75
+the cube comes to rest at x ≈ 1.71 (bounced off the near wall) rather than x ≈ 1.91. The
+swings that solve the scene are consequently different ones — ≥ 0.96 rather than 0.6–0.9.
+`SkillOraclePolicy.ORACLE_SWING` is **not** retuned for it here: that constant is measured
+against stock `o1`, which is what every number on this domain is measured against, and
+re-measuring it is a separate change with its own evidence.
+
+**Stock `o1` remains the default, deliberately.** Every result this repo has published on
+this domain — the EES-vs-random-skills comparison, the swing table above, the demo clip —
+was measured on stock `o1`. A default that quietly changed the scene would invalidate all
+of them with no diff to point at.
+`test_stock_o1_is_untouched_by_shipping_the_variant` guards it. Do not compare a number
+measured under `--coincident-bin-goal` against one that was not.
+
+**Provenance** lives in the file's own `_provenance` key (an extra top-level key; KINDER
+reads `regions`/`objects`/`cameras`/`robots` by name and ignores the rest) and is pinned
+by tests: `test_the_shipped_config_changes_exactly_one_region_of_upstreams_o1` asserts the
+diff against the *installed* upstream is exactly `bin_init_region`, and
+`test_the_bin_is_placed_where_upstreams_own_o2_puts_it` asserts the value matches o2's.
+Both fail loudly if an upstream bump edits o1.
+
+The mechanism needs no fork: `KinDEREnv.__init__` takes a `task_config_path`
+([`envs.py:79`][envs]) and uses an absolute one verbatim, so `KinderBackend` simply passes
+one through `kinder.make`. No upstream file is edited or shadowed.
+
+[envs]: https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/blob/main/src/kinder/envs/dynamic3d/envs.py
 
 ## Known limitations
 

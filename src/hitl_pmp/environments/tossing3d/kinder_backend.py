@@ -22,6 +22,7 @@ control tick -- the same convention every other domain in this repo uses.
 """
 
 import os
+from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
@@ -68,7 +69,26 @@ class KinderBackend(BaseModel):
     # back would be mid-flight and no goal test could mean anything.
     SETTLE_STEPS: ClassVar[int] = 150
 
+    # This repo's own task config, shipped beside this module (see `task_configs/` and
+    # the domain README). It is upstream's `Tossing3D-o1.json` with `bin_init_region`
+    # moved back to the x = 2.0 that upstream's own `o2` still uses, which is what makes
+    # the bin footprint and the *inflated* goal box describe the same place. Selected
+    # only by `coincident_bin_goal`; stock o1 remains the default.
+    COINCIDENT_BIN_TASK_CONFIG: ClassVar[Path] = (
+        Path(__file__).parent / "task_configs" / "tossing3d-o1-coincident-bin.json"
+    )
+
     variant: str = "o1"
+    # Opt in to the task config above instead of the variant's stock KINDER one.
+    #
+    # Deliberately NOT the default, and deliberately a flag rather than a free-form path.
+    # Every number this repo has measured on Tossing3D was measured against stock o1, so
+    # a default that quietly changed the scene would invalidate all of them without any
+    # diff to point at; and a bool can only select the one shipped, provenance-tested
+    # config, where an arbitrary path would let a run be scored against a scene nobody
+    # reviewed. `o2` has the bin at 2.0 already, so this is a no-op there and is rejected
+    # rather than silently ignored -- see `task_config_path`.
+    coincident_bin_goal: bool = False
     # KINDER's own background scene. False selects its "simple" scene -- a bare white
     # void -- and True selects the MimicLabs room the `Tossing3D-o1` task JSON names,
     # which is what every clip on the benchmark's own site shows: KINDER's
@@ -148,6 +168,28 @@ class KinderBackend(BaseModel):
         env = self._ensure_env()
         return int(env.metadata.get("render_fps", 10))
 
+    def task_config_path(self) -> str | None:
+        """The task config KINDER should load, or `None` to let it pick the variant's own.
+
+        This is the whole mechanism by which the coincident-bin scene is a *config*
+        choice rather than a fork: `KinDEREnv.__init__` takes a `task_config_path`
+        (`envs.py:79`) and uses an absolute one verbatim (`envs.py:101-105`), so no
+        upstream file is touched or shadowed.
+
+        `o2` already places its bin at 2.0, so the flag would be a no-op there. That is
+        raised rather than ignored: a run asking for a scene it did not get should say
+        so, not quietly produce numbers under a different name than the caller believes.
+        """
+        if not self.coincident_bin_goal:
+            return None
+        if self.variant != "o1":
+            raise ValueError(
+                f"coincident_bin_goal targets the o1 variant, whose bin upstream moved "
+                f"away from its goal region; variant {self.variant!r} already places the "
+                "bin at 2.0, so the flag would change nothing"
+            )
+        return str(self.COINCIDENT_BIN_TASK_CONFIG)
+
     def _ensure_env(self) -> Any:
         """Open the MuJoCo scene and build the controllers, once.
 
@@ -185,10 +227,17 @@ class KinderBackend(BaseModel):
         for name, value in chosen_gl.items():
             if value is not None:
                 os.environ[name] = value
+        # Passed only when this repo actually overrides the scene, so the stock path
+        # stays byte-for-byte the call it was before `coincident_bin_goal` existed.
+        overrides = {}
+        task_config_path = self.task_config_path()
+        if task_config_path is not None:
+            overrides["task_config_path"] = task_config_path
         env = kinder.make(
             f"kinder/Tossing3D-{self.variant}-v0",
             render_mode="rgb_array",
             scene_bg=self.scene_bg,
+            **overrides,
         )
         env.unwrapped._object_centric_env.set_render_camera(self.render_camera)
         self._env = env

@@ -103,6 +103,21 @@ class Tossing3DEnvironment(Environment):
     throw_pose_tolerance: ClassVar[float] = 0.15
 
     variant: str = "o1"
+    # Score against a scene where the bin and the goal region are the same place.
+    #
+    # Stock `o1` is the default and stays the default. Upstream moved `bin_init_region`
+    # from x = 2.0 to 2.23 (commit 1183de7) without moving `blocks_goal_region`, and the
+    # only goal predicate is `["on", "cube_0", "blocks_goal_region"]`, so on the shipped
+    # scene the bin participates in no check: a cube that lands *in the bin* is scored a
+    # failure, and one resting on the open floor short of it is scored a pass. Turning
+    # this on loads `task_configs/tossing3d-o1-coincident-bin.json` instead, which is
+    # upstream's o1 with the bin put back at the x = 2.0 that upstream's own `o2` still
+    # uses -- making "in the bin" and "in the goal region" the same event.
+    #
+    # Off by default because every number this repo has measured on this domain was
+    # measured against stock o1; see the domain README's "Which scene a number was
+    # measured on" before turning it on for anything comparative.
+    coincident_bin_goal: bool = False
     # Bounds the uniform prior over Pick's (distance, rot) draws. These are KINDER's
     # own `MOVE_TO_TARGET_DISTANCE_BOUNDS`/`MOVE_TO_TARGET_ROT_BOUNDS`
     # (kinder_models/dynamic3d/utils.py), i.e. the range its own `pick_shelf` sampler
@@ -138,7 +153,11 @@ class Tossing3DEnvironment(Environment):
         which is several seconds -- too expensive to pay in a constructor that tests
         call to check a feature layout."""
         if self._backend is None:
-            self._backend = KinderBackend(variant=self.variant, scene_bg=self.scene_bg)
+            self._backend = KinderBackend(
+                variant=self.variant,
+                scene_bg=self.scene_bg,
+                coincident_bin_goal=self.coincident_bin_goal,
+            )
         return self._backend
 
     def goal_region_bounds(self) -> tuple[float, ...]:

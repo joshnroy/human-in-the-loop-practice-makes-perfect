@@ -1,0 +1,218 @@
+{
+    "_provenance": {
+        "derived_from": "kinder/envs/dynamic3d/tasks/Tossing3D/Tossing3D-o1.json",
+        "upstream_repo": "https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden",
+        "upstream_commit": "39eb7e084c1d54a69f71abfd7faebef62e4a059e",
+        "changed": "bin_init_region x moved from 2.23 back to 2.0, which is exactly the value upstream's own Tossing3D-o2.json still uses. Nothing else differs: blocks_goal_region, goal_state and every object are byte-identical to o1.",
+        "why": "In stock o1 the bin and the scored goal region do not describe the same place. blocks_goal_region's raw range is x in [1.90, 2.10], which MujocoGround._create_regions inflates by ground_placement_threshold (0.05 m) per side at load, so KINDER scores containment against x in [1.85, 2.15]. The bin's footprint sits at x in [2.081, 2.381]. The only goal predicate is ['on', 'cube_0', 'blocks_goal_region'], so the bin participates in no check: a cube resting in the bin is scored a FAILURE, and a cube on the open floor short of the bin is scored a pass. Upstream commit 1183de7 introduced this by moving bin_init_region from 2.0 to 2.23 while leaving blocks_goal_region behind; o2 was never moved and still matches. Putting the bin back at o2's placement makes the bin footprint and the inflated goal box coincide to under a millimetre in x and y, so 'in the bin' and 'in the goal region' become the same event.",
+        "not_the_default": "hitl_pmp uses stock o1 unless Tossing3DEnvironment(coincident_bin_goal=True) / --coincident-bin-goal is passed. Every number measured on this domain was measured against stock o1, and silently changing the scene would invalidate them."
+    },
+    "description": "A 3D task where an object that is initially on the floor must be transferred to the bin.",
+    "variant_description": "The variants require transferring different numbers of objects to the bin.",
+    "variant_specific_description": "Get one cube into the bin.",
+    "robots": {
+        "tidybot": {
+            "robot": {}
+        }
+    },
+    "scene": "lab2",
+    "regions": {
+        "bin_init_region": {
+            "target": "ground",
+            "ranges": [
+                [
+                    2.0,
+                    -0.0005,
+                    2.001,
+                    0.0005
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    0,
+                    0
+                ]
+            ]
+        },
+        "blocks_init_region": {
+            "target": "ground",
+            "ranges": [
+                [
+                    0.5,
+                    -0.25,
+                    0.75,
+                    0.25
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    -45,
+                    45
+                ]
+            ],
+            "rgba": [
+                0.2,
+                0.6,
+                0.2,
+                0.0
+            ]
+        },
+        "blocks_goal_region": {
+            "target": "ground",
+            "ranges": [
+                [
+                    1.9,
+                    -0.1,
+                    0.0,
+                    2.1,
+                    0.1,
+                    0.1
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    -360,
+                    360
+                ]
+            ],
+            "rgba": [
+                0.2,
+                0.6,
+                0.2,
+                0.0
+            ]
+        },
+        "barrier_init_region": {
+            "target": "ground",
+            "ranges": [
+                [
+                    1.3,
+                    0.0,
+                    1.301,
+                    0.001
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    0,
+                    0
+                ]
+            ]
+        },
+        "robot_init_region": {
+            "target": "ground",
+            "ranges": [
+                [
+                    -0.05,
+                    -0.05,
+                    0.05,
+                    0.05
+                ]
+            ],
+            "yaw_ranges": [
+                [
+                    -5,
+                    5
+                ]
+            ],
+            "rgba": [
+                0.2,
+                0.6,
+                0.2,
+                0.0
+            ]
+        }
+    },
+    "objects": {
+        "cube": {
+            "cube_0": {
+                "size": 0.025,
+                "rgba": [
+                    0.2,
+                    0.6,
+                    0.2,
+                    1
+                ],
+                "mass": 0.1
+            }
+        },
+        "cuboid": {
+            "cuboid_barrier": {
+                "size": [
+                    0.03,
+                    5.0,
+                    0.1
+                ],
+                "rgba": [
+                    0.918,
+                    0.894,
+                    0.835,
+                    1.0
+                ],
+                "mass": 10.0
+            }
+        },
+        "bin": {
+            "bin_0": {
+                "length": 0.3,
+                "width": 0.3,
+                "height": 0.2,
+                "wall_thickness": 0.02,
+                "rgba": [
+                    0.8,
+                    0.8,
+                    0.0,
+                    1.0
+                ]
+            }
+        }
+    },
+    "cameras": {
+        "task_view": {
+            "position": [
+                1,
+                -2,
+                2
+            ],
+            "lookat": [
+                1,
+                0,
+                0
+            ],
+            "fovy": 42,
+            "resolution": [
+                640,
+                480
+            ]
+        }
+    },
+    "initial_state": [
+        [
+            "on",
+            "robot",
+            "robot_init_region"
+        ],
+        [
+            "on",
+            "cube_0",
+            "blocks_init_region"
+        ],
+        [
+            "on",
+            "bin_0",
+            "bin_init_region"
+        ],
+        [
+            "on",
+            "cuboid_barrier",
+            "barrier_init_region"
+        ]
+    ],
+    "goal_state": [
+        [
+            "on",
+            "cube_0",
+            "blocks_goal_region"
+        ]
+    ]
+}

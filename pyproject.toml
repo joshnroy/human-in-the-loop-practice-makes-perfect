@@ -66,6 +66,11 @@ tossing3d = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# The Tossing3D task config this repo ships (see that domain's README) is data, not code,
+# so it needs declaring or it is missing from a built wheel.
+[tool.setuptools.package-data]
+"hitl_pmp.environments.tossing3d" = ["task_configs/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

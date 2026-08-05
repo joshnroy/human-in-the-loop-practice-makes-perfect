@@ -39,6 +39,15 @@ class Tossing3DCli:
             "NOT supported by this port's single-cube symbolic layer.",
         )
         parser.add_argument(
+            "--coincident-bin-goal",
+            action="store_true",
+            default=fields["coincident_bin_goal"].default,
+            help="Load this repo's task config, in which the bin sits where the scored "
+            "goal region is (upstream o1 moved the bin away from it, so a cube landing "
+            "IN the bin is scored a failure). Off by default: every number measured on "
+            "this domain was measured against stock o1.",
+        )
+        parser.add_argument(
             "--swing-low",
             type=float,
             default=fields["swing_low"].default,
@@ -91,6 +100,7 @@ class Tossing3DCli:
         domain-agnostic rest to method_runner.py's MethodRunner."""
         env = Tossing3DEnvironment(
             variant=args.variant,
+            coincident_bin_goal=args.coincident_bin_goal,
             swing_low=args.swing_low,
             swing_high=args.swing_high,
             pick_distance_low=args.pick_distance_low,
