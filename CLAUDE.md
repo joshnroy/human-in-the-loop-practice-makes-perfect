@@ -30,6 +30,67 @@ the planner does not shell out to coreutils' `timeout` (so macOS needs no
 `brew install coreutils` for `gtimeout`); the per-call budget is enforced by
 `subprocess` itself. See `planning/fast_downward.py`'s deviations list.
 
+### `reference/`: third-party checkouts, read but never committed
+
+`reference/` holds upstream repos this project reads for API/behavior reference —
+`kindergarden`, `kinder-baselines`, `predicators`. It is **gitignored and never
+committed** (`.gitignore`): ~1.9 GB, and an embedded git repo inside this one
+confuses `git add -A`. It belongs to the *main* checkout, not to each worktree.
+
+Clone or refresh all of them with one idempotent command — run it as often as you
+like, including as a pre-flight check:
+
+```bash
+scripts/update_reference_repos.sh
+```
+
+It resolves each repo's **own** default branch rather than assuming `main`
+(`predicators` is on `master`), fast-forwards with `--ff-only`, and **skips rather
+than clobbers** any checkout with a dirty tree, a non-default branch, or a detached
+HEAD — someone may be mid-investigation in there. It exits `0` when everything is
+current, `1` if a repo failed, and `2` if one was skipped.
+
+**KINDER** (the `Tossing3D` benchmark and its parameterized controllers) is two of
+those repos, installed into a **separate venv — never `hitl-pmp`**, because it pulls
+MuJoCo, PyBullet and OpenCV and `kindergarden` caps `requires-python` at `<3.13`:
+
+```bash
+python3.10 -m venv ../kinder-venv
+../kinder-venv/bin/pip install -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+```
+
+Install from `reference/` specifically, so the tree that is *read* and the tree that
+is *run* are the same one — a read-vs-run skew between two copies at different
+commits has already caused a wrong SHA to be stated as fact. Verify it took:
+`kinder.__file__` and `kinder_models.__file__` must both resolve under `reference/`.
+
+Four traps, each of which costs an hour:
+
+- **The distribution is `kindergarden`; the import package is `kinder`.**
+  `import kindergarden` raises `ModuleNotFoundError`. `kinder_models` lives in the
+  `kinder-baselines` monorepo, subdirectory `kinder-models`.
+- **`export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl` is required**, and ordering matters.
+  `register_all_environments()` forces `osmesa` when `DISPLAY` is unset
+  (`src/kinder/__init__.py:67-74`); under `osmesa` `import mujoco` raises, and
+  `_check_deps` swallows *every* exception, so all `Dynamic3D` envs are skipped in
+  silence and `kinder.make("kinder/Tossing3D-o1-v0")` fails much later with
+  `NameNotFound`. Import a dynamic3d **module** (e.g. `kinder.envs.dynamic3d.envs`,
+  *not* the `kinder.envs.dynamic3d` package, which does not pull in `mujoco`) before
+  that call, and set both variables back to `egl` after it.
+- **There is a known unbounded memory leak** — one PyBullet client and ~136 MB per
+  skill execution, never released. Never run an unbounded loop; wrap anything
+  iterative in
+  `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue -- <cmd>`
+  (no sudo needed) and check the scope's cgroup `memory.max` before trusting it. This
+  machine's `DefaultOOMPolicy=stop` means a kernel OOM takes down the whole session.
+- **First `reset()` downloads ~1 GB** of MimicLabs scene assets from Google Drive into
+  the checkout. Automatic and idempotent, but it needs network and a few minutes.
+
+`docs/kinder-environment-validation.md` records what was actually measured at
+upstream `main` — including that a cube landing **in** the bin scores a **failure**,
+which is the single most misreadable thing about `Tossing3D`. Nothing on `main`
+imports KINDER today.
+
 ## Commands
 
 ```bash
