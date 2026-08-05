@@ -64,12 +64,21 @@ is *run* are the same one — a read-vs-run skew between two copies at different
 commits has already caused a wrong SHA to be stated as fact. Verify it took:
 `kinder.__file__` and `kinder_models.__file__` must both resolve under `reference/`.
 
-Prefer a *system* `python3.10` to seed that venv. Seeding it from conda's
-interpreter works, but the venv inherits conda's `sysconfig` build flags, so any
-package that compiles C++ at install time (notably `pybullet_helpers`' IKFast, which
-`pick_shelf` triggers on first use) links through conda's `compiler_compat` linker
-and fails against the system libraries — see `docs/kinder-environment-validation.md`
-for the workaround that was actually used.
+**Only if you need IKFast**, install system BLAS/LAPACK once. `pybullet_helpers`
+compiles IKFast from C++ the first time a controller asks for inverse kinematics —
+which on Tossing3D means `pick_shelf`, not the toss sequence itself (`move_to_target`,
+`move_arm_to_conf` and `toss` never call IK):
+
+```bash
+sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf only
+```
+
+With those present the compile is stock: `compile.py`'s own default paths, no
+`BLAS_DIR`/`LAPACK_DIR`/`LIBGFORTRAN_DIR` and no `CC`/`CXX`/`LDSHARED` overrides, even
+in a venv seeded from conda's interpreter (which inherits conda's `compiler_compat`
+build flags). Without them the build fails, and the wheel-internal libraries an
+earlier session substituted instead are recorded — and retracted — in
+`docs/kinder-environment-validation.md`.
 
 Four traps, each of which costs an hour:
 

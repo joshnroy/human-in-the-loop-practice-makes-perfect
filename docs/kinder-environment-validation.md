@@ -258,41 +258,74 @@ was the basis of the earlier argument, and it holds at `main`.
 
 ---
 
-## Caveats on this machine, and one thing to be suspicious of
+## Caveats on this machine
 
-**IKFast was linked against substituted BLAS/LAPACK.** `pick_shelf` needs IKFast, which
-compiles on first use and wants `/usr/lib/x86_64-linux-gnu/{libblas.a,lapack/liblapack.a}`
-and `libgfortran.so.5.0.0`. **This machine has none of them**, and installing them needs
-`sudo apt install libblas-dev liblapack-dev libgfortran5` — not done. Instead the build
-was pointed, via the `BLAS_DIR`/`LAPACK_DIR`/`LIBGFORTRAN_DIR` hooks `compile.py` already
-provides, at real implementations already present in the venv's own wheels:
-OpenCV's bundled OpenBLAS 0.3.3 (verified with `nm` to define `dgemm_`, `dgesv_`,
-`dgesvd_`, `dgetrf_` — genuine BLAS *and* LAPACK, LP64) and numpy's bundled libgfortran 5
-(1363 defined symbols). These are real libraries under different filenames.
+**IKFast is a stock build.** `pick_shelf` needs IKFast, which `pybullet_helpers`
+compiles from C++ on first use against the three paths `compile.py` defaults to:
+`/usr/lib/x86_64-linux-gnu/{libblas.a, lapack/liblapack.a}` and
+`libgfortran.so.5.0.0`. All three are now present, from Ubuntu's own packages:
 
-Two reasons to trust the result anyway, and one reason to stay alert:
+```
+$ dpkg -l libblas-dev liblapack-dev libgfortran5 | grep ^ii
+ii  libblas-dev:amd64   3.12.1-7ubuntu1       amd64  Basic Linear Algebra Subroutines 3, static library
+ii  libgfortran5:amd64  16-20260322-1ubuntu1  amd64  Runtime library for GNU Fortran applications
+ii  liblapack-dev:amd64 3.12.1-7ubuntu1       amd64  Library of linear algebra routines 3 - static version
+```
 
-- The compiled module links only against OpenBLAS (`readelf -d` shows no `libgfortran`
-  in `NEEDED`), so the gfortran substitution is not actually exercised.
-- IK correctness is observable end to end: `pick_shelf` terminated and the cube was
-  actually grasped and thrown on 10/10 seeds. A broken IK solver does not pick up a cube.
-- **But this is a substitution, and it is the one part of this record that is not
-  upstream-stock.** If a future measurement on this domain disagrees with this file,
-  check the BLAS link first.
+The compiled module and its `build/` were deleted and rebuilt from scratch with **no
+environment overrides at all** — no `BLAS_DIR`/`LAPACK_DIR`/`LIBGFORTRAN_DIR`, and no
+`CC`/`CXX`/`LDSHARED` — just `python setup.py` in the venv, ending `ikfast module
+ikfast_kortex imported successful`. Done twice, the two builds are byte-identical
+(`sha256 1a1868b258eddd1f…`), so this is reproducible rather than a one-off.
 
-**A previous session's shim is still on disk and should not be reused.** An earlier
+What it links is entirely system libraries:
+
+```
+$ readelf -d ikfast_kortex.cpython-310-x86_64-linux-gnu.so | grep NEEDED
+ (NEEDED)  Shared library: [libgfortran.so.5]
+ (NEEDED)  Shared library: [libstdc++.so.6]
+ (NEEDED)  Shared library: [libm.so.6]
+ (NEEDED)  Shared library: [libgcc_s.so.1]
+ (NEEDED)  Shared library: [libc.so.6]
+```
+
+No OpenBLAS, and no `RUNPATH`/`RPATH` at all — the module imports with
+`LD_LIBRARY_PATH` unset. BLAS and LAPACK come in *statically* from the `.a` files:
+74 Fortran-style symbols are defined in the module's own text (`dgemm_`, `dgetrf_`,
+`dgeev_`, …). The linker pulls in only what IKFast references, so `dgesv_` and
+`dgesvd_` are **absent** — expect a partial set, not all four.
+
+**The earlier build here was not stock, and §2 re-measured on the stock one is
+unchanged.** Before those packages were installed, the same module was pointed —
+through `compile.py`'s `BLAS_DIR`/`LAPACK_DIR`/`LIBGFORTRAN_DIR` hooks — at OpenCV's
+bundled OpenBLAS 0.3.3 inside the venv's own wheels. `readelf -d` on that build listed
+`libopenblas-r0-f650aae0.3.3.so` with no `RUNPATH`, i.e. it depended on the loader
+finding a library inside another wheel's private directory. §2 was measured against
+it, and §4's leak run executes the same `pick_shelf`. The oracle sequence was then
+re-run end to end on the stock build, seed 125: all four skills terminate in **71 / 23 / 16 / 18**
+steps, standoff 1.35 leaves the cube at `x=2.2197 y=0.0103 z=0.0444` with
+`_check_goals() = False`, and standoff 1.55 at `x=2.0268 y=0.0105 z=0.0249` with
+`_check_goals() = True` — §2's bin-floor-versus-bare-floor split, unchanged. That
+reproduction, not the link itself, is the evidence nothing here depended on the
+substituted libraries. (Resting *x* is sensitive to the `pick_shelf` parameter draw
+— a different draw moves it to 2.1888 with the same `z` and the same verdict — so
+compare §2's per-seed figures on `z` and the verdict, not on `x` to four places.)
+
+**A previous session's shim is still on disk and must not be reused.** An earlier
 attempt at the same problem symlinked `libblas.a`/`liblapack.a` at an OpenBLAS inside a
 now-deleted scratch venv (dangling), and supplied a hand-compiled `libgfortran.so.5.0.0`
 built from a 1-byte `empty.c` that exports **0 symbols** — verified with `nm -D`. That is
-a stub, not a library. It was not used here.
+a stub, not a library. It was never used for any number here, and the system packages
+above supersede it entirely: there is no longer any reason to point a build at it.
 
 **Run wiring.** The venv lives at `/home/josh/Documents/repos/research/kinder-venv` and
-installs editable from `reference/`. Because it was seeded from conda's `python3.10`
-(this machine has no system 3.10), `sysconfig`'s `CC`/`LDSHARED` point at conda's
-`compiler_compat` linker, which cannot see the system toolchain; the IKFast build
-therefore needs `CC`/`CXX`/`LDSHARED` overridden to plain `gcc`/`g++`, and the resulting
-module needs `LD_LIBRARY_PATH` to include `opencv_python.libs` and `numpy.libs` at
-import time.
+installs editable from `reference/`. It was seeded from conda's `python3.10` (this
+machine has no system 3.10), so `sysconfig`'s `CC`/`LDSHARED` still name conda's
+`compiler_compat` linker — but with the system BLAS/LAPACK/gfortran packages present
+the IKFast build succeeds straight through that, unmodified. Overriding
+`CC`/`CXX`/`LDSHARED` to plain `gcc`/`g++`, and putting `opencv_python.libs` and
+`numpy.libs` on `LD_LIBRARY_PATH` at import time, were both needed for the earlier
+substituted build; neither is needed now.
 
 ## What this record does not establish
 
