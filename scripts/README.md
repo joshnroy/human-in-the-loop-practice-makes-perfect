@@ -203,3 +203,88 @@ end-to-end through the real CLI — same seed → identical `stats.json`, differ
 seeds → different `stats.json`, and neither depends on the math thread count.
 It's tested at that level deliberately: any one component reaching for an
 unseeded global would break reproducibility without breaking a narrower test.
+
+## `tossing3d_oracle_demo.py`
+
+Renders KINDER's Tossing3D oracle rollout to a GIF, one per toss standoff, and
+writes them to `docs/`. The two committed clips —
+[`docs/tossing3d_oracle_standoff_1p35.gif`](../docs/tossing3d_oracle_standoff_1p35.gif)
+and
+[`docs/tossing3d_oracle_standoff_1p55.gif`](../docs/tossing3d_oracle_standoff_1p55.gif)
+— are exactly what its defaults produce:
+
+| standoff | cube comes to rest | `_check_goals()` |
+| --- | --- | --- |
+| 1.35 | `x=2.2197 y=0.0103 z=0.0444` — **in the bin** (`bin_0` is at `x=2.2301`) | `False` |
+| 1.55 | `x=2.0268 y=0.0105 z=0.0249` — bare floor, short of the bin | `True` |
+
+Same seed, same skills, same parameters; only `move_to_target`'s standoff differs,
+and every skill terminates on its own (71 / 23 / 16 / 18 steps in both). **The
+throw that lands in the bin scores nothing and the one that misses scores**, because
+`Tossing3D-o1`'s goal predicate is `["on", "cube_0", "blocks_goal_region"]` — a
+ground region the bin merely sits near. Each clip carries its own measured numbers
+burned into the frame, so one clip on its own still makes the point.
+
+It drives a simulator, so it is here and not in `analysis/`. Unlike `run_sweep.py`
+it does not shell out to `hitl_pmp.cli`: there is no CLI surface for KINDER at all
+on `main` (`environments/tossing3d/` is not merged — see
+[`docs/tossing3d-integration-status.md`](../docs/tossing3d-integration-status.md)),
+and this deliberately depends on nothing but upstream, so it survives that work
+landing, changing, or staying closed. It imports no `hitl_pmp` module.
+
+```bash
+# KINDER is an optional extra and is NOT in the hitl-pmp conda env.
+systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue \
+    /path/to/kinder-venv/bin/python scripts/tossing3d_oracle_demo.py --output-dir docs
+```
+
+Three things about running it are easy to get wrong, and each costs an hour:
+
+- **The memory cap is not optional.** KINDER leaks roughly one PyBullet client and
+  ~150 MB per skill execution; a kernel OOM on this box has taken a whole login
+  session down before. Read the scope's cgroup `memory.max` back to confirm the cap
+  is real rather than assuming the flag took.
+- **The distribution is `kindergarden`; the import package is `kinder`.** The venv
+  additionally needs `pydantic` (this repo's own convention, not KINDER's) and wants
+  `gifsicle` on `PATH` — without it `kinder.gif_utils.optimize_gif` prints a warning,
+  skips, and leaves a ~6 MB clip.
+- **`MUJOCO_GL` must be `egl`, with some `DISPLAY` set, before KINDER is imported.**
+  `register_all_environments()` rewrites `MUJOCO_GL` to `osmesa` when `DISPLAY` is
+  unset, `import mujoco` then raises, `_check_deps` **swallows** it, and every
+  Dynamic3D env silently vanishes into `NameNotFound` from `kinder.make`. The script
+  handles this itself in `configure_headless_rendering`; the ordering is pinned by a
+  test, because setting the variable after the import is a no-op.
+
+### `--camera task_view`, not `agentview_1`
+
+Upstream's demo (`reference/kindergarden/scripts/generate_demo_video.py`) sets
+`agentview_1`, but only `if "TidyBot" in env_id` — and this env id is
+`kinder/Tossing3D-o1-v0`, which does not contain `TidyBot`. That camera is not in
+this scene's `camera_names` at all (`frontview`, `birdview`, `agentview`,
+`sideview`, `task_view`, `robot_base`, `robot_wrist`), and `set_render_camera`
+stores the name without validating it, so it renders a near-static shot of a wall:
+6/32 sampled frames unique, against 32/32 for `task_view`. The script now rejects
+an unknown camera name outright rather than rendering the wrong thing quietly.
+
+`task_view` is the camera Tossing3D's own task config defines, and it is the only
+one of the seven that frames the task. Its limitation, since it is a fixed camera:
+the bin sits at the right-hand edge, so the cube's landing is at the frame border.
+The pick, the drive to the barrier, the swing and the cube in flight are all clearly
+visible.
+
+`--scene-bg` (on by default) is what makes this the MimicLabs `lab2` scene the task
+JSON names, and is what the ~1 GB asset download is for; `--no-scene-bg` renders a
+scene literally named `simple` — a bare ground plane, upstream's *unit test* setting,
+useful only as a fast smoke test. Physics is unaffected by either. fps comes from
+`env.metadata["render_fps"]` (20 here), never a hardcoded value.
+
+### Why the clips are 64 frames and a 128-colour palette
+
+They are **committed**, so their size is a review concern rather than a preference.
+The rollout is 128 steps of a wood-textured lab floor, so nearly every pixel changes
+every frame and GIF's inter-frame compression buys almost nothing: at `--every 1`
+with upstream's own `--colors 256 --lossy 80` the optimised clip is 3.9 MB, against
+a whole-repo `.git` of 26 MB. Keeping every 2nd frame and halving the playback fps
+(so the clip still runs at real speed) is the dominant saving, and the palette does
+the rest: 6.0 MB → 1.9 MB. Upstream's exact settings are still one flag away
+(`--every 1 --colors 256 --lossy 80`).
