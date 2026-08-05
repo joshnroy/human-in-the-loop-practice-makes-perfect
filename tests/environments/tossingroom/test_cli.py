@@ -22,6 +22,14 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def test_there_is_no_button_room_flag() -> None:
+    """Each bin's button sits in that bin's own room, so --trash-bin-room and
+    --recycling-bin-room place the buttons too. A separate --button-room would be a
+    second knob that has to agree with them."""
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["--button-room", "4"])
+
+
 def test_add_arguments_defaults_match_live_class_values() -> None:
     args = _build_parser().parse_args([])
     fields = TossingRoomEnvironment.model_fields
@@ -29,7 +37,6 @@ def test_add_arguments_defaults_match_live_class_values() -> None:
     assert args.start_room == fields["start_room"].default
     assert args.recycling_bin_room == fields["recycling_bin_room"].default
     assert args.trash_bin_room == fields["trash_bin_room"].default
-    assert args.button_room == fields["button_room"].default
     assert args.blocked_right_from == fields["blocked_right_from"].default
     assert args.throw_tolerance == fields["throw_tolerance"].default
     assert args.target_low == TossingRoomTasks.model_fields["target_low"].default
@@ -112,8 +119,6 @@ def test_run_method_respects_a_larger_layout(*, capsys: pytest.CaptureFixture[st
         "--num-rooms",
         "9",
         "--trash-bin-room",
-        "8",
-        "--button-room",
         "8",
         "--goal-type",
         "trash",

@@ -300,7 +300,8 @@ class DomainCases:
         env = TossingRoomEnvironment()
         tasks = TossingRoomTasks(env=env, seed=0)
         # One oracle task per goal family: the EMPTY family is what walks the oracle
-        # into the button room, and it is only ~20% of the default goal_weights.
+        # into BOTH bins' button rooms (each bin has its own button beside it), and it
+        # is only ~20% of the default goal_weights.
         oracle_tasks = tuple(
             TossingRoomTasks(env=env, seed=0, forced_goal_type=goal_type).sample_test_task()
             for goal_type in TossingRoomGoalType

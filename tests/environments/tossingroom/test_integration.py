@@ -38,6 +38,35 @@ def test_oracle_solves_the_default_mixed_distribution() -> None:
     assert solved == 30
 
 
+def test_oracle_presses_both_buttons_in_the_only_feasible_order() -> None:
+    """EMPTY is now an ordering task: the trash button (room 6) must be pressed BEFORE
+    crossing the one-way ledge down to the recycling one (room 1), because nothing to
+    the right of the ledge is reachable again afterwards. Asserted on the realised
+    action sequence, not just on the solved flag, so a solve that happened to work by
+    another route would still be visible."""
+    env = TossingRoomEnvironment()
+    tasks = TossingRoomTasks(env=env, seed=0, forced_goal_type=TossingRoomGoalType.EMPTY)
+    problem = TossingRoomProblem(env=env, tasks=tasks)
+    method = SkillOracleMethod(env=env, oracle=TossingRoomOracle(env=env))
+    for _ in range(10):
+        task = tasks.sample_test_task()
+        state = problem.reset_to_task(task=task)
+        policy = method.get_task_policy(task=task)
+        pressed: list[int] = []
+        for _ in range(problem.max_episode_steps()):
+            if task.goal.is_satisfied(state=state):
+                break
+            action = policy(state).action
+            if int(round(action[0])) == TossingRoomEnvironment.SKILL_PRESS:
+                pressed.append(int(round(action[1])))
+            state = env.take_action(action=action)
+        assert task.goal.is_satisfied(state=state) is True
+        assert pressed == [
+            TossingRoomEnvironment.TRASH_KIND,
+            TossingRoomEnvironment.RECYCLING_KIND,
+        ]
+
+
 def test_oracle_never_issues_the_blocked_rightward_ledge_step() -> None:
     """The oracle is forward-only: it should solve without ever attempting the single
     irreversible-blocked move (rightward across the ledge), so it never needs help."""

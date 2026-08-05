@@ -17,7 +17,10 @@ class TossingRoomGoalType(str, Enum):
 
     RECYCLING = "recycling"  # throw the recycling item into the recycling bin
     TRASH = "trash"  # throw the trash item into the trash bin
-    EMPTY = "empty"  # empty both (initially non-empty) bins via the button
+    # Empty both prefilled bins, each via its OWN button beside it. Since the recycling
+    # button sits behind the one-way ledge, this is an ordering task: trash first, then
+    # drop across for recycling. The reverse order is unsolvable.
+    EMPTY = "empty"
 
 
 class TossingRoomTasks(Tasks):
@@ -37,10 +40,12 @@ class TossingRoomTasks(Tasks):
     shuffled with test_rng, rather than sampling each family independently. Two
     reasons, both about the analyses this domain feeds (which are per goal family,
     with the within-seed TRASH - RECYCLING success gap as the headline):
-      * EMPTY is deterministic (MoveRoom x k + Press, no Throw) -- it was 100% in
-        every seed of every arm measured so far, sd exactly 0. It is worth keeping as
-        a live sanity check but not worth ~20% of the evaluation budget, so it gets a
-        small fixed allocation and the throw families get the rest.
+      * EMPTY carries no Throw and so no stochasticity -- it was 100% in every seed of
+        every arm measured so far, sd exactly 0. It is worth keeping as a live sanity
+        check but not worth ~20% of the evaluation budget, so it gets a small fixed
+        allocation and the throw families get the rest. (It is no longer a *trivial*
+        walk-and-press: with one button per bin it now requires both presses in the one
+        order the ledge permits, so it tests ordering rather than nothing.)
       * Sampling made the per-family *counts* random too (16/10/4 at seed 0 vs
         11/12/7 at seed 1 for 30 test tasks), adding a variance source on top of the
         binomial noise already in each family's success rate. A fixed composition
@@ -67,10 +72,6 @@ class TossingRoomTasks(Tasks):
     test_env_seed_offset: int = 10000
     target_low: float = 0.5
     target_high: float = 1.0
-    # Bins start with this many items for the EMPTY goal (both bins non-empty, so the
-    # goal is never already/half satisfied). Inclusive integer range.
-    initial_count_low: int = 1
-    initial_count_high: int = 3
     # Sampling weights over (RECYCLING, TRASH, EMPTY) for the *training* stream only:
     # biased toward the throw families, since they are the interesting
     # pick-traverse-throw tasks. The test stream ignores these -- see the class
@@ -191,17 +192,16 @@ class TossingRoomTasks(Tasks):
         recycling_target = float(rng.uniform(self.target_low, self.target_high))
 
         if goal_type is TossingRoomGoalType.EMPTY:
-            recycling_count = int(
-                rng.integers(self.initial_count_low, self.initial_count_high, endpoint=True)
-            )
-            trash_count = int(
-                rng.integers(self.initial_count_low, self.initial_count_high, endpoint=True)
-            )
+            # One item per bin: a bin holds at most one, so the old Uniform{1, 2, 3}
+            # prefill (and its initial_count_low/high knobs) has a single legal value
+            # left. Both bins are filled, so the goal is never already or half
+            # satisfied -- and since each bin now has its own button, emptying both is
+            # what makes this an ordering task rather than one walk and one press.
             initial_state = self.env.build_initial_state(
                 trash_target_force=trash_target,
                 recycling_target_force=recycling_target,
-                recycling_count=recycling_count,
-                trash_count=trash_count,
+                recycling_count=self.env.BIN_CAPACITY,
+                trash_count=self.env.BIN_CAPACITY,
             )
             atoms = frozenset({
                 BIN_EMPTY(state=initial_state, objects=(self.env.recycling_bin,)),

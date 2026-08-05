@@ -63,17 +63,24 @@ def test_throw_tasks_start_with_empty_bins() -> None:
     )
 
 
-def test_empty_goal_starts_with_both_bins_non_empty() -> None:
-    task = _tasks(seed=2, forced_goal_type=TossingRoomGoalType.EMPTY).sample_train_task()
-    assert task.goal.atoms == frozenset({
-        BIN_EMPTY(state=task.initial_state, objects=(TossingRoomEnvironment.recycling_bin,)),
-        BIN_EMPTY(state=task.initial_state, objects=(TossingRoomEnvironment.trash_bin,)),
-    })
-    assert (
-        task.initial_state.get(obj=TossingRoomEnvironment.recycling_bin, feature_name="count")
-        >= 1.0
-    )
-    assert task.initial_state.get(obj=TossingRoomEnvironment.trash_bin, feature_name="count") >= 1.0
+def test_empty_goal_prefills_exactly_one_item_per_bin() -> None:
+    """A bin holds at most one item, so the old Uniform{1, 2, 3} prefill (and its
+    initial_count_low/high knobs) has exactly one legal value left."""
+    tasks = _tasks(seed=2, forced_goal_type=TossingRoomGoalType.EMPTY)
+    for _ in range(10):
+        task = tasks.sample_train_task()
+        assert task.goal.atoms == frozenset({
+            BIN_EMPTY(state=task.initial_state, objects=(TossingRoomEnvironment.recycling_bin,)),
+            BIN_EMPTY(state=task.initial_state, objects=(TossingRoomEnvironment.trash_bin,)),
+        })
+        assert (
+            task.initial_state.get(obj=TossingRoomEnvironment.recycling_bin, feature_name="count")
+            == 1.0
+        )
+        assert (
+            task.initial_state.get(obj=TossingRoomEnvironment.trash_bin, feature_name="count")
+            == 1.0
+        )
 
 
 def test_target_force_is_within_the_sampled_range() -> None:
@@ -220,13 +227,14 @@ def test_forced_goal_type_still_overrides_the_test_schedule() -> None:
     [
         (
             0,
-            "trash recycling trash empty recycling empty recycling trash empty trash trash trash",
+            "trash recycling trash empty empty recycling recycling recycling trash empty "
+            "trash trash",
             0.520487,
         ),
         (
             1,
-            "trash empty trash trash trash recycling recycling trash trash recycling "
-            "recycling trash",
+            "trash empty empty recycling recycling trash recycling recycling empty "
+            "recycling trash trash",
             0.572080,
         ),
         (
@@ -240,10 +248,17 @@ def test_forced_goal_type_still_overrides_the_test_schedule() -> None:
 def test_train_stream_is_unchanged_by_the_fixed_test_composition(
     *, seed: int, expected_goal_types: str, expected_first_target: float
 ) -> None:
-    """Golden values recorded from the sampled-test-set implementation, before the test
-    set was pinned to a fixed composition. The training task distribution is deliberately
-    untouched by that change -- pinning training tasks too has silently turned a run into
-    a different experiment on this project before -- so these literals must not move."""
+    """Golden values pinning the training stream, which the fixed-test-set change
+    deliberately left untouched -- pinning training tasks too has silently turned a run
+    into a different experiment on this project before.
+
+    RE-RECORDED ONCE, for the capacity-1 bin redesign: an EMPTY task used to draw two
+    extra `rng.integers` for its 1-3 prefill, and a bin now holds exactly one item, so
+    those draws are gone and every family drawn after the first EMPTY of a seed shifts.
+    That is a real change to the training distribution, not a re-recording of noise: the
+    first target (0.520487 / 0.572080 / 0.907113) is identical because it is drawn before
+    the first EMPTY, and seed 2's sequence is unchanged because its first EMPTY is the
+    twelfth task. Any *other* movement in these literals is a regression."""
     tasks = _tasks(seed=seed, num_test_tasks=30)
     drawn = [tasks.sample_train_task() for _ in range(12)]
     assert [_goal_type(task=task).value for task in drawn] == expected_goal_types.split()

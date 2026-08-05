@@ -44,10 +44,18 @@ class AdjacentClassifier:
 
 
 class ItemInBinClassifier:
-    """Whether an item of this kind is in the (matching) bin: the bin holds at least
-    one item AND it is the correct bin for the item (item.kind == bin.kind). The kind
-    match is what makes ItemInBin(trash, recycling_bin) false even when the recycling
-    bin is non-empty."""
+    """Whether an item of this kind is in the (matching) bin: the bin is non-empty AND
+    it is the correct bin for the item (item.kind == bin.kind). The kind match is what
+    makes ItemInBin(trash, recycling_bin) false even when the recycling bin is
+    non-empty.
+
+    Deliberately still count-based, and deliberately NOT paired with an `in_bin` flag on
+    the item. A bin holds at most one item (TossingRoomEnvironment.BIN_CAPACITY) and
+    `Throw` requires `BinEmpty`, so the count is provably 0 at throw time -- which makes
+    this predicate flip false -> true exactly once per throw and therefore an honest
+    add-effect for EES to score against. `count in {0, 1}` is the single representation
+    of a bin's contents, read here and by BinEmpty below; storing the same fact twice is
+    what this redesign exists to avoid."""
 
     @staticmethod
     def holds(*, state: State, item: Object, bin_obj: Object) -> bool:
@@ -58,6 +66,10 @@ class ItemInBinClassifier:
 
 
 class BinEmptyClassifier:
+    """The complement of ItemInBin over the same `count`, and the other half of what
+    makes `Throw`'s scoring honest: as `Throw`'s precondition it pins the count to 0
+    before the throw."""
+
     @staticmethod
     def holds(*, state: State, bin_obj: Object) -> bool:
         return int(round(state.get(obj=bin_obj, feature_name="count"))) == 0
@@ -81,6 +93,19 @@ class BinAcceptsItemClassifier:
         item_kind = int(round(state.get(obj=item, feature_name="kind")))
         bin_kind = int(round(state.get(obj=bin_obj, feature_name="kind")))
         return item_kind == bin_kind
+
+
+class ButtonForBinClassifier:
+    """Which single bin a button empties -- each bin has its own button, beside it, and
+    `_apply_press` empties only that one. Without this tie `Press`'s effects are not
+    expressible per bin, which is what forced the old shared button's blanket
+    `ignore_effects={ItemInBin}`."""
+
+    @staticmethod
+    def holds(*, state: State, button: Object, bin_obj: Object) -> bool:
+        button_kind = int(round(state.get(obj=button, feature_name="kind")))
+        bin_kind = int(round(state.get(obj=bin_obj, feature_name="kind")))
+        return button_kind == bin_kind
 
 
 class CanMoveRoomClassifier:
@@ -179,6 +204,14 @@ BIN_ACCEPTS_ITEM = Predicate(
     types=(TossingRoomEnvironment.item_type, TossingRoomEnvironment.bin_type),
     holds=lambda state, objects: BinAcceptsItemClassifier.holds(
         state=state, item=objects[0], bin_obj=objects[1]
+    ),
+)
+
+BUTTON_FOR_BIN = Predicate(
+    name="ButtonForBin",
+    types=(TossingRoomEnvironment.button_type, TossingRoomEnvironment.bin_type),
+    holds=lambda state, objects: ButtonForBinClassifier.holds(
+        state=state, button=objects[0], bin_obj=objects[1]
     ),
 )
 

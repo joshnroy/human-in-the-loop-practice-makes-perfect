@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from gymnasium.spaces import Box
 
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
@@ -30,8 +31,10 @@ def _throw(*, kind: int, force: float) -> np.ndarray:
     return np.array([float(TossingRoomEnvironment.SKILL_THROW), float(kind), force])
 
 
-def _press() -> np.ndarray:
-    return np.array([float(TossingRoomEnvironment.SKILL_PRESS), 0.0, 0.0])
+def _press(*, kind: int) -> np.ndarray:
+    """`kind` names WHICH button is pressed -- each bin has its own, beside it. Press's
+    `arg` used to be unused, back when one button emptied both bins."""
+    return np.array([float(TossingRoomEnvironment.SKILL_PRESS), float(kind), 0.0])
 
 
 def test_hard_reset_sets_canonical_starting_state() -> None:
@@ -44,12 +47,11 @@ def test_hard_reset_sets_canonical_starting_state() -> None:
     assert state.get(obj=_TRASH_BIN, feature_name="count") == 0.0
 
 
-def test_build_initial_state_places_bins_and_button_in_their_rooms() -> None:
+def test_build_initial_state_places_bins_and_buttons_in_their_rooms() -> None:
     env = _env()
     state = env.build_initial_state(trash_target_force=0.7, recycling_target_force=0.3)
     assert state.get(obj=_RECYCLING_BIN, feature_name="room") == env.recycling_bin_room
     assert state.get(obj=_TRASH_BIN, feature_name="room") == env.trash_bin_room
-    assert state.get(obj=TossingRoomEnvironment.button, feature_name="room") == env.button_room
     assert state.get(obj=TossingRoomEnvironment.trash, feature_name="target_force") == 0.7
     assert state.get(obj=TossingRoomEnvironment.recycling, feature_name="target_force") == 0.3
 
@@ -218,28 +220,154 @@ def test_throw_with_an_empty_hand_is_a_no_op() -> None:
     assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
 
 
-def test_press_in_the_button_room_empties_both_bins() -> None:
+def test_press_outside_a_button_room_is_a_no_op() -> None:
     env = _env()
     state = env.build_initial_state(
-        trash_target_force=0.5, recycling_target_force=0.5, recycling_count=3, trash_count=2
+        trash_target_force=0.5, recycling_target_force=0.5, recycling_count=1, trash_count=1
     )
-    state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.button_room))
+    # Robot at start_room, which holds neither bin's button.
     env.set_state(state=state)
-    next_state = env.take_action(action=_press())
-    assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
-    assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 0.0
+    next_state = env.take_action(action=_press(kind=TossingRoomEnvironment.TRASH_KIND))
+    assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
+    assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 1.0
 
 
-def test_press_outside_the_button_room_is_a_no_op() -> None:
-    env = _env()
-    state = env.build_initial_state(
-        trash_target_force=0.5, recycling_target_force=0.5, recycling_count=3, trash_count=2
-    )
-    # Robot at start_room, not the button room.
-    env.set_state(state=state)
-    next_state = env.take_action(action=_press())
-    assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 3.0
-    assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 2.0
+class TestBinsHoldAtMostOneItem:
+    """Capacity 1 is the whole point of the bin redesign: with the count provably 0 at
+    throw time, `ItemInBin` goes false -> true exactly once per throw, so EES's
+    `add_effects <= atoms(next_state)` verdict cannot be satisfied by an item somebody
+    else's throw put there. The dynamics REFUSE a throw at a full bin (a silent no-op,
+    like every other out-of-context action here) rather than swallowing the item, and
+    `Throw` carries the matching `BinEmpty` precondition so the symbolic model stays
+    exactly as strong as this guard."""
+
+    @staticmethod
+    def _at_the_full_recycling_bin(*, env: TossingRoomEnvironment):
+        state = env.build_initial_state(
+            trash_target_force=0.5, recycling_target_force=0.5, recycling_count=1
+        )
+        state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.recycling_bin_room))
+        state.set(
+            obj=_ROBOT,
+            feature_name="holding",
+            feature_val=float(TossingRoomEnvironment.RECYCLING_KIND),
+        )
+        env.set_state(state=state)
+        return state
+
+    @staticmethod
+    def test_a_throw_at_a_full_bin_is_refused_and_the_item_stays_in_hand() -> None:
+        env = _env()
+        TestBinsHoldAtMostOneItem._at_the_full_recycling_bin(env=env)
+        # Force is exactly the target, so only the capacity guard can refuse this.
+        next_state = env.take_action(
+            action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5)
+        )
+        assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
+        assert (
+            next_state.get(obj=_ROBOT, feature_name="holding")
+            == TossingRoomEnvironment.RECYCLING_KIND
+        )
+
+    @staticmethod
+    def test_the_same_throw_lands_once_the_bin_has_been_emptied() -> None:
+        """The complement, so the guard cannot be 'a throw never lands'."""
+        env = _env()
+        TestBinsHoldAtMostOneItem._at_the_full_recycling_bin(env=env)
+        env.take_action(action=_press(kind=TossingRoomEnvironment.RECYCLING_KIND))
+        next_state = env.take_action(
+            action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5)
+        )
+        assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
+        assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
+
+    @staticmethod
+    def test_a_landed_throw_never_pushes_a_bin_past_one() -> None:
+        env = _env()
+        state = _carry_to_recycling_room(env=env)
+        del state
+        env.take_action(action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5))
+        assert env.get_current_state().get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
+
+    @staticmethod
+    def test_build_initial_state_rejects_a_count_beyond_capacity() -> None:
+        with pytest.raises(ValueError, match="at most one item"):
+            _env().build_initial_state(
+                trash_target_force=0.5, recycling_target_force=0.5, trash_count=2
+            )
+
+
+class TestEachBinHasItsOwnButtonBesideIt:
+    """One button per bin, in that bin's own room, emptying only that bin. The single
+    shared button that emptied both is what forced `Press`'s `ignore_effects` (a
+    universal delete no per-item effect could express); with per-bin effects the delete
+    is expressible as an ordinary `delete_effect`."""
+
+    @staticmethod
+    def _both_bins_full(*, env: TossingRoomEnvironment):
+        state = env.build_initial_state(
+            trash_target_force=0.5,
+            recycling_target_force=0.5,
+            recycling_count=1,
+            trash_count=1,
+        )
+        env.set_state(state=state)
+        return state
+
+    @staticmethod
+    def test_each_button_sits_in_its_own_bins_room() -> None:
+        env = _env()
+        state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
+        assert (
+            state.get(obj=TossingRoomEnvironment.trash_button, feature_name="room")
+            == env.trash_bin_room
+        )
+        assert (
+            state.get(obj=TossingRoomEnvironment.recycling_button, feature_name="room")
+            == env.recycling_bin_room
+        )
+
+    @staticmethod
+    def test_pressing_the_trash_button_empties_only_the_trash_bin() -> None:
+        env = _env()
+        state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
+        state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.trash_bin_room))
+        env.set_state(state=state)
+        next_state = env.take_action(action=_press(kind=TossingRoomEnvironment.TRASH_KIND))
+        assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 0.0
+        assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
+
+    @staticmethod
+    def test_pressing_the_recycling_button_empties_only_the_recycling_bin() -> None:
+        env = _env()
+        state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
+        state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.recycling_bin_room))
+        env.set_state(state=state)
+        next_state = env.take_action(action=_press(kind=TossingRoomEnvironment.RECYCLING_KIND))
+        assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
+        assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 1.0
+
+    @staticmethod
+    def test_pressing_a_button_from_the_other_buttons_room_is_a_no_op() -> None:
+        """The buttons are not remote controls: standing beside the trash button and
+        asking for the recycling one does nothing."""
+        env = _env()
+        state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
+        state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.trash_bin_room))
+        env.set_state(state=state)
+        next_state = env.take_action(action=_press(kind=TossingRoomEnvironment.RECYCLING_KIND))
+        assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
+        assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 1.0
+
+    @staticmethod
+    def test_pressing_an_unknown_button_kind_is_a_no_op() -> None:
+        env = _env()
+        state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
+        state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.trash_bin_room))
+        env.set_state(state=state)
+        next_state = env.take_action(action=_press(kind=99))
+        assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 1.0
+        assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
 
 
 def test_take_action_updates_current_state() -> None:

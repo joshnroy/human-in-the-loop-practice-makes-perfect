@@ -52,39 +52,76 @@ class TossingRoomProblem(Problem):
         Note this bounds only the EVALUATION episode. An interaction period's length
         is `--max-steps-per-interaction`, untouched by this, so tightening the horizon
         cannot change how much practice experience any Method receives.
+
+        The default layout's horizon moved 7 -> 12 when each bin got its own button:
+        EMPTY became the longest solve (see `longest_shortest_solve`). That does NOT
+        reopen the retry channel the tight bound exists to close -- a TRASH retry needs
+        step 13 and RECYCLING can never retry at all -- and 12 is inside the range the
+        horizon sweep measured as flat (every horizon from 5 to 12 returned the same
+        unpracticed score).
         """
         return self.longest_shortest_solve() + 2
 
     def longest_shortest_solve(self) -> int:
         """Skills in the longest of this layout's three goal families' shortest
         solves: a throw goal is Pickup + walk to that item's bin room + Throw, and the
-        empty goal is walk to the button room + Press. Targets the one-way ledge makes
-        unreachable are skipped -- they are unsolvable at *any* horizon, so letting
-        them set the budget would only hand the solvable goals extra retries."""
+        empty goal is a walk to each bin's own button plus a Press at each. Targets the
+        one-way ledge makes unreachable are skipped -- they are unsolvable at *any*
+        horizon, so letting them set the budget would only hand the solvable goals extra
+        retries.
+
+        On the default layout EMPTY is now the longest (10: 3 moves, Press, 5 moves,
+        Press), where it used to be 4 with one button emptying both bins -- so the
+        horizon is 12 rather than 7. TRASH's own solve is unchanged at 5 and still
+        admits no second attempt: a retry costs the eight-step round trip to the pile,
+        landing at step 13. RECYCLING can never be retried at any horizon, since the
+        ledge severs the bin room from the pile."""
         lengths: list[int] = []
         for bin_room in (self.env.recycling_bin_room, self.env.trash_bin_room):
             distance = self.rooms_to_walk(room=bin_room)
             if distance is not None:
                 lengths.append(1 + distance + 1)
-        distance = self.rooms_to_walk(room=self.env.button_room)
-        if distance is not None:
-            lengths.append(distance + 1)
+        empty = self.empty_both_bins_solve()
+        if empty is not None:
+            lengths.append(empty)
         # default=1 only for a degenerate layout with nothing reachable at all; the
         # horizon still has to be positive for run_task_episode's goal check to run.
         return max(lengths, default=1)
 
+    def empty_both_bins_solve(self) -> int | None:
+        """MoveRooms + Presses to empty BOTH bins, or None when no order of the two
+        works. Each bin has its own button beside it, so the robot must visit both
+        rooms, and the one-way ledge means the order matters: on the default layout only
+        trash-then-recycling is feasible. Both orders are costed and the cheaper
+        feasible one wins, rather than hardcoding "rightmost first" -- the ledge's
+        direction is layout config."""
+        candidates: list[int] = []
+        for first, second in (
+            (self.env.trash_bin_room, self.env.recycling_bin_room),
+            (self.env.recycling_bin_room, self.env.trash_bin_room),
+        ):
+            to_first = self.rooms_to_walk(room=first)
+            between = self.rooms_to_walk_between(from_room=first, to_room=second)
+            if to_first is not None and between is not None:
+                candidates.append(to_first + 1 + between + 1)
+        return min(candidates, default=None)
+
     def rooms_to_walk(self, *, room: int) -> int | None:
         """MoveRoom steps from the start room to `room`, or None if the one-way ledge
-        blocks it. Closed form rather than a graph search: the rooms are a 1-D hallway
-        whose single blocked edge is the rightward step out of `blocked_right_from`,
-        so leftward is always free and rightward is free unless the walk crosses that
+        blocks it."""
+        return self.rooms_to_walk_between(from_room=self.env.start_room, to_room=room)
+
+    def rooms_to_walk_between(self, *, from_room: int, to_room: int) -> int | None:
+        """MoveRoom steps between two rooms, or None if the one-way ledge blocks the
+        walk. Closed form rather than a graph search: the rooms are a 1-D hallway whose
+        single blocked edge is the rightward step out of `blocked_right_from`, so
+        leftward is always free and rightward is free unless the walk crosses that
         edge."""
-        start = self.env.start_room
-        if room <= start:
-            return start - room
-        if start <= self.env.blocked_right_from < room:
+        if to_room <= from_room:
+            return from_room - to_room
+        if from_room <= self.env.blocked_right_from < to_room:
             return None
-        return room - start
+        return to_room - from_room
 
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
