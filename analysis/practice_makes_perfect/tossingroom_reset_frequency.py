@@ -27,18 +27,38 @@ saturate. `--num-cycles` sets progress, so the arms can sit at different points 
 that hump and their final gaps can differ for that reason alone.
 
 They do. `family_differences` measures the precondition directly, and it fails:
-between the extreme arms (500 steps vs 50) final competence differs by **-40.4pp
-on TRASH and -44.7pp on RECYCLING, both exact Wilcoxon p = 0.0156**. The arms are
-not equally trained, so a cross-arm gap difference is not attributable to reset
-frequency. `progress_diagnostics` reports the supporting quantities (final TRASH
-level, seeds at the ceiling, seeds that never improved, exact ties), and both are
-printed *before* any p-value, because they decide whether the p-values below mean
-anything. `progress_matched_gaps` is the un-confounded companion: the gap read at
-a common TRASH competence rather than at a common transition count.
+between the extreme arms (500 steps vs 50) final competence differs by **-40.7pp
+on TRASH (p = 0.0195) and -82.9pp on RECYCLING (p = 0.0020)**, exact paired tests.
+The arms are not equally trained, so a cross-arm gap difference is not attributable
+to reset frequency. `progress_diagnostics` reports the supporting quantities (final
+TRASH level, seeds at the ceiling, seeds that never improved, exact ties), and both
+are printed *before* any p-value, because they decide whether the p-values below
+mean anything. `progress_matched_gaps` is the un-confounded companion: the gap read
+at a common TRASH competence rather than at a common transition count.
+
+**That companion is now load-bearing, and `progress_matched_differences` is why it
+is a test and not a table.** On the fixed 14/14/2 evaluation set (PR #41) the final
+gap *does* trend with period length -- monotone, armD - armA = +42.14pp at exact
+Wilcoxon p = 0.0039 -- where on the superseded sampled composition it did not trend
+at all. Hold training progress fixed and the same contrast is -5.00pp at p = 0.6875,
+a null result. So the trend is what the hump predicts from the competence difference
+above, and this design still cannot tell that apart from a reset effect. Anything
+here that quotes a number quotes the fixed-composition run; the 2026-08-03 numbers
+it replaced are recorded in the experiment log's *previously* columns.
 
 EMPTY is the control: no `Throw`, no stochastic skill, solved by a deterministic
 `MoveRoom`-then-`Press` plan. If its rate moves across arms, something other than
-irreversibility is in play, so the summary table prints it alongside.
+irreversibility is in play, so the summary table prints it alongside. Under the
+fixed composition it is only **2 tasks per seed**, so its 100% is 2/2 -- a
+plan-and-execute smoke test rather than a control with the power to detect a
+moderate regression, and it is read that way.
+
+**The manipulation is checked, not assumed.** `composition_violations` asserts the
+realised per-family denominators against `TossingRoomTasks.test_goal_type_counts()`
+and `transition_violations` asserts the 2500-transition budget, both per arm, seed
+and evaluation sweep. This experiment's own finding is a design that failed to
+isolate what it claimed; taking the evaluation set on trust would repeat that one
+level down, and is exactly what went stale when PR #41 landed.
 
 Reads only already-produced outputs (CLAUDE.md's analysis/ convention -- never
 runs a simulation). Two modes, both post-run:
@@ -59,9 +79,9 @@ enumeration: at n = 10 there are only 2**10 = 1024 sign assignments, so both the
 signed-rank null and the mean-difference null are enumerated in full rather than
 approximated. No normal approximation, no special functions, no tie correction
 needed -- ties are handled by averaging ranks and enumerating against *those*
-ranks, which is exact by construction. Ties matter here: with ~12 tasks per family
-per seed a gap can only land on multiples of ~8pp, so exact-zero differences are
-common and are reported rather than silently dropped.
+ranks, which is exact by construction. Ties matter here: with 14 tasks per throw
+family per seed a gap can only land on multiples of 100/14 = 7.1pp, so exact-zero
+differences are common and are reported rather than silently dropped.
 """
 
 import argparse
@@ -77,6 +97,8 @@ from pydantic import BaseModel, ConfigDict
 
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import EvaluationBreakdown
+from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
+from hitl_pmp.environments.tossingroom.tasks import TossingRoomTasks
 
 matplotlib.use("Agg")
 
@@ -210,13 +232,22 @@ class ResetFrequencyReport:
         floor, largest mid-training when TRASH pulls ahead, near zero again once
         both saturate. Since `--num-cycles` sets progress, arms can sit at
         different points on that hump -- and measurably do here, differing by
-        ~40pp in final competence (p = 0.0156), which is larger than any gap
-        difference this metric reports.
+        40.7pp (TRASH) and 82.9pp (RECYCLING) in final competence, which is larger
+        than any gap difference this metric reports.
 
-        The measured values are non-monotone in period length (-1.2, +5.4, +35.8,
-        +3.2 pp for 50/100/250/500), peaking at the arm whose TRASH competence is
-        mid-curve rather than at the arm with the fewest resets, which is the
-        hump asserting itself rather than the hypothesis.
+        On the fixed 14/14/2 evaluation set the measured values are **monotone** in
+        period length (-5.7, +4.3, +32.1, +36.4 pp for 50/100/250/500), and the
+        trend is significant (armD - armA = +42.14pp, exact Wilcoxon p = 0.0039).
+        That is *not* support for the hypothesis: the ordering also tracks training
+        progress exactly, since the least-trained arm sits mid-hump while the
+        most-trained one is pinned at the ceiling with both families at 100%. The
+        discriminating test is `progress_matched_differences`, which holds progress
+        fixed and returns a null result (-5.00pp, p = 0.6875).
+
+        On the superseded *sampled* composition these values were non-monotone
+        (-1.2, +5.4, +35.8, +3.2) and no trend test approached significance. That
+        difference is the evaluation set, not the harness -- same machine, same
+        seeds, same flags.
         """
         trash = ResetFrequencyReport.final_rates(arms=arms, arm=arm, family="TRASH")
         recycling = ResetFrequencyReport.final_rates(arms=arms, arm=arm, family="RECYCLING")
@@ -248,6 +279,30 @@ class ResetFrequencyReport:
                     break
             results.append(gap)
         return results
+
+    @staticmethod
+    def progress_matched_differences(
+        *, arms: dict, from_arm: str, to_arm: str, level: float
+    ) -> list[float]:
+        """Per-seed (to_arm - from_arm) difference in the *progress-matched* gap --
+        the cross-arm contrast with training progress held fixed, over the seeds
+        where both arms reach `level`.
+
+        This is the un-confounded twin of the headline `armD - armA` final-gap
+        test, and on the fixed-composition data it is the one that decides the
+        experiment's reading: the final gap trends with period length at p < 0.01,
+        but the arms also end ~40-80 competence points apart, and the gap is
+        hump-shaped in progress. If the trend were a reset effect rather than a
+        position-on-the-hump effect, it should still be here once progress is
+        matched.
+        """
+        from_gaps = ResetFrequencyReport.progress_matched_gaps(arms=arms, arm=from_arm, level=level)
+        to_gaps = ResetFrequencyReport.progress_matched_gaps(arms=arms, arm=to_arm, level=level)
+        return [
+            to_gap - from_gap
+            for from_gap, to_gap in zip(from_gaps, to_gaps, strict=True)
+            if from_gap is not None and to_gap is not None
+        ]
 
     @staticmethod
     def matchable_level(*, arms: dict) -> float:
@@ -320,6 +375,20 @@ class ResetFrequencyReport:
         carries far more sampling noise than the ~100-task pooled figure while
         estimating the same quantity.
         """
+        solved, total = ResetFrequencyReport.pooled_counts(arms=arms, arm=arm, family=family)
+        return 100.0 * solved / total if total else 0.0
+
+    @staticmethod
+    def pooled_counts(*, arms: dict, arm: str, family: str) -> tuple[int, int]:
+        """(evaluation episodes solved, evaluation episodes run) at the final sweep,
+        summed over seeds -- the primary record behind every pooled rate quoted for
+        this experiment.
+
+        Reported as the count rather than only as a percentage because a rate has
+        no denominator attached and this project has already published one number
+        whose denominator silently changed underneath it. Both integers come from
+        `Metrics.breakdowns`; neither is reconstructed by multiplying a percentage.
+        """
         solved = total = 0
         for seed in ResetFrequencyReport.seeds(arms=arms):
             _transitions, seed_solved, seed_total = max(
@@ -327,15 +396,76 @@ class ResetFrequencyReport:
             )
             solved += seed_solved
             total += seed_total
-        return 100.0 * solved / total if total else 0.0
+        return solved, total
 
     @staticmethod
     def family_denominators(*, arms: dict, arm: str, family: str) -> list[int]:
         """How many test tasks of one family each seed actually drew. Reported
-        because it is the experiment's real limiting quantity: `goal_weights` is
-        *sampled*, so 30 test tasks split unevenly and a seed can hold as few as
-        five RECYCLING tasks -- which makes "40% -> 0%" mean 2/5 -> 0/5."""
+        because it is the experiment's real limiting quantity: it is the
+        denominator every per-family rate is a fraction of, and it sets the noise
+        floor `predicted_gap_noise` computes.
+
+        Under the **fixed** composition (PR #41) this is a constant 14/14/2 at 30
+        test tasks, which `composition_violations` asserts rather than assumes.
+        The original 2026-08-03 run predates that change: `goal_weights` was
+        *sampled* then, so 30 test tasks split unevenly and a seed could hold as
+        few as five RECYCLING tasks -- which made "40% -> 0%" mean 2/5 -> 0/5.
+        """
         return [arms[arm][seed][family][0][2] for seed in ResetFrequencyReport.seeds(arms=arms)]
+
+    @staticmethod
+    def expected_composition(*, num_test_tasks: int = 30) -> dict[str, int]:
+        """The per-family test-set composition the *code* produces, read from the
+        domain itself rather than restated here.
+
+        `TossingRoomTasks.test_goal_type_counts` is public precisely so an analysis
+        script can assert the composition of a run it is reading back, and it
+        depends on neither the layout nor the seed -- so a default-constructed
+        instance is enough. At 30 test tasks: 14 TRASH / 14 RECYCLING / 2 EMPTY.
+        """
+        counts = TossingRoomTasks(
+            env=TossingRoomEnvironment(), num_test_tasks=num_test_tasks
+        ).test_goal_type_counts()
+        return {goal_type.name: count for goal_type, count in counts.items()}
+
+    @staticmethod
+    def composition_violations(*, arms: dict, num_test_tasks: int = 30) -> list[str]:
+        """Every (arm, seed, sweep) whose realised per-family denominators disagree
+        with `expected_composition`. Empty means the manipulation held everywhere.
+
+        This is the check this experiment's own headline demands. PR #39's lesson
+        was a design that did not isolate what it claimed; assuming the evaluation
+        composition instead of measuring it would be the same mistake one level
+        down, and it is exactly the assumption that went stale when PR #41 replaced
+        the sampled composition with a fixed one.
+        """
+        expected = ResetFrequencyReport.expected_composition(num_test_tasks=num_test_tasks)
+        violations = []
+        for arm in sorted(arms):
+            for seed in ResetFrequencyReport.seeds(arms=arms):
+                num_sweeps = min(len(arms[arm][seed][family]) for family in expected)
+                for index in range(num_sweeps):
+                    realised = {family: arms[arm][seed][family][index][2] for family in expected}
+                    if realised != expected:
+                        violations.append(f"{arm}/seed {seed}/sweep {index}: {realised}")
+        return violations
+
+    @staticmethod
+    def transition_violations(*, arms: dict, expected: int = 2500) -> list[str]:
+        """Every (arm, seed) that did not reach exactly `expected` online
+        transitions. The arms are only comparable at all because the experience
+        budget is identical by construction, so a shortfall is a residual confound
+        and is measured rather than argued from the loop's arithmetic."""
+        return [
+            f"{arm}/seed {seed}: {achieved:.0f}"
+            for arm in sorted(arms)
+            for seed, achieved in zip(
+                ResetFrequencyReport.seeds(arms=arms),
+                ResetFrequencyReport.achieved_transitions(arms=arms, arm=arm),
+                strict=True,
+            )
+            if achieved != expected
+        ]
 
     @staticmethod
     def predicted_gap_noise(*, arms: dict, arm: str) -> float:
@@ -818,6 +948,19 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _format_power(*, needed: float) -> str:
+    """Render `seeds_for_80_percent_power` for a table cell.
+
+    `<1` rather than `0`: an effect large enough that fewer than one pair would
+    suffice is not "zero seeds needed", and a bare 0 reads like a bug or like the
+    test being impossible. It happens here on the RECYCLING arm-extreme difference,
+    where the effect is ~5.6 sds wide.
+    """
+    if not math.isfinite(needed):
+        return "infinite (zero observed effect)"
+    return "<1" if needed < 1.0 else f"{needed:.0f}"
+
+
 def _print_report(*, arms: dict) -> None:
     arms_ordered = sorted(_ARM_PERIOD, key=lambda arm: _ARM_PERIOD[arm])
     seeds = ResetFrequencyReport.seeds(arms=arms)
@@ -846,23 +989,47 @@ def _print_report(*, arms: dict) -> None:
         gaps = ResetFrequencyReport.gaps(arms=arms, arm=arm)
         print(f"{arm:>5} " + " ".join(f"{gap:>6.1f}" for gap in gaps))
 
-    print("\nTest tasks drawn per family per seed (goal_weights is sampled, so this varies):")
+    # The manipulation check, printed before anything derived from it. Both halves
+    # of this experiment's design are assertions about the runs, not about the
+    # code: that every seed evaluated on the same fixed composition, and that every
+    # arm spent the same experience budget. PR #39's finding was a design that did
+    # not isolate what it claimed, so neither is taken on trust.
+    print("\nManipulation check:")
+    expected = ResetFrequencyReport.expected_composition()
+    composition = ResetFrequencyReport.composition_violations(arms=arms)
+    transitions = ResetFrequencyReport.transition_violations(arms=arms)
+    print(
+        f"  test-set composition expected {expected}: "
+        + ("OK, every arm/seed/sweep" if not composition else f"VIOLATED {composition[:5]}")
+    )
+    print(
+        "  online transitions expected 2500: "
+        + ("OK, every arm/seed" if not transitions else f"VIOLATED {transitions[:5]}")
+    )
     for family in _FAMILY_STYLE:
         denominators = ResetFrequencyReport.family_denominators(
             arms=arms, arm=arms_ordered[0], family=family
         )
         print(f"  {family:>10}: {denominators}  (identical in every arm -- same test RNG stream)")
 
-    print("\nPooled final rate (total solved / total tasks over all 10 seeds, descriptive only):")
-    print(f"{'arm':>5} " + " ".join(f"{family:>11}" for family in _FAMILY_STYLE))
+    print("\nPooled final count, solved/run over all 10 seeds (descriptive only):")
+    print(f"{'arm':>5} " + " ".join(f"{family:>20}" for family in _FAMILY_STYLE))
     for arm in arms_ordered:
-        print(
-            f"{arm:>5} "
-            + " ".join(
-                f"{ResetFrequencyReport.pooled_rate(arms=arms, arm=arm, family=family):>10.1f}%"
-                for family in _FAMILY_STYLE
-            )
-        )
+        cells = []
+        for family in _FAMILY_STYLE:
+            solved, total = ResetFrequencyReport.pooled_counts(arms=arms, arm=arm, family=family)
+            cells.append(f"{f'{solved}/{total}':>12} ({100.0 * solved / total:5.1f}%)")
+        print(f"{arm:>5} " + " ".join(cells))
+
+    print("\nPer-seed final solved/run, by family:")
+    for family in _FAMILY_STYLE:
+        print(f"  {family}:")
+        for arm in arms_ordered:
+            cells = []
+            for seed in seeds:
+                _t, solved, total = max(arms[arm][seed][family], key=lambda triple: triple[0])
+                cells.append(f"{solved}/{total}")
+            print(f"    {arm:>5} " + " ".join(f"{cell:>6}" for cell in cells))
 
     print("\nIs the gap's spread real, or just task-sampling noise?")
     for arm in arms_ordered:
@@ -903,7 +1070,7 @@ def _print_report(*, arms: dict) -> None:
         wilcoxon = PairedTests.wilcoxon_signed_rank(differences=differences)
         flip = PairedTests.sign_flip(differences=differences)
         needed = PairedTests.seeds_for_80_percent_power(differences=differences)
-        power = f"{needed:.0f}" if math.isfinite(needed) else "infinite (zero observed effect)"
+        power = _format_power(needed=needed)
         print(
             f"  {family:>10}: mean {statistics.mean(differences):+6.1f}pp, "
             f"sd {statistics.stdev(differences):5.1f}, "
@@ -935,6 +1102,27 @@ def _print_report(*, arms: dict) -> None:
             f"  {arm}: {len(present)}/10 seeds, {summary}, {at_start} matched before any practice"
         )
 
+    # Tested, not eyeballed. On the fixed-composition re-run the *final* gap does
+    # trend with period length at p < 0.01, so "is that the treatment or the hump?"
+    # stops being rhetorical and becomes the question the whole log turns on. The
+    # progress-matched gap is the same contrast with training progress held fixed,
+    # so if the trend were a reset effect it should survive here.
+    matched_extremes = ResetFrequencyReport.progress_matched_differences(
+        arms=arms, from_arm="armA", to_arm="armD", level=level
+    )
+    if matched_extremes:
+        wilcoxon = PairedTests.wilcoxon_signed_rank(differences=matched_extremes)
+        flip = PairedTests.sign_flip(differences=matched_extremes)
+        needed = PairedTests.seeds_for_80_percent_power(differences=matched_extremes)
+        power = _format_power(needed=needed)
+        print(
+            f"  progress-matched gap, armD - armA (n={len(matched_extremes)}): "
+            f"mean {statistics.mean(matched_extremes):+.2f}pp, "
+            f"sd {statistics.stdev(matched_extremes):.2f}, "
+            f"Wilcoxon p={wilcoxon.p_value:.4f}, sign-flip p={flip.p_value:.4f}, "
+            f"n for 80% power: {power}"
+        )
+
     print("\nPaired tests (exact, 10 shared seeds):")
     extremes = [
         d - a
@@ -958,7 +1146,7 @@ def _print_report(*, arms: dict) -> None:
         wilcoxon = PairedTests.wilcoxon_signed_rank(differences=differences)
         flip = PairedTests.sign_flip(differences=differences)
         needed = PairedTests.seeds_for_80_percent_power(differences=differences)
-        power = f"{needed:.0f}" if math.isfinite(needed) else "infinite (zero observed effect)"
+        power = _format_power(needed=needed)
         print(
             f"  {label}: mean {statistics.mean(differences):+.2f}, "
             f"sd {statistics.stdev(differences):.2f}, "
@@ -971,9 +1159,12 @@ def _print_report(*, arms: dict) -> None:
         gaps = ResetFrequencyReport.gaps(arms=arms, arm=arm)
         wilcoxon = PairedTests.wilcoxon_signed_rank(differences=gaps)
         flip = PairedTests.sign_flip(differences=gaps)
+        needed = PairedTests.seeds_for_80_percent_power(differences=gaps)
+        power = _format_power(needed=needed)
         print(
             f"  {arm}: mean {statistics.mean(gaps):+.1f}pp, Wilcoxon p={wilcoxon.p_value:.4f}, "
-            f"sign-flip p={flip.p_value:.4f}, {wilcoxon.num_zero_differences} zero diffs"
+            f"sign-flip p={flip.p_value:.4f}, {wilcoxon.num_zero_differences} zero diffs, "
+            f"n for 80% power: {power}"
         )
 
 
