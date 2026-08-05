@@ -124,6 +124,21 @@ pre-commit install            # optional: run lint/format/typecheck locally pre-
 All four of lint/typecheck/import-direction/test run in CI (`.github/workflows/ci.yml`) on every push/PR
 to `main`. `main` only allows squash-merge (no merge commits, no rebase merge).
 
+**Run the gate locally; do not block on GitHub CI.** The local gate is the real check — it is the
+same four commands, and it runs in ~1 minute against CI's ~10. Once it passes, open the PR, report
+whatever state CI happens to be in, and finish. Polling GitHub until every check goes green wastes
+minutes per PR and tells you nothing the local run did not. Two caveats worth knowing rather than
+waiting for: CI does **not** install the optional `tossing3d` extra, so KINDER-backed tests must skip
+cleanly there (gate on `importlib.util.find_spec`), and CI *does* have Fast Downward while a fresh
+worktree may not — see `FD_EXEC_PATH` below. If CI later fails on something local passed, that
+divergence is itself the bug worth reporting.
+
+**Running the gate from a git worktree** needs two environment variables, or ~29 tests fail for
+reasons unrelated to any change: `PYTHONPATH=<worktree>/src`, because the editable install resolves
+`hitl_pmp` to the *main* checkout rather than the worktree; and `FD_EXEC_PATH=<path-to>/downward`,
+because Fast Downward is found by a sibling-directory convention that resolves to a nonexistent path
+from inside `.claude/worktrees/`.
+
 ## Workflow: one independent feature per PR, stacked in dependency order
 
 Multi-piece work (e.g. "port this paper baseline") gets decomposed into a list of
@@ -166,6 +181,54 @@ if they're conceptually part of the same effort.
   script is calling `Problem`/`Method`/`Environment` directly instead of
   invoking the CLI and reading its output, that's a sign that the CLI-side
   wiring it depends on shipped in a later PR than it should have.
+
+## How to write a PR description, and what to report
+
+Every PR body — tooling and docs as much as experiments — is a **TL;DR** followed by
+seven `##` sections, in this order:
+
+`Question / goal` · `Background` · `Hypothesis` · `Guidance given` · `Methods` ·
+`Results` · `Recommendation`
+
+- **Background is not optional and goes before Hypothesis.** PRs are reviewed long after
+  the conversation that produced them, and a reader six months out has none of it. Say
+  what the code did before, name the PR/experiment/defect this follows from, and define
+  the mechanism the change turns on. `Question / goal` is what was attempted; `Background`
+  is what someone needs in order to understand that goal at all.
+- **`Hypothesis: None — implementation task, not an experiment`** is a correct answer for
+  a bugfix, refactor, rebase or docs change. Never invent one to fill the slot.
+- **Do not add a TDD section.** Write the failing test first and watch it fail — that is
+  the working discipline — but keep it out of the write-up. No red-green narration, no
+  quoted pytest output. The test in the diff and the pass counts are the evidence.
+
+**Report counts as `x/y`, never a bare percentage.** Everywhere: prose, tables, PR bodies,
+experiment logs, axis labels, analysis output. A percentage hides the denominator, and the
+denominators here are small and uneven — Tossing Room's fixed test set is 14 TRASH /
+14 RECYCLING / **2** EMPTY, so "EMPTY: 100%" is really `2/2`, which is almost no evidence,
+while "TRASH: 100%" is `14/14`. A percentage may accompany a count (`27/30 (90%)`), never
+replace it. Write "null result" in full; reserve a bare `null`, in backticks, for the code
+value.
+
+**Any quantitative result needs a figure, not just a table.** A table makes the reader
+reconstruct the shape one number at a time, and the shape — a gap closing, a curve
+flattening, two arms diverging — is the thing worth seeing. Plot per-seed spread rather
+than only a mean: with ten seeds a bar chart of two means hides one seed driving the whole
+effect. Keep the table too; the figure shows the shape, the table carries the numbers.
+
+**Where a figure or video lives depends on the kind of PR:**
+
+- **Experiment-log PRs commit them**, alongside the `docs/experiment-logs/` entry, and
+  reference them from the body by `raw.githubusercontent.com` URL **pinned to the commit
+  SHA, not the branch**. `curl` each and confirm `200` with the right content-type.
+- **Every other PR leaves a drag-drop `TODO` block** where the image belongs, and serves
+  the file on the scratch web server (`127.0.0.1:8765`) for Josh to drop in. Dragging a
+  file into the GitHub editor uploads it to `user-attachments`, which is permanent and
+  lives in neither repo — this matters most on **upstream** PRs, where a maintainer should
+  not have to carry our illustration. A `raw.githubusercontent` link into a topic branch
+  breaks when the branch is deleted, and one into a force-pushed-away commit renders today
+  and breaks silently later.
+- A PR that *produces* an artifact — a renderer, a demo, a plot script — should show one
+  even when it has no "results".
 
 ## Architecture
 
