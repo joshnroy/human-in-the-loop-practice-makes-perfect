@@ -58,6 +58,31 @@ them.
 fps is read from `env.metadata["render_fps"]` (20 for this env), never hardcoded --
 several other KINDER envs report 10, and a hardcoded value would silently render
 those at the wrong speed.
+
+## The goal region is shaded in, using KINDER's own mechanism
+
+The default clips draw `blocks_goal_region` as a translucent blue box, because
+"the cube lands in the bin and this scores a **failure**" is only legible once you
+can see where the goal actually is. `--no-goal-region` renders clean.
+
+This is not an overlay drawn on top of the image. KINDER creates a box **site** for
+every region at construction and calls `visualize_regions()` unconditionally
+(`envs.py:455` for ground regions); those sites are invisible only because their
+alpha is `0` -- the `[1, 0, 0, 0]` default in `objects/base.py:370`/`:900`, or, for
+this scene's goal region, a `[0.2, 0.6, 0.2, 0.0]` set in the task JSON. So the
+first-class configuration route is an `"rgba"` key on the region's JSON entry, and
+that file is under `reference/`, a third-party checkout this repo never modifies.
+The same value is therefore written into the compiled `MjModel` after `env.reset()`
+instead. A site is a massless, collision-free marker, so this is a colour and
+nothing else: the rest positions and `_check_goals()` values are unchanged with the
+overlay on, which is checked by re-running both standoffs.
+
+The site is found by reading the model's site names back and matching, never by a
+hardcoded string: the name is assembled as `{fixture}_{region}_region_{index}` deep
+inside upstream's XML builder. On this scene it resolves to
+`ground_blocks_goal_region_region_0`, whose x-extent is `[1.8500, 2.1500]` -- and
+the caption reports that measured bracket, so the shaded box and the printed numbers
+cannot drift apart.
 """
 
 import argparse
@@ -103,6 +128,23 @@ FALLBACK_DISPLAY = ":0"
 
 CONTRAST_LINE = "the toss that lands IN the bin does not score; the one that misses it does"
 
+# The goal region is what the clip is *about*, so it is drawn. KINDER already creates a
+# box site for every region and already calls `visualize_regions()` unconditionally
+# (`envs.py:455` for ground regions); the sites are invisible purely because their alpha
+# is 0 -- either the `[1, 0, 0, 0]` default in `objects/base.py:370`/`:900`, or, for this
+# scene's goal region, a `[0.2, 0.6, 0.2, 0.0]` written into the task JSON. Setting an
+# `"rgba"` in that JSON is therefore the first-class configuration route, and it is
+# unavailable here: the task JSON lives under `reference/`, which is a third-party
+# checkout this repo reads and never modifies. So the same value is written into the
+# compiled model at runtime instead -- purely a colour, after the scene is built.
+GOAL_REGION_RGBA = (0.15, 0.55, 1.00, 0.33)
+
+# Matched against the site names read back off the compiled model rather than hardcoded,
+# because the name is assembled as `{fixture}_{region}_region_{index}` deep inside
+# upstream's XML builder. Five of this scene's six sites are regions, so the marker has
+# to discriminate: `_region_` or `ground_` alone would match four of them.
+GOAL_REGION_SITE_MARKER = "goal_region"
+
 # The cube starts on the floor, so its own start height is its half-extent. Comparing
 # the rest height against that -- rather than against a hardcoded number, or against
 # bin geometry we would have to look up -- is what makes "on the floor" a measured
@@ -132,6 +174,18 @@ class KinderApi(BaseModel):
     optimize_gif: Any
 
 
+class GoalRegion(BaseModel):
+    """The goal-region site that was made visible, and where it actually is.
+
+    `x_min`/`x_max` are read off the site's own `pos`/`size` rather than restated from
+    a doc, so the caption's numbers and the shaded box in the frame cannot disagree.
+    """
+
+    name: str
+    x_min: float
+    x_max: float
+
+
 class ClipResult(BaseModel):
     """What one rendered standoff produced. Reported as a table at the end."""
 
@@ -144,6 +198,7 @@ class ClipResult(BaseModel):
     bytes_before: int
     bytes_after: int
     steps: dict[str, int]
+    goal_region: GoalRegion | None
 
 
 def configure_headless_rendering(
@@ -203,6 +258,50 @@ def import_kinder() -> KinderApi:
     )
 
 
+def site_names(*, model: Any) -> list[str]:
+    """Every site name in a compiled `mujoco.MjModel`, in model order.
+
+    `model` is typed loosely on purpose: taking the real `mujoco.MjModel` as an
+    annotation would put a KINDER-only import at module scope, which is exactly what
+    lets this module import and test on a machine with no MuJoCo.
+    """
+    return [model.site(index).name for index in range(model.nsite)]
+
+
+def find_goal_region_site(*, names: Sequence[str]) -> str:
+    """The one site that is the goal region, or an error naming every candidate.
+
+    Failing loudly matters more than usual here: if upstream renames the region, a
+    lenient match would render a clip with no overlay -- or with the *wrong* region
+    shaded -- and nothing in the output would say so.
+    """
+    matches = [name for name in names if GOAL_REGION_SITE_MARKER in name]
+    if len(matches) != 1:
+        raise ValueError(
+            f"expected exactly one site containing {GOAL_REGION_SITE_MARKER!r}, "
+            f"found {len(matches)}: {matches} (all sites: {list(names)})"
+        )
+    return matches[0]
+
+
+def reveal_goal_region(*, model: Any, rgba: Sequence[float]) -> GoalRegion:
+    """Give the goal-region site a visible alpha, in place, on the compiled model.
+
+    `model.site(name).rgba` is a writable *view* into the model, and the offscreen
+    render context holds the same `MjModel` object, so the write shows up in the next
+    frame with no re-compile. It has to happen **after** `env.reset()`, which rebuilds
+    the scene XML and therefore the model.
+
+    Nothing but a colour changes: a site is a massless, collision-free marker, so this
+    cannot touch the physics, any skill parameter, or the goal predicate.
+    """
+    name = find_goal_region_site(names=site_names(model=model))
+    site = model.site(name)
+    site.rgba[:] = rgba
+    center_x, half_x = float(site.pos[0]), float(site.size[0])
+    return GoalRegion(name=name, x_min=center_x - half_x, x_max=center_x + half_x)
+
+
 def gif_filename(*, standoff: float) -> str:
     """`1.35` -> `tossing3d_oracle_standoff_1p35.gif`.
 
@@ -238,12 +337,18 @@ def caption_lines(
     start_z: float,
     bin_x: float,
     solved: bool,
+    goal_region: GoalRegion | None = None,
     tolerance: float = RESTING_TOLERANCE_M,
 ) -> list[str]:
     """The caption burned into every frame of one clip.
 
     Every number in it is measured in the run that produced the clip; the only fixed
     text is `CONTRAST_LINE`, which is what makes a single clip self-explanatory.
+
+    The legend line is appended only when the region is actually drawn (`--no-goal-
+    region` renders clean), so the caption never describes something absent from the
+    frame. Its bracket is what turns the shaded box into a readable claim: the cube
+    rests outside it while visibly inside the bin.
     """
     x, y, z = rest
     lift = z - start_z
@@ -252,12 +357,18 @@ def caption_lines(
         height = f"z matches its start height ({start_z:.4f} m): {place.value}"
     else:
         height = f"z is {lift:+.4f} m off its start height: {place.value}"
-    return [
+    lines = [
         f"Tossing3D-o1 skill oracle | toss standoff {standoff:g} | _check_goals() = {solved}",
         f"cube at rest x={x:.4f} y={y:.4f} z={z:.4f}   (bin_0 at x={bin_x:.4f})",
         height,
         CONTRAST_LINE,
     ]
+    if goal_region is not None:
+        lines.append(
+            "shaded blue = the goal region blocks_goal_region, "
+            f"x in [{goal_region.x_min:.4f}, {goal_region.x_max:.4f}]"
+        )
+    return lines
 
 
 def _load_font(*, size: int) -> ImageFont.ImageFont | ImageFont.FreeTypeFont:
@@ -388,6 +499,7 @@ def render_clip(
     every: int,
     colors: int,
     lossy: int,
+    goal_region: bool,
     output_dir: Path,
 ) -> ClipResult:
     """Run the oracle skill sequence once at `standoff` and write its captioned GIF."""
@@ -402,6 +514,15 @@ def render_clip(
     object_centric.set_render_camera(camera)
 
     observation, _ = env.reset(seed=seed)
+    # After reset, never before: reset rebuilds the scene XML and recompiles the model,
+    # so an rgba written earlier would be thrown away along with the model it was on.
+    region: GoalRegion | None = None
+    if goal_region:
+        region = reveal_goal_region(
+            model=object_centric._robot_env.sim.model.mj_model,  # noqa: SLF001
+            rgba=GOAL_REGION_RGBA,
+        )
+        print(f"  goal region {region.name}: x in [{region.x_min:.4f}, {region.x_max:.4f}]")
     rollout = Rollout(env=env, every=every, state=env.observation_space.devectorize(observation))
     cube = rollout.state.get_object_from_name("cube_0")
     bin_object = rollout.state.get_object_from_name("bin_0")
@@ -448,7 +569,14 @@ def render_clip(
     print(f"  cube at rest: x={rest[0]:.4f} y={rest[1]:.4f} z={rest[2]:.4f}", flush=True)
     print(f"  _check_goals() = {solved}", flush=True)
 
-    lines = caption_lines(standoff=standoff, rest=rest, start_z=start_z, bin_x=bin_x, solved=solved)
+    lines = caption_lines(
+        standoff=standoff,
+        rest=rest,
+        start_z=start_z,
+        bin_x=bin_x,
+        solved=solved,
+        goal_region=region,
+    )
     path = output_dir / gif_filename(standoff=standoff)
     before, after = write_gif(
         frames=annotate(frames=rollout.frames, lines=lines),
@@ -468,6 +596,7 @@ def render_clip(
         bytes_before=before,
         bytes_after=after,
         steps=steps,
+        goal_region=region,
     )
 
 
@@ -510,6 +639,14 @@ def parse_args(*, argv: Sequence[str]) -> argparse.Namespace:
         "download, and looks wrong -- a smoke test only. Physics is unaffected.",
     )
     parser.add_argument(
+        "--no-goal-region",
+        dest="goal_region",
+        action="store_false",
+        help="render clean, without the goal region shaded in. On by default, because "
+        "the committed clips exist to show that the cube lands in the bin and *outside* "
+        "the goal region, which is unreadable when the region is invisible.",
+    )
+    parser.add_argument(
         "--every",
         type=_positive_int,
         default=DEFAULT_EVERY,
@@ -528,7 +665,7 @@ def parse_args(*, argv: Sequence[str]) -> argparse.Namespace:
         default=DEFAULT_LOSSY,
         help="gifsicle lossy level, higher is smaller (upstream's default is 80)",
     )
-    parser.set_defaults(scene_bg=True)
+    parser.set_defaults(scene_bg=True, goal_region=True)
     return parser.parse_args(list(argv))
 
 
@@ -546,6 +683,7 @@ def main(*, argv: Sequence[str] | None = None) -> None:
             every=args.every,
             colors=args.colors,
             lossy=args.lossy,
+            goal_region=args.goal_region,
             output_dir=args.output_dir,
         )
         for standoff in args.standoffs

@@ -25,15 +25,20 @@ import pytest
 from scripts.tossing3d_oracle_demo import (
     CONTRAST_LINE,
     DEFAULT_STANDOFFS,
+    GOAL_REGION_RGBA,
+    GoalRegion,
     RestingPlace,
     annotate,
     caption_lines,
     configure_headless_rendering,
+    find_goal_region_site,
     fps_from_metadata,
     gif_filename,
     import_kinder,
     parse_args,
+    reveal_goal_region,
     should_keep_frame,
+    site_names,
     write_gif,
 )
 
@@ -44,6 +49,57 @@ def _frames(*, count: int = 3, width: int = 8, height: int = 6) -> list[np.ndarr
     return [
         np.full((height, width, 3), fill_value=index * 10, dtype=np.uint8) for index in range(count)
     ]
+
+
+class _FakeSite:
+    """One row of a compiled MuJoCo model's site tables.
+
+    `rgba`/`pos`/`size` are numpy arrays because that is what `mujoco.MjModel.site()`
+    hands back: writable *views* into the model, which is the whole reason an in-place
+    write to one of them shows up in the next render.
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        pos: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        size: tuple[float, float, float] = (0.1, 0.1, 0.1),
+        rgba: tuple[float, float, float, float] = (0.2, 0.6, 0.2, 0.0),
+    ) -> None:
+        self.name = name
+        self.pos = np.array(pos, dtype=float)
+        self.size = np.array(size, dtype=float)
+        self.rgba = np.array(rgba, dtype=float)
+
+
+class _FakeModel:
+    """The two-signature `model.site(...)` accessor: by index, and by name."""
+
+    def __init__(self, *sites: _FakeSite) -> None:
+        self._sites = list(sites)
+        self.nsite = len(self._sites)
+
+    def site(self, key: int | str) -> _FakeSite:  # noqa: PLR0917 (mirrors mujoco's API)
+        if isinstance(key, int):
+            return self._sites[key]
+        return next(site for site in self._sites if site.name == key)
+
+
+def _tossing3d_model() -> _FakeModel:
+    """The six sites this scene actually compiles to, measured off the real model."""
+    return _FakeModel(
+        _FakeSite(name="ground_bin_init_region_region_0", pos=(2.2305, 0.0, 0.05)),
+        _FakeSite(name="ground_blocks_init_region_region_0", pos=(0.625, 0.0, 0.05)),
+        _FakeSite(
+            name="ground_blocks_goal_region_region_0",
+            pos=(2.0, 0.0, 0.075),
+            size=(0.15, 0.15, 0.075),
+        ),
+        _FakeSite(name="ground_barrier_init_region_region_0", pos=(1.3005, 0.0005, 0.05)),
+        _FakeSite(name="ground_robot_init_region_region_0", pos=(0.0, 0.0, 0.05)),
+        _FakeSite(name="robot_pinch_site", rgba=(0.5, 0.5, 0.5, 0.3)),
+    )
 
 
 # --- the headless-rendering environment ------------------------------------------
@@ -235,6 +291,106 @@ def test_the_seed_is_fixed_rather_than_drawn() -> None:
     assert parse_args(argv=[]).seed == 125
 
 
+# --- the goal-region overlay ------------------------------------------------------
+#
+# KINDER already creates a box site for every region and already calls
+# visualize_regions() unconditionally; the sites are invisible only because the task
+# JSON gives them alpha 0. So this is upstream's own mechanism, turned on at runtime
+# rather than by editing a file under reference/ (which is never modified).
+
+
+def test_site_names_are_read_off_the_compiled_model() -> None:
+    """Read back, never assumed: the site name is generated as
+    `{fixture}_{region}_region_{index}` deep inside upstream's XML builder."""
+    assert site_names(model=_tossing3d_model()) == [
+        "ground_bin_init_region_region_0",
+        "ground_blocks_init_region_region_0",
+        "ground_blocks_goal_region_region_0",
+        "ground_barrier_init_region_region_0",
+        "ground_robot_init_region_region_0",
+        "robot_pinch_site",
+    ]
+
+
+def test_the_goal_region_site_is_found_by_what_it_is_not_by_a_hardcoded_name() -> None:
+    """Five of this scene's six region sites are *not* the goal, so matching has to
+    discriminate -- `_region_0` or `ground_` alone would hit four of them."""
+    assert (
+        find_goal_region_site(names=site_names(model=_tossing3d_model()))
+        == "ground_blocks_goal_region_region_0"
+    )
+
+
+def test_a_scene_with_no_goal_region_site_lists_what_it_did_find() -> None:
+    """Renaming this site upstream must fail loudly with the candidates in hand,
+    not render a clip with no overlay and nothing to say so."""
+    with pytest.raises(ValueError, match="robot_pinch_site"):
+        find_goal_region_site(names=["robot_pinch_site"])
+
+
+def test_an_ambiguous_match_is_an_error_rather_than_a_guess() -> None:
+    with pytest.raises(ValueError, match="ground_b_goal_region_region_0"):
+        find_goal_region_site(
+            names=["ground_a_goal_region_region_0", "ground_b_goal_region_region_0"]
+        )
+
+
+def test_the_overlay_colour_is_actually_visible() -> None:
+    """The entire defect being fixed is an alpha of 0.0, so a zero alpha here would
+    reintroduce it silently."""
+    assert GOAL_REGION_RGBA[3] > 0.0
+
+
+def test_the_overlay_is_translucent_so_the_cube_stays_visible_through_it() -> None:
+    """The cube comes to rest near the region's edge; an opaque box would hide the
+    very thing the clip exists to show."""
+    assert GOAL_REGION_RGBA[3] < 1.0
+
+
+def test_revealing_the_region_writes_the_new_alpha_into_the_model() -> None:
+    model = _tossing3d_model()
+    reveal_goal_region(model=model, rgba=GOAL_REGION_RGBA)
+    assert tuple(model.site("ground_blocks_goal_region_region_0").rgba) == GOAL_REGION_RGBA
+
+
+def test_revealing_the_region_touches_no_other_site() -> None:
+    """Presentation only: the bin/blocks/robot init regions stay invisible, and the
+    robot's own pinch site keeps the alpha upstream gave it."""
+    model = _tossing3d_model()
+    reveal_goal_region(model=model, rgba=GOAL_REGION_RGBA)
+    others = [
+        model.site(index).rgba[3]
+        for index in range(model.nsite)
+        if model.site(index).name != "ground_blocks_goal_region_region_0"
+    ]
+    assert others == [0.0, 0.0, 0.0, 0.0, 0.3]
+
+
+def test_revealing_the_region_reports_its_measured_x_extent() -> None:
+    """`x in [1.85, 2.15]` is the number that makes the clip legible -- the cube
+    rests at x=2.2197, outside it, while visibly inside the bin."""
+    region = reveal_goal_region(model=_tossing3d_model(), rgba=GOAL_REGION_RGBA)
+    assert (round(region.x_min, 4), round(region.x_max, 4)) == (1.85, 2.15)
+
+
+def test_revealing_the_region_reports_the_site_it_changed() -> None:
+    region = reveal_goal_region(model=_tossing3d_model(), rgba=GOAL_REGION_RGBA)
+    assert region.name == "ground_blocks_goal_region_region_0"
+
+
+# --- the overlay flag -------------------------------------------------------------
+
+
+def test_the_goal_region_overlay_is_on_by_default() -> None:
+    """The committed clips carry it: the whole point is that "lands in the bin but
+    scores a failure" reads without the caption."""
+    assert parse_args(argv=[]).goal_region is True
+
+
+def test_the_overlay_can_be_turned_off_for_a_clean_render() -> None:
+    assert parse_args(argv=["--no-goal-region"]).goal_region is False
+
+
 # --- the caption ------------------------------------------------------------------
 
 
@@ -295,6 +451,39 @@ def test_both_clips_carry_the_same_line_stating_the_contrast() -> None:
     )
     assert CONTRAST_LINE in solved
     assert CONTRAST_LINE in missed
+
+
+def test_the_caption_names_the_shaded_box_when_the_overlay_is_on() -> None:
+    """A translucent blue box with nothing saying what it is would be scenery."""
+    lines = caption_lines(
+        standoff=1.35,
+        rest=(2.2197, 0.0103, 0.0444),
+        start_z=0.0249,
+        bin_x=2.2301,
+        solved=False,
+        goal_region=GoalRegion(name="ground_blocks_goal_region_region_0", x_min=1.85, x_max=2.15),
+    )
+    text = " ".join(lines)
+    assert "1.8500" in text
+    assert "2.1500" in text
+
+
+def test_the_caption_says_nothing_about_a_region_that_is_not_drawn() -> None:
+    """`--no-goal-region` renders clean, so a legend for an absent box would be a
+    caption describing something that is not in the frame."""
+    with_overlay = caption_lines(
+        standoff=1.35,
+        rest=(2.2197, 0.0103, 0.0444),
+        start_z=0.0249,
+        bin_x=2.2301,
+        solved=False,
+        goal_region=GoalRegion(name="ground_blocks_goal_region_region_0", x_min=1.85, x_max=2.15),
+    )
+    without = caption_lines(
+        standoff=1.35, rest=(2.2197, 0.0103, 0.0444), start_z=0.0249, bin_x=2.2301, solved=False
+    )
+    assert len(with_overlay) == len(without) + 1
+    assert without == with_overlay[: len(without)]
 
 
 # --- annotation and GIF writing ---------------------------------------------------

@@ -222,8 +222,9 @@ Same seed, same skills, same parameters; only `move_to_target`'s standoff differ
 and every skill terminates on its own (71 / 23 / 16 / 18 steps in both). **The
 throw that lands in the bin scores nothing and the one that misses scores**, because
 `Tossing3D-o1`'s goal predicate is `["on", "cube_0", "blocks_goal_region"]` — a
-ground region the bin merely sits near. Each clip carries its own measured numbers
-burned into the frame, so one clip on its own still makes the point.
+ground region the bin merely sits near. The clips draw that region, so this reads
+without the caption; each also carries its own measured numbers burned into the
+frame, so one clip on its own still makes the point.
 
 It drives a simulator, so it is here and not in `analysis/`. Unlike `run_sweep.py`
 it does not shell out to `hitl_pmp.cli`: there is no CLI surface for KINDER at all
@@ -254,6 +255,41 @@ Three things about running it are easy to get wrong, and each costs an hour:
   Dynamic3D env silently vanishes into `NameNotFound` from `kinder.make`. The script
   handles this itself in `configure_headless_rendering`; the ordering is pinned by a
   test, because setting the variable after the import is a no-op.
+
+### The goal region is drawn, using KINDER's own mechanism
+
+The clips shade `blocks_goal_region` in translucent blue. Without it the central
+finding is invisible: you watch a cube land squarely in a bin and are told that
+scored a failure, with nothing on screen to show where the goal actually was. With
+it, the goal box (`x ∈ [1.8500, 2.1500]`) and the bin footprint (`x ∈ [2.0801,
+2.3801]` at seed 125) are both in frame, their **7.0 cm overlap on x** is visible,
+and so is the fact that the cube comes to rest at `x = 2.2197` — past the far edge
+of the goal box, inside the bin. `--no-goal-region` renders clean.
+
+**This is not an overlay painted onto the image.** KINDER creates a box *site* for
+every region at construction and calls `visualize_regions()` unconditionally
+(`envs.py:455` for ground regions, `:542`/`:568` for fixtures). The sites exist and
+are rendered; they are invisible only because their alpha is `0` — either the
+`[1, 0, 0, 0]` default (`objects/base.py:370` and `:900`) or, for this scene's goal
+region, a `[0.2, 0.6, 0.2, 0.0]` set in the task JSON. So the first-class route is an
+`"rgba"` key on that JSON entry, and it is unavailable here: the task JSON is under
+`reference/`, a third-party checkout this repo reads and never modifies. The script
+writes the same value into the compiled `MjModel` instead, **after** `env.reset()` —
+reset rebuilds the scene XML and recompiles the model, so an earlier write is
+discarded with the model it was made on.
+
+It is cosmetic by construction (a site is a massless, collision-free marker) and
+that was checked rather than assumed: with the overlay on, both standoffs reproduce
+their rest positions, their `_check_goals()` values and their 71 / 23 / 16 / 18 skill
+steps exactly.
+
+The site is located by reading the model's site names back and matching, never by a
+hardcoded string — the name is assembled as `{fixture}_{region}_region_{index}` deep
+inside upstream's XML builder, and five of this scene's six sites are regions, so the
+match has to discriminate. It resolves to `ground_blocks_goal_region_region_0`, and
+the caption's `x ∈ […]` bracket is read off that same site's `pos`/`size`, so the
+shaded box and the printed numbers cannot drift apart. Zero matches, or more than
+one, raises with every site name listed.
 
 ### `--camera task_view`, not `agentview_1`
 
@@ -286,5 +322,6 @@ every frame and GIF's inter-frame compression buys almost nothing: at `--every 1
 with upstream's own `--colors 256 --lossy 80` the optimised clip is 3.9 MB, against
 a whole-repo `.git` of 26 MB. Keeping every 2nd frame and halving the playback fps
 (so the clip still runs at real speed) is the dominant saving, and the palette does
-the rest: 6.0 MB → 1.9 MB. Upstream's exact settings are still one flag away
+the rest: 6,466,313 B → 1,816,392 B (standoff 1.35) and 6,516,167 B → 1,682,113 B
+(standoff 1.55). Upstream's exact settings are still one flag away
 (`--every 1 --colors 256 --lossy 80`).
