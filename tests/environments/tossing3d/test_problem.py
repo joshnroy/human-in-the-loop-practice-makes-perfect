@@ -1,12 +1,18 @@
 """Offline tests for `Tossing3DProblem` and `Tossing3DSkillProvider`.
 
-`run_task_episode` itself needs a simulator and lives in `test_kinder_fidelity.py`.
+`run_task_episode`'s *simulator* behaviour lives in `test_kinder_fidelity.py`; its frame
+bookkeeping is exercised here against a canned backend, because CI never installs KINDER
+and that is precisely where a rendering regression would otherwise go unseen.
 """
 
 import numpy as np
+from pydantic import PrivateAttr
 
-from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.method.types import GroundSkill, LabeledAction
+from hitl_pmp.core.problem.environment.types import State
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
     HAND_EMPTY,
     HOLDING,
@@ -16,6 +22,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     REACHABLE,
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
+from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
@@ -123,3 +130,94 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() 
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
     action = provider.compute_action(ground_skill=ground_skill, params=params, state=state())
     assert action[0] == Tossing3DEnvironment.move_to_throw_pose_id
+
+
+class _CannedBackend(KinderBackend):
+    """A `KinderBackend` whose simulator is replaced by canned frames.
+
+    Enough to exercise `run_task_episode`'s drain offline. The first drain is the
+    clearing one `run_task_episode` does straight after the reset, and finds nothing;
+    every later drain stands in for one skill's worth of physics ticks.
+    """
+
+    frames_per_skill: int = 3
+    _drains: int = PrivateAttr(default=0)
+
+    def drain_substep_frames(self) -> list[np.ndarray]:
+        self._drains += 1
+        if not self.record_substeps or self._drains == 1:
+            return []
+        return [np.zeros((480, 640, 3), dtype=np.uint8) for _ in range(self.frames_per_skill)]
+
+    def render(self) -> np.ndarray:
+        return np.zeros((480, 640, 3), dtype=np.uint8)
+
+
+class _CannedEnvironment(Tossing3DEnvironment):
+    """A `Tossing3DEnvironment` with no MuJoCo behind it: skills are no-ops."""
+
+    def backend(self) -> KinderBackend:
+        if self._backend is None:
+            self._backend = _CannedBackend()
+        return self._backend
+
+    def set_state(self, *, state: State) -> None:
+        self.current_state = state
+
+    def take_action(self, *, action: np.ndarray) -> State:
+        return self.get_current_state()
+
+
+def _unreachable_goal(*, env: Tossing3DEnvironment) -> Goal:
+    """`InGoalRegion(cube)`, which the initial scene does not satisfy -- so the episode
+    runs its whole horizon instead of returning on the first check."""
+    return Goal(
+        atoms=frozenset({GroundAtom(predicate=IN_GOAL_REGION, objects=(env.cube, env.goal_region))})
+    )
+
+
+def _canned_episode(*, renderer):
+    env = _CannedEnvironment()
+    problem = Tossing3DProblem(env=env, tasks=Tossing3DTasks(env=env, seed=0))
+    task = Task(initial_state=state(), goal=_unreachable_goal(env=env))
+
+    def policy(observed) -> LabeledAction:  # noqa: PLR0917  (core.Policy is positional)
+        return LabeledAction(action=np.zeros(3), label="Pick(robot, cube)")
+
+    return problem.run_task_episode(task=task, policy=policy, renderer=renderer)
+
+
+def test_a_rendered_episode_is_physics_rate_rather_than_one_frame_per_skill() -> None:
+    """The defect this exists to prevent: `episode.mp4` used to be one frame per
+    decision, and a decision here is a whole controller execution, so the CLI's demo clip
+    was four frames of a domain whose entire point is a throw. Every sub-step frame the
+    backend collected has to reach the returned list."""
+    _, frames = _canned_episode(renderer=Tossing3DRenderer)
+
+    # One captioned initial frame, then five skills x three canned sub-step frames.
+    assert len(frames) == 1 + 5 * _CannedBackend().frames_per_skill
+
+
+def test_an_unrendered_episode_records_nothing_and_turns_recording_back_off() -> None:
+    """Recording is opt-in per episode: a training run passes no renderer and must not
+    pay for hundreds of MuJoCo renders per skill, nor be left recording afterwards."""
+    env = _CannedEnvironment()
+    problem = Tossing3DProblem(env=env, tasks=Tossing3DTasks(env=env, seed=0))
+    task = Task(initial_state=state(), goal=_unreachable_goal(env=env))
+
+    def policy(observed) -> LabeledAction:  # noqa: PLR0917
+        return LabeledAction(action=np.zeros(3), label="Pick(robot, cube)")
+
+    solved, frames = problem.run_task_episode(task=task, policy=policy, renderer=None)
+
+    assert frames == []
+    assert env.backend().record_substeps is False
+
+
+def test_every_frame_of_a_rendered_episode_is_the_same_size() -> None:
+    """ffmpeg needs one frame size for the whole clip. The boundary frame comes from
+    `render_frame` and the sub-step frames from the drain, so this is the join where a
+    mismatch would appear."""
+    _, frames = _canned_episode(renderer=Tossing3DRenderer)
+
+    assert len({frame.shape for frame in frames}) == 1

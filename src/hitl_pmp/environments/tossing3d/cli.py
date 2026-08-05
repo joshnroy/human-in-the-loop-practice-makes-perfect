@@ -28,11 +28,29 @@ class Tossing3DCli:
     """This domain's argparse flags and composition root. A static-method container,
     never instantiated, same as every other business-logic class in this project."""
 
-    # One frame per skill means a four-frame episode, so a clip at any normal rate is
-    # over before it is seen. 1 fps gives each stage a second. (KINDER's own
-    # `render_fps` of 20 is the rate for a per-tick clip -- what
-    # `scripts/tossing3d_oracle_demo.py` writes -- and is not this.)
-    render_fps: ClassVar[int] = 1
+    # Only reached when no video is being written at all, so nothing plays at it: a run
+    # without --output-dir gets no renderer, and MethodRunner then never opens a writer.
+    # A recorded run reads KINDER's own metadata instead -- see resolve_render_fps.
+    unrendered_render_fps: ClassVar[int] = 1
+
+    @staticmethod
+    def resolve_render_fps(*, env: Tossing3DEnvironment, renderer: type[Renderer] | None) -> int:
+        """The clip's playback rate, taken from the simulator rather than chosen here.
+
+        A recorded episode is now one frame per physics tick, so the right rate is the
+        environment's own `metadata["render_fps"]` (20 on Tossing3D; several other KINDER
+        scenes report 10, which is exactly why this is read and not written down). It
+        used to be a hardcoded 1, which was correct while an episode was a four-frame
+        storyboard and would now stretch a throw across two minutes.
+
+        Reading metadata needs a live scene, hence the `hard_reset()`. That is not extra
+        work: sampling a task in this domain is itself a simulator rebuild, so the run
+        builds this scene either way, and it only happens on the recorded path.
+        """
+        if renderer is None:
+            return Tossing3DCli.unrendered_render_fps
+        env.hard_reset()
+        return env.backend().render_fps()
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -127,7 +145,7 @@ class Tossing3DCli:
                 num_cycles=num_cycles,
                 max_steps_per_interaction=max_steps_per_interaction,
                 renderer=renderer,
-                render_fps=Tossing3DCli.render_fps,
+                render_fps=Tossing3DCli.resolve_render_fps(env=env, renderer=renderer),
                 num_render_checkpoints=getattr(args, "num_render_checkpoints", 1),
             )
         finally:

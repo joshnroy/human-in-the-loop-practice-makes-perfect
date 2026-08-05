@@ -82,3 +82,15 @@ def test_the_global_cli_registers_this_domains_flags_when_env_is_tossing3d() -> 
     )
     assert args.task_config == "stock"
     assert args.num_test_tasks == 10
+
+
+def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator() -> None:
+    """`render_fps` is only ever read when a clip is written, and a run without
+    `--output-dir` gets no renderer. Building a MuJoCo scene just to fill in a number
+    nothing plays at would make every headless run pay for the one that does not."""
+    import sys
+
+    assert Tossing3DCli.resolve_render_fps(env=Tossing3DEnvironment(), renderer=None) == (
+        Tossing3DCli.unrendered_render_fps
+    )
+    assert "mujoco" not in sys.modules

@@ -301,3 +301,68 @@ def test_set_state_rebuilds_the_scene_so_reset_to_task_really_rewinds() -> None:
         )
     finally:
         env.close()
+
+
+def test_a_recorded_episode_is_physics_rate_rather_than_one_frame_per_skill() -> None:
+    """The frame count is the whole claim. One `take_action` here is a whole controller
+    execution -- tens of MuJoCo ticks -- so rendering once per decision gave a four-frame
+    `episode.mp4` of a domain that exists to show a throw. With the gymnasium
+    `RenderCollection` wrapper in place, every one of those ticks reaches the clip.
+
+    Asserted as a floor rather than an exact number: the oracle's controllers terminate
+    on their own conditions (71/23/16/18 at the canonical seed), and pinning the total
+    would make this a second, fragile copy of the step-count test above.
+    """
+    from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
+
+    env = _env()
+    try:
+        tasks = Tossing3DTasks(env=env, seed=0)
+        problem = Tossing3DProblem(env=env, tasks=tasks)
+        task = tasks.build_task(scene_seed=CANONICAL_SEED)
+
+        def policy(state) -> LabeledAction:  # noqa: PLR0917
+            return SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=task.goal)
+
+        solved, frames = problem.run_task_episode(
+            task=task, policy=policy, renderer=Tossing3DRenderer
+        )
+
+        assert solved
+        assert len(frames) > 100, f"expected a physics-rate clip, got {len(frames)} frames"
+        assert len({frame.shape for frame in frames}) == 1, "ffmpeg needs one frame size"
+        # Recording is per-episode and must not leak into the next, unrendered one.
+        assert env.backend().record_substeps is False
+    finally:
+        env.close()
+
+
+def test_recording_does_not_change_where_the_cube_comes_to_rest() -> None:
+    """Presentation-only, proved rather than asserted in prose: the same episode run with
+    and without the recording wrapper has to land the cube in the same place. A wrapper
+    that stepped the simulator, or a per-tick render that perturbed it, would show up
+    here and nowhere else."""
+    from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
+
+    rest = {}
+    for label, renderer in (("plain", None), ("recorded", Tossing3DRenderer)):
+        env = _env()
+        try:
+            tasks = Tossing3DTasks(env=env, seed=0)
+            problem = Tossing3DProblem(env=env, tasks=tasks)
+            task = tasks.build_task(scene_seed=CANONICAL_SEED)
+
+            def policy(state, task=task, env=env) -> LabeledAction:  # noqa: PLR0917
+                return SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=task.goal)
+
+            problem.run_task_episode(task=task, policy=policy, renderer=renderer)
+            final = env.get_current_state()
+            rest[label] = (
+                final.get(obj=env.cube, feature_name="x"),
+                final.get(obj=env.cube, feature_name="z"),
+            )
+        finally:
+            env.close()
+
+    assert rest["plain"][0] == pytest.approx(COINCIDENT_REST_X, abs=1e-3)
+    assert rest["recorded"] == pytest.approx(rest["plain"], abs=1e-6)

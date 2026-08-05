@@ -3,11 +3,13 @@
 import numpy as np
 
 from hitl_pmp.core.method.types import Policy
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
 
 from .environment import Tossing3DEnvironment
+from .renderer import Tossing3DRenderer
 from .tasks import Tossing3DTasks
 
 
@@ -41,15 +43,61 @@ class Tossing3DProblem(Problem):
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
     ) -> tuple[bool, list[np.ndarray]]:
-        state = self.reset_to_task(task=task)
-        frames = [renderer.render_frame(state=state, env=self.env)] if renderer is not None else []
-        for _ in range(self.max_episode_steps()):
-            if task.goal.is_satisfied(state=state):
-                return True, frames
-            labeled_action = policy(state)
-            state = self.env.take_action(action=labeled_action.action)
-            if renderer is not None:
-                frames.append(
-                    renderer.render_frame(state=state, env=self.env, label=labeled_action.label)
-                )
-        return task.goal.is_satisfied(state=state), frames
+        """Run one episode, optionally recording it at physics rate rather than per skill.
+
+        The loop is the standard one. What is domain-specific is *how many frames a
+        transition is worth*: one `take_action` here runs a whole KINDER controller, so
+        rendering only at transition boundaries produced a four-frame `episode.mp4` of a
+        domain whose entire point is a throw. When a renderer is given, the backend
+        collects every physics tick (`gymnasium.wrappers.RenderCollection`; see
+        `kinder_backend.py`) and each skill contributes that whole burst instead.
+
+        **Recording is scoped to this call, and only when a renderer was passed.** A
+        renderer is passed exactly on the `--output-dir` / `--num-render-checkpoints` /
+        `--record-full-loop` demo paths, so a plain training run never pays for hundreds
+        of MuJoCo renders per skill -- and the `finally` means an episode that raised
+        cannot leave the next one recording.
+        """
+        backend = self.env.backend()
+        backend.set_substep_recording(enabled=renderer is not None)
+        try:
+            state = self.reset_to_task(task=task)
+            frames = (
+                [renderer.render_frame(state=state, env=self.env)] if renderer is not None else []
+            )
+            # The reset collected the initial scene as well; the captioned frame above
+            # already covers it, so start the first skill from an empty buffer.
+            backend.drain_substep_frames()
+            for _ in range(self.max_episode_steps()):
+                if task.goal.is_satisfied(state=state):
+                    return True, frames
+                labeled_action = policy(state)
+                state = self.env.take_action(action=labeled_action.action)
+                if renderer is not None:
+                    frames.extend(
+                        self._skill_frames(
+                            renderer=renderer, state=state, label=labeled_action.label
+                        )
+                    )
+            return task.goal.is_satisfied(state=state), frames
+        finally:
+            backend.set_substep_recording(enabled=False)
+
+    def _skill_frames(
+        self, *, renderer: type[Renderer], state: State, label: str
+    ) -> list[np.ndarray]:
+        """The frames one skill contributes: its physics ticks, or one boundary frame.
+
+        The fallback is not defensive padding -- a controller whose motion planning fails
+        never steps the simulator, so there is genuinely nothing to collect, and the
+        storyboard frame is what keeps that skill visible in the clip at all.
+        """
+        assert issubclass(renderer, Tossing3DRenderer), (
+            f"Tossing3DProblem records through Tossing3DRenderer, got {renderer.__name__}"
+        )
+        substeps = self.env.backend().drain_substep_frames()
+        if not substeps:
+            return [renderer.render_frame(state=state, env=self.env, label=label)]
+        return renderer.render_substep_frames(
+            frames=substeps, state=state, env=self.env, label=label
+        )

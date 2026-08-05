@@ -46,6 +46,35 @@ upstream `main` plus a `weakref.finalize(self, p.disconnect, ...)` in `PyBulletS
 (upstream PR #87). The client is therefore released when the controller is collected.
 **Do not add a `_release`-style explicit `close()` here**: with the finalizer in place
 that double-disconnects.
+
+## Physics-rate frames come from a wrapper, not from a hand-rolled buffer
+
+One `take_action` is a whole controller execution, so a `core.Renderer` -- which emits
+one frame per *transition* -- gives a four-frame clip of a domain whose entire point is a
+throw. The frames exist; nothing captured them.
+
+Capturing them is `gymnasium.wrappers.RenderCollection`'s exact job: it collects
+`env.render()` on every `step()` and `reset()`, and its own `render()` hands the list
+back and clears it. KINDER wraps its envs with the sibling `RecordVideo` throughout its
+own tests, so wrapping is upstream's idiom too. `RecordVideo` itself is deliberately
+*not* used here -- it writes its own `rl-video-episode-N.mp4` per gym reset, with no
+caption, which would leave the harness's own `episode.mp4` still four frames long and add
+a second, differently-named file beside it. `RenderCollection` instead feeds the frames
+into the list `Problem.run_task_episode` already returns, so every existing consumer
+(`--output-dir`, `--num-render-checkpoints`, `--record-full-loop`) gets the smooth clip
+with no new file and no new codepath.
+
+**Collected frames are not aliases.** `RenderCollection` stores whatever `render()`
+returned, without copying, so a simulator that handed back a view into one reused buffer
+would silently yield a clip of N identical frames. Measured on this scene: two successive
+`env.render()` calls share no memory (`np.shares_memory` is `False`) and collected frames
+are distinct arrays, so nothing needs copying on the way out. `test_kinder_fidelity.py`
+asserts the collected frames genuinely differ rather than trusting that measurement.
+
+Recording is **off by default**: it renders every physics tick, which is tens to hundreds
+of MuJoCo renders per skill, and a training run that wants no video must not pay for it.
+`Tossing3DProblem.run_task_episode` turns it on for exactly the episodes it was given a
+renderer for.
 """
 
 import os
@@ -143,6 +172,10 @@ class KinderApi(BaseModel):
     robot_type: Any
     tossing_controllers: Any
     shelf_controllers: Any
+    # `gymnasium.wrappers.RenderCollection`, the class itself. Gymnasium is KINDER's own
+    # dependency rather than this repo's, so it is imported here with everything else
+    # instead of at module scope, which would break the offline import.
+    render_collection: Any
 
 
 class KinderBackend(BaseModel):
@@ -191,8 +224,17 @@ class KinderBackend(BaseModel):
     # build a transition function. That is what `snapshot`/`restore` below rest on.
     # Upstream's own env models pass `allow_state_access=True` too.
     allow_state_access: bool = True
+    # Collect one frame per physics tick while a controller runs. Off by default: see the
+    # module docstring. `Tossing3DProblem.run_task_episode` flips it per episode, so a
+    # rendered demo episode records and a training episode does not.
+    record_substeps: bool = False
 
     _api: KinderApi | None = PrivateAttr(default=None)
+    # The gym env exactly as `kinder.make` returned it. Single frames, metadata and the
+    # object-centric handle are all read from *this* one, so they are unaffected by
+    # whether a recording wrapper is currently in place.
+    _raw_env: Any = PrivateAttr(default=None)
+    # What gets stepped: `_raw_env`, or a `RenderCollection` around it while recording.
     _env: Any = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
     _robot_name: str = PrivateAttr(default="")
@@ -226,6 +268,7 @@ class KinderBackend(BaseModel):
 
         import kinder
         import kinder.envs.dynamic3d.envs  # noqa: F401  (the MODULE, not the package)
+        from gymnasium.wrappers import RenderCollection
         from kinder.envs.dynamic3d.object_types import MujocoTidyBotRobotObjectType
         from kinder_models.dynamic3d.shelf.parameterized_skills import (
             create_lifted_controllers as shelf_create_lifted_controllers,
@@ -242,6 +285,7 @@ class KinderBackend(BaseModel):
             robot_type=MujocoTidyBotRobotObjectType,
             tossing_controllers=tossing_create_lifted_controllers,
             shelf_controllers=shelf_create_lifted_controllers,
+            render_collection=RenderCollection,
         )
         return self._api
 
@@ -265,11 +309,11 @@ class KinderBackend(BaseModel):
         cheap relative to a fresh `make`.
         """
         api = self.api()
-        if self._env is None:
+        if self._raw_env is None:
             overrides: dict[str, Any] = {}
             if self.task_config_path is not None:
                 overrides["task_config_path"] = str(self.task_config_path)
-            self._env = api.kinder.make(
+            self._raw_env = api.kinder.make(
                 self.env_id,
                 render_mode=self.render_mode,
                 scene_bg=self.scene_bg,
@@ -280,7 +324,10 @@ class KinderBackend(BaseModel):
             available = list(getattr(object_centric, "camera_names", []))
             if available and self.camera not in available:
                 raise ValueError(f"camera {self.camera!r} is not in this scene: {available}")
+            # Before any wrapper goes on, as upstream's own `test_pick_ground_toss` does:
+            # a recording made through the wrong camera is a silent shot of a wall.
             object_centric.set_render_camera(self.camera)
+        self._sync_recording_wrapper()
         observation, _ = self._env.reset(seed=seed)
         self._state = self._env.observation_space.devectorize(observation)
         self._robot_name = next(iter(self._state.get_objects(self.api().robot_type))).name
@@ -288,10 +335,53 @@ class KinderBackend(BaseModel):
 
     def close(self) -> None:
         """Release the gym env, if one was ever built. Idempotent."""
-        if self._env is not None:
-            self._env.close()
+        if self._raw_env is not None:
+            self._raw_env.close()
+            self._raw_env = None
             self._env = None
             self._state = None
+
+    def set_substep_recording(self, *, enabled: bool) -> None:
+        """Turn per-physics-tick frame collection on or off, effective immediately.
+
+        Imports nothing on its own: a backend with no scene yet just remembers the flag,
+        and the wrapper goes on at the next `reset()`. That matters because this is
+        called from `run_task_episode`, which a test may reach without ever intending to
+        start MuJoCo.
+        """
+        self.record_substeps = enabled
+        self._sync_recording_wrapper()
+
+    def drain_substep_frames(self) -> list[np.ndarray]:
+        """Every frame collected since the last drain, in order, clearing the buffer.
+
+        This is `RenderCollection.render()` -- the wrapper's own drain -- not a buffer
+        kept here. Empty whenever recording is off or no scene exists, which are both
+        ordinary states rather than errors: `run_task_episode` drains unconditionally.
+
+        No copy is taken. See the module docstring: collected frames were measured to be
+        distinct arrays rather than aliases of one reused MuJoCo buffer, and copying a
+        physics-rate episode would double an already-large peak for nothing.
+        """
+        if not self.record_substeps or self._env is None or self._env is self._raw_env:
+            return []
+        return [np.asarray(frame, dtype=np.uint8) for frame in self._env.render()]
+
+    def _sync_recording_wrapper(self) -> None:
+        """Put the `RenderCollection` on, or take it off, to match `record_substeps`.
+
+        Wrapping and unwrapping are pure re-bindings around the one `_raw_env`, so
+        toggling between episodes never rebuilds the scene.
+        """
+        if self._raw_env is None:
+            return
+        recording = self._env is not None and self._env is not self._raw_env
+        if self.record_substeps and not recording:
+            self._env = self.api().render_collection(
+                self._raw_env, pop_frames=True, reset_clean=True
+            )
+        elif not self.record_substeps:
+            self._env = self._raw_env
 
     def snapshot(self) -> Any:
         """An opaque handle to the live simulator state, restorable by `restore`.
@@ -387,13 +477,18 @@ class KinderBackend(BaseModel):
     def render(self) -> np.ndarray:
         """One RGB frame from `task_view`, copied out of MuJoCo's buffer.
 
-        The copy is not optional. `np.asarray` does not copy an already-`uint8` array, so
-        without it this hands back a *view* into the render context's reused buffer --
-        harmless one frame at a time, and silently wrong the moment frames accumulate.
+        Rendered from the *unwrapped* env, so a single frame is still a single frame
+        while a `RenderCollection` is in place -- that wrapper's own `render()` returns
+        the collected list and drains it, which would both break this signature and eat
+        the episode's frames.
+
+        The copy is belt-and-braces. Two successive `render()` calls on this scene were
+        measured to share no memory, so this array is already the caller's own; the copy
+        stays because `np.asarray` would not add one if that ever changed.
         """
-        if self._env is None:
+        if self._raw_env is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is nothing to render.")
-        return np.asarray(self._env.render(), dtype=np.uint8).copy()
+        return np.asarray(self._raw_env.render(), dtype=np.uint8).copy()
 
     def render_fps(self) -> int:
         """Playback rate from the environment's own metadata, never hardcoded.
@@ -401,9 +496,9 @@ class KinderBackend(BaseModel):
         Tossing3D reports 20; several other KINDER environments report 10, so a constant
         here would render some domain's clips at the wrong speed with nothing to say so.
         """
-        if self._env is None:
+        if self._raw_env is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no metadata.")
-        metadata: Mapping[str, Any] = self._env.metadata
+        metadata: Mapping[str, Any] = self._raw_env.metadata
         if "render_fps" not in metadata:
             raise ValueError(f"environment metadata has no render_fps: {dict(metadata)}")
         return int(metadata["render_fps"])
@@ -526,9 +621,9 @@ class KinderBackend(BaseModel):
         return windup, swing
 
     def _object_centric(self) -> Any:
-        if self._env is None:
+        if self._raw_env is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no scene.")
-        return self._env.unwrapped._object_centric_env  # noqa: SLF001
+        return self._raw_env.unwrapped._object_centric_env  # noqa: SLF001
 
     def _require_state(self) -> Any:
         if self._state is None:

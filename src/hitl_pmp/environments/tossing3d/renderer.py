@@ -12,18 +12,29 @@ this is not a discrepancy: `Problem.run_task_episode` renders immediately after 
 transition that produced `state`, so the simulator *is* that state. The caption's numbers
 are read from the `state` argument, so if the two ever came apart the frame would say so.
 
-**A frame is a whole skill, not a control tick.** `core.Renderer` emits one frame per
-transition and one transition here is a whole controller execution -- several hundred
-MuJoCo ticks. So an episode clip is four frames: the initial scene, then one after each
-of `Pick`, `MoveToThrowPose`, `Toss`. That is a storyboard, not a movie, and it is a
-property of the core interface rather than of this domain.
-`scripts/tossing3d_oracle_demo.py` is the smooth per-tick clip, and stays separate.
+**`render_frame` is one frame per skill; `render_substep_frames` is the movie.**
+`core.Renderer` emits one frame per transition, and one transition here is a whole
+controller execution -- tens to hundreds of MuJoCo ticks. Rendering only at those
+boundaries gave a four-frame clip of a domain whose entire point is a throw, so
+`Tossing3DProblem.run_task_episode` now captions the per-tick frames the
+`gymnasium.wrappers.RenderCollection` wrapper collects (see `kinder_backend.py`) and
+`render_frame` is the fallback for a skill that stepped the simulator zero times.
+`render_frame`'s own signature is untouched -- it still returns exactly one frame, which
+is right, and nothing in `core/` had to learn about sub-steps.
+
+A clip cannot mix frame sizes, so the sub-step frames are captioned too. The bar is built
+once per skill, from the state that skill produced, and held across that skill's frames:
+the same shape of caption `scripts/tossing3d_oracle_demo.py` stacks under all 128 frames
+of its per-tick clip, where the numbers are likewise the clip's measured *outcome*. So
+the caption describes the skill that is running and how it ended, and every number in it
+is still measured rather than restated.
 
 The caption reports the cube's position, the live goal box and the `InGoalRegion` verdict,
 because "the cube landed in the bin and this scores a failure" is the single most
 misreadable thing about this domain and is illegible from pixels alone.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import ClassVar
 
@@ -61,6 +72,36 @@ class Tossing3DRenderer(Renderer):
             state=state, env=env, width=frame.shape[1], label=label
         )
         return np.vstack([frame, bar])
+
+    @staticmethod
+    def render_substep_frames(
+        *,
+        frames: Sequence[np.ndarray],
+        state: State,
+        env: Environment,
+        label: str | None = None,
+    ) -> list[np.ndarray]:
+        """Caption a whole skill's worth of already-rendered per-tick frames.
+
+        Deliberately *not* an override of `render_frame`: that returns one frame from one
+        `State`, which is the correct core interface and is left alone. This takes frames
+        the simulator already produced -- MuJoCo has moved on since, so they cannot be
+        re-rendered -- and stacks the identical caption bar under each, so the sub-step
+        frames and the boundary frame are the same size and ffmpeg accepts the clip.
+
+        An empty input gives an empty output: a controller whose motion planning failed
+        steps the simulator zero times, and inventing a frame for it would be a lie about
+        what happened.
+        """
+        assert isinstance(env, Tossing3DEnvironment), (
+            f"Tossing3DRenderer needs a Tossing3DEnvironment, got {type(env).__name__}"
+        )
+        if not frames:
+            return []
+        bar = Tossing3DRenderer._caption_bar(
+            state=state, env=env, width=frames[0].shape[1], label=label
+        )
+        return [np.vstack([np.asarray(frame, dtype=np.uint8), bar]) for frame in frames]
 
     @staticmethod
     def caption(*, state: State, env: Tossing3DEnvironment, label: str | None = None) -> list[str]:
