@@ -1,9 +1,11 @@
 import argparse
+import os
 import shutil
 from pathlib import Path
 
 import numpy as np
 
+from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
@@ -98,4 +100,16 @@ class MethodRunner:
                 # frames are long gone by now.
                 shutil.copyfile(written_clips[max(written_clips)], args.output_dir / "episode.mp4")
             (args.output_dir / "stats.json").write_text(metrics.model_dump_json(indent=2))
+            # Written alongside rather than inside stats.json: stats.json is the
+            # serialized Metrics, every archived run conforms to that shape, and its
+            # byte-stability is what verifies a change did not alter results -- a
+            # commit SHA in it would break that on every commit. Same rule as
+            # timing.json. Collected after the run so a crash mid-run costs no
+            # results, and from `args` post-argparse so defaulted flags land too.
+            snapshot = ConfigSnapshot.collect(
+                args=args, fd_exec_path=os.environ.get("FD_EXEC_PATH")
+            )
+            (args.output_dir / "config_snapshot.json").write_text(
+                snapshot.model_dump_json(indent=2)
+            )
         return metrics

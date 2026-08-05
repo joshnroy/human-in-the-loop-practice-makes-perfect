@@ -188,7 +188,17 @@ per-cycle retraining; both are concrete defaults, so non-learning baselines need
 boilerplate. All flags are named, no positional arguments. `--output-dir DIR`
 (global) writes `stats.json` (the run's serialized `Metrics` — raw fields only, so
 readers reconstruct a `Metrics` and call its own computation methods) and, if the
-environment has a `renderer.py`, a demo `episode.mp4`.
+environment has a `renderer.py`, a demo `episode.mp4`. It also writes
+`config_snapshot.json` (`config_snapshot.py`'s `ConfigSnapshot`) — the conditions the
+run happened under: the *resolved* argparse namespace (so defaulted flags are
+recorded, not just passed ones), this repo's commit + dirty flag, and the same pair
+for Fast Downward and both KINDER upstreams (`kindergarden`, `kinder-baselines`),
+plus the Python/torch/numpy/platform stack. KINDER checkouts are located through the
+import system, never a hardcoded path, so a sibling clone and an editable install
+resolve identically; absent records `"unset"` and present-but-not-in-a-git-repo
+records `"unknown"`, and it never raises. A *separate* file for the same reason
+`timing.json` is: `stats.json`'s byte-stability is what verifies a change didn't
+alter results, and a commit SHA in it would break that on every commit.
 `--num-render-checkpoints N` (global) instead records N evaluation sweeps spread
 evenly from before any practice through the end of training, as
 `episode_<transitions>.mp4` — a visible progression for a `Method` that learns,

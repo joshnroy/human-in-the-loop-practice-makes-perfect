@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
@@ -114,6 +115,45 @@ def test_run_with_output_dir_writes_stats_json_that_round_trips(*, tmp_path: Pat
     assert loaded == metrics
     assert loaded.evaluations == metrics.evaluations
     assert loaded.task_name == metrics.task_name
+
+
+def test_run_with_output_dir_writes_config_snapshot_json_beside_stats_json(
+    *, tmp_path: Path
+) -> None:
+    """Beside stats.json, never inside it: stats.json's byte-stability is what
+    verifies a change did not alter results, and a SHA in it would break that."""
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=1, output_dir=tmp_path),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    snapshot_path = tmp_path / "config_snapshot.json"
+    assert snapshot_path.exists()
+
+    snapshot = ConfigSnapshot.model_validate_json(snapshot_path.read_text())
+    # Recorded post-argparse, so a flag that was defaulted rather than passed is
+    # still visible afterwards.
+    assert snapshot.args["num_test_tasks"] == "1"
+    assert "num_test_tasks" not in (tmp_path / "stats.json").read_text()
+
+
+def test_run_without_output_dir_writes_no_config_snapshot_json(*, tmp_path: Path) -> None:
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(output_dir=None),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    assert not (tmp_path / "config_snapshot.json").exists()
 
 
 def test_run_does_not_leak_evaluations_between_calls() -> None:
