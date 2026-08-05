@@ -151,5 +151,25 @@ predicate definitions play in `predicators/envs/`.
   `../../methods/oracle/cli.py`'s `SkillOracleCli`), runnable via
   `python -m hitl_pmp.cli --env lightswitch --method skill-oracle
   [--output-dir DIR]`.
-- Every other domain subfolder: not started yet. The convention above describes the
-  expected shape once one lands.
+- `tossingroomsplit/` — **Tossing Room with the two throws as separate lifted
+  skills.** The world is byte-for-byte the same as `tossingroom/`'s (7 rooms, pile and
+  start in room 3, recycling bin + its own emptying button in room 1, trash bin + its
+  own button in room 6, one-way ledge out of room 2, a bin holding at most **one** item
+  and refusing a throw when full) and the raw action space is unchanged; the entire
+  difference is in the symbolic layer. `Throw` becomes `ThrowTrash` and `ThrowRecycling`,
+  each binding its own item and bin *type*, which splits `Pickup` and `Press` too and
+  drops both `BinAcceptsItem` and `ButtonForBin` (the types make them tautologies). Why
+  the split matters: `EesMethod.sampler` keys its
+  `LearnedSkillSampler` dict by skill **name**, so one name is one classifier — Tossing
+  Room's single `Throw` pools both kinds' training rows and can transfer trash
+  experience to recycling, and two names remove that channel while keeping the same
+  architecture. The domain exists to measure what the removal costs each kind, given
+  that the layout buys roughly a dozen trash attempts per practice period and at most
+  one recycling attempt (the ledge closes behind the robot, and a missed throw spends
+  the item). Runnable as `python -m hitl_pmp.cli --env tossingroomsplit --method ees`,
+  on the identical flag set as `--env tossingroom`. See its `skills.py` docstring for
+  the full rationale.
+- The remaining domain subfolders (`ballring/`, `tossingroom/`) are implemented but not
+  written up in this Status section; their own module docstrings and the experiment
+  logs under `docs/experiment-logs/` are the current record. The convention above
+  describes the shape every one of them follows.

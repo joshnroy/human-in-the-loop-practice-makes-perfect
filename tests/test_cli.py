@@ -6,6 +6,7 @@ import pytest
 import hitl_pmp.cli as cli_module
 from hitl_pmp.cli import ENVIRONMENTS, METHODS, Cli, MethodCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.environments.tossingroomsplit.cli import TossingRoomSplitCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 
 
@@ -52,6 +53,29 @@ def test_main_runs_tossingroom_skill_oracle_end_to_end() -> None:
             "recycling",
         ]
     )
+
+
+def test_main_runs_tossingroomsplit_skill_oracle_end_to_end() -> None:
+    """The split-throw domain is reachable by name from the global CLI, on the same flag
+    set as `tossingroom` -- which is what lets one `scripts/run_sweep.py` command target
+    either domain."""
+    Cli.main(
+        argv=[
+            "--env",
+            "tossingroomsplit",
+            "--method",
+            "skill-oracle",
+            "--num-test-tasks",
+            "4",
+            "--goal-type",
+            "recycling",
+        ]
+    )
+
+
+def test_tossingroomsplit_registered_under_its_own_name() -> None:
+    assert ENVIRONMENTS["tossingroomsplit"] is TossingRoomSplitCli
+    assert ENVIRONMENTS["tossingroomsplit"] is not ENVIRONMENTS["tossingroom"]
 
 
 def test_methods_registry_contains_skill_oracle() -> None:

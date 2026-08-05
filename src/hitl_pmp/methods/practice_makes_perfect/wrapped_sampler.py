@@ -360,6 +360,17 @@ class LearnedSkillSampler(BaseModel):
     def num_observations(self) -> int:
         return len(self._labels)
 
+    def observed_inputs(self) -> list[list[float]]:
+        """A copy of every training row observed so far -- `num_observations`' content
+        counterpart. Read-only by construction (a fresh list of fresh rows), so a caller
+        cannot reach into the training set through it.
+
+        Exists because "this sampler saw only its own skill's data" is a claim an
+        experiment can rest on and a count alone cannot settle: two samplers can hold
+        the same number of rows and still have been fed each other's. See
+        `tests/environments/tossingroomsplit/test_sampler_separation.py`."""
+        return [list(row) for row in self._inputs]
+
     def observe(self, *, sampler_input: list[float], success: bool) -> None:
         """Record one (already-built classifier input row) -> success transition.
 

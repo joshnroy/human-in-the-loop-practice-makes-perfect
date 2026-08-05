@@ -1,0 +1,163 @@
+import argparse
+from pathlib import Path
+
+import pytest
+
+from hitl_pmp.cli import Cli
+from hitl_pmp.environments.tossingroomsplit import cli as tossingroomsplit_cli
+from hitl_pmp.environments.tossingroomsplit.cli import TossingRoomSplitCli
+from hitl_pmp.environments.tossingroomsplit.environment import TossingRoomSplitEnvironment
+from hitl_pmp.environments.tossingroomsplit.tasks import TossingRoomSplitTasks
+from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Mimics hitl_pmp/cli.py's global flags plus this domain's own, so TossingRoomSplitCli
+    can be exercised in isolation (mirrors Light Switch's test_cli)."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--num-test-tasks", type=int, default=20)
+    parser.add_argument("--output-dir", type=Path, default=None)
+    TossingRoomSplitCli.add_arguments(parser=parser)
+    return parser
+
+
+def test_there_is_no_button_room_flag() -> None:
+    """Each bin's button sits in that bin's own room, so --trash-bin-room and
+    --recycling-bin-room place the buttons too. A separate --button-room would be a
+    second knob that has to agree with them."""
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["--button-room", "4"])
+
+
+def test_add_arguments_defaults_match_live_class_values() -> None:
+    args = _build_parser().parse_args([])
+    fields = TossingRoomSplitEnvironment.model_fields
+    assert args.num_rooms == fields["num_rooms"].default
+    assert args.start_room == fields["start_room"].default
+    assert args.recycling_bin_room == fields["recycling_bin_room"].default
+    assert args.trash_bin_room == fields["trash_bin_room"].default
+    assert args.blocked_right_from == fields["blocked_right_from"].default
+    assert args.throw_tolerance == fields["throw_tolerance"].default
+    assert args.target_low == TossingRoomSplitTasks.model_fields["target_low"].default
+    assert args.goal_type is None
+
+
+def test_num_test_tasks_field_default_matches_the_global_flag_default() -> None:
+    """Two independent literals (hitl_pmp/cli.py's --num-test-tasks and this domain's
+    Tasks field) that must agree, since the field is what the fixed test-set composition
+    is divided out of."""
+    parser = argparse.ArgumentParser()
+    Cli.add_global_arguments(parser=parser)
+    args = parser.parse_args(["--env", "tossingroomsplit", "--method", "skill-oracle"])
+    assert args.num_test_tasks == TossingRoomSplitTasks.model_fields["num_test_tasks"].default
+
+
+def test_run_method_passes_num_test_tasks_into_tasks(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The composition is only fixed if Tasks knows how many test tasks the harness
+    will draw -- so --num-test-tasks has to reach the constructor."""
+    captured: dict[str, object] = {}
+    build = tossingroomsplit_cli.TossingRoomSplitTasks
+    # Parsed before the patch: add_arguments reads defaults off the real class.
+    args = _build_parser().parse_args(["--num-test-tasks", "7"])
+
+    def spy(**kwargs) -> TossingRoomSplitTasks:
+        captured.update(kwargs)
+        return build(**kwargs)
+
+    monkeypatch.setattr(tossingroomsplit_cli, "TossingRoomSplitTasks", spy)
+    TossingRoomSplitCli.run_method(
+        args=args,
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    assert captured["num_test_tasks"] == 7
+
+
+def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[str]) -> None:
+    args = _build_parser().parse_args(["--num-test-tasks", "8"])
+    TossingRoomSplitCli.run_method(
+        args=args,
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    assert "success rate: 8/8 (100%)" in capsys.readouterr().out
+
+
+def test_run_method_forces_a_single_goal_type(*, capsys: pytest.CaptureFixture[str]) -> None:
+    args = _build_parser().parse_args(["--num-test-tasks", "5", "--goal-type", "recycling"])
+    TossingRoomSplitCli.run_method(
+        args=args,
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    assert "success rate: 5/5 (100%)" in capsys.readouterr().out
+
+
+def test_run_method_applies_seed_deterministically() -> None:
+    args = _build_parser().parse_args(["--num-test-tasks", "3", "--seed", "99"])
+    TossingRoomSplitCli.run_method(
+        args=args,
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    a = TossingRoomSplitTasks(env=TossingRoomSplitEnvironment(), seed=99).sample_test_task()
+    b = TossingRoomSplitTasks(env=TossingRoomSplitEnvironment(), seed=99).sample_test_task()
+    assert a.initial_state.get(
+        obj=TossingRoomSplitEnvironment.recycling, feature_name="target_force"
+    ) == b.initial_state.get(obj=TossingRoomSplitEnvironment.recycling, feature_name="target_force")
+
+
+def test_run_method_respects_a_larger_layout(*, capsys: pytest.CaptureFixture[str]) -> None:
+    args = _build_parser().parse_args([
+        "--num-test-tasks",
+        "4",
+        "--num-rooms",
+        "9",
+        "--trash-bin-room",
+        "8",
+        "--goal-type",
+        "trash",
+    ])
+    TossingRoomSplitCli.run_method(
+        args=args,
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    assert "success rate: 4/4 (100%)" in capsys.readouterr().out
+
+
+def test_run_method_with_output_dir_writes_a_video(*, tmp_path: Path) -> None:
+    args = _build_parser().parse_args([
+        "--num-test-tasks",
+        "1",
+        "--goal-type",
+        "recycling",
+        "--output-dir",
+        str(tmp_path),
+    ])
+    TossingRoomSplitCli.run_method(
+        args=args,
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    video = tmp_path / "episode.mp4"
+    assert video.exists()
+    assert video.stat().st_size > 0
+
+
+def test_run_method_without_output_dir_writes_nothing(*, tmp_path: Path) -> None:
+    args = _build_parser().parse_args(["--num-test-tasks", "2"])
+    TossingRoomSplitCli.run_method(
+        args=args,
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    assert list(tmp_path.iterdir()) == []
