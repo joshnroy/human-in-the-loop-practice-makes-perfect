@@ -24,13 +24,19 @@ from pathlib import Path
 from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli
 from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
+# Registering tossing3d here costs nothing on a machine without KINDER: importing
+# Tossing3DCli imports no simulator (see environments/tossing3d/kinder_backend.py), so
+# --env lightswitch still works, --help still lists every flag, and only actually
+# *running* --env tossing3d needs the optional dependency.
 ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     "ballring": BallRingCli,
     "lightswitch": LightSwitchCli,
+    "tossing3d": Tossing3DCli,
     "tossingroom": TossingRoomCli,
 }
 
