@@ -279,7 +279,12 @@ alter results, and a commit SHA in it would break that on every commit.
 `--num-render-checkpoints N` (global) instead records N evaluation sweeps spread
 evenly from before any practice through the end of training, as
 `episode_<transitions>.mp4` — a visible progression for a `Method` that learns,
-rather than one clip of the finished policy.
+rather than one clip of the finished policy. `--record-full-loop PATH` (global) is a
+different thing again: it records the *entire outer loop* — practice periods
+included, which nothing else renders — to one seekable `.mp4`, annotated with a
+status bar (phase, cycle, step, transitions, task, skill) and a distinctly coloured
+marker per reset kind. Off by default, and a pure observer: a recorded run takes the
+same actions and writes a byte-identical `stats.json`. See `recording/README.md`.
 
 **Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
 defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task
@@ -364,6 +369,12 @@ actually happened — it returns nothing; querying cost beforehand is
   `to_gym.py` wraps this project's `core.Environment` to expose the Gym interface for
   RL libraries like SB3/RLlib. Not mirror images — different directions, different
   jobs. Neither exists yet.
+- `recording/` — `--record-full-loop`'s implementation: `LoopRecorder` (the hooks
+  `practice_loop.py` calls) plus `StatusBarOverlay`, which composes the annotation
+  *around* frames a `core.Renderer` already produced rather than teaching any domain
+  renderer about loop state. Sits between `practice_loop.py` and `core/` in the
+  import layering. See its own README for the four reset kinds and why they are
+  labelled apart.
 - `planning/` — bridges `Predicate`/`GroundAtom`/`Skill` to real Fast Downward (PDDL
   planning), for planning-based `Method`s only — needed for `methods/
   practice_makes_perfect/`, since EES's competence-cost-aware task planning has no

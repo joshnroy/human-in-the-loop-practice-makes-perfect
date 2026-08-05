@@ -2,6 +2,7 @@ import argparse
 import os
 import shutil
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 
@@ -9,8 +10,9 @@ from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
-from hitl_pmp.core.renderer.renderer import Renderer, VideoWriter
+from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
 from hitl_pmp.practice_loop import PracticeLoop
+from hitl_pmp.recording.loop_recorder import LoopRecorder
 
 
 class MethodRunner:
@@ -38,6 +40,24 @@ class MethodRunner:
     those are computed, not two. A static-method container, never
     instantiated, same as every other business-logic class in this
     project."""
+
+    # --record-full-loop covers a whole run (every practice step and every
+    # evaluation episode of every sweep), so it is far longer than the one-episode
+    # clips render_fps is tuned for and would be tedious to scrub at that rate.
+    # Reset markers are held for a fixed number of *frames*, so they stay visible
+    # for a readable fraction of a second here rather than an awkward pause.
+    full_loop_fps: ClassVar[int] = 4
+
+    @staticmethod
+    def rendering_needed(*, args: argparse.Namespace) -> bool:
+        """Whether anything in this run will consume rendered frames, which is what
+        decides whether an environment hands its Renderer over at all. Shared so the
+        condition cannot drift between domains as consumers are added -- it grew a
+        second one (--record-full-loop) the moment there was more than --output-dir."""
+        return (
+            getattr(args, "output_dir", None) is not None
+            or getattr(args, "record_full_loop", None) is not None
+        )
 
     @staticmethod
     def run(
@@ -68,22 +88,45 @@ class MethodRunner:
             VideoWriter.write(frames=frames, output_path=output_path, fps=render_fps)
             written_clips[transitions] = output_path
 
-        PracticeLoop.run(
+        recorder = MethodRunner._build_recorder(
+            args=args,
             problem=problem,
-            method=method,
-            metrics=metrics,
+            renderer=renderer,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
-            num_test_tasks=args.num_test_tasks,
-            # Read off args rather than threaded through every environment-CLI's
-            # run_method, exactly like num_render_checkpoints above it: both are
-            # harness knobs owned by cli.py's global flags, not per-domain or
-            # per-method configuration.
-            practice_reset_interval=getattr(args, "practice_reset_interval", None),
-            renderer=renderer,
-            num_render_checkpoints=num_render_checkpoints,
-            on_checkpoint_frames=write_clip,
         )
+        try:
+            PracticeLoop.run(
+                problem=problem,
+                method=method,
+                metrics=metrics,
+                num_cycles=num_cycles,
+                max_steps_per_interaction=max_steps_per_interaction,
+                num_test_tasks=args.num_test_tasks,
+                # Read off args rather than threaded through every environment-CLI's
+                # run_method, exactly like num_render_checkpoints above it: both are
+                # harness knobs owned by cli.py's global flags, not per-domain or
+                # per-method configuration.
+                practice_reset_interval=getattr(args, "practice_reset_interval", None),
+                # Checkpoint clips are an --output-dir product; without one there is
+                # nowhere to write them, so nothing is rendered for them either. The
+                # recorder carries its own renderer, so --record-full-loop still
+                # records with no --output-dir at all.
+                renderer=renderer if getattr(args, "output_dir", None) is not None else None,
+                num_render_checkpoints=num_render_checkpoints,
+                on_checkpoint_frames=write_clip,
+                recorder=recorder,
+            )
+        finally:
+            # In a finally so a crashed run still leaves a playable video of
+            # everything up to the crash -- which is exactly when someone wants to
+            # watch what the loop was doing.
+            if recorder is not None:
+                recorder.close()
+        if recorder is not None:
+            print(
+                f"full-loop recording: {args.record_full_loop} ({recorder.frames_written} frames)"
+            )
         # The LAST evaluation, not the first: with num_cycles=0 (every non-learning
         # baseline) there is exactly one sweep so the two coincide, but for a
         # learning Method the first sweep runs *before* any practice, so reporting
@@ -113,3 +156,32 @@ class MethodRunner:
                 snapshot.model_dump_json(indent=2)
             )
         return metrics
+
+    @staticmethod
+    def _build_recorder(
+        *,
+        args: argparse.Namespace,
+        problem: Problem,
+        renderer: type[Renderer] | None,
+        num_cycles: int,
+        max_steps_per_interaction: int,
+    ) -> LoopRecorder | None:
+        """None unless --record-full-loop asked for one, which is what keeps every
+        existing run byte-identical."""
+        output_path = getattr(args, "record_full_loop", None)
+        if output_path is None:
+            return None
+        if renderer is None:
+            # Up front, before the run: a domain with no renderer.py (Ball-Ring)
+            # would otherwise run to completion and silently write nothing.
+            raise ValueError(
+                "--record-full-loop needs a renderer, and the selected environment "
+                "does not provide one (no renderer.py for this domain yet)."
+            )
+        return LoopRecorder(
+            renderer=renderer,
+            env=problem.env,
+            video=VideoStream(output_path=output_path, fps=MethodRunner.full_loop_fps),
+            num_cycles=num_cycles,
+            max_steps_per_interaction=max_steps_per_interaction,
+        )

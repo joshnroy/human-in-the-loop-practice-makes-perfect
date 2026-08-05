@@ -149,7 +149,7 @@ class TossingRoomCli:
         )
 
         renderer: type[Renderer] | None = (
-            TossingRoomRenderer if args.output_dir is not None else None
+            TossingRoomRenderer if MethodRunner.rendering_needed(args=args) else None
         )
         MethodRunner.run(
             args=args,

@@ -1,3 +1,6 @@
+import inspect
+from pathlib import Path
+
 import numpy as np
 import pytest
 from pydantic import ConfigDict, Field
@@ -10,8 +13,9 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, Task
-from hitl_pmp.core.renderer.renderer import Renderer
+from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
 from hitl_pmp.practice_loop import PracticeLoop
+from hitl_pmp.recording.loop_recorder import LoopRecorder
 
 _BLOCK = Type(name="block", feature_names=("x",))
 _OBJ = Object(name="thing", type=_BLOCK)
@@ -914,3 +918,185 @@ def test_reset_is_due_yields_the_designed_resets_per_period() -> None:
             for step in range(100)
         )
         assert within_period + 1 == expected_per_period
+
+
+class _SpyRecorder(LoopRecorder):
+    """Logs which recording hook PracticeLoop called, in order, without rendering
+    or writing anything -- these tests are about the *loop's* coverage of its own
+    phases and resets, not about what a frame looks like (that is
+    tests/recording/'s job)."""
+
+    calls: list[str] = Field(default_factory=list)
+
+    def record_hard_reset(self, *, state: State) -> None:
+        del state
+        self.calls.append("hard_reset")
+
+    def begin_evaluation(self, *, sweep_index: int, transitions: int) -> None:
+        del transitions
+        self.calls.append(f"begin_evaluation:{sweep_index}")
+
+    def watch_policy(self, *, policy: Policy) -> Policy:
+        self.calls.append("watch_policy")
+        return policy
+
+    def record_evaluation_episode(
+        self,
+        *,
+        task_index: int,
+        num_tasks: int,
+        task: str,
+        frames: list[np.ndarray],
+        solved: bool,
+    ) -> None:
+        del num_tasks, task, frames, solved
+        self.calls.append(f"evaluation_episode:{task_index}")
+
+    def begin_practice(self, *, cycle_index: int, transitions: int, task: str) -> None:
+        del transitions, task
+        self.calls.append(f"begin_practice:{cycle_index}")
+
+    def record_period_reset(self, *, state: State) -> None:
+        del state
+        self.calls.append("period_reset")
+
+    def record_practice_step(
+        self, *, state: State, skill: str, step_index: int, transitions: int
+    ) -> None:
+        del state, skill, transitions
+        self.calls.append(f"practice_step:{step_index}")
+
+    def record_interval_reset(self, *, state: State, step_index: int, transitions: int) -> None:
+        del state, transitions
+        self.calls.append(f"interval_reset:{step_index}")
+
+    def record_interaction_complete(
+        self, *, state: State, step_index: int, transitions: int
+    ) -> None:
+        del state, transitions
+        self.calls.append(f"interaction_complete:{step_index}")
+
+
+def _spy_recorder(*, problem: _FakeProblem, num_cycles: int, max_steps: int) -> _SpyRecorder:
+    return _SpyRecorder(
+        renderer=_FakeRenderer,
+        env=problem.env,
+        video=VideoStream(output_path=Path("unused.mp4"), fps=4),
+        num_cycles=num_cycles,
+        max_steps_per_interaction=max_steps,
+    )
+
+
+def test_run_hands_the_recorder_every_phase_and_every_reset_of_the_loop() -> None:
+    problem, method, metrics = _build()
+    recorder = _spy_recorder(problem=problem, num_cycles=2, max_steps=3)
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=3,
+        num_test_tasks=1,
+        practice_reset_interval=2,
+        recorder=recorder,
+    )
+    assert recorder.calls == [
+        "hard_reset",
+        "begin_evaluation:0",
+        "watch_policy",
+        "evaluation_episode:0",
+        "begin_practice:0",
+        "period_reset",
+        "practice_step:0",
+        "practice_step:1",
+        "interval_reset:1",
+        "practice_step:2",
+        "begin_evaluation:1",
+        "watch_policy",
+        "evaluation_episode:0",
+        "begin_practice:1",
+        "period_reset",
+        "practice_step:0",
+        "practice_step:1",
+        "interval_reset:1",
+        "practice_step:2",
+        "begin_evaluation:2",
+        "watch_policy",
+        "evaluation_episode:0",
+    ]
+
+
+def test_run_records_every_test_task_of_a_sweep_not_only_the_first() -> None:
+    """The rendered-checkpoint path deliberately records only test task 0; a
+    full-loop recording is a record of the whole loop, so every episode of the
+    sweep has to appear in it."""
+    problem, method, metrics = _build()
+    recorder = _spy_recorder(problem=problem, num_cycles=0, max_steps=1)
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=0,
+        max_steps_per_interaction=1,
+        num_test_tasks=3,
+        recorder=recorder,
+    )
+    assert [call for call in recorder.calls if call.startswith("evaluation_episode")] == [
+        "evaluation_episode:0",
+        "evaluation_episode:1",
+        "evaluation_episode:2",
+    ]
+
+
+def test_run_records_an_interaction_complete_when_a_period_ends_early() -> None:
+    env = _FakeEnv()
+    event_log = _EventLog()
+    problem = _FakeProblem(env=env, tasks=_FakeTasks(env=env), event_log=event_log)
+    method = _EarlyStoppingMethod(env=env, event_log=event_log, steps_before_stopping=2)
+    recorder = _spy_recorder(problem=problem, num_cycles=1, max_steps=100)
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=Metrics(),
+        num_cycles=1,
+        max_steps_per_interaction=100,
+        num_test_tasks=1,
+        recorder=recorder,
+    )
+    assert "interaction_complete:2" in recorder.calls
+
+
+def test_run_defaults_to_not_recording() -> None:
+    assert inspect.signature(PracticeLoop.run).parameters["recorder"].default is None
+
+
+def _run_for_comparison(
+    *, recorder: _SpyRecorder | None
+) -> tuple[Metrics, _FakeProblem, _FakeMethod]:
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=4,
+        num_test_tasks=2,
+        practice_reset_interval=2,
+        recorder=recorder,
+    )
+    return metrics, problem, method
+
+
+def test_recording_does_not_change_what_the_run_does() -> None:
+    """The whole flag is only usable if it is an observer: same actions, same
+    step counts, same serialized Metrics down to the byte."""
+    plain_metrics, plain_problem, plain_method = _run_for_comparison(recorder=None)
+    problem, _, _ = _build()
+    recorded_metrics, recorded_problem, recorded_method = _run_for_comparison(
+        recorder=_spy_recorder(problem=problem, num_cycles=3, max_steps=4)
+    )
+
+    assert recorded_metrics.model_dump_json() == plain_metrics.model_dump_json()
+    assert recorded_problem.env.pre_action_xs == plain_problem.env.pre_action_xs
+    assert recorded_method.policy_call_count == plain_method.policy_call_count
+    assert recorded_method.reset_observation_xs == plain_method.reset_observation_xs

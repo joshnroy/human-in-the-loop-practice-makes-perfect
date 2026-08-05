@@ -129,7 +129,7 @@ class LightSwitchCli:
         )
 
         renderer: type[Renderer] | None = (
-            LightSwitchRenderer if args.output_dir is not None else None
+            LightSwitchRenderer if MethodRunner.rendering_needed(args=args) else None
         )
         MethodRunner.run(
             args=args,

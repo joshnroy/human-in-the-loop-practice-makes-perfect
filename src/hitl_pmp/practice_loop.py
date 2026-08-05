@@ -11,6 +11,7 @@ from hitl_pmp.core.metrics.types import TaskOutcome
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
+from hitl_pmp.recording.loop_recorder import LoopRecorder
 
 
 class PracticeLoop:
@@ -143,7 +144,16 @@ class PracticeLoop:
     given, and ignored (so it may be omitted) when renderer is None, since a run
     with no renderer produces no frames for anyone to receive. Passing a renderer
     without a sink is a ValueError raised up front, before the run starts, rather
-    than a silent discard of every clip."""
+    than a silent discard of every clip.
+
+    **recorder is a separate, orthogonal thing from renderer.** renderer records
+    *evaluation episodes* at checkpoints, into one clip each. recorder (a
+    recording.LoopRecorder, off by default) records the whole outer loop -- every
+    practice period, every evaluation episode of every sweep, and every reset --
+    into a single continuous video. The hooks below are the only difference a
+    recorder makes: it is handed state this loop already has, and never gets to
+    decide anything, so a recorded run takes exactly the actions an unrecorded one
+    does. See LoopRecorder's own docstring."""
 
     @staticmethod
     def run(
@@ -159,6 +169,7 @@ class PracticeLoop:
         renderer: type[Renderer] | None = None,
         num_render_checkpoints: int = 1,
         on_checkpoint_frames: CheckpointFramesSink | None = None,
+        recorder: LoopRecorder | None = None,
     ) -> None:
         # Up front, before hard_reset(), so a caller that forgot the sink finds out
         # before the run mutates the environment rather than one sweep in.
@@ -185,6 +196,8 @@ class PracticeLoop:
             on_checkpoint_frames(transitions=transitions, frames=sweep_frames)
 
         problem.hard_reset()
+        if recorder is not None:
+            recorder.record_hard_reset(state=problem.get_current_state())
         # Drawn ONCE, up front -- see the class docstring's "fixed test set"
         # section for why re-sampling it per sweep corrupts the learning curve.
         test_tasks = [problem.sample_test_task() for _ in range(num_test_tasks)]
@@ -196,6 +209,8 @@ class PracticeLoop:
             test_tasks=test_tasks,
             num_online_transitions=num_online_transitions,
             renderer=renderer if 0 in rendered_sweeps else None,
+            recorder=recorder,
+            sweep_index=0,
         )
         hand_over(transitions=num_online_transitions, sweep_frames=frames)
         for cycle in range(num_cycles):
@@ -206,6 +221,12 @@ class PracticeLoop:
             # held-out test tasks. Non-learning Methods inherit the default, which
             # just forwards to get_task_policy -- see Method's own docstrings.
             policy = method.get_practice_policy(task=task)
+            if recorder is not None:
+                recorder.begin_practice(
+                    cycle_index=cycle,
+                    transitions=num_online_transitions,
+                    task=task.goal.describe(),
+                )
             # Start the period at the task just sampled, rather than resuming from
             # whatever the preceding evaluation sweep left behind. predicators does
             # the same (main.py:301-302, `cogman.reset(env_task)` per interaction
@@ -214,6 +235,8 @@ class PracticeLoop:
             # free period a head start it never earned.
             state = problem.reset_to_task(task=task)
             metrics.record_practice_reset()
+            if recorder is not None:
+                recorder.record_period_reset(state=state)
             for step in range(max_steps_per_interaction):
                 try:
                     labeled_action = policy(state)
@@ -222,9 +245,20 @@ class PracticeLoop:
                     # early is normal, and the steps not taken are not charged --
                     # see InteractionComplete's own docstring for why the count is
                     # data-driven rather than budget-driven.
+                    if recorder is not None:
+                        recorder.record_interaction_complete(
+                            state=state, step_index=step, transitions=num_online_transitions
+                        )
                     break
                 state = problem.take_action(action=labeled_action.action)
                 num_online_transitions += 1
+                if recorder is not None:
+                    recorder.record_practice_step(
+                        state=state,
+                        skill=labeled_action.label,
+                        step_index=step,
+                        transitions=num_online_transitions,
+                    )
                 if PracticeLoop._reset_is_due(
                     step=step,
                     max_steps_per_interaction=max_steps_per_interaction,
@@ -240,6 +274,10 @@ class PracticeLoop:
                     # which is the confound this knob exists to avoid.
                     state = problem.reset_to_task(task=task)
                     metrics.record_practice_reset()
+                    if recorder is not None:
+                        recorder.record_interval_reset(
+                            state=state, step_index=step, transitions=num_online_transitions
+                        )
             # Before this cycle's evaluation, so the sweep actually measures what
             # the Method just learned rather than lagging a cycle behind.
             method.end_cycle()
@@ -252,6 +290,8 @@ class PracticeLoop:
                 test_tasks=test_tasks,
                 num_online_transitions=num_online_transitions,
                 renderer=renderer if (cycle + 1) in rendered_sweeps else None,
+                recorder=recorder,
+                sweep_index=cycle + 1,
             )
             hand_over(transitions=num_online_transitions, sweep_frames=frames)
 
@@ -296,18 +336,37 @@ class PracticeLoop:
         test_tasks: list[Task],
         num_online_transitions: int,
         renderer: type[Renderer] | None = None,
+        recorder: LoopRecorder | None = None,
+        sweep_index: int = 0,
     ) -> list[np.ndarray]:
         num_solved = 0
         frames: list[np.ndarray] = []
         outcomes: list[TaskOutcome] = []
+        if recorder is not None:
+            recorder.begin_evaluation(sweep_index=sweep_index, transitions=num_online_transitions)
         for i, task in enumerate(test_tasks):
+            policy = method.get_task_policy(task=task)
+            # The checkpoint clip is of test task 0 only; a full-loop recording is
+            # of the whole loop, so it renders every episode of the sweep. Its
+            # renderer wins where both are on -- they are the same renderer in
+            # practice, and rendering the episode twice would only cost time.
+            episode_renderer = renderer if i == 0 else None
+            if recorder is not None:
+                policy = recorder.watch_policy(policy=policy)
+                episode_renderer = recorder.renderer
             solved, task_frames = problem.run_task_episode(
-                task=task,
-                policy=method.get_task_policy(task=task),
-                renderer=renderer if i == 0 else None,
+                task=task, policy=policy, renderer=episode_renderer
             )
             if i == 0 and renderer is not None:
                 frames = task_frames
+            if recorder is not None:
+                recorder.record_evaluation_episode(
+                    task_index=i,
+                    num_tasks=len(test_tasks),
+                    task=task.goal.describe(),
+                    frames=task_frames,
+                    solved=solved,
+                )
             num_solved += int(solved)
             # test_tasks is drawn once for the whole run, so i identifies the
             # same Task at every checkpoint -- a task can be followed across the
