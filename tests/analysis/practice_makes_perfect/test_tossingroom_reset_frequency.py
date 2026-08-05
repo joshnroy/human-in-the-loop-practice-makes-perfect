@@ -28,9 +28,18 @@ from analysis.practice_makes_perfect.tossingroom_reset_frequency import (
     ResetFrequencyReport,
 )
 
-_ARMS_JSON = (
-    Path(__file__).parents[3] / "docs/experiment-logs/2026-08-03-tossingroom-reset-freq.json"
-)
+_LOGS = Path(__file__).parents[3] / "docs/experiment-logs"
+
+# The live aggregate: the four arms re-run on the fixed 14/14/2 evaluation set that
+# PR #41 introduced. Every number quoted in the experiment log's live tables comes
+# from this file.
+_ARMS_JSON = _LOGS / "2026-08-04-tossingroom-reset-freq.json"
+
+# The superseded aggregate, kept so the log's "previously" columns re-derive from a
+# committed file rather than from prose. It was measured on the *sampled*
+# composition, so it deliberately fails the 14/14/2 composition check below -- that
+# failure is the whole reason the arms were re-run.
+_SUPERSEDED_ARMS_JSON = _LOGS / "2026-08-03-tossingroom-reset-freq.json"
 
 
 def test_wilcoxon_on_an_all_positive_sample_is_exactly_two_over_two_to_the_n():
@@ -122,4 +131,53 @@ def test_every_arm_draws_the_same_test_set_so_denominators_match_across_arms():
         }
         assert len(set(denominators.values())) == 1, (
             f"seed {seed} drew different task families per arm: {denominators}"
+        )
+
+
+def test_the_evaluation_set_really_was_the_fixed_14_14_2_composition():
+    """The manipulation check for the *evaluation* side, asserted against the data
+    rather than assumed from the flags.
+
+    This experiment's own headline was that a design failed to isolate what it
+    claimed. Taking the test-set composition on trust would repeat that one level
+    down -- and it is precisely the assumption that went stale underneath the
+    original run, whose numbers were measured on a sampled composition that the
+    code no longer produces.
+    """
+    arms = ResetFrequencyReport.load_arms(json_path=_ARMS_JSON)
+    assert ResetFrequencyReport.expected_composition() == {
+        "TRASH": 14,
+        "RECYCLING": 14,
+        "EMPTY": 2,
+    }
+    assert ResetFrequencyReport.composition_violations(arms=arms) == []
+
+
+def test_every_arm_actually_spent_the_2500_transition_budget():
+    """The manipulation check for the *training* side. The arms are comparable only
+    because the experience budget is identical by construction, so a shortfall is a
+    residual confound and is measured rather than argued from the loop's
+    arithmetic."""
+    arms = ResetFrequencyReport.load_arms(json_path=_ARMS_JSON)
+    assert ResetFrequencyReport.transition_violations(arms=arms) == []
+
+
+def test_the_superseded_aggregate_is_kept_and_fails_the_composition_check():
+    """The re-run's own justification, pinned. The 2026-08-03 aggregate is retained
+    so the log's "previously" columns re-derive from a committed file, and it must
+    keep failing the 14/14/2 check -- if it ever passed, the two files would be
+    measuring the same evaluation set and the re-run would have been unnecessary."""
+    superseded = ResetFrequencyReport.load_arms(json_path=_SUPERSEDED_ARMS_JSON)
+    assert ResetFrequencyReport.composition_violations(arms=superseded) != []
+
+
+def test_the_noise_floor_follows_from_the_fixed_composition():
+    """14 tasks in each throw family puts the gap's binomial noise floor at
+    100 * sqrt(0.25/14 + 0.25/14) = 18.9pp, the same in every arm because the
+    composition no longer varies by seed. Quoted in the log beside every observed
+    sd, so it is pinned here."""
+    arms = ResetFrequencyReport.load_arms(json_path=_ARMS_JSON)
+    for arm in ("armA", "armB", "armC", "armD"):
+        assert ResetFrequencyReport.predicted_gap_noise(arms=arms, arm=arm) == pytest.approx(
+            18.90, abs=0.01
         )
