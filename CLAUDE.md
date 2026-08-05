@@ -64,6 +64,13 @@ is *run* are the same one — a read-vs-run skew between two copies at different
 commits has already caused a wrong SHA to be stated as fact. Verify it took:
 `kinder.__file__` and `kinder_models.__file__` must both resolve under `reference/`.
 
+Prefer a *system* `python3.10` to seed that venv. Seeding it from conda's
+interpreter works, but the venv inherits conda's `sysconfig` build flags, so any
+package that compiles C++ at install time (notably `pybullet_helpers`' IKFast, which
+`pick_shelf` triggers on first use) links through conda's `compiler_compat` linker
+and fails against the system libraries — see `docs/kinder-environment-validation.md`
+for the workaround that was actually used.
+
 Four traps, each of which costs an hour:
 
 - **The distribution is `kindergarden`; the import package is `kinder`.**
