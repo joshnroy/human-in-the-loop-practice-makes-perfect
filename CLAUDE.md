@@ -104,8 +104,20 @@ Four traps, each of which costs an hour:
 
 `docs/kinder-environment-validation.md` records what was actually measured at
 upstream `main` — including that a cube landing **in** the bin scores a **failure**,
-which is the single most misreadable thing about `Tossing3D`. Nothing on `main`
-imports KINDER today.
+which is the single most misreadable thing about `Tossing3D`.
+
+`reference/kinder-baselines` is deliberately **not** on its default branch: it sits on
+`pinned-with-leak-fix` (`566d49b`), upstream `main` plus a `weakref.finalize` in
+`PyBulletSim` that disconnects the leaked client — pushed to the fork
+`joshnroy/kinder-baselines` and proposed upstream as PR #87. `scripts/update_reference_repos.sh`
+skips rather than clobbers a non-default branch, so a refresh leaves it alone. **Do not
+add a `_release`-style explicit `close()` on top of it**: with the finalizer in place that
+double-disconnects.
+
+`environments/tossing3d/` is the integration (`--env tossing3d`), and it imports KINDER
+**lazily**, from one module — so the package still imports, typechecks and tests without
+it, and CI (which never installs the extra) skips only the simulator-backed tests. See
+that folder's own README for what is upstream's and what is ours.
 
 ## Commands
 
@@ -416,6 +428,17 @@ actually happened — it returns nothing; querying cost beforehand is
   directly in raw action space — declares `Skill` `ClassVar`s plus
   `sample_params`/`compute_action` static methods; see `core/README.md`'s
   `Skill`/`GroundSkill` section and `environments/lightswitch/skills.py`).
+  `environments/tossing3d/` is the one domain that does **not** implement its own
+  dynamics: it wraps KINDER's `Tossing3D` simulator and its parameterized controllers
+  (see the `reference/` section above), so it additionally holds `kinder_backend.py` —
+  the single module allowed to import KINDER, and only lazily. Three consequences worth
+  knowing before touching it: one `take_action` is a whole *skill* (hundreds of MuJoCo
+  ticks), `set_state` can only restore an **episode-initial** state and raises otherwise
+  (a flat `State` cannot carry MuJoCo's `qpos`/`qvel`), and it defaults to *our*
+  `scripts/task_configs/Tossing3D-o1-coincident.json` rather than upstream's stock `o1`,
+  under which a cube landing **in** the bin is a scored failure. Its simulator-backed
+  tests gate on `importlib.util.find_spec("kinder")` — the *import* package name; the
+  distribution is `kindergarden` — so they skip cleanly on CI.
 - `humans/` — concrete `HumanOracle` implementations, the v0 (unconditional) →
   v3 (natural-language, capability-aware) axis from the design doc. Domain-agnostic:
   a `HumanOracle` knows nothing about any specific `Environment`'s dynamics.

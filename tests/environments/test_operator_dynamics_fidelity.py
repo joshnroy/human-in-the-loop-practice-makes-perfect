@@ -625,6 +625,26 @@ def _report(*, domain: str) -> WalkReport:
     return _REPORTS[domain]
 
 
+# Every domain whose dynamics this walk can drive. Deliberately a literal list rather
+# than a scan of `hitl_pmp.cli.ENVIRONMENTS`, because one registered domain cannot be
+# walked at all:
+#
+# **tossing3d is absent, and not as an exemption.** Two structural reasons:
+#
+# 1. It needs KINDER (MuJoCo + PyBullet), an optional extra CI never installs. Registering
+#    it here would turn this green cross-domain file into a collection error on CI.
+# 2. The budget below -- 8 walks x 40 steps, every applicable candidate x 30 parameter
+#    draws -- is thousands of executions. There one execution is a real MuJoCo rollout of
+#    several hundred ticks (~1-15 s), so this walk would take hours to days per run.
+#
+# Neither is a licensed no-op, so no `Exemption` expresses it and adding one would be a
+# lie about coverage. The invariant is enforced for that domain instead by
+# `tests/environments/tossing3d/test_operator_fidelity.py`, which applies this same
+# property -- speculatively execute every applicable ground skill, rewind, require the
+# world to have changed -- along the oracle's own trajectory, rewinding through
+# `Tossing3DEnvironment.snapshot`/`.restore` (KINDER's own `set_state`) rather than
+# through `Environment.set_state`. That file states its own narrowing: it walks one
+# trajectory rather than searching.
 _DOMAINS = ["lightswitch", "ballring", "tossingroom"]
 
 
