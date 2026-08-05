@@ -98,6 +98,17 @@ class Cli:
             "Disabled (nothing written) if omitted.",
         )
         parser.add_argument(
+            "--practice-reset-interval",
+            type=lambda value: Cli.parse_positive_int(value=value),
+            default=None,
+            help="Put the environment back to the current practice task's initial "
+            "state every N steps *within* an interaction period, without ending the "
+            "cycle or retraining. Omitted (the default) means the only reset is the "
+            "one at the top of each cycle, so reset frequency is whatever "
+            "--max-steps-per-interaction happens to be. Set it to decouple how often "
+            "the robot is rescued from how often the method refits.",
+        )
+        parser.add_argument(
             "--num-render-checkpoints",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1,

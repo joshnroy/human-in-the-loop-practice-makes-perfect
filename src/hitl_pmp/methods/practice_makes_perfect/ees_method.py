@@ -212,6 +212,11 @@ class EesMethod(Method):
     # Scoped to this Method instance, so it lives exactly as long as one run and is
     # never shared between runs, processes, or tests. See `plan_to`.
     _translation_cache: TranslationCache = PrivateAttr()
+    # The practice episode currently in flight, so observe_environment_reset can
+    # settle its unobserved skill before the harness discards the state that would
+    # have judged it. None until the first practice period, and never an
+    # *evaluation* episode: those observe nothing at all.
+    _practice_episode: "_EesEpisode | None" = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -222,6 +227,7 @@ class EesMethod(Method):
         self._cached_plans = []
         self._score_calls = 0
         self._translation_cache = TranslationCache()
+        self._practice_episode = None
 
     # ------------------------------------------------------------------ domain
 
@@ -541,7 +547,29 @@ class EesMethod(Method):
         init_atoms = self.abstract_state(state=task.initial_state)
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
         episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
+        self._practice_episode = episode
         return lambda state: episode.step(state=state)
+
+    def observe_environment_reset(self, *, state: State) -> None:
+        """Score the in-flight skill against the state the harness is about to
+        discard, instead of against the initial state it is about to be reset to.
+
+        Only reachable with practice_reset_interval set (practice_loop.py never
+        calls this otherwise), and it is what keeps that knob from confounding
+        itself: an outcome is normally read on the *next* step, so a reset in
+        between would check add_effects against a freshly reset environment --
+        where InBin/RobotInRoom-style effects essentially never hold -- and record
+        a spurious failure into both the competence model and the sampler's
+        training data, once per reset. That mislabelling would scale exactly with
+        reset frequency.
+
+        Flushing here rather than at the period boundary is deliberate: the last
+        skill of a period still goes unobserved (this class's deviation 2), so
+        every interaction period loses exactly one observation no matter how often
+        the harness resets inside it."""
+        if self._practice_episode is None:
+            return
+        self._practice_episode.observe_pending(true_atoms=self.abstract_state(state=state))
 
     def execute_ground_skill(
         self, *, ground_skill: GroundSkill, state: State, explore: bool
@@ -680,7 +708,7 @@ class _EesEpisode:
     def step(self, *, state: State) -> LabeledAction:
         method = self._method
         true_atoms = method.abstract_state(state=state)
-        self._observe_pending(true_atoms=true_atoms)
+        self.observe_pending(true_atoms=true_atoms)
         self._tick_goal_pursuit_horizon()
 
         # Closed-loop execution: if the next queued skill's preconditions no longer
@@ -754,7 +782,7 @@ class _EesEpisode:
         else:
             self._goal_pursuit_remaining -= 1
 
-    def _observe_pending(self, *, true_atoms: frozenset[GroundAtom]) -> None:
+    def observe_pending(self, *, true_atoms: frozenset[GroundAtom]) -> None:
         if self._pending is None:
             return
         if self._practicing:

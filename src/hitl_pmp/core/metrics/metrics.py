@@ -31,6 +31,10 @@ class Metrics(BaseModel):
     # Defaults to empty, so every stats.json written before this field existed
     # still loads, and a caller that only has aggregate counts stays valid.
     breakdowns: list[EvaluationBreakdown] = Field(default_factory=list)
+    # How many times the harness put the environment back to the current practice
+    # task's initial state, counted as it happened. Defaults to 0 so every
+    # stats.json written before this field existed still loads.
+    num_practice_resets: int = 0
     task_name: str = "default"
 
     def record_evaluation(
@@ -67,6 +71,16 @@ class Metrics(BaseModel):
         self.evaluations.append((num_online_transitions, num_solved, num_total))
         if breakdown is not None:
             self.breakdowns.append(breakdown)
+
+    def record_practice_reset(self) -> None:
+        """Counts one free reset back to the current practice task's initial state.
+
+        Recorded rather than rederived from the configured interval because a
+        configured knob is a claim and this is the measurement: an experiment
+        that varies how often the robot is rescued has to be able to show the
+        resets really happened, at the rate intended, from the run's own output
+        instead of from an argument about the loop's arithmetic."""
+        self.num_practice_resets += 1
 
     def failures_by_goal(self) -> dict[str, tuple[int, int]]:
         """{goal description: (num_failed, num_total)} for the final evaluation
