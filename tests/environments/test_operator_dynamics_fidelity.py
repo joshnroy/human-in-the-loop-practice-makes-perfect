@@ -77,6 +77,15 @@ from hitl_pmp.environments.tossingroom.skill_provider import (
     TossingRoomSkillProvider,
 )
 from hitl_pmp.environments.tossingroom.tasks import TossingRoomGoalType, TossingRoomTasks
+from hitl_pmp.environments.tossingroomsplit.environment import TossingRoomSplitEnvironment
+from hitl_pmp.environments.tossingroomsplit.skill_provider import (
+    TossingRoomSplitOracle,
+    TossingRoomSplitSkillProvider,
+)
+from hitl_pmp.environments.tossingroomsplit.tasks import (
+    TossingRoomSplitGoalType,
+    TossingRoomSplitTasks,
+)
 from hitl_pmp.planning.grounding import SkillGrounder
 
 # Draws per execution trial for a skill with continuous parameters. A sampler miss is
@@ -319,11 +328,36 @@ class DomainCases:
         )
 
     @staticmethod
+    def tossingroomsplit() -> DomainCase:
+        """Same walk on the split-throw domain. Seven lifted skills instead of four
+        (`Pickup`, `Throw` and `Press` each split per kind), so the coverage floor below
+        is strictly harder to clear -- and it is what would catch a `ThrowTrash`/
+        `ThrowRecycling` (or `PressTrash`/`PressRecycling`) whose preconditions drifted
+        apart from the dynamics independently of each other, which a single shared
+        `Throw`/`Press` could not express."""
+        env = TossingRoomSplitEnvironment()
+        tasks = TossingRoomSplitTasks(env=env, seed=0)
+        oracle_tasks = tuple(
+            TossingRoomSplitTasks(env=env, seed=0, forced_goal_type=goal_type).sample_test_task()
+            for goal_type in TossingRoomSplitGoalType
+        )
+        return DomainCase(
+            name="tossingroomsplit",
+            env=env,
+            provider=TossingRoomSplitSkillProvider(env=env),
+            tasks=tasks,
+            oracle=TossingRoomSplitOracle(env=env),
+            oracle_tasks=oracle_tasks,
+            # No exemptions, for the same reason Tossing Room has none.
+        )
+
+    @staticmethod
     def build(*, domain: str) -> DomainCase:
         builders = {
             "lightswitch": DomainCases.lightswitch,
             "ballring": DomainCases.ballring,
             "tossingroom": DomainCases.tossingroom,
+            "tossingroomsplit": DomainCases.tossingroomsplit,
         }
         return builders[domain]()
 
@@ -645,7 +679,7 @@ def _report(*, domain: str) -> WalkReport:
 # `Tossing3DEnvironment.snapshot`/`.restore` (KINDER's own `set_state`) rather than
 # through `Environment.set_state`. That file states its own narrowing: it walks one
 # trajectory rather than searching.
-_DOMAINS = ["lightswitch", "ballring", "tossingroom"]
+_DOMAINS = ["lightswitch", "ballring", "tossingroom", "tossingroomsplit"]
 
 
 @pytest.mark.parametrize(
@@ -654,6 +688,7 @@ _DOMAINS = ["lightswitch", "ballring", "tossingroom"]
         "lightswitch",
         "ballring",
         "tossingroom",
+        "tossingroomsplit",
     ],
 )
 def test_applicable_ground_skills_are_never_silently_ignored(*, domain: str) -> None:

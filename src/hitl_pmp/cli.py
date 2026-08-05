@@ -26,6 +26,7 @@ from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
+from hitl_pmp.environments.tossingroomsplit.cli import TossingRoomSplitCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
@@ -38,6 +39,9 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     "lightswitch": LightSwitchCli,
     "tossing3d": Tossing3DCli,
     "tossingroom": TossingRoomCli,
+    # Tossing Room with the two throws as separate lifted skills -- same world, same
+    # flags, two `LearnedSkillSampler`s instead of one. See its own cli.py/skills.py.
+    "tossingroomsplit": TossingRoomSplitCli,
 }
 
 
