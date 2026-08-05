@@ -51,6 +51,40 @@ def test_render_frame_differs_when_holding_an_item() -> None:
     )
 
 
+def test_render_frame_shows_a_bins_single_item() -> None:
+    """A bin holds 0 or 1 items, and the drawing has to distinguish those two -- the
+    only two states there are."""
+    env = TossingRoomEnvironment()
+    empty = _state(env=env)
+    full = env.build_initial_state(
+        trash_target_force=0.5, recycling_target_force=0.5, trash_count=1
+    )
+    assert not np.array_equal(
+        TossingRoomRenderer.render_frame(state=empty, env=env),
+        TossingRoomRenderer.render_frame(state=full, env=env),
+    )
+
+
+def test_render_frame_distinguishes_the_two_bins_buttons() -> None:
+    """Each bin has its own button beside it, so emptying the trash bin and emptying the
+    recycling bin must not look the same -- a viewer has to be able to tell which button
+    was pressed by what changed."""
+    env = TossingRoomEnvironment()
+    both_full = env.build_initial_state(
+        trash_target_force=0.5, recycling_target_force=0.5, trash_count=1, recycling_count=1
+    )
+    trash_emptied = both_full.model_copy(deep=True)
+    trash_emptied.set(obj=TossingRoomEnvironment.trash_bin, feature_name="count", feature_val=0.0)
+    recycling_emptied = both_full.model_copy(deep=True)
+    recycling_emptied.set(
+        obj=TossingRoomEnvironment.recycling_bin, feature_name="count", feature_val=0.0
+    )
+    assert not np.array_equal(
+        TossingRoomRenderer.render_frame(state=trash_emptied, env=env),
+        TossingRoomRenderer.render_frame(state=recycling_emptied, env=env),
+    )
+
+
 def test_render_frame_differs_with_a_label() -> None:
     env = TossingRoomEnvironment()
     state = _state(env=env)

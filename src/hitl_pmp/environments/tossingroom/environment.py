@@ -10,14 +10,33 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 class TossingRoomEnvironment(Environment):
     """The "Tossing Room" environment: a robot in a 1-D hallway of rooms must sort
     items into the correct bin. A limitless pile of trash and recycling sits at the
-    robot's start room; the recycling bin is in one room, the trash bin and an
-    "empty/incinerate" button in another. A ONE-WAY LEDGE sits between two adjacent
-    rooms: the robot can step LEFT across it (down in index) but never RIGHT (up in
-    index) -- that rightward step is the domain's single irreversible action. The
-    recycling bin therefore sits behind the ledge (closer to start but only reachable
-    by dropping down), while the trash bin sits freely reachable in the other
-    direction. No HumanOracle exists yet (Problem.human stays None): the oracle solves
-    every task forward-only, so it never needs to be lifted back up the ledge.
+    robot's start room; the recycling bin is in one room and the trash bin in another,
+    and EACH BIN HAS ITS OWN "empty/incinerate" button beside it, in that bin's room.
+    A ONE-WAY LEDGE sits between two adjacent rooms: the robot can step LEFT across it
+    (down in index) but never RIGHT (up in index) -- that rightward step is the
+    domain's single irreversible action. The recycling bin therefore sits behind the
+    ledge (closer to start but only reachable by dropping down), while the trash bin
+    sits freely reachable in the other direction. No HumanOracle exists yet
+    (Problem.human stays None): the oracle solves every task forward-only, so it never
+    needs to be lifted back up the ledge.
+
+    **A BIN HOLDS AT MOST ONE ITEM**, and `_apply_throw` REFUSES a throw at a full one
+    (a silent no-op, like every other out-of-context action). That capacity is what
+    makes `ItemInBin(item, bin)` -- the count-based predicate that is also `Throw`'s
+    add-effect -- mean "this throw landed" rather than "somebody's item is in there":
+    with `Throw` carrying the matching `BinEmpty` precondition, the count is provably 0
+    at throw time, so `ItemInBin` goes false -> true exactly once per throw. Before
+    that, EES's `add_effects <= atoms(next_state)` verdict scored ANY throw into an
+    already-occupied bin a success at any force, because a throw always releases the
+    item whether or not it lands. One button per bin follows from the same choice: a
+    single button emptying both bins made `Press`'s effect on `ItemInBin` a universal
+    delete that no per-bin effect could express.
+
+    Consequence, deliberately accepted: the EMPTY goal family is an ORDERING task. Both
+    buttons must be pressed, the recycling one sits behind the one-way ledge, so the
+    only solution is to press the trash button first and then drop across. The reverse
+    order is unsolvable. That makes EMPTY exercise the irreversibility this domain is
+    about instead of being a deterministic walk-and-press smoke test.
 
     This is a fresh first-principles environment (not a port), but it deliberately
     mirrors LightSwitchEnvironment's structure exactly -- the same real-per-instance
@@ -36,7 +55,10 @@ class TossingRoomEnvironment(Environment):
     Box action_space, decoded by rounding the first two entries):
       * skill_id -- which skill: 0 Pickup, 1 MoveRoom, 2 Throw, 3 Press.
       * arg -- skill-dependent integer: Pickup/Throw = item kind (1 trash,
-        2 recycling); MoveRoom = destination room index; Press = unused.
+        2 recycling); MoveRoom = destination room index; Press = which button, by the
+        kind of the bin it empties (so the pressed button is named by the action rather
+        than inferred from the robot's position -- it was unused when one button
+        emptied both bins).
       * force -- only read by Throw (the continuous dial, like Light Switch's dlight).
     take_action is TOTAL over the whole Box: any action out of context (wrong room,
     hand already full, a non-finite or unknown value) is a silent no-op, never a
@@ -54,11 +76,19 @@ class TossingRoomEnvironment(Environment):
     TRASH_KIND: ClassVar[int] = 1
     RECYCLING_KIND: ClassVar[int] = 2
 
+    # A bin's capacity. Deliberately NOT configurable: `Throw`'s BinEmpty precondition,
+    # `ItemInBin`'s once-per-throw semantics and EMPTY's one-item-per-bin prefill are
+    # all statements about capacity 1, so a knob here would let a config silently
+    # reopen the vacuous-success defect this design closes.
+    BIN_CAPACITY: ClassVar[int] = 1
+
     num_rooms: int = 7
     start_room: int = 3
     recycling_bin_room: int = 1
     trash_bin_room: int = 6
-    button_room: int = 6
+    # There is no button-room config: each bin's button sits in that bin's own room, so
+    # its placement is derived (button_room_for_kind) rather than separately configured.
+    # Two knobs that must agree would be a footgun -- "beside its bin" is structural.
     # The one-way ledge sits between blocked_right_from and blocked_right_from + 1:
     # stepping RIGHT from blocked_right_from is blocked; every other adjacent step
     # (including stepping LEFT back across it) is allowed.
@@ -76,8 +106,13 @@ class TossingRoomEnvironment(Environment):
     # only (state, objects) -- can read it and keep MoveRoom's model as strong as
     # _apply_move's guard.
     room_type: ClassVar[Type] = Type(name="room", feature_names=("index", "blocks_right"))
+    # count stays the single representation of a bin's contents, read by BOTH ItemInBin
+    # and BinEmpty -- with capacity 1 it is already exactly the bit they each need, and
+    # a second "is an item in here" feature would be the same fact stored twice.
     bin_type: ClassVar[Type] = Type(name="bin", feature_names=("count", "room", "kind"))
-    button_type: ClassVar[Type] = Type(name="button", feature_names=("room",))
+    # kind is what ties a button to the one bin it empties (ButtonForBin), the same way
+    # a bin's kind ties it to the item it accepts (BinAcceptsItem).
+    button_type: ClassVar[Type] = Type(name="button", feature_names=("room", "kind"))
     # The limitless item pile. Modelled as a real object with a room feature -- the
     # same shape as `button` -- so a module-level Predicate can tell which room it is
     # in. `start_room` is per-instance config, which a Predicate (whose signature is
@@ -89,7 +124,8 @@ class TossingRoomEnvironment(Environment):
     robot: ClassVar[Object] = Object(name="robot", type=robot_type)
     recycling_bin: ClassVar[Object] = Object(name="recycling_bin", type=bin_type)
     trash_bin: ClassVar[Object] = Object(name="trash_bin", type=bin_type)
-    button: ClassVar[Object] = Object(name="button", type=button_type)
+    trash_button: ClassVar[Object] = Object(name="trash_button", type=button_type)
+    recycling_button: ClassVar[Object] = Object(name="recycling_button", type=button_type)
     pile: ClassVar[Object] = Object(name="pile", type=pile_type)
     # Singleton discriminator objects, so skills/predicates/goals have a concrete
     # Object to bind their "item" argument to. Their kind feature is what maps a held
@@ -116,6 +152,13 @@ class TossingRoomEnvironment(Environment):
     def bin_room_for_kind(self, *, kind: int) -> int:
         return self.recycling_bin_room if kind == self.RECYCLING_KIND else self.trash_bin_room
 
+    def button_for_kind(self, *, kind: int) -> Object:
+        return self.recycling_button if kind == self.RECYCLING_KIND else self.trash_button
+
+    def button_room_for_kind(self, *, kind: int) -> int:
+        """A button sits beside the bin it empties, so its room IS that bin's room."""
+        return self.bin_room_for_kind(kind=kind)
+
     def build_initial_state(
         self,
         *,
@@ -124,11 +167,23 @@ class TossingRoomEnvironment(Environment):
         recycling_count: int = 0,
         trash_count: int = 0,
     ) -> State:
-        """The robot always starts in start_room with an empty hand; the bins/button
-        sit in their configured rooms. Only the per-item throw targets and the initial
-        bin counts vary between callers -- hard_reset uses canonical values with empty
-        bins, Tasks samples targets per episode (and non-empty counts for the
-        empty-buckets goal). Mirrors LightSwitchEnvironment.build_initial_state."""
+        """The robot always starts in start_room with an empty hand; each bin sits in
+        its configured room with its own button beside it. Only the per-item throw
+        targets and the initial bin counts vary between callers -- hard_reset uses
+        canonical values with empty bins, Tasks samples targets per episode (and a
+        prefilled item per bin for the empty-buckets goal). Mirrors
+        LightSwitchEnvironment.build_initial_state.
+
+        A count above BIN_CAPACITY raises rather than being clamped: it is a caller
+        bug, and silently accepting it would put the environment in a state `Throw`'s
+        BinEmpty precondition and `ItemInBin`'s once-per-throw reading both assume away.
+        """
+        for name, count in (("trash", trash_count), ("recycling", recycling_count)):
+            if not 0 <= count <= self.BIN_CAPACITY:
+                raise ValueError(
+                    f"{name}_count={count}: a bin holds at most one item "
+                    f"(BIN_CAPACITY={self.BIN_CAPACITY})"
+                )
         data: dict[Object, np.ndarray] = {
             self.robot: np.array([float(self.start_room), 0.0]),
             self.recycling_bin: np.array([
@@ -141,7 +196,14 @@ class TossingRoomEnvironment(Environment):
                 float(self.trash_bin_room),
                 float(self.TRASH_KIND),
             ]),
-            self.button: np.array([float(self.button_room)]),
+            self.trash_button: np.array([
+                float(self.button_room_for_kind(kind=self.TRASH_KIND)),
+                float(self.TRASH_KIND),
+            ]),
+            self.recycling_button: np.array([
+                float(self.button_room_for_kind(kind=self.RECYCLING_KIND)),
+                float(self.RECYCLING_KIND),
+            ]),
             self.pile: np.array([float(self.start_room)]),
             self.trash: np.array([float(self.TRASH_KIND), float(trash_target_force)]),
             self.recycling: np.array([float(self.RECYCLING_KIND), float(recycling_target_force)]),
@@ -177,7 +239,7 @@ class TossingRoomEnvironment(Environment):
                     raw_force=raw_force,
                 )
             elif skill_id == self.SKILL_PRESS:
-                self._apply_press(next_state=next_state, robot_room=robot_room)
+                self._apply_press(next_state=next_state, robot_room=robot_room, arg=arg)
             # Any other skill_id is unknown -> no-op.
 
         self.set_state(state=next_state)
@@ -218,6 +280,17 @@ class TossingRoomEnvironment(Environment):
         bin_obj = self.bin_for_kind(kind=holding)
         item_obj = self.item_for_kind(kind=holding)
         bin_room = self.bin_room_for_kind(kind=holding)
+        count = state.get(obj=bin_obj, feature_name="count")
+        # Capacity 1: a full bin REFUSES the throw outright -- the item stays in hand and
+        # nothing happens, exactly like every other out-of-context action here. Refusing
+        # rather than swallowing the item is what makes Throw's BinEmpty precondition
+        # exactly as strong as this guard, and it is why the count is provably 0 below,
+        # so a landed throw flips ItemInBin false -> true instead of finding it already
+        # true. (A refusal is not a miss: nothing was consumed, so this is not the free
+        # re-roll the release below exists to close. Emptying the bin first costs a
+        # Press, which the planner has to schedule.)
+        if count >= self.BIN_CAPACITY:
+            return
         target = state.get(obj=item_obj, feature_name="target_force")
         # Throwing always releases the item, whether or not it lands. It lands only in
         # the item's own bin room and only when the dial is within tolerance of that
@@ -242,13 +315,17 @@ class TossingRoomEnvironment(Environment):
         # test-set composition too, so it does not reproduce against current code.
         next_state.set(obj=self.robot, feature_name="holding", feature_val=0.0)
         if robot_room == bin_room and abs(raw_force - target) < self.throw_tolerance:
-            count = state.get(obj=bin_obj, feature_name="count")
             next_state.set(obj=bin_obj, feature_name="count", feature_val=count + 1.0)
 
-    def _apply_press(self, *, next_state: State, robot_room: int) -> None:
-        if robot_room == self.button_room:
-            next_state.set(obj=self.recycling_bin, feature_name="count", feature_val=0.0)
-            next_state.set(obj=self.trash_bin, feature_name="count", feature_val=0.0)
+    def _apply_press(self, *, next_state: State, robot_room: int, arg: int) -> None:
+        """Empty the bin belonging to the button named by `arg`, and ONLY that bin --
+        each bin has its own button, beside it. Naming the button in the action rather
+        than inferring it from the room keeps this unambiguous under any layout,
+        including a degenerate one that puts both bins in the same room."""
+        if arg not in (self.TRASH_KIND, self.RECYCLING_KIND):
+            return
+        if robot_room == self.button_room_for_kind(kind=arg):
+            next_state.set(obj=self.bin_for_kind(kind=arg), feature_name="count", feature_val=0.0)
 
     def get_valid_actions(self) -> list[Action]:
         # The force dimension is continuous and unbounded (matches Light Switch's

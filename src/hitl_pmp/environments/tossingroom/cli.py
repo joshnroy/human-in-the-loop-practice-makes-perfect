@@ -55,12 +55,8 @@ class TossingRoomCli:
             default=fields["trash_bin_room"].default,
             help="Room holding the trash bin.",
         )
-        parser.add_argument(
-            "--button-room",
-            type=int,
-            default=fields["button_room"].default,
-            help="Room holding the empty/incinerate button.",
-        )
+        # There is no --button-room: each bin's empty/incinerate button sits in that
+        # bin's own room, so --recycling-bin-room/--trash-bin-room place the buttons too.
         parser.add_argument(
             "--blocked-right-from",
             type=int,
@@ -125,7 +121,6 @@ class TossingRoomCli:
             start_room=args.start_room,
             recycling_bin_room=args.recycling_bin_room,
             trash_bin_room=args.trash_bin_room,
-            button_room=args.button_room,
             blocked_right_from=args.blocked_right_from,
             throw_tolerance=args.throw_tolerance,
             canonical_target_force=args.canonical_target_force,

@@ -3,6 +3,7 @@ from hitl_pmp.environments.tossingroom.predicates import (
     ADJACENT,
     BIN_EMPTY,
     BIN_IN_ROOM,
+    BUTTON_FOR_BIN,
     BUTTON_IN_ROOM,
     HAND_EMPTY,
     HOLDING,
@@ -16,7 +17,8 @@ _RECYCLING = TossingRoomEnvironment.recycling
 _TRASH = TossingRoomEnvironment.trash
 _RECYCLING_BIN = TossingRoomEnvironment.recycling_bin
 _TRASH_BIN = TossingRoomEnvironment.trash_bin
-_BUTTON = TossingRoomEnvironment.button
+_TRASH_BUTTON = TossingRoomEnvironment.trash_button
+_RECYCLING_BUTTON = TossingRoomEnvironment.recycling_button
 
 
 def _state(*, recycling_count: int = 0, trash_count: int = 0):
@@ -82,7 +84,7 @@ def test_item_in_bin_is_false_for_an_empty_bin() -> None:
 
 def test_bin_empty_holds_only_when_count_is_zero() -> None:
     empty = _state(recycling_count=0)
-    non_empty = _state(recycling_count=2)
+    non_empty = _state(recycling_count=1)
     assert BIN_EMPTY.holds(empty, (_RECYCLING_BIN,)) is True
     assert BIN_EMPTY.holds(non_empty, (_RECYCLING_BIN,)) is False
 
@@ -92,8 +94,21 @@ def test_bin_in_room_and_button_in_room_are_static_placements() -> None:
     rooms = _ENV.get_rooms()
     assert BIN_IN_ROOM.holds(state, (_RECYCLING_BIN, rooms[_ENV.recycling_bin_room])) is True
     assert BIN_IN_ROOM.holds(state, (_TRASH_BIN, rooms[_ENV.trash_bin_room])) is True
-    assert BUTTON_IN_ROOM.holds(state, (_BUTTON, rooms[_ENV.button_room])) is True
-    assert BUTTON_IN_ROOM.holds(state, (_BUTTON, rooms[0])) is False
+    # Each button sits beside its own bin, so its room IS that bin's room.
+    assert BUTTON_IN_ROOM.holds(state, (_TRASH_BUTTON, rooms[_ENV.trash_bin_room])) is True
+    assert BUTTON_IN_ROOM.holds(state, (_RECYCLING_BUTTON, rooms[_ENV.recycling_bin_room])) is True
+    assert BUTTON_IN_ROOM.holds(state, (_TRASH_BUTTON, rooms[_ENV.recycling_bin_room])) is False
+
+
+def test_button_for_bin_ties_each_button_to_exactly_one_bin() -> None:
+    """`Press` empties only its own button's bin, so the operator needs a symbolic tie
+    between the two -- without it `Press`'s delete effect on `ItemInBin` is not
+    expressible per bin and has to fall back to a blanket `ignore_effects`."""
+    state = _state()
+    assert BUTTON_FOR_BIN.holds(state, (_TRASH_BUTTON, _TRASH_BIN)) is True
+    assert BUTTON_FOR_BIN.holds(state, (_RECYCLING_BUTTON, _RECYCLING_BIN)) is True
+    assert BUTTON_FOR_BIN.holds(state, (_TRASH_BUTTON, _RECYCLING_BIN)) is False
+    assert BUTTON_FOR_BIN.holds(state, (_RECYCLING_BUTTON, _TRASH_BIN)) is False
 
 
 def test_predicates_declare_their_types_and_names() -> None:

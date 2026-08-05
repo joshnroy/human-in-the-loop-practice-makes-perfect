@@ -18,10 +18,12 @@ class SkillOraclePolicy:
     goal's own atoms. A static-method container, never instantiated, same as every
     other business-logic class in this project.
 
-    Forward-only by construction: recycling sits LEFT of start (down across the
-    reversible-leftward ledge), trash/button sit RIGHT of start, and every solve is
-    pick -> step toward the target room -> act. The oracle therefore never issues the
-    one blocked rightward ledge step, so it never needs human help to recover."""
+    Forward-only by construction: recycling and its button sit LEFT of start (down
+    across the reversible-leftward ledge), the trash bin and its button sit RIGHT of
+    start, and every solve is pick -> step toward the target room -> act. The oracle
+    therefore never issues the one blocked rightward ledge step, so it never needs human
+    help to recover. For the EMPTY family that forward-only walk is no longer automatic
+    -- both buttons must be pressed, rightmost first -- see `_empty_step`."""
 
     @staticmethod
     def get_labeled_action(
@@ -32,7 +34,7 @@ class SkillOraclePolicy:
 
         if any(atom.predicate == BIN_EMPTY for atom in goal.atoms):
             ground_skill, params = SkillOraclePolicy._empty_step(
-                env=env, rooms=rooms, robot_room=robot_room
+                state=state, env=env, rooms=rooms, robot_room=robot_room, goal=goal
             )
         else:
             item = SkillOraclePolicy._goal_item(goal=goal)
@@ -51,15 +53,51 @@ class SkillOraclePolicy:
 
     @staticmethod
     def _empty_step(
-        *, env: TossingRoomEnvironment, rooms: tuple[Object, ...], robot_room: int
+        *,
+        state: State,
+        env: TossingRoomEnvironment,
+        rooms: tuple[Object, ...],
+        robot_room: int,
+        goal: Goal,
     ) -> tuple[GroundSkill, np.ndarray]:
-        if robot_room != env.button_room:
+        """Empty each still-full bin named by the goal, via that bin's own button.
+
+        The ORDER is the whole difficulty. Each bin has its own button beside it, and
+        the one-way ledge only ever permits a LEFTWARD (down-index) crossing, so any
+        button the robot leaves to its right is gone for good. Visiting the still-full
+        bins in DESCENDING room index is therefore the one order that can work -- on the
+        default layout that is the trash button (room 6) first, then the recycling one
+        (room 1) behind the ledge. Doing it the other way strands the robot with the
+        trash bin still full, which is exactly the irreversibility this domain is about.
+        """
+        goal_bins = [atom.objects[0] for atom in goal.atoms if atom.predicate == BIN_EMPTY]
+        full = [
+            bin_obj
+            for bin_obj in goal_bins
+            if int(round(state.get(obj=bin_obj, feature_name="count"))) > 0
+        ]
+        # `full` is only empty when the goal is already satisfied, which run_task_episode
+        # checks before ever calling the policy -- falling back to goal_bins keeps this
+        # a total Policy rather than letting that invariant become an IndexError.
+        bin_obj = min(
+            full or goal_bins,
+            key=lambda candidate: -int(round(state.get(obj=candidate, feature_name="room"))),
+        )
+        kind = int(round(state.get(obj=bin_obj, feature_name="kind")))
+        button_room = int(round(state.get(obj=env.button_for_kind(kind=kind), feature_name="room")))
+        if robot_room != button_room:
             return SkillOraclePolicy._move_toward(
-                rooms=rooms, robot_room=robot_room, target_room=env.button_room
+                rooms=rooms, robot_room=robot_room, target_room=button_room
             )
         ground_skill = GroundSkill(
             skill=TossingRoomSkills.PRESS,
-            objects=(env.robot, env.button, rooms[robot_room], env.recycling_bin, env.trash_bin),
+            objects=(
+                env.robot,
+                env.button_for_kind(kind=kind),
+                rooms[robot_room],
+                bin_obj,
+                env.item_for_kind(kind=kind),
+            ),
         )
         return ground_skill, np.zeros(0)
 

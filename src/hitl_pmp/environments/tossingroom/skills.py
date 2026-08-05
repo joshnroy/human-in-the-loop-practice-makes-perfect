@@ -10,6 +10,7 @@ from .predicates import (
     BIN_ACCEPTS_ITEM,
     BIN_EMPTY,
     BIN_IN_ROOM,
+    BUTTON_FOR_BIN,
     BUTTON_IN_ROOM,
     CAN_MOVE_ROOM,
     HAND_EMPTY,
@@ -33,9 +34,14 @@ class TossingRoomSkills:
     expired the moment EES task-planned over them: Fast Downward emitted plans that
     walked past the pile and picked up in the bin room, a silent no-op, solving 1/10
     tasks. Pickup now requires PileInRoom (the pile is a state object precisely so a
-    module-level Predicate can read it), and Press declares ignore_effects={ItemInBin}
-    because _apply_press empties both bins. See
+    module-level Predicate can read it). See
     docs/experiment-logs/2026-08-02-tossingroom-pickup-precondition.md.
+
+    Two of the models below encode the capacity-1 bin redesign, and both are exactly as
+    strong as the dynamics they mirror: Throw requires BinEmpty (because _apply_throw
+    refuses a throw at a full bin) and deletes it (because a landed throw fills it),
+    and Press is per-bin -- ?bin pinned by ButtonForBin, ?item by BinAcceptsItem -- which
+    is what let the old shared button's ignore_effects={ItemInBin} go away entirely.
 
     Light Switch's JumpToLight is NOT a precedent for weakening this: it is a
     deliberate trap whose option provably cannot achieve its effect, which EES is meant
@@ -51,12 +57,6 @@ class TossingRoomSkills:
     )
     _to_room: ClassVar[Variable] = Variable(name="to_room", type=TossingRoomEnvironment.room_type)
     _bin: ClassVar[Variable] = Variable(name="bin", type=TossingRoomEnvironment.bin_type)
-    _recycling_bin: ClassVar[Variable] = Variable(
-        name="recycling_bin", type=TossingRoomEnvironment.bin_type
-    )
-    _trash_bin: ClassVar[Variable] = Variable(
-        name="trash_bin", type=TossingRoomEnvironment.bin_type
-    )
     _button: ClassVar[Variable] = Variable(name="button", type=TossingRoomEnvironment.button_type)
     _pile: ClassVar[Variable] = Variable(name="pile", type=TossingRoomEnvironment.pile_type)
 
@@ -101,31 +101,51 @@ class TossingRoomSkills:
             # _apply_throw routes by the HELD item's kind and ignores the bound
             # bin, so a mismatched bin can never succeed at any force.
             LiftedAtom(predicate=BIN_ACCEPTS_ITEM, variables=(_item, _bin)),
+            # A bin holds at most one item and _apply_throw REFUSES a throw at a full
+            # one, so the model has to say so. This is also what makes ItemInBin an
+            # honest add_effect: with the count pinned to 0 beforehand it goes
+            # false -> true exactly once per throw, instead of already being true
+            # because of somebody else's item (which EES scored as this throw's
+            # success at any force).
+            LiftedAtom(predicate=BIN_EMPTY, variables=(_bin,)),
         }),
         add_effects=frozenset({
             LiftedAtom(predicate=ITEM_IN_BIN, variables=(_item, _bin)),
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
         }),
-        delete_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _item))}),
+        delete_effects=frozenset({
+            LiftedAtom(predicate=HOLDING, variables=(_robot, _item)),
+            # A landed throw fills the bin. Omitting this would leave the planner
+            # believing it can throw a second item into the same bin -- the same
+            # model-above-reality shape as the defects this domain has already shipped.
+            LiftedAtom(predicate=BIN_EMPTY, variables=(_bin,)),
+        }),
         param_dim=1,
     )
     PRESS: ClassVar[Skill] = Skill(
         name="Press",
-        parameters=(_robot, _button, _room, _recycling_bin, _trash_bin),
+        parameters=(_robot, _button, _room, _bin, _item),
         preconditions=frozenset({
             LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(_robot, _room)),
             LiftedAtom(predicate=BUTTON_IN_ROOM, variables=(_button, _room)),
+            # Each bin has its own button beside it, and _apply_press empties only that
+            # one -- ButtonForBin pins ?bin to the pressed button.
+            LiftedAtom(predicate=BUTTON_FOR_BIN, variables=(_button, _bin)),
+            # ...and BinAcceptsItem pins ?item to that bin, giving exactly one valid
+            # grounding per button rather than widening what Press applies to. Without a
+            # named item the ItemInBin delete below is not expressible.
+            LiftedAtom(predicate=BIN_ACCEPTS_ITEM, variables=(_item, _bin)),
         }),
-        add_effects=frozenset({
-            LiftedAtom(predicate=BIN_EMPTY, variables=(_recycling_bin,)),
-            LiftedAtom(predicate=BIN_EMPTY, variables=(_trash_bin,)),
-        }),
-        delete_effects=frozenset(),
-        # _apply_press empties BOTH bins, so every ItemInBin becomes false --
-        # a universal delete no per-item delete_effect can express, since Press
-        # takes no item parameter. Previously omitted, leaving the model
-        # believing items survive a press.
-        ignore_effects=frozenset({ITEM_IN_BIN}),
+        add_effects=frozenset({LiftedAtom(predicate=BIN_EMPTY, variables=(_bin,))}),
+        delete_effects=frozenset({LiftedAtom(predicate=ITEM_IN_BIN, variables=(_item, _bin))}),
+        # No ignore_effects, deliberately. The old single button emptied BOTH bins, so
+        # every ItemInBin became false at once -- a universal delete no per-item
+        # delete_effect could express, since that Press had no item parameter. One
+        # button per bin makes the delete ordinary: ItemInBin(?item, ?bin) is the only
+        # atom a press can falsify (a mismatched-kind ItemInBin is false in every
+        # state), so the blanket ignore_effects -- which also told the planner that
+        # emptying one bin empties the other -- is no longer needed and would now be
+        # strictly weaker than the truth.
         param_dim=0,
     )
 
@@ -164,6 +184,11 @@ class TossingRoomSkills:
             return np.array([float(env.SKILL_THROW), kind, float(params[0])])
 
         if skill == skills.PRESS:
-            return np.array([float(env.SKILL_PRESS), 0.0, 0.0])
+            # arg names WHICH button: each bin has its own, and pressing empties only
+            # that bin. Read off the bound button rather than the bin, so the action
+            # says what was pressed.
+            _robot, button, _room, _bin, _item = ground_skill.objects
+            kind = state.get(obj=button, feature_name="kind")
+            return np.array([float(env.SKILL_PRESS), kind, 0.0])
 
         raise ValueError(f"Unknown skill: {skill.name}")

@@ -19,10 +19,15 @@ from .environment import TossingRoomEnvironment  # noqa: E402
 
 class TossingRoomRenderer(Renderer):
     """Draws the hallway as a labeled floor-plan diagram: a row of "Room i" boxes, the
-    Start room and the Empty/Incinerate (button) room tinted, the recycling and trash
-    bins (with counts) in their rooms, the limitless trash+recycling piles at the
-    start, the robot (outlined by what it holds), and the one-way ledge as a barrier
-    with an arrow for the passable crossing and an X for the blocked return.
+    Start room and both bin rooms tinted, the recycling and trash bins in their rooms
+    holding either nothing or their single item, EACH BIN'S OWN empty/incinerate button
+    beside it (labeled with the bin it empties, so which button is which is never
+    ambiguous), the limitless trash+recycling piles at the start, the robot (outlined by
+    what it holds), and the one-way ledge as a barrier with an arrow for the passable
+    crossing and an X for the blocked return.
+
+    A bin holds at most one item, so its contents are drawn as the item itself (present
+    or absent) rather than as a running tally.
 
     Reads every position from the env instance, so it renders whatever layout the env
     is configured with (the ledge arrow always points the *passable* way -- leftward
@@ -73,7 +78,8 @@ class TossingRoomRenderer(Renderer):
 
     @staticmethod
     def _draw_bin(*, ax: Axes, x: float, y: float, color: str, count: int, letter: str) -> None:
-        # a bin as a small open box with a thicker rim, plus a count badge.
+        # a bin as a small open box with a thicker rim. Capacity is 1, so the badge
+        # reads 0 or 1 and the item itself is drawn poking out of the bin when present.
         ax.add_patch(
             Rectangle((x - 0.11, y - 0.11), 0.22, 0.2, facecolor=color, edgecolor="black", zorder=5)
         )
@@ -82,6 +88,15 @@ class TossingRoomRenderer(Renderer):
                 (x - 0.13, y + 0.07), 0.26, 0.05, facecolor=color, edgecolor="black", zorder=5
             )
         )
+        if count:
+            ax.add_patch(
+                Polygon(
+                    [[x - 0.045, y + 0.11], [x + 0.045, y + 0.11], [x, y + 0.21]],
+                    facecolor=color,
+                    edgecolor="black",
+                    zorder=6,
+                )
+            )
         ax.text(
             x,
             y - 0.02,
@@ -93,6 +108,14 @@ class TossingRoomRenderer(Renderer):
             va="center",
             zorder=6,
         )
+
+    @staticmethod
+    def _draw_button(*, ax: Axes, x: float, label: str) -> None:
+        """One bin's own empty/incinerate button, beside that bin, with a leader line to
+        a label naming which bin it empties -- pressing it empties only that one."""
+        ax.add_patch(Circle((x, 0.5), 0.055, facecolor="#e8862c", edgecolor="black", zorder=5))
+        ax.plot([x, x], [0.44, -0.12], color="black", lw=0.8, zorder=1)
+        ax.text(x, -0.16, label, ha="center", va="top", fontsize=7)
 
     @staticmethod
     def _draw_pile(*, ax: Axes, x: float, y: float, color: str, name: str, count: int = 3) -> None:
@@ -139,12 +162,13 @@ class TossingRoomRenderer(Renderer):
             ax.set_ylim(-0.45, 1.35)
             ax.axis("off")
 
-            # Room boxes, with Start and Empty/Incinerate rooms tinted.
+            # Room boxes, with Start and both bin/button rooms tinted.
+            button_rooms = {env.trash_bin_room, env.recycling_bin_room}
             for i in range(n):
                 fill = "white"
                 if i == env.start_room:
                     fill = r.start_fill
-                elif i == env.button_room:
+                elif i in button_rooms:
                     fill = r.button_fill
                 ax.add_patch(
                     Rectangle(
@@ -164,29 +188,28 @@ class TossingRoomRenderer(Renderer):
                 va="bottom",
             )
 
-            # Empty/Incinerate button + its label, connected by a leader line.
-            bx = env.button_room + 0.5
-            ax.add_patch(Circle((bx, 0.5), 0.07, facecolor="#e8862c", edgecolor="black", zorder=5))
-            ax.plot([bx, bx], [0.42, -0.12], color="black", lw=0.8, zorder=1)
-            ax.text(bx, -0.16, "Empty/Incinerate", ha="center", va="top", fontsize=8)
-
-            # Bins (counts inside) and the limitless piles at the start room.
+            # Bins (0 or 1 item each) and, beside each one, its OWN button. The button
+            # is drawn in the same room as its bin and labeled with that bin, because
+            # pressing it empties only that bin -- a viewer must never have to guess
+            # which button belongs to which.
             r._draw_bin(
                 ax=ax,
-                x=env.recycling_bin_room + 0.5,
+                x=env.recycling_bin_room + 0.35,
                 y=0.28,
                 color=r.recycling_color,
                 count=recycling_count,
                 letter="R",
             )
+            r._draw_button(x=env.recycling_bin_room + 0.75, ax=ax, label="Empty\nRecycling")
             r._draw_bin(
                 ax=ax,
-                x=env.trash_bin_room + 0.5,
+                x=env.trash_bin_room + 0.35,
                 y=0.28,
                 color=r.trash_color,
                 count=trash_count,
                 letter="T",
             )
+            r._draw_button(x=env.trash_bin_room + 0.75, ax=ax, label="Empty\nTrash")
             r._draw_pile(ax=ax, x=env.start_room + 0.45, y=0.12, color=r.trash_color, name="Trash")
             r._draw_pile(
                 ax=ax, x=env.start_room + 0.78, y=0.12, color=r.recycling_color, name="Recycling"
