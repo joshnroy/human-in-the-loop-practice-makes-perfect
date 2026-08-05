@@ -98,6 +98,6 @@ layers = [
     "hitl_pmp.environments",
     "hitl_pmp.cli_protocols",
     "hitl_pmp.method_runner",
-    "hitl_pmp.practice_loop | hitl_pmp.humans | hitl_pmp.planning | hitl_pmp.adapters",
+    "hitl_pmp.practice_loop | hitl_pmp.config_snapshot | hitl_pmp.humans | hitl_pmp.planning | hitl_pmp.adapters",
     "hitl_pmp.core",
 ]
