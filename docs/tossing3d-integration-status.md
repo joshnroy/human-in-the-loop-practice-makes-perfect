@@ -298,9 +298,12 @@ asserted.
 
 **Why EES starts at 33/100 and the floor at 14/100:** EES *plans* the correct skill
 sequence from the first checkpoint and only its sampler is untrained, so it already
-inherits the roughly one-third of the uniform swing prior that lands in the goal region.
+inherits whatever fraction of the uniform swing prior happens to land in the goal region.
 Random skills has to discover the sequence too. The two comparisons therefore answer
-different questions, which is why both are reported.
+different questions, which is why both are reported. **The record gives two different
+figures for that fraction and they disagree** — "~36% of the swing prior" and "roughly
+half the sampler's `[0.25, 1.25]` prior", both in the same experiment log. Neither is
+backed by a stated measurement, so neither is repeated as fact here; see §8.
 
 **The raw counts are committed.** `docs/experiment-logs/2026-08-04-tossing3d-arms.json` on
 `josh/experiment/tossing3d-ees` and later holds all 10 seeds of both arms at all 11
@@ -926,3 +929,11 @@ Recorded so the next reader does not have to re-derive them.
    passed at different heads; each PR says explicitly that the number drifts upward on every
    rebase from tests `main` itself gained. Read them as "green at this SHA", never as a fixed
    figure.
+9. **The experiment log gives two conflicting figures for how much of the swing prior
+   solves.** `docs/experiment-logs/2026-08-04-tossing3d-ees.md` says both "~36% of the swing
+   prior" and "roughly half the sampler's `[0.25, 1.25]` prior lands in the region". Neither
+   is attached to a stated measurement, and both are used to explain the same thing (why the
+   pre-practice checkpoint is 33/100 rather than near zero). One of them is wrong; the record
+   does not say which. **(inferred: the `[0.57, 0.93]` interpolated band was withdrawn in
+   §5.4 as not a measurement, and either figure would have been derived from something like
+   it — so both are suspect.)** If this number matters to a future argument, measure it.
