@@ -2,10 +2,12 @@ import abc
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import imageio
 import imageio_ffmpeg
 import numpy as np
+from pydantic import BaseModel, ConfigDict
 
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
@@ -32,6 +34,52 @@ class Renderer(abc.ABC):
         what happened at each step. None on an episode's first frame (no action has
         been taken yet to produce a label for)."""
         raise NotImplementedError
+
+
+class VideoStream(BaseModel):
+    """One video file being written frame by frame, as the frames are produced.
+
+    A real instance rather than a static-method container (the split core/README.md
+    draws): it holds genuine per-file state -- the open ffmpeg encoder and how many
+    frames have gone into it -- which VideoWriter, whose whole input is one already-
+    complete sequence, does not.
+
+    That is the point of it existing alongside VideoWriter rather than replacing it.
+    VideoWriter.write takes every frame at once, so its caller must hold the whole
+    clip in memory first; that is fine for one episode and not fine for a recording
+    that spans an entire run, whose length is (cycles x period length + sweeps x
+    episodes x steps) frames of whatever resolution the domain renders at. This
+    project has already had a runaway ~48 GB process trigger the kernel OOM killer
+    and -- because a tmux pane's systemd scope defaults to OOMPolicy=stop -- take
+    the whole session down with it, so anything unbounded gets streamed, not
+    buffered. Peak retention here is one frame.
+
+    The encoder is opened lazily, on the first append: a recording that captured
+    nothing then leaves no zero-frame file behind for someone to try to play.
+    close() is idempotent, so a caller may close in a finally block that also runs
+    on the success path."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    output_path: Path
+    fps: int
+    # imageio's writer object, once opened. Deliberately Any: imageio's own stubs
+    # do not export a public type for it, and this field is never introspected --
+    # only appended to and closed.
+    writer: Any = None
+    frames_written: int = 0
+
+    def append(self, *, frame: np.ndarray) -> None:
+        if self.writer is None:
+            self.output_path.parent.mkdir(parents=True, exist_ok=True)
+            self.writer = imageio.get_writer(self.output_path, fps=self.fps)
+        self.writer.append_data(frame)
+        self.frames_written += 1
+
+    def close(self) -> None:
+        if self.writer is not None:
+            self.writer.close()
+            self.writer = None
 
 
 class VideoWriter:

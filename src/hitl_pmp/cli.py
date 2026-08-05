@@ -109,6 +109,19 @@ class Cli:
             "the robot is rescued from how often the method refits.",
         )
         parser.add_argument(
+            "--record-full-loop",
+            type=Path,
+            default=None,
+            help="Record the ENTIRE outer loop to this .mp4: every practice period, "
+            "every evaluation episode of every sweep, and every environment reset, in "
+            "one continuous seekable timeline, with a status bar showing which phase "
+            "the loop is in and a distinct marker per reset kind. Independent of "
+            "--output-dir/--num-render-checkpoints, which record evaluation episodes "
+            "only. Off by default; a recorded run takes exactly the same actions as an "
+            "unrecorded one, it just renders far more of them, so keep the run small "
+            "(a few cycles) if the point is to see the structure.",
+        )
+        parser.add_argument(
             "--num-render-checkpoints",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1,

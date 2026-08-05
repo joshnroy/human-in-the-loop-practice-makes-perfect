@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 import pytest
 
@@ -163,3 +164,48 @@ def test_parse_args_rejects_a_non_positive_practice_reset_interval() -> None:
         Cli.parse_args(
             argv=["--env", "tossingroom", "--method", "ees", "--practice-reset-interval", "0"]
         )
+
+
+def test_parse_args_defaults_record_full_loop_to_none() -> None:
+    """Off unless asked for: a run that does not pass it is unchanged, right down
+    to taking no rendering path at all."""
+    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
+    assert args.record_full_loop is None
+
+
+def test_parse_args_accepts_a_record_full_loop_path() -> None:
+    args = Cli.parse_args(
+        argv=[
+            "--env",
+            "tossingroom",
+            "--method",
+            "ees",
+            "--record-full-loop",
+            "/tmp/loop.mp4",
+        ]
+    )
+    assert args.record_full_loop == Path("/tmp/loop.mp4")
+
+
+def test_main_records_a_full_loop_end_to_end(*, tmp_path: Path) -> None:
+    """The flag is wired all the way through the real CLI (not only MethodRunner):
+    one video covering the baseline sweep, the practice period and the post-cycle
+    sweep."""
+    output = tmp_path / "loop.mp4"
+    Cli.main(
+        argv=[
+            "--env",
+            "lightswitch",
+            "--method",
+            "random-skills",
+            "--num-test-tasks",
+            "1",
+            "--num-cycles",
+            "1",
+            "--max-steps-per-interaction",
+            "2",
+            "--record-full-loop",
+            str(output),
+        ]
+    )
+    assert output.exists()

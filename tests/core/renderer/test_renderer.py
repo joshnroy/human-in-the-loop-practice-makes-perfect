@@ -6,7 +6,7 @@ import pytest
 
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
-from hitl_pmp.core.renderer.renderer import Renderer, VideoWriter
+from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
 
 _BLOCK = Type(name="block", feature_names=("x",))
 _OBJ = Object(name="block1", type=_BLOCK)
@@ -128,3 +128,47 @@ def test_video_writer_write_gif_falls_back_to_ffmpeg_subprocess_on_imageio_failu
 
     assert gif_path.exists()
     assert gif_path.stat().st_size > 0
+
+
+def test_video_stream_writes_every_appended_frame(*, tmp_path: Path) -> None:
+    """The streaming counterpart of VideoWriter.write: frames go to disk as they
+    are produced, so nothing has to hold a whole run's worth of them."""
+    stream = VideoStream(output_path=tmp_path / "stream.mp4", fps=5)
+    for frame in _make_solid_frames(size=32, count=4):
+        stream.append(frame=frame)
+    stream.close()
+
+    decoded = [np.asarray(frame) for frame in imageio.mimread(tmp_path / "stream.mp4")]
+    assert len(decoded) == 4
+    assert decoded[-1].mean() - decoded[0].mean() > 100
+
+
+def test_video_stream_counts_the_frames_it_wrote(*, tmp_path: Path) -> None:
+    stream = VideoStream(output_path=tmp_path / "stream.mp4", fps=5)
+    for frame in _make_solid_frames(size=16, count=3):
+        stream.append(frame=frame)
+    stream.close()
+    assert stream.frames_written == 3
+
+
+def test_video_stream_creates_missing_parent_directories(*, tmp_path: Path) -> None:
+    stream = VideoStream(output_path=tmp_path / "nested" / "dir" / "stream.mp4", fps=5)
+    stream.append(frame=np.zeros((16, 16, 3), dtype=np.uint8))
+    stream.close()
+    assert (tmp_path / "nested" / "dir" / "stream.mp4").exists()
+
+
+def test_video_stream_writes_no_file_when_nothing_was_appended(*, tmp_path: Path) -> None:
+    """A run that recorded nothing should leave no truncated, unplayable file
+    behind -- the encoder is opened lazily, on the first frame."""
+    stream = VideoStream(output_path=tmp_path / "stream.mp4", fps=5)
+    stream.close()
+    assert not (tmp_path / "stream.mp4").exists()
+
+
+def test_video_stream_close_is_idempotent(*, tmp_path: Path) -> None:
+    stream = VideoStream(output_path=tmp_path / "stream.mp4", fps=5)
+    stream.append(frame=np.zeros((16, 16, 3), dtype=np.uint8))
+    stream.close()
+    stream.close()
+    assert (tmp_path / "stream.mp4").exists()

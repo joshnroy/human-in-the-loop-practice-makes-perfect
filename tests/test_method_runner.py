@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+import imageio
 import pytest
 
 from hitl_pmp.config_snapshot import ConfigSnapshot
@@ -275,3 +276,85 @@ def test_run_without_a_practice_reset_interval_resets_only_per_cycle() -> None:
         render_fps=2,
     )
     assert metrics.num_practice_resets == 2
+
+
+def test_run_without_the_record_full_loop_flag_writes_no_video(*, tmp_path: Path) -> None:
+    """The flag defaults to off, and an args namespace that predates it entirely
+    (as every archived driver's does) must still run."""
+    problem = _build_problem()
+    args = _args(num_test_tasks=1)
+    assert not hasattr(args, "record_full_loop")
+    MethodRunner.run(
+        args=args,
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=1,
+        max_steps_per_interaction=2,
+        renderer=LightSwitchRenderer,
+        render_fps=2,
+    )
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_run_with_record_full_loop_writes_one_seekable_video(*, tmp_path: Path) -> None:
+    problem = _build_problem()
+    args = _args(num_test_tasks=1)
+    args.record_full_loop = tmp_path / "full_loop.mp4"
+    MethodRunner.run(
+        args=args,
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=1,
+        max_steps_per_interaction=2,
+        renderer=LightSwitchRenderer,
+        render_fps=2,
+    )
+    assert (tmp_path / "full_loop.mp4").exists()
+    decoded = imageio.mimread(tmp_path / "full_loop.mp4", memtest=False)
+    # One continuous timeline: the practice period's own frames are in here too,
+    # so it is longer than the single evaluation episode --output-dir would write.
+    assert len(decoded) > 10
+
+
+def test_run_with_record_full_loop_leaves_stats_json_byte_identical(*, tmp_path: Path) -> None:
+    """The recording must be a pure observer. This is the in-suite form of the
+    same check run at full scale on Tossing Room: same seed, one run with the flag
+    and one without, compared byte for byte."""
+    outputs: dict[str, bytes] = {}
+    for name, record in (("plain", None), ("recorded", tmp_path / "full_loop.mp4")):
+        output_dir = tmp_path / name
+        problem = _build_problem()
+        args = _args(num_test_tasks=3, output_dir=output_dir)
+        args.record_full_loop = record
+        MethodRunner.run(
+            args=args,
+            method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+            problem=problem,
+            num_cycles=2,
+            max_steps_per_interaction=3,
+            renderer=LightSwitchRenderer,
+            render_fps=2,
+        )
+        outputs[name] = (output_dir / "stats.json").read_bytes()
+    # Non-vacuity: a comparison of two runs that both ignored the flag would pass
+    # trivially, so the recorded arm must actually have recorded something.
+    assert (tmp_path / "full_loop.mp4").exists()
+    assert outputs["recorded"] == outputs["plain"]
+
+
+def test_run_rejects_record_full_loop_when_the_domain_has_no_renderer(*, tmp_path: Path) -> None:
+    """Failing up front beats a run that completes and silently writes no video --
+    Ball-Ring has no renderer.py yet, so asking to record one is a mistake."""
+    problem = _build_problem()
+    args = _args(num_test_tasks=1)
+    args.record_full_loop = tmp_path / "full_loop.mp4"
+    with pytest.raises(ValueError, match="renderer"):
+        MethodRunner.run(
+            args=args,
+            method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+            problem=problem,
+            num_cycles=0,
+            max_steps_per_interaction=0,
+            renderer=None,
+            render_fps=2,
+        )
