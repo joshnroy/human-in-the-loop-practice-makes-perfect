@@ -85,9 +85,9 @@ PICK_ROTATION_BOUNDS = (-np.pi / 4, np.pi / 4)
 # that the interval the sampler draws from and the interval `NearBin` admits are the same
 # object. They were briefly two constants that had to be kept consistent by hand, and the
 # gap between them is what let an over-permissive `NearBin` ship (see that classifier).
-# It is the range `scripts/tossing3d_oracle_demo.py --sweep` covers -- the whole swept
-# range, not the solving band inside it, because a sampler initialised on the answer
-# measures nothing about learning to find it.
+# It is the *feasible* range, deliberately much wider than the band that solves -- a
+# sampler initialised on the answer measures nothing about learning to find it. Both
+# endpoints are measured; `predicates.THROW_STANDOFF_BOUNDS`'s own comment says how.
 
 
 class Tossing3DSkills:

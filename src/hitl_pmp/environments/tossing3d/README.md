@@ -41,10 +41,12 @@ Ours, and therefore ours to defend:
   symbolic models for `Shelf3D`, `Sweep3D` and base motion, but **none for Tossing3D**,
   so the operator layer is written here — following `tidybot3d_shelf3D.py`'s shape, where
   a `LiftedOperator` is paired to one of upstream's controllers.
-- **`THROW_STANDOFF_BOUNDS = (1.20, 1.65)`**, the one genuinely new continuous range.
+- **`THROW_STANDOFF_BOUNDS = (0.45, 1.75)`**, the one genuinely new continuous range.
   Upstream's own `MOVE_TO_TARGET_DISTANCE_BOUNDS` is `(0.5, 0.6)` — a *grasping* standoff
-  — and upstream's tossing test simply hardcodes `1.35` with no range at all. This
-  interval is the one `scripts/tossing3d_oracle_demo.py --sweep` covers.
+  — and upstream's tossing test simply hardcodes `1.35` with no range at all. It used to
+  be `(1.20, 1.65)`, the interval `scripts/tossing3d_oracle_demo.py --sweep` happened to
+  cover, which is barely wider than the band that solves; both endpoints are now measured
+  (see below).
 - **The `[skill_id, param_0, param_1]` action encoding**, the `State` schema, and the
   `scene` object that carries the episode seed.
 - **The default of the coincident task config** (see below).
@@ -174,12 +176,20 @@ PYTHONPATH=$(pwd)/src /path/to/kinder-venv/bin/python -m pytest tests/environmen
   seeds 0-9 × 10 test tasks, so on this scene the grasp is close to reliable.)
 - **What there is to learn is a constant, not a function of state.** `bin_init_region` is
   1 mm wide, so the bin is in the same place every episode; `Toss` has `param_dim = 0`;
-  and only `MoveToThrowPose`'s standoff decides success. Swept over 11 standoffs the
-  oracle solves 6/11 points, all in [1.20, 1.425] m with the edge between 1.380 and
-  1.425 — so a uniform draw from `THROW_STANDOFF_BOUNDS` already succeeds a bit under
-  half the time. **Do not read a result on this domain as evidence about learning a
-  state-dependent sampler.** Widening `bin_init_region` is the change that would make it
-  one.
+  and only `MoveToThrowPose`'s standoff decides success. **Do not read a result on this
+  domain as evidence about learning a state-dependent sampler.** Widening
+  `bin_init_region` is the change that would make it one.
+- **The constant is now hard to find, which it was not before.** `THROW_STANDOFF_BOUNDS`
+  used to be `(1.20, 1.65)` — barely wider than the band that solves — and pooled over
+  that range the oracle solved **155/330**, so a uniform draw was right about as often as
+  not and a learned sampler had almost no headroom over its own prior. The bounds are now
+  `(0.45, 1.75)`, 1.30 m wide: the measured feasible range `[0.40, 2.06]`, inset at the
+  bottom by `NEAR_BIN_TOLERANCE` and at the top by the pose `Pick` leaves the base in.
+  Over five scene seeds at 0.025 m resolution the throw solves **5/5** throughout
+  `[1.150, 1.375]` and **0/5** below 1.125 or above 1.425, with soft edges between (2/5 at
+  1.125, 3/5 at 1.400, 2/5 at 1.425). So the reliably-solving band is 0.225 m of a 1.30 m
+  range. Short standoffs overshoot — the cube lands at x = 2.3–3.0 against a goal box
+  ending at 2.15 — and long ones fall short.
 - **`RandomSkillsMethod` cannot run here.** After a `Toss` the cube is past the barrier,
   `Reachable` is false, and no ground skill's preconditions hold — the first genuine
   dead-end state in any domain in this repo. `EesMethod` degrades to `no-op (no plan)`;
@@ -192,3 +202,5 @@ PYTHONPATH=$(pwd)/src /path/to/kinder-venv/bin/python -m pytest tests/environmen
 - **One learning run has now been made**, and it is a null result:
   `docs/experiment-logs/2026-08-06-tossing3d-ees.md`. EES went from 24/90 to 33/90 over
   ~55 online transitions (p = 0.1328, not established) against a 99/100 oracle ceiling.
+  **That run predates the widening above** and was taken under `(1.20, 1.65)`, so its
+  counts are not reproducible at HEAD and must not be compared against one that is.

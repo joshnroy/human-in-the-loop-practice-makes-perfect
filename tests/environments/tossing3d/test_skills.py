@@ -13,6 +13,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     NEAR_BIN,
     ON_GROUND,
     REACHABLE,
+    THROW_SOLVING_BAND,
     NearBinClassifier,
 )
 from hitl_pmp.environments.tossing3d.predicates import (
@@ -231,17 +232,50 @@ def test_every_sampled_throw_standoff_satisfies_near_bin() -> None:
         )
 
 
-def test_the_sampler_range_is_the_measured_sweep_and_is_shared_with_the_predicate() -> None:
-    """`scripts/tossing3d_oracle_demo.py --sweep` covers 1.20 to 1.65, the only range of
-    throw standoffs anything in this repo has measured, so the sampler cannot be drawing
-    somewhere nothing was ever observed.
+def test_the_sampler_range_is_the_measured_feasible_range_and_is_shared_with_the_predicate() -> (
+    None
+):
+    """Both endpoints are measured, and neither is the endpoint of a solving band.
+
+    The feasible range is `[0.40, 2.06]`: below 0.40 m the base drives into the bin and
+    shoves it across the floor rather than failing to reach it, and above 2.06 m the
+    `Toss` windup stops being motion-plannable. The bounds inset that at both ends -- at
+    the bottom by `NEAR_BIN_TOLERANCE`, so the predicate never admits a pose inside the
+    collision regime, and at the top to 1.75 so the widened `NearBin` does not start
+    admitting the pose `Pick` leaves the base in, whereupon the oracle would skip
+    `MoveToThrowPose` and throw from wherever it stood. Every number here, and the seeds
+    it was measured over, is in `predicates.THROW_STANDOFF_BOUNDS`'s own comment.
 
     The identity check is the important half: `skills.py` imports this interval from
     `predicates.py` rather than declaring its own, so "what the sampler draws" and "what
     NearBin admits" cannot drift apart. They were briefly two separate constants, and that
     gap is what let an over-permissive NearBin ship."""
-    assert THROW_STANDOFF_BOUNDS == (1.20, 1.65)
+    assert THROW_STANDOFF_BOUNDS == (0.45, 1.75)
     assert THROW_STANDOFF_BOUNDS is PREDICATE_THROW_STANDOFF_BOUNDS
+
+
+def test_the_solving_band_is_a_small_fraction_of_the_range_the_sampler_draws_from() -> None:
+    """The whole point of the bounds: a uniform draw has to be wrong most of the time.
+
+    The standoff is effectively a *constant* here -- the bin comes from a 1 mm-wide
+    region, so the correct answer is the same every episode -- and a constant is only a
+    learning problem if the prior does not already find it. The bounds were previously
+    `(1.20, 1.65)`, barely wider than the solving band; pooled over that range the oracle
+    solved 155/330, so a learned sampler had almost no headroom to beat its own prior.
+
+    `THROW_SOLVING_BAND` is the 5/5-seeds core, so this ratio deliberately ignores the
+    soft edges (2/5 at 1.125, 3/5 at 1.400, 2/5 at 1.425) and is therefore an
+    *under*-estimate of how often a uniform draw succeeds. The threshold is set with that
+    slack in mind rather than tuned to the current numbers.
+
+    Pinned as a ratio rather than as two more literals, because it is the ratio that
+    carries the design intent: narrowing the bounds back toward the band, or widening the
+    band, both make the domain unable to show sampler learning and both fail here."""
+    band_low, band_high = THROW_SOLVING_BAND
+    range_low, range_high = THROW_STANDOFF_BOUNDS
+    assert range_low <= band_low < band_high <= range_high
+    fraction = (band_high - band_low) / (range_high - range_low)
+    assert fraction <= 0.20
 
 
 def test_toss_samples_no_parameters_at_all() -> None:

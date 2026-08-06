@@ -378,7 +378,11 @@ Over 11 standoffs on the coincident config, **6/11 solve**:
 | 1.65 | `x=1.7238 z=0.0249` | bare floor | `False` |
 
 The solving band `[1.20, 1.425]` is contiguous and 0.225 m wide, so this is not a
-knife-edge that happened to be found. Note what the two columns say together: on this
+knife-edge that happened to be found. **Superseded as the band of record** by
+`predicates.THROW_SOLVING_BAND = (1.15, 1.375)`, measured later at 0.025 m resolution
+over five scene seeds rather than one seed at 0.05 m; the two are the same width at
+different endpoints because this one is the coarser measurement, and this table's grid
+never went below 1.20. Note what the two columns say together: on this
 config, **11/11 rollouts agree — every cube that came to rest in the bin scored, and
 every one that did not, did not.** The five failures all bounce off the bin's near
 wall (now at `x ≈ 1.8601`) and land short of it.
