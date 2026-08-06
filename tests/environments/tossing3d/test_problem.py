@@ -17,9 +17,9 @@ from hitl_pmp.environments.tossing3d.predicates import (
     HAND_EMPTY,
     HOLDING,
     IN_GOAL_REGION,
-    NEAR_BIN,
     ON_GROUND,
     REACHABLE,
+    ROBOT_AT_SUCCESSFUL_THROW_POSE,
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
@@ -38,9 +38,9 @@ def _problem() -> Tossing3DProblem:
 
 def test_the_horizon_is_the_shortest_solve_plus_two() -> None:
     """Three skills is the shortest solve and there is no shorter route: `Toss` requires
-    both `Holding` and `NearBin`, and nothing else grants either. The `+ 2` buys one
-    recovery from a failed grasp -- and no more, because after a toss there is nothing to
-    recover from anyway."""
+    both `Holding` and `RobotAtSuccessfulThrowPose`, and nothing else grants either. The
+    `+ 2` buys one recovery from a failed grasp -- and no more, because after a toss there
+    is nothing to recover from anyway."""
     assert _problem().max_episode_steps() == 5
 
 
@@ -65,7 +65,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         HOLDING,
         ON_GROUND,
         REACHABLE,
-        NEAR_BIN,
+        ROBOT_AT_SUCCESSFUL_THROW_POSE,
     }
     assert {obj.type for obj in provider.objects()} == set(provider.types())
 
@@ -125,7 +125,8 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() 
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
     ground_skill = GroundSkill(
-        skill=Tossing3DSkills.MOVE_TO_THROW_POSE, objects=(env.robot, env.cube, env.bin)
+        skill=Tossing3DSkills.MOVE_TO_THROW_POSE,
+        objects=(env.robot, env.cube, env.bin, env.goal_region),
     )
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
     action = provider.compute_action(ground_skill=ground_skill, params=params, state=state())

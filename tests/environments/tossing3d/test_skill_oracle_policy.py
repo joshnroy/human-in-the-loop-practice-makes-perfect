@@ -107,7 +107,7 @@ def test_the_label_names_the_skill_its_objects_and_its_parameters() -> None:
     """`LabeledAction.label` is what the renderer burns into the frame, so it has to say
     what actually happened rather than just which skill ran."""
     label = _act().label
-    assert label.startswith("Pick(robot, cube_0, cuboid_barrier, bin_0)")
+    assert label.startswith("Pick(robot, cube_0, cuboid_barrier, bin_0, blocks_goal_region)")
     assert "params=[0.57, -0.7]" in label
 
 
