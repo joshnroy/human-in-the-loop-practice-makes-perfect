@@ -9,6 +9,7 @@ from hitl_pmp.core.method.types import (
     SetupCommand,
     SetupCommandTarget,
     Skill,
+    SkillPracticeTally,
     Variable,
 )
 from hitl_pmp.core.problem.environment.types import Object, State, Type
@@ -232,3 +233,81 @@ def test_ground_skills_with_equal_content_are_equal_and_hashable() -> None:
     b = GroundSkill(skill=skill, objects=(_OBJ, _OBJ2, _OBJ3))
     assert a == b
     assert hash(a) == hash(b)
+
+
+def test_a_fresh_practice_tally_is_all_zeros() -> None:
+    tally = SkillPracticeTally()
+    assert tally.num_attempts == 0
+    assert tally.num_successes == 0
+    assert tally.num_random_attempts == 0
+    assert tally.num_random_successes == 0
+    assert tally.num_informed_attempts == 0
+    assert tally.num_informed_successes == 0
+
+
+def test_with_attempt_files_one_execution_into_exactly_one_pool() -> None:
+    """Every attempt lands in exactly one of random / informed / fallback, which is
+    what makes the three recoverable from six numbers: fallback is the remainder."""
+    tally = SkillPracticeTally()
+    tally = tally.with_attempt(success=True, was_random=True, was_informed=False)
+    tally = tally.with_attempt(success=False, was_random=False, was_informed=True)
+    tally = tally.with_attempt(success=True, was_random=False, was_informed=False)
+    assert (tally.num_successes, tally.num_attempts) == (2, 3)
+    assert (tally.num_random_successes, tally.num_random_attempts) == (1, 1)
+    assert (tally.num_informed_successes, tally.num_informed_attempts) == (0, 1)
+    assert tally.num_fallback_attempts() == 1
+    assert tally.num_fallback_successes() == 1
+
+
+def test_an_attempt_cannot_be_both_random_and_informed() -> None:
+    """SamplerChoice already forbids the combination; recording it would silently
+    double-count one execution into two pools."""
+    with pytest.raises(ValueError, match="never informed"):
+        SkillPracticeTally().with_attempt(success=True, was_random=True, was_informed=True)
+
+
+def test_minus_differences_two_cumulative_readings() -> None:
+    earlier = SkillPracticeTally(num_attempts=4, num_successes=1, num_informed_attempts=2)
+    later = SkillPracticeTally(num_attempts=10, num_successes=6, num_informed_attempts=5)
+    assert later.minus(previous=earlier) == SkillPracticeTally(
+        num_attempts=6, num_successes=5, num_informed_attempts=3
+    )
+
+
+def test_a_counter_that_went_backwards_is_rejected_rather_than_clamped() -> None:
+    """Callers difference two cumulative readings, so a negative delta means a
+    counter went backwards -- a bug worth surfacing, not averaging away."""
+    with pytest.raises(ValidationError):
+        SkillPracticeTally(num_attempts=1).minus(previous=SkillPracticeTally(num_attempts=3))
+
+
+def test_plus_sums_two_windows() -> None:
+    first = SkillPracticeTally(num_attempts=3, num_successes=1, num_random_attempts=2)
+    second = SkillPracticeTally(num_attempts=5, num_successes=4, num_random_attempts=1)
+    assert first.plus(other=second) == SkillPracticeTally(
+        num_attempts=8, num_successes=5, num_random_attempts=3
+    )
+
+
+def test_more_successes_than_attempts_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        SkillPracticeTally(num_attempts=2, num_successes=3)
+
+
+def test_more_pooled_attempts_than_attempts_is_rejected() -> None:
+    """random + informed can at most account for every attempt; the remainder is the
+    uniform-fallback pool, so an overflow means one execution was filed twice."""
+    with pytest.raises(ValidationError):
+        SkillPracticeTally(num_attempts=2, num_random_attempts=2, num_informed_attempts=1)
+
+
+def test_a_pool_cannot_succeed_more_often_than_it_was_attempted() -> None:
+    with pytest.raises(ValidationError):
+        SkillPracticeTally(
+            num_attempts=5, num_successes=5, num_informed_attempts=1, num_informed_successes=2
+        )
+
+
+def test_a_negative_counter_is_rejected() -> None:
+    with pytest.raises(ValidationError):
+        SkillPracticeTally(num_attempts=-1)

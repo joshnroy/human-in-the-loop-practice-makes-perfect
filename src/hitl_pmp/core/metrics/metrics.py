@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from hitl_pmp.core.method.types import SkillPracticeTally
+
 from .types import EvaluationBreakdown, TaskOutcome
 
 
@@ -43,6 +45,20 @@ class Metrics(BaseModel):
     # fine" stays distinguishable from "did not plan".
     planning_failures_per_cycle: list[int] = Field(default_factory=list)
     planning_attempts_per_cycle: list[int] = Field(default_factory=list)
+    # What each lifted skill's practice actually did, bucketed by the same window as
+    # the planning counters above -- see record_practice_outcomes. Defaults to empty so
+    # every stats.json written before this field existed still loads; a run driven by
+    # method_runner.py always writes one entry per window, `{}` included, so "practiced
+    # nothing this cycle" stays distinguishable from "this Method does not measure
+    # practice".
+    #
+    # SkillPracticeTally comes from core.method.types rather than this package's own
+    # types.py, which is deliberate: it is the SAME record the Method hands over, so
+    # there is one definition of the six counters and no shape to keep in sync. That is
+    # the sibling-types.py import CLAUDE.md prescribes for exactly this case -- and it
+    # does not compromise what TaskOutcome's docstring protects, which is that Metrics
+    # depends on nothing DOMAIN-specific. core.method.types is six ints and a name.
+    practice_outcomes_per_cycle: list[dict[str, SkillPracticeTally]] = Field(default_factory=list)
     task_name: str = "default"
 
     def record_evaluation(
@@ -140,6 +156,50 @@ class Metrics(BaseModel):
     def total_planning_outcomes(self) -> tuple[int, int]:
         """(failures, attempts) over the whole run -- an x/y pair, never a bare x."""
         return (sum(self.planning_failures_per_cycle), sum(self.planning_attempts_per_cycle))
+
+    def record_practice_outcomes(self, *, outcomes: dict[str, SkillPracticeTally]) -> None:
+        """Records one window's per-lifted-skill practice tallies.
+
+        Recorded because a run that solved 21/100 because its samplers never got enough
+        labels and a run that solved 21/100 because its samplers cannot fit the labels
+        they have produce the *same* stats.json otherwise. Both of this project's two
+        most recent experiments (PR #103, PR #108) ran into exactly that, and only one
+        of them could answer it -- through a bespoke per-domain collector script. This
+        is the same measurement made available to every Method on every domain.
+
+        **The window is the planning counters' window**, which is not the obvious one:
+        method_runner.py records at `PracticeLoop`'s `on_cycle_end`, which fires after
+        cycle *i*'s practice period and *before* cycle *i*'s evaluation sweep, plus once
+        more after the loop. So entry `i < N` covers *evaluation sweep i then practice
+        period i*, and the final entry `N` covers the final sweep alone -- which
+        contains no practice at all, so it is `{}` for every skill. The list is
+        therefore the same length as `evaluations` but offset from it: bucket `i`
+        holds the practice that runs between `evaluations[i]`'s and `evaluations[i+1]`'s
+        transition counts. Plotting the two against one x-axis without accounting for
+        that shifts a whole practice period one checkpoint left.
+
+        **Stored with the skill names sorted.** stats.json's byte-stability is what
+        verifies a change did not alter results, and a dict serializes in insertion
+        order, so an unsorted window would make the file depend on which skill happened
+        to be practiced first. Sorted here rather than at the caller so no caller can be
+        the one that forgets.
+
+        An empty window is appended rather than skipped: the buckets are only readable
+        against `evaluations` if they stay index-aligned, and a cycle in which nothing
+        was practiced is a finding, not an absence."""
+        self.practice_outcomes_per_cycle.append({name: outcomes[name] for name in sorted(outcomes)})
+
+    def total_practice_outcomes(self) -> dict[str, SkillPracticeTally]:
+        """Each lifted skill's tally summed over the whole run.
+
+        Summed by `SkillPracticeTally.plus`, so the validator that keeps a tally
+        internally consistent applies to the total too -- there is no path by which the
+        pools and the attempts disagree in a report but agree in the record."""
+        totals: dict[str, SkillPracticeTally] = {}
+        for window in self.practice_outcomes_per_cycle:
+            for name, tally in window.items():
+                totals[name] = totals.get(name, SkillPracticeTally()).plus(other=tally)
+        return {name: totals[name] for name in sorted(totals)}
 
     def failures_by_goal(self) -> dict[str, tuple[int, int]]:
         """{goal description: (num_failed, num_total)} for the final evaluation

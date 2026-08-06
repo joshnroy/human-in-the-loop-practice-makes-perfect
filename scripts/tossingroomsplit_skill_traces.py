@@ -17,17 +17,37 @@ descriptions that are identical in both. `ThrowTarget` is the only place the two
 representations differ here. Each shard records its own `env`, so a pooled analysis
 cannot silently mix them: they are comparable side by side, never summed.
 
-**Why this exists rather than being read off `--output-dir`.** `stats.json` is the
-serialized `core.Metrics`: it records *tasks solved*, per evaluation sweep, with a
-per-task goal breakdown. That is the right record of outcomes and it is what
-`scripts/run_sweep.py` produces. But the question this domain poses is about the two
-throw SKILLS -- `ThrowTrash` against `ThrowRecycling` -- and how often each one was
-practiced at all. Attempts, successes and competence never leave `EesMethod`'s
-internals, so they are read out here by subclassing it.
+**Why this exists rather than being read off `--output-dir`, and what has since moved
+there.** `stats.json` is the serialized `core.Metrics`. When this file was written it
+recorded *tasks solved* and nothing about practice, so attempts, successes and the
+informed/random split never left `EesMethod`'s internals and were read out here by
+subclassing it.
 
-That mirrors `scripts/tossingroom_throw_traces.py` exactly, for the same reason its
-docstring gives: there is no CLI surface for a method's internal decisions, and adding
-one purely for a diagnostic would put trace plumbing in the shipped `Method`.
+**Half of that is now in `stats.json` for every domain.** `Metrics.
+practice_outcomes_per_cycle` carries, per lifted skill and per window, exactly
+`attempts` / `successes` / `random_attempts` / `random_successes` /
+`informed_attempts` / `informed_successes` -- this file's whole domain-agnostic half,
+available from any `--env` with no subclassing, and plotted by
+`analysis/practice_makes_perfect/practice_diagnostics.py`. **Prefer that** for anything
+those six numbers answer; a new domain should never grow a copy of this script.
+
+**This file is kept, not retired, for the half that cannot move.** Everything it
+records beyond those six is read from the Tossing Room DYNAMICS rather than from the
+`Method`, and there is nothing domain-agnostic to promote:
+
+- `landed` reimplements `_apply_throw`'s own condition, deliberately *not* the
+  add-effect check EES scores by -- which is the point, since the audit is of whether
+  those two agree. `core.Metrics` only ever sees the second.
+- `prefilled` is a fact about a bin's occupancy.
+- `throw_targets` / `greedy_forces` / `informed_forces` are the continuous parameter
+  issued and the ground-truth force required, the latter computable only by the
+  environment. Those are what separate "a sampler stuck on a confident wrong value"
+  from "a sampler scattering", and no per-skill count can stand in for them.
+
+So the overlap is subsumed and the remainder is not. `scripts/tossingroom_throw_traces.py`
+sits in the same position for the same reason: there is no CLI surface for a method's
+internal decisions, and adding one purely for a diagnostic would put trace plumbing in
+the shipped `Method`.
 
 **This is the same experiment as the sweep, measured a second way -- not a second
 experiment.** A run is fully determined by its `--seed`, and the subclasses below

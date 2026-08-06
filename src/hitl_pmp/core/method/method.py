@@ -7,7 +7,7 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Task
 
-from .types import GroundSkill, Policy, Rollout, SetupCommand
+from .types import GroundSkill, Policy, Rollout, SetupCommand, SkillPracticeTally
 
 
 class InteractionComplete(Exception):  # noqa: N818
@@ -125,6 +125,44 @@ class Method(BaseModel, abc.ABC):
         cannot see it. Pulling a counter at a known boundary is what keeps this from
         needing a Metrics reference threaded down into every Method."""
         return (0, 0)
+
+    def practice_outcomes(self) -> dict[str, SkillPracticeTally]:
+        """{lifted skill name: what practicing it has done so far}, cumulative over the
+        whole run. `{}` for a Method that never scores its own skill executions.
+
+        The sibling of `planning_outcomes`, threaded the same way and for the same
+        reason: read by method_runner.py once per cycle and differenced into
+        `Metrics.record_practice_outcomes`, so what lands in stats.json is per-window
+        while all a Method maintains is one monotonic tally per skill.
+
+        **What this makes answerable.** Until it existed, a run's stats.json recorded
+        tasks solved and nothing about practice, so a null result could not be told
+        apart from a starved one -- PR #108's author said so explicitly, that "the
+        discriminating quantity between 'too few labels' and 'cannot use them' does not
+        exist in any run to date". `SkillPracticeTally` is where that quantity now
+        lives; see it for how to read the three pools.
+
+        **Keyed by the LIFTED skill**, not the grounding, because that is the unit the
+        learning happens in: one `LearnedSkillSampler` is fitted per skill *name*
+        (predicators' `active_sampler_learning_object_specific_samplers = False`), so
+        "was this sampler starved?" is a question about the lifted name. Competence
+        models are per *ground* skill and are deliberately not surfaced here -- a
+        different quantity, aggregated differently, and one a caller can reach through
+        the Method it already holds.
+
+        **`{}` and a zero-attempt entry are different answers.** `{}` means this Method
+        does not measure practice at all -- `RandomSkillsMethod` checks no add effects
+        and `SkillOracleMethod` never practices, so neither has an outcome to report,
+        and neither should need boilerplate to say so (concrete default, same reason as
+        `end_cycle`). A *present* entry reading 0/0 means the opposite: this Method does
+        measure, and this skill was not practiced. Only the second is evidence, which is
+        why a Method must never pad its mapping with skills it has not seen.
+
+        On Method rather than Metrics because only the Method knows: the add-effect
+        check that decides a success, and the `SamplerChoice` flags that classify the
+        draw, both happen deep inside its own policy where the harness cannot see
+        them."""
+        return {}
 
     def end_cycle(self) -> None:
         """Called by practice_loop.py once after each interaction period, before

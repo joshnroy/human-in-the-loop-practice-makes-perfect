@@ -1,5 +1,6 @@
 import pytest
 
+from hitl_pmp.core.method.types import SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import TaskOutcome
 
@@ -204,3 +205,69 @@ def test_a_stats_json_written_before_planning_outcomes_existed_still_loads() -> 
     restored = Metrics.model_validate_json('{"evaluations": [[0, 1, 2]], "task_name": "default"}')
     assert restored.planning_failures_per_cycle == []
     assert restored.planning_attempts_per_cycle == []
+
+
+def test_practice_outcomes_start_empty_and_record_in_order() -> None:
+    metrics = Metrics()
+    assert metrics.practice_outcomes_per_cycle == []
+    metrics.record_practice_outcomes(
+        outcomes={"ThrowTrash": SkillPracticeTally(num_attempts=8, num_successes=3)}
+    )
+    metrics.record_practice_outcomes(
+        outcomes={
+            "ThrowTrash": SkillPracticeTally(num_attempts=4, num_successes=4),
+            "ThrowRecycling": SkillPracticeTally(num_attempts=2, num_successes=0),
+        }
+    )
+    assert len(metrics.practice_outcomes_per_cycle) == 2
+    assert metrics.practice_outcomes_per_cycle[0]["ThrowTrash"].num_attempts == 8
+    totals = metrics.total_practice_outcomes()
+    assert (totals["ThrowTrash"].num_successes, totals["ThrowTrash"].num_attempts) == (7, 12)
+    assert (totals["ThrowRecycling"].num_successes, totals["ThrowRecycling"].num_attempts) == (0, 2)
+
+
+def test_a_recorded_window_is_stored_with_its_skill_names_sorted() -> None:
+    """stats.json's byte-stability is what verifies a change did not alter results, so
+    the serialized key order must not depend on which skill happened to be practiced
+    first."""
+    metrics = Metrics()
+    metrics.record_practice_outcomes(
+        outcomes={
+            "Zeta": SkillPracticeTally(num_attempts=1),
+            "Alpha": SkillPracticeTally(num_attempts=1),
+        }
+    )
+    assert list(metrics.practice_outcomes_per_cycle[0]) == ["Alpha", "Zeta"]
+
+
+def test_recording_an_empty_window_keeps_the_buckets_aligned() -> None:
+    """A cycle in which nothing was practiced still gets an entry, so the list stays
+    the same length as `evaluations` instead of silently skipping a window."""
+    metrics = Metrics()
+    metrics.record_practice_outcomes(outcomes={})
+    assert metrics.practice_outcomes_per_cycle == [{}]
+    assert metrics.total_practice_outcomes() == {}
+
+
+def test_practice_outcomes_survive_a_round_trip_through_stats_json() -> None:
+    metrics = Metrics()
+    metrics.record_practice_outcomes(
+        outcomes={
+            "ThrowRecycling": SkillPracticeTally(
+                num_attempts=6,
+                num_successes=2,
+                num_random_attempts=3,
+                num_random_successes=1,
+                num_informed_attempts=2,
+                num_informed_successes=1,
+            )
+        }
+    )
+    restored = Metrics.model_validate_json(metrics.model_dump_json())
+    assert restored.practice_outcomes_per_cycle == metrics.practice_outcomes_per_cycle
+
+
+def test_a_stats_json_written_before_practice_outcomes_existed_still_loads() -> None:
+    restored = Metrics.model_validate_json('{"evaluations": [[0, 1, 2]], "task_name": "default"}')
+    assert restored.practice_outcomes_per_cycle == []
+    assert restored.total_practice_outcomes() == {}
