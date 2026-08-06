@@ -35,6 +35,14 @@ class Metrics(BaseModel):
     # task's initial state, counted as it happened. Defaults to 0 so every
     # stats.json written before this field existed still loads.
     num_practice_resets: int = 0
+    # Planning failures and planning attempts, bucketed by the window between two
+    # consecutive recordings -- always the same length, and always a failures/attempts
+    # pair, never a bare numerator (see record_planning_outcomes). Both default to
+    # empty so every stats.json written before these fields existed still loads; a
+    # run driven by method_runner.py always writes them, zeros included, so "planned
+    # fine" stays distinguishable from "did not plan".
+    planning_failures_per_cycle: list[int] = Field(default_factory=list)
+    planning_attempts_per_cycle: list[int] = Field(default_factory=list)
     task_name: str = "default"
 
     def record_evaluation(
@@ -81,6 +89,57 @@ class Metrics(BaseModel):
         resets really happened, at the rate intended, from the run's own output
         instead of from an argument about the loop's arithmetic."""
         self.num_practice_resets += 1
+
+    def record_planning_outcomes(self, *, num_failures: int, num_attempts: int) -> None:
+        """Records one window's planning failures **and** the attempts they are out of.
+
+        Recorded because a planner that never succeeds and a planner that succeeds but
+        plans badly produce the *same* stats.json otherwise. A malformed-PDDL defect
+        once made `EesMethod` catch `PlanningFailure` on every single step and degrade
+        to a no-op for a whole run; the run exited 0 with a full stats.json reporting
+        0/5, and nothing anywhere recorded that planning had failed. "The method scored
+        zero" and "the method never planned" are different diagnoses, and only the
+        second one is immediate.
+
+        The denominator is not optional, and this is why it is one call rather than
+        two: a bare failure count is uninterpretable here. EES asks the planner
+        speculatively -- once per seen task in the planning-progress scoring pass, once
+        per candidate while situating -- and a failure in those loops is *routine*, it
+        just drops that task or candidate. So a perfectly healthy run reports a nonzero,
+        workload-dependent number, and only `failures ≈ attempts` means anything is
+        wrong. `17/20` says that; `17` does not. (This is the project's standing
+        counts-not-percentages rule arriving at the same place: never record a
+        numerator whose denominator the reader cannot recover.)
+
+        **What one window is**, exactly, since it is not the obvious thing:
+        method_runner.py records at `PracticeLoop`'s `on_cycle_end`, which fires after
+        cycle *i*'s practice period and *before* cycle *i*'s evaluation sweep, plus once
+        more after the loop. So entry `i < N` covers *evaluation sweep i then practice
+        period i*, and the final entry `N` covers *evaluation sweep N alone* -- a
+        smaller kind of window than the others, not a short cycle. The list is therefore
+        the same length as `evaluations` but offset from it: bucket `i` includes the
+        practice that runs between `evaluations[i]`'s and `evaluations[i+1]`'s
+        transition counts, so plotting the two against one x-axis without accounting for
+        that shifts a whole practice period's failures one checkpoint left.
+
+        Rejects rather than clamps a negative count or a failures > attempts pair:
+        callers record deltas between two cumulative readings, so either means a
+        counter went backwards or the two got out of step -- a bug worth surfacing
+        rather than averaging away."""
+        if num_failures < 0 or num_attempts < 0:
+            raise ValueError(
+                f"planning counts cannot be negative: got {num_failures}/{num_attempts}"
+            )
+        if num_failures > num_attempts:
+            raise ValueError(
+                f"planning failures cannot exceed attempts: got {num_failures}/{num_attempts}"
+            )
+        self.planning_failures_per_cycle.append(num_failures)
+        self.planning_attempts_per_cycle.append(num_attempts)
+
+    def total_planning_outcomes(self) -> tuple[int, int]:
+        """(failures, attempts) over the whole run -- an x/y pair, never a bare x."""
+        return (sum(self.planning_failures_per_cycle), sum(self.planning_attempts_per_cycle))
 
     def failures_by_goal(self) -> dict[str, tuple[int, int]]:
         """{goal description: (num_failed, num_total)} for the final evaluation

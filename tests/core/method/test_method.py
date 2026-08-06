@@ -104,3 +104,11 @@ def test_a_method_can_override_practice_policy_independently_of_task_policy() ->
     state = task.initial_state
     assert method.get_practice_policy(task=task)(state).label == "practicing"
     assert method.get_task_policy(task=task)(state).label == "minimal"
+
+
+def test_planning_outcomes_default_to_no_failures_out_of_no_attempts() -> None:
+    """Concrete, not abstract: a Method with no planner has nothing to report, and
+    every non-planning baseline should need no boilerplate to say so. A pair rather
+    than a bare count, so a failure number can never be reported without the
+    denominator that makes it readable."""
+    assert _MinimalMethod(env=_Env()).planning_outcomes() == (0, 0)

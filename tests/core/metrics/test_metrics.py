@@ -151,3 +151,56 @@ def test_num_practice_resets_survives_a_round_trip_through_stats_json() -> None:
 def test_a_stats_json_written_before_practice_resets_existed_still_loads() -> None:
     restored = Metrics.model_validate_json('{"evaluations": [[0, 1, 2]], "task_name": "default"}')
     assert restored.num_practice_resets == 0
+
+
+def test_planning_outcomes_start_empty_and_record_in_order() -> None:
+    metrics = Metrics()
+    assert metrics.planning_failures_per_cycle == []
+    assert metrics.planning_attempts_per_cycle == []
+    metrics.record_planning_outcomes(num_failures=3, num_attempts=20)
+    metrics.record_planning_outcomes(num_failures=0, num_attempts=11)
+    assert metrics.planning_failures_per_cycle == [3, 0]
+    assert metrics.planning_attempts_per_cycle == [20, 11]
+    assert metrics.total_planning_outcomes() == (3, 31)
+
+
+def test_recording_a_negative_planning_count_is_rejected() -> None:
+    """The wiring records a *delta* between two cumulative readings, so a negative
+    one means the counter went backwards -- a bug worth failing on rather than
+    writing a nonsense number into stats.json."""
+    with pytest.raises(ValueError, match="cannot be negative"):
+        Metrics().record_planning_outcomes(num_failures=-1, num_attempts=0)
+
+
+def test_recording_more_planning_failures_than_attempts_is_rejected() -> None:
+    """The two counters are differenced independently, so they can only disagree this
+    way if they have got out of step -- which would make every x/y in the file a lie."""
+    with pytest.raises(ValueError, match="cannot exceed attempts"):
+        Metrics().record_planning_outcomes(num_failures=4, num_attempts=3)
+
+
+def test_a_rejected_planning_record_leaves_metrics_untouched() -> None:
+    """Both lists are appended to only after validation, so a rejected call cannot
+    leave them at different lengths -- which would silently misalign every later
+    pair rather than failing where the bug is."""
+    metrics = Metrics()
+    with pytest.raises(ValueError, match="cannot exceed attempts"):
+        metrics.record_planning_outcomes(num_failures=4, num_attempts=3)
+    assert metrics.planning_failures_per_cycle == []
+    assert metrics.planning_attempts_per_cycle == []
+
+
+def test_planning_outcomes_survive_a_round_trip_through_stats_json() -> None:
+    """The whole point: "the method scored zero" and "the method never planned" are
+    different diagnoses, and only stats.json is read back after a sweep."""
+    metrics = Metrics()
+    metrics.record_planning_outcomes(num_failures=5, num_attempts=5)
+    restored = Metrics.model_validate_json(metrics.model_dump_json())
+    assert restored.planning_failures_per_cycle == [5]
+    assert restored.planning_attempts_per_cycle == [5]
+
+
+def test_a_stats_json_written_before_planning_outcomes_existed_still_loads() -> None:
+    restored = Metrics.model_validate_json('{"evaluations": [[0, 1, 2]], "task_name": "default"}')
+    assert restored.planning_failures_per_cycle == []
+    assert restored.planning_attempts_per_cycle == []

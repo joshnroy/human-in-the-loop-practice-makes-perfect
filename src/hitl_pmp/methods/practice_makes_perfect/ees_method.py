@@ -209,6 +209,12 @@ class EesMethod(Method):
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
     _cached_plans: list[list[GroundSkill]] = PrivateAttr()
     _score_calls: int = PrivateAttr()
+    # Cumulative over the run. The failure counter is incremented in plan_to's own
+    # except-clause, so no catch site can be the one that forgets; the attempt counter
+    # is its mandatory denominator. Surfaced as a pair through
+    # Method.planning_outcomes into stats.json.
+    _planning_failures: int = PrivateAttr()
+    _planning_attempts: int = PrivateAttr()
     # Scoped to this Method instance, so it lives exactly as long as one run and is
     # never shared between runs, processes, or tests. See `plan_to`.
     _translation_cache: TranslationCache = PrivateAttr()
@@ -226,6 +232,8 @@ class EesMethod(Method):
         self._seen_tasks = []
         self._cached_plans = []
         self._score_calls = 0
+        self._planning_failures = 0
+        self._planning_attempts = 0
         self._translation_cache = TranslationCache()
         self._practice_episode = None
 
@@ -364,18 +372,42 @@ class EesMethod(Method):
         `TranslationCache` to skip re-translating PDDL it has already seen. Costs are
         patched into the SAS *after* translation, so caching that stage cannot change
         the plan; see `TranslationCache`."""
-        return FastDownwardPlanner.plan(
-            skills=self.skills(),
-            predicates=self.predicates(),
-            types=self.types(),
-            objects=self.objects(),
-            init_atoms=init_atoms,
-            goal=goal,
-            ground_skill_costs=costs,
-            default_cost=self.default_cost(),
-            timeout=self.planning_timeout,
-            translation_cache=self._translation_cache,
-        )
+        self._planning_attempts += 1
+        try:
+            return FastDownwardPlanner.plan(
+                skills=self.skills(),
+                predicates=self.predicates(),
+                types=self.types(),
+                objects=self.objects(),
+                init_atoms=init_atoms,
+                goal=goal,
+                ground_skill_costs=costs,
+                default_cost=self.default_cost(),
+                timeout=self.planning_timeout,
+                translation_cache=self._translation_cache,
+            )
+        except PlanningFailure:
+            # Counted HERE rather than at the three `except PlanningFailure:` sites
+            # that catch it, so that no catch site -- present or future -- can be the
+            # one that forgets. This is the single place a plan is ever requested,
+            # which makes the counted quantity exactly "asked the planner for a plan
+            # and got none", with no judgement about which asks matter.
+            #
+            # That deliberately includes refresh_planning_progress_plans' scoring
+            # pass and _practice_plan's per-candidate loop, where a failure is routine
+            # and simply drops that task or candidate. Including them keeps the
+            # definition one sentence long, and the failure mode this exists to catch
+            # inflates every caller at once anyway: when the PDDL itself is malformed,
+            # nothing plans. It is also exactly why the attempt count above is
+            # mandatory -- against a speculative workload, a bare failure count says
+            # nothing.
+            self._planning_failures += 1
+            raise
+
+    def planning_outcomes(self) -> tuple[int, int]:
+        """(failures, attempts), cumulative over the run; method_runner.py differences
+        them per window. See Method.planning_outcomes and plan_to for what is counted."""
+        return (self._planning_failures, self._planning_attempts)
 
     def record_seen_task(
         self, *, init_atoms: frozenset[GroundAtom], goal: frozenset[GroundAtom]

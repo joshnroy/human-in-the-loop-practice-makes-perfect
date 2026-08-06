@@ -88,6 +88,28 @@ class MethodRunner:
             VideoWriter.write(frames=frames, output_path=output_path, fps=render_fps)
             written_clips[transitions] = output_path
 
+        # A run whose planner never succeeds and a run whose planner works but plans
+        # badly produce the same stats.json otherwise -- 0/N either way. Recorded as
+        # per-window deltas of the Method's own cumulative counters, so a Method keeps
+        # two monotonic numbers and this decides the cadence. See
+        # Metrics.record_planning_outcomes for exactly what one window covers.
+        #
+        # Seeded from the Method's *current* reading rather than from 0, so a Method
+        # instance reused across two runs cannot silently dump run 1's whole total into
+        # run 2's first bucket. Nothing does that today (every CLI builds a fresh
+        # Method), and the failure would be a positive delta, so no validation would
+        # catch it.
+        failures_recorded, attempts_recorded = method.planning_outcomes()
+
+        def record_planning_outcomes() -> None:
+            nonlocal failures_recorded, attempts_recorded
+            failures, attempts = method.planning_outcomes()
+            metrics.record_planning_outcomes(
+                num_failures=failures - failures_recorded,
+                num_attempts=attempts - attempts_recorded,
+            )
+            failures_recorded, attempts_recorded = failures, attempts
+
         recorder = MethodRunner._build_recorder(
             args=args,
             problem=problem,
@@ -115,8 +137,17 @@ class MethodRunner:
                 renderer=renderer if getattr(args, "output_dir", None) is not None else None,
                 num_render_checkpoints=num_render_checkpoints,
                 on_checkpoint_frames=write_clip,
+                on_cycle_end=record_planning_outcomes,
                 recorder=recorder,
             )
+            # Once more after the loop, so the final evaluation sweep is covered and
+            # so a num_cycles=0 run (every non-learning baseline) still gets exactly
+            # one entry rather than none. With num_cycles=N that leaves N+1 entries,
+            # the same length as `evaluations` -- though offset from it, since
+            # on_cycle_end fires before each sweep rather than after it. That offset
+            # is spelled out in Metrics.record_planning_outcomes and pinned by
+            # tests/test_method_runner.py.
+            record_planning_outcomes()
         finally:
             # In a finally so a crashed run still leaves a playable video of
             # everything up to the crash -- which is exactly when someone wants to
@@ -133,6 +164,14 @@ class MethodRunner:
         # it would always print the untrained score and hide the whole result.
         _num_online_transitions, num_solved, num_total = metrics.evaluations[-1]
         print(f"success rate: {num_solved}/{num_total} ({num_solved / num_total:.0%})")
+        # Printed beside the score, because the whole point of counting planning
+        # failures is that they should be visible *without* opening stats.json -- a
+        # malformed-PDDL defect once produced a clean-looking 0/5 that took an hour to
+        # diagnose. Only when the planner failed at all, so a healthy non-planning run
+        # prints exactly what it printed before.
+        num_failed, num_attempted = metrics.total_planning_outcomes()
+        if num_failed:
+            print(f"planning failures: {num_failed}/{num_attempted} planner calls found no plan")
 
         if args.output_dir is not None:
             if written_clips:
