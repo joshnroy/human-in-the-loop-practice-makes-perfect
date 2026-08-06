@@ -403,6 +403,88 @@ class TestEachBinHasItsOwnButtonBesideIt:
         assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
 
 
+class TestTheEmptyFamilyHasItsOwnTerminalFailure:
+    """A SECOND genuinely terminal failure, alongside the missed `RECYCLING` throw.
+
+    Two experiment logs and two analysis docstrings describe the `EMPTY` family as
+    the deterministic control whose miss "costs nothing". It is not: emptying both
+    bins is an ORDERING task, because the recycling button sits behind the one-way
+    ledge. Press it first and the trash button is out of reach forever -- no `Throw`
+    involved, and no way back at any horizon.
+
+    These tests establish reachability by taking real `MoveRoom` actions rather than
+    by reading `blocked_right_from`, so they would still fail if the ledge moved."""
+
+    @staticmethod
+    def _reachable_rooms(*, env: TossingRoomEnvironment, state) -> set[int]:
+        """Every room the robot can actually walk to from `state`, found by executing
+        MoveRoom and seeing where it lands."""
+        start = int(state.get(obj=_ROBOT, feature_name="room"))
+        seen = {start}
+        frontier = [start]
+        while frontier:
+            room = frontier.pop()
+            for to_room in (room - 1, room + 1):
+                state.set(obj=_ROBOT, feature_name="room", feature_val=float(room))
+                env.set_state(state=state)
+                landed = int(
+                    env.take_action(action=_move(to_room=to_room)).get(
+                        obj=_ROBOT, feature_name="room"
+                    )
+                )
+                if landed not in seen:
+                    seen.add(landed)
+                    frontier.append(landed)
+        return seen
+
+    @staticmethod
+    def _both_bins_full(*, env: TossingRoomEnvironment):
+        state = env.build_initial_state(
+            trash_weight=1.0,
+            recycling_weight=1.0,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+            recycling_count=1,
+            trash_count=1,
+        )
+        env.set_state(state=state)
+        return state
+
+    @staticmethod
+    def test_pressing_recycling_first_strands_the_robot_with_the_trash_bin_full() -> None:
+        """The terminal case: crossing the ledge to reach the recycling button leaves
+        the trash button permanently unreachable, so the EMPTY goal can never be met."""
+        env = _env()
+        state = TestTheEmptyFamilyHasItsOwnTerminalFailure._both_bins_full(env=env)
+        for room in range(env.start_room - 1, env.recycling_bin_room - 1, -1):
+            state = env.take_action(action=_move(to_room=room))
+        state = env.take_action(action=_press(kind=TossingRoomEnvironment.RECYCLING_KIND))
+        assert state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
+        assert state.get(obj=_TRASH_BIN, feature_name="count") == 1.0
+
+        reachable = TestTheEmptyFamilyHasItsOwnTerminalFailure._reachable_rooms(
+            env=env, state=state
+        )
+        assert env.trash_bin_room not in reachable
+        # ...and the pile is gone too, so this is not recoverable by any other route.
+        assert env.start_room not in reachable
+
+    @staticmethod
+    def test_pressing_trash_first_is_the_one_order_that_works() -> None:
+        """The mirror image, so the test above is about ORDER and not about the
+        presses being impossible."""
+        env = _env()
+        state = TestTheEmptyFamilyHasItsOwnTerminalFailure._both_bins_full(env=env)
+        for room in range(env.start_room + 1, env.trash_bin_room + 1):
+            state = env.take_action(action=_move(to_room=room))
+        state = env.take_action(action=_press(kind=TossingRoomEnvironment.TRASH_KIND))
+        for room in range(env.trash_bin_room - 1, env.recycling_bin_room - 1, -1):
+            state = env.take_action(action=_move(to_room=room))
+        state = env.take_action(action=_press(kind=TossingRoomEnvironment.RECYCLING_KIND))
+        assert state.get(obj=_TRASH_BIN, feature_name="count") == 0.0
+        assert state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
+
+
 def test_take_action_updates_current_state() -> None:
     env = _env()
     _fresh_state(env=env)

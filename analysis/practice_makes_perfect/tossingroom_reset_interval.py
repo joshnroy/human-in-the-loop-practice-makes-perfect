@@ -2,12 +2,26 @@
 training held fixed, does rescuing the robot more often reduce the penalty its one
 irreversible action carries?
 
-Tossing Room has exactly one genuinely terminal failure. On the `RECYCLING` family
-a missed `Throw` strands the robot: the pile sits in room 3, the recycling bin in
-room 1, and `blocked_right_from = 2` makes room 3 unreachable once the item is
-gone, so Fast Downward correctly reports no plan for the rest of the period. A
-missed `TRASH` throw is merely expensive (a round trip buys a fresh item), and the
-`EMPTY` family has no `Throw` at all -- it is the control.
+Tossing Room has **two** genuinely terminal failures, both caused by the same one-way
+ledge. On the `RECYCLING` family a missed `Throw` strands the robot: the pile sits in
+room 3, the recycling bin in room 1, and `blocked_right_from = 2` makes room 3
+unreachable once the item is gone, so Fast Downward correctly reports no plan for the
+rest of the period. A missed `TRASH` throw is merely expensive (a round trip buys a
+fresh item). The `EMPTY` family has no `Throw` at all, but it is **not** the free
+control this docstring used to call it: emptying both bins is an ordering task, and
+its recycling button sits behind the ledge, so pressing that one first puts the trash
+button permanently out of reach. Measured signature of the stranding, from the
+**standard-budget** split-throw run -- 25 cycles x 100 steps x 10 seeds, so 24,750
+practice actions in all (`2026-08-05-tossingroomsplit-throw-rates.json`):
+`PressRecycling` accounts for **3,576/24,750** of them (14.4%), a stranded robot
+pressing an already-empty button -- 22x that run's recycling-throw count. PR #103's
+10x-budget run has a ~10x larger denominator, so its tallies are not comparable to
+these and neither contradicts the other.
+
+Only the "exactly one" framing was wrong; the experiment below is unaffected. It is a
+within-arm (TRASH - RECYCLING) contrast, and `EMPTY` scored 1040/1040 in each of the
+four arms -- not one miss anywhere in the committed aggregate -- so the ordering trap
+never fired at evaluation and the `EMPTY` column is still a usable control here.
 
 `PracticeLoop` used to hand out a free reset only at the top of each practice
 cycle, which caps what stranding can cost at "the rest of this period". The
@@ -507,7 +521,8 @@ class ResetIntervalReport:
         The progress-match check. Run on TRASH and RECYCLING it asks "are the arms
         equally trained?", which decides whether a cross-arm gap difference is
         attributable to reset frequency at all. Run on EMPTY it is the control: no
-        `Throw`, no stochastic skill, so movement there is not irreversibility.
+        `Throw`, no stochastic skill, so movement there is not sampler quality --
+        EMPTY does still cross the irreversible ledge, see the module docstring.
         """
         return [
             t - f

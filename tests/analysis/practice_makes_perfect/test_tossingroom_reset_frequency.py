@@ -18,6 +18,7 @@ aggregate, so no number quoted in the experiment log or the PR can drift away fr
 the data that produced it without a test failing.
 """
 
+import importlib
 import math
 from pathlib import Path
 
@@ -181,3 +182,24 @@ def test_the_noise_floor_follows_from_the_fixed_composition():
         assert ResetFrequencyReport.predicted_gap_noise(arms=arms, arm=arm) == pytest.approx(
             18.90, abs=0.01
         )
+
+
+def test_neither_the_docstring_nor_the_log_claims_a_single_terminal_failure():
+    """Tossing Room has TWO terminal failure families, not one. Besides the missed
+    `RECYCLING` throw, the `EMPTY` family is an ordering trap: its recycling button
+    sits behind the one-way ledge, so pressing that one first puts the trash button
+    out of reach for the rest of the period. Pinned behaviourally by
+    tests/environments/tossingroom/test_environment.py's
+    TestTheEmptyFamilyHasItsOwnTerminalFailure.
+
+    Both this analysis module's docstring and the committed log asserted "exactly one
+    genuinely terminal failure". This keeps the retraction from being quietly undone by
+    a later copy-edit."""
+    module = importlib.import_module("analysis.practice_makes_perfect.tossingroom_reset_frequency")
+    sources = {
+        "module docstring": module.__doc__ or "",
+        "experiment log": (_LOGS / "2026-08-03-tossingroom-reset-frequency.md").read_text(),
+    }
+    for name, text in sources.items():
+        assert "exactly one genuinely terminal failure" not in text, name
+        assert "PressRecycling" in text, name
