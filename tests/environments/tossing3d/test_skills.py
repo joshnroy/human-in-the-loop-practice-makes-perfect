@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill, LiftedAtom
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
     HAND_EMPTY,
@@ -23,6 +24,8 @@ from hitl_pmp.environments.tossing3d.skills import (
     THROW_STANDOFF_BOUNDS,
     Tossing3DSkills,
 )
+from hitl_pmp.planning.fast_downward import FastDownwardPlanner
+from hitl_pmp.planning.grounding import SkillGrounder
 
 from .observations import COINCIDENT_BIN_X, state
 
@@ -121,6 +124,51 @@ def test_no_skill_declares_ignore_effects() -> None:
     as a plain add or delete."""
     for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
         assert skill.ignore_effects == frozenset(), skill.name
+
+
+def test_no_variable_carries_the_question_mark_the_pddl_writer_adds() -> None:
+    """`PddlWriter.variable_str` (planning/pddl.py) documents the convention explicitly:
+    our `Variable.name` is plain and the writer prepends the "?" at write time, because
+    predicators' `Variable.name` already carries it and ours deliberately does not. A
+    name declared as "?robot" therefore renders as "??robot", which Fast Downward's
+    translator splits into two tokens -- and the failure is *silent*, because
+    `EesMethod._next_plan` catches `PlanningFailure` and degrades to a no-op. So this is
+    checked structurally as well as end-to-end below: a run can otherwise exit 0 and
+    write a full `stats.json` in which the method never took a single action."""
+    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+        for variable in skill.parameters:
+            assert not variable.name.startswith("?"), f"{skill.name}: {variable.name}"
+
+
+def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
+    """An INTEGRATION test, deliberately not skipped, in the style of
+    `tests/planning/test_fast_downward.py`: it shells out to a real Fast Downward on this
+    domain's own PDDL. It needs no simulator -- the whole symbolic layer is built from a
+    hand-written `KinderObservation` -- so it runs on CI, where the `tossing3d` extra is
+    never installed but Fast Downward is.
+
+    The structural test above would not have caught a second way of emitting unparseable
+    PDDL; this one catches any of them, and is the check that was missing when
+    `--env tossing3d --method ees` ran to completion planning nothing."""
+    env = Tossing3DEnvironment()
+    objects = (env.robot, env.cube, env.bin, env.barrier, env.goal_region)
+    predicates = (IN_GOAL_REGION, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE, NEAR_BIN)
+    init_atoms = SkillGrounder.abstract_state(state=state(), objects=objects, predicates=predicates)
+    plan = FastDownwardPlanner.plan(
+        skills=(_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS),
+        predicates=predicates,
+        types=(
+            env.robot_type,
+            env.cube_type,
+            env.bin_type,
+            env.barrier_type,
+            env.goal_region_type,
+        ),
+        objects=objects,
+        init_atoms=init_atoms,
+        goal=frozenset({GroundAtom(predicate=IN_GOAL_REGION, objects=(env.cube, env.goal_region))}),
+    )
+    assert [step.skill.name for step in plan] == ["Pick", "MoveToThrowPose", "Toss"]
 
 
 def test_param_dims_put_the_only_learnable_dial_on_the_walk_not_the_throw() -> None:

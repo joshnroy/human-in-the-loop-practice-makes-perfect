@@ -59,6 +59,12 @@ class PddlWriter:
         types: tuple[Type, ...],
         domain_name: str = "hitlpmp",
     ) -> str:
+        for type_ in types:
+            PddlWriter._reject_sigil(name=type_.name, kind="Type")
+        for skill in skills:
+            PddlWriter._reject_sigil(name=skill.name, kind="Skill")
+        for predicate in predicates:
+            PddlWriter._reject_sigil(name=predicate.name, kind="Predicate")
         types_str = " ".join(t.name for t in sorted(types, key=lambda t: t.name))
         preds_str = "\n    ".join(
             PddlWriter._predicate_declaration_str(predicate=predicate)
@@ -86,6 +92,9 @@ class PddlWriter:
         domain_name: str = "hitlpmp",
         problem_name: str = "hitlpmpproblem",
     ) -> str:
+        for obj in objects:
+            PddlWriter._reject_sigil(name=obj.name, kind="Object")
+            PddlWriter._reject_sigil(name=obj.type.name, kind="Type")
         objects_str = "\n    ".join(
             f"{obj.name} - {obj.type.name}" for obj in sorted(objects, key=lambda o: o.name)
         )
@@ -199,4 +208,29 @@ class PddlWriter:
         carry one (unlike predicators', which requires it) -- so add it here, and only
         here, so the two places variables are written (`:parameters` and atom
         references) can never drift apart."""
+        PddlWriter._reject_sigil(name=variable.name, kind="Variable")
         return f"?{variable.name}"
+
+    @staticmethod
+    def _reject_sigil(*, name: str, kind: str) -> None:
+        """Refuse any name that already carries PDDL's "?", at every site this writer
+        interpolates one raw.
+
+        The alternative is a **silent** wrong answer, and it has happened: a `Variable`
+        declared "?robot" renders "??robot", Fast Downward's translator splits that into
+        two tokens and exits 31, `FastDownwardPlanner` turns the non-zero exit into
+        `PlanningFailure`, and `EesMethod._next_plan` catches that and returns a no-op.
+        `environments/tossing3d/skills.py` declared all five of its variables that way,
+        and `--env tossing3d --method ees` still exited 0 and wrote a full `stats.json`
+        in which the method had never taken a single action.
+
+        Checked for objects, predicates, types and skills too, not just variables: a "?"
+        in any of those names produces the identical failure, and closing the class costs
+        one call site each. Nothing raises today -- this is a tripwire, not a
+        migration."""
+        if name.startswith("?"):
+            raise ValueError(
+                f"{kind} name {name!r} already carries the '?' this writer adds; declare "
+                "it plain (e.g. 'robot'), or the emitted PDDL is '??robot' and Fast "
+                "Downward's translator rejects the whole domain."
+            )
