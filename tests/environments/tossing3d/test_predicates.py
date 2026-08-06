@@ -16,18 +16,19 @@ from hitl_pmp.environments.tossing3d.predicates import (
     HANDEMPTY_TOL,
     HOLDING,
     IN_GOAL_REGION,
-    NEAR_BIN,
-    NEAR_BIN_TOLERANCE,
     ON_GROUND,
     REACHABLE,
+    ROBOT_AT_SUCCESSFUL_THROW_POSE,
+    THROW_POSE_LATERAL_TOLERANCE,
     THROW_STANDOFF_BOUNDS,
     HandEmptyClassifier,
     HoldingClassifier,
     InGoalRegionClassifier,
-    NearBinClassifier,
     OnGroundClassifier,
     ReachableClassifier,
+    RobotAtSuccessfulThrowPoseClassifier,
 )
+from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
 
 from .observations import BARRIER_X, COINCIDENT_BIN_X, CUBE_START_X, GOAL_REGION_BBOX, state
 
@@ -151,63 +152,154 @@ def test_reachable_reads_the_barriers_live_x_rather_than_a_constant() -> None:
     assert ReachableClassifier.holds(state=beyond_default, cube=_ENV.cube, barrier=_ENV.barrier)
 
 
-@pytest.mark.parametrize("standoff", [THROW_STANDOFF_BOUNDS[0], 1.35, THROW_STANDOFF_BOUNDS[1]])
-def test_near_bin_holds_across_the_whole_sampled_standoff_range(*, standoff: float) -> None:
-    """Every standoff the sampler can draw must satisfy the add effect of the skill that
-    draws it, including both endpoints."""
-    assert NearBinClassifier.holds(
-        state=state(base_x=COINCIDENT_BIN_X - standoff), robot=_ENV.robot, target=_ENV.bin
+def _at_throw_pose(*, standoff: float, base_y: float = 0.0, **kwargs) -> bool:
+    """Does the predicate hold for a base placed `standoff` metres in front of the bin?"""
+    bin_x = kwargs.pop("bin_x", COINCIDENT_BIN_X)
+    return RobotAtSuccessfulThrowPoseClassifier.holds(
+        state=state(base_x=bin_x - standoff, base_y=base_y, bin_x=bin_x, **kwargs),
+        robot=_ENV.robot,
+        target=_ENV.bin,
+        goal_region=_ENV.goal_region,
     )
 
 
-def test_near_bin_tolerates_exactly_what_the_controller_tolerates() -> None:
-    """`move_to_target` stops once the base is within `WAYPOINT_TOL` of its own planned
-    waypoint, so a pose that far off a band endpoint still has to count."""
-    just_inside = COINCIDENT_BIN_X - (THROW_STANDOFF_BOUNDS[1] + NEAR_BIN_TOLERANCE * 0.9)
-    assert NearBinClassifier.holds(
-        state=state(base_x=just_inside), robot=_ENV.robot, target=_ENV.bin
-    )
-    just_outside = COINCIDENT_BIN_X - (THROW_STANDOFF_BOUNDS[1] + NEAR_BIN_TOLERANCE * 1.1)
-    assert not NearBinClassifier.holds(
-        state=state(base_x=just_outside), robot=_ENV.robot, target=_ENV.bin
-    )
+def _accepted_band(**kwargs) -> tuple[float, float]:
+    """The interval of standoffs the predicate accepts, found by scanning at 1 mm."""
+    accepted = [
+        standoff / 1000
+        for standoff in range(0, 3000)
+        if _at_throw_pose(standoff=standoff / 1000, **kwargs)
+    ]
+    return (min(accepted), max(accepted))
 
 
-def test_near_bin_rejects_standing_on_top_of_the_bin() -> None:
-    """The lower bound is not decoration. A base at the bin's own position has nowhere to
-    throw from, and an operator model that called that a throw pose would let a planner
-    skip the walk entirely."""
-    assert not NearBinClassifier.holds(
-        state=state(base_x=COINCIDENT_BIN_X), robot=_ENV.robot, target=_ENV.bin
-    )
+def test_the_accepted_band_is_strictly_narrower_than_the_range_the_sampler_draws_from() -> None:
+    """**The property whose absence is the whole reason this predicate was rewritten.**
 
-
-def test_near_bin_rejects_the_far_side_of_the_room() -> None:
-    assert not NearBinClassifier.holds(state=state(base_x=0.0), robot=_ENV.robot, target=_ENV.bin)
-
-
-def test_near_bin_rejects_a_base_off_the_bins_axis() -> None:
-    """The conjunct a plain distance test does not have, and the one that matters.
-
-    `pick_shelf` drives the base to the *cube*, off to one side. Measured on the canonical
-    scene, that leaves the base 1.76 m from the bin and 0.37 m off its axis -- a distance
-    a loose band happily admits. `NearBin` was briefly written that way, and the
-    consequence was that the oracle skipped `MoveToThrowPose` entirely and threw from a
-    pose facing 40 degrees off: the cube landed at (0.9969, -0.7196) and the episode
-    failed. See `NearBinClassifier`'s own docstring."""
-    assert not NearBinClassifier.holds(
-        state=state(base_x=0.279, base_y=0.366), robot=_ENV.robot, target=_ENV.bin
+    `MoveToThrowPose`'s only add effect is this predicate, and EES trains that skill's
+    success classifier on exactly that label. While the predicate accepted every standoff
+    in `THROW_STANDOFF_BOUNDS` -- the interval the sampler draws from -- the label was
+    constant-true, the classifier saw one class, and every draw fell back to uniform. If
+    this ever fails again, the sampler has silently stopped being able to learn."""
+    rng = np.random.default_rng(0)
+    draws = [float(rng.uniform(*THROW_STANDOFF_BOUNDS)) for _ in range(200)]
+    accepted = [d for d in draws if _at_throw_pose(standoff=d)]
+    assert accepted, "no sampled standoff is accepted: the skill could never succeed"
+    assert len(accepted) < len(draws), (
+        "every sampled standoff is accepted: the add effect is constant-true and no "
+        "sampler can learn from it"
     )
 
 
-def test_near_bin_rejects_a_diagonal_approach_at_the_right_distance() -> None:
+def test_the_accepted_band_moves_when_the_bin_moves() -> None:
+    """**The test that catches someone reintroducing a measured literal.**
+
+    The band is derived from live scene geometry, so shifting the bin shifts it by exactly
+    the same amount. A hard-coded `[1.15, 1.375]` would hold the band still and be
+    silently wrong the moment kindergarden#126 lands."""
+    shift = 0.25
+    here = _accepted_band()
+    there = _accepted_band(bin_x=COINCIDENT_BIN_X + shift)
+    assert there[0] == pytest.approx(here[0] + shift, abs=2e-3)
+    assert there[1] == pytest.approx(here[1] + shift, abs=2e-3)
+
+
+def test_the_accepted_band_moves_when_the_goal_region_moves() -> None:
+    """The other half of "derived, not pinned": the band tracks the goal box too, so a
+    task JSON that retargets the throw needs no change here."""
+    x_min, y_min, z_min, x_max, y_max, z_max = GOAL_REGION_BBOX
+    shifted = (x_min - 0.30, y_min, z_min, x_max - 0.30, y_max, z_max)
+    here = _accepted_band()
+    there = _accepted_band(goal_region=shifted)
+    assert there[0] == pytest.approx(here[0] + 0.30, abs=2e-3)
+    assert there[1] == pytest.approx(here[1] + 0.30, abs=2e-3)
+
+
+def test_the_accepted_band_is_exactly_as_wide_as_the_goal_regions_x_extent() -> None:
+    """A throw is a constant displacement, so the set of standoffs landing inside the box
+    is the box's own width -- 0.300 m here. This is the arithmetic check that the
+    derivation is a derivation and not a fit: it holds for any box at any bin position."""
+    low, high = _accepted_band()
+    assert high - low == pytest.approx(GOAL_REGION_BBOX[3] - GOAL_REGION_BBOX[0], abs=2e-3)
+
+
+def test_the_oracle_standoff_is_inside_the_accepted_band() -> None:
+    """`SkillOraclePolicy` throws from 1.35 and scores 99/100. If tightening the predicate
+    ever excluded that standoff the oracle would stop planning a throw at all, and every
+    EES number on this domain is measured against that ceiling."""
+    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF)
+
+
+@pytest.mark.parametrize("standoff", [1.15, 1.25, 1.35, 1.40])
+def test_the_band_accepts_every_standoff_measured_to_solve(*, standoff: float) -> None:
+    """The 48-episode grid behind `THROW_RANGE` solved at these standoffs (3/3 at 1.15,
+    1.25 and 1.35; 2/3 at 1.40). A predicate rejecting one of them would be calling a
+    pose a failure that demonstrably scores."""
+    assert _at_throw_pose(standoff=standoff)
+
+
+@pytest.mark.parametrize("standoff", [0.45, 0.80, 1.00, 1.10, 1.45, 1.55, 1.65, 1.75])
+def test_the_band_rejects_every_standoff_measured_not_to_solve(*, standoff: float) -> None:
+    """The other half of the same grid: 0/3 solved at each. **Both endpoints of
+    `THROW_STANDOFF_BOUNDS` are in this list**, which is the point -- the sampler can draw
+    them and they are honest failures. Under the old predicate both were accepted."""
+    assert not _at_throw_pose(standoff=standoff)
+
+
+def test_the_predicate_rejects_standing_on_top_of_the_bin() -> None:
+    """A base at the bin's own position throws the cube clean over it -- 1.275 m past a
+    box whose far edge is 0.15 m away."""
+    assert not _at_throw_pose(standoff=0.0)
+
+
+def test_the_predicate_rejects_the_far_side_of_the_room() -> None:
+    assert not _at_throw_pose(standoff=THROW_STANDOFF_BOUNDS[1] + 0.2)
+
+
+def test_the_predicate_rejects_the_worst_measured_pose_that_pick_leaves_the_base_in() -> None:
+    """`Pick` drives the base to the *cube*, and if the predicate held there the oracle
+    would skip `MoveToThrowPose` and throw from wherever it stood. Over 30 scene seeds
+    exactly one leaves the base inside the 0.04 m lateral tolerance: seed 14, at 1.8592 m
+    from the bin and 0.0074 m off its axis. The lateral conjunct cannot save that one, so
+    the standoff conjunct has to -- and now does so on its own terms, because a throw from
+    1.8592 m back lands at x = 1.42, well short of the box."""
+    assert not _at_throw_pose(standoff=1.8592, base_y=0.0074)
+
+
+def test_the_predicate_rejects_a_base_off_the_bins_axis() -> None:
+    """The conjunct a plain distance test does not have, and the one that was measured.
+
+    `pick_shelf` drives the base to the *cube*, off to one side. On the canonical scene
+    that leaves the base 1.76 m from the bin and 0.37 m off its axis -- a distance a loose
+    band happily admits. The predicate was briefly written that way, and the oracle
+    skipped `MoveToThrowPose` and threw facing 40 degrees off: the cube landed at
+    (0.9969, -0.7196) and the episode failed."""
+    assert not RobotAtSuccessfulThrowPoseClassifier.holds(
+        state=state(base_x=0.279, base_y=0.366),
+        robot=_ENV.robot,
+        target=_ENV.bin,
+        goal_region=_ENV.goal_region,
+    )
+
+
+def test_the_predicate_rejects_a_diagonal_approach_at_the_right_distance() -> None:
     """The general form of the case above: the right distance is not enough, because
     `MoveToThrowPose` pins `rot = 0` and therefore always ends on the bin's axis."""
     offset = 1.35 / np.sqrt(2)
-    assert not NearBinClassifier.holds(
+    assert not RobotAtSuccessfulThrowPoseClassifier.holds(
         state=state(base_x=COINCIDENT_BIN_X - offset, base_y=offset),
         robot=_ENV.robot,
         target=_ENV.bin,
+        goal_region=_ENV.goal_region,
+    )
+
+
+def test_the_lateral_conjunct_still_tolerates_exactly_what_the_controller_tolerates() -> None:
+    """`move_to_target` stops once the base is within `WAYPOINT_TOL` of its own planned
+    waypoint, so a pose that far off the axis still has to count."""
+    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_LATERAL_TOLERANCE * 0.9)
+    assert not _at_throw_pose(
+        standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_LATERAL_TOLERANCE * 1.1
     )
 
 
@@ -223,7 +315,11 @@ def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
         HOLDING: (Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
         ON_GROUND: (Tossing3DEnvironment.cube_type,),
         REACHABLE: (Tossing3DEnvironment.cube_type, Tossing3DEnvironment.barrier_type),
-        NEAR_BIN: (Tossing3DEnvironment.robot_type, Tossing3DEnvironment.bin_type),
+        ROBOT_AT_SUCCESSFUL_THROW_POSE: (
+            Tossing3DEnvironment.robot_type,
+            Tossing3DEnvironment.bin_type,
+            Tossing3DEnvironment.goal_region_type,
+        ),
     }
     for predicate, types in expected.items():
         assert predicate.types == types, predicate.name

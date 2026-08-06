@@ -8,7 +8,14 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import Tossing3DEnvironment
-from .predicates import HAND_EMPTY, HOLDING, IN_GOAL_REGION, NEAR_BIN, ON_GROUND, REACHABLE
+from .predicates import (
+    HAND_EMPTY,
+    HOLDING,
+    IN_GOAL_REGION,
+    ON_GROUND,
+    REACHABLE,
+    ROBOT_AT_SUCCESSFUL_THROW_POSE,
+)
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
 from .skills import Tossing3DSkills
 
@@ -32,7 +39,14 @@ class Tossing3DSkillProvider(SkillProvider):
         )
 
     def predicates(self) -> tuple[Predicate, ...]:
-        return (IN_GOAL_REGION, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE, NEAR_BIN)
+        return (
+            IN_GOAL_REGION,
+            HAND_EMPTY,
+            HOLDING,
+            ON_GROUND,
+            REACHABLE,
+            ROBOT_AT_SUCCESSFUL_THROW_POSE,
+        )
 
     def types(self) -> tuple[Type, ...]:
         return (

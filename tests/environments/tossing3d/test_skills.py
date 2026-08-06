@@ -10,10 +10,10 @@ from hitl_pmp.environments.tossing3d.predicates import (
     HAND_EMPTY,
     HOLDING,
     IN_GOAL_REGION,
-    NEAR_BIN,
     ON_GROUND,
     REACHABLE,
-    NearBinClassifier,
+    ROBOT_AT_SUCCESSFUL_THROW_POSE,
+    RobotAtSuccessfulThrowPoseClassifier,
 )
 from hitl_pmp.environments.tossing3d.predicates import (
     THROW_STANDOFF_BOUNDS as PREDICATE_THROW_STANDOFF_BOUNDS,
@@ -34,11 +34,17 @@ _SKILLS = Tossing3DSkills
 
 
 def _pick() -> GroundSkill:
-    return GroundSkill(skill=_SKILLS.PICK, objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin))
+    return GroundSkill(
+        skill=_SKILLS.PICK,
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin, _ENV.goal_region),
+    )
 
 
 def _move() -> GroundSkill:
-    return GroundSkill(skill=_SKILLS.MOVE_TO_THROW_POSE, objects=(_ENV.robot, _ENV.cube, _ENV.bin))
+    return GroundSkill(
+        skill=_SKILLS.MOVE_TO_THROW_POSE,
+        objects=(_ENV.robot, _ENV.cube, _ENV.bin, _ENV.goal_region),
+    )
 
 
 def _toss() -> GroundSkill:
@@ -59,12 +65,15 @@ def test_pick_requires_reachable_so_no_plan_retrieves_a_tossed_cube() -> None:
     )
 
 
-def test_pick_deletes_near_bin_because_the_grasp_drives_the_base_to_the_cube() -> None:
+def test_pick_deletes_the_throw_pose_because_the_grasp_drives_the_base_to_the_cube() -> None:
     """`pick_shelf` navigates to the cube, which is on the near side of the barrier and
-    therefore nowhere near the bin. A model that let `NearBin` survive a pick would let
-    the planner skip `MoveToThrowPose` entirely."""
+    therefore far too short of the bin to throw from. A model that let the predicate
+    survive a pick would let the planner skip `MoveToThrowPose` entirely."""
     assert (
-        LiftedAtom(predicate=NEAR_BIN, variables=(_SKILLS._robot, _SKILLS._bin))
+        LiftedAtom(
+            predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
+            variables=(_SKILLS._robot, _SKILLS._bin, _SKILLS._goal_region),
+        )
         in _SKILLS.PICK.delete_effects
     )
 
@@ -93,20 +102,29 @@ def test_the_three_operator_models_are_exactly_as_declared() -> None:
     assert _SKILLS.PICK.delete_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
-        LiftedAtom(predicate=NEAR_BIN, variables=(_SKILLS._robot, _SKILLS._bin)),
+        LiftedAtom(
+            predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
+            variables=(_SKILLS._robot, _SKILLS._bin, _SKILLS._goal_region),
+        ),
     })
 
     assert _SKILLS.MOVE_TO_THROW_POSE.preconditions == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
     })
     assert _SKILLS.MOVE_TO_THROW_POSE.add_effects == frozenset({
-        LiftedAtom(predicate=NEAR_BIN, variables=(_SKILLS._robot, _SKILLS._bin))
+        LiftedAtom(
+            predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
+            variables=(_SKILLS._robot, _SKILLS._bin, _SKILLS._goal_region),
+        )
     })
     assert _SKILLS.MOVE_TO_THROW_POSE.delete_effects == frozenset()
 
     assert _SKILLS.TOSS.preconditions == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
-        LiftedAtom(predicate=NEAR_BIN, variables=(_SKILLS._robot, _SKILLS._bin)),
+        LiftedAtom(
+            predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
+            variables=(_SKILLS._robot, _SKILLS._bin, _SKILLS._goal_region),
+        ),
     })
     assert _SKILLS.TOSS.add_effects == frozenset({
         LiftedAtom(predicate=IN_GOAL_REGION, variables=(_SKILLS._cube, _SKILLS._goal_region)),
@@ -152,7 +170,14 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
     `--env tossing3d --method ees` ran to completion planning nothing."""
     env = Tossing3DEnvironment()
     objects = (env.robot, env.cube, env.bin, env.barrier, env.goal_region)
-    predicates = (IN_GOAL_REGION, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE, NEAR_BIN)
+    predicates = (
+        IN_GOAL_REGION,
+        HAND_EMPTY,
+        HOLDING,
+        ON_GROUND,
+        REACHABLE,
+        ROBOT_AT_SUCCESSFUL_THROW_POSE,
+    )
     init_atoms = SkillGrounder.abstract_state(state=state(), objects=objects, predicates=predicates)
     plan = FastDownwardPlanner.plan(
         skills=(_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS),
@@ -215,33 +240,67 @@ def test_sample_params_draws_pick_parameters_inside_upstreams_own_bounds() -> No
         assert PICK_ROTATION_BOUNDS[0] <= rotation <= PICK_ROTATION_BOUNDS[1]
 
 
-def test_every_sampled_throw_standoff_satisfies_near_bin() -> None:
-    """A sampler that could draw a standoff at which its own skill's add effect is false
-    would hand a planner an operator that provably cannot achieve what it claims. Checked
-    against the predicate itself, not against the constants, so widening either one
-    without the other fails here."""
+def test_the_sampler_draws_both_satisfying_and_unsatisfying_standoffs() -> None:
+    """**The sampler must be able to miss.** `MoveToThrowPose`'s only add effect is
+    `RobotAtSuccessfulThrowPose`, and EES trains that skill's success classifier on
+    exactly that label. This test used to assert the opposite -- that *every* sampled
+    standoff satisfies the add effect -- which is a tautology dressed as a fidelity check:
+    it holds precisely when the label is constant-true and the sampler cannot learn.
+
+    Both outcomes must occur, and every draw must still be in bounds."""
     rng = np.random.default_rng(0)
+    outcomes = []
     for _ in range(200):
         (standoff,) = Tossing3DSkills.sample_params(ground_skill=_move(), rng=rng)
         assert THROW_STANDOFF_BOUNDS[0] <= standoff <= THROW_STANDOFF_BOUNDS[1]
-        assert NearBinClassifier.holds(
-            state=state(base_x=COINCIDENT_BIN_X - standoff),
+        outcomes.append(
+            RobotAtSuccessfulThrowPoseClassifier.holds(
+                state=state(base_x=COINCIDENT_BIN_X - standoff),
+                robot=_ENV.robot,
+                target=_ENV.bin,
+                goal_region=_ENV.goal_region,
+            )
+        )
+    assert any(outcomes), "no draw ever succeeds: the skill could never achieve its effect"
+    assert not all(outcomes), (
+        "every draw succeeds: the add effect is constant-true and no sampler can learn"
+    )
+
+
+def test_the_sampler_range_is_the_measured_feasible_range() -> None:
+    """The measured feasible range `[0.40, 2.06]`, inset at both ends: below 0.40 m the
+    base shoves the bin across the floor, above 2.06 m `Toss`'s windup fails to
+    motion-plan, and above ~1.79 m the predicate would start accepting the pose `Pick`
+    leaves the base in.
+
+    `skills.py` imports the interval from `predicates.py` rather than declaring its own,
+    so there is one place it is measured. That import is **not** the same thing as the
+    predicate's acceptance band, which is derived per call -- see the test below."""
+    assert THROW_STANDOFF_BOUNDS == (0.45, 1.75)
+    assert THROW_STANDOFF_BOUNDS is PREDICATE_THROW_STANDOFF_BOUNDS
+
+
+def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:
+    """The defect this whole change exists to fix, pinned as a property.
+
+    `predicates.py` used to hand `THROW_STANDOFF_BOUNDS` straight to the classifier as its
+    acceptance interval, so widening the sampler's range widened the acceptance region in
+    lockstep and the add effect stayed constant-true. The acceptance band is now derived
+    from the live goal region and `THROW_RANGE`, and is strictly narrower than the range
+    the sampler draws from."""
+    low, high = THROW_STANDOFF_BOUNDS
+    accepted = [
+        standoff / 1000
+        for standoff in range(int(low * 1000), int(high * 1000))
+        if RobotAtSuccessfulThrowPoseClassifier.holds(
+            state=state(base_x=COINCIDENT_BIN_X - standoff / 1000),
             robot=_ENV.robot,
             target=_ENV.bin,
+            goal_region=_ENV.goal_region,
         )
-
-
-def test_the_sampler_range_is_the_measured_sweep_and_is_shared_with_the_predicate() -> None:
-    """`scripts/tossing3d_oracle_demo.py --sweep` covers 1.20 to 1.65, the only range of
-    throw standoffs anything in this repo has measured, so the sampler cannot be drawing
-    somewhere nothing was ever observed.
-
-    The identity check is the important half: `skills.py` imports this interval from
-    `predicates.py` rather than declaring its own, so "what the sampler draws" and "what
-    NearBin admits" cannot drift apart. They were briefly two separate constants, and that
-    gap is what let an over-permissive NearBin ship."""
-    assert THROW_STANDOFF_BOUNDS == (1.20, 1.65)
-    assert THROW_STANDOFF_BOUNDS is PREDICATE_THROW_STANDOFF_BOUNDS
+    ]
+    assert accepted
+    assert max(accepted) - min(accepted) < (high - low) / 2
 
 
 def test_toss_samples_no_parameters_at_all() -> None:
@@ -253,7 +312,7 @@ def test_toss_samples_no_parameters_at_all() -> None:
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     stray = GroundSkill(
         skill=_SKILLS.PICK.model_copy(update={"name": "NotASkill"}),
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin, _ENV.goal_region),
     )
     with pytest.raises(ValueError, match="Unknown skill"):
         Tossing3DSkills.sample_params(ground_skill=stray, rng=np.random.default_rng(0))

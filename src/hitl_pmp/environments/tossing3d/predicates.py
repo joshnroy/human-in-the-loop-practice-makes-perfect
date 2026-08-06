@@ -38,20 +38,94 @@ GRASP_THRESHOLD = 0.1  # `GraspThreshold`
 HOLDING_HEIGHT = 0.1  # the `state.get(target, "z") > 0.1` conjunct
 ON_GROUND_TOL = 0.05  # `on_ground_tol`
 
-# Ours: the range of throw standoffs, in metres. There is no upstream number to borrow --
-# upstream simply hardcodes 1.35 in its own test, and its own `MOVE_TO_TARGET_DISTANCE_
-# BOUNDS` of (0.5, 0.6) is a *grasping* standoff -- so this is the interval
-# `scripts/tossing3d_oracle_demo.py --sweep` covers, which is the only range of throw
-# standoffs anything in this repo has measured (11 standoffs, 1.20 to 1.65). It lives
-# here rather than in `skills.py` so that `NearBin` and the `MoveToThrowPose` sampler are
-# the same interval by construction; `skills.py` imports it back.
-THROW_STANDOFF_BOUNDS = (1.20, 1.65)
+# Ours: the range of throw standoffs, in metres -- the interval the `MoveToThrowPose`
+# sampler draws from. There is no upstream number to borrow: upstream simply hardcodes
+# 1.35 in its own test, and its own `MOVE_TO_TARGET_DISTANCE_BOUNDS` of (0.5, 0.6) is a
+# *grasping* standoff.
+#
+# It is the **feasible** range -- where the episode is still a throw problem -- not the
+# range that solves. The feasible range is `[0.40, 2.06]`, measured over five scene seeds
+# by running `Pick` -> `MoveToThrowPose(standoff)` -> `Toss` and recording each upstream
+# controller's own outcome:
+#
+# - **Below 0.40 m** `move_to_target` reports success but the base drives into the bin and
+#   shoves it across the floor: 5/5 seeds displaced the bin at 0.35 m (by up to 0.069 m,
+#   and by 0.99 m at 0.05 m), against 0/5 at 0.40 m.
+# - **Above ~2.06 m** the base reaches the pose cleanly, but `Toss`'s windup
+#   `move_arm_to_conf` fails to motion-plan (`AssertionError: Motion planning failed`), so
+#   `Toss` executes zero steps and the cube never leaves the gripper: 2/5 seeds failed to
+#   plan at 2.08 m, against 0/5 at 2.06 m.
+#
+# The bounds inset that range at both ends. The bottom is belt-and-braces (nothing observed
+# stops that short; a 0.40 m command lands at 0.428 m). The top is set by a *hazard* rather
+# than by feasibility: the predicate must stay false at the pose `Pick` leaves the base in,
+# or the oracle -- and any planner reading it -- would believe it was already at a throw
+# pose and skip `MoveToThrowPose`. Over 30 scene seeds the post-`Pick` base sits 1.364-1.971
+# m from the bin, and seed 14 sits at 1.8592 m only 0.0074 m off-axis, i.e. inside the
+# lateral tolerance, so nothing but the standoff would exclude it. An upper bound of 1.90
+# admits it; 1.75 does not.
+#
+# **This is the sampler's range only. It is deliberately NOT what the predicate accepts.**
+# Those two used to be the same symbol -- this constant was imported into
+# `NearBinClassifier` and used as its acceptance interval -- and that identity is what made
+# this domain's sampler unlearnable. `MoveToThrowPose`'s only add effect was `NearBin`, so
+# every standoff the sampler could draw satisfied its own add effect by construction: the
+# label was constant-true (16/16 attempts labelled success in a probe run), EES's per-skill
+# success classifier saw a single class, and every draw fell back to uniform forever. No
+# amount of data can fix a label that cannot vary.
+#
+# `RobotAtSuccessfulThrowPose` now derives its own, much narrower acceptance band from live
+# scene geometry and `THROW_RANGE`. **Do not re-couple them**; widening this constant must
+# not widen the predicate, or the tautology returns silently.
+#
+# The widening from `(1.20, 1.65)` to the feasible range is what makes the separation
+# *measurable* rather than merely correct. At the old bounds the derived band covered
+# 0.225 of a 0.45 m range, so a uniform draw was right about half the time and a learned
+# sampler had little headroom over its own prior. At 1.30 m wide the 0.300 m band is
+# 3/13 of the range: the prior is wrong often enough that finding the constant is worth
+# measuring.
+THROW_STANDOFF_BOUNDS = (0.45, 1.75)
+
+# **The one calibrated constant in this module, and the only thing the success band is not
+# derived from.** `Toss` takes no parameters: `run_toss` executes
+# `move_arm_to_conf(windup_conf_deg)` and then `toss(toss_conf_deg)`, both fixed joint
+# configurations, so a throw displaces the cube by the same distance in the base's facing
+# direction every time. That displacement is this number, in metres.
+#
+# Because it is a property of the *controller* -- upstream's arm configurations and the
+# cube's 0.1 kg mass -- and not of the scene, the success band can be recomputed from live
+# state on every call and stays correct when the bin or the goal region moves. That is the
+# whole point: kindergarden#126 moves the bin, and nothing here needs to change.
+#
+# **Calibrated against where success breaks, not measured in free flight, and the
+# difference is a trap.** The obvious measurement -- throw onto open floor and record where
+# the cube comes to rest -- gives **1.3499 m** (sd 0.0024, n = 12, standoffs 0.45-1.00 over
+# 3 seeds) and is **wrong for this purpose**: it includes post-impact roll along the floor.
+# What the goal-region test needs is the *impact* range, because on the coincident config
+# the bin sits on the goal region and a cube that impacts inside it is caught by the bin
+# walls instead of rolling on. The two differ by the ~0.075 m of roll.
+#
+# Two independent sweeps agree on the impact range:
+#
+# - A 48-episode grid (16 standoffs x 3 scene seeds, coincident config, Pick ->
+#   MoveToThrowPose(d) -> Toss): solved 0/3 at d = 1.10, 3/3 at 1.15, 3/3 through 1.35,
+#   2/3 at 1.40, 0/3 at 1.45. Reading the *measured* base poses against the goal box's own
+#   edges brackets the constant to (1.2608, 1.3090).
+# - PR #105's finer sweep (5 seeds, 0.025 m resolution) put the edges of partial solving at
+#   1.125 and 1.425. Those two edges imply **1.2749 from each end independently** -- which
+#   is the strongest evidence here that the constant-displacement model is right at all,
+#   since nothing forced the two ends to agree.
+#
+# 1.275 sits inside both brackets. `test_throw_range_predicts_where_the_cube_lands`
+# re-measures it against the real simulator, so upstream changing the toss controller, the
+# windup conf or the physics fails loudly rather than silently.
+THROW_RANGE = 1.275
 
 # Upstream's `WAYPOINT_TOL` (`kinder_models/dynamic3d/utils.py:54`), which is how close
 # `MoveToTargetGroundController.terminated()` requires the base to be to its own planned
-# waypoint. Using upstream's own number means `NearBin` admits exactly the poses that
-# controller is willing to stop at, rather than a tolerance invented here.
-NEAR_BIN_TOLERANCE = 4 * 1e-2
+# waypoint. Using upstream's own number means the lateral conjunct admits exactly the poses
+# that controller is willing to stop at, rather than a tolerance invented here.
+THROW_POSE_LATERAL_TOLERANCE = 4 * 1e-2
 
 
 class InGoalRegionClassifier:
@@ -154,52 +228,82 @@ class ReachableClassifier:
         )
 
 
-class NearBinClassifier:
-    """The base is standing where a throw is thrown from: on the bin's axis, at a
-    standoff inside the measured band.
+class RobotAtSuccessfulThrowPoseClassifier:
+    """The base is standing somewhere a throw from here lands the cube in the goal region:
+    on the bin's axis, and at a standoff from which the throw's fixed displacement carries
+    the cube into the goal box.
 
     **Ours.** `move_to_target` has no symbolic model upstream, and its own termination
     condition (`_robot_is_close_to_pose`) is about the base having reached *its own
     planned waypoint*, which says nothing about where that waypoint was. So the effect a
-    planner needs -- "the robot is now somewhere it can throw from" -- has to be stated
-    here.
+    planner needs has to be stated here.
 
-    It is stated as an exact characterisation of what `MoveToThrowPose` produces, rather
-    than a loose proximity test, and that precision is load-bearing rather than
-    fastidious. `move_to_target(bin, d, rot)` places the base at
-    `(bin_x - d*cos(ang), bin_y - d*sin(ang))` with `ang = bin_yaw + rot`
-    (`kinder_models/dynamic3d/utils.py:395`); `MoveToThrowPose` pins `rot = 0` and the
-    bin's yaw range is `[[0, 0]]`, so the resulting pose is exactly `(bin_x - d, bin_y)`.
-    Hence both conjuncts: **on the bin's axis** (`|dy| <= NEAR_BIN_TOLERANCE`) and **at a
-    band standoff** (`|dx|` inside `THROW_STANDOFF_BOUNDS`, widened by the same
-    tolerance). The tolerance is upstream's own `WAYPOINT_TOL`, i.e. exactly how far off
-    its own waypoint that controller is willing to stop.
+    **Why this is a success test and not a reachability test.** This was previously
+    `NearBin`, whose docstring called it "an exact characterisation of what
+    `MoveToThrowPose` produces" -- and that is exactly what was wrong with it. It accepted
+    every standoff in `THROW_STANDOFF_BOUNDS`, the interval the sampler draws from, so
+    `MoveToThrowPose`'s only add effect held after *every* attempt. EES trains one success
+    classifier per skill on precisely that label, so the label was constant-true, the
+    classifier saw a single class, and the sampler fell back to uniform on every draw
+    forever -- 16/16 attempts labelled success with 0/16 informed draws in a probe run,
+    against 7/20 informed draws for `Pick` in the same run. A skill whose add effect cannot
+    fail is a skill whose sampler cannot learn, and this skill's standoff is the one
+    continuous parameter in the domain that decides the outcome: `Toss`, which does decide
+    it, has `param_dim = 0`.
 
-    **A plain distance test is not enough, and this was measured.** An earlier version
-    tested only `1.0 <= hypot(dx, dy) <= 1.8`. After `Pick` -- which drives the base to
-    the *cube*, off to one side -- the base sat at 1.76 m from the bin, inside that band,
-    so `NearBin` was already true, the oracle skipped `MoveToThrowPose` entirely and threw
-    from a pose facing 40 degrees away from the bin: the cube landed at
-    `(0.9969, -0.7196)` and the episode scored a failure. The lateral conjunct rules that
-    out by 0.72 m rather than by the 7 cm the distance test had to spare. This is exactly
-    the over-permissive-operator-model defect class that
-    `tests/environments/test_operator_dynamics_fidelity.py` exists for, caught here by
+    **The standoff conjunct is derived from live state, not measured and pinned.** `Toss`
+    takes no parameters -- fixed windup conf, fixed toss conf -- so a throw displaces the
+    cube by the constant `THROW_RANGE` in the base's facing direction. `MoveToThrowPose`
+    pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base satisfying the lateral
+    conjunct faces `+x` and the cube's predicted resting place is `base_x + THROW_RANGE`.
+    `InGoalRegion` tests the cube's centre against the goal region's box, which the `State`
+    already carries as the live `Region.bbox`. So the test below is *that same box* applied
+    to the predicted landing point, and the accepted band of standoffs
+
+        [bin_x + THROW_RANGE - x_max,  bin_x + THROW_RANGE - x_min]
+
+    falls out rather than being written down. Move the bin, resize the goal region, or
+    change `ground_placement_threshold`, and the band follows on its own -- which matters,
+    because kindergarden#126 moves the bin. A hard-coded band would be silently wrong the
+    moment that lands.
+
+    On the coincident config the band works out to `[1.125, 1.425]`: **0.300 m wide, which
+    is exactly the goal region's own x-extent**, as it must be for a constant-displacement
+    throw. The band over which the throw solves on *every* seed is narrower -- 0.225 m,
+    measured in PR #105 -- and that 0.075 m gap is the throw's own scatter rather than an
+    error in the derivation. It is why the derived band's edges sit where solving goes
+    partial (2/5, 3/5) rather than where it stops.
+
+    **The lateral conjunct is unchanged, and was measured.** An earlier version tested only
+    `1.0 <= hypot(dx, dy) <= 1.8`. After `Pick` -- which drives the base to the *cube*, off
+    to one side -- the base sat at 1.76 m from the bin, inside that band, so the predicate
+    was already true, the oracle skipped `MoveToThrowPose` entirely and threw from a pose
+    facing 40 degrees away from the bin: the cube landed at `(0.9969, -0.7196)` and the
+    episode scored a failure. The lateral conjunct rules that out by 0.72 m rather than by
+    the 7 cm the distance test had to spare. This is exactly the over-permissive-operator-
+    model defect class that `tests/environments/test_operator_dynamics_fidelity.py` exists
+    for, caught here by
     `test_the_oracle_reproduces_the_recorded_coincident_landing_and_step_counts`.
+
+    The standoff conjunct now independently excludes those poses too -- the post-`Pick`
+    base is far enough back that its predicted landing falls short of the box -- but the
+    lateral conjunct stays, because it is the one measured against the real failure, and
+    because a base off the axis does not throw along `+x` at all.
     """
 
     @staticmethod
-    def holds(*, state: State, robot: Object, target: Object) -> bool:
-        dx = abs(
-            state.get(obj=robot, feature_name="pos_base_x")
-            - state.get(obj=target, feature_name="x")
-        )
-        dy = abs(
+    def holds(*, state: State, robot: Object, target: Object, goal_region: Object) -> bool:
+        lateral_offset = abs(
             state.get(obj=robot, feature_name="pos_base_y")
             - state.get(obj=target, feature_name="y")
         )
-        low, high = THROW_STANDOFF_BOUNDS
+        if lateral_offset > THROW_POSE_LATERAL_TOLERANCE:
+            return False
+        landing_x = state.get(obj=robot, feature_name="pos_base_x") + THROW_RANGE
         return bool(
-            dy <= NEAR_BIN_TOLERANCE and low - NEAR_BIN_TOLERANCE <= dx <= high + NEAR_BIN_TOLERANCE
+            state.get(obj=goal_region, feature_name="x_min")
+            <= landing_x
+            <= state.get(obj=goal_region, feature_name="x_max")
         )
 
 
@@ -242,10 +346,14 @@ REACHABLE = Predicate(
     ),
 )
 
-NEAR_BIN = Predicate(
-    name="NearBin",
-    types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.bin_type),
-    holds=lambda state, objects: NearBinClassifier.holds(
-        state=state, robot=objects[0], target=objects[1]
+ROBOT_AT_SUCCESSFUL_THROW_POSE = Predicate(
+    name="RobotAtSuccessfulThrowPose",
+    types=(
+        Tossing3DEnvironment.robot_type,
+        Tossing3DEnvironment.bin_type,
+        Tossing3DEnvironment.goal_region_type,
+    ),
+    holds=lambda state, objects: RobotAtSuccessfulThrowPoseClassifier.holds(
+        state=state, robot=objects[0], target=objects[1], goal_region=objects[2]
     ),
 )

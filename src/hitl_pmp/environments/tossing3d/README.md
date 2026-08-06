@@ -36,15 +36,22 @@ Ours, and therefore ours to defend:
   requires a forward-kinematics end-effector check through a live `PyBulletSim`, which a
   pure-`State` predicate cannot do, so that conjunct is dropped and the predicate is
   correspondingly *weaker* than upstream's. `InGoalRegion` reproduces `_check_goals()`
-  exactly and is differentially tested against it. `Reachable` and `NearBin` are new.
+  exactly and is differentially tested against it. `Reachable` and `RobotAtSuccessfulThrowPose` are new.
 - **The three lifted skills and their operator models** (`skills.py`). KINDER ships
   symbolic models for `Shelf3D`, `Sweep3D` and base motion, but **none for Tossing3D**,
   so the operator layer is written here — following `tidybot3d_shelf3D.py`'s shape, where
   a `LiftedOperator` is paired to one of upstream's controllers.
-- **`THROW_STANDOFF_BOUNDS = (1.20, 1.65)`**, the one genuinely new continuous range.
+- **`THROW_STANDOFF_BOUNDS = (0.45, 1.75)`**, the one genuinely new continuous range.
   Upstream's own `MOVE_TO_TARGET_DISTANCE_BOUNDS` is `(0.5, 0.6)` — a *grasping* standoff
-  — and upstream's tossing test simply hardcodes `1.35` with no range at all. This
-  interval is the one `scripts/tossing3d_oracle_demo.py --sweep` covers.
+  — and upstream's tossing test simply hardcodes `1.35` with no range at all. This is the
+  measured **feasible** range `[0.40, 2.06]` inset at both ends: below 0.40 m the base
+  shoves the bin across the floor, above 2.06 m `Toss`'s windup fails to motion-plan. It
+  is what the sampler draws from and **not** what `RobotAtSuccessfulThrowPose` accepts —
+  see below.
+- **`THROW_RANGE = 1.275`**, the distance a throw displaces the cube. `Toss` takes no
+  parameters (fixed windup conf, fixed toss conf), so this is a property of upstream's
+  controller rather than of the scene, which is what lets the success band be derived
+  from live state instead of pinned to one bin position.
 - **The `[skill_id, param_0, param_1]` action encoding**, the `State` schema, and the
   `scene` object that carries the episode seed.
 - **The default of the coincident task config** (see below).
@@ -125,13 +132,23 @@ each. The narrowing this leaves is stated in the local file: it walks one trajec
 rather than searching, so it cannot find a reachable-but-unvisited symbolic state whose
 model is wrong.
 
-**This is not a hypothetical guard.** `NearBin` was first written as a plain
-`1.0 <= distance <= 1.8` band. After `Pick` — which drives the base to the *cube*, off to
-one side — the base sat 1.76 m from the bin, inside that band, so the oracle believed it
-was already at a throw pose, skipped `MoveToThrowPose`, and threw facing 40° away: the
-cube landed at (0.9969, −0.7196) and the episode failed. `NearBin` now characterises
-exactly the pose `move_to_target` produces (on the bin's axis, at a band standoff, within
-upstream's own `WAYPOINT_TOL`).
+**This is not a hypothetical guard.** The throw-pose predicate was first written as a
+plain `1.0 <= distance <= 1.8` band. After `Pick` — which drives the base to the *cube*,
+off to one side — the base sat 1.76 m from the bin, inside that band, so the oracle
+believed it was already at a throw pose, skipped `MoveToThrowPose`, and threw facing 40°
+away: the cube landed at (0.9969, −0.7196) and the episode failed. Its lateral conjunct
+(on the bin's axis, within upstream's own `WAYPOINT_TOL`) is what rules that out, and is
+unchanged since.
+
+**`RobotAtSuccessfulThrowPose` is a success test, not a reachability test, and that is a
+correctness fix rather than a rename.** It was `NearBin`, and it accepted every standoff
+in `THROW_STANDOFF_BOUNDS` — the interval the sampler draws from. `MoveToThrowPose`'s only
+add effect was therefore constant-true, EES's per-skill success classifier saw a single
+class, and every draw fell back to uniform: 16/16 attempts labelled success with 0/16
+informed draws in a probe run. The standoff conjunct now tests whether the *predicted
+landing point* `base_x + THROW_RANGE` falls inside the goal region's own live box, so the
+accepted band `[bin_x + THROW_RANGE − x_max, bin_x + THROW_RANGE − x_min]` is derived per
+call and tracks the bin and the goal region wherever they move.
 
 ## Running it
 

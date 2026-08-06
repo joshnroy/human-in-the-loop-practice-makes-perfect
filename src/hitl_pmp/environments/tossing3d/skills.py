@@ -43,9 +43,10 @@ execute. Two of the declarations below exist only for that reason:
 1. **`Pick` requires `Reachable(?cube, ?barrier)`.** The base cannot cross the barrier,
    so a cube past it can never be grasped. Without this precondition a planner emits
    "toss, then pick it back up and try again", which the dynamics silently refuse.
-2. **`Pick` deletes `NearBin(?robot, ?bin)`.** `pick_shelf` drives the base to the cube,
-   which is on the near side of the barrier and therefore nowhere near the bin. A model
-   that let `NearBin` survive a pick would let the planner skip `MoveToThrowPose`.
+2. **`Pick` deletes `RobotAtSuccessfulThrowPose(?robot, ?bin, ?goal_region)`.**
+   `pick_shelf` drives the base to the cube, which is on the near side of the barrier and
+   therefore far too short of the bin to throw from. A model that let the predicate
+   survive a pick would let the planner skip `MoveToThrowPose`.
 
 And one on the other side:
 
@@ -67,9 +68,9 @@ from .predicates import (
     HAND_EMPTY,
     HOLDING,
     IN_GOAL_REGION,
-    NEAR_BIN,
     ON_GROUND,
     REACHABLE,
+    ROBOT_AT_SUCCESSFUL_THROW_POSE,
     THROW_STANDOFF_BOUNDS,
 )
 
@@ -81,13 +82,14 @@ from .predicates import (
 PICK_DISTANCE_BOUNDS = (0.5, 0.6)
 PICK_ROTATION_BOUNDS = (-np.pi / 4, np.pi / 4)
 
-# `THROW_STANDOFF_BOUNDS` is imported from `predicates.py` rather than declared here, so
-# that the interval the sampler draws from and the interval `NearBin` admits are the same
-# object. They were briefly two constants that had to be kept consistent by hand, and the
-# gap between them is what let an over-permissive `NearBin` ship (see that classifier).
-# It is the range `scripts/tossing3d_oracle_demo.py --sweep` covers -- the whole swept
-# range, not the solving band inside it, because a sampler initialised on the answer
-# measures nothing about learning to find it.
+# `THROW_STANDOFF_BOUNDS` is the *feasible* range of throw standoffs and is what the
+# sampler below draws from. It is emphatically **not** the range
+# `RobotAtSuccessfulThrowPose` accepts: that band is derived per-call from the live goal
+# region and `THROW_RANGE`, and covers 3/13 of this interval. Those two used to be one
+# symbol, which
+# made `MoveToThrowPose`'s add effect constant-true and its sampler unlearnable -- see
+# `predicates.THROW_STANDOFF_BOUNDS`. It still lives in `predicates.py` rather than here
+# only because that is where its measured provenance is written down.
 
 
 class Tossing3DSkills:
@@ -113,7 +115,7 @@ class Tossing3DSkills:
 
     PICK: ClassVar[Skill] = Skill(
         name="Pick",
-        parameters=(_robot, _cube, _barrier, _bin),
+        parameters=(_robot, _cube, _barrier, _bin, _goal_region),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
@@ -125,20 +127,26 @@ class Tossing3DSkills:
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
             # pick_shelf drives the base to the cube: see choice 2.
-            LiftedAtom(predicate=NEAR_BIN, variables=(_robot, _bin)),
+            LiftedAtom(
+                predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE, variables=(_robot, _bin, _goal_region)
+            ),
         }),
         param_dim=2,
     )
 
     MOVE_TO_THROW_POSE: ClassVar[Skill] = Skill(
         name="MoveToThrowPose",
-        parameters=(_robot, _cube, _bin),
+        parameters=(_robot, _cube, _bin, _goal_region),
         # `Holding` rather than nothing: `move_to_target` here passes
         # `disable_collision_objects=["cube_0"]`, upstream's own argument, which is only
         # correct while the cube is in the gripper. Planning the base motion with the cube
         # ignored while it sits on the floor would drive straight through it.
         preconditions=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
-        add_effects=frozenset({LiftedAtom(predicate=NEAR_BIN, variables=(_robot, _bin))}),
+        add_effects=frozenset({
+            LiftedAtom(
+                predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE, variables=(_robot, _bin, _goal_region)
+            )
+        }),
         delete_effects=frozenset(),
         param_dim=1,
     )
@@ -148,7 +156,9 @@ class Tossing3DSkills:
         parameters=(_robot, _cube, _bin, _barrier, _goal_region),
         preconditions=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
-            LiftedAtom(predicate=NEAR_BIN, variables=(_robot, _bin)),
+            LiftedAtom(
+                predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE, variables=(_robot, _bin, _goal_region)
+            ),
         }),
         add_effects=frozenset({
             LiftedAtom(predicate=IN_GOAL_REGION, variables=(_cube, _goal_region)),

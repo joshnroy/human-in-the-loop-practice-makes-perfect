@@ -29,7 +29,12 @@ import pytest
 
 from hitl_pmp.core.method.types import LabeledAction
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment, Tossing3DTaskConfig
-from hitl_pmp.environments.tossing3d.predicates import IN_GOAL_REGION, InGoalRegionClassifier
+from hitl_pmp.environments.tossing3d.predicates import (
+    IN_GOAL_REGION,
+    THROW_RANGE,
+    InGoalRegionClassifier,
+    RobotAtSuccessfulThrowPoseClassifier,
+)
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
     ORACLE_PICK_DISTANCE,
@@ -164,6 +169,59 @@ def test_the_oracle_reproduces_the_recorded_coincident_landing_and_step_counts()
         assert state.get(obj=env.cube, feature_name="z") == pytest.approx(BIN_FLOOR_Z, abs=1e-3)
         assert env.is_solved()
         assert IN_GOAL_REGION.holds(state, (env.cube, env.goal_region))
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize(("standoff", "expected"), [(1.15, True), (1.45, False)])
+def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
+    *, standoff: float, expected: bool
+) -> None:
+    """**The calibration guard for `THROW_RANGE`.**
+
+    `RobotAtSuccessfulThrowPose` derives its acceptance band from live scene geometry plus
+    one calibrated constant: the distance a throw displaces the cube. Everything else is
+    read from the `State`, so this constant is the only thing that can go stale -- and it
+    goes stale silently, because a wrong value still yields a plausible-looking band. If
+    upstream changes the toss controller, the windup configuration, the cube's mass or the
+    physics step, this is what fails.
+
+    **The two standoffs are chosen to catch the specific wrong value.** `THROW_RANGE` is
+    the *impact* range, 1.275 m. The tempting mismeasurement is the free-floor rest
+    displacement, 1.3499 m, which is 0.075 m longer because it includes post-impact roll;
+    the cube only rolls when it misses, since on this config the bin sits on the goal
+    region and catches anything that lands inside. Under that wrong value the band shifts
+    from `[1.125, 1.425]` to `[1.200, 1.500]`, and **both** of these standoffs flip: 1.15
+    would be predicted a miss and 1.45 a hit. Measured over three scene seeds, 1.15 solves
+    3/3 and 1.45 solves 0/3, so the predicate must say exactly the opposite of the wrong
+    value at both points.
+
+    Asserted against the real episode outcome rather than against a recorded number, so
+    this is a check that the symbolic layer still describes the dynamics.
+    """
+    env = _env()
+    try:
+        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        for _ in range(3):
+            action = SkillOraclePolicy.get_labeled_action(
+                state=state, env=env, goal=goal, throw_standoff=standoff
+            )
+            state = env.take_action(action=action.action)
+            assert env.last_skill_error() is None, env.last_skill_error()
+            if action.label.startswith("MoveToThrowPose("):
+                predicted = RobotAtSuccessfulThrowPoseClassifier.holds(
+                    state=state, robot=env.robot, target=env.bin, goal_region=env.goal_region
+                )
+
+        assert predicted == expected, (
+            f"at standoff {standoff} the predicate says {predicted}, but it was measured "
+            f"to be {expected}. THROW_RANGE = {THROW_RANGE} is no longer calibrated."
+        )
+        assert env.is_solved() == expected, (
+            f"at standoff {standoff} the episode scored {env.is_solved()}, not {expected} "
+            "as measured -- the dynamics moved, so THROW_RANGE needs re-measuring."
+        )
     finally:
         env.close()
 

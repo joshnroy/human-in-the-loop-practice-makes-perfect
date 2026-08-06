@@ -120,8 +120,8 @@ def _missed_toss_dead_end() -> tuple[Tossing3DEnvironment, RandomSkillsMethod, S
     toss (the goal region is x in [1.85, 2.15], so the cube is outside it and the
     task is unsolved -- had it landed in, `run_task_episode`'s goal check would end
     the episode before ever calling the policy), and the base at x = 0.65 is a real
-    post-toss pose, so `NearBin` genuinely holds and the dead end is not an artifact
-    of the robot standing somewhere it could never be.
+    post-toss pose, so `RobotAtSuccessfulThrowPose` genuinely holds and the dead end is
+    not an artifact of the robot standing somewhere it could never be.
     """
     env = Tossing3DEnvironment()
     method = RandomSkillsMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)

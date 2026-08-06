@@ -30,11 +30,12 @@ class Tossing3DProblem(Problem):
         """The shortest solve plus two.
 
         The shortest solve is exactly three skills -- `Pick`, `MoveToThrowPose`, `Toss` --
-        and there is no shorter route, since `Toss` requires `Holding` and `NearBin` and
-        nothing else grants either. The `+ 2` is this repo's standing convention and is
-        deliberately small here: a generous horizon in a domain whose skills are
-        stochastic quietly becomes a retry dial, and in *this* domain a retry is not even
-        available -- after a toss the cube is past the barrier, `Reachable` is false, and
+        and there is no shorter route, since `Toss` requires both `Holding` and
+        `RobotAtSuccessfulThrowPose`, and nothing else grants either. The `+ 2` is this
+        repo's standing convention and is deliberately small here: a generous horizon in a
+        domain whose skills are stochastic quietly becomes a retry dial, and in *this*
+        domain a retry is not even available -- after a toss the cube is past the barrier,
+        `Reachable` is false, and
         no further skill applies. So the extra budget buys one recovery from a failed
         grasp and nothing more, which is the honest amount.
         """
