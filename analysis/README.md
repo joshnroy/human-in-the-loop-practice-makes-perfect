@@ -52,3 +52,12 @@ exactly one place those are computed, not a second copy living in `analysis/`.
   a run's own record and keys on nothing domain-specific, so it serves every `--env`
   — which is what distinguishes it from `scripts/tossingroomsplit_skill_traces.py`,
   whose overlapping tallies are Tossing-Room-only by construction.
+- `practice_makes_perfect/tossing3d_practice_diagnosis.py` — applies the decision rule
+  pre-registered in `docs/experiment-logs/2026-08-06-tossing3d-practice-diagnosis.md`
+  to a Tossing3D sweep and renders that log's figure. Domain-specific where the script
+  above is not, because the rule names this domain's three skills: the standoff
+  (`MoveToThrowPose`), the skill carrying the real success signal (`Toss`), and `Pick`
+  as the **positive control** — a run in which the control also shows zero informed
+  draws is reporting an instrument fault, and the module says so rather than
+  concluding. The verdict deliberately reads no episode counts; see its docstring for
+  why that is load-bearing on this domain today.
