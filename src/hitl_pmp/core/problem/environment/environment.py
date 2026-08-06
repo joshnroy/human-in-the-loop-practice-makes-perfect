@@ -56,6 +56,54 @@ class Environment(BaseModel, abc.ABC):
     def get_valid_actions(self) -> list[Action]:
         raise NotImplementedError
 
+    @abc.abstractmethod
+    def noop_action(self) -> Action:
+        """The action that means "do nothing" in *this* domain's action space.
+
+        A `Method` sometimes has to act without wanting to: a planner that finds no
+        plan still owes the harness an `Action` for this step, because ending the
+        episode is `Problem.run_task_episode`'s job and not the policy's. That
+        placeholder must be genuinely inert, or a method that failed to decide gets
+        scored on whatever the placeholder happened to trigger.
+
+        Only the environment can answer, which is why this lives here and not on
+        `Method`. `np.zeros(action_space.shape)` is the obvious guess, and across the
+        six domains here it is right for the wrong reason twice, wrong twice, and
+        right by construction once:
+
+        - **Ball-Ring**: slot 0 is binary and zero means *navigate*, so zeros is
+          "navigate to (0, 0)" -- it really moves the robot.
+        - **Tossing3D**: `pick_id == 0`, so zeros is a real `pick_shelf` at distance
+          0.0 -- a whole arm trajectory in the simulator.
+        - **the three Tossing Rooms**: `SKILL_PICKUP == 0`, so zeros *decodes as*
+          `Pickup`, but its item-kind argument also rounds to 0, which names no kind,
+          so nothing is written. Inert by coincidence of a second field, not by
+          design -- and anything reading the skill id mislabels it.
+        - **Light Switch**: both slots are deltas, so zeros is inert by construction.
+          This is the exception that made the guess look safe.
+
+        Abstract rather than a `np.zeros` default for exactly that reason: a default
+        here would be a plausible-looking answer that is silently wrong for the next
+        domain added, which is the defect this method exists to close. A few lines of
+        boilerplate per domain is the price of never re-opening it.
+
+        The contract is that the domain's own dynamics ignore it: it triggers no
+        skill and changes nothing a `Predicate` can observe. It is *not* a promise
+        that no bookkeeping moves -- a simulator-backed domain still counts the
+        transition (Tossing3D advances `steps_taken`), and the harness still charges
+        the step, which is correct: refusing to act is a choice that costs time.
+
+        Two things implementations may rely on and callers must respect. It may read
+        `current_state`, so it is only callable once the environment has one
+        (Ball-Ring's is the robot's own position, which is the only inert action its
+        bounded Box can express). And it must return an action within that domain's
+        own `action_space` *bounds*, since a `Method` may only emit actions from it --
+        bounds rather than literal `action_space.contains`, because every action in
+        this repo is float64 while a Box may be float32, and `contains` is False for
+        that pair repo-wide.
+        """
+        raise NotImplementedError
+
     def set_state(self, *, state: State) -> None:
         """External override: what happens when a human (via HumanOracle, called
         through Problem.execute_human_command) physically moves the real state --

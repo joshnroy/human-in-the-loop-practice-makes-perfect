@@ -149,6 +149,10 @@ class Tossing3DEnvironment(Environment):
     pick_id: ClassVar[int] = 0
     move_to_throw_pose_id: ClassVar[int] = 1
     toss_id: ClassVar[int] = 2
+    # Not a skill: the id `noop_action` carries, chosen outside the real ids so
+    # `_execute` falls through every branch. Negative rather than 3 so that adding a
+    # fourth controller can never silently turn every no-op into it.
+    noop_id: ClassVar[int] = -1
 
     # [skill_id, param_0, param_1]. Two parameter slots because `Pick` is the widest
     # skill (distance, rotation); `MoveToThrowPose` uses one and `Toss` none, and the
@@ -284,6 +288,20 @@ class Tossing3DEnvironment(Environment):
         over the reals, so there is no finite enumeration to return. A `Method` picks a
         `GroundSkill` and samples its parameters instead (see `skill_provider.py`)."""
         return []
+
+    def noop_action(self) -> Action:
+        """`noop_id` in slot 0, which `_execute` falls through as an unrecognised skill.
+
+        Emphatically not a zero vector: `pick_id == 0`, so `np.zeros(3)` is a real
+        `pick_shelf` at distance 0.0 -- a whole arm trajectory, and the concrete bug
+        this method exists to close. This is the one domain here where a wrong no-op
+        costs seconds of simulator time as well as a wrong state.
+
+        `take_action` still advances the scene's `steps_taken`, as it does for any
+        unrecognised action. That is the interface's contract, not a violation of it:
+        the world does not move, but the transition is still charged.
+        """
+        return np.array([float(self.noop_id), 0.0, 0.0])
 
     def set_state(self, *, state: State) -> None:
         """Adopt `state`, rebuilding the simulator from its seed when it is an initial one.

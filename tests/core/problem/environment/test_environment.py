@@ -20,6 +20,9 @@ class _DummyEnvironment(Environment):
     def get_valid_actions(self) -> list[Action]:
         return [np.array([1.0]), np.array([-1.0])]
 
+    def noop_action(self) -> Action:
+        return np.zeros(1)
+
     def hard_reset(self) -> None:
         self.set_state(state=_state(x=0.0))
 
@@ -27,6 +30,18 @@ class _DummyEnvironment(Environment):
 def test_environment_cannot_be_instantiated_directly() -> None:
     with pytest.raises(TypeError):
         Environment()  # type: ignore[abstract]
+
+
+def test_environment_declares_expected_abstract_methods() -> None:
+    """`noop_action` is deliberately abstract rather than defaulting to
+    `np.zeros(action_space.shape)`: that default is a real action on nearly every
+    domain in this repo, so inheriting it silently is the defect, not the fix."""
+    assert Environment.__abstractmethods__ == frozenset({
+        "take_action",
+        "get_valid_actions",
+        "noop_action",
+        "hard_reset",
+    })
 
 
 def test_get_current_state_raises_before_any_state_is_ever_set() -> None:

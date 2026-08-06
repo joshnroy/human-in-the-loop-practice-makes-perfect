@@ -25,6 +25,9 @@ class _Env(Environment):
     def get_valid_actions(self) -> list[Action]:
         raise NotImplementedError
 
+    def noop_action(self) -> Action:
+        raise NotImplementedError
+
     def hard_reset(self) -> None:
         raise NotImplementedError
 
