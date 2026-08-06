@@ -517,6 +517,53 @@ class TestTheBinningItself:
         assert sum(cell["informed"][1] + cell["random"][1] for cell in cells) == len(compared)
 
 
+class TestHoldingEvidenceFixedAndWindowingTimeFinely:
+    """The 2x2 splits time at the median of the whole run, which is far coarser than the
+    window a crossover is found in; a gap confined to the first window is invisible
+    there. This is the finer cut, and it is the one that showed the factorial's reading
+    did not survive."""
+
+    @staticmethod
+    def test_only_draws_meeting_the_landing_floor_are_windowed() -> None:
+        draws = [
+            Draw(
+                seed=0,
+                transitions=transitions,
+                target=0.5,
+                landed=False,
+                kind="informed",
+                prior_landings=landings,
+                prior_separation=0.0,
+            )
+            for transitions, landings in ((0, 0), (0, 1), (0, 5), (2500, 0), (2500, 7))
+        ]
+        records = TossingRoomSplitScaling.stratified_by_transitions(
+            draws=draws, bin_width=2500, landing_floor=2
+        )
+        # Only the two draws with >= 2 landings survive, one per window.
+        assert [record["informed"][1] for record in records] == [1, 1]
+
+    @staticmethod
+    def test_a_floor_no_draw_meets_yields_no_windows() -> None:
+        draws = [
+            Draw(
+                seed=0,
+                transitions=0,
+                target=0.5,
+                landed=True,
+                kind="informed",
+                prior_landings=1,
+                prior_separation=0.0,
+            )
+        ]
+        assert (
+            TossingRoomSplitScaling.stratified_by_transitions(
+                draws=draws, bin_width=2500, landing_floor=99
+            )
+            == []
+        )
+
+
 class TestTheSeparationSplitTheMechanismClaimRestsOn:
     @staticmethod
     def test_draws_are_split_by_whether_past_landings_already_spanned_the_tolerance() -> None:

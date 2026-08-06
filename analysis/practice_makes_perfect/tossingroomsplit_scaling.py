@@ -436,6 +436,27 @@ class TossingRoomSplitScaling:
         return TossingRoomSplitScaling.first_separating_bin(records=records, alpha=alpha)
 
     @staticmethod
+    def stratified_by_transitions(
+        *, draws: list[Draw], bin_width: int, landing_floor: int
+    ) -> list[dict]:
+        """Transition windows computed on draws that already have `landing_floor`
+        landings behind them -- the cut `factorial_split` is too coarse to make.
+
+        The 2x2 splits time at the median of all compared draws, which on a 25,000-
+        transition run is around 13,000 -- more than five standard runs, and far coarser
+        than the window where a crossover is actually found. A gap that is confined to
+        the first window or two is invisible at that resolution. Holding the landing
+        count at or above a floor and then windowing time finely is what tests whether
+        elapsed transitions still matter once evidence is held fixed, which is the one
+        question the factorial cannot answer on this domain: recycling takes almost
+        exactly one attempt per period, so its landings are near-linear in its
+        transitions and the two are confounded by construction."""
+        return TossingRoomSplitScaling.binned_by_transitions(
+            draws=[draw for draw in draws if draw.prior_landings >= landing_floor],
+            bin_width=bin_width,
+        )
+
+    @staticmethod
     def split_by_separation(
         *, draws: list[Draw], tolerance: float = _THROW_TOLERANCE
     ) -> list[dict]:
@@ -655,6 +676,14 @@ class TossingRoomSplitScaling:
             TossingRoomSplitScaling._print_comparisons(
                 records=TossingRoomSplitScaling.split_by_separation(draws=draws),
                 header="By whether the past landings already spanned the throw tolerance",
+            )
+
+            TossingRoomSplitScaling._print_comparisons(
+                records=TossingRoomSplitScaling.stratified_by_transitions(
+                    draws=draws, bin_width=bin_width, landing_floor=landing_threshold
+                )[:4],
+                header=f"Transition windows among draws with >= {landing_threshold} "
+                f"landings behind them (does the clock still matter at fixed evidence?)",
             )
 
             cells = TossingRoomSplitScaling.factorial_split(
