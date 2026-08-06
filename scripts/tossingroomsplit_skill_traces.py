@@ -103,6 +103,18 @@ class SkillTally(BaseModel):
     # pooling the two would wash the signal out.
     greedy_forces: list[float] = Field(default_factory=list)
     greedy_targets: list[float] = Field(default_factory=list)
+    # Throws only, and a STRICT SUBSET of the greedy draws above: the ones whose
+    # classifier scores actually ranked the candidates (`SamplerChoice.was_informed`).
+    # The rest of the greedy pool is `LearnedSkillSampler.sample`'s uniform fallback on
+    # a degenerate score vector -- a draw that carries no belief but is not an
+    # epsilon-random one either. Kept as its own bucket rather than replacing
+    # `greedy_*`, so the contaminated pool the previous log reported stays computable
+    # and the two can be compared directly.
+    informed_attempts: int = 0
+    informed_successes: int = 0
+    informed_landed: int = 0
+    informed_forces: list[float] = Field(default_factory=list)
+    informed_targets: list[float] = Field(default_factory=list)
 
 
 class PeriodLog(BaseModel):
@@ -134,6 +146,12 @@ class PeriodLog(BaseModel):
             else:
                 tally.greedy_forces.append(throw.force)
                 tally.greedy_targets.append(throw.target)
+                if throw.informed:
+                    tally.informed_attempts += 1
+                    tally.informed_successes += int(success)
+                    tally.informed_landed += int(throw.landed)
+                    tally.informed_forces.append(throw.force)
+                    tally.informed_targets.append(throw.target)
 
     def drain(self) -> dict:
         snapshot = {"skills": {name: tally.model_dump() for name, tally in self.skills.items()}}
@@ -162,6 +180,12 @@ class ThrowObservation(BaseModel):
     # findings.
     force: float
     target: float
+    # `SamplerChoice.was_informed` for the draw that produced this throw, read off the
+    # `_SkillAttempt` EesMethod already returns. It rides here rather than on
+    # `observe_outcome` because that is a `core.Method` signature and this is
+    # privileged instrumentation, exactly like `force`/`target` above. Defaulted so a
+    # test can construct a bare observation without asserting on the sampler.
+    informed: bool = False
 
 
 class TracingEesMethod(EesMethod):
@@ -203,12 +227,31 @@ class TracingEesMethod(EesMethod):
         )
         name = ground_skill.skill.name
         if self.practicing and name in ("ThrowTrash", "ThrowRecycling"):
+            # `record` is `None` exactly when the base class ran this skill with
+            # `explore=False`, which during practice happens only under
+            # `--reproduce-predicators-explore-target-only` (off by default, and off for
+            # every run this collector has been used for). Such a draw IS an argmax and
+            # may well have been informed, but the sampler's answer was not recorded, so
+            # it is counted as uninformed rather than guessed at -- which under that flag
+            # would over-report the uniform fallback. Asserted rather than left silent:
+            # the split is the point of this collector, and a run that quietly mislabels
+            # half of it is worse than one that stops.
+            assert record is not None, (
+                f"{name}: practiced with no sampler record, so the informed/uninformed "
+                "split cannot be measured -- --reproduce-predicators-explore-target-only "
+                "is not supported by this collector"
+            )
             self.pending_throws[name] = self._observe_throw(
-                name=name, state=state, force=float(labeled.action[2])
+                name=name,
+                state=state,
+                force=float(labeled.action[2]),
+                informed=record.was_informed_choice,
             )
         return labeled, record
 
-    def _observe_throw(self, *, name: str, state: State, force: float) -> ThrowObservation:
+    def _observe_throw(
+        self, *, name: str, state: State, force: float, informed: bool = False
+    ) -> ThrowObservation:
         env = self.env
         assert isinstance(env, TossingRoomSplitEnvironment)
         trash = name == "ThrowTrash"
@@ -229,6 +272,7 @@ class TracingEesMethod(EesMethod):
             prefilled=count >= 1,
             force=force,
             target=target,
+            informed=informed,
         )
 
     def observe_outcome(

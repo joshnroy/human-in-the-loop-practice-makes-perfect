@@ -606,6 +606,7 @@ class EesMethod(Method):
                         ground_skill=ground_skill, state=state, params=params
                     ),
                     was_random_exploration=choice.was_random,
+                    was_informed_choice=choice.was_informed,
                 )
                 if explore
                 else None
@@ -676,6 +677,15 @@ class _SkillAttempt(BaseModel):
     # is exactly the row that was scored -- see EesMethod.sampler_input_row.
     sampler_input: list[float]
     was_random_exploration: bool
+    # `SamplerChoice.was_informed`: the classifier's scores actually ranked the
+    # candidates, so these parameters reflect something it learned. Orthogonal to
+    # the flag above, and recorded for a different reader: `was_random_exploration`
+    # is what the competence models key on, while this one exists so an analysis can
+    # tell a trained classifier's greedy draw from the uniform fallback `sample`
+    # takes on a degenerate score vector. Pooling those two is what made the
+    # greedy-versus-random split in
+    # docs/experiment-logs/2026-08-05-tossingroomsplit-throw-rates.md provisional.
+    was_informed_choice: bool
 
 
 class _EesEpisode:

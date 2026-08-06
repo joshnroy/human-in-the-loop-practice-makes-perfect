@@ -27,6 +27,7 @@ ceiling-clipped percentage is neither large nor normal.
 import argparse
 import itertools
 import json
+import math
 import statistics
 from pathlib import Path
 
@@ -306,6 +307,49 @@ class TossingRoomComparison:
             if abs(statistic - total / 2) >= abs(observed - total / 2):
                 extreme += 1
         return {"n": num_pairs, "statistic": observed, "p": extreme / 2**num_pairs}
+
+    @staticmethod
+    def fisher_exact_two_sided(*, a: int, b: int, c: int, d: int) -> float:
+        """Two-sided Fisher exact test on the 2x2 table `[[a, b], [c, d]]`.
+
+        Lives here beside `wilcoxon_signed_rank` for the same reason that one does:
+        every analysis in this package that needs it imports this, so there is exactly
+        one hand-rolled significance test to get wrong and exactly one place it is
+        pinned against hand-computed values.
+
+        Wilcoxon is the right test for a per-seed *paired* comparison; this is the right
+        one for a pooled 2x2 of counts (an attempt-level rate against another), where
+        the arms have different, small and uneven denominators and there is no pairing
+        to exploit. Exact by enumeration over the hypergeometric null, which is free at
+        these table sizes -- and unlike a chi-square it stays valid when a cell count is
+        small, which on the recycling arm it always is.
+
+        The two-sided convention is the standard "sum every table no less likely than
+        the observed one"; the 1e-9 slack absorbs float error when two tables have
+        mathematically equal probability."""
+        if min(a, b, c, d) < 0:
+            raise ValueError(f"Fisher exact needs non-negative counts, got {(a, b, c, d)}.")
+        total = a + b + c + d
+        if total == 0:
+            raise ValueError("Fisher exact needs a non-empty table.")
+
+        def probability(*, top_left: int) -> float:
+            row, column = a + b, a + c
+            return (
+                math.comb(row, top_left)
+                * math.comb(total - row, column - top_left)
+                / math.comb(total, column)
+            )
+
+        row_total, column_total = a + b, a + c
+        observed = probability(top_left=a)
+        accumulated = 0.0
+        low = max(0, column_total - (total - row_total))
+        for top_left in range(low, min(row_total, column_total) + 1):
+            candidate = probability(top_left=top_left)
+            if candidate <= observed * (1 + 1e-9):
+                accumulated += candidate
+        return min(accumulated, 1.0)
 
     @staticmethod
     def print_paired_tests(*, arms: list[tuple[str, Path]], threshold: float) -> None:
