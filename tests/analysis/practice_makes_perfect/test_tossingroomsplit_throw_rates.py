@@ -730,6 +730,147 @@ class TestWhatTheSamplerActuallyAnswered:
         assert streaks == {4: 2}
 
 
+class TestSeparatingLearnedDrawsFromTheUniformFallback:
+    """A greedy draw is not automatically a learned one.
+
+    `LearnedSkillSampler.sample` falls back to a uniform draw when its scores cannot
+    rank the candidates, and reports `was_random=False` for it -- `was_random` means
+    "the epsilon-greedy branch fired", nothing more. So the old greedy pool mixes a
+    trained classifier's choices with draws that carry no belief, and the skill with
+    fewer observations spends longer in the second state. These are the statistics that
+    unpool them."""
+
+    @staticmethod
+    def _run(*, tallies: dict) -> list[dict]:
+        return [
+            {
+                "seed": 0,
+                "horizon": 12,
+                "sweeps": [{"transitions": 0, "solved": 0, "total": 2, "families": {}}],
+                "periods": [{"skills": tallies}],
+                "competence": [{}],
+            }
+        ]
+
+    @staticmethod
+    def test_landings_are_counted_against_informed_draws_not_all_greedy_ones() -> None:
+        tally = {
+            "attempts": 10,
+            "successes": 4,
+            "random_attempts": 4,
+            "random_successes": 1,
+            "landed": 4,
+            "landed_random": 1,
+            "prefilled": 0,
+            # Two of the six greedy draws came from a discriminating classifier, and
+            # `informed_*` is a strict subset of `greedy_*` -- the last two entries here.
+            # Misses of 0.60 and 0.50 exceed the 0.30 threshold; 0.00, 0.00, 0.00 and
+            # 0.05 do not. Distances stay clear of the threshold on both sides, since
+            # 0.9 - 0.6 is 0.30000000000000004 in binary floating point.
+            "greedy_forces": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            "greedy_targets": [0.1, 0.2, 0.9, 0.9, 0.5, 0.55],
+            "informed_attempts": 2,
+            "informed_successes": 1,
+            "informed_landed": 1,
+            "informed_forces": [0.5, 0.6],
+            "informed_targets": [0.5, 0.55],
+        }
+        traces = [
+            {
+                "label": "ees",
+                "seeds": TestSeparatingLearnedDrawsFromTheUniformFallback._run(
+                    tallies={"ThrowRecycling": tally}
+                ),
+            }
+        ]
+        assert TossingRoomSplitThrowRates.informed_landing_totals(traces=traces) == {
+            "ThrowRecycling": (1, 2)
+        }
+        # The old pool: six greedy draws, of which four were the uniform fallback.
+        assert TossingRoomSplitThrowRates.uninformed_greedy_totals(traces=traces) == {
+            "ThrowRecycling": (4, 6)
+        }
+        assert TossingRoomSplitThrowRates.per_seed_informed_draws(
+            traces=traces, skill="ThrowRecycling"
+        ) == {0: (2, 6)}
+        # Only the informed draws are asked whether they missed -- neither did, while
+        # the greedy pool they sit inside contains two that did. Reporting the pooled
+        # 2/6 as "what the sampler answered" is exactly the conflation being removed.
+        assert TossingRoomSplitThrowRates.informed_badly_missed_force_totals(
+            traces=traces, miss_threshold=0.30
+        ) == {"ThrowRecycling": (0, 2)}
+        assert TossingRoomSplitThrowRates.badly_missed_force_totals(
+            traces=traces, miss_threshold=0.30
+        ) == {"ThrowRecycling": (2, 6)}
+
+    @staticmethod
+    def test_the_epsilon_random_control_counts_only_random_draws() -> None:
+        """The control the informed rate is read against. It must come from
+        `landed_random`/`random_attempts` and never pick up a greedy landing, or the
+        comparison the log turns on would be the informed draws against themselves."""
+        tally = {
+            "attempts": 10,
+            "successes": 5,
+            "random_attempts": 4,
+            "random_successes": 1,
+            "landed": 5,
+            "landed_random": 1,
+            "prefilled": 0,
+            "greedy_forces": [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            "greedy_targets": [0.1, 0.2, 0.9, 0.9, 0.5, 0.55],
+            "informed_attempts": 2,
+            "informed_successes": 1,
+            "informed_landed": 1,
+            "informed_forces": [0.5, 0.6],
+            "informed_targets": [0.5, 0.55],
+        }
+        traces = [
+            {
+                "label": "ees",
+                "seeds": TestSeparatingLearnedDrawsFromTheUniformFallback._run(
+                    tallies={"ThrowRecycling": tally}
+                ),
+            }
+        ]
+        assert TossingRoomSplitThrowRates.random_landing_totals(traces=traces) == {
+            "ThrowRecycling": (1, 4)
+        }
+
+    @staticmethod
+    def test_a_p_value_below_the_printed_resolution_is_reported_as_an_inequality() -> None:
+        """`p = 0.0000` claims a p-value of zero, which no test returns."""
+        assert TossingRoomSplitThrowRates.format_p_value(p=1e-30) == "< 0.0001"
+        assert TossingRoomSplitThrowRates.format_p_value(p=1.0) == "1.0000"
+        assert TossingRoomSplitThrowRates.format_p_value(p=0.0078) == "0.0078"
+
+    @staticmethod
+    def test_traces_without_the_instrumentation_report_no_informed_draws() -> None:
+        """Backwards compatibility: the committed shards from before this split have no
+        `informed_*` keys, and must read as "nothing recorded" rather than raising."""
+        traces = [
+            {
+                "label": "ees",
+                "seeds": TestSeparatingLearnedDrawsFromTheUniformFallback._run(
+                    tallies={"ThrowRecycling": _throw(forces=[0.5, 0.6], targets=[0.5, 0.9])}
+                ),
+            }
+        ]
+        assert TossingRoomSplitThrowRates.informed_landing_totals(traces=traces) == {
+            "ThrowRecycling": (0, 0)
+        }
+        assert TossingRoomSplitThrowRates.uninformed_greedy_totals(traces=traces) == {
+            "ThrowRecycling": (2, 2)
+        }
+        # A skill with no recorded informed forces is omitted rather than reported as
+        # 0/0, matching `badly_missed_force_totals`' own convention for absent keys.
+        assert (
+            TossingRoomSplitThrowRates.informed_badly_missed_force_totals(
+                traces=traces, miss_threshold=0.30
+            )
+            == {}
+        )
+
+
 def _throw(*, forces: list[float], targets: list[float]) -> dict:
     """A throw tally whose greedy draws are given, with `landed` derived from the same
     0.1 tolerance the environment uses -- so a fixture cannot claim a landing its numbers

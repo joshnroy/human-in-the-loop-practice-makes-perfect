@@ -281,6 +281,80 @@ class TestTheForceEachSamplerChose:
         assert tally.greedy_targets == [0.83]
 
 
+class TestWhichGreedyDrawsTheClassifierActuallyInformed:
+    """A greedy draw is not automatically a *learned* one.
+
+    `LearnedSkillSampler.sample` falls back to a uniform draw whenever its scores fail
+    to rank the candidates -- unfitted, either single-class shortcut, or a saturated
+    plateau. Those draws report `was_random=False`, so before this split they were
+    pooled with the trained classifier's choices and reported as evidence of what the
+    sampler had learned. `informed_*` is the subset that really is."""
+
+    @staticmethod
+    def test_an_uninformed_greedy_draw_counts_as_greedy_but_not_as_informed() -> None:
+        log = PeriodLog()
+        log.record(
+            name="ThrowRecycling",
+            success=False,
+            was_random=False,
+            throw=ThrowObservation(
+                landed=False, prefilled=False, force=0.02, target=0.83, informed=False
+            ),
+        )
+        log.record(
+            name="ThrowRecycling",
+            success=True,
+            was_random=False,
+            throw=ThrowObservation(
+                landed=True, prefilled=False, force=0.83, target=0.83, informed=True
+            ),
+        )
+        tally = log.skills["ThrowRecycling"]
+        assert tally.greedy_forces == [0.02, 0.83]
+        assert tally.informed_attempts == 1
+        assert tally.informed_successes == 1
+        assert tally.informed_landed == 1
+        assert tally.informed_forces == [0.83]
+        assert tally.informed_targets == [0.83]
+
+    @staticmethod
+    def test_an_epsilon_random_draw_is_never_counted_as_informed() -> None:
+        log = PeriodLog()
+        log.record(
+            name="ThrowTrash",
+            success=True,
+            was_random=True,
+            throw=ThrowObservation(
+                landed=True, prefilled=False, force=0.5, target=0.5, informed=False
+            ),
+        )
+        assert log.skills["ThrowTrash"].informed_attempts == 0
+
+    @staticmethod
+    def test_a_real_run_records_informed_draws_as_a_subset_of_its_greedy_ones() -> None:
+        trace = _traced()
+        seen_greedy = 0
+        seen_informed = 0
+        for period in trace["periods"]:
+            for name, record in period["skills"].items():
+                if not name.startswith("Throw"):
+                    continue
+                greedy = record["attempts"] - record["random_attempts"]
+                assert record["informed_attempts"] <= greedy, name
+                assert len(record["informed_forces"]) == record["informed_attempts"], name
+                assert len(record["informed_targets"]) == record["informed_attempts"], name
+                assert record["informed_successes"] <= record["informed_attempts"], name
+                assert record["informed_landed"] <= record["informed_attempts"], name
+                seen_greedy += greedy
+                seen_informed += record["informed_attempts"]
+        # Non-vacuity, and the claim the split exists for: this fixture's 4 cycles
+        # never buy either throw sampler a classifier that discriminates, so every one
+        # of its greedy draws is the uniform fallback. The two pools genuinely differ,
+        # which is exactly what pooling them hid.
+        assert seen_greedy > 0
+        assert seen_informed < seen_greedy
+
+
 def test_every_sweep_carries_a_per_goal_family_breakdown_that_sums_to_the_total() -> None:
     """The per-family counts are read back as `x/y`, never as a percentage, so the
     denominators have to be present and consistent with the aggregate."""

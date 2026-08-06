@@ -357,6 +357,202 @@ class TossingRoomSplitThrowRates:
     # ------------------------------------------- what the sampler actually answered
 
     @staticmethod
+    def format_p_value(*, p: float) -> str:
+        """`p = 0.0000` claims a p-value of zero, which no test returns. Anything below
+        the printed resolution is reported as an inequality instead."""
+        return "< 0.0001" if p < 0.0001 else f"{p:.4f}"
+
+    @staticmethod
+    def random_landing_totals(*, traces: list[dict]) -> dict[str, tuple[int, int]]:
+        """`{skill: (landings, attempts)}` over the epsilon-random draws.
+
+        This is the control the informed rate has to beat to mean anything: a learned
+        sampler landing at its own coin-flip rate has learned nothing, and no pooled
+        greedy number can say that. It is a separate method rather than an inline sum
+        inside the figure because it is the decisive comparison on the page, and every
+        other statistic here goes through a tested one."""
+        totals: dict[str, tuple[int, int]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            for period in run["periods"]:
+                for name, tally in period["skills"].items():
+                    landed, attempts = totals.get(name, (0, 0))
+                    totals[name] = (
+                        landed + tally.get("landed_random", 0),
+                        attempts + tally.get("random_attempts", 0),
+                    )
+        return totals
+
+    @staticmethod
+    def informed_landing_totals(*, traces: list[dict]) -> dict[str, tuple[int, int]]:
+        """`{skill: (landings, attempts)}` over the greedy draws a classifier that
+        actually *discriminated* among the candidates made.
+
+        This is `greedy_success_totals` with the contamination removed.
+        `LearnedSkillSampler.sample` returns a uniform draw whenever its scores fail to
+        rank the candidates -- unfitted, either single-class shortcut, or a saturated
+        plateau -- and reports `was_random=False` for it, because `was_random` means
+        specifically "the epsilon-greedy branch fired". Those draws are therefore greedy
+        by the old split while carrying no belief at all, and the skill with fewer
+        observations spends longer in that state, which is exactly the asymmetry this
+        experiment measures. Reported beside the greedy column, never instead of it."""
+        totals: dict[str, tuple[int, int]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            for period in run["periods"]:
+                for name, tally in period["skills"].items():
+                    landed, attempts = totals.get(name, (0, 0))
+                    totals[name] = (
+                        landed + tally.get("informed_landed", 0),
+                        attempts + tally.get("informed_attempts", 0),
+                    )
+        return totals
+
+    @staticmethod
+    def uninformed_greedy_totals(*, traces: list[dict]) -> dict[str, tuple[int, int]]:
+        """`{skill: (uninformed greedy draws, greedy draws)}` -- how much of the old
+        "learned-sampler" pool was the uniform fallback rather than a learned choice.
+
+        On a shard collected before the `was_informed` instrumentation this reports
+        every greedy draw as uninformed, because absent is indistinguishable from zero
+        here. That is why `print_informed_split` gates on `informed_landing_totals`
+        first: read this number on its own from a legacy shard and it says 100%
+        fallback, which is a statement about the instrumentation, not the sampler."""
+        totals: dict[str, tuple[int, int]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            for period in run["periods"]:
+                for name, tally in period["skills"].items():
+                    greedy = tally["attempts"] - tally.get("random_attempts", 0)
+                    uninformed, drawn = totals.get(name, (0, 0))
+                    totals[name] = (
+                        uninformed + greedy - tally.get("informed_attempts", 0),
+                        drawn + greedy,
+                    )
+        return totals
+
+    @staticmethod
+    def per_seed_informed_draws(*, traces: list[dict], skill: str) -> dict[int, tuple[int, int]]:
+        """`{seed: (informed draws, greedy draws)}` for one skill.
+
+        The pooled count hides that the recycling sampler's whole budget is single
+        digits per run, so the per-seed split is what says whether the pooled number is
+        a central value or one seed's."""
+        per_seed: dict[int, tuple[int, int]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            informed = 0
+            greedy = 0
+            for period in run["periods"]:
+                tally = period["skills"].get(skill)
+                if tally is None:
+                    continue
+                greedy += tally["attempts"] - tally.get("random_attempts", 0)
+                informed += tally.get("informed_attempts", 0)
+            per_seed[run["seed"]] = (informed, greedy)
+        return per_seed
+
+    @staticmethod
+    def informed_badly_missed_force_totals(
+        *, traces: list[dict], miss_threshold: float
+    ) -> dict[str, tuple[int, int]]:
+        """`badly_missed_force_totals` restricted to the draws a discriminating
+        classifier made -- "did what it *learned* point somewhere wrong", rather than
+        "did the pool that includes its uniform fallback point somewhere wrong"."""
+        totals: dict[str, tuple[int, int]] = {}
+        for run in TossingRoomSplitThrowRates.runs(traces=traces):
+            for period in run["periods"]:
+                for name, tally in period["skills"].items():
+                    forces = tally.get("informed_forces")
+                    targets = tally.get("informed_targets")
+                    if forces is None or targets is None:
+                        continue
+                    missed, drawn = totals.get(name, (0, 0))
+                    totals[name] = (
+                        missed
+                        + sum(
+                            1
+                            for force, target in zip(forces, targets, strict=True)
+                            if abs(force - target) > miss_threshold
+                        ),
+                        drawn + len(forces),
+                    )
+        return totals
+
+    @staticmethod
+    def print_informed_split(*, traces: list[dict]) -> None:
+        """Results (4) and (6) with the greedy pool separated into the draws a
+        discriminating classifier made and the uniform fallback."""
+        informed = TossingRoomSplitThrowRates.informed_landing_totals(traces=traces)
+        if not any(attempts for _landed, attempts in informed.values()):
+            print(
+                "\nNo informed/uninformed split recorded -- these traces predate the "
+                "was_informed instrumentation."
+            )
+            return
+        uninformed = TossingRoomSplitThrowRates.uninformed_greedy_totals(traces=traces)
+        missed = TossingRoomSplitThrowRates.informed_badly_missed_force_totals(
+            traces=traces, miss_threshold=_BADLY_MISSED_THRESHOLD
+        )
+        print("\nGreedy draws split by whether the classifier discriminated")
+        header = (
+            f"{'skill':>18}{'uninformed/greedy':>20}{'landed/informed':>18}"
+            f"{'missed >0.30/informed':>24}"
+        )
+        print(header)
+        print("-" * len(header))
+        for skill in _SKILL_STYLES:
+            u_count, u_total = uninformed.get(skill, (0, 0))
+            i_landed, i_total = informed.get(skill, (0, 0))
+            m_count, m_total = missed.get(skill, (0, 0))
+            print(
+                f"{skill:>18}{f'{u_count}/{u_total}':>20}"
+                f"{f'{i_landed}/{i_total}':>18}{f'{m_count}/{m_total}':>24}"
+            )
+        trash = informed.get("ThrowTrash", (0, 0))
+        recyc = informed.get("ThrowRecycling", (0, 0))
+        if trash[1] and recyc[1]:
+            gap = trash[0] / trash[1] - recyc[0] / recyc[1]
+            mde = TossingRoomSplitThrowRates.minimum_detectable_effect(
+                n_first=trash[1], n_second=recyc[1]
+            )
+            p = TossingRoomComparison.fisher_exact_two_sided(
+                a=trash[0], b=trash[1] - trash[0], c=recyc[0], d=recyc[1] - recyc[0]
+            )
+            print(f"  informed gap (TRASH - RECYCLING) {100 * gap:+.2f}pp")
+            print(f"  minimum detectable effect (80%)  {100 * mde:.2f}pp")
+            shown = TossingRoomSplitThrowRates.format_p_value(p=p)
+            print(f"  Fisher exact (pooled 2x2)        p = {shown}")
+
+        # The decisive comparison: each skill's learned draws against its OWN coin flip.
+        # A sampler that cannot beat this has learned nothing, however good the
+        # cross-skill gap looks.
+        random_draws = TossingRoomSplitThrowRates.random_landing_totals(traces=traces)
+        print("\n  each skill's informed draws against its own epsilon-random control")
+        header = (
+            f"{'skill':>18}{'landed/informed':>18}{'landed/random':>16}{'gap':>10}{'Fisher p':>12}"
+        )
+        print(header)
+        print("-" * len(header))
+        for skill in _SKILL_STYLES:
+            i_landed, i_total = informed.get(skill, (0, 0))
+            r_landed, r_total = random_draws.get(skill, (0, 0))
+            if not (i_total and r_total):
+                continue
+            gap = i_landed / i_total - r_landed / r_total
+            p = TossingRoomComparison.fisher_exact_two_sided(
+                a=i_landed, b=i_total - i_landed, c=r_landed, d=r_total - r_landed
+            )
+            print(
+                f"{skill:>18}{f'{i_landed}/{i_total}':>18}{f'{r_landed}/{r_total}':>16}"
+                f"{f'{100 * gap:+.2f}pp':>10}"
+                f"{TossingRoomSplitThrowRates.format_p_value(p=p):>12}"
+            )
+        print("\n  per seed, informed/greedy draws")
+        for skill in _SKILL_STYLES:
+            per_seed = TossingRoomSplitThrowRates.per_seed_informed_draws(
+                traces=traces, skill=skill
+            )
+            shown = ", ".join(f"{per_seed[s][0]}/{per_seed[s][1]}" for s in sorted(per_seed))
+            print(f"{skill:>18}  {shown}")
+
+    @staticmethod
     def badly_missed_force_totals(
         *, traces: list[dict], miss_threshold: float
     ) -> dict[str, tuple[int, int]]:
@@ -772,6 +968,7 @@ class TossingRoomSplitThrowRates:
         TossingRoomSplitThrowRates.print_landing_audit(traces=traces)
         TossingRoomSplitThrowRates.print_switch_audit(traces=traces)
         TossingRoomSplitThrowRates.print_sampler_answers(traces=traces)
+        TossingRoomSplitThrowRates.print_informed_split(traces=traces)
 
     @staticmethod
     def print_switch_audit(*, traces: list[dict]) -> None:
@@ -1168,6 +1365,105 @@ class TossingRoomSplitThrowRates:
         fig.tight_layout()
         fig.savefig(output, dpi=150)
 
+    @staticmethod
+    def render_informed_split(*, traces: list[dict], output: Path) -> None:
+        """Results (4) and (6) drawn, per seed rather than pooled.
+
+        Left: how much of each seed's "learned-sampler" pool was actually a
+        discriminating classifier, against how much was `sample`'s uniform fallback.
+        Right: the landing rate over the informed draws alone, one point per seed, with
+        the pooled rate as a line. Ten seeds and single-digit recycling denominators
+        mean a bar chart of two means would hide everything that matters here."""
+        informed_pooled = TossingRoomSplitThrowRates.informed_landing_totals(traces=traces)
+        random_pooled = TossingRoomSplitThrowRates.random_landing_totals(traces=traces)
+        fig, (split_ax, rate_ax) = plt.subplots(1, 2, figsize=(12.5, 4.6))
+
+        seeds = sorted(run["seed"] for run in TossingRoomSplitThrowRates.runs(traces=traces))
+        width = 0.38
+        for offset, skill in zip((-width / 2, width / 2), _SKILL_STYLES, strict=True):
+            per_seed = TossingRoomSplitThrowRates.per_seed_informed_draws(
+                traces=traces, skill=skill
+            )
+            colour, _linestyle = _SKILL_STYLES[skill]
+            positions = [index + offset for index in range(len(seeds))]
+            informed = [per_seed.get(seed, (0, 0))[0] for seed in seeds]
+            greedy = [per_seed.get(seed, (0, 0))[1] for seed in seeds]
+            split_ax.bar(
+                positions,
+                greedy,
+                width=width,
+                color=colour,
+                alpha=0.28,
+                label=f"{skill}: all greedy draws",
+            )
+            split_ax.bar(
+                positions,
+                informed,
+                width=width,
+                color=colour,
+                label=f"{skill}: classifier discriminated",
+            )
+        split_ax.set_xticks(range(len(seeds)))
+        split_ax.set_xticklabels([str(seed) for seed in seeds])
+        split_ax.set_xlabel("seed")
+        split_ax.set_ylabel("draws (count, not a rate)")
+        split_ax.set_title("How many 'learned-sampler' draws were actually learned")
+        split_ax.legend(fontsize=8)
+
+        for skill in _SKILL_STYLES:
+            colour, _linestyle = _SKILL_STYLES[skill]
+            xs = []
+            ys = []
+            for run in TossingRoomSplitThrowRates.runs(traces=traces):
+                landed = 0
+                attempts = 0
+                for period in run["periods"]:
+                    tally = period["skills"].get(skill)
+                    if tally is None:
+                        continue
+                    landed += tally.get("informed_landed", 0)
+                    attempts += tally.get("informed_attempts", 0)
+                if attempts:
+                    xs.append(seeds.index(run["seed"]))
+                    ys.append(landed / attempts)
+            rate_ax.scatter(xs, ys, color=colour, label=f"{skill} (per seed)", zorder=3)
+            pooled_landed, pooled_attempts = informed_pooled.get(skill, (0, 0))
+            if pooled_attempts:
+                rate_ax.axhline(
+                    pooled_landed / pooled_attempts,
+                    color=colour,
+                    linestyle="--",
+                    linewidth=1.2,
+                    label=f"{skill} informed {pooled_landed}/{pooled_attempts}",
+                )
+            # The control the informed rate has to beat to mean anything: the same
+            # skill's own epsilon-random draws. A learned sampler sitting on its own
+            # coin-flip line has learned nothing, which no pooled greedy number can say.
+            random_landed, random_attempts = random_pooled.get(skill, (0, 0))
+            if random_attempts:
+                rate_ax.axhline(
+                    random_landed / random_attempts,
+                    color=colour,
+                    linestyle=":",
+                    linewidth=1.6,
+                    label=f"{skill} epsilon-random {random_landed}/{random_attempts}",
+                )
+        rate_ax.set_xticks(range(len(seeds)))
+        rate_ax.set_xticklabels([str(seed) for seed in seeds])
+        rate_ax.set_xlabel("seed (a seed with no informed draw has no point)")
+        rate_ax.set_ylabel("landed / informed draws")
+        rate_ax.set_ylim(-0.05, 1.05)
+        rate_ax.set_title("Landing rate over informed draws, against the coin-flip control")
+        rate_ax.legend(fontsize=7)
+
+        fig.suptitle(
+            "Separating a trained classifier's greedy draws from sample()'s uniform "
+            "fallback, per seed",
+            fontsize=12,
+        )
+        fig.tight_layout()
+        fig.savefig(output, dpi=150)
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1192,6 +1488,13 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Second figure: one line per seed rather than a mean, the distribution of "
         "every seed-checkpoint score, and the force each sampler actually chose.",
+    )
+    parser.add_argument(
+        "--informed-output",
+        type=Path,
+        default=None,
+        help="Third figure: the greedy pool split per seed into the draws a "
+        "discriminating classifier made and sample()'s uniform fallback.",
     )
     return parser.parse_args()
 
@@ -1219,6 +1522,10 @@ def main() -> int:
         args.per_seed_output.parent.mkdir(parents=True, exist_ok=True)
         TossingRoomSplitThrowRates.render_per_seed(traces=traces, output=args.per_seed_output)
         print(f"wrote {args.per_seed_output}")
+    if args.informed_output is not None:
+        args.informed_output.parent.mkdir(parents=True, exist_ok=True)
+        TossingRoomSplitThrowRates.render_informed_split(traces=traces, output=args.informed_output)
+        print(f"wrote {args.informed_output}")
     return 0
 
 

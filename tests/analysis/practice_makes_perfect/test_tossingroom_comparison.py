@@ -220,3 +220,49 @@ def test_per_seed_counts_returns_the_recorded_integers_not_a_rounded_rate(
         "final": (30, 30),
         "worst": (30, 30),
     }
+
+
+class TestFisherExact:
+    """Pinned against hand-computable tables, for the same reason the Wilcoxon is: this
+    is the second hand-rolled significance test in the package, and an untested one is
+    how a sign error gets published."""
+
+    @staticmethod
+    def test_a_table_with_no_association_returns_one() -> None:
+        """Perfectly balanced 2x2: every arrangement is at least as likely as observed."""
+        assert TossingRoomComparison.fisher_exact_two_sided(a=5, b=5, c=5, d=5) == 1.0
+
+    @staticmethod
+    def test_the_textbook_tea_tasting_table() -> None:
+        """Fisher's own lady-tasting-tea design, 4 of 8 chosen with all 4 correct. The
+        one-sided probability of the observed table is 1/70, and the two-sided p sums
+        the mirror-image table as well: 2/70."""
+        p = TossingRoomComparison.fisher_exact_two_sided(a=4, b=0, c=0, d=4)
+        assert abs(p - 2 / 70) < 1e-12
+
+    @staticmethod
+    def test_the_null_this_experiment_reports_is_reproducible() -> None:
+        """11/56 against 11/57 -- ThrowRecycling's informed draws against its own
+        epsilon-random control, the null result the split-throw log turns on."""
+        p = TossingRoomComparison.fisher_exact_two_sided(a=11, b=45, c=11, d=46)
+        assert p == 1.0
+
+    @staticmethod
+    def test_a_large_real_effect_is_far_below_the_reporting_resolution() -> None:
+        """208/301 against 61/310 -- ThrowTrash's informed draws against its control."""
+        p = TossingRoomComparison.fisher_exact_two_sided(a=208, b=93, c=61, d=249)
+        assert p < 1e-30
+
+    @staticmethod
+    def test_the_test_is_symmetric_under_swapping_the_rows() -> None:
+        first = TossingRoomComparison.fisher_exact_two_sided(a=208, b=93, c=61, d=249)
+        second = TossingRoomComparison.fisher_exact_two_sided(a=61, b=249, c=208, d=93)
+        assert abs(first - second) < 1e-15
+
+    @staticmethod
+    def test_a_negative_count_is_rejected() -> None:
+        try:
+            TossingRoomComparison.fisher_exact_two_sided(a=-1, b=1, c=1, d=1)
+        except ValueError:
+            return
+        raise AssertionError("expected a ValueError for a negative cell count")

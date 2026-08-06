@@ -566,11 +566,12 @@ class SamplerChoice(BaseModel):
       candidates, so this parameter vector reflects something it learned". It is an
       *analysis* signal: without it, a greedy draw made on a degenerate score vector
       is indistinguishable in the record from one a trained classifier chose, and any
-      greedy-versus-random statistic silently pools the two. Nothing records it yet
-      -- `EesMethod._SkillAttempt` still carries only `was_random_exploration`. The
-      collector and analysis that consume it are the follow-up this PR is stacked
-      under; the flag ships here because `sample` is the only place the distinction
-      can be observed.
+      greedy-versus-random statistic silently pools the two. It is recorded through
+      `EesMethod._SkillAttempt.was_informed_choice` into
+      `scripts/tossingroomsplit_skill_traces.py`'s `informed_*` tallies. Pooling the
+      two inverted a published conclusion once already: recycling's greedy draws
+      landed 22/103 while the informed subset landed 11/56, which is its own
+      epsilon-random rate.
 
     Exactly three of the four combinations are reachable. A draw can be neither
     (`was_random=False, was_informed=False`): that is deviation 6's fallback, an
