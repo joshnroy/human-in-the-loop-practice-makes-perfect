@@ -5,7 +5,9 @@ import imageio
 import pytest
 
 from hitl_pmp.config_snapshot import ConfigSnapshot
+from hitl_pmp.core.method.types import Policy
 from hitl_pmp.core.metrics.metrics import Metrics
+from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
 from hitl_pmp.environments.lightswitch.renderer import LightSwitchRenderer
@@ -358,3 +360,137 @@ def test_run_rejects_record_full_loop_when_the_domain_has_no_renderer(*, tmp_pat
             renderer=None,
             render_fps=2,
         )
+
+
+class _CountingPlanMethod(SkillOracleMethod):
+    """Reports a planning attempt per policy call, so a test can decode which calls
+    landed in which bucket. Practice and evaluation are charged different amounts, so
+    the two are separable in the recorded totals -- 1 per evaluation policy, 100 per
+    practice policy, and one failure per ten attempts."""
+
+    attempts: int = 0
+
+    def get_task_policy(self, *, task: Task) -> Policy:
+        self.attempts += 1
+        return super().get_task_policy(task=task)
+
+    def get_practice_policy(self, *, task: Task) -> Policy:
+        self.attempts += 100
+        return super().get_task_policy(task=task)
+
+    def planning_outcomes(self) -> tuple[int, int]:
+        return (self.attempts // 10, self.attempts)
+
+
+def test_each_planning_bucket_covers_one_evaluation_sweep_and_the_practice_after_it() -> None:
+    """Pins the window, which is not the obvious one and is easy to misread as
+    "cycle i's practice". `on_cycle_end` fires after cycle i's practice and *before*
+    cycle i's sweep, so bucket i is (sweep i, practice i) and the trailing bucket is
+    the final sweep alone -- a different kind of window, not a short cycle.
+
+    Decoded from a Method charging 1 per evaluation policy and 100 per practice
+    policy, with 2 test tasks: 2 + 100 for each of the first two buckets, 2 for the
+    last. Recorded here rather than only in prose because anyone plotting these
+    against `evaluations`' transition counts needs to know about the offset."""
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(num_test_tasks=2),
+        method=_CountingPlanMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        renderer=None,
+        render_fps=2,
+    )
+    assert len(metrics.planning_attempts_per_cycle) == len(metrics.evaluations) == 3
+    assert metrics.planning_attempts_per_cycle == [102, 102, 2]
+    assert metrics.planning_failures_per_cycle == [10, 10, 0]
+    assert metrics.total_planning_outcomes() == (20, 206)
+
+
+def test_a_method_that_never_plans_reports_zero_out_of_zero() -> None:
+    """The oracle carries no planner, so its buckets must be present-and-zero rather
+    than absent -- "planned fine" and "did not plan" have to stay distinguishable from
+    a run's own stats.json."""
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(num_test_tasks=2),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    assert metrics.planning_failures_per_cycle == [0]
+    assert metrics.planning_attempts_per_cycle == [0]
+    assert metrics.total_planning_outcomes() == (0, 0)
+
+
+def test_planning_outcomes_reach_stats_json(*, tmp_path: Path) -> None:
+    """The fields are only useful if they survive to the file a sweep reads back."""
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=2, output_dir=tmp_path),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    restored = Metrics.model_validate_json((tmp_path / "stats.json").read_text())
+    assert restored.planning_failures_per_cycle == [0]
+    assert restored.planning_attempts_per_cycle == [0]
+
+
+class _AlwaysFailsToPlanMethod(SkillOracleMethod):
+    """Every planner call found no plan -- the shape of the defect that motivated
+    counting them at all. Counters start at zero and rise during the run, like a real
+    Method's: a fake returning a constant would be differenced away to nothing, which
+    is exactly the reused-instance protection working."""
+
+    attempts: int = 0
+
+    def get_task_policy(self, *, task: Task) -> Policy:
+        self.attempts += 1
+        return super().get_task_policy(task=task)
+
+    def planning_outcomes(self) -> tuple[int, int]:
+        return (self.attempts, self.attempts)
+
+
+def test_planning_failures_are_printed_beside_the_success_rate(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The original defect was a clean-looking 0/5 with nothing on the console saying
+    planning had failed. As an x/y, never a bare count: against EES's speculative
+    planning a numerator alone does not distinguish a healthy run from a broken one."""
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=2),
+        method=_AlwaysFailsToPlanMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    assert "planning failures: 2/2 planner calls found no plan" in capsys.readouterr().out
+
+
+def test_a_run_whose_planner_never_failed_prints_nothing_extra(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A healthy run's console output is exactly what it was before this change."""
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=2),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    assert "planning failures" not in capsys.readouterr().out

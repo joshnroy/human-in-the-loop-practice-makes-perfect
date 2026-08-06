@@ -102,6 +102,30 @@ class Method(BaseModel, abc.ABC):
         sweep drop exactly one observation per period rather than a number that
         varies with the interval."""
 
+    def planning_outcomes(self) -> tuple[int, int]:
+        """(failures, attempts) for this Method's own planning so far, cumulative over
+        the whole run. `(0, 0)` for a Method that does not plan.
+
+        Read by method_runner.py once per cycle and differenced into
+        `Metrics.record_planning_outcomes`, so what lands in stats.json is per-window
+        while all a Method maintains is two monotonic counters -- the cheaper half of
+        the job, and the half that cannot get out of step with the loop's cadence.
+
+        A *pair*, never a bare failure count: EES asks its planner speculatively, so a
+        failure there is often routine and the number is uninterpretable without what
+        it is out of. Returning both together is what makes it impossible to report one
+        without the other -- see Metrics.record_planning_outcomes.
+
+        Concrete default, for the same reason as end_cycle: every baseline built so far
+        plans nothing, and none of them should need boilerplate to say so. A planning
+        Method overrides it (EesMethod does).
+
+        On Method rather than Metrics because only the Method knows -- a
+        `PlanningFailure` is caught deep inside its own policy, where the harness
+        cannot see it. Pulling a counter at a known boundary is what keeps this from
+        needing a Metrics reference threaded down into every Method."""
+        return (0, 0)
+
     def end_cycle(self) -> None:
         """Called by practice_loop.py once after each interaction period, before
         that cycle's evaluation sweep -- the hook where a learning Method

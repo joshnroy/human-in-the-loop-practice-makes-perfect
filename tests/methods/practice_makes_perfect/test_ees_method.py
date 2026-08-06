@@ -21,6 +21,7 @@ from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillPro
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
+from hitl_pmp.planning.fast_downward import PlanningFailure
 
 
 def _build(*, grid_size: int = 4, seed: int = 0) -> tuple[EesMethod, LightSwitchEnvironment]:
@@ -885,3 +886,44 @@ def test_the_no_plan_no_op_really_leaves_the_environment_alone() -> None:
     env.take_action(action=labeled.action)
     after = env.get_current_state()
     assert {obj.name: tuple(features) for obj, features in after.data.items()} == before
+
+
+def test_a_failed_plan_is_counted_where_nothing_recorded_it_before() -> None:
+    """The `??robot` defect cost an hour of silent nonsense: EES caught
+    PlanningFailure every single step, degraded to a no-op, and the run exited 0 with
+    a full stats.json reporting 0/5. Nothing anywhere recorded that planning had
+    failed, so "the method scored zero" could not be told from "the method never
+    planned" without re-running it by hand.
+
+    Counted inside plan_to rather than at any catch site, so the three existing
+    `except PlanningFailure:` handlers -- and any future one -- cannot diverge."""
+    method, env = _build()
+    unreachable = frozenset({
+        ADJACENT(
+            state=env.build_initial_state(light_level=0.0, light_target=0.5),
+            objects=(env.get_cells()[0], env.get_cells()[0]),
+        )
+    })
+    assert method.planning_outcomes() == (0, 0)
+
+    with pytest.raises(PlanningFailure):
+        method.plan_to(init_atoms=frozenset(), goal=unreachable, costs=method.skill_costs())
+
+    assert method.planning_outcomes() == (1, 1)
+
+
+def test_a_successful_plan_is_not_counted_as_a_failure() -> None:
+    """Guards the opposite error: a counter that ticks on every call would report a
+    healthy run as a catastrophic one, which is worse than reporting nothing."""
+    method, env = _build()
+    tasks = LightSwitchTasks(env=env, seed=0)
+    task = tasks.sample_train_task()
+
+    plan = method.plan_to(
+        init_atoms=method.abstract_state(state=task.initial_state),
+        goal=task.goal.atoms,
+        costs=method.skill_costs(),
+    )
+
+    assert plan
+    assert method.planning_outcomes() == (0, 1)
