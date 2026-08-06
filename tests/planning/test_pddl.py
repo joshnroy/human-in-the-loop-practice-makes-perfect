@@ -3,6 +3,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from hitl_pmp.core.method.types import LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Object, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
@@ -204,6 +206,60 @@ def test_domain_str_is_deterministic_regardless_of_input_order() -> None:
         types=(_CELL_TYPE, _ROBOT_TYPE),
     )
     assert shuffled == _domain()
+
+
+def test_domain_str_rejects_a_variable_that_already_carries_the_question_mark() -> None:
+    """The writer owns the "?" (see `_variable_str`). A `Variable` declared as "?robot"
+    renders "??robot", which Fast Downward's translator splits into two tokens and exits
+    31 on -- and `EesMethod._next_plan` catches that `PlanningFailure` and returns a
+    no-op, so the whole run completes, exits 0 and writes a `stats.json` in which the
+    method never acted. `environments/tossing3d/skills.py` shipped exactly that. Raising
+    at write time is what makes the next occurrence loud instead."""
+    already_sigilled = Variable(name="?robot", type=_ROBOT_TYPE)
+    skill = Skill(
+        name="Move",
+        parameters=(already_sigilled,),
+        preconditions=frozenset(),
+        add_effects=frozenset({LiftedAtom(predicate=_HANDS_FREE, variables=())}),
+        delete_effects=frozenset(),
+        param_dim=0,
+    )
+    with pytest.raises(ValueError, match=r"Variable name .* already carries"):
+        PddlWriter.domain_str(skills=(skill,), predicates=(_HANDS_FREE,), types=(_ROBOT_TYPE,))
+
+
+def test_the_writer_rejects_the_question_mark_in_every_name_it_interpolates() -> None:
+    """The guard is on the *class* of failure, not just the `Variable` instance of it: a
+    "?" in a type, skill, predicate or object name emits the same unparseable PDDL and
+    fails the same silent way. Nothing in this repo declares such a name -- this is a
+    tripwire."""
+    sigilled_type = Type(name="?robot", feature_names=())
+    with pytest.raises(ValueError, match=r"Type name .* already carries"):
+        PddlWriter.domain_str(skills=(), predicates=(), types=(sigilled_type,))
+
+    sigilled_skill = Skill(
+        name="?Move",
+        parameters=(),
+        preconditions=frozenset(),
+        add_effects=frozenset({LiftedAtom(predicate=_HANDS_FREE, variables=())}),
+        delete_effects=frozenset(),
+        param_dim=0,
+    )
+    with pytest.raises(ValueError, match=r"Skill name .* already carries"):
+        PddlWriter.domain_str(
+            skills=(sigilled_skill,), predicates=(_HANDS_FREE,), types=(_ROBOT_TYPE,)
+        )
+
+    sigilled_predicate = Predicate(name="?HandsFree", types=(), holds=lambda state, objects: True)
+    with pytest.raises(ValueError, match=r"Predicate name .* already carries"):
+        PddlWriter.domain_str(skills=(), predicates=(sigilled_predicate,), types=())
+
+    with pytest.raises(ValueError, match=r"Object name .* already carries"):
+        PddlWriter.problem_str(
+            objects=(Object(name="?robby", type=_ROBOT_TYPE),),
+            init_atoms=frozenset(),
+            goal=frozenset(),
+        )
 
 
 def test_domain_str_honors_a_custom_domain_name() -> None:

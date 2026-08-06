@@ -97,12 +97,18 @@ class Tossing3DSkills:
     class in this project.
     """
 
-    _robot: ClassVar[Variable] = Variable(name="?robot", type=Tossing3DEnvironment.robot_type)
-    _cube: ClassVar[Variable] = Variable(name="?cube", type=Tossing3DEnvironment.cube_type)
-    _bin: ClassVar[Variable] = Variable(name="?bin", type=Tossing3DEnvironment.bin_type)
-    _barrier: ClassVar[Variable] = Variable(name="?barrier", type=Tossing3DEnvironment.barrier_type)
+    # No leading "?" on any of these: `PddlWriter.variable_str` adds it at write time
+    # (planning/pddl.py, deviation 1 -- predicators' own `Variable.name` carries the
+    # sigil and ours deliberately does not). Declaring "?robot" here rendered "??robot",
+    # which Fast Downward's translator split into two tokens, so every plan call in the
+    # domain failed -- silently, since `EesMethod._next_plan` catches `PlanningFailure`
+    # and degrades to a no-op. Every other domain here declares plain names.
+    _robot: ClassVar[Variable] = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
+    _cube: ClassVar[Variable] = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
+    _bin: ClassVar[Variable] = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
+    _barrier: ClassVar[Variable] = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
     _goal_region: ClassVar[Variable] = Variable(
-        name="?goal_region", type=Tossing3DEnvironment.goal_region_type
+        name="goal_region", type=Tossing3DEnvironment.goal_region_type
     )
 
     PICK: ClassVar[Skill] = Skill(
