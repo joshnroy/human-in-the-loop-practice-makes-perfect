@@ -1,33 +1,42 @@
-# Tossing3D: integration status, findings, and how to pick it up again
+# Tossing3D: what the closed seven-PR stack measured
 
-**Status: paused, not abandoned.** Seven pull requests integrated KINDER's `Tossing3D-o1`
-into this repo, measured EES on it, corrected two fidelity defects and shipped a task
-config of our own. All seven were **closed without merging** so that the environment can
-be validated before any of it lands on `main`. Nothing from that work is on `main`; every
-line of it is on a branch, and every branch survives its PR being closed.
+**Status: superseded.** Seven pull requests integrated KINDER's `Tossing3D-o1` into this
+repo, measured EES on it, corrected two fidelity defects and shipped a task config of our
+own. All seven were **closed without merging**, so that the environment could be validated
+first. That validation happened (#68, `docs/kinder-environment-validation.md`), and the
+domain then landed on `main` as a **fresh** integration — #69 (the coincident task config)
+and #77 (`--env tossing3d`) — which reused none of the seven branches' code. Every line of
+the closed stack is still only on a branch.
 
-This file is the durable record. It exists so that someone months from now can restart
-the work without reading a single closed PR thread.
+So this file is a record of what that stack measured. It is not a plan for resuming it, and
+it does not describe the code on `main`: the live description of the domain as it exists
+today is `src/hitl_pmp/environments/tossing3d/README.md`.
 
-**Written 2026-08-04**, against `main` at `d6ae54c` and the top of the stack at `3565312`.
+**Written 2026-08-04**, against `main` at `d6ae54c` and the top of the stack at `3565312`;
+audited and corrected 2026-08-06 against `main` at `891bee0`.
 
 ### How to read the claims in here
 
 Every number below is traceable to a PR body, a diff, or `docs/experiment-logs/2026-08-04-tossing3d-ees.md`
-on branch `josh/experiment/tossing3d-ees` (and later branches). Where a statement is an
-inference rather than something the record states, it is marked **(inferred)** inline.
-Where the record is silent, this file says so rather than filling the gap. Counts are
-`x/y` throughout — a percentage without its denominator is never the primary record.
+on branch `josh/experiment/tossing3d-ees` (and later branches) — that file is **not** on
+`main`. Where a statement is an inference rather than something the record states, it is
+marked **(inferred)** inline. Where the record is silent, this file says so rather than
+filling the gap. Counts are `x/y` throughout — a percentage without its denominator is
+never the primary record.
+
+**Every measurement in §5 was taken on the closed branches**, whose adapter differs from
+`main`'s in ways that matter — `main` has no `swing` dial, no `ORACLE_SWING`, no
+`_release`, and defaults to the coincident scene. Do not read a number here as a number
+about `main`.
 
 ---
 
-## 1. Recovery: reconstructing the stack
+## 1. Where the closed stack lives
 
 **Closing a pull request does not delete its branch.** GitHub keeps the head ref; the
-commits below are reachable on `origin` exactly as they were. Reopening a closed PR
-restores it in place as long as the branch still exists. If a branch has been deleted,
-the SHAs below still identify the commits (`git fetch origin <sha>`), and a branch can be
-recreated at any of them.
+commits below are reachable on `origin` exactly as they were, and all seven PRs are still
+in the `CLOSED` state with the branches and head SHAs listed here (re-verified 2026-08-06).
+If a branch is ever deleted, the SHAs still identify the commits (`git fetch origin <sha>`).
 
 The stack, bottom-first. Merge order is the table order.
 
@@ -41,51 +50,34 @@ The stack, bottom-first. Merge order is the table order.
 | 64 | https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/64 | `josh/feature/tossing3d-coincident-bin-goal` | `3565312f455066437cdc18150fe0280d1d508798` | `josh/fix/tossing3d-demo-caption` | Our own task config in which the bin and the goal region coincide, opt-in behind `--coincident-bin-goal`. |
 | 61 | https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/61 | `josh/fix/tossing3d-controller-reuse-explanation` | `fc50bfddbcdd568186832bb49c367ba552d2c4a7` | `josh/fix/tossing3d-pybullet-leak` | Corrects *why* reusing a ground controller breaks `Pick`. Comments and prose only. **Not in the linear stack — see below.** |
 
-### The one thing that is easy to get wrong when rebuilding this
+### #61 is a side branch, not a link in the chain
 
-**#61 is a side branch, not a link in the chain.** `fc50bfd` sits directly on top of
-`a00b632` (#42's head), and `git merge-base --is-ancestor fc50bfd 3565312` is **false** —
-#61's commit is *not* reachable from the top of the stack. #43 was branched from #42
-before #61 existed, so everything above #43 was built from a base that never contained it.
+`fc50bfd` sits directly on top of `a00b632` (#42's head), and
+`git merge-base --is-ancestor fc50bfd 3565312` is **false** — #61's commit is *not*
+reachable from the top of the stack. #43 was branched from #42 before #61 existed, so
+everything above #43 was built from a base that never contained it.
 
-The practical consequence, verified at `3565312`: the corrected explanation is missing
-from the top of the stack, and the *wrong* explanation is still present there in three
-places.
+The consequence, on those branches only: the corrected explanation of why reusing a ground
+controller breaks `Pick` is missing from `3565312`, and the *wrong* explanation is still
+present there — in the environment README, in `kinder_backend.py`'s `_ground` docstring, in
+`KinderBackend`'s class docstring, and a fourth time in
+`docs/experiment-logs/2026-08-04-tossing3d-ees.md`, which arrived in #43 above #61's base.
+**(inferred: #61 could not have fixed a file that was not on its base; the record does not
+discuss this fourth site.)** None of those files is on `main`, and `main`'s integration was
+written fresh rather than from `3565312`, so nothing needs cherry-picking. The corrected
+mechanism is recorded in
+[§5.6](#56-why-reusing-a-ground-controller-breaks-pick-corrected-twice) below.
 
-- `src/hitl_pmp/environments/tossing3d/README.md:289` — still says `PyBulletSim` "carries
-  held-object state (`base_link_to_held_obj`) that `reset` does not clear".
-- `src/hitl_pmp/environments/tossing3d/kinder_backend.py:404` — the `_ground` docstring,
-  same wording.
-- `KinderBackend`'s class docstring — still says "the memo in `_ground` is what actually
-  holds the line", contradicting `_ground`'s own "deliberately *not* memoized". #61 fixes
-  this too; it is the third of the three sites #61 lists.
-
-A fourth site #61 did **not** cover, because it did not exist on #61's base:
-`docs/experiment-logs/2026-08-04-tossing3d-ees.md` repeats the same wrong mechanism
-("`PyBulletSim` carries held-object state `reset` does not clear"). That file arrived in
-#43, above #61's base. **(inferred: #61 could not have fixed a file that was not on its
-base; the record does not discuss this fourth site.)**
-
-**So: whoever restarts this must land #61's correction onto the linear stack**, either by
-cherry-picking `fc50bfd` on top of `3565312` (expect the README/`kinder_backend.py` hunks
-to apply against text that #59/#62/#64 have since edited around) or by re-applying its
-three edits by hand plus the fourth site in the experiment log. The corrected mechanism
-is recorded in [§5.6](#56-why-reusing-a-ground-controller-breaks-pick-corrected-twice)
-below, so it is not lost even if `fc50bfd` is.
-
-### Other reconstruction notes
+### Other notes on the table
 
 - **The stack numbering in the PR titles is stale and inconsistent.** #40/#42/#43 say
   "stack 1 of 3", "2 of 3", "3 of 3" — written before #59, #62 and #64 existed. #59 says
   "stack 4/4", #62 "stack 5/5", #64 "6/6". #61 carries no stack number. Read the table
   above, not the titles.
-- **#64's base note is worth keeping.** Tossing3D does not exist on `main` at all: no
-  `Tossing3DEnvironment`, no `tests/environments/tossing3d/`, no KINDER dependency
-  declaration. Any PR touching this domain has to stack on #40 or later, or duplicate the
-  whole port.
 - Base branches above are the PR's declared base, not necessarily where `main` was. #40's
-  merge-base with `main` is `d57e613`; `main` has since moved to `d6ae54c`, so the stack
-  is behind `main` and will need a rebase.
+  merge-base with `main` is `d57e613`. `main` has moved a long way since, and now carries
+  its own `Tossing3DEnvironment` and `tests/environments/tossing3d/`, so the stack is not
+  merely behind `main` — it conflicts with a different implementation of the same domain.
 
 ---
 
@@ -93,17 +85,21 @@ below, so it is not lost even if `fc50bfd` is.
 
 Josh chose to **validate the environment before any of it lands**. The seven PRs describe
 a domain whose scoring semantics were misunderstood twice in a row (the goal region was
-tested against the wrong box; the bin turned out to be scenery), on top of an upstream
-that has a live memory bug in it. Merging that onto `main` first and validating second
-would put unvalidated environment semantics underneath every future number.
+tested against the wrong box; the bin turned out to be scenery), on top of an upstream that
+had a live memory bug in it. Merging that onto `main` first and validating second would put
+unvalidated environment semantics underneath every future number.
 
-This is a deliberate pause with the work preserved, not a decision that the work was
-wrong. The findings in §5 stand on their own evidence; what is deferred is the decision to
-make this domain part of `main`.
+That validation was then done independently (#68), and the domain was re-integrated from
+scratch (#77) rather than by reopening the stack. The findings in §5 stand on their own
+evidence, and #77 checked its own numbers against them.
 
 ---
 
 ## 3. What the environment is, and where the boundary runs
+
+**This section describes the closed stack's adapter, not `main`'s.** The description of the
+*task* is upstream's and still current; the "ours" half below was rewritten from scratch
+in #77 and differs — see `src/hitl_pmp/environments/tossing3d/README.md`.
 
 `Tossing3D-o1` is a KINDER benchmark task. A TidyBot++ mobile manipulator must get a cube
 from the floor to a goal region on the far side of an immovable 5 m barrier. The base
@@ -167,9 +163,12 @@ Specifically **ours**, and therefore ours to defend:
 - **`SkillOraclePolicy`** and its constants: `ORACLE_SWING = 0.75`,
   `ORACLE_PICK_DISTANCE = 0.55`, `ORACLE_PICK_ROT = 0.0`.
 - **`H_eval = 3 + 2`**, the step budget per evaluation episode.
-- **`KinderBackend._release`**, the PyBullet workaround (§5.5).
+- **`KinderBackend._release`**, the PyBullet workaround (§5.5). Deliberately **not** on
+  `main`: the leak was fixed upstream, and a `close()` on top of that finalizer would
+  double-disconnect.
 - **`task_configs/tossing3d-o1-coincident-bin.json`**, the one scene here that is not
-  upstream's (§5.8).
+  upstream's (§5.8). `main` ships the same idea at a different path,
+  `scripts/task_configs/Tossing3D-o1-coincident.json`, and defaults to it.
 - The decision to **ignore KINDER's `terminated`**: an interaction period runs its full
   length regardless, because a solved state is absorbing and ending early would make a
   solved period cheaper in transitions than a failed one, biasing the x-axis of every
@@ -179,8 +178,10 @@ Specifically **ours**, and therefore ours to defend:
 
 ## 4. Version pinning: the version *is* the experiment
 
-`pyproject.toml` declares an optional `tossing3d` extra pinned to **exact commits, not
-branches**:
+On the closed stack, `pyproject.toml` declared an optional `tossing3d` extra pinned to
+**exact commits, not branches**. **`main`'s `pyproject.toml` declares no KINDER dependency
+at all** — the simulator is installed into a separate venv from the `reference/` checkouts
+instead (see `CLAUDE.md`), so the pin below describes the closed branches only:
 
 | package | repo | pin |
 | --- | --- | --- |
@@ -190,9 +191,10 @@ branches**:
 Exact SHAs because this domain does not reimplement the benchmark — the dynamics, the
 controllers and the success criterion are all upstream's, so a number measured here is
 only meaningful against the version it was measured on. KINDER is a live upstream that
-moves underneath the adapter, and the leaked PyBullet client `_release` works around is an
-*upstream* bug, so a version that fixed or reshaped it would silently change what the
-numbers in the experiment log mean.
+moves underneath the adapter, and the leaked PyBullet client `_release` worked around was
+an *upstream* bug, so a version that fixed or reshaped it would silently change what the
+numbers in the experiment log mean. **That version now exists**: `kinder-baselines` PR #87
+(`9512b9e`, 2026-08-06) fixed the leak, so every number in §5 predates the fix.
 
 ### These SHAs are inferred, not recorded
 
@@ -214,24 +216,32 @@ Independently re-verified while writing this file, via the GitHub API:
   **"Fix cluttered retrieval initial-state sampling (#123)"**. The commit subject matches
   the content argument exactly.
 - `39eb7e08...cdf1b8b` is `ahead_by: 1`, `total_commits: 1` — **exactly one commit apart.**
-- `kinder-baselines` `main` is still `4c731dc8` (2026-06-29T15:13:44Z, "Add reward
-  grounding prototype (#81)"), so that pin is unambiguous — the repo has not moved.
+- `kinder-baselines` `main` was still `4c731dc8` (2026-06-29T15:13:44Z, "Add reward
+  grounding prototype (#81)") when this was written, so that pin was unambiguous. It has
+  since moved: `main` is `9512b9e` as of 2026-08-06, the leak fix.
 
 ### Upstream has moved one commit past the pin
 
-`reference/kindergarden` in the working checkout sits at `cdf1b8b`, i.e. **one commit
-ahead of the pin**. Reading source out of `reference/kindergarden` is therefore reading a
-slightly different tree than the pinned one. For everything Tossing3D touches this is
-believed harmless (the single intervening commit is the cluttered-retrieval fix above),
-but it is a real gap between what the code cites and what a reader has locally.
+Upstream `kindergarden` `main` is `cdf1b8b`, i.e. **one commit ahead of the pin**. Reading
+source out of a checkout at `main` is therefore reading a slightly different tree than the
+pinned one. For everything Tossing3D touches this is believed harmless (the single
+intervening commit is the cluttered-retrieval fix above), but it is a real gap between what
+the code cites and what a reader has locally.
+
+The local `reference/` checkouts are not reliably at `main` either:
+`scripts/update_reference_repos.sh` skips a checkout that is not on its default branch, so
+either one may be sitting on a topic branch someone is working in. As of 2026-08-06 both
+are.
 
 ### The `kindergarden` / `kinder` naming trap
 
 The **distribution** is named `kindergarden`; the **import package** is `kinder`.
 `pip install kindergarden`, `import kinder`. Two consequences that have already cost time:
 
-- `tests/environments/tossing3d/conftest.py`'s availability check keys on the *import*
-  name `kinder`, not on the distribution name.
+- The simulator-availability check in `tests/environments/tossing3d/` keys on the *import*
+  name `kinder`, not on the distribution name. (On the closed stack that check lived in a
+  `conftest.py`; on `main` it is an `importlib.util.find_spec("kinder")` guard in each
+  simulator-backed test module.)
 - The old install docs told you to clone
   `Princeton-Robot-Planning-and-Learning/kinder-models`, which **404s**. The controllers
   live in the `kinder-baselines` monorepo, subdirectory `kinder-models`. Corrected in #40.
@@ -294,7 +304,7 @@ zero, two up, and the spread swamps the mean. The 300-transition checkpoint was 
 chosen *post hoc* as the worst of ten, which inflates significance rather than deflating
 it. `describe_trough` in `analysis/practice_makes_perfect/tossing3d_comparison.py` re-runs
 this test on every invocation precisely so the claim cannot drift back into being
-asserted.
+asserted — that script is on `josh/experiment/tossing3d-ees` and later, **not** on `main`.
 
 **Why EES starts at 33/100 and the floor at 14/100:** EES *plans* the correct skill
 sequence from the first checkpoint and only its sampler is untrained, so it already
@@ -316,7 +326,8 @@ Two concrete reasons, both structural:
 
 1. **The harness hands out a free reset.** `PracticeLoop.run` calls
    `problem.reset_to_task(task=task)` at the top of every practice cycle
-   (`practice_loop.py:150`) and `run_task_episode` resets per evaluation episode — a free
+   (`practice_loop.py:236` on `main` at `891bee0`; the line has moved since this was
+   written) and `run_task_episode` resets per evaluation episode — a free
    reset every `--max-steps-per-interaction` steps. That is faithful to predicators and
    correct for a reproduction, and it supplies **precisely** the resets the hypothesis is
    about removing.
@@ -483,8 +494,15 @@ The mechanism is a seam between two individually reasonable pieces:
 2. Each new controller's `reset` runs `if self._pybullet_sim is None: self._pybullet_sim = PyBulletSim(x)`,
    and `PyBulletSim.__init__` does a `p.connect(p.DIRECT)` plus a kinova-gen3 URDF load.
    That `is None` guard is therefore `None` **every time**.
-3. `PyBulletSim.close()` exists (`kinder_models/dynamic3d/utils.py:590`) and has **zero
-   callers anywhere in the package**.
+3. `PyBulletSim.close()` existed (`kinder_models/dynamic3d/utils.py:590` then; `:596` at
+   upstream `main` today) and had **zero callers anywhere in the package**.
+
+**This is fixed upstream and the section below is history.** `kinder-baselines` PR #87,
+squash-merged as `9512b9e` on 2026-08-06, gives `PyBulletSim` a `weakref.finalize` that
+disconnects its client when the sim is collected, so a sequential run releases as it goes;
+`close()` now calls that finalizer rather than `p.disconnect` directly. What did *not* go
+away is the cost of holding many sims alive at once. **`main` carries no `_release`**: a
+`close()` on top of the finalizer would double-disconnect.
 
 `KinderBackend` had already spotted the hazard and cached the **lifted** controllers to
 avoid it. That cache cannot help: the `PyBulletSim` lives on the **ground** controller,
@@ -607,9 +625,11 @@ the fact and calls it out of scope, but does not propose a remedy.)**
 
 ### 5.8 The coincident-bin task config
 
-Ours, not upstream's: `src/hitl_pmp/environments/tossing3d/task_configs/tossing3d-o1-coincident-bin.json`,
-selected only by `Tossing3DEnvironment(coincident_bin_goal=True)` / `--coincident-bin-goal`.
-It is upstream's `o1` with `bin_init_region` put back to x = 2.0 — the value **upstream's
+Ours, not upstream's. On the closed stack it was
+`src/hitl_pmp/environments/tossing3d/task_configs/tossing3d-o1-coincident-bin.json`,
+selected only by `Tossing3DEnvironment(coincident_bin_goal=True)` / `--coincident-bin-goal`;
+on `main` the same scene is `scripts/task_configs/Tossing3D-o1-coincident.json`, selected by
+`--task-config coincident` and **the default**. It is upstream's `o1` with `bin_init_region` put back to x = 2.0 — the value **upstream's
 own `o2` still ships** — which makes the bin footprint and the *inflated* goal box coincide
 to under a millimetre. `blocks_goal_region` is byte-identical to upstream's.
 
@@ -626,13 +646,33 @@ Under the coincident config, "in the bin" and "in the goal region" are the same 
 **12/12** rollouts — the goal is satisfied by exactly the tosses that land in the bin and by
 no others.
 
-**Why the bin moved rather than the region.** Three reasons: x = 2.0 is a pairing upstream
-already publishes (`o2`), so it is not a new scene; it reverts the edit that caused the
+**Why the bin moved rather than the region.** Two reasons: x = 2.0 is a pairing upstream
+already publishes (`o2`), so it is not a new scene; and it reverts the edit that caused the
 mismatch rather than compensating for it, since the goal region is the task *specification*
-and the bin is scenery that drifted; and moving `blocks_goal_region` to the bin instead
-would have implied a goal box at x ∈ [2.13, 2.33] after inflation, extending ~18 cm past the
-bin's far wall onto open floor, so a cube that **overshot the bin entirely** would score as
-a success — the defect would have changed shape rather than gone away.
+and the bin is scenery that drifted.
+
+**A third reason was given and is arithmetically wrong. Retracted.** It claimed that moving
+`blocks_goal_region` onto the bin instead "would have implied a goal box at x ∈ [2.13, 2.33]
+after inflation, extending ~18 cm past the bin's far wall onto open floor, so a cube that
+overshot the bin entirely would score as a success". Re-derived from upstream `main`'s
+`Tossing3D-o1.json`, `objects/base.py:874-881` and `primitive_objects.py:368-380`:
+
+- The raw `blocks_goal_region` range is `[1.90, -0.10, 0.0, 2.10, 0.10, 0.10]`, 0.20 m wide
+  on x about 2.0. Recentring it on the bin (`bin_init_region` x ∈ [2.23, 2.231], midpoint
+  2.2305) gives a **raw** range of x ∈ [2.1305, 2.3305]. So `[2.13, 2.33]` is the range
+  *before* inflation, not after; after the 0.05 m per-side inflation it is
+  x ∈ **[2.0805, 2.3805]**.
+- The bin is 0.3 m with 0.02 m walls, so its footprint is x ∈ [2.0805, 2.3805] and its far
+  wall's outer face is at **2.3805**. The quoted 2.33 is **5.1 cm short of** that face, not
+  18 cm past it. The 18 cm figure is `2.33 − 2.15` — the distance past the *current* goal
+  box's far edge, a different reference point.
+- The inflated box [2.0805, 2.3805] coincides with the bin footprint to 0.0 mm — the exact
+  mirror of what moving the bin to 2.0 achieves. A cube that overshot the bin entirely
+  comes to rest past 2.3805, i.e. **outside** that box, so it would **not** score. The
+  stated consequence does not follow.
+
+The two remaining reasons are unaffected, and moving the bin is still the right call — but
+this ground was not one.
 
 **It changes the physics, not just the scoring — and this was not predicted.** Moving the
 bin 23 cm nearer puts it where the cube used to land, so it is now an **obstacle in the
@@ -645,11 +685,14 @@ domain is measured against. **If the coincident scene is ever used for a learnin
 `ORACLE_SWING` must be re-measured against it first — its current value does not solve that
 scene.**
 
-Stock `o1` remains the default, guarded by `test_stock_o1_is_untouched_by_shipping_the_variant`.
-**Do not compare a number measured under `--coincident-bin-goal` against one that was not.**
-Passing it with `--variant o2` raises rather than silently no-oping (o2's bin is already at
-2.0). Provenance is pinned against the *installed* upstream, so a KINDER bump that edits
-`o1` fails loudly rather than silently widening the diff.
+On the closed stack, stock `o1` remained the default, guarded by
+`test_stock_o1_is_untouched_by_shipping_the_variant`; **`main` inverts this** and defaults to
+the coincident scene, with `--task-config stock` still selectable.
+**Do not compare a number measured under the coincident config against one that was not.**
+On the closed stack, passing the flag with `--variant o2` raised rather than silently
+no-oping (o2's bin is already at 2.0). Provenance is pinned against the *installed*
+upstream, so a KINDER bump that edits `o1` fails loudly rather than silently widening the
+diff.
 
 ### 5.9 Concurrency did not contaminate the sweep — and the first check lied
 
@@ -658,7 +701,8 @@ and a starved FD returns no plan, which would make a curve measure timeouts rath
 learning.
 
 **This cannot be checked the obvious way.** `ees_method.py` swallows `PlanningFailure` at
-all three call sites (lines 386, 778, 802) without logging it, so a timeout and a genuinely
+all three call sites (lines 386, 778, 802 as written; **404, 818, 842** on `main` at
+`891bee0`) without logging it, so a timeout and a genuinely
 unreachable goal are indistinguishable and neither reaches `log.txt`. A re-run diff was
 substituted, since a timeout would necessarily change the plan and hence the trajectory:
 
@@ -670,7 +714,8 @@ IDENTICAL
 
 **The first attempt returned DIFFERS and would have become a false finding.** It drove
 `hitl_pmp.cli` directly, missing the `OMP_NUM_THREADS=1` / `MKL_NUM_THREADS=1` that
-`run_sweep` pins on every child (`run_sweep.py:153`), so it compared a many-thread run
+`run_sweep` pins on every child (`run_sweep.py:153` as written; `:426` on `main` at
+`891bee0`), so it compared a many-thread run
 against a one-thread run and was about to report "concurrency perturbs Tossing3D".
 
 Two facts fall out, both worth more than the check itself:
@@ -705,7 +750,10 @@ sweep never had a GPU option in the first place.
 - **The storyboard is 4 frames per episode by construction.** `core.Renderer` emits one
   frame per *transition*, and one transition here is a whole skill — several hundred MuJoCo
   ticks. That is a property of the core interface, not of this domain.
-- **The smooth clip is a separate script**, `scripts/render_tossing3d_demo.py`, following
+- **The smooth clip is a separate script**, `scripts/render_tossing3d_demo.py` on the closed
+  branches (`main` has no such file; its demo script is `scripts/tossing3d_oracle_demo.py`,
+  and `main` gets smooth clips from a `gymnasium.wrappers.RenderCollection` instead),
+  following
   KINDER's own `generate_demo_video.py` step for step: per-tick `env.render()` via
   `KinderBackend.capture_frames_into`, `fps` from KINDER's own `render_fps` metadata (20),
   `imageio.mimsave` straight to GIF with no mp4 round trip, and `kinder.gif_utils.optimize_gif`.
@@ -743,9 +791,11 @@ sweep never had a GPU option in the first place.
   airborne, across 63 cm of flight.
 - `gifsicle` is a requirement of the demo script only — not of CI, the test suite, or any
   sweep.
-- **`core/renderer/renderer.py` writes GIFs through an mp4 round trip** (lines 58-68),
-  pushing frames through lossy 4:2:0 H.264 before the palette is chosen. The demo script
-  bypasses it; the shared path should stop doing it. Cross-domain, never fixed.
+- **`core/renderer/renderer.py` writes GIFs through an mp4 round trip** —
+  `VideoWriter.write_gif` takes an already-written `video_path` and re-reads it
+  (`renderer.py:105-124` on `main` at `891bee0`; the quoted "lines 58-68" no longer point at
+  it), pushing frames through lossy 4:2:0 H.264 before the palette is chosen. Cross-domain,
+  still unfixed.
 
 ### 5.12 The demo GIFs are not the seed-0 run behind the curve
 
@@ -764,38 +814,23 @@ not run.
 
 ## 6. Known defects and open questions
 
-### IN PROGRESS
-
-- **Is the PyBullet client leak upstream's bug or ours?** #42 states it as an upstream bug
-  that driving KINDER this way amplifies — `PyBulletSim.close()` having zero callers
-  anywhere in the package, and KINDER's own `KinDERParameterizedSkillEnv.step()`
-  re-grounding per step identically. **An investigation into exactly this question was
-  running at the time this file was written. Its outcome is not recorded here, and nothing
-  in this file should be read as anticipating it.** Check for a newer PR or experiment log
-  before acting on §5.5's attribution. The *fix* is unaffected either way — releasing the
-  client is correct regardless of who owns the bug — but the framing of an upstream report
-  depends on the answer.
-
 ### Unresolved
 
-- **Two upstream KINDER issues, both still unfiled.** Neither was reported to PRPL.
-  1. `PyBulletSim.close()` has zero callers; grounding a controller opens a client nothing
-     ever disconnects (§5.5).
-  2. `PickShelfController.reset` does not clear its four progress flags, so a reused
-     controller reports success having done nothing (§5.6). **The actionable ask is that
-     `reset` clear those four flags, exactly as `TossController.reset` already clears
-     `_has_released`.** Use §5.6's mechanism, not #42's original — a wrong mechanism sends
-     maintainers after the wrong field.
-  - **(inferred)** A third candidate, never framed as an upstream issue in the record:
-    `docs/envs/Tossing3D.md:8` describes the pre-`1183de7` scene (§5.3). Whether that is
-    worth filing is an open question nobody has answered.
-- **The KINDER-backed claims are unverified on CI.** CI never installs the optional
-  extra, so at `3565312`: **11/11** tests in `test_kinder_fidelity.py` skip, and **7/8** of
-  #64's own `test_task_configs.py` skip (1 of the 8 runs offline). CI therefore **cannot**
-  catch a reintroduction of the memory leak, a wrong goal box, or a broken task-config
-  provenance pin. The `79/79` tossing3d figure quoted in #64 was measured in a venv with the
-  simulator installed, before that PR's final rebase, and was **not** re-run for the rebased
-  head.
+- **One upstream KINDER issue is still unfiled.** `PickShelfController.reset` does not clear
+  its four progress flags, so a reused controller reports success having done nothing
+  (§5.6). **The actionable ask is that `reset` clear those four flags, exactly as
+  `TossController.reset` already clears `_has_released`.** Use §5.6's mechanism, not #42's
+  original — a wrong mechanism sends maintainers after the wrong field.
+  - **(inferred)** A second candidate, never framed as an upstream issue in the record:
+    `docs/envs/Tossing3D.md:8` describes the pre-`1183de7` scene (§5.3). That is the subject
+    of kindergarden PR #126, still open.
+- **The KINDER-backed claims are unverified on CI.** CI never installs KINDER, so at
+  `3565312`: **11/11** tests in `test_kinder_fidelity.py` skip, and **7/8** of #64's own
+  `test_task_configs.py` skip (1 of the 8 runs offline). CI therefore **cannot** catch a
+  wrong goal box or a broken task-config provenance pin. The `79/79` tossing3d figure quoted
+  in #64 was measured in a venv with the simulator installed, before that PR's final rebase,
+  and was **not** re-run for the rebased head. The same gap holds on `main`, where 15 tests
+  skip on CI for the same reason.
 - **No `HumanOracle`.** This is the domain in the repo that most needs one.
   `Metrics.num_human_interventions()` reports `(0.0, 0)` — not because no intervention was
   needed, but because none is representable.
@@ -803,15 +838,15 @@ not run.
   here is single-cube. The CLI accepts `--variant o2` because the backend does, but the goal
   would be under-specified.
 - **The planning-failure rate cannot be read out of any run log.** `ees_method.py` catches
-  `PlanningFailure` silently at lines 386, 778 and 802 and never logs it. This is a gap in
-  the harness's observability, not something specific to this domain.
+  `PlanningFailure` silently at three call sites and never logs it. Still true on `main`
+  (lines 404, 818, 842). This is a gap in the harness's observability, not something
+  specific to this domain.
 - **The irreversibility hypothesis is untested.** Changing `PracticeLoop`'s reset behaviour
   is a separate design decision, deliberately not made anywhere in this stack. The EES log is
   the reproduction baseline such a change would be measured against.
-- **#61's correction is not on the linear stack** (§1). This is the single highest-priority
-  loose end for whoever rebuilds it.
-- **`ORACLE_SWING` is invalid for the coincident scene** and must be re-measured before that
-  scene is used for a learning run (§5.8).
+- **`ORACLE_SWING` is invalid for the coincident scene** and was never re-measured against
+  it (§5.8). Applies to the closed branches only — `main` has no swing dial and no
+  `ORACLE_SWING`.
 - **Which of two mechanisms makes the swing dial step** — release-tick quantisation or
   PyBullet path replanning — is not measured (§5.4).
 - **Whether `--num-render-checkpoints` perturbs a run** is not shown either way (§5.12).
@@ -821,7 +856,9 @@ not run.
 ### Resolved
 
 - The goal-region inflation bug — fixed by reading `Region.bbox`, both arms re-run (§5.2).
-- The PyBullet leak, at this repo's boundary — `_release` (§5.5).
+- The PyBullet leak — worked around here as `_release` (§5.5), then **fixed upstream** by
+  `kinder-baselines` PR #87 (`9512b9e`), which also settles who owned the bug. `main`
+  carries no workaround.
 - The wrong reuse mechanism — corrected, but see §1 for where the correction lives (§5.6).
 - "Marginal grasps flip on residual MuJoCo solver state" — refuted; it was the leaked
   clients (§5.5).
@@ -841,61 +878,24 @@ not run.
 
 ## 7. Environment gotchas that cost real time
 
-Four of these are recorded in the repo; the last two entries note where this file is
-reporting something outside the PR record.
+**All six of these are now maintained in `CLAUDE.md` and the `hitl-env` skill**, which are
+the authoritative copies; the versions that used to be spelled out here had already drifted
+(the install command named a `[tossing3d]` extra that `main`'s `pyproject.toml` does not
+declare). They are listed by name only, so the duplicate cannot drift again:
 
-**1. The editable install points at the main checkout, not at your worktree.**
-`pip install -e .` writes `__editable__.hitl_pmp-0.1.0.pth` into the conda env pointing at
-`<main checkout>/src`. Running `pytest` from a `.claude/worktrees/...` worktree therefore
-imports and tests the **main checkout's** `src/hitl_pmp`, silently, and your changes appear
-to have no effect. Verified while writing this file:
-`python -c "import hitl_pmp; print(hitl_pmp.__file__)"` from inside a worktree resolves to
-the main checkout. Fix:
-
-```bash
-PYTHONPATH=<worktree>/src pytest -q
-```
-
-**2. Fast Downward's sibling convention resolves to a nonexistent path from a worktree.**
-`FastDownwardPlanner.fd_dir()` falls back to `Path(__file__).resolve().parents[4] / "downward"`.
-From `<repo>/src/hitl_pmp/planning/fast_downward.py` that is `<repo>/../downward` — correct.
-From `<repo>/.claude/worktrees/<agent>/src/hitl_pmp/planning/fast_downward.py` it is
-`<repo>/.claude/worktrees/downward`, which does not exist, and every FD-backed test fails.
-Fix:
-
-```bash
-export FD_EXEC_PATH=/path/to/downward
-```
-
-Measured while writing this file, on `main` at `d6ae54c` from a worktree with `FD_EXEC_PATH`
-unset: **29/29 failures**, all FD-dependent — 14 in `tests/methods/practice_makes_perfect/test_ees_method.py`,
-12 in `tests/planning/test_fast_downward.py`, 2 in `tests/planning/test_pddl.py`, 1 in
-`tests/methods/practice_makes_perfect/test_cli.py`, and zero failures anywhere else. (The
-coordinating brief for this file quoted **26**; the mechanism is the same and the count moves
-as `main` gains FD-backed tests — see §8.)
-
-**3. `MUJOCO_GL=egl PYOPENGL_PLATFORM=egl` must be exported.**
-`kinder.register_all_environments()` forces `osmesa` whenever `DISPLAY` is unset, which is
-the case under `scripts/run_sweep.py`. `KinderBackend._ensure_env` snapshots and restores the
-caller's choice, so an exported value wins — **but it has to be exported**, not set inline
-after import. Software rasterisation here is also a classic cause of render-bound runs; §5.10
-confirms the GL renderer string names the 5090 when this is set correctly.
-
-**4. KINDER goes in its own virtualenv, not in `hitl-pmp`.**
-It pulls MuJoCo, PyBullet and OpenCV, and `kindergarden` caps `requires-python` at `<3.13`
-while this project sets no upper bound. Layering it into the conda env every other domain
-runs in is the wrong move.
-
-```bash
-python -m venv kinder-venv && . kinder-venv/bin/activate
-pip install -e "/path/to/this/repo[tossing3d]"
-export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
-```
-
-**5. The distribution is `kindergarden`; the import package is `kinder`** (§4).
-
-**6. Any re-run comparison must go through `scripts/run_sweep.py`, not the CLI.** The thread
-pinning is load-bearing and a `--seed` determines a run only at a fixed thread count (§5.9).
+1. The editable install points at the main checkout, not at your worktree — set an absolute
+   `PYTHONPATH`.
+2. Fast Downward's sibling convention resolves to a nonexistent path from a worktree — set
+   `FD_EXEC_PATH`. Measured on `main` at `d6ae54c` from a worktree with it unset:
+   **29/29 failures**, all FD-dependent, and zero failures anywhere else. The count moves as
+   `main` gains FD-backed tests.
+3. `MUJOCO_GL=egl PYOPENGL_PLATFORM=egl` must be **exported**, not set inline after import;
+   `register_all_environments()` forces `osmesa` whenever `DISPLAY` is unset.
+4. KINDER goes in its own virtualenv, never in `hitl-pmp`.
+5. The distribution is `kindergarden`; the import package is `kinder` (§4).
+6. Any re-run comparison must go through `scripts/run_sweep.py`, not the CLI — the thread
+   pinning is load-bearing and a `--seed` determines a run only at a fixed thread count
+   (§5.9).
 
 ---
 
@@ -906,11 +906,12 @@ Recorded so the next reader does not have to re-derive them.
 1. **#61 is not an ancestor of the stack top** (§1). The wrong mechanism survives at
    `3565312` in three places, plus a fourth in the experiment log that #61 never covered.
    Verified by `git merge-base --is-ancestor fc50bfd 3565312` and by grepping `3565312`.
-2. **"the eight simulator tests" is stale in two places.** Both
+   Moot for `main`, which was written fresh (§1).
+2. **"the eight simulator tests" is stale in two places on the closed branches.** Both
    `src/hitl_pmp/environments/tossing3d/README.md` and `pyproject.toml`'s `tossing3d` comment
    say the conftest skips "the eight simulator tests". At `3565312` `test_kinder_fidelity.py`
    holds **11**. The count was accurate at #40 and was not updated as #42, #59 and #62 each
-   added fidelity tests.
+   added fidelity tests. Neither site exists on `main`.
 3. **Stack numbering in PR titles is inconsistent** — "1 of 3" through "3 of 3", then "4/4",
    "5/5", "6/6", and #61 unnumbered (§1).
 4. **The FD-failure count differs from the brief.** 29/29 measured here on `main` at
@@ -923,8 +924,9 @@ Recorded so the next reader does not have to re-derive them.
    post-correction values. Do not mix the two tables.
 6. **The `79/79` tossing3d figure was not re-measured at #64's final head**, and no
    KINDER-backed number in the stack is verified by CI (§6).
-7. **`reference/kindergarden` is one commit ahead of the pin** (§4). Source citations read out
-   of it are from `cdf1b8b`, not `39eb7e08`.
+7. **Upstream `kindergarden` `main` is one commit ahead of the pin** (§4). Source citations
+   read out of a checkout at `main` are from `cdf1b8b`, not `39eb7e08` — and a local
+   `reference/` checkout may not be at `main` at all.
 8. **Suite counts across the stack are not comparable.** The PRs report 725, 738, 739, 742
    passed at different heads; each PR says explicitly that the number drifts upward on every
    rebase from tests `main` itself gained. Read them as "green at this SHA", never as a fixed

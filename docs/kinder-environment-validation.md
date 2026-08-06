@@ -1,13 +1,17 @@
 # KINDER Tossing3D: what actually works at upstream `main`
 
-**Written 2026-08-05.** This is a validation record, not an integration. Nothing on
-`main` imports KINDER, and this document does not change that. Its job is to answer,
-with evidence, whether the `Tossing3D` environment behaves the way seven closed pull
-requests assumed it did — before any of that work is reconsidered.
+**Written 2026-08-05.** This is a validation record, not an integration. Its job was to
+answer, with evidence, whether the `Tossing3D` environment behaves the way seven closed
+pull requests assumed it did — before any of that work was reconsidered. **Nothing on
+`main` imported KINDER when this was written; `--env tossing3d` has since landed (#77) and
+does, lazily.** Its numbers were checked against this file.
 
 Every claim below names the command that produced it. Where a previously-recorded
 claim did **not** reproduce, this file says so in bold rather than repeating the old
 number.
+
+**Audited 2026-08-06** against `main` at `891bee0`. §1, §2, §3 and §5 reproduce unchanged;
+**§4 no longer holds at upstream `main`** — see the note there.
 
 ## What was validated
 
@@ -17,7 +21,8 @@ number.
 | `reference/kinder-baselines` | `Princeton-Robot-Planning-and-Learning/kinder-baselines` | `main` | `4c731dc81d68ee6888ef3a989034991cd0694630` |
 
 Both SHAs were read back from the checkouts rather than assumed, and both were
-confirmed to be the current tip of their remote's default branch:
+confirmed to be the current tip of their remote's default branch **at the time of
+writing**:
 
 ```
 $ git ls-remote https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden.git refs/heads/main
@@ -25,6 +30,10 @@ cdf1b8ba0ed0d4fbf0390e336bea748e83d517d5	refs/heads/main
 $ git ls-remote https://github.com/Princeton-Robot-Planning-and-Learning/kinder-baselines.git refs/heads/main
 4c731dc81d68ee6888ef3a989034991cd0694630	refs/heads/main
 ```
+
+**`kinder-baselines` has since moved.** Its `main` is `9512b9edbdd17ecfd7d9a6350a9408ade94d4bad`
+as of 2026-08-06 — PR #87, the PyBullet leak fix, which is why §4 no longer reproduces.
+`kindergarden` `main` is still `cdf1b8b`, so §1, §2, §3 and §5 are unaffected.
 
 **`cdf1b8b` is one commit ahead of the `39eb7e08` that the earlier Tossing3D work
 pinned** (`docs/tossing3d-integration-status.md` §4). The intervening commit changes
@@ -183,13 +192,31 @@ The consequence, restated correctly:
 
 **A cube that lands in the bin is a scored failure, and a cube that misses the bin and
 lands on bare floor is a scored success.** That is reproduced at `main`, from a clean
-control pair, and it is the single most misreadable thing about this domain.
+control pair, and it is the single most misreadable thing about this domain. It is the
+claim `CLAUDE.md` cites this file for, and it was still true at `cdf1b8b` on 2026-08-06.
+
+**It has an expiry date.** kindergarden PR #126, "Move the Tossing3D-o1 bin back inside
+`blocks_goal_region`" (https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden/pull/126),
+is open and would make stock `o1` behave the way this repo's coincident config already
+does. When it merges, this section and `CLAUDE.md`'s citation of it both need re-measuring.
 
 ---
 
 ## 4. Does the PyBullet leak still reproduce at `main`?
 
-**Yes, exactly as recorded, and it is unbounded.** Run from
+**It did at `4c731dc8`, and it does not any more.** `kinder-baselines` PR #87,
+squash-merged as `9512b9e` on 2026-08-06, gives `PyBulletSim` a `weakref.finalize` that
+disconnects its PyBullet client when the sim is garbage collected, so a sequential run
+releases as it goes; `PyBulletSim.close()` (`utils.py:596`) now calls that finalizer rather
+than `p.disconnect` directly, and no longer has zero callers. The upstream issue this
+section motivated is `kinder-baselines` #88, now closed.
+
+What the fix does **not** remove is the cost of holding many sims alive at once, so the
+"run it under a memory cap" conclusion below still stands. The rest of this section is the
+measurement as taken at `4c731dc8`, kept because every §5 number in
+`docs/tossing3d-integration-status.md` predates the fix.
+
+Run from
 `scratch/kinder-pybullet-leak-evidence/repro.py`, 20 iterations, inside the 8 GB scope.
 
 `--mode leak` (upstream's own per-execution `lifted.ground(objects)` pattern):
@@ -220,8 +247,10 @@ peak live pybullet clients: 0
 PASS: bounded across all iterations
 ```
 
-So the client is genuinely leaked and genuinely releasable — the leak is not inherent to
-the workload. **Any iterative use of these controllers must run under a memory cap.**
+So the client was genuinely leaked and genuinely releasable — the leak was not inherent to
+the workload, which is the evidence PR #87 acted on. **Any iterative use of these
+controllers must still run under a memory cap**, for the many-sims-at-once cost noted
+above.
 
 ---
 
