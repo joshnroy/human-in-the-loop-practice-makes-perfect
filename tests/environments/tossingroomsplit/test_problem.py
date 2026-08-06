@@ -24,8 +24,13 @@ def _no_op_action(*, state) -> LabeledAction:
 _never_solves_policy: Policy = lambda state: _no_op_action(state=state)  # noqa: E731
 
 
-def _build_problem(*, num_rooms: int = 7, goal_type: TossingRoomSplitGoalType | None = None):
-    env = TossingRoomSplitEnvironment(num_rooms=num_rooms)
+def _build_problem(
+    *,
+    num_rooms: int = 7,
+    goal_type: TossingRoomSplitGoalType | None = None,
+    two_way_ledge: bool = False,
+):
+    env = TossingRoomSplitEnvironment(num_rooms=num_rooms, two_way_ledge=two_way_ledge)
     tasks = TossingRoomSplitTasks(env=env, forced_goal_type=goal_type)
     return TossingRoomSplitProblem(env=env, tasks=tasks)
 
@@ -128,3 +133,54 @@ def test_run_task_episode_sets_env_state_from_the_task_initial_state() -> None:
     assert problem.env.get_current_state().get(
         obj=TossingRoomSplitEnvironment.robot, feature_name="room"
     ) == task.initial_state.get(obj=TossingRoomSplitEnvironment.robot, feature_name="room")
+
+
+def test_two_way_ledge_shortens_the_longest_solve_and_the_horizon() -> None:
+    """**The domain gets easier, and the difference must be stated rather than
+    discovered.** EMPTY is the longest solve on the default layout because each bin has
+    its own button and the one-way ledge forces trash-first: 3 moves (3->6), a press,
+    5 moves (6->1), a press = 10, horizon 12.
+
+    Two-way, the reverse order becomes feasible and is cheaper -- 2 moves (3->1), a
+    press, 5 moves (1->6), a press = 9 -- so the horizon drops to 11. A shorter horizon
+    in the two-way arm is a real difficulty change, not a method effect.
+
+    It does NOT reopen the throw-retry channel the tight bound exists to close: a TRASH
+    retry still costs the eight-step round trip to the pile and lands at step 13, past
+    11 as it was past 12."""
+    one_way = _build_problem()
+    two_way = _build_problem(two_way_ledge=True)
+    assert one_way.longest_shortest_solve() == 10
+    assert one_way.max_episode_steps() == 12
+    assert two_way.longest_shortest_solve() == 9
+    assert two_way.max_episode_steps() == 11
+
+
+def test_two_way_ledge_leaves_the_two_throw_solves_unchanged() -> None:
+    """Only EMPTY's solve moves. TRASH walks rightward from start and never touches the
+    ledge; RECYCLING walks leftward, which was always allowed. So the throw families --
+    the ones the samplers are scored on -- are the same length in both worlds."""
+    for problem in (_build_problem(), _build_problem(two_way_ledge=True)):
+        # PickupRecycling, 3->1, ThrowRecycling.
+        assert 1 + problem.rooms_to_walk(room=problem.env.recycling_bin_room) + 1 == 4
+        # PickupTrash, 3->6, ThrowTrash.
+        assert 1 + problem.rooms_to_walk(room=problem.env.trash_bin_room) + 1 == 5
+
+
+def test_two_way_ledge_reconnects_the_recycling_room_to_the_pile() -> None:
+    """The mechanism the positive control isolates. One-way, rooms {0,1,2} are absorbing
+    -- the pile in room 3 is the only item source and 2->3 is the only edge back, so a
+    robot that walks left for recycling can never practice any skill again. Two-way, the
+    walk back exists."""
+    one_way = _build_problem()
+    two_way = _build_problem(two_way_ledge=True)
+    assert one_way.rooms_to_walk_between(from_room=1, to_room=3) is None
+    assert two_way.rooms_to_walk_between(from_room=1, to_room=3) == 2
+    assert one_way.rooms_to_walk_between(from_room=1, to_room=6) is None
+    assert two_way.rooms_to_walk_between(from_room=1, to_room=6) == 5
+
+
+def test_two_way_ledge_leaves_leftward_walks_alone() -> None:
+    for problem in (_build_problem(), _build_problem(two_way_ledge=True)):
+        assert problem.rooms_to_walk_between(from_room=6, to_room=1) == 5
+        assert problem.rooms_to_walk_between(from_room=3, to_room=3) == 0

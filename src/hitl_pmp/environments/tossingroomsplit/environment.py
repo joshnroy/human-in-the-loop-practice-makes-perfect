@@ -37,6 +37,22 @@ class TossingRoomSplitEnvironment(Environment):
     behind the one-way ledge, so the only solution is to press the trash button first and
     then drop across. The reverse order is unsolvable.
 
+    **`two_way_ledge` (`--two-way-ledge`) turns all of that off, and is OFF by default.**
+    It is the positive control for the reset-free experiment; see the field's own comment
+    for why it exists and why it is not the same knob as `blocked_right_from`. Three
+    things about the domain stop being true when it is on, and none of them is a method
+    effect:
+      * EMPTY stops being an ordering task -- both orders solve it, and the cheaper one
+        (recycling first) is 9 rather than 10, so the evaluation horizon drops 12 -> 11.
+        See `TossingRoomSplitProblem.longest_shortest_solve`.
+      * RECYCLING stops being one-shot. The walk back from room 1 to the pile in room 3
+        exists, so a practice period buys as many recycling attempts as it does trash
+        ones instead of exactly one.
+      * Rooms {0..blocked_right_from} stop being absorbing, which is the whole point:
+        reset-free practice can no longer strand itself away from the only item source.
+    Anything measured under the flag is measured on an easier domain, so it is never
+    directly comparable to a banked one-way number without saying so.
+
     That layout is what makes the domain interesting, and it is why it was not
     simplified:
 
@@ -141,6 +157,25 @@ class TossingRoomSplitEnvironment(Environment):
     # stepping RIGHT from blocked_right_from is blocked; every other adjacent step
     # (including stepping LEFT back across it) is allowed.
     blocked_right_from: int = 2
+    # THE POSITIVE CONTROL SWITCH. True makes that same edge traversable RIGHTWARD too,
+    # so the hallway becomes an ordinary two-way corridor and the domain has no
+    # irreversible action left at all. Default False, so every result banked before this
+    # flag existed is reproduced by the default command line, byte for byte.
+    #
+    # It exists to isolate ONE mechanism. Reset-free practice was measured worse than
+    # scheduled-reset practice here (151/300 vs 85/300, PR #115), and the follow-up
+    # attributed most of that to stranding: rooms {0..blocked_right_from} are absorbing,
+    # the pile is the only item source and it sits to the RIGHT of the ledge, so a robot
+    # that walks left once can never practice any skill again. Turning this on removes
+    # exactly that and nothing else, which is what makes "reset-free works now" evidence
+    # about *irreversibility* rather than about reset-free practice as such.
+    #
+    # NOT the same knob as `blocked_right_from`: that MOVES the ledge, this REMOVES its
+    # direction. Setting `blocked_right_from` outside [0, num_rooms) would also produce
+    # a fully-connected hallway, but it would do so by silently relying on a bounds
+    # check, and `blocks_right` would then be 0 on every room for a different reason
+    # than "this world is two-way" -- a config no reader could tell apart from a typo.
+    two_way_ledge: bool = False
     throw_tolerance: float = (
         0.1  # max |force - required| for a Throw to land, like Light Switch's 0.1
     )
@@ -226,6 +261,22 @@ class TossingRoomSplitEnvironment(Environment):
         caching risks a stale value; Object equality/hash are value-based (frozen
         pydantic), so rebuilding is correct, just not free (negligible at this scale)."""
         return tuple(Object(name=f"room_{i}", type=self.room_type) for i in range(self.num_rooms))
+
+    def ledge_blocks_rightward(self, *, from_room: int) -> bool:
+        """Whether the RIGHTWARD step out of `from_room` is refused. **The one place the
+        ledge is decided**, read by all three layers that have to agree about it:
+        `_apply_move` (the dynamics), `build_initial_state` (which writes the answer into
+        each room's `blocks_right` feature, where `CanMoveRoomClassifier` picks it up for
+        the planner) and `TossingRoomSplitProblem.rooms_to_walk_between` (which sizes the
+        evaluation horizon).
+
+        One function rather than three copies of `room == self.blocked_right_from`
+        because `--two-way-ledge` has to move all three at once. A flag that unblocked
+        the dynamics but left `blocks_right` set would leave the planner refusing a move
+        the world allows; one that cleared `blocks_right` but left `_apply_move` guarding
+        would let it schedule a move the world silently drops -- the exact
+        model-above-reality shape this domain has already shipped defects in."""
+        return not self.two_way_ledge and from_room == self.blocked_right_from
 
     def bin_for_kind(self, *, kind: int) -> Object:
         return self.recycling_bin if kind == self.RECYCLING_KIND else self.trash_bin
@@ -313,7 +364,7 @@ class TossingRoomSplitEnvironment(Environment):
             self.recycling: np.array([float(self.RECYCLING_KIND), float(recycling_weight)]),
         }
         for i, room in enumerate(self.get_rooms()):
-            data[room] = np.array([float(i), float(i == self.blocked_right_from)])
+            data[room] = np.array([float(i), float(self.ledge_blocks_rightward(from_room=i))])
         return State(data=data)
 
     def take_action(self, *, action: Action) -> State:
@@ -363,9 +414,10 @@ class TossingRoomSplitEnvironment(Environment):
         if 0 <= to_room < self.num_rooms and abs(to_room - robot_room) == 1:
             # The one-way ledge: stepping RIGHT from blocked_right_from is the single
             # irreversible-blocked move (a no-op). Everything else, including stepping
-            # LEFT back across it, is allowed.
+            # LEFT back across it, is allowed. Under --two-way-ledge nothing is blocked
+            # -- see ledge_blocks_rightward, which is also what writes the symbolic half.
             crosses_ledge_rightward = (
-                robot_room == self.blocked_right_from and to_room == self.blocked_right_from + 1
+                self.ledge_blocks_rightward(from_room=robot_room) and to_room == robot_room + 1
             )
             if not crosses_ledge_rightward:
                 next_state.set(obj=self.robot, feature_name="room", feature_val=float(to_room))

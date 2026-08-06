@@ -53,7 +53,16 @@ class TossingRoomSplitProblem(Problem):
         is 12 rather than 7. TRASH's own solve is unchanged at 5 and still admits no
         second attempt: a retry costs the eight-step round trip to the pile, landing at
         step 13. RECYCLING can never be retried at any horizon, since the ledge severs the
-        bin room from the pile."""
+        bin room from the pile.
+
+        **Under `--two-way-ledge` EMPTY's solve is 9, not 10, and the horizon is 11.**
+        The reverse order (recycling first: 2 moves, a press, 5 moves, a press) becomes
+        feasible and is cheaper, so `empty_both_bins_solve` returns it. That is a real
+        change in the domain's difficulty and must be stated wherever a two-way number is
+        put beside a one-way one -- it is not a method effect. It does not reopen the
+        retry channel the tight bound exists to close: a TRASH retry still lands at step
+        13, past 11 as it was past 12. The two throw families' own solves (4 and 5) are
+        unchanged either way, since neither walk crosses the ledge rightward."""
         lengths: list[int] = []
         for bin_room in (self.env.recycling_bin_room, self.env.trash_bin_room):
             distance = self.rooms_to_walk(room=bin_room)
@@ -72,7 +81,12 @@ class TossingRoomSplitProblem(Problem):
         and the one-way ledge means the order matters: on the default layout only
         trash-then-recycling is feasible. Both orders are costed and the cheaper feasible
         one wins, rather than hardcoding "rightmost first" -- the ledge's direction is
-        layout config."""
+        layout config.
+
+        Costing both orders is what makes `--two-way-ledge` correct here for free: with
+        no blocked edge BOTH orders are feasible, and the cheaper (recycling first, 9 on
+        the default layout) wins. A hardcoded "rightmost first" would have silently
+        reported 10 for a world in which 9 is achievable, over-sizing the horizon."""
         candidates: list[int] = []
         for first, second in (
             (self.env.trash_bin_room, self.env.recycling_bin_room),
@@ -93,10 +107,18 @@ class TossingRoomSplitProblem(Problem):
         """MoveRoom steps between two rooms, or None if the one-way ledge blocks the
         walk. Closed form rather than a graph search: the rooms are a 1-D hallway whose
         single blocked edge is the rightward step out of `blocked_right_from`, so leftward
-        is always free and rightward is free unless the walk crosses that edge."""
+        is always free and rightward is free unless the walk crosses that edge.
+
+        Under `--two-way-ledge` there is no blocked edge at all, so this never returns
+        None and the hallway is an ordinary corridor. The feasibility question is asked
+        of `Environment.ledge_blocks_rightward` rather than re-derived from
+        `blocked_right_from` here, so the dynamics, the symbolic model and this horizon
+        calculation cannot disagree about which edges exist."""
         if to_room <= from_room:
             return from_room - to_room
-        if from_room <= self.env.blocked_right_from < to_room:
+        if any(
+            self.env.ledge_blocks_rightward(from_room=room) for room in range(from_room, to_room)
+        ):
             return None
         return to_room - from_room
 

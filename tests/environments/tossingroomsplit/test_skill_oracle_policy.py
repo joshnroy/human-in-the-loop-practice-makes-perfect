@@ -13,7 +13,9 @@ from hitl_pmp.environments.tossingroomsplit.predicates import (
     TRASH_BIN_EMPTY,
     TRASH_IN_BIN,
 )
+from hitl_pmp.environments.tossingroomsplit.problem import TossingRoomSplitProblem
 from hitl_pmp.environments.tossingroomsplit.skill_oracle_policy import SkillOraclePolicy
+from hitl_pmp.environments.tossingroomsplit.tasks import TossingRoomSplitTasks
 
 _ENV = TossingRoomSplitEnvironment()
 _ROBOT = TossingRoomSplitEnvironment.robot
@@ -217,3 +219,77 @@ class TestEmptyIsAnOrderingTask:
         assert labeled.action[0] == TossingRoomSplitEnvironment.SKILL_PRESS
         assert labeled.action[1] == TossingRoomSplitEnvironment.RECYCLING_KIND
         assert labeled.label.startswith("PressRecycling(")
+
+
+class TestTheOracleUnderATwoWayLedge:
+    """`--two-way-ledge` must not silently break the privileged solver. `_empty_step`
+    visits still-full bins in DESCENDING room index because the one-way ledge makes that
+    the only feasible order; two-way, both orders work and descending is no longer the
+    cheapest. It is kept anyway -- it is still *correct* in both worlds, and changing it
+    would make the oracle's behaviour depend on the flag for no measured benefit.
+
+    What that costs is bounded and asserted below: descending exceeds the cheapest order
+    by |start - far_bin| - |start - near_bin|, which is 1 on the default layout against
+    the 2 spare steps `max_episode_steps` allows."""
+
+    @staticmethod
+    def _rollout(*, env: TossingRoomSplitEnvironment, goal_builder) -> int:
+        state = env.build_initial_state(
+            trash_weight=1.0,
+            recycling_weight=1.0,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+            trash_count=1,
+            recycling_count=1,
+        )
+        env.set_state(state=state)
+        goal = goal_builder(state=state)
+        for step in range(64):
+            if goal.is_satisfied(state=env.get_current_state()):
+                return step
+            labeled = SkillOraclePolicy.get_labeled_action(
+                state=env.get_current_state(), env=env, goal=goal
+            )
+            env.take_action(action=labeled.action)
+        raise AssertionError("oracle did not reach the goal")
+
+    def test_it_still_empties_both_bins_two_way(self) -> None:
+        env = TossingRoomSplitEnvironment(two_way_ledge=True)
+        assert TestTheOracleUnderATwoWayLedge._rollout(env=env, goal_builder=_empty_goal) == 10
+
+    def test_it_empties_both_bins_one_way_in_the_same_number_of_steps(self) -> None:
+        """Unchanged behaviour with the flag off: the flag adds a world, it does not
+        move the existing one."""
+        env = TossingRoomSplitEnvironment()
+        assert TestTheOracleUnderATwoWayLedge._rollout(env=env, goal_builder=_empty_goal) == 10
+
+    def test_its_empty_solve_still_fits_the_two_way_horizon(self) -> None:
+        """10 descending steps against a horizon of 11 -- one spare, not zero."""
+        env = TossingRoomSplitEnvironment(two_way_ledge=True)
+        problem = TossingRoomSplitProblem(
+            env=env, tasks=TossingRoomSplitTasks(env=env, forced_goal_type=None)
+        )
+        steps = TestTheOracleUnderATwoWayLedge._rollout(env=env, goal_builder=_empty_goal)
+        assert steps <= problem.max_episode_steps()
+
+    def test_it_still_solves_both_throw_families_two_way(self) -> None:
+        for goal_builder, expected in ((_recycling_goal, 4), (_trash_goal, 5)):
+            env = TossingRoomSplitEnvironment(two_way_ledge=True)
+            state = env.build_initial_state(
+                trash_weight=1.0,
+                recycling_weight=1.0,
+                trash_bin_distance=2.0,
+                recycling_bin_distance=2.0,
+            )
+            env.set_state(state=state)
+            goal = goal_builder(state=state)
+            for step in range(64):
+                if goal.is_satisfied(state=env.get_current_state()):
+                    assert step == expected
+                    break
+                labeled = SkillOraclePolicy.get_labeled_action(
+                    state=env.get_current_state(), env=env, goal=goal
+                )
+                env.take_action(action=labeled.action)
+            else:
+                raise AssertionError("oracle did not reach the goal")

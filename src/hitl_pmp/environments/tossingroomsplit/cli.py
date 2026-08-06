@@ -22,8 +22,14 @@ class TossingRoomSplitCli:
     The flag set is deliberately identical to `TossingRoomCli`'s, including the
     defaults, so the two domains can be run with the same command line and any
     difference in results is the skill split rather than a differently configured
-    world. A static-method container, never instantiated, same as every other
-    business-logic class in this project."""
+    world. **One deliberate exception**: `--two-way-ledge` exists here and not there.
+    It is the positive control for the reset-free experiment, which runs on this domain
+    only; it defaults off, so the identical-command-line property still holds for every
+    command line that does not name it. Porting it to `environments/tossingroom` is a
+    later PR's job if that domain ever needs the same control, not a bundled change here.
+
+    A static-method container, never instantiated, same as every other business-logic
+    class in this project."""
 
     render_fps: ClassVar[int] = 2  # slow -- solves are only a handful of actions long
 
@@ -60,6 +66,16 @@ class TossingRoomSplitCli:
             type=int,
             default=fields["blocked_right_from"].default,
             help="The one-way ledge: stepping RIGHT from this room to the next is blocked.",
+        )
+        parser.add_argument(
+            "--two-way-ledge",
+            action="store_true",
+            help="Make that ledge traversable in BOTH directions, leaving the domain with "
+            "no irreversible action. Off by default. The positive control for the "
+            "reset-free experiment: it isolates irreversibility as the mechanism, since "
+            "rooms left of the ledge stop being absorbing and the robot can walk back to "
+            "the pile. NOTE this also shortens EMPTY's solve 10 -> 9 and the evaluation "
+            "horizon 12 -> 11 on the default layout -- see TossingRoomSplitProblem.",
         )
         parser.add_argument(
             "--throw-tolerance",
@@ -221,6 +237,7 @@ class TossingRoomSplitCli:
             recycling_bin_room=args.recycling_bin_room,
             trash_bin_room=args.trash_bin_room,
             blocked_right_from=args.blocked_right_from,
+            two_way_ledge=args.two_way_ledge,
             throw_tolerance=args.throw_tolerance,
             reference_force=args.reference_force,
             reference_distance=args.reference_distance,

@@ -107,3 +107,16 @@ def test_render_frame_differs_with_a_label() -> None:
             state=state, env=env, label="Throw(robot, recycling)"
         ),
     )
+
+
+def test_render_frame_annotates_the_ledge_differently_when_it_is_two_way() -> None:
+    """The caption says "One-way" and a red X marks the blocked crossing. Under
+    --two-way-ledge neither is true, so the drawing has to change -- otherwise every
+    demo video and every --record-full-loop recording of the positive-control arm
+    carries a false claim about the world it is showing."""
+    one_way = TossingRoomSplitEnvironment()
+    two_way = TossingRoomSplitEnvironment(two_way_ledge=True)
+    one_way_frame = TossingRoomSplitRenderer.render_frame(state=_state(env=one_way), env=one_way)
+    two_way_frame = TossingRoomSplitRenderer.render_frame(state=_state(env=two_way), env=two_way)
+    assert one_way_frame.shape == two_way_frame.shape
+    assert not np.array_equal(one_way_frame, two_way_frame)

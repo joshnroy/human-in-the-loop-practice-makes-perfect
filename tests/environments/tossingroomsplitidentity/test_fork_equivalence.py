@@ -364,3 +364,18 @@ def test_target_force_sits_at_input_index_four(*, identity_env):
     assert len(row) == 11, "the identity arm's throw row is 11 columns, not the causal 12"
     assert row[4] == expected, "target_force is not at index 4"
     assert row[10] == 0.42, "the sampled force is not the last column"
+
+
+def test_the_two_way_ledge_flag_is_a_causal_only_divergence_that_defaults_off(*, causal_env):
+    """`--two-way-ledge` (the reset-free positive control) exists on the causal domain
+    only -- the identity fork has no such field. That is a real divergence, so it is
+    recorded here rather than left for a reviewer to notice.
+
+    It is harmless to this guard for exactly one reason: it defaults OFF, and every
+    assertion in this file constructs both environments at their defaults. So the two
+    worlds compared above are still the same world. If the default ever flips, or if the
+    identity fork grows its own copy, this test is the thing that has to be revisited --
+    and the throw-representation comparison re-baselined."""
+    assert causal_env.two_way_ledge is False
+    assert "two_way_ledge" not in TossingRoomSplitIdentityEnvironment.model_fields
+    assert causal_env.ledge_blocks_rightward(from_room=causal_env.blocked_right_from) is True
