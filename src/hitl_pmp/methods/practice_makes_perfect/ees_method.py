@@ -624,10 +624,16 @@ class EesMethod(Method):
     # ------------------------------------------- unreachable Method surface area
 
     def reset_environment(self, *, start_state: State) -> bool:
-        """No irreversible actions exist in Light Switch and the base PMP paper has
-        no human-in-the-loop layer at all (matches SkillOracleMethod's reasoning)."""
-        self.env.set_state(state=start_state)
-        return True
+        """Always False: EES has no self-navigation to offer, so it declines rather than
+        reporting a success it did not achieve (matches SkillOracleMethod's reasoning).
+
+        This used to `self.env.set_state(state=start_state); return True` -- a
+        privileged external state write dressed up as the agent recovering under its
+        own power. Nothing calls this method today, so the lie cost nothing; the moment
+        a reset-free loop branches on the return value it would silently treat every
+        stranded robot as rescued."""
+        del start_state  # nothing to navigate towards -- see above
+        return False
 
     def generate_train_task(self, *, tbd_inputs: Any) -> Task:
         raise NotImplementedError(

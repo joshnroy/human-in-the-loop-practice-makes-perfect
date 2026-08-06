@@ -55,11 +55,16 @@ class RandomSkillsMethod(Method):
         return LabeledAction(action=action, label=label)
 
     def reset_environment(self, *, start_state: State) -> bool:
-        """No irreversible actions matter to this baseline and the base PMP paper has
-        no human-in-the-loop layer -- a direct environment set stands in for a real
-        "self-navigate without help" recovery (matches SkillOracleMethod)."""
-        self.env.set_state(state=start_state)
-        return True
+        """Always False: this baseline has no self-navigation to offer, so it declines
+        rather than reporting a success it did not achieve (matches SkillOracleMethod).
+
+        This used to `self.env.set_state(state=start_state); return True` -- a
+        privileged external state write dressed up as the agent recovering under its
+        own power. Nothing calls this method today, so the lie cost nothing; the moment
+        a reset-free loop branches on the return value it would silently treat every
+        stranded robot as rescued."""
+        del start_state  # nothing to navigate towards -- see above
+        return False
 
     def get_task_policy(self, *, task: Task) -> Policy:
         del task  # never consulted -- this baseline always samples uniformly among
