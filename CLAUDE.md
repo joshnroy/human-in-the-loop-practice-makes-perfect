@@ -93,9 +93,12 @@ Four traps, each of which costs an hour:
   `NameNotFound`. Import a dynamic3d **module** (e.g. `kinder.envs.dynamic3d.envs`,
   *not* the `kinder.envs.dynamic3d` package, which does not pull in `mujoco`) before
   that call, and set both variables back to `egl` after it.
-- **There is a known unbounded memory leak** — one PyBullet client and ~136 MB per
-  skill execution, never released. Never run an unbounded loop; wrap anything
-  iterative in
+- **The unbounded memory leak is fixed upstream**, but memory still needs care. Each
+  skill execution used to strand one PyBullet client and ~136 MB forever; `PyBulletSim`
+  now disconnects its client from a `weakref.finalize` when it is collected, so a
+  sequential run releases as it goes. What did *not* go away is the cost of holding many
+  sims alive **at once** — and a planner grounds a fresh controller, hence a fresh sim,
+  per sampling attempt. So still never run an unbounded loop; wrap anything iterative in
   `systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue -- <cmd>`
   (no sudo needed) and check the scope's cgroup `memory.max` before trusting it. This
   machine's `DefaultOOMPolicy=stop` means a kernel OOM takes down the whole session.
@@ -106,13 +109,19 @@ Four traps, each of which costs an hour:
 upstream `main` — including that a cube landing **in** the bin scores a **failure**,
 which is the single most misreadable thing about `Tossing3D`.
 
-`reference/kinder-baselines` is deliberately **not** on its default branch: it sits on
-`pinned-with-leak-fix` (`566d49b`), upstream `main` plus a `weakref.finalize` in
-`PyBulletSim` that disconnects the leaked client — pushed to the fork
-`joshnroy/kinder-baselines` and proposed upstream as PR #87. `scripts/update_reference_repos.sh`
-skips rather than clobbers a non-default branch, so a refresh leaves it alone. **Do not
-add a `_release`-style explicit `close()` on top of it**: with the finalizer in place that
-double-disconnects.
+`reference/kinder-baselines` is deliberately **not** on its default branch. The leak fix
+it used to be pinned for landed upstream (PR #87, squash-merged as `9512b9e`), so the old
+`pinned-with-leak-fix` pin is gone; the checkout now sits on the **Tossing3D port stack**
+— `josh/feature/tossing3d-bilevel-model`, the top of `josh/feature/tossing-state-abstractions`
+→ `-throw-controllers` → `-oracle-policy` → `-bilevel-model`, open upstream as PRs #89–#92.
+`scripts/update_reference_repos.sh` skips rather than clobbers a non-default branch, so a
+refresh leaves it alone; that also means **it will not pull `main` for you** — fetch
+explicitly (`git fetch origin main:main`) rather than assuming a refresh moved it.
+
+**Do not add a `_release`-style explicit `close()`** on top of the finalizer: that
+double-disconnects. `close()` itself is safe and idempotent — it calls the finalizer — so
+prefer it over `p.disconnect` by hand, which would strand a stale finalizer against a
+reused client id.
 
 `environments/tossing3d/` is the integration (`--env tossing3d`), and it imports KINDER
 **lazily**, from one module — so the package still imports, typechecks and tests without
