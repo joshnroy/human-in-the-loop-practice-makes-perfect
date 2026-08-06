@@ -359,6 +359,14 @@ while "TRASH: 100%" is `14/14`. A percentage may accompany a count (`27/30 (90%)
 replace it. Write "null result" in full; reserve a bare `null`, in backticks, for the code
 value.
 
+**When a later change makes a published number provisional or wrong, the staleness note goes
+in the committed `docs/experiment-logs/` entry as well as the PR body.** The PR body is not
+where a reader six months out looks; the log is. Put it where someone landing mid-page will
+see it, not only at the bottom. **Never edit, restate or recompute a published number** — add
+a clearly-marked note beside it, so both what was originally reported and why it is now
+provisional stay visible. State each reason at the strength it is warranted, and mark an
+unverified part as unverified.
+
 **Any quantitative result needs a figure, not just a table.** A table makes the reader
 reconstruct the shape one number at a time, and the shape — a gap closing, a curve
 flattening, two arms diverging — is the thing worth seeing. Plot per-seed spread rather
