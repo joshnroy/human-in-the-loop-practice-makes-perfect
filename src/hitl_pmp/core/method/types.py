@@ -319,13 +319,21 @@ class GroundSkill(BaseModel):
 
 
 class Variable(BaseModel):
-    """A typed placeholder in a lifted Skill (e.g. "?robot": robot), as opposed to
-    Object, which is a concrete, named instance. Mirrors Object's shape (name +
-    type) in problem/environment/types.py -- predicators' equivalent (Object and
-    Variable both subclassing _TypedEntity) lives in one file since both wrap a
+    """A typed placeholder in a lifted Skill (e.g. name="robot", type=robot_type), as
+    opposed to Object, which is a concrete, named instance. Mirrors Object's shape
+    (name + type) in problem/environment/types.py -- predicators' equivalent (Object
+    and Variable both subclassing _TypedEntity) lives in one file since both wrap a
     Type; here Variable stays in method/types.py rather than environment/types.py
     since only Skill (Method's territory) consumes it, keeping environment/types.py
-    a pure leaf."""
+    a pure leaf.
+
+    **`name` carries no leading "?".** PDDL wants one and `PddlWriter._variable_str`
+    adds it at write time -- unlike predicators, whose `Variable.name` is required to
+    already have it. A name written "?robot" here renders "??robot", which Fast
+    Downward's translator splits into two tokens; `PddlWriter` now rejects it, because
+    an earlier version of this docstring used "?robot" as its example and
+    `environments/tossing3d/skills.py` followed it, silently disabling planning for
+    that whole domain."""
 
     model_config = ConfigDict(frozen=True)
 

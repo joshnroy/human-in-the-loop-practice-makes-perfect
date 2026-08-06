@@ -309,7 +309,9 @@ execution (a concrete `Method`'s job, inside `execute_skill`), so
 `improve_skill_parameters` updates the *sampler*, not one already-consumed value.
 
 `Skill`'s `preconditions`/`add_effects`/`delete_effects` are `LiftedAtom`s — a
-`Predicate` applied to `Variable`s (a typed placeholder, e.g. `?robot`) rather than
+`Predicate` applied to `Variable`s (a typed placeholder, e.g. `Variable(name="robot",
+type=robot_type)` — **no leading `?`**; `PddlWriter` adds that at write time and rejects
+a name that already carries it) rather than
 concrete `Object`s, mirroring `predicators`' `STRIPSOperator`/`NSRT` symbolic half.
 This was deliberately deferred until a real consumer existed; `methods/
 practice_makes_perfect/` (reproducing the original PMP/EES paper) is that consumer —
