@@ -57,6 +57,28 @@ def test_family_of_reads_the_item_name_out_of_a_throw_goal() -> None:
     assert TossingRoomGoalFamilyCurves.family_of(goal=_RECYCLING_GOAL) == "RECYCLING"
 
 
+def test_family_of_reads_the_split_domains_per_item_throw_predicates() -> None:
+    """`tossingroomsplit` splits the shared `ItemInBin` into `TrashInBin` and
+    `RecyclingInBin`, because there the item and bin types are split too
+    (`environments/tossingroomsplit/predicates.py`). The family still comes from the
+    **first object**, not from the predicate name, so one rule covers both domains --
+    and without this the split domain's runs cannot be read at all."""
+    assert TossingRoomGoalFamilyCurves.family_of(goal="TrashInBin(trash, trash_bin)") == "TRASH"
+    assert (
+        TossingRoomGoalFamilyCurves.family_of(goal="RecyclingInBin(recycling, recycling_bin)")
+        == "RECYCLING"
+    )
+
+
+def test_family_of_recognises_the_split_domains_two_atom_empty_goal() -> None:
+    """The split domain also renames the empty atoms per bin. It must still be EMPTY,
+    and must not be mistaken for a throw family -- `TrashBinEmpty` contains the word
+    Trash, so a rule keyed on the predicate name rather than the objects would put it in
+    the TRASH denominator."""
+    goal = "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)"
+    assert TossingRoomGoalFamilyCurves.family_of(goal=goal) == "EMPTY"
+
+
 def test_family_of_recognises_the_two_atom_empty_goal() -> None:
     """EMPTY is the only conjunctive goal in this domain -- one `BinEmpty` per bin since
     #74 gave each bin its own button. It must not be parsed as a throw family; doing so

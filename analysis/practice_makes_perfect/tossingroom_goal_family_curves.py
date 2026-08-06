@@ -35,6 +35,7 @@ the entire reason the denominator is written down.
 import argparse
 import json
 import math
+import re
 import statistics
 from pathlib import Path
 
@@ -65,11 +66,19 @@ class TossingRoomGoalFamilyCurves:
     def family_of(*, goal: str) -> str:
         """Which goal family a recorded goal string belongs to.
 
-        `TossingRoomTasks.build_task` writes exactly three shapes, and this is the whole
-        vocabulary: a throw family is one `ItemInBin(<item>, <bin>)` atom whose first
-        object names the item, and `EMPTY` is the conjunction of one `BinEmpty` per bin
+        A throw family is one `<...>InBin(<item>, <bin>)` atom whose **first object**
+        names the item, and `EMPTY` is a conjunction of `BinEmpty` atoms, one per bin
         (two of them since #74 gave each bin its own button, where it used to be a
         single atom).
+
+        **The family comes from the first object, not from the predicate name**, and
+        that is what lets one rule serve both domains. `TossingRoomTasks` writes the
+        shared `ItemInBin`; `tossingroomsplit` splits it per item into `TrashInBin` and
+        `RecyclingInBin`, because there the item and bin *types* are split too (see
+        `environments/tossingroomsplit/predicates.py`). Keying on the predicate name
+        would also misfile the split domain's `TrashBinEmpty` atom, which contains the
+        word Trash but is half of an EMPTY goal -- so the `BinEmpty` test is deliberately
+        made first.
 
         Anything else raises. Bucketing an unrecognised goal into a default would move
         tasks between denominators invisibly, which on a 14/14/2 composition is a
@@ -77,12 +86,14 @@ class TossingRoomGoalFamilyCurves:
         loudly."""
         if "BinEmpty" in goal:
             return "EMPTY"
-        if goal.startswith("ItemInBin(") and ", " in goal:
-            return goal[len("ItemInBin(") :].split(",")[0].strip().upper()
+        match = re.fullmatch(r"\w*InBin\(\s*(\w+)\s*,\s*[^)]*\)", goal)
+        if match is not None:
+            return match.group(1).upper()
         raise ValueError(
-            f"unrecognised goal {goal!r}: expected an ItemInBin throw goal or a BinEmpty "
-            "conjunction. If the domain gained a goal family, teach this function about "
-            "it rather than letting it fall into another family's denominator."
+            f"unrecognised goal {goal!r}: expected an `<...>InBin(<item>, <bin>)` throw "
+            "goal or a BinEmpty conjunction. If the domain gained a goal family, teach "
+            "this function about it rather than letting it fall into another family's "
+            "denominator."
         )
 
     @staticmethod
