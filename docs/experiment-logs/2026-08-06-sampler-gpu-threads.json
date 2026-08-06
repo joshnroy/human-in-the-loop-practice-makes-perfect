@@ -1,0 +1,132 @@
+{
+  "torch_version": "2.13.0+cu130",
+  "note": "One process per thread setting; threads = -1 means set_num_threads was not called at all, which is what the shipped code does. Each row carries the 1-minute load average it was measured at, because the penalty for using more than one thread scales with machine contention.",
+  "rows": [
+    {
+      "device": "cpu",
+      "n": 16,
+      "dim": 12,
+      "max_train_iters": 1000,
+      "median_seconds": 0.3383389789996727,
+      "min_seconds": 0.33392821899906266,
+      "max_seconds": 0.3456802910004626,
+      "reps": 3,
+      "samples": [
+        0.3383389789996727,
+        0.33392821899906266,
+        0.3456802910004626
+      ],
+      "threads": 1,
+      "called_set_num_threads": true,
+      "load_average_1min": 43.603515625
+    },
+    {
+      "device": "cpu",
+      "n": 16,
+      "dim": 12,
+      "max_train_iters": 1000,
+      "median_seconds": 0.752474302000337,
+      "min_seconds": 0.45229937600015546,
+      "max_seconds": 1.0992642889996205,
+      "reps": 3,
+      "samples": [
+        1.0992642889996205,
+        0.752474302000337,
+        0.45229937600015546
+      ],
+      "threads": 2,
+      "called_set_num_threads": true,
+      "load_average_1min": 42.35400390625
+    },
+    {
+      "device": "cpu",
+      "n": 16,
+      "dim": 12,
+      "max_train_iters": 1000,
+      "median_seconds": 6.030998177999209,
+      "min_seconds": 4.124751751000076,
+      "max_seconds": 6.392939256998943,
+      "reps": 3,
+      "samples": [
+        6.392939256998943,
+        4.124751751000076,
+        6.030998177999209
+      ],
+      "threads": 4,
+      "called_set_num_threads": true,
+      "load_average_1min": 43.90771484375
+    },
+    {
+      "device": "cpu",
+      "n": 16,
+      "dim": 12,
+      "max_train_iters": 1000,
+      "median_seconds": 30.085905333000483,
+      "min_seconds": 29.453917803999502,
+      "max_seconds": 32.37278220799999,
+      "reps": 3,
+      "samples": [
+        32.37278220799999,
+        29.453917803999502,
+        30.085905333000483
+      ],
+      "threads": 8,
+      "called_set_num_threads": true,
+      "load_average_1min": 50.0361328125
+    },
+    {
+      "device": "cpu",
+      "n": 16,
+      "dim": 12,
+      "max_train_iters": 1000,
+      "median_seconds": 72.10688136600038,
+      "min_seconds": 71.28682403099992,
+      "max_seconds": 75.18281544900128,
+      "reps": 3,
+      "samples": [
+        75.18281544900128,
+        72.10688136600038,
+        71.28682403099992
+      ],
+      "threads": 16,
+      "called_set_num_threads": true,
+      "load_average_1min": 58.6318359375
+    },
+    {
+      "device": "cpu",
+      "n": 16,
+      "dim": 12,
+      "max_train_iters": 1000,
+      "median_seconds": 120.42574985300053,
+      "min_seconds": 114.7909291879987,
+      "max_seconds": 121.01787277999938,
+      "reps": 3,
+      "samples": [
+        120.42574985300053,
+        114.7909291879987,
+        121.01787277999938
+      ],
+      "threads": 24,
+      "called_set_num_threads": true,
+      "load_average_1min": 67.697265625
+    },
+    {
+      "device": "cpu",
+      "n": 16,
+      "dim": 12,
+      "max_train_iters": 1000,
+      "median_seconds": 0.8734493800002383,
+      "min_seconds": 0.868182603000605,
+      "max_seconds": 1.323789002999547,
+      "reps": 3,
+      "samples": [
+        1.323789002999547,
+        0.868182603000605,
+        0.8734493800002383
+      ],
+      "threads": -1,
+      "called_set_num_threads": false,
+      "load_average_1min": 66.19287109375
+    }
+  ]
+}

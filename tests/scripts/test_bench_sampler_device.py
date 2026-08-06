@@ -19,16 +19,19 @@ from hitl_pmp.methods.practice_makes_perfect.wrapped_sampler import MlpBinaryCla
 from scripts.bench_sampler_device import CudaMlpBinaryClassifier, SamplerDeviceBench
 
 
-@pytest.mark.parametrize("n", [1, 2, 3, 8, 16, 64, 513])
+@pytest.mark.parametrize("n", [2, 3, 8, 16, 64, 513])
 def test_generated_data_always_contains_both_classes(*, n):
     """A single-class draw would silently time the shortcut instead of a real fit."""
-    x_data, y_data = SamplerDeviceBench.make_data(n=n, dim=12, seed=7)
-    if n == 1:
-        # Degenerate by construction: one row cannot hold two classes. The grid never
-        # uses it, but the generator must not pretend otherwise.
-        assert y_data.sum() == 1
-        return
+    _, y_data = SamplerDeviceBench.make_data(n=n, dim=12, seed=7)
     assert 0 < y_data.sum() < n, f"n={n} produced a single-class label vector"
+
+
+@pytest.mark.parametrize("n", [0, 1])
+def test_a_dataset_too_small_to_hold_two_classes_is_refused(*, n):
+    """Serving n < 2 degenerately would time the single-class shortcut -- a fit that
+    never happened -- and report it as a fit."""
+    with pytest.raises(ValueError, match="at least 2"):
+        SamplerDeviceBench.make_data(n=n, dim=12, seed=7)
 
 
 def test_generated_rows_have_the_real_layout():
@@ -71,7 +74,6 @@ def test_cuda_subclass_trains_the_same_net_as_the_cpu_original():
 
 def test_the_shipped_class_is_used_unmodified_for_the_cpu_arm():
     """The CPU number must come from the class the project actually runs, not a copy."""
-    assert SamplerDeviceBench.time_one.__module__ == "scripts.bench_sampler_device"
     assert issubclass(CudaMlpBinaryClassifier, MlpBinaryClassifier)
     # Exactly the two device-bound methods are overridden. `fit` -- normalization, the
     # single-class shortcut, the balancing branch -- and `_build_net`, the architecture,

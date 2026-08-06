@@ -48,18 +48,93 @@ class SamplerDeviceBenchPlot:
 
     @staticmethod
     def crossover(*, rows: list[dict[str, object]], slow: str, fast: str) -> str:
-        """The bracket in n where `fast` overtakes `slow`, as a human-readable string."""
+        """The bracket in n where `fast` overtakes `slow`, as a human-readable string.
+
+        Three things this refuses to do, because each would state more than the data
+        supports:
+
+        - **Compare arms that were not both measured.** An `n` present for only one
+          device is dropped, and if that leaves nothing the answer is "not comparable"
+          rather than a crash or a comparison against a missing value.
+        - **Bracket non-monotone data.** `max(below)`/`min(above)` is a bracket only if
+          the sign of `slow - fast` flips exactly once in n. On a coarse grid measured
+          on a shared box it may not, and that form would then emit a *reversed*
+          interval. So the sign changes are counted, and more than one is reported as
+          having no meaningful bracket.
+        - **Conflate the two directions.** `fast` overtaking `slow` as n grows and
+          `fast` losing its lead as n grows are different findings, and get different
+          sentences.
+        """
         by_n: dict[int, dict[str, float]] = {}
         for row in rows:
             by_n.setdefault(int(row["n"]), {})[str(row["device"])] = float(row["median_seconds"])
-        paired = sorted(n for n, d in by_n.items() if slow in d and fast in d)
-        below = [n for n in paired if by_n[n][slow] < by_n[n][fast]]
-        above = [n for n in paired if by_n[n][fast] < by_n[n][slow]]
-        if not above:
+        paired = sorted(n for n, devices in by_n.items() if slow in devices and fast in devices)
+        if not paired:
+            return f"not comparable: no n was measured on both {slow} and {fast}"
+        if all(by_n[n][fast] == by_n[n][slow] for n in paired):
+            return f"no crossover: {slow} and {fast} tie at every measured n"
+        # True where `fast` wins. An exact tie counts as "fast has not overtaken".
+        fast_wins = [by_n[n][fast] < by_n[n][slow] for n in paired]
+        if not any(fast_wins):
             return f"no crossover: {slow} is faster at every measured n (max n = {max(paired)})"
-        if not below:
+        if all(fast_wins):
             return f"no crossover: {fast} is faster at every measured n (min n = {min(paired)})"
-        return f"crossover between n = {max(below)} and n = {min(above)}"
+        flips = [i for i in range(1, len(fast_wins)) if fast_wins[i] != fast_wins[i - 1]]
+        if len(flips) > 1:
+            return (
+                f"not a single crossover: the faster arm changes {len(flips)} times "
+                f"across n = {paired[0]}..{paired[-1]}, so no bracket is meaningful"
+            )
+        index = flips[0]
+        if fast_wins[index]:
+            return f"crossover between n = {paired[index - 1]} and n = {paired[index]}"
+        return (
+            f"reverse crossover between n = {paired[index - 1]} and n = {paired[index]}: "
+            f"{fast} is faster only below it"
+        )
+
+    @staticmethod
+    def crossover_span(
+        *, rows: list[dict[str, object]], slow: str, fast: str
+    ) -> tuple[int, int] | None:
+        """The same bracket as `crossover`, as numbers, or `None` when there is not
+        exactly one forward crossover to draw.
+
+        `plot` needs the interval, not the sentence. Returning it separately keeps the
+        figure from depending on the wording of a human-readable string -- and keeps a
+        reverse crossover, a multi-flip series and an incomparable pair from all being
+        shaded as if they were the same thing.
+        """
+        message = SamplerDeviceBenchPlot.crossover(rows=rows, slow=slow, fast=fast)
+        if not message.startswith("crossover between"):
+            return None
+        by_n: dict[int, dict[str, float]] = {}
+        for row in rows:
+            by_n.setdefault(int(row["n"]), {})[str(row["device"])] = float(row["median_seconds"])
+        paired = sorted(n for n, devices in by_n.items() if slow in devices and fast in devices)
+        fast_wins = [by_n[n][fast] < by_n[n][slow] for n in paired]
+        index = next(i for i in range(1, len(fast_wins)) if fast_wins[i] != fast_wins[i - 1])
+        return paired[index - 1], paired[index]
+
+    @staticmethod
+    def one_condition(*, rows: list[dict[str, object]]) -> tuple[int, int]:
+        """The single `(dim, max_train_iters)` every row was measured at.
+
+        The driver's *default* grid spans two dims and two iteration counts, which
+        would put four different measurements on the same `(device, n)`. Plotting
+        those as one series draws a zigzag between points that differ 10x, and
+        `crossover`'s per-n lookup would silently keep whichever row came last. So a
+        mixed file is a hard error telling the caller to filter, not something to
+        average over.
+        """
+        conditions = {(int(row["dim"]), int(row["max_train_iters"])) for row in rows}
+        if len(conditions) != 1:
+            raise ValueError(
+                "these rows mix measurement conditions "
+                f"(dim, max_train_iters) = {sorted(conditions)}; "
+                "pass --dim and --iters to select one before plotting."
+            )
+        return next(iter(conditions))
 
     @staticmethod
     def plot(*, rows: list[dict[str, object]], out_path: Path, title: str) -> None:
@@ -90,14 +165,20 @@ class SamplerDeviceBenchPlot:
             )
             axes.fill_between(xs, lows, highs, color=DEVICE_COLORS[device], alpha=0.15)
 
-        bracket = SamplerDeviceBenchPlot.crossover(rows=rows, slow="cpu", fast="cuda")
-        if bracket.startswith("crossover"):
-            low = int(bracket.split("n = ")[1].split(" ")[0])
-            high = int(bracket.rsplit("n = ", maxsplit=1)[1])
+        # The numeric bracket, not a re-parse of the sentence `crossover` returns.
+        span = SamplerDeviceBenchPlot.crossover_span(rows=rows, slow="cpu", fast="cuda")
+        if span is not None:
+            low, high = span
             axes.axvspan(low, high, color="#888888", alpha=0.18)
             axes.annotate(
                 f"CPU/GPU crossover\n{low} < n < {high}",
-                xy=((low * high) ** 0.5, max(ys)),
+                # Sit the label just above the CUDA arm, deliberately: the shipped-CPU
+                # arm spans two decades above it and anchoring to the overall maximum
+                # would push the text off into empty space at the top of the axes.
+                xy=(
+                    (low * high) ** 0.5,
+                    max(float(r["median_seconds"]) for r in rows if r["device"] == "cuda"),
+                ),
                 ha="center",
                 fontsize=9,
                 color="#333333",
@@ -119,14 +200,26 @@ class SamplerDeviceBenchPlot:
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument("--bench-json", type=Path, nargs="+", required=True)
         parser.add_argument("--out", type=Path, required=True)
+        parser.add_argument("--dim", type=int, help="Keep only rows at this input dim.")
+        parser.add_argument("--iters", type=int, help="Keep only rows at this max_train_iters.")
         parser.add_argument(
             "--title",
             default="Sampler classifier fit(), CPU vs GPU (1000 iterations, input dim 12)",
         )
         args = parser.parse_args(argv)
         rows = SamplerDeviceBenchPlot.load(paths=args.bench_json)
-        print(SamplerDeviceBenchPlot.crossover(rows=rows, slow="cpu", fast="cuda"))
-        print(SamplerDeviceBenchPlot.crossover(rows=rows, slow="cpu1", fast="cuda"))
+        if args.dim is not None:
+            rows = [row for row in rows if int(row["dim"]) == args.dim]
+        if args.iters is not None:
+            rows = [row for row in rows if int(row["max_train_iters"]) == args.iters]
+        # Raises on a file mixing dims or iteration counts, rather than plotting four
+        # different measurements as one series.
+        dim, iters = SamplerDeviceBenchPlot.one_condition(rows=rows)
+        print(f"input dim {dim}, {iters} training iterations")
+        # Each pair is reported independently, so a file holding only one CPU arm still
+        # answers for the arm it has instead of failing on the one it does not.
+        for slow in ("cpu", "cpu1"):
+            print(SamplerDeviceBenchPlot.crossover(rows=rows, slow=slow, fast="cuda"))
         SamplerDeviceBenchPlot.plot(rows=rows, out_path=args.out, title=args.title)
         print(f"wrote {args.out}")
 

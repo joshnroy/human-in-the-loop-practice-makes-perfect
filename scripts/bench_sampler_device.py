@@ -38,8 +38,10 @@ import argparse
 import copy
 import json
 import math
+import os
 import statistics
 import time
+from datetime import datetime, timezone
 
 import numpy as np
 import torch
@@ -127,7 +129,12 @@ class SamplerDeviceBench:
     def make_data(*, n: int, dim: int, seed: int) -> tuple[np.ndarray, np.ndarray]:
         """A synthetic training set with the real row layout: a leading 1.0 bias
         column, then features. Both classes are always present, or `fit` takes the
-        single-class shortcut and never trains at all."""
+        single-class shortcut and never trains at all -- and `time_one` would then
+        report ~2e-5 s for a fit that never happened, which is worse than an error.
+        A single row cannot hold two classes, so n < 2 is refused rather than served
+        degenerately."""
+        if n < 2:
+            raise ValueError(f"n must be at least 2 for both classes to be present, got {n}.")
         rng = np.random.default_rng(seed)
         x_data = rng.uniform(size=(n, dim))
         x_data[:, 0] = 1.0
@@ -185,7 +192,80 @@ class SamplerDeviceBench:
             "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
             "torch_num_threads": torch.get_num_threads(),
             "called_set_num_threads": args.threads >= 0,
+            # The resolved namespace, so `--ns`/`--reps`/`--devices` stay recoverable
+            # from the file, and the machine-wide load the timings were taken against
+            # -- this box is shared, and a contention caveat the data cannot
+            # substantiate is not a caveat. Same reasoning as config_snapshot.json and
+            # timing.json; see CLAUDE.md.
+            "resolved_args": {key: value for key, value in vars(args).items() if key != "out"},
+            "load_average_1min": os.getloadavg()[0],
+            "cpu_count": os.cpu_count(),
+            "measured_at": datetime.now(timezone.utc).isoformat(),
             "rows": rows,
+        }
+
+    @staticmethod
+    def cuda_init(*, args: argparse.Namespace) -> dict[str, object]:
+        """CUDA context creation and first-cuBLAS-matmul cost.
+
+        Meaningful **only in a fresh process**: both are lazy one-time initialisations,
+        so a second measurement in the same process reads zero. That is why this is a
+        mode of its own rather than a row in the grid, and why the caller is expected
+        to invoke it once per process.
+        """
+        start = time.perf_counter()
+        tensor = torch.zeros(1, device="cuda")
+        torch.cuda.synchronize()
+        context_seconds = time.perf_counter() - start
+        start = time.perf_counter()
+        _ = tensor.new_ones(12, 32) @ tensor.new_ones(32, 32)
+        torch.cuda.synchronize()
+        cublas_seconds = time.perf_counter() - start
+        return {
+            "torch_version": torch.__version__,
+            "gpu_name": torch.cuda.get_device_name(0),
+            "context_seconds": context_seconds,
+            "cublas_seconds": cublas_seconds,
+            "resolved_args": {key: value for key, value in vars(args).items() if key != "out"},
+        }
+
+    @staticmethod
+    def bitwise(*, args: argparse.Namespace) -> dict[str, object]:
+        """Are CPU-fitted and GPU-fitted classifier scores bit-identical?
+
+        This is the reproducibility question, not a speed one, and it is decided
+        separately from any timing: `stats.json` byte-stability is how this project
+        verifies a change did not alter results, so a device that cannot reproduce the
+        CPU path's scores exactly is disqualified whatever it costs.
+        """
+        exact = 0
+        worst = 0.0
+        for seed in range(args.bitwise_seeds):
+            x_data, y_data = SamplerDeviceBench.make_data(n=args.bitwise_n, dim=12, seed=seed)
+            cpu = MlpBinaryClassifier(
+                seed=seed, max_train_iters=args.bitwise_iters, n_iter_no_change=10**9
+            )
+            gpu = CudaMlpBinaryClassifier(
+                seed=seed, max_train_iters=args.bitwise_iters, n_iter_no_change=10**9
+            )
+            cpu.fit(x_data=x_data, y_data=y_data)
+            gpu.fit(x_data=x_data, y_data=y_data)
+            cpu_probabilities = cpu.predict_proba(x_data=x_data)
+            gpu_probabilities = gpu.predict_proba(x_data=x_data)
+            exact += int(np.array_equal(cpu_probabilities, gpu_probabilities))
+            worst = max(worst, float(np.max(np.abs(cpu_probabilities - gpu_probabilities))))
+        print(
+            f"bit-identical seeds: {exact}/{args.bitwise_seeds}; "
+            f"worst absolute score difference {worst:.3e}",
+            flush=True,
+        )
+        return {
+            "torch_version": torch.__version__,
+            "gpu_name": torch.cuda.get_device_name(0),
+            "bit_identical_seeds": exact,
+            "total_seeds": args.bitwise_seeds,
+            "worst_absolute_score_difference": worst,
+            "resolved_args": {key: value for key, value in vars(args).items() if key != "out"},
         }
 
     @staticmethod
@@ -207,11 +287,27 @@ class SamplerDeviceBench:
             help="torch intra-op threads; -1 (the default) does not call "
             "set_num_threads at all, which is what the shipped code does.",
         )
+        parser.add_argument(
+            "--mode",
+            choices=["grid", "cuda-init", "bitwise"],
+            default="grid",
+            help="grid: the device x n timing sweep. cuda-init: per-process CUDA "
+            "context cost, valid only in a fresh process. bitwise: whether the two "
+            "devices produce bit-identical scores.",
+        )
+        parser.add_argument("--bitwise-seeds", type=int, default=10)
+        parser.add_argument("--bitwise-n", type=int, default=24)
+        parser.add_argument("--bitwise-iters", type=int, default=1000)
         args = parser.parse_args(argv)
         if args.threads >= 0:
             torch.set_num_threads(args.threads)
+        modes = {
+            "grid": SamplerDeviceBench.run,
+            "cuda-init": SamplerDeviceBench.cuda_init,
+            "bitwise": SamplerDeviceBench.bitwise,
+        }
         with open(args.out, "w") as handle:
-            json.dump(SamplerDeviceBench.run(args=args), handle, indent=2)
+            json.dump(modes[args.mode](args=args), handle, indent=2)
 
 
 if __name__ == "__main__":

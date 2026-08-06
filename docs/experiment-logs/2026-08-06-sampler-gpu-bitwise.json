@@ -1,0 +1,38 @@
+{
+  "torch_version": "2.13.0+cu130",
+  "gpu_name": "NVIDIA GeForce RTX 5090",
+  "bit_identical_seeds": 0,
+  "total_seeds": 10,
+  "worst_absolute_score_difference": 3.576651215553284e-05,
+  "resolved_args": {
+    "reps": 5,
+    "warmup_reps": 2,
+    "ns": [
+      8,
+      16,
+      32,
+      64,
+      128,
+      256,
+      512,
+      2048
+    ],
+    "dims": [
+      11,
+      12
+    ],
+    "iters": [
+      1000,
+      10000
+    ],
+    "devices": [
+      "cpu",
+      "cuda"
+    ],
+    "threads": -1,
+    "mode": "bitwise",
+    "bitwise_seeds": 10,
+    "bitwise_n": 24,
+    "bitwise_iters": 1000
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "torch_version": "2.13.0+cu130",
+  "gpu_name": "NVIDIA GeForce RTX 5090",
+  "note": "One fresh process per sample; both costs are lazy one-time inits.",
+  "samples": [
+    {
+      "context_seconds": 0.1625654109993775,
+      "cublas_seconds": 0.06794227299906197
+    },
+    {
+      "context_seconds": 0.2300972869998077,
+      "cublas_seconds": 0.06596533999982057
+    },
+    {
+      "context_seconds": 0.13541542500024661,
+      "cublas_seconds": 0.06593313600023976
+    },
+    {
+      "context_seconds": 0.15033193900126207,
+      "cublas_seconds": 0.06577557299897308
+    },
+    {
+      "context_seconds": 0.18662121099987417,
+      "cublas_seconds": 0.06514872499974445
+    }
+  ]
+}
