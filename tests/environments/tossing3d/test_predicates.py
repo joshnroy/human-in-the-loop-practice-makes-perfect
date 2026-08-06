@@ -183,7 +183,29 @@ def test_near_bin_rejects_standing_on_top_of_the_bin() -> None:
 
 
 def test_near_bin_rejects_the_far_side_of_the_room() -> None:
-    assert not NearBinClassifier.holds(state=state(base_x=0.0), robot=_ENV.robot, target=_ENV.bin)
+    """Derived from the upper bound rather than written as a literal, so that widening the
+    bounds again cannot quietly turn "the far side of the room" into a legal throw pose."""
+    far_side = COINCIDENT_BIN_X - (THROW_STANDOFF_BOUNDS[1] + 0.2)
+    assert not NearBinClassifier.holds(
+        state=state(base_x=far_side), robot=_ENV.robot, target=_ENV.bin
+    )
+
+
+def test_near_bin_rejects_the_worst_measured_pose_that_pick_leaves_the_base_in() -> None:
+    """The constraint that sets the upper bound, pinned offline against a real pose.
+
+    `Pick` drives the base to the *cube*, and the widened band would admit that pose if it
+    reached far enough -- whereupon the oracle skips `MoveToThrowPose` and throws from
+    wherever it stands, which is the failure `NearBinClassifier`'s docstring records. Over
+    30 scene seeds exactly one leaves the base inside the 0.04 m lateral tolerance: seed
+    14, at 1.8592 m from the bin and 0.0074 m off its axis. The lateral conjunct cannot
+    save that one, so the standoff conjunct has to, and it does only while the upper bound
+    stays below 1.8592 - NEAR_BIN_TOLERANCE."""
+    assert not NearBinClassifier.holds(
+        state=state(base_x=COINCIDENT_BIN_X - 1.8592, base_y=0.0074),
+        robot=_ENV.robot,
+        target=_ENV.bin,
+    )
 
 
 def test_near_bin_rejects_a_base_off_the_bins_axis() -> None:

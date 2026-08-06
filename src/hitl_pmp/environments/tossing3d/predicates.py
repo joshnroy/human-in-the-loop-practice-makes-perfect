@@ -40,12 +40,78 @@ ON_GROUND_TOL = 0.05  # `on_ground_tol`
 
 # Ours: the range of throw standoffs, in metres. There is no upstream number to borrow --
 # upstream simply hardcodes 1.35 in its own test, and its own `MOVE_TO_TARGET_DISTANCE_
-# BOUNDS` of (0.5, 0.6) is a *grasping* standoff -- so this is the interval
-# `scripts/tossing3d_oracle_demo.py --sweep` covers, which is the only range of throw
-# standoffs anything in this repo has measured (11 standoffs, 1.20 to 1.65). It lives
-# here rather than in `skills.py` so that `NearBin` and the `MoveToThrowPose` sampler are
-# the same interval by construction; `skills.py` imports it back.
-THROW_STANDOFF_BOUNDS = (1.20, 1.65)
+# BOUNDS` of (0.5, 0.6) is a *grasping* standoff. It lives here rather than in `skills.py`
+# so that `NearBin` and the `MoveToThrowPose` sampler are the same interval by
+# construction; `skills.py` imports it back.
+#
+# **This is the range over which the domain is feasible, not the range that solves.** It
+# was previously `(1.20, 1.65)` -- the interval `scripts/tossing3d_oracle_demo.py --sweep`
+# happened to cover -- which is barely wider than `THROW_SOLVING_BAND` below. Pooled over
+# that old range the oracle solved 155/330 (`docs/experiment-logs/2026-08-06-tossing3d-
+# ees.md`), so a uniform draw was already right about as often as not and a learned sampler
+# had almost no headroom over its own prior. Widening does not change the physics, the
+# skills or the state: it changes only how hard the constant is to find.
+#
+# The **feasible** range is `[0.40, 2.06]`, measured over five scene seeds by running
+# `Pick` -> `MoveToThrowPose(standoff)` -> `Toss` through this domain and recording each
+# upstream controller's own outcome. Outside it the episode stops being a throw problem
+# rather than merely failing:
+#
+# - **Below 0.40 m** `move_to_target` reports success but the base drives into the bin and
+#   shoves it across the floor: 5/5 seeds displaced the bin at 0.35 m (by up to 0.069 m,
+#   and by 0.99 m at 0.05 m), against 0/5 at 0.40 m. The base ends up ~0.45 m from where
+#   the bin *started*, having pushed it ahead -- so it is the bin that moved, not the
+#   commanded pose that was unreachable.
+# - **Above ~2.06 m** the base reaches the pose cleanly, but `Toss`'s windup
+#   `move_arm_to_conf` fails to motion-plan (`AssertionError: Motion planning failed`), so
+#   `Toss` executes zero steps and the cube never leaves the gripper: 2/5 seeds failed to
+#   plan at 2.08 m, against 0/5 at 2.06 m.
+#
+# The bounds are that feasible range **inset at both ends**, for two different reasons.
+#
+# At the bottom, by `NEAR_BIN_TOLERANCE`: `NearBin` admits anything from `low - tolerance`,
+# so a `low` of 0.40 would have the predicate calling 0.36 m a throw pose -- inside the
+# regime above. 0.45 keeps the whole admitted interval at or above 0.41 m. Nothing observed
+# actually stops that short (a 0.40 m command lands at 0.428 m), so this is belt-and-braces
+# rather than a fix for a seen failure.
+#
+# At the top, by a second measured constraint that has nothing to do with feasibility:
+# `NearBin` has to stay false at the pose `Pick` leaves the base in. `Pick` drives the base
+# to the cube, and if the widened band admitted that pose then the oracle -- and any
+# planner reading the same predicate -- would believe it was already at a throw pose, skip
+# `MoveToThrowPose`, and throw from wherever it stood. That failure is not hypothetical; it
+# is the one `NearBinClassifier`'s own docstring records. Over 30 scene seeds the
+# post-`Pick` base sits 1.364-1.971 m from the bin, and two of those seeds come near the
+# 0.04 m lateral conjunct -- the only other thing standing in the way. Seed 14 is *inside*
+# it (`dy = 0.0074`, `dx = 1.8592`), so nothing but the standoff conjunct excludes that
+# pose; seed 9 clears it by 1.6 mm (`dy = 0.0416`, `dx = 1.8352`).
+# `1.75 + NEAR_BIN_TOLERANCE = 1.79` puts both outside the band by at least 0.045 m; at an
+# upper bound of 1.90 seed 14 is admitted. The same 30 seeds' *episode-initial* poses
+# (1.951-2.050 m from the bin) also stay outside, so an episode cannot begin already
+# standing at a throw pose -- at an upper bound of 2.00, 18/30 of them would.
+#
+# So the widening is almost entirely downward: 0.45 m of range becomes 1.30 m, and short
+# standoffs are where the new headroom is. They fail cleanly -- the throw overshoots and
+# the cube lands past the goal box, at x = 2.3-3.0 against a box ending at 2.15.
+THROW_STANDOFF_BOUNDS = (0.45, 1.75)
+
+# The sub-interval of the above in which the throw lands the cube in the goal region on
+# *every* seed, measured on the coincident config at 0.025 m resolution over five scene
+# seeds. Solving is partial rather than absent just outside it -- 2/5 at 1.125, 3/5 at
+# 1.400, 2/5 at 1.425, and 0/5 beyond either -- so this is the reliable core of a slightly
+# softer edge, not a cliff. It supersedes the one-seed, 0.05 m-resolution band of
+# `[1.20, 1.425]` quoted in `scripts/README.md`, which is the same width at different
+# endpoints because it was a coarser measurement.
+#
+# Nothing reads it: it is the justification for the bounds, kept beside them and pinned by
+# a test, so that narrowing the bounds back toward the band -- which is what made sampler
+# learning unmeasurable here -- fails loudly rather than silently.
+#
+# The band is effectively a *constant* to be found: `bin_init_region` is 1 mm wide, so the
+# correct standoff is the same in every episode. That is a degenerate learning problem,
+# and widening the bounds does not make it less degenerate -- it only makes the prior wrong
+# often enough that finding the constant is worth measuring.
+THROW_SOLVING_BAND = (1.15, 1.375)
 
 # Upstream's `WAYPOINT_TOL` (`kinder_models/dynamic3d/utils.py:54`), which is how close
 # `MoveToTargetGroundController.terminated()` requires the base to be to its own planned
@@ -156,7 +222,8 @@ class ReachableClassifier:
 
 class NearBinClassifier:
     """The base is standing where a throw is thrown from: on the bin's axis, at a
-    standoff inside the measured band.
+    standoff inside `THROW_STANDOFF_BOUNDS` -- the range the sampler draws from, *not*
+    `THROW_SOLVING_BAND`. This says the robot can throw from here, not that it will score.
 
     **Ours.** `move_to_target` has no symbolic model upstream, and its own termination
     condition (`_robot_is_close_to_pose`) is about the base having reached *its own
@@ -170,10 +237,18 @@ class NearBinClassifier:
     `(bin_x - d*cos(ang), bin_y - d*sin(ang))` with `ang = bin_yaw + rot`
     (`kinder_models/dynamic3d/utils.py:395`); `MoveToThrowPose` pins `rot = 0` and the
     bin's yaw range is `[[0, 0]]`, so the resulting pose is exactly `(bin_x - d, bin_y)`.
-    Hence both conjuncts: **on the bin's axis** (`|dy| <= NEAR_BIN_TOLERANCE`) and **at a
-    band standoff** (`|dx|` inside `THROW_STANDOFF_BOUNDS`, widened by the same
+    Hence both conjuncts: **on the bin's axis** (`|dy| <= NEAR_BIN_TOLERANCE`) and **at an
+    in-range standoff** (`|dx|` inside `THROW_STANDOFF_BOUNDS`, widened by the same
     tolerance). The tolerance is upstream's own `WAYPOINT_TOL`, i.e. exactly how far off
     its own waypoint that controller is willing to stop.
+
+    **The lateral conjunct now carries almost all of the weight.** While the standoff
+    range was `(1.20, 1.65)` the two conjuncts shared the work, because most post-`Pick`
+    poses were simply too far out to admit. With the range widened to `(0.45, 1.75)` the
+    standoff conjunct excludes the post-`Pick` pose on only 1 of 30 measured scene seeds;
+    for the other 29 it is `|dy| <= 0.04` alone. That is why the upper bound is 1.75 rather
+    than the feasible 2.06 -- see `THROW_STANDOFF_BOUNDS` -- and why a future change to
+    either the bound or the tolerance needs the post-`Pick` poses re-measured, not assumed.
 
     **A plain distance test is not enough, and this was measured.** An earlier version
     tested only `1.0 <= hypot(dx, dy) <= 1.8`. After `Pick` -- which drives the base to
