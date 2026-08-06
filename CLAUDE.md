@@ -199,6 +199,23 @@ CI (`.github/workflows/ci.yml`) runs these on every push/PR to `main`, as **thre
 (`ruff check .`, `ruff format --check .`, `lint-imports`), `typecheck` (`mypy src`), and `test`
 (`pytest -q`). `main` only allows squash-merge (no merge commits, no rebase merge).
 
+**A branch that is `BEHIND` gets rebased before it is surfaced** — it has never been tested against
+what it would merge into, and `MERGEABLE` only means "no textual conflict". Prefer resuming the
+agent that owns the branch over rebasing in the main checkout; a stale checkout of an agent's
+branch has nearly clobbered work.
+
+**One exception: an agent far into an experiment finishes first, then rebases.** Interrupting a
+run to replay commits risks the run for no gain, so if the incoming changes cannot affect the
+result, take the results and rebase afterwards. "Cannot affect the result" is a claim to check,
+not assume — if `main` moved the dynamics, the sampler, the analysis module or anything else the
+experiment reads, the numbers are stale and the rebase means a **re-run**, not a replay. Docs,
+tooling and unrelated domains are the safe cases. State which it was in the PR.
+
+Two things that go stale under any rebase and are easy to miss: `raw.githubusercontent.com`
+figure URLs pinned to a **full SHA** (the old SHA no longer holds the figures — re-pin and `curl`
+each for `200`), and `file:line` citations in prose. Cite a **symbol** with the line as a
+convenience, so a shifted line does not make the text false.
+
 **Run the gate locally; do not block on GitHub CI.** The local gate is the real check — it is the
 same five commands, and it runs in ~1 minute against CI's ~10. Once it passes, open the PR, report
 whatever state CI happens to be in, and finish. Polling GitHub until every check goes green wastes
