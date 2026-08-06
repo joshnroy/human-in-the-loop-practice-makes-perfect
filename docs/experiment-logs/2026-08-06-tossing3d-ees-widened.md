@@ -12,6 +12,46 @@ The preceding PR widened the bounds to the measured feasible range, `(0.45, 1.75
 physics, same skills, same state, same success criterion; only the interval the sampler
 draws from changed. This log is the re-run.
 
+## Status note: every EES count in this log is provisional
+
+**Added during the rebase onto `main` at `d647749`. No number in this log has been edited,
+restated or recomputed — the counts below are exactly what was measured, and this note
+records why they should not be quoted as current.**
+
+Two independent reasons, either of which alone is enough.
+
+**1. Tossing3D is not reproducible from `--seed`** — measured here, by accident, and written
+up in full below (see "Tossing3D runs are **not** reproducible from `--seed`"). Seed 0 run
+twice under identical arguments and identical code ended **3/10 versus 2/10**. Same-seed
+run-to-run variation is therefore **at least 1 episode in 10 = 10 pp**, roughly **five times
+the +2.0 pp** this experiment set out to interpret. The paired Wilcoxon and the MDEs below
+both assume binomial noise only, so they **understate** the true variability and the MDEs are
+lower bounds. A separate fix for this is in flight.
+
+**2. #102 changed the no-op path underneath these results.** `_EesEpisode._noop_action`
+returned `np.zeros(3)`, and Tossing3D's `pick_id` is `0`, so every `no-op (no plan)` step
+dispatched a real `pick_shelf(distance=0.0, rotation=0.0)`. It now returns `noop_id = -1`,
+which **no branch of `Tossing3DEnvironment._execute` handles**. That path is reached on
+**every failed evaluation episode** — exactly two no-op steps between the last goal check and
+the final one. So **19/100, 21/100, every per-seed change and every statistic derived from
+them (the Wilcoxon tests, all four MDE rows) were produced by code `main` has since changed.**
+
+**How strong that second claim is, exactly.** What is *established* is that the executed
+action sequence differs: the old code dispatched a skill, the new code dispatches nothing.
+Whether the **counts** move is **not established** — KINDER's motion planner may have failed
+to plan a base motion to distance 0.0 and stepped the simulator zero times, in which case the
+old and new no-ops were physically identical and the numbers would be unchanged. That
+possibility is untested. **Only a re-run settles it.**
+
+**What is not affected.** The `skill-oracle` ceiling (**99/100**) and the uniform-draw
+baseline (**543/2700**) stand as measured: `SkillOraclePolicy` never calls `noop_action`, so
+#102 cannot have touched them. Reason 1 still applies to them as run-to-run noise, but no
+code changed underneath them.
+
+**Also stale as a description of `main`:** recommendation 1 below describes per-cycle
+planning counters as not yet existing. #106 has since shipped them — `stats.json` now carries
+`planning_failures_per_cycle` and `planning_attempts_per_cycle`.
+
 ## Pre-registration
 
 Written **2026-08-06T19:59:06Z** and committed before any EES run under the widened bounds
@@ -113,6 +153,12 @@ In the 10-worker sweep, which ran in a 16 GiB scope, runs took **1404-1535 s (me
 1467 s)**, ~25 min of wall clock for the arm.
 
 ## Results
+
+> **Provisional — see "Status note" at the top of this log.** The EES counts in this section
+> were produced by code `main` has since changed (#102's no-op path), and this domain is not
+> reproducible from `--seed` (same-seed spread ≥ 10 pp, against the +2.0 pp read off here).
+> Nothing below has been edited; a re-run is what would settle it. The `99/100` ceiling and
+> the `543/2700` uniform baseline are unaffected.
 
 **Every checkpoint sits within this design's resolution of the uniform prior. This is a
 null result.**
