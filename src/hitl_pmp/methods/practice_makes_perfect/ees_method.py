@@ -13,6 +13,7 @@ from hitl_pmp.core.method.types import (
     Rollout,
     SetupCommand,
     Skill,
+    SkillPracticeTally,
 )
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Object, State, Type
@@ -215,6 +216,11 @@ class EesMethod(Method):
     # Method.planning_outcomes into stats.json.
     _planning_failures: int = PrivateAttr()
     _planning_attempts: int = PrivateAttr()
+    # Cumulative per LIFTED skill name -- the unit one sampler is fitted per. Surfaced
+    # through Method.practice_outcomes into stats.json, which is what makes "the sampler
+    # was starved" and "the sampler cannot fit what it has" separable from a run's own
+    # output rather than only from a bespoke per-domain collector script.
+    _practice_tallies: dict[str, SkillPracticeTally] = PrivateAttr()
     # Scoped to this Method instance, so it lives exactly as long as one run and is
     # never shared between runs, processes, or tests. See `plan_to`.
     _translation_cache: TranslationCache = PrivateAttr()
@@ -234,6 +240,7 @@ class EesMethod(Method):
         self._score_calls = 0
         self._planning_failures = 0
         self._planning_attempts = 0
+        self._practice_tallies = {}
         self._translation_cache = TranslationCache()
         self._practice_episode = None
 
@@ -408,6 +415,41 @@ class EesMethod(Method):
         """(failures, attempts), cumulative over the run; method_runner.py differences
         them per window. See Method.planning_outcomes and plan_to for what is counted."""
         return (self._planning_failures, self._planning_attempts)
+
+    # ------------------------------------------------------- practice bookkeeping
+
+    def record_practice_attempt(
+        self, *, skill_name: str, success: bool, was_random: bool, was_informed: bool
+    ) -> None:
+        """Tally one observed practice execution against its lifted skill.
+
+        Called from `_EesEpisode.observe_pending`, the single point at which an outcome
+        becomes known, right beside the `observe_outcome` call that feeds the competence
+        model and the `observe_sampler_outcome` call that feeds the classifier -- so
+        every attempt those two see is an attempt this counts, exactly once.
+
+        Kept off `observe_outcome`'s own signature deliberately. That method is a
+        documented extension point (`scripts/tossingroomsplit_skill_traces.py`
+        overrides it), and a subclass's override would silently drop a new keyword,
+        leaving every traced run reporting `was_informed=False`. The flag also is not
+        `observe_outcome`'s business: competence keys on `was_random` alone.
+
+        `was_informed` is `SamplerChoice.was_informed` carried through
+        `_SkillAttempt.was_informed_choice`. A skill with no continuous parameters, and
+        one executed with `explore=False`, has no `_SkillAttempt` at all and so lands in
+        the fallback pool -- neither random nor informed, which is the honest reading:
+        nothing the sampler learned went into it."""
+        self._practice_tallies[skill_name] = self._practice_tallies.get(
+            skill_name, SkillPracticeTally()
+        ).with_attempt(success=success, was_random=was_random, was_informed=was_informed)
+
+    def practice_outcomes(self) -> dict[str, SkillPracticeTally]:
+        """Per lifted skill, cumulative over the run; method_runner.py differences them
+        per window. See Method.practice_outcomes and record_practice_attempt.
+
+        A copy, so a caller holding last cycle's reading to difference against cannot
+        have it mutated underneath by the next practice step."""
+        return dict(self._practice_tallies)
 
     def record_seen_task(
         self, *, init_atoms: frozenset[GroundAtom], goal: frozenset[GroundAtom]
@@ -846,6 +888,17 @@ class _EesEpisode:
         if self._practicing:
             success = self._pending.add_effects <= true_atoms
             attempt = self._pending_sampler_record
+            # Tallied here, beside the two consumers below, because this is the one
+            # place an outcome becomes known -- so the diagnostic record and the data
+            # the method actually learns from can never disagree about what happened.
+            # Practice only: an evaluation episode observes nothing, and a counter that
+            # ticked there would be counting the held-out test set.
+            self._method.record_practice_attempt(
+                skill_name=self._pending.skill.name,
+                success=success,
+                was_random=attempt is not None and attempt.was_random_exploration,
+                was_informed=attempt is not None and attempt.was_informed_choice,
+            )
             # observe_outcome() owns what an epsilon-greedy random attempt does to
             # competence; sampler data below is kept either way.
             self._method.observe_outcome(

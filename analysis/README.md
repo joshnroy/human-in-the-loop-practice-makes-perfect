@@ -42,3 +42,13 @@ exactly one place those are computed, not a second copy living in `analysis/`.
   matters here is *training progress*, not environment size). A method with a
   single checkpoint (`--method skill-oracle`, which never practices) is drawn as a
   flat dashed reference level rather than a lone point.
+- `practice_makes_perfect/practice_diagnostics.py` — the *why* behind that curve,
+  from the same `stats.json` files: per lifted skill and per window, how often it
+  was practiced, how often that worked, and how much of it the sampler's classifier
+  actually chose (`practice_outcomes_per_cycle`), plus how often the planner was
+  asked and came back empty (`planning_failures_per_cycle` /
+  `planning_attempts_per_cycle`, which nothing plotted before). Same
+  `DIR/<method>/<seed>/stats.json` layout, `--output PATH.png` for the figure. Reads
+  a run's own record and keys on nothing domain-specific, so it serves every `--env`
+  — which is what distinguishes it from `scripts/tossingroomsplit_skill_traces.py`,
+  whose overlapping tallies are Tossing-Room-only by construction.

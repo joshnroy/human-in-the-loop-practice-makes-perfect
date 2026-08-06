@@ -5,7 +5,7 @@ import imageio
 import pytest
 
 from hitl_pmp.config_snapshot import ConfigSnapshot
-from hitl_pmp.core.method.types import Policy
+from hitl_pmp.core.method.types import Policy, SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
@@ -494,3 +494,140 @@ def test_a_run_whose_planner_never_failed_prints_nothing_extra(
         render_fps=2,
     )
     assert "planning failures" not in capsys.readouterr().out
+
+
+class _CountingPracticeMethod(SkillOracleMethod):
+    """Charges one practice attempt of `Toggle` per practice policy handed out, and
+    one of `Move` per evaluation policy, so a test can decode which executions landed
+    in which window. Counters are cumulative and rise during the run, like a real
+    Method's -- a fake returning a constant would be differenced away to nothing,
+    which is exactly the reused-instance protection working."""
+
+    toggles: int = 0
+    moves: int = 0
+
+    def get_task_policy(self, *, task: Task) -> Policy:
+        self.moves += 1
+        return super().get_task_policy(task=task)
+
+    def get_practice_policy(self, *, task: Task) -> Policy:
+        self.toggles += 1
+        return super().get_task_policy(task=task)
+
+    def practice_outcomes(self) -> dict[str, SkillPracticeTally]:
+        return {
+            "Toggle": SkillPracticeTally(
+                num_attempts=self.toggles,
+                num_successes=self.toggles,
+                num_informed_attempts=self.toggles,
+                num_informed_successes=self.toggles,
+            ),
+            "Move": SkillPracticeTally(num_attempts=self.moves),
+        }
+
+
+def test_each_practice_bucket_covers_one_evaluation_sweep_and_the_practice_after_it() -> None:
+    """The same window as the planning counters, and the same trap: `on_cycle_end`
+    fires after cycle i's practice and *before* cycle i's sweep, so bucket i is
+    (sweep i, practice i) and the trailing bucket is the final sweep alone.
+
+    Decoded from a Method charging one `Move` per evaluation policy and one `Toggle`
+    per practice policy, with 2 test tasks: 2 Moves + 1 Toggle in each of the first
+    two buckets, 2 Moves in the last."""
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(num_test_tasks=2),
+        method=_CountingPracticeMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        renderer=None,
+        render_fps=2,
+    )
+    assert len(metrics.practice_outcomes_per_cycle) == len(metrics.evaluations) == 3
+    assert [window["Move"].num_attempts for window in metrics.practice_outcomes_per_cycle] == [
+        2,
+        2,
+        2,
+    ]
+    assert [window["Toggle"].num_attempts for window in metrics.practice_outcomes_per_cycle] == [
+        1,
+        1,
+        0,
+    ]
+    totals = metrics.total_practice_outcomes()
+    assert (totals["Toggle"].num_successes, totals["Toggle"].num_attempts) == (2, 2)
+    assert (totals["Move"].num_successes, totals["Move"].num_attempts) == (0, 6)
+
+
+def test_a_method_that_scores_no_skills_records_an_empty_window_per_cycle() -> None:
+    """Present-and-empty rather than absent, so the buckets stay index-aligned with
+    `evaluations` for a reader plotting the two together."""
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(num_test_tasks=2),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    assert metrics.practice_outcomes_per_cycle == [{}]
+    assert metrics.total_practice_outcomes() == {}
+
+
+def test_practice_outcomes_reach_stats_json(*, tmp_path: Path) -> None:
+    """The fields are only useful if they survive to the file a sweep reads back --
+    which is the whole point: the previous route to these numbers was a bespoke
+    per-domain collector script."""
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=2, output_dir=tmp_path),
+        method=_CountingPracticeMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=1,
+        max_steps_per_interaction=2,
+        renderer=None,
+        render_fps=2,
+    )
+    restored = Metrics.model_validate_json((tmp_path / "stats.json").read_text())
+    assert restored.total_practice_outcomes()["Toggle"].num_attempts == 1
+
+
+def test_practice_outcomes_are_printed_beside_the_success_rate(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Visible without opening stats.json, and as x/y counts throughout: the question
+    these exist to answer -- was the sampler starved or is it unable -- is asked while
+    watching a run, not only afterwards."""
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=2),
+        method=_CountingPracticeMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=1,
+        max_steps_per_interaction=2,
+        renderer=None,
+        render_fps=2,
+    )
+    out = capsys.readouterr().out
+    assert "practice Toggle: 1/1 succeeded" in out
+    assert "1/1 informed" in out
+
+
+def test_a_run_that_practiced_nothing_prints_nothing_extra(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A non-learning baseline's console output is exactly what it was before."""
+    problem = _build_problem()
+    MethodRunner.run(
+        args=_args(num_test_tasks=2),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=0,
+        max_steps_per_interaction=0,
+        renderer=None,
+        render_fps=2,
+    )
+    assert "practice " not in capsys.readouterr().out

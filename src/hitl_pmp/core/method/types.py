@@ -42,6 +42,156 @@ class Rollout(BaseModel):
         return self
 
 
+class SkillPracticeTally(BaseModel):
+    """One lifted skill's practice record: how often it was executed during practice,
+    how often that worked, and -- split three ways -- what chose its parameters.
+
+    **Why this exists.** Two experiments finished on this project unable to say why
+    their result happened, for the same reason: a run's `stats.json` recorded *tasks
+    solved* and nothing about practice, so "the sampler was never given enough labels"
+    and "the sampler has the labels and cannot use them" produced identical output.
+    PR #103 answered that question once for Tossing Room, but only through a bespoke
+    `scripts/` collector that subclasses `EesMethod` and imports one domain's
+    `Environment` directly, so it could not be pointed at Tossing3D. This is the
+    domain-agnostic half of that collector, moved into `core` where every `Method` on
+    every domain reaches it.
+
+    **The six numbers, and why six.** An attempt falls in exactly one of three pools,
+    named for `SamplerChoice`'s own two flags:
+
+    - *random* -- the epsilon-greedy branch fired. A coin flip carries no belief, so
+      it is evidence about the domain, never about the sampler.
+    - *informed* -- `was_informed`: the classifier's scores actually ranked the
+      candidates, so these parameters reflect something it learned.
+    - *fallback* -- the remainder: `LearnedSkillSampler.sample`'s uniform draw on a
+      score vector that could not discriminate, plus every parameter-free skill.
+      Recoverable as `num_attempts - num_random_attempts - num_informed_attempts`
+      rather than stored, so the three can never disagree about the total.
+
+    Successes are carried per pool as well as overall, because the pools are what the
+    diagnosis turns on and a pooled rate silently averages them. Pooling these two
+    inverted a published conclusion on this project once already (`SamplerChoice`):
+    recycling's greedy draws landed 22/103 while the informed subset landed 11/56,
+    which is its own epsilon-random rate.
+
+    **How to read it.** `num_attempts == 0` (i.e. no entry at all) is "never asked".
+    `num_informed_attempts == 0` with `num_attempts > 0` is "asked, but never with a
+    classifier that had anything to say" -- starvation. A healthy `num_informed_attempts`
+    with a low `num_informed_successes` is "asked and missed" -- inability. Those are
+    different diagnoses and only this split tells them apart.
+
+    Frozen, and every counter validated against every other, so an inconsistent tally
+    cannot be constructed at all -- including by `minus`, which is how a cumulative
+    counter that went backwards surfaces as an error rather than as a quietly clamped
+    zero."""
+
+    model_config = ConfigDict(frozen=True)
+
+    num_attempts: int = 0
+    num_successes: int = 0
+    num_random_attempts: int = 0
+    num_random_successes: int = 0
+    num_informed_attempts: int = 0
+    num_informed_successes: int = 0
+
+    def num_fallback_attempts(self) -> int:
+        """Attempts that were neither an epsilon-greedy coin flip nor an informed
+        draw: the uniform fallback on a degenerate score vector, and every execution
+        of a skill with no continuous parameters to choose. Derived rather than
+        stored -- see this class's docstring."""
+        return self.num_attempts - self.num_random_attempts - self.num_informed_attempts
+
+    def num_fallback_successes(self) -> int:
+        return self.num_successes - self.num_random_successes - self.num_informed_successes
+
+    def with_attempt(
+        self, *, success: bool, was_random: bool, was_informed: bool
+    ) -> SkillPracticeTally:
+        """This tally plus one execution, filed into exactly one pool.
+
+        The single place an attempt is classified, so no caller can put one in two
+        pools or in none. Returns a new instance (the model is frozen); the counts are
+        six ints, so there is nothing to gain by mutating."""
+        if was_random and was_informed:
+            raise ValueError(
+                "an epsilon-random draw is never informed: it ignores the classifier's "
+                "scores by construction (see SamplerChoice)."
+            )
+        return SkillPracticeTally(
+            num_attempts=self.num_attempts + 1,
+            num_successes=self.num_successes + int(success),
+            num_random_attempts=self.num_random_attempts + int(was_random),
+            num_random_successes=self.num_random_successes + int(was_random and success),
+            num_informed_attempts=self.num_informed_attempts + int(was_informed),
+            num_informed_successes=self.num_informed_successes + int(was_informed and success),
+        )
+
+    def plus(self, *, other: SkillPracticeTally) -> SkillPracticeTally:
+        """Field-wise sum -- how several windows are totalled over a whole run."""
+        return SkillPracticeTally(
+            num_attempts=self.num_attempts + other.num_attempts,
+            num_successes=self.num_successes + other.num_successes,
+            num_random_attempts=self.num_random_attempts + other.num_random_attempts,
+            num_random_successes=self.num_random_successes + other.num_random_successes,
+            num_informed_attempts=self.num_informed_attempts + other.num_informed_attempts,
+            num_informed_successes=self.num_informed_successes + other.num_informed_successes,
+        )
+
+    def minus(self, *, previous: SkillPracticeTally) -> SkillPracticeTally:
+        """Field-wise difference of two cumulative readings -- how method_runner.py
+        turns a Method's monotonic counters into one window's record.
+
+        A counter that went backwards produces a negative field, which the validator
+        below rejects: that means two readings got out of step, which is a bug worth
+        surfacing rather than clamping to zero and averaging away."""
+        return SkillPracticeTally(
+            num_attempts=self.num_attempts - previous.num_attempts,
+            num_successes=self.num_successes - previous.num_successes,
+            num_random_attempts=self.num_random_attempts - previous.num_random_attempts,
+            num_random_successes=self.num_random_successes - previous.num_random_successes,
+            num_informed_attempts=self.num_informed_attempts - previous.num_informed_attempts,
+            num_informed_successes=(self.num_informed_successes - previous.num_informed_successes),
+        )
+
+    @model_validator(mode="after")
+    def _check_counts_are_consistent(self) -> SkillPracticeTally:
+        counts = {
+            "num_attempts": self.num_attempts,
+            "num_successes": self.num_successes,
+            "num_random_attempts": self.num_random_attempts,
+            "num_random_successes": self.num_random_successes,
+            "num_informed_attempts": self.num_informed_attempts,
+            "num_informed_successes": self.num_informed_successes,
+        }
+        negative = {name: value for name, value in counts.items() if value < 0}
+        if negative:
+            raise ValueError(f"practice counts cannot be negative: {negative}")
+        if self.num_successes > self.num_attempts:
+            raise ValueError(
+                f"successes cannot exceed attempts: got {self.num_successes}/{self.num_attempts}"
+            )
+        if self.num_random_successes > self.num_random_attempts:
+            raise ValueError(
+                f"epsilon-random successes cannot exceed epsilon-random attempts: got "
+                f"{self.num_random_successes}/{self.num_random_attempts}"
+            )
+        if self.num_informed_successes > self.num_informed_attempts:
+            raise ValueError(
+                f"informed successes cannot exceed informed attempts: got "
+                f"{self.num_informed_successes}/{self.num_informed_attempts}"
+            )
+        # The two named pools are disjoint subsets of the attempts, so together they
+        # can at most account for all of them; the slack is the uniform-fallback pool.
+        # An overflow means one execution was filed into two pools.
+        if self.num_random_attempts + self.num_informed_attempts > self.num_attempts:
+            raise ValueError(
+                f"epsilon-random ({self.num_random_attempts}) plus informed "
+                f"({self.num_informed_attempts}) attempts exceed the "
+                f"{self.num_attempts} attempts they are drawn from"
+            )
+        return self
+
+
 class SetupCommand(BaseModel):
     """Either the robot executes this goal itself (execute_setup_command) or it's
     handed to the human (execute_human_command) -- target says which."""

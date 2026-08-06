@@ -112,3 +112,12 @@ def test_planning_outcomes_default_to_no_failures_out_of_no_attempts() -> None:
     than a bare count, so a failure number can never be reported without the
     denominator that makes it readable."""
     assert _MinimalMethod(env=_Env()).planning_outcomes() == (0, 0)
+
+
+def test_practice_outcomes_default_to_nothing_recorded() -> None:
+    """Empty, not "one all-zero entry per skill": a Method that never scores its own
+    skill executions (every non-learning baseline) has no attempts to report, and an
+    all-zero entry would claim the skill was practiced and never succeeded. `{}` says
+    "this Method does not measure that"; a present entry says "it did, and this is
+    what happened"."""
+    assert _MinimalMethod(env=_Env()).practice_outcomes() == {}
