@@ -292,6 +292,112 @@ class SkillPracticeTally(BaseModel):
         return self
 
 
+class PracticeTargetTally(BaseModel):
+    """One lifted skill's *selection* record: how often EES considered practicing it,
+    how often it committed, and -- the counter this type exists for -- how often it
+    refused to consider it at all because the skill already looked perfect.
+
+    **Why this is a different quantity from `SkillPracticeTally`.** That type counts
+    skill *executions*, and an execution says nothing about intent: EES plans to a
+    chosen candidate's preconditions and executes the whole prefix on the way, so a
+    skill can rack up hundreds of attempts without ever having been the thing EES
+    wanted to practice. Tossing3D's `MoveToThrowPose` is the worked example -- 175/175
+    executions recorded, and not one of them a chosen practice target, because
+    `skip_perfect` had dropped every grounding of it from the candidate list. The
+    execution tally could not show that, and two experiments shipped without it.
+
+    **The four counters, and what each one licenses you to conclude.**
+
+    - `num_scored` -- a grounding was scored, came back finite, and entered the ranked
+      candidate list. This is "EES was willing to practice it".
+    - `num_declined_perfect` -- a grounding scored `-math.inf` and was dropped, which
+      under `skip_perfect` means and only means its *measured* success rate is exactly
+      1.0. Nonzero here beside a zero `num_selected` is the failure state: the skill is
+      not being practiced, and the reason is that the domain's success predicate says
+      it never fails. Whether that is a genuinely solved skill or a predicate too weak
+      to notice failure is not answerable from this counter -- but the counter is what
+      tells you the question is live.
+    - `num_selected` -- a grounding was the candidate the explorer committed to. This
+      is the only counter that means "practiced on purpose".
+    - `num_unreachable` -- a grounding was examined ahead of the eventual selection and
+      no plan reached its preconditions. It outranked the winner and lost on
+      reachability, not on score.
+
+    **Absence is the third state, and it is deliberate.** A skill with no entry at all
+    was never a candidate, because EES's candidate set is exactly the ground skills it
+    has executed at least once (`competence_model` creates lazily). "Never selected
+    because perfect" and "never selected because never reached" are the two readings a
+    bare zero cannot separate; `num_declined_perfect` against absence separates them.
+
+    **Keyed by the lifted skill name while scoring is keyed by the GROUND skill**, so
+    every counter here sums over groundings: four perfect groundings of one skill
+    contribute 4, not 1. That is the intended aggregation -- the question is about the
+    sampler, and one sampler is fitted per lifted name -- but it does mean these
+    numbers are grounding-executions, not decisions, and are not comparable to a count
+    of `choose_practice_target` calls."""
+
+    num_scored: int = 0
+    num_declined_perfect: int = 0
+    num_selected: int = 0
+    num_unreachable: int = 0
+
+    def with_scored(self) -> PracticeTargetTally:
+        return self.model_copy(update={"num_scored": self.num_scored + 1})
+
+    def with_declined_perfect(self) -> PracticeTargetTally:
+        return self.model_copy(update={"num_declined_perfect": self.num_declined_perfect + 1})
+
+    def with_selected(self) -> PracticeTargetTally:
+        return self.model_copy(update={"num_selected": self.num_selected + 1})
+
+    def with_unreachable(self) -> PracticeTargetTally:
+        return self.model_copy(update={"num_unreachable": self.num_unreachable + 1})
+
+    def plus(self, *, other: PracticeTargetTally) -> PracticeTargetTally:
+        return PracticeTargetTally(
+            num_scored=self.num_scored + other.num_scored,
+            num_declined_perfect=self.num_declined_perfect + other.num_declined_perfect,
+            num_selected=self.num_selected + other.num_selected,
+            num_unreachable=self.num_unreachable + other.num_unreachable,
+        )
+
+    def minus(self, *, previous: PracticeTargetTally) -> PracticeTargetTally:
+        """This window's activity from two cumulative readings. A counter that went
+        backwards fails the validator rather than being clamped -- it would mean two
+        Methods' readings were differenced against each other, and a silent zero there
+        is worse than a crash."""
+        return PracticeTargetTally(
+            num_scored=self.num_scored - previous.num_scored,
+            num_declined_perfect=self.num_declined_perfect - previous.num_declined_perfect,
+            num_selected=self.num_selected - previous.num_selected,
+            num_unreachable=self.num_unreachable - previous.num_unreachable,
+        )
+
+    @model_validator(mode="after")
+    def _check_counts_are_consistent(self) -> PracticeTargetTally:
+        counts = {
+            "num_scored": self.num_scored,
+            "num_declined_perfect": self.num_declined_perfect,
+            "num_selected": self.num_selected,
+            "num_unreachable": self.num_unreachable,
+        }
+        negative = {name: value for name, value in counts.items() if value < 0}
+        if negative:
+            raise ValueError(f"practice-target counts cannot be negative: {negative}")
+        # Selection and the reachability rejection both happen by walking the ranked
+        # list, so both are drawn from the scored pool. The walk short-circuits at the
+        # first success, which is why this is an inequality and not equality: the
+        # candidates below the winner were scored and never examined.
+        examined = self.num_selected + self.num_unreachable
+        if examined > self.num_scored:
+            raise ValueError(
+                f"selected ({self.num_selected}) and unreachable ({self.num_unreachable}) "
+                f"groundings sum to {examined}, which exceeds the {self.num_scored} scored "
+                "candidates they are drawn from"
+            )
+        return self
+
+
 class SamplerConsultation(Enum):
     """What, if anything, a learned parameter sampler contributed to one skill
     execution -- the pool `SkillPracticeTally` files that execution into.

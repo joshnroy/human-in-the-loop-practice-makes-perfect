@@ -1,6 +1,6 @@
 import pytest
 
-from hitl_pmp.core.method.types import SkillPracticeTally
+from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import TaskOutcome
 
@@ -271,3 +271,32 @@ def test_a_stats_json_written_before_practice_outcomes_existed_still_loads() -> 
     restored = Metrics.model_validate_json('{"evaluations": [[0, 1, 2]], "task_name": "default"}')
     assert restored.practice_outcomes_per_cycle == []
     assert restored.total_practice_outcomes() == {}
+    assert restored.practice_target_outcomes_per_cycle == []
+    assert restored.total_practice_target_outcomes() == {}
+
+
+def test_practice_target_outcomes_start_empty_and_record_in_order() -> None:
+    metrics = Metrics()
+    assert metrics.practice_target_outcomes_per_cycle == []
+    metrics.record_practice_target_outcomes(
+        outcomes={"ThrowTrash": PracticeTargetTally(num_scored=3, num_selected=2)}
+    )
+    metrics.record_practice_target_outcomes(
+        outcomes={"ThrowTrash": PracticeTargetTally(num_declined_perfect=4)}
+    )
+    assert len(metrics.practice_target_outcomes_per_cycle) == 2
+    assert metrics.practice_target_outcomes_per_cycle[0]["ThrowTrash"].num_selected == 2
+    totals = metrics.total_practice_target_outcomes()
+    assert totals["ThrowTrash"].num_scored == 3
+    assert totals["ThrowTrash"].num_declined_perfect == 4
+
+
+def test_practice_target_outcomes_are_stored_in_sorted_skill_order() -> None:
+    metrics = Metrics()
+    metrics.record_practice_target_outcomes(
+        outcomes={
+            "Zeta": PracticeTargetTally(num_scored=1),
+            "Alpha": PracticeTargetTally(num_scored=1),
+        }
+    )
+    assert list(metrics.practice_target_outcomes_per_cycle[0]) == ["Alpha", "Zeta"]

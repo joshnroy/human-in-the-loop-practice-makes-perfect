@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from analysis.practice_makes_perfect.practice_diagnostics import PracticeDiagnostics
-from hitl_pmp.core.method.types import SkillPracticeTally
+from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 
 
@@ -215,3 +215,143 @@ def test_plotting_writes_a_figure(*, tmp_path: Path) -> None:
 def test_plotting_an_empty_sweep_is_an_error_rather_than_a_blank_page(*, tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="nothing to plot"):
         PracticeDiagnostics.plot(summary={}, output_path=tmp_path / "empty.png")
+
+
+# ------------------------------------------------------- practice-target (selection)
+
+
+def _target_metrics(*, windows: list[dict[str, PracticeTargetTally]], step: int = 100) -> Metrics:
+    metrics = Metrics()
+    for index in range(len(windows)):
+        metrics.record_evaluation(
+            num_online_transitions=index * step, num_solved=index, num_total=len(windows)
+        )
+    for window in windows:
+        metrics.record_practice_target_outcomes(outcomes=window)
+    return metrics
+
+
+def test_target_totals_pool_decisions_across_seeds() -> None:
+    runs = [
+        _target_metrics(windows=[{"Throw": PracticeTargetTally(num_scored=2, num_selected=1)}]),
+        _target_metrics(windows=[{"Throw": PracticeTargetTally(num_declined_perfect=4)}]),
+    ]
+    pooled = PracticeDiagnostics.target_totals(runs=runs)
+    assert pooled["Throw"].num_scored == 2
+    assert pooled["Throw"].num_selected == 1
+    assert pooled["Throw"].num_declined_perfect == 4
+
+
+def test_the_target_table_calls_out_a_skill_declined_as_already_perfect(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The finding this whole record exists to surface, and the one a reader must not
+    have to derive by eye: scored zero times, declined every time, never selected."""
+    summary = {
+        "ees": [
+            _target_metrics(
+                windows=[
+                    {
+                        "MoveToThrow": PracticeTargetTally(num_declined_perfect=17),
+                        "Throw": PracticeTargetTally(num_scored=9, num_selected=4),
+                    }
+                ]
+            )
+        ]
+    }
+    PracticeDiagnostics.print_target_table(summary=summary)
+    out = capsys.readouterr().out
+    assert "NEVER SELECTED, declined as already-perfect: MoveToThrow" in out
+    # A skill that IS being practiced must not be swept into the same sentence.
+    assert "Throw," not in out
+
+
+def test_the_target_table_reports_counts_never_bare_percentages(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary = {"ees": [_target_metrics(windows=[{"Throw": PracticeTargetTally(num_scored=3)}])]}
+    PracticeDiagnostics.print_target_table(summary=summary)
+    assert "%" not in capsys.readouterr().out
+
+
+def test_a_method_that_chooses_no_targets_says_so_rather_than_printing_an_empty_table(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    PracticeDiagnostics.print_target_table(
+        summary={"skill-oracle": [_target_metrics(windows=[{}])]}
+    )
+    assert "does not choose targets" in capsys.readouterr().out
+
+
+def test_plotting_targets_writes_a_figure(*, tmp_path: Path) -> None:
+    summary = {"ees": [_target_metrics(windows=[{"Throw": PracticeTargetTally(num_scored=2)}, {}])]}
+    output = tmp_path / "figures" / "targets.png"
+    PracticeDiagnostics.plot_targets(summary=summary, output_path=output)
+    assert output.exists()
+    assert output.stat().st_size > 0
+
+
+def test_the_target_panels_stop_before_the_trailing_evaluation_only_bucket(
+    *, tmp_path: Path
+) -> None:
+    """No practice target is chosen during the final evaluation sweep, and that bucket
+    sits at a duplicated x -- so drawing it renders a structural zero at the right-hand
+    edge that reads as selection collapsing. The practice panels already exclude it;
+    these must too, and the first render of this figure did not."""
+    metrics = _target_metrics(
+        windows=[
+            {"Throw": PracticeTargetTally(num_scored=9, num_selected=5)},
+            {"Throw": PracticeTargetTally(num_scored=9, num_selected=5)},
+            {},
+        ]
+    )
+    lengths = []
+    for entry in PracticeDiagnostics._target_series(
+        runs=[metrics], skill_name="Throw", field="num_selected"
+    ):
+        lengths.append(
+            min(
+                len(PracticeDiagnostics.window_transitions(metrics=metrics)),
+                len(entry),
+                PracticeDiagnostics.target_window_count(metrics=metrics),
+            )
+        )
+    assert lengths == [2], "the trailing evaluation-only bucket must be dropped"
+    # Counted off the selection list, not the execution one. This Metrics carries no
+    # execution records at all, and reading that list would truncate the panel to zero.
+    assert metrics.practice_outcomes_per_cycle == []
+    assert PracticeDiagnostics.practice_window_count(metrics=metrics) == 0
+
+
+def test_target_skills_filter_keeps_only_the_named_panels(*, tmp_path: Path) -> None:
+    """Ten of Ball-Ring's fifteen skills are param_dim 0, where "never practiced" is
+    correct rather than a finding. Filtering is opt-in so the subset is never silent."""
+    summary = {
+        "ees": [
+            _target_metrics(
+                windows=[
+                    {
+                        "Keep": PracticeTargetTally(num_scored=2),
+                        "Drop": PracticeTargetTally(num_declined_perfect=2),
+                    },
+                    {},
+                ]
+            )
+        ]
+    }
+    output = tmp_path / "filtered.png"
+    PracticeDiagnostics.plot_targets(summary=summary, output_path=output, skills=["Keep"])
+    assert output.exists()
+    with pytest.raises(ValueError, match="nothing to plot"):
+        PracticeDiagnostics.plot_targets(
+            summary=summary, output_path=tmp_path / "none.png", skills=["Absent"]
+        )
+
+
+def test_plotting_targets_for_a_sweep_with_no_selection_record_is_an_error(
+    *, tmp_path: Path
+) -> None:
+    with pytest.raises(ValueError, match="nothing to plot"):
+        PracticeDiagnostics.plot_targets(
+            summary={"ees": [_target_metrics(windows=[{}])]}, output_path=tmp_path / "empty.png"
+        )

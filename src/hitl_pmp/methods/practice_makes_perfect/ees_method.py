@@ -10,6 +10,7 @@ from hitl_pmp.core.method.types import (
     GroundSkill,
     LabeledAction,
     Policy,
+    PracticeTargetTally,
     Rollout,
     SamplerConsultation,
     SetupCommand,
@@ -222,6 +223,12 @@ class EesMethod(Method):
     # was starved" and "the sampler cannot fit what it has" separable from a run's own
     # output rather than only from a bespoke per-domain collector script.
     _practice_tallies: dict[str, SkillPracticeTally] = PrivateAttr()
+    # The same, for practice-target *decisions* rather than executions. A second dict
+    # rather than more fields on the first, because the two are counted at different
+    # places and one skill can have a large entry here and none there (a candidate that
+    # is always outranked is never executed) or the reverse (a prefix step is executed
+    # constantly and never chosen). See PracticeTargetTally.
+    _practice_target_tallies: dict[str, PracticeTargetTally] = PrivateAttr()
     # Scoped to this Method instance, so it lives exactly as long as one run and is
     # never shared between runs, processes, or tests. See `plan_to`.
     _translation_cache: TranslationCache = PrivateAttr()
@@ -242,6 +249,7 @@ class EesMethod(Method):
         self._planning_failures = 0
         self._planning_attempts = 0
         self._practice_tallies = {}
+        self._practice_target_tallies = {}
         self._translation_cache = TranslationCache()
         self._practice_episode = None
 
@@ -453,6 +461,33 @@ class EesMethod(Method):
         have it mutated underneath by the next practice step."""
         return dict(self._practice_tallies)
 
+    def record_practice_target(self, *, name: str, field: str) -> None:
+        """Tally one practice-target decision against its lifted skill.
+
+        Pure observation: every call site sits beside a decision the surrounding code
+        has already made and reads a value it has already computed, so no branch, no
+        RNG draw and no planner call depends on this. That is the whole contract --
+        this landed as an audit of EES, not a change to it.
+
+        Dispatched on a field name rather than four call-site-specific methods because
+        the four `with_*` builders differ only in which counter they bump, and a
+        four-way switch at each site would be the same dispatch written out longer."""
+        tally = self._practice_target_tallies.get(name, PracticeTargetTally())
+        builder = {
+            "scored": tally.with_scored,
+            "declined_perfect": tally.with_declined_perfect,
+            "selected": tally.with_selected,
+            "unreachable": tally.with_unreachable,
+        }[field]
+        self._practice_target_tallies[name] = builder()
+
+    def practice_target_outcomes(self) -> dict[str, PracticeTargetTally]:
+        """Per lifted skill, cumulative over the run; method_runner.py differences them
+        per window. See Method.practice_target_outcomes and PracticeTargetTally.
+
+        A copy, for the same reason `practice_outcomes` returns one."""
+        return dict(self._practice_target_tallies)
+
     def record_seen_task(
         self, *, init_atoms: frozenset[GroundAtom], goal: frozenset[GroundAtom]
     ) -> None:
@@ -525,7 +560,13 @@ class EesMethod(Method):
         for candidate in list(self._competence_models):
             score = self.score_ground_skill(ground_skill=candidate)
             if score == -math.inf:
+                # Observation only -- the `continue` below is unchanged, and this is the
+                # one place the drop is visible. `-inf` comes from exactly one branch of
+                # score_ground_skill, so this counts skip_perfect firings and nothing
+                # else. See PracticeTargetTally for why that needed its own counter.
+                self.record_practice_target(name=candidate.skill.name, field="declined_perfect")
                 continue
+            self.record_practice_target(name=candidate.skill.name, field="scored")
             # Ties broken randomly, matching predicators' own rng.uniform tiebreak.
             scored.append((score, float(self._rng.uniform()), candidate))
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -971,6 +1012,7 @@ class _EesEpisode:
         method = self._method
         for candidate in method.choose_practice_target():
             if candidate.preconditions <= true_atoms:
+                method.record_practice_target(name=candidate.skill.name, field="selected")
                 return [candidate]
             try:
                 prefix = method.plan_to(
@@ -979,7 +1021,12 @@ class _EesEpisode:
                     costs=method.skill_costs(),
                 )
             except PlanningFailure:
+                # Outscored the eventual winner and lost on reachability alone, which
+                # is a different reason for going unpracticed than scoring `-inf` --
+                # and unlike that one, more practice elsewhere can fix it.
+                method.record_practice_target(name=candidate.skill.name, field="unreachable")
                 continue
+            method.record_practice_target(name=candidate.skill.name, field="selected")
             return [*prefix, candidate]
 
         applicable = SkillGrounder.applicable_ground_skills(

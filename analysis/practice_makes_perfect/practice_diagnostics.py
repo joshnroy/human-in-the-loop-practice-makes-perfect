@@ -66,7 +66,7 @@ matplotlib.use("Agg")  # headless rendering -- no GUI backend needed/available i
 
 import matplotlib.pyplot as plt  # noqa: E402
 
-from hitl_pmp.core.method.types import SkillPracticeTally  # noqa: E402
+from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally  # noqa: E402
 from hitl_pmp.core.metrics.metrics import Metrics  # noqa: E402
 
 
@@ -159,6 +159,74 @@ class PracticeDiagnostics:
         return [
             statistics.mean([float(entry[index]) for entry in usable]) for index in range(length)
         ]
+
+    @staticmethod
+    def target_totals(*, runs: Sequence[Metrics]) -> dict[str, PracticeTargetTally]:
+        """Every seed's practice-target decisions pooled per lifted skill. Pooled, not
+        averaged, for the same reason `totals` is."""
+        pooled: dict[str, PracticeTargetTally] = {}
+        for metrics in runs:
+            for name, tally in metrics.total_practice_target_outcomes().items():
+                pooled[name] = pooled.get(name, PracticeTargetTally()).plus(other=tally)
+        return {name: pooled[name] for name in sorted(pooled)}
+
+    @staticmethod
+    def target_totals_per_seed(
+        *, runs: Sequence[Metrics], skill_name: str
+    ) -> list[PracticeTargetTally]:
+        """One whole-run tally per seed, for the per-seed spread the selection figure
+        draws. A seed that never saw the skill contributes an all-zero tally rather than
+        being dropped, so the denominator of a mean stays the seed count."""
+        return [
+            metrics.total_practice_target_outcomes().get(skill_name, PracticeTargetTally())
+            for metrics in runs
+        ]
+
+    @staticmethod
+    def print_target_table(*, summary: dict[str, list[Metrics]]) -> None:
+        """Which skills EES chose to practice, and why it passed over the rest.
+
+        Printed apart from the execution table rather than as extra columns on it,
+        because the two have different denominators -- one row here is a count of
+        scoring decisions over ground skills, one row there is a count of executions --
+        and putting them side by side invites reading a ratio across them that means
+        nothing.
+
+        `declined perfect` is the row to read first. Nonzero there with a zero
+        `selected` is a skill EES has stopped practicing because its measured success
+        rate hit exactly 1.0, which is the state that let a Tossing3D design flaw
+        survive two experiments."""
+        for method, runs in summary.items():
+            pooled = PracticeDiagnostics.target_totals(runs=runs)
+            print(f"\n=== {method}: practice targets ({len(runs)} seeds) ===")
+            if not pooled:
+                print("targets: nothing recorded (this Method does not choose targets)")
+                continue
+            header = (
+                f"{'skill':<26}{'selected':>12}{'scored':>12}"
+                f"{'declined perfect':>20}{'unreachable':>14}"
+            )
+            print(header)
+            for name, tally in pooled.items():
+                print(
+                    f"{name:<26}"
+                    f"{tally.num_selected:>12}"
+                    f"{tally.num_scored:>12}"
+                    f"{tally.num_declined_perfect:>20}"
+                    f"{tally.num_unreachable:>14}"
+                )
+            # The one line a reader should not have to derive by eye.
+            never = [
+                name
+                for name, tally in pooled.items()
+                if tally.num_selected == 0 and tally.num_declined_perfect > 0
+            ]
+            if never:
+                print(
+                    "NEVER SELECTED, declined as already-perfect: "
+                    + ", ".join(sorted(never))
+                    + "  <- skip_perfect dropped every grounding of these"
+                )
 
     @staticmethod
     def totals(*, runs: Sequence[Metrics]) -> dict[str, SkillPracticeTally]:
@@ -282,6 +350,19 @@ class PracticeDiagnostics:
         return max(len(metrics.practice_outcomes_per_cycle) - 1, 0)
 
     @staticmethod
+    def target_window_count(*, metrics: Metrics) -> int:
+        """`practice_window_count` for the selection buckets, counted off their own
+        list rather than the execution one.
+
+        A separate method rather than reusing that one, because the two lists are
+        populated independently: a `Metrics` carrying only selection records has an
+        empty `practice_outcomes_per_cycle`, and reading the count off that list
+        silently truncates every selection panel to nothing. Real runs write both, so
+        the bug is invisible on real data and appears only where the record is partial
+        -- which is exactly the case this figure exists to read."""
+        return max(len(metrics.practice_target_outcomes_per_cycle) - 1, 0)
+
+    @staticmethod
     def plot(*, summary: dict[str, list[Metrics]], output_path: Path) -> None:
         """One row per (method, lifted skill) for practice, plus one row per method for
         planning. Every panel shares the transitions x-axis the learning curve uses, so
@@ -347,6 +428,131 @@ class PracticeDiagnostics:
             plt.close(fig)
 
     @staticmethod
+    def target_skill_names(*, runs: Sequence[Metrics]) -> list[str]:
+        """Every lifted skill any seed ever *scored*, sorted. Taken over the union for
+        the same reason `skill_names` is -- a skill only some seeds ever made a
+        candidate is exactly what this figure is for."""
+        names: set[str] = set()
+        for metrics in runs:
+            for window in metrics.practice_target_outcomes_per_cycle:
+                names.update(window)
+        return sorted(names)
+
+    @staticmethod
+    def _target_series(*, runs: Sequence[Metrics], skill_name: str, field: str) -> list[list[int]]:
+        return [
+            [
+                getattr(window.get(skill_name, PracticeTargetTally()), field)
+                for window in metrics.practice_target_outcomes_per_cycle
+            ]
+            for metrics in runs
+        ]
+
+    @staticmethod
+    def plot_targets(
+        *,
+        summary: dict[str, list[Metrics]],
+        output_path: Path,
+        skills: Sequence[str] | None = None,
+    ) -> None:
+        """One row per (method, lifted skill): was this skill chosen for practice, and
+        if not, was it dropped as already-perfect?
+
+        A **separate figure** from `plot`, not extra series on it, because the two
+        count different events with different denominators -- executions there,
+        scoring decisions over ground skills here. Sharing an axis would invite reading
+        a ratio across them, and the ratio is meaningless.
+
+        Drawn as lines over the same transitions x-axis rather than as bars over
+        whole-run totals, because *when* a skill stopped being selected is the finding:
+        `skip_perfect` fires the moment a measured rate touches 1.0, so the shape is a
+        selection line falling to zero while a declined line rises to meet it. A bar of
+        run totals shows the sum of those two and hides the crossing entirely.
+
+        `skills` restricts the panels to a named subset. Ball-Ring has fifteen lifted
+        skills and ten of them are `param_dim == 0`, where "never practiced" is the
+        correct answer and not a finding; a figure that gives those ten equal space
+        buries the five that can actually be learned. Unfiltered by default -- the
+        subset is a presentation choice and must be made explicitly, never silently."""
+        rows: list[tuple[str, list[Metrics], str]] = []
+        for method, runs in summary.items():
+            for name in PracticeDiagnostics.target_skill_names(runs=runs):
+                if skills is None or name in skills:
+                    rows.append((method, runs, name))
+        if not rows:
+            raise ValueError("nothing to plot: no practice-target records under --results-root")
+        fig, axes = plt.subplots(len(rows), 1, figsize=(8, 3.1 * len(rows)), squeeze=False)
+        try:
+            for axis, (method, runs, name) in zip(axes[:, 0], rows, strict=True):
+                # All four are counts of ground-skill decisions per window -- one unit,
+                # so one axis. Widths descend so a skill whose scored and selected
+                # counts coincide shows both rather than hiding one under the other.
+                for field, color, label, width, linestyle in (
+                    ("num_scored", "tab:blue", "scored (a live candidate)", 3.2, "-"),
+                    ("num_selected", "tab:green", "selected (practiced on purpose)", 2.4, "-"),
+                    (
+                        "num_declined_perfect",
+                        "tab:red",
+                        "declined: already perfect (skip_perfect)",
+                        1.8,
+                        "--",
+                    ),
+                    ("num_unreachable", "tab:orange", "outranked but unreachable", 1.2, ":"),
+                ):
+                    series = PracticeDiagnostics._target_series(
+                        runs=runs, skill_name=name, field=field
+                    )
+                    for metrics, entry in zip(runs, series, strict=True):
+                        transitions = PracticeDiagnostics.window_transitions(metrics=metrics)
+                        # Same truncation as the practice panels, for the same reason:
+                        # the trailing bucket is the final evaluation sweep alone, in
+                        # which no practice target is chosen by construction, and it
+                        # sits at a duplicated x. Drawing it puts a structural zero at
+                        # the right-hand edge that reads as selection collapsing.
+                        length = min(
+                            len(transitions),
+                            len(entry),
+                            PracticeDiagnostics.target_window_count(metrics=metrics),
+                        )
+                        if length:
+                            axis.plot(
+                                transitions[:length],
+                                entry[:length],
+                                color=color,
+                                alpha=0.18,
+                                lw=1,
+                                ls=linestyle,
+                            )
+                    mean = PracticeDiagnostics.mean_series(series=series)
+                    if mean and runs:
+                        transitions = PracticeDiagnostics.window_transitions(metrics=runs[0])
+                        length = min(
+                            len(transitions),
+                            len(mean),
+                            PracticeDiagnostics.target_window_count(metrics=runs[0]),
+                        )
+                        axis.plot(
+                            transitions[:length],
+                            mean[:length],
+                            color=color,
+                            lw=width,
+                            ls=linestyle,
+                            marker="o",
+                            ms=3,
+                            label=label,
+                        )
+                axis.set_title(f"{method}: {name} practice-target decisions ({len(runs)} seeds)")
+                axis.set_ylabel("ground-skill decisions\nper window (count)")
+                axis.set_xlabel("Number of online transitions at the end of the window")
+                axis.legend(fontsize=8)
+                axis.margins(y=0.15)
+            fig.tight_layout()
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(output_path, dpi=150)
+        finally:
+            plt.close(fig)
+
+    @staticmethod
     def _draw_planning_panel(*, axis: plt.Axes, runs: Sequence[Metrics]) -> None:
         """#106's counters, which nothing plotted until now. Failures and attempts on
         one axis rather than a ratio: EES plans speculatively, so a healthy run reports
@@ -387,6 +593,18 @@ def _parse_args() -> argparse.Namespace:
         help="Sweep directory laid out as <results-root>/<method>/<seed>/stats.json.",
     )
     parser.add_argument("--output", type=Path, default=None, help="Optional diagnostics PNG.")
+    parser.add_argument(
+        "--target-output",
+        type=Path,
+        default=None,
+        help="Optional practice-target (selection) PNG -- a separate figure, see plot_targets.",
+    )
+    parser.add_argument(
+        "--target-skills",
+        nargs="+",
+        default=None,
+        help="Restrict --target-output's panels to these lifted skill names.",
+    )
     return parser.parse_args()
 
 
@@ -394,9 +612,15 @@ def main() -> None:
     args = _parse_args()
     summary = PracticeDiagnostics.summarize(results_root=args.results_root)
     PracticeDiagnostics.print_table(summary=summary)
+    PracticeDiagnostics.print_target_table(summary=summary)
     if args.output is not None:
         PracticeDiagnostics.plot(summary=summary, output_path=args.output)
         print(f"\nWrote plot to {args.output}")
+    if args.target_output is not None:
+        PracticeDiagnostics.plot_targets(
+            summary=summary, output_path=args.target_output, skills=args.target_skills
+        )
+        print(f"Wrote practice-target plot to {args.target_output}")
 
 
 if __name__ == "__main__":

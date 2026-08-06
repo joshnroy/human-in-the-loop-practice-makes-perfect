@@ -7,7 +7,14 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Task
 
-from .types import GroundSkill, Policy, Rollout, SetupCommand, SkillPracticeTally
+from .types import (
+    GroundSkill,
+    Policy,
+    PracticeTargetTally,
+    Rollout,
+    SetupCommand,
+    SkillPracticeTally,
+)
 
 
 class InteractionComplete(Exception):  # noqa: N818
@@ -162,6 +169,24 @@ class Method(BaseModel, abc.ABC):
         check that decides a success, and the `SamplerChoice` flags that classify the
         draw, both happen deep inside its own policy where the harness cannot see
         them."""
+        return {}
+
+    def practice_target_outcomes(self) -> dict[str, PracticeTargetTally]:
+        """{lifted skill name: how often practicing it was *chosen*}, cumulative over
+        the whole run. `{}` for a Method that does not select practice targets.
+
+        The sibling of `practice_outcomes`, threaded and differenced identically, and
+        deliberately *not* folded into it: the two count different events. That one
+        counts executions, this one counts decisions, and the gap between them is
+        precisely where a skill EES declines to practice hides -- it goes on being
+        executed as a prefix step toward some other candidate, so its execution tally
+        looks healthy while its selection tally is zero. See `PracticeTargetTally`.
+
+        `{}` and a zero entry differ here for the same reason as on `practice_outcomes`:
+        `{}` is "this Method does not choose practice targets at all", an absent skill
+        is "never a candidate", and a present entry reading zero selections is "was a
+        candidate and was passed over". Only the last two are evidence about the skill,
+        and they mean opposite things."""
         return {}
 
     def end_cycle(self) -> None:
