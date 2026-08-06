@@ -837,6 +837,106 @@ class TestSeparatingLearnedDrawsFromTheUniformFallback:
         }
 
     @staticmethod
+    def test_each_informed_versus_random_row_carries_its_own_denominators_mde(
+        *, capsys: pytest.CaptureFixture
+    ) -> None:
+        """**The defect this test exists to stop recurring.** PR #90 and the committed log
+        quote a single **20.19pp** MDE for the recycling null result. That figure is the
+        floor for a **310 vs 57** comparison -- trash's epsilon-random draws against
+        recycling's, a row in a *different* table. The comparison actually called null is
+        recycling-informed against recycling-random, **56 vs 57**, whose floor is
+        `sqrt(0.25/56 + 0.25/57)` = 9.41pp and whose MDE is **26.36pp**. The quoted number
+        understated the MDE by 6.17pp (the floor itself by 2.20pp), making a null result
+        look better resolved than it was.
+
+        26.36 rather than 26.34: this repo's `_MDE_CONSTANT` is the unrounded
+        `z_{0.025} + z_{0.20}` = 2.801585, and 2.801585 x 9.4076pp = 26.36pp. Rounding the
+        constant to 2.8 gives 26.34pp. Every other MDE on the page uses the unrounded
+        constant, so this one does too.
+
+        The mechanism was that this table printed a gap and a p-value but **no MDE**, so
+        the only MDE on the page belonged to a neighbouring comparison and got borrowed.
+        Every row now derives its own from its own two denominators.
+
+        **Both skills are in the trace on purpose.** With one row, code that hardcoded a
+        single constant on every row would pass -- which is the very defect class being
+        guarded. Trash's own comparison is 301 vs 310, floor 4.05pp, MDE 11.34pp, so the
+        two rows must differ from each other as well as from 20.19pp.
+        """
+
+        def _tally(*, informed: int, informed_landed: int, random: int, random_landed: int) -> dict:
+            return {
+                "attempts": informed + random,
+                "successes": informed_landed + random_landed,
+                "random_attempts": random,
+                "random_successes": random_landed,
+                "landed": informed_landed + random_landed,
+                "landed_random": random_landed,
+                "prefilled": 0,
+                "greedy_forces": [],
+                "greedy_targets": [],
+                "informed_attempts": informed,
+                "informed_successes": informed_landed,
+                "informed_landed": informed_landed,
+                "informed_forces": [],
+                "informed_targets": [],
+            }
+
+        traces = [
+            {
+                "label": "ees",
+                "seeds": TestSeparatingLearnedDrawsFromTheUniformFallback._run(
+                    tallies={
+                        # The exact two comparisons the log reports.
+                        "ThrowRecycling": _tally(
+                            informed=56, informed_landed=11, random=57, random_landed=11
+                        ),
+                        "ThrowTrash": _tally(
+                            informed=301, informed_landed=208, random=310, random_landed=61
+                        ),
+                    }
+                ),
+            }
+        ]
+
+        assert 100 * TossingRoomSplitThrowRates.noise_floor(
+            n_first=56, n_second=57
+        ) == pytest.approx(9.41, abs=0.01)
+        assert 100 * TossingRoomSplitThrowRates.minimum_detectable_effect(
+            n_first=56, n_second=57
+        ) == pytest.approx(26.36, abs=0.01)
+        assert 100 * TossingRoomSplitThrowRates.noise_floor(
+            n_first=301, n_second=310
+        ) == pytest.approx(4.05, abs=0.01)
+        assert 100 * TossingRoomSplitThrowRates.minimum_detectable_effect(
+            n_first=301, n_second=310
+        ) == pytest.approx(11.34, abs=0.01)
+
+        TossingRoomSplitThrowRates.print_informed_split(traces=traces)
+        printed = capsys.readouterr().out
+
+        recycling = next(
+            line
+            for line in printed.splitlines()
+            if "ThrowRecycling" in line and "11/56" in line and "11/57" in line
+        )
+        assert "9.41pp" in recycling
+        assert "26.36pp" in recycling, f"row carries no own-denominator MDE: {recycling!r}"
+        # And specifically not the borrowed 310-vs-57 figure.
+        assert "20.19pp" not in recycling
+
+        trash = next(
+            line
+            for line in printed.splitlines()
+            if "ThrowTrash" in line and "208/301" in line and "61/310" in line
+        )
+        assert "4.05pp" in trash
+        assert "11.34pp" in trash, f"row carries no own-denominator MDE: {trash!r}"
+        # The decisive non-vacuity check: the two rows carry DIFFERENT floors, so no
+        # single hardcoded constant satisfies both.
+        assert "26.36pp" not in trash
+
+    @staticmethod
     def test_a_p_value_below_the_printed_resolution_is_reported_as_an_inequality() -> None:
         """`p = 0.0000` claims a p-value of zero, which no test returns."""
         assert TossingRoomSplitThrowRates.format_p_value(p=1e-30) == "< 0.0001"

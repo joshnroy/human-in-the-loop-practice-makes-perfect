@@ -18,7 +18,8 @@ fixed seeds, 2500 online transitions each, 14 TRASH / 14 RECYCLING / 2 EMPTY per
    whether the classifier could actually discriminate: **56/103** of recycling's greedy
    draws were informed, and those land **11/56**. Its own epsilon-random draws land
    **11/57**. A gap of **+0.34pp, Fisher exact p = 1.0000** — a **null result**: at these
-   denominators the design can only exclude an effect larger than **20.19pp**, so what is
+   denominators the design can only exclude an effect larger than **26.36pp** (corrected
+   from 20.19pp; see the correction note under "What this design can detect"), so what is
    established is that recycling's trained classifier *cannot be distinguished from a coin
    flip*, not that it is worth exactly nothing. `ThrowTrash`'s, on the same architecture
    and the same seeds, lands **208/301** against its own random **61/310** (**+49.43pp,
@@ -269,10 +270,26 @@ two-sided MDE, which is 2.80 of them.
 | greedy draws | 417 vs 103 | 5.50pp | **15.41pp** |
 | **informed draws** | **301 vs 56** | **7.28pp** | **20.39pp** |
 | epsilon-random draws | 310 vs 57 | 7.21pp | **20.19pp** |
+| **recycling informed vs its own random** | **56 vs 57** | **9.41pp** | **26.36pp** |
+| trash informed vs its own random | 301 vs 310 | 4.05pp | **11.34pp** |
 
 The floor is driven by the **smaller** arm throughout. Splitting the greedy pool costs
 resolution — recycling's denominator falls 103 → 56 and the MDE rises 15.41pp → 20.39pp —
 and the split is still worth it, because the pooled statistic was measuring the wrong thing.
+
+**Correction (2026-08-06).** The last two rows were missing when this page was published,
+and the null result in (3) was quoted against **20.19pp** — the floor for the
+*epsilon-random* row, a **310 vs 57** comparison between two different skills. The
+comparison actually called null is recycling's informed draws against **its own** random
+control, **56 vs 57**, whose floor is `sqrt(0.25/56 + 0.25/57)` = 9.41pp and whose MDE is
+**26.36pp**. The published figure understated the **MDE** by 6.17pp (and the floor itself
+by 2.20pp, 7.21 → 9.41), making the null result look better resolved than it was; the
+conclusion (no detectable learning) is
+unchanged, but the bound on what could have been missed is weaker. Every MDE must be
+computed from **its own** two sample sizes. The analysis script now prints each row's own
+floor and MDE beside it, so the number cannot be borrowed from a neighbouring table again
+(`analysis/practice_makes_perfect/tossingroomsplit_throw_rates.py::print_informed_split`,
+pinned by `test_each_informed_versus_random_row_carries_its_own_denominators_mde`).
 
 ## Results
 
@@ -400,10 +417,13 @@ run.
 **But the decisive comparison is each skill against its own coin flip**, and it is the
 reason this re-derivation was worth doing:
 
-| skill | informed draws | its own epsilon-random draws | gap | Fisher exact |
-|---|---|---|---|---|
-| `ThrowTrash` | **208/301** | **61/310** | **+49.43pp** | **p < 0.0001** |
-| `ThrowRecycling` | **11/56** | **11/57** | **+0.34pp** | **p = 1.0000** |
+| skill | informed draws | its own epsilon-random draws | gap | noise floor | MDE (80%) | Fisher exact |
+|---|---|---|---|---|---|---|
+| `ThrowTrash` | **208/301** | **61/310** | **+49.43pp** | 4.05pp | **11.34pp** | **p < 0.0001** |
+| `ThrowRecycling` | **11/56** | **11/57** | **+0.34pp** | 9.41pp | **26.36pp** | **p = 1.0000** |
+
+(The floor and MDE columns were added by the 2026-08-06 correction above; each is computed
+from **that row's own** two denominators.)
 
 **`ThrowRecycling`'s trained classifier lands at exactly its own random rate. That is a
 null result, reported as one: on this domain, at this sample budget, the recycling sampler
@@ -504,7 +524,7 @@ estimate barely moves is a skill the planner has little reason to prioritise.
 | trash gets **~12 attempts** in a 100-step period | **held, conditionally** — 12 is the observed ceiling, reached in 35 of 250 periods, but 130 of 250 have zero |
 | attempt ratio **≈ 1:12** | **still refuted, and by more** — measured **4.54:1** (727:160), against 6.29:1 before |
 | recycling learns **far slower, at roughly the attempt ratio** | **weakened** — 7.0x and 6.2x against a 4.54:1 ratio, no longer "roughly" |
-| **possibly not at all** within a practice budget | **consistent, and now measured directly** — its informed draws land 11/56 against its own random 11/57, p = 1.0000. A null result at an MDE of 20.19pp: no learning is *detected*, which is not the same as none occurring |
+| **possibly not at all** within a practice budget | **consistent, and now measured directly** — its informed draws land 11/56 against its own random 11/57, p = 1.0000. A null result at an MDE of 26.36pp (corrected from 20.19pp): no learning is *detected*, which is not the same as none occurring |
 | learning is a **switch**, not a curve | **held** — 212/260 and 199/260 at an extreme |
 | *(previous run)* results (4) and (6) are **provisional** pending the sampler fix | **discharged** — re-derived here, and (4) reverses in interpretation |
 
@@ -518,7 +538,8 @@ estimate barely moves is a skill the planner has little reason to prioritise.
 2. **`ThrowRecycling`'s sampler is not merely slow — no learning by it is detectable at
    all.** This is the finding to act on, and it is the third defect's cost measured end to
    end: at this budget the classifier is statistically indistinguishable from a coin flip
-   (p = 1.0000, MDE 20.19pp, so an effect smaller than that would not have been seen). The
+   (p = 1.0000, MDE 26.36pp corrected from 20.19pp, so an effect smaller than that would
+   not have been seen). The
    diagnosis's proposed experiment — gate the wrapped sampler on having ≥ 2 positives whose
    targets are separated by more than the tolerance, falling back to the base sampler
    otherwise — now has a clean baseline to beat. **Note that a naive gate on positive count
