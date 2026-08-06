@@ -1,0 +1,2450 @@
+{
+  "description": "EES on Tossing3D with THROW_STANDOFF_BOUNDS widened from (1.20, 1.65) to (0.45, 1.75). Counts are raw solved/total; never percentages.",
+  "protocol": {
+    "seeds": 10,
+    "num_test_tasks": 10,
+    "num_cycles": 20,
+    "max_steps_per_interaction": 20,
+    "exploration_epsilon": 0.5,
+    "task_config": "coincident"
+  },
+  "throw_standoff_bounds": [
+    0.45,
+    1.75
+  ],
+  "throw_solving_band": [
+    1.15,
+    1.375
+  ],
+  "ees": {
+    "0": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 3,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 4,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 7,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 8,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 11,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 14,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 17,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 20,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 23,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 26,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 29,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 32,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 33,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 36,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 39,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 42,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 45,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 46,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 49,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 51,
+          "solved": 2,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 2,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 2,
+        "total": 10
+      },
+      "online_transitions": 51,
+      "elapsed_seconds": 1495.2281330379992,
+      "returncode": 0
+    },
+    "1": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 3,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 6,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 9,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 12,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 15,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 18,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 19,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 22,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 23,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 26,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 29,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 32,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 35,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 37,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 40,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 43,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 46,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 49,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 52,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 55,
+          "solved": 1,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 1,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 1,
+        "total": 10
+      },
+      "online_transitions": 55,
+      "elapsed_seconds": 1443.4617625419996,
+      "returncode": 0
+    },
+    "2": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 2,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 5,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 8,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 11,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 14,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 17,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 20,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 23,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 26,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 29,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 32,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 34,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 37,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 40,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 43,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 45,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 48,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 51,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 54,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 57,
+          "solved": 2,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 1,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 2,
+        "total": 10
+      },
+      "online_transitions": 57,
+      "elapsed_seconds": 1403.555199268998,
+      "returncode": 0
+    },
+    "3": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 2,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 5,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 6,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 9,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 11,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 12,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 15,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 18,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 21,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 24,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 27,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 30,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 33,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 36,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 39,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 42,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 45,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 48,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 51,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 54,
+          "solved": 3,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 2,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 3,
+        "total": 10
+      },
+      "online_transitions": 54,
+      "elapsed_seconds": 1499.9166996289969,
+      "returncode": 0
+    },
+    "4": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 3,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 5,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 6,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 8,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 11,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 14,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 16,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 19,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 22,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 24,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 27,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 30,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 33,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 34,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 37,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 40,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 43,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 46,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 49,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 52,
+          "solved": 2,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 3,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 2,
+        "total": 10
+      },
+      "online_transitions": 52,
+      "elapsed_seconds": 1442.5146714410002,
+      "returncode": 0
+    },
+    "5": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 3,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 6,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 9,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 12,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 15,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 17,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 20,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 23,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 26,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 29,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 31,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 34,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 37,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 40,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 41,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 44,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 47,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 48,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 51,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 54,
+          "solved": 2,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 1,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 2,
+        "total": 10
+      },
+      "online_transitions": 54,
+      "elapsed_seconds": 1461.2080730170019,
+      "returncode": 0
+    },
+    "6": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 3,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 6,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 8,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 11,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 14,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 15,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 16,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 19,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 22,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 25,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 28,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 31,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 34,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 37,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 40,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 41,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 44,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 47,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 50,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 53,
+          "solved": 4,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 2,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 4,
+        "total": 10
+      },
+      "online_transitions": 53,
+      "elapsed_seconds": 1472.5826162239973,
+      "returncode": 0
+    },
+    "7": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 3,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 6,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 8,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 11,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 14,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 17,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 18,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 21,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 22,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 25,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 28,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 31,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 34,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 37,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 40,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 43,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 46,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 49,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 52,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 55,
+          "solved": 1,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 3,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 1,
+        "total": 10
+      },
+      "online_transitions": 55,
+      "elapsed_seconds": 1461.5919627469993,
+      "returncode": 0
+    },
+    "8": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 4,
+          "total": 10
+        },
+        {
+          "transitions": 1,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 4,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 5,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 6,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 7,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 10,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 13,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 16,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 19,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 22,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 25,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 28,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 30,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 33,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 36,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 39,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 42,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 45,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 46,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 49,
+          "solved": 2,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 4,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 2,
+        "total": 10
+      },
+      "online_transitions": 49,
+      "elapsed_seconds": 1478.1728801999998,
+      "returncode": 0
+    },
+    "9": {
+      "checkpoints": [
+        {
+          "transitions": 0,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 2,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 3,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 6,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 9,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 12,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 15,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 18,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 19,
+          "solved": 2,
+          "total": 10
+        },
+        {
+          "transitions": 22,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 25,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 28,
+          "solved": 3,
+          "total": 10
+        },
+        {
+          "transitions": 31,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 34,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 36,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 39,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 40,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 43,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 46,
+          "solved": 0,
+          "total": 10
+        },
+        {
+          "transitions": 49,
+          "solved": 1,
+          "total": 10
+        },
+        {
+          "transitions": 52,
+          "solved": 2,
+          "total": 10
+        }
+      ],
+      "pre_practice": {
+        "solved": 0,
+        "total": 10
+      },
+      "end_of_training": {
+        "solved": 2,
+        "total": 10
+      },
+      "online_transitions": 52,
+      "elapsed_seconds": 1534.568645489002,
+      "returncode": 0
+    }
+  },
+  "skill_oracle_ceiling": {
+    "note": "The standoff grid's own 1.35 point: ORACLE_THROW_STANDOFF is 1.35, so that sweep is a 10-seed x 10-task skill-oracle run at the default standoff.",
+    "per_seed": {
+      "0": {
+        "solved": 10,
+        "total": 10
+      },
+      "1": {
+        "solved": 10,
+        "total": 10
+      },
+      "2": {
+        "solved": 10,
+        "total": 10
+      },
+      "3": {
+        "solved": 10,
+        "total": 10
+      },
+      "4": {
+        "solved": 9,
+        "total": 10
+      },
+      "5": {
+        "solved": 10,
+        "total": 10
+      },
+      "6": {
+        "solved": 10,
+        "total": 10
+      },
+      "7": {
+        "solved": 10,
+        "total": 10
+      },
+      "8": {
+        "solved": 10,
+        "total": 10
+      },
+      "9": {
+        "solved": 10,
+        "total": 10
+      }
+    }
+  },
+  "standoff_response": {
+    "0.400": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.450": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.500": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.550": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.600": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.650": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.700": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.750": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.800": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.850": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.900": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "0.950": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.000": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.050": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.100": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.150": {
+      "0": {
+        "solved": 10,
+        "total": 10
+      },
+      "1": {
+        "solved": 10,
+        "total": 10
+      },
+      "2": {
+        "solved": 9,
+        "total": 10
+      },
+      "3": {
+        "solved": 10,
+        "total": 10
+      },
+      "4": {
+        "solved": 9,
+        "total": 10
+      },
+      "5": {
+        "solved": 10,
+        "total": 10
+      },
+      "6": {
+        "solved": 10,
+        "total": 10
+      },
+      "7": {
+        "solved": 10,
+        "total": 10
+      },
+      "8": {
+        "solved": 10,
+        "total": 10
+      },
+      "9": {
+        "solved": 10,
+        "total": 10
+      }
+    },
+    "1.200": {
+      "0": {
+        "solved": 10,
+        "total": 10
+      },
+      "1": {
+        "solved": 10,
+        "total": 10
+      },
+      "2": {
+        "solved": 10,
+        "total": 10
+      },
+      "3": {
+        "solved": 10,
+        "total": 10
+      },
+      "4": {
+        "solved": 9,
+        "total": 10
+      },
+      "5": {
+        "solved": 10,
+        "total": 10
+      },
+      "6": {
+        "solved": 10,
+        "total": 10
+      },
+      "7": {
+        "solved": 10,
+        "total": 10
+      },
+      "8": {
+        "solved": 10,
+        "total": 10
+      },
+      "9": {
+        "solved": 10,
+        "total": 10
+      }
+    },
+    "1.250": {
+      "0": {
+        "solved": 10,
+        "total": 10
+      },
+      "1": {
+        "solved": 10,
+        "total": 10
+      },
+      "2": {
+        "solved": 10,
+        "total": 10
+      },
+      "3": {
+        "solved": 10,
+        "total": 10
+      },
+      "4": {
+        "solved": 9,
+        "total": 10
+      },
+      "5": {
+        "solved": 10,
+        "total": 10
+      },
+      "6": {
+        "solved": 10,
+        "total": 10
+      },
+      "7": {
+        "solved": 10,
+        "total": 10
+      },
+      "8": {
+        "solved": 10,
+        "total": 10
+      },
+      "9": {
+        "solved": 10,
+        "total": 10
+      }
+    },
+    "1.300": {
+      "0": {
+        "solved": 10,
+        "total": 10
+      },
+      "1": {
+        "solved": 10,
+        "total": 10
+      },
+      "2": {
+        "solved": 10,
+        "total": 10
+      },
+      "3": {
+        "solved": 10,
+        "total": 10
+      },
+      "4": {
+        "solved": 9,
+        "total": 10
+      },
+      "5": {
+        "solved": 10,
+        "total": 10
+      },
+      "6": {
+        "solved": 10,
+        "total": 10
+      },
+      "7": {
+        "solved": 10,
+        "total": 10
+      },
+      "8": {
+        "solved": 10,
+        "total": 10
+      },
+      "9": {
+        "solved": 10,
+        "total": 10
+      }
+    },
+    "1.350": {
+      "0": {
+        "solved": 10,
+        "total": 10
+      },
+      "1": {
+        "solved": 10,
+        "total": 10
+      },
+      "2": {
+        "solved": 10,
+        "total": 10
+      },
+      "3": {
+        "solved": 10,
+        "total": 10
+      },
+      "4": {
+        "solved": 9,
+        "total": 10
+      },
+      "5": {
+        "solved": 10,
+        "total": 10
+      },
+      "6": {
+        "solved": 10,
+        "total": 10
+      },
+      "7": {
+        "solved": 10,
+        "total": 10
+      },
+      "8": {
+        "solved": 10,
+        "total": 10
+      },
+      "9": {
+        "solved": 10,
+        "total": 10
+      }
+    },
+    "1.400": {
+      "0": {
+        "solved": 7,
+        "total": 10
+      },
+      "1": {
+        "solved": 6,
+        "total": 10
+      },
+      "2": {
+        "solved": 5,
+        "total": 10
+      },
+      "3": {
+        "solved": 3,
+        "total": 10
+      },
+      "4": {
+        "solved": 4,
+        "total": 10
+      },
+      "5": {
+        "solved": 6,
+        "total": 10
+      },
+      "6": {
+        "solved": 3,
+        "total": 10
+      },
+      "7": {
+        "solved": 5,
+        "total": 10
+      },
+      "8": {
+        "solved": 4,
+        "total": 10
+      },
+      "9": {
+        "solved": 4,
+        "total": 10
+      }
+    },
+    "1.450": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.500": {
+      "0": {
+        "solved": 1,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 1,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.550": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.600": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.650": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.700": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    },
+    "1.750": {
+      "0": {
+        "solved": 0,
+        "total": 10
+      },
+      "1": {
+        "solved": 0,
+        "total": 10
+      },
+      "2": {
+        "solved": 0,
+        "total": 10
+      },
+      "3": {
+        "solved": 0,
+        "total": 10
+      },
+      "4": {
+        "solved": 0,
+        "total": 10
+      },
+      "5": {
+        "solved": 0,
+        "total": 10
+      },
+      "6": {
+        "solved": 0,
+        "total": 10
+      },
+      "7": {
+        "solved": 0,
+        "total": 10
+      },
+      "8": {
+        "solved": 0,
+        "total": 10
+      },
+      "9": {
+        "solved": 0,
+        "total": 10
+      }
+    }
+  },
+  "uniform_draw_baseline": {
+    "solved": 543,
+    "total": 2700,
+    "grid_points_in_bounds": 27,
+    "note": "Pooled over an evenly spaced 0.05 m grid inside the bounds -- a Riemann estimate of the uniform-draw success rate, the same instrument the previous log used (155/330 under the old bounds)."
+  }
+}
