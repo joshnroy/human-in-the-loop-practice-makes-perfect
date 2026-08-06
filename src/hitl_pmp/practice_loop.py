@@ -86,6 +86,35 @@ class PracticeLoop:
     trajectories its explorers really produced (main.py:244) rather than assuming
     each request ran to max_num_steps_interaction_request.
 
+    **Separate evaluation environment.** `evaluation_problem` (None by default) is a
+    second, independently-constructed Problem -- its own Environment and its own Tasks
+    -- that every evaluation sweep runs on. The practice Problem is then never touched
+    by measurement at all.
+
+    This is not tidiness either. Every domain's `run_task_episode` opens with
+    `reset_to_task`, a privileged state-write, so a sweep over an n-task test set
+    performs n such writes **on the environment practice inherits**. At the default 30
+    test tasks that is 30 resets per sweep handed to the practice environment for free.
+    Under the default per-period reset the next period overwrites that state anyway, so
+    it is invisible -- but it makes a reset-free practice arm impossible to express:
+    "never reset" would still be reset 30 times per sweep, and the manipulation being
+    measured would not exist. Splitting the environments is what makes
+    `practice_reset_policy` mean anything.
+
+    Passing one is safe only where the split is genuinely byte-identical -- the
+    environment must consume no randomness of its own, or a second instance changes
+    which draws practice sees. Exactly one domain is wired today, `tossingroomsplit`
+    (no environment RNG, pure `take_action`), because that is where the reset-free
+    measurement is being made. Two domains are *excluded on the merits* and should not
+    simply be wired by the next reader: `ballring`, whose `_noise_rng` is consumed by
+    evaluation today and therefore shifts the practice stream, so a split needs a
+    re-baseline rather than an identity check; and `tossing3d`, where a second instance
+    is a second live simulator backend. The rest -- `lightswitch`, `tossingroom`,
+    `tossingroomsplitidentity` -- are simply **not migrated yet**, not assessed and
+    rejected; each is RNG-free in the same way and could be wired when something needs
+    it. Every unmigrated domain omits the argument and keeps exactly its old behaviour,
+    one Problem for both roles.
+
     **Fixed test set.** The evaluation set is drawn once, before the first sweep, and
     reused for the whole run -- matching predicators, whose `BaseEnv.get_test_tasks`
     generates once and caches (`envs/base_env.py:180-193`).
@@ -164,6 +193,7 @@ class PracticeLoop:
         num_cycles: int,
         max_steps_per_interaction: int,
         num_test_tasks: int,
+        evaluation_problem: Problem | None = None,
         practice_reset_interval: int | None = None,
         on_cycle_end: Callable[[], None] | None = None,
         renderer: type[Renderer] | None = None,
@@ -195,15 +225,28 @@ class PracticeLoop:
                 return
             on_checkpoint_frames(transitions=transitions, frames=sweep_frames)
 
+        # Falls back to the practice Problem, which is exactly the old behaviour --
+        # see the class docstring's "separate evaluation environment" section for what
+        # a caller buys by passing a distinct one, and why every domain that has not
+        # been migrated stays byte-identical by omitting it.
+        eval_problem = evaluation_problem if evaluation_problem is not None else problem
         problem.hard_reset()
+        if eval_problem is not problem:
+            # Its own one-time reset: a fresh Environment has no current_state at all
+            # until something installs one. Guarded on identity rather than called
+            # unconditionally so the un-migrated path still hard-resets exactly once.
+            eval_problem.hard_reset()
         if recorder is not None:
             recorder.record_hard_reset(state=problem.get_current_state())
         # Drawn ONCE, up front -- see the class docstring's "fixed test set"
-        # section for why re-sampling it per sweep corrupts the learning curve.
-        test_tasks = [problem.sample_test_task() for _ in range(num_test_tasks)]
+        # section for why re-sampling it per sweep corrupts the learning curve. From
+        # the *evaluation* Problem: its Tasks is constructed identically to practice's,
+        # so the tasks are the same ones, but they now come off a stream nothing in
+        # the practice loop can advance.
+        test_tasks = [eval_problem.sample_test_task() for _ in range(num_test_tasks)]
         num_online_transitions = 0
         frames = PracticeLoop._evaluate(
-            problem=problem,
+            problem=eval_problem,
             method=method,
             metrics=metrics,
             test_tasks=test_tasks,
@@ -284,7 +327,7 @@ class PracticeLoop:
             if on_cycle_end is not None:
                 on_cycle_end()
             frames = PracticeLoop._evaluate(
-                problem=problem,
+                problem=eval_problem,
                 method=method,
                 metrics=metrics,
                 test_tasks=test_tasks,

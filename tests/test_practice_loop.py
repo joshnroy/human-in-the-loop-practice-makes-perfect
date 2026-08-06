@@ -211,6 +211,23 @@ def _build() -> tuple[_FakeProblem, _FakeMethod, Metrics]:
     return problem, method, Metrics()
 
 
+def _build_split() -> tuple[_FakeProblem, _FakeProblem, _FakeMethod, Metrics]:
+    """A practice triple and a wholly separate evaluation triple, as a domain's
+    composition root now builds them. Two independent _FakeEnv instances, so a write
+    to one is observable as an absence on the other -- which is the entire point."""
+    practice_env = _FakeEnv()
+    evaluation_env = _FakeEnv()
+    event_log = _EventLog()
+    practice = _FakeProblem(
+        env=practice_env, tasks=_FakeTasks(env=practice_env), event_log=event_log
+    )
+    evaluation = _FakeProblem(
+        env=evaluation_env, tasks=_FakeTasks(env=evaluation_env), event_log=event_log
+    )
+    method = _FakeMethod(env=practice_env, event_log=event_log)
+    return practice, evaluation, method, Metrics()
+
+
 def test_run_hard_resets_exactly_once_before_the_first_evaluation() -> None:
     problem, method, metrics = _build()
     PracticeLoop.run(
@@ -628,6 +645,102 @@ def test_the_test_set_is_drawn_once_and_reused_by_every_sweep() -> None:
     # 5 sweeps happen (1 initial + 4 cycles), but only 3 test tasks are ever drawn.
     assert len(metrics.evaluations) == 5
     assert problem.tasks.test_task_count == 3
+
+
+def test_evaluation_runs_on_the_evaluation_problem_when_one_is_given() -> None:
+    """The defect this fixes: `_evaluate` used to take the SAME Problem the practice
+    loop drives, so every evaluation episode's opening `reset_to_task` was a
+    privileged state-write on the environment practice inherits. A 30-task sweep is
+    30 such writes, which silently resets a "never reset" practice arm 30 times per
+    sweep and makes the manipulation unmeasurable."""
+    practice, evaluation, method, metrics = _build_split()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        num_test_tasks=3,
+    )
+    # 3 sweeps (1 initial + 2 cycles) x 3 test tasks, all on the evaluation problem.
+    assert evaluation.run_task_episode_calls == 9
+    assert practice.run_task_episode_calls == 0
+
+
+def test_the_test_set_is_drawn_from_the_evaluation_problem() -> None:
+    """Test tasks come off the evaluation Tasks' own stream, not the practice one's.
+    Both are constructed identically, so the tasks are the same -- but drawing them
+    from the practice instance would leave the evaluation environment un-exercised
+    and keep the two halves entangled through a shared Tasks."""
+    practice, evaluation, method, metrics = _build_split()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=2,
+        num_test_tasks=4,
+    )
+    assert evaluation.tasks.test_task_count == 4
+    assert practice.tasks.test_task_count == 0
+
+
+def test_evaluation_leaves_the_practice_environments_state_untouched() -> None:
+    """The property the whole split exists for, stated as behaviour rather than as
+    call counts: after a run, the practice environment holds what *practice* left
+    there. Before the split, the final evaluation sweep's `reset_to_task` overwrote
+    it with a test task's initial state (x=0.0 here)."""
+    practice, evaluation, method, metrics = _build_split()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=3,
+        num_test_tasks=2,
+    )
+    # The period starts at the train task's x=100.0 and takes 3 steps of +1.0 each.
+    assert float(practice.env.get_current_state()[_OBJ][0]) == 103.0
+    # ...and the evaluation environment holds a *test* task's state, never 100-ish.
+    assert float(evaluation.env.get_current_state()[_OBJ][0]) == 0.0
+
+
+def test_both_environments_are_hard_reset_exactly_once() -> None:
+    """Each environment needs its own one-time hard_reset before the run; skipping
+    the evaluation one would leave it with no current_state at all."""
+    practice, evaluation, method, metrics = _build_split()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+    )
+    assert practice.env.hard_reset_count == 1
+    assert evaluation.env.hard_reset_count == 1
+
+
+def test_omitting_the_evaluation_problem_evaluates_on_the_practice_problem() -> None:
+    """Back-compatibility, and what keeps every un-migrated domain byte-identical:
+    with no evaluation_problem the loop behaves exactly as it did before, evaluating
+    on the one Problem it was given and hard-resetting it exactly once."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=2,
+        num_test_tasks=3,
+    )
+    assert problem.run_task_episode_calls == 6
+    assert problem.tasks.test_task_count == 3
+    assert problem.env.hard_reset_count == 1
 
 
 def test_streaming_hands_over_every_rendered_checkpoint_and_returns_nothing() -> None:

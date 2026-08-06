@@ -66,6 +66,9 @@ class MethodRunner:
         args: argparse.Namespace,
         method: Method,
         problem: Problem,
+        # Next to `problem`, which is the one it is the counterpart of -- see
+        # PracticeLoop's "separate evaluation environment" section.
+        evaluation_problem: Problem | None = None,
         num_cycles: int,
         max_steps_per_interaction: int,
         renderer: type[Renderer] | None,
@@ -149,6 +152,10 @@ class MethodRunner:
         try:
             PracticeLoop.run(
                 problem=problem,
+                # None for every domain that has not been migrated, which is what
+                # keeps their results byte-identical -- PracticeLoop then evaluates
+                # on `problem`, exactly as before. See its own docstring.
+                evaluation_problem=evaluation_problem,
                 method=method,
                 metrics=metrics,
                 num_cycles=num_cycles,
