@@ -323,11 +323,15 @@ def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_samp
     assert method.total_observations() > competence_before
 
 
-def test_reset_environment_directly_sets_state_and_returns_true() -> None:
+def test_reset_environment_reports_failure_and_leaves_the_environment_alone() -> None:
+    """EES has no way to self-navigate, so it reports failure -- and does not reach for
+    the privileged `set_state` that would fake one."""
     method, env = _build()
+    stranded = env.build_initial_state(light_level=0.1, light_target=0.9)
+    env.set_state(state=stranded)
     start_state = env.build_initial_state(light_level=0.3, light_target=0.8)
-    assert method.reset_environment(start_state=start_state) is True
-    assert env.get_current_state() is start_state
+    assert method.reset_environment(start_state=start_state) is False
+    assert env.get_current_state() is stranded
 
 
 def test_measured_success_rate_is_zero_for_a_never_executed_skill() -> None:

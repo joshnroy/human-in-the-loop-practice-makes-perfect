@@ -39,12 +39,16 @@ def test_solves_a_sampled_task_in_exactly_two_actions() -> None:
     assert task.goal.is_satisfied(state=state) is True
 
 
-def test_reset_environment_directly_sets_state_and_returns_true() -> None:
+def test_reset_environment_reports_failure_and_leaves_the_environment_alone() -> None:
+    """This method has no way to self-navigate, so it reports failure -- and does not
+    reach for the privileged `set_state` that would fake one."""
     env = LightSwitchEnvironment()
     method = _method(env=env)
+    stranded = env.build_initial_state(light_level=0.1, light_target=0.9)
+    env.set_state(state=stranded)
     start_state = env.build_initial_state(light_level=0.3, light_target=0.8)
-    assert method.reset_environment(start_state=start_state) is True
-    assert env.get_current_state() is start_state
+    assert method.reset_environment(start_state=start_state) is False
+    assert env.get_current_state() is stranded
 
 
 def test_generate_train_task_is_unreachable() -> None:
