@@ -27,6 +27,50 @@
 
 ![EES on Tossing3D](./2026-08-06-tossing3d-ees.png)
 
+## Status note: every EES count in this log is provisional
+
+**Added during the rebase onto `main` at `d647749`. No number in this log has been
+edited, restated or recomputed — the counts below are exactly what was measured, and
+this note records why they should not be quoted as current.**
+
+Two independent reasons, either of which alone is enough.
+
+**1. Tossing3D is not reproducible from `--seed`.** Discovered later, in the widened-bounds
+re-run (`2026-08-06-tossing3d-ees-widened.md`): seed 0 run twice under identical arguments
+and identical code ended **3/10 versus 2/10**, with `evaluations` diverging at several
+checkpoints. Same-seed run-to-run variation is therefore **at least 1 episode in 10 = 10 pp**.
+`tests/scripts/test_reproducibility.py` covers `--env lightswitch` only, so nothing pinned
+this domain. Every count in this log is a single draw from a distribution whose width is
+comparable to the effects being read off it, and the paired Wilcoxon below assumes binomial
+noise only — so it **understates** the true variability. A separate fix for this is in
+flight.
+
+**2. #102 changed the no-op path underneath these results.** `_EesEpisode._noop_action`
+returned `np.zeros(3)`, and Tossing3D's `pick_id` is `0`, so every `no-op (no plan)` step
+dispatched a real `pick_shelf(distance=0.0, rotation=0.0)`. It now returns `noop_id = -1`,
+which **no branch of `Tossing3DEnvironment._execute` handles**. That path is reached on
+**every failed evaluation episode** — exactly two no-op steps between the last goal check
+and the final one. So **24/90, 33/90, every per-seed row and every statistic derived from
+them (the Wilcoxon tests, the power estimate) were produced by code `main` has since
+changed.**
+
+**How strong that second claim is, exactly.** What is *established* is that the executed
+action sequence differs: the old code dispatched a skill, the new code dispatches nothing.
+Whether the **counts** move is **not established** — KINDER's motion planner may have failed
+to plan a base motion to distance 0.0 and stepped the simulator zero times, in which case the
+old and new no-ops were physically identical and the numbers would be unchanged. That
+possibility is untested. **Only a re-run settles it.**
+
+**What is not affected.** The `skill-oracle` ceiling (**99/100**) and the pooled standoff
+response (**155/330**) stand as measured: `SkillOraclePolicy` never calls `noop_action`, so
+#102 cannot have touched them. Reason 1 still applies to them as run-to-run noise, but no
+code changed underneath them.
+
+**Also stale as descriptions of `main`, though no number depends on them:** finding 4's
+"`RandomSkillsMethod` cannot run on this domain at all" (fixed by #104) and "EES's 'no-op'
+is not inert here" (fixed by #102). Recommendations 2(a), 2(b) and 3 have all shipped — as
+#104, #102 and #106 respectively.
+
 ## Question / goal
 
 Run vanilla PMP (EES) against `--env tossing3d`, KINDER's MuJoCo/PyBullet `Tossing3D-o1`
@@ -225,6 +269,11 @@ number, the same one every episode**, and guessing it uniformly already works ab
 often as not.
 
 ### 3. EES does not measurably improve within this budget — a null result
+
+> **Provisional — see "Status note" at the top of this log.** The EES counts in this
+> section were produced by code `main` has since changed (#102's no-op path), and this
+> domain is not reproducible from `--seed` (same-seed spread ≥ 10 pp). Nothing below has
+> been edited; a re-run is what would settle it. The `99/100` oracle ceiling is unaffected.
 
 Ten seeds requested, **9/10 usable**. Seed 9's run was killed mid-flight when the agent
 harness reaped the background job that owned it, and the re-issued run was reaped the same
