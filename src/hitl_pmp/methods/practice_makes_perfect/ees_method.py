@@ -591,9 +591,10 @@ class EesMethod(Method):
                 for candidate in candidates
             ]
             sampler = self.sampler(skill_name=skill.name, param_dim=skill.param_dim)
-            params, was_random = sampler.sample(
+            choice = sampler.sample(
                 sampler_inputs=sampler_inputs, candidates=candidates, explore=explore
             )
+            params = choice.params
             record = (
                 _SkillAttempt(
                     skill_name=skill.name,
@@ -604,7 +605,7 @@ class EesMethod(Method):
                     sampler_input=self.sampler_input_row(
                         ground_skill=ground_skill, state=state, params=params
                     ),
-                    was_random_exploration=was_random,
+                    was_random_exploration=choice.was_random,
                 )
                 if explore
                 else None
