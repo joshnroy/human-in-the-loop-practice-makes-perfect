@@ -162,7 +162,12 @@ class SkillTally(BaseModel):
     # `throw_kinds` splits three ways rather than two, since "the epsilon branch fired"
     # and "the classifier could not rank the candidates" are different facts about a
     # non-informed draw -- the same distinction `was_random` and `was_informed` carry on
-    # `SamplerChoice`. Every count above re-derives from these three lists.
+    # `SamplerChoice`.
+    #
+    # Every ATTEMPT and LANDING count above re-derives from these three lists -- but the
+    # `successes` counts do not, and neither does `prefilled`. A scored success is EES's
+    # add-effect check, which is a different event from a landing (see this class's
+    # docstring), and both are kept for exactly that reason.
     throw_targets: list[float] = Field(default_factory=list)
     throw_landed_flags: list[bool] = Field(default_factory=list)
     throw_kinds: list[Literal["random", "informed", "fallback"]] = Field(default_factory=list)
@@ -344,7 +349,18 @@ class TracingEesMethod(EesMethod):
     # The in-flight throw's dynamics observation, keyed by lifted skill name, waiting for
     # the outcome to be observed. At most one per name is ever in flight: EES observes the
     # previous execution before issuing the next.
+    #
+    # Dropped at each cycle boundary by `drain_pending`, because EES leaves each period's
+    # LAST skill unobserved by construction, so a throw issued last in a period leaves an
+    # entry here that its own period will never pop. It has always been overwritten by the
+    # next period's throw before anything reads it, so no count was ever wrong -- but with
+    # the per-draw lists a misattribution would now be silent, since the list lengths
+    # would still match `attempts` while a target and a kind rode on the wrong draw.
     pending_throws: dict[str, ThrowObservation] = Field(default_factory=dict)
+
+    def drain_pending(self) -> None:
+        """Forget any throw whose outcome the period ended before observing."""
+        self.pending_throws = {}
 
     def get_task_policy(self, *, task: Task) -> Policy:
         self.practicing = False
@@ -494,6 +510,7 @@ class SkillTraceCollector:
 
         def on_cycle_end() -> None:
             periods.append(log.drain())
+            method.drain_pending()
             competence.append(method.competence_snapshot())
 
         PracticeLoop.run(

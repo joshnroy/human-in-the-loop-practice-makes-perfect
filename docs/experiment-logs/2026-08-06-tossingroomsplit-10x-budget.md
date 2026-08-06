@@ -21,9 +21,32 @@ later of the two.
 
 **Which variable it aligns with.** **Accumulated landings**, not transitions. The
 classifier only ever sees positives, and the seeds differ several-fold in how fast they
-accumulate them (the standard run's per-seed attempt ratio spanned 2.7x to 8.8x), so a
-crossover pinned in transitions should be much more spread across seeds than one pinned
-in landings.
+accumulate them (the standard run's per-seed attempt ratio spanned 49/18 for seed 4 to
+123/14 for seed 1), so a crossover pinned in transitions should be much more spread across
+seeds than one pinned in landings.
+
+## The decision rule, fixed in advance
+
+Added before any result was computed — the sweep was still running when this was written,
+and no shard existed. Recorded because a prediction about *where* a crossover falls is not
+preregistered unless what counts as a crossover is fixed too.
+
+- **A crossover** is the earliest window whose informed rate beats its own epsilon-random
+  control at raw `alpha = 0.05` (Fisher exact, two-sided) **and** after which every later
+  window that was measured at all still has a positive gap. Persistence is doing the
+  multiplicity work: one significant window in ten at `alpha = 0.05` is roughly what
+  chance produces. The final window can never qualify, since nothing follows it to
+  establish persistence.
+- **The Holm-Bonferroni threshold is reported beside it**, per table, and the two are
+  never merged into one number.
+- **Windows are 2,500 transitions**, one standard run each, so window 1 replicates the
+  published 11/56-vs-11/57 null at the published power and each later window is an
+  independent replication.
+- **The same rule is applied to the accumulated-landings bands**, so the
+  transitions-versus-successes claim is adjudicated by one statistic on both axes rather
+  than by eye, and the 2x2 of transitions x landings is what separates the two factors.
+- **Every MDE is derived from its own two denominators**; none is carried between
+  comparisons.
 
 **What would make me wrong in the more interesting direction.** If the null persists to
 25,000 transitions, the saturated-classifier failure is not a budget problem at all, and
