@@ -129,13 +129,49 @@ float32 sigmoid) do produce exactly equal scores, so it covers them -- but "cann
 discriminate" is the broader property, and this detects only its exact form.
 """
 
+import contextlib
 import copy
 import math
+from collections.abc import Iterator
 
 import numpy as np
 import torch
 from pydantic import BaseModel, ConfigDict, PrivateAttr, model_validator
 from torch import nn
+
+
+class SingleThreadedTorch:
+    """Runs a block of torch arithmetic at exactly one intra-op thread.
+
+    `torch.manual_seed` pins the *initial weights* but not the **reduction order** of
+    the matmuls that follow: torch splits a dot product across intra-op threads and
+    sums the partial results in whatever order they finish, and float addition is not
+    associative. So the same seed on the same data trained to different weights
+    depending on how many threads the process happened to have -- making the ambient
+    thread count a second, unrecorded input to every result.
+
+    That is not hypothetical here. `scripts/run_sweep.py` pins `OMP_NUM_THREADS=1` on
+    every child it spawns, while a bare `python -m hitl_pmp.cli` run inherits the
+    machine's default (24 on this box), so a sweep and a CLI re-run of the *same seed*
+    were two different experiments. See `docs/tossing3d-integration-status.md` section
+    5.9, where exactly that comparison nearly became a false "concurrency perturbs
+    Tossing3D" finding.
+
+    Pinning here rather than at the CLI boundary keeps the guarantee a property of the
+    sampler itself, so it holds however the run was launched -- including from a test,
+    a notebook, or an `analysis/` script. The cost is negligible: these nets are
+    32x32 and the wall clock on any real run is dominated by the simulator.
+    """
+
+    @staticmethod
+    @contextlib.contextmanager
+    def scope() -> Iterator[None]:
+        previous = torch.get_num_threads()
+        torch.set_num_threads(1)
+        try:
+            yield
+        finally:
+            torch.set_num_threads(previous)
 
 
 class MlpBinaryClassifier(BaseModel):
@@ -226,7 +262,10 @@ class MlpBinaryClassifier(BaseModel):
             raise RuntimeError("MlpBinaryClassifier.predict_proba called before fit.")
         normalized = (x_data - self._input_shift) / self._input_scale
         tensor_x = torch.from_numpy(np.asarray(normalized, dtype=np.float32))
-        with torch.no_grad():
+        # Scoring is pinned for the same reason training is: this forward pass decides
+        # which candidate the sampler returns, so a thread-dependent reduction here
+        # would move the argmax even against identical weights.
+        with SingleThreadedTorch.scope(), torch.no_grad():
             probabilities = self._net(tensor_x).squeeze(dim=-1)
         return probabilities.detach().cpu().numpy().astype(np.float64)
 
@@ -248,6 +287,14 @@ class MlpBinaryClassifier(BaseModel):
         torch.manual_seed(self.seed)
         tensor_x = torch.from_numpy(np.asarray(x_data, dtype=np.float32))
         tensor_y = torch.from_numpy(np.asarray(y_data, dtype=np.float32))
+        with SingleThreadedTorch.scope():
+            self._train_single_threaded(tensor_x=tensor_x, tensor_y=tensor_y, x_data=x_data)
+
+    def _train_single_threaded(
+        self, *, tensor_x: torch.Tensor, tensor_y: torch.Tensor, x_data: np.ndarray
+    ) -> None:
+        """The training loop proper. Split out only so `_train` reads as
+        seed-then-pin-then-train rather than nesting the whole loop in a `with`."""
         loss_fn = nn.BCELoss()
         best_overall_loss = math.inf
         best_overall_state: dict[str, torch.Tensor] | None = None

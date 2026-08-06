@@ -1,9 +1,11 @@
 import numpy as np
 import pytest
+import torch
 from pydantic import Field, ValidationError
 
 from hitl_pmp.methods.practice_makes_perfect.wrapped_sampler import (
     LearnedSkillSampler,
+    MlpBinaryClassifier,
     SamplerChoice,
 )
 
@@ -13,6 +15,21 @@ from hitl_pmp.methods.practice_makes_perfect.wrapped_sampler import (
 # separable task below is linearly separable in one feature, so a few hundred
 # full-batch Adam steps are plenty.
 TEST_MAX_TRAIN_ITERS = 300
+
+
+def _thread_probe_data() -> tuple[np.ndarray, np.ndarray]:
+    """Deliberately wide (64 features, 400 rows): a reduction only has something to
+    reassociate across threads when the dot products are long enough to be split."""
+    rng = np.random.default_rng(0)
+    x_data = rng.normal(size=(400, 64))
+    y_data = (x_data[:, 0] + 0.5 * x_data[:, 1] > 0).astype(float)
+    return x_data, y_data
+
+
+def _fit_probe_classifier(*, x_data: np.ndarray, y_data: np.ndarray) -> np.ndarray:
+    classifier = MlpBinaryClassifier(seed=0, max_train_iters=TEST_MAX_TRAIN_ITERS)
+    classifier.fit(x_data=x_data, y_data=y_data)
+    return classifier.predict_proba(x_data=x_data)
 
 
 def _row(*, params: np.ndarray, features=(0.0,)) -> list[float]:
@@ -400,3 +417,25 @@ def test_refit_from_scratch_forgets_nothing_and_tracks_all_data():
     sampler.observe(sampler_input=_row(params=np.array([0.99])), success=True)
     sampler.fit()
     assert sampler.num_observations == 41
+
+
+def test_training_does_not_depend_on_the_ambient_torch_thread_count():
+    """`--seed` must fully determine a run, and it did not: `torch.manual_seed` pins
+    the initial weights but not the *reduction order* of the matmuls that follow, so
+    the same seed and the same data trained to different weights depending on how
+    many intra-op threads torch happened to be using.
+
+    That made the thread count a second, unrecorded input to every result. It bit
+    this project once already: `scripts/run_sweep.py` pins `OMP_NUM_THREADS=1` on
+    every child while a bare `hitl_pmp.cli` run inherits the machine's default, so a
+    sweep and a CLI re-run of the same seed were two different experiments (see
+    docs/tossing3d-integration-status.md section 5.9).
+    """
+    x_data, y_data = _thread_probe_data()
+
+    torch.set_num_threads(1)
+    single = _fit_probe_classifier(x_data=x_data, y_data=y_data)
+    torch.set_num_threads(4)
+    multi = _fit_probe_classifier(x_data=x_data, y_data=y_data)
+
+    assert np.array_equal(single, multi)

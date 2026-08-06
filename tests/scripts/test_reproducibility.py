@@ -9,11 +9,34 @@ any narrower test. A sweep whose numbers cannot be regenerated months later is n
 a research result, so this is worth pinning explicitly.
 """
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+
+# The DISTRIBUTION is `kindergarden`; the IMPORT package is `kinder`. Keying on the
+# distribution name here would skip everything, always. Matches how every other
+# simulator-backed test in this repo gates (see tests/environments/tossing3d/).
+needs_kinder = pytest.mark.skipif(
+    importlib.util.find_spec("kinder") is None or importlib.util.find_spec("kinder_models") is None,
+    reason="KINDER is an optional extra (`kindergarden` + `kinder_models`); CI never installs it",
+)
+
+# grid_size=1 puts the robot in the light's own cell from the start, so TurnOnLight is
+# immediately applicable and this baseline's solve rate genuinely varies with the seed
+# (5/8, 3/8, 1/8 for seeds 1/2/3). At larger grids it scores 0 for every seed, which
+# would make the different-seeds assertion vacuous.
+LIGHTSWITCH_ARGS = ("--grid-size", "1", "--num-test-tasks", "8")
+
+# Deliberately the smallest run that still executes real controllers: one evaluation
+# sweep over two scenes. Each task is a full pick/move/toss attempt in MuJoCo, so this
+# is minutes rather than the milliseconds Light Switch costs -- which is why it is
+# gated off CI rather than folded into the default gate.
+TOSSING3D_ARGS = ("--num-test-tasks", "2", "--num-cycles", "0")
 
 
 class ReproducibilityHarness:
@@ -21,7 +44,14 @@ class ReproducibilityHarness:
     business-logic class in this project."""
 
     @staticmethod
-    def run(*, output_dir: Path, seed: int, threads: int) -> dict[str, object]:
+    def run(
+        *,
+        output_dir: Path,
+        seed: int,
+        threads: int,
+        env_name: str = "lightswitch",
+        env_args: tuple[str, ...] = LIGHTSWITCH_ARGS,
+    ) -> dict[str, object]:
         """One short real CLI run; returns its parsed stats.json."""
         output_dir.mkdir(parents=True, exist_ok=True)
         completed = subprocess.run(  # noqa: S603
@@ -30,18 +60,10 @@ class ReproducibilityHarness:
                 "-m",
                 "hitl_pmp.cli",
                 "--env",
-                "lightswitch",
+                env_name,
                 "--method",
                 "random-skills",
-                # grid_size=1 puts the robot in the light's own cell from the
-                # start, so TurnOnLight is immediately applicable and this
-                # baseline's solve rate genuinely varies with the seed (5/8, 3/8,
-                # 1/8 for seeds 1/2/3). At larger grids it scores 0 for every
-                # seed, which would make the different-seeds assertion vacuous.
-                "--grid-size",
-                "1",
-                "--num-test-tasks",
-                "8",
+                *env_args,
                 "--seed",
                 str(seed),
                 "--output-dir",
@@ -55,6 +77,16 @@ class ReproducibilityHarness:
         assert "success rate" in completed.stdout
         parsed: dict[str, object] = json.loads((output_dir / "stats.json").read_text())
         return parsed
+
+    @staticmethod
+    def run_tossing3d(*, output_dir: Path, seed: int, threads: int) -> dict[str, object]:
+        return ReproducibilityHarness.run(
+            output_dir=output_dir,
+            seed=seed,
+            threads=threads,
+            env_name="tossing3d",
+            env_args=TOSSING3D_ARGS,
+        )
 
 
 def test_the_same_seed_produces_identical_results(*, tmp_path: Path) -> None:
@@ -78,3 +110,34 @@ def test_different_seeds_produce_different_results(*, tmp_path: Path) -> None:
     first = ReproducibilityHarness.run(output_dir=tmp_path / "s1", seed=1, threads=1)
     second = ReproducibilityHarness.run(output_dir=tmp_path / "s2", seed=2, threads=1)
     assert first != second
+
+
+# --- Tossing3D -------------------------------------------------------------------
+#
+# Everything above runs Light Switch, whose whole dynamics is a few lines of numpy.
+# Tossing3D is the opposite case and the one actually at risk: MuJoCo physics, PyBullet
+# motion planning and four upstream controllers, none of which this project seeds
+# directly -- `--seed` reaches them only as the scene seed handed to `env.reset(seed=)`.
+# A domain whose runs cannot be regenerated is not a research result, so the guarantee
+# is pinned here per-domain rather than assumed to transfer from Light Switch.
+
+
+@needs_kinder
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_tossing3d_the_same_seed_produces_identical_results(*, tmp_path: Path, seed: int) -> None:
+    """Three seeds, not one: a single seed can be reproducible by luck (e.g. every
+    task fails identically), which would make the check vacuous."""
+    first = ReproducibilityHarness.run_tossing3d(output_dir=tmp_path / "a", seed=seed, threads=1)
+    second = ReproducibilityHarness.run_tossing3d(output_dir=tmp_path / "b", seed=seed, threads=1)
+    assert first == second
+
+
+@needs_kinder
+def test_tossing3d_results_do_not_depend_on_the_math_thread_count(*, tmp_path: Path) -> None:
+    """The Light Switch analogue of this test guards torch; here it guards the whole
+    simulator stack, whose BLAS-backed float reductions can reassociate with the thread
+    count. run_sweep.py pins children to one math thread, so a sweep and a bare CLI run
+    would otherwise be two different experiments."""
+    single = ReproducibilityHarness.run_tossing3d(output_dir=tmp_path / "t1", seed=0, threads=1)
+    multi = ReproducibilityHarness.run_tossing3d(output_dir=tmp_path / "t4", seed=0, threads=4)
+    assert single == multi
