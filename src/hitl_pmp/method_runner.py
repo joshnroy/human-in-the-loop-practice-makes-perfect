@@ -8,6 +8,7 @@ import numpy as np
 
 from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.method.method import Method
+from hitl_pmp.core.method.types import SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
@@ -110,6 +111,34 @@ class MethodRunner:
             )
             failures_recorded, attempts_recorded = failures, attempts
 
+        # The same treatment for practice, and for the same class of failure one level
+        # down: a run whose samplers were never given enough labels and a run whose
+        # samplers cannot fit the labels they have score identically. Cumulative
+        # readings differenced per window, seeded from the Method's current reading for
+        # the reused-instance reason above. See Metrics.record_practice_outcomes.
+        practice_recorded = method.practice_outcomes()
+
+        def record_practice_outcomes() -> None:
+            nonlocal practice_recorded
+            current = method.practice_outcomes()
+            # Skills absent from the previous reading are new this window, so their
+            # whole tally is the delta -- an empty tally is the right `previous`. The
+            # reverse (a skill that disappears) would mean a counter went backwards,
+            # which SkillPracticeTally.minus rejects rather than hides; it cannot
+            # happen here because a skill that vanished from `current` is simply not
+            # iterated, and nothing else consults the stale entry.
+            metrics.record_practice_outcomes(
+                outcomes={
+                    name: tally.minus(previous=practice_recorded.get(name, SkillPracticeTally()))
+                    for name, tally in current.items()
+                }
+            )
+            practice_recorded = current
+
+        def record_cycle_end() -> None:
+            record_planning_outcomes()
+            record_practice_outcomes()
+
         recorder = MethodRunner._build_recorder(
             args=args,
             problem=problem,
@@ -137,7 +166,7 @@ class MethodRunner:
                 renderer=renderer if getattr(args, "output_dir", None) is not None else None,
                 num_render_checkpoints=num_render_checkpoints,
                 on_checkpoint_frames=write_clip,
-                on_cycle_end=record_planning_outcomes,
+                on_cycle_end=record_cycle_end,
                 recorder=recorder,
             )
             # Once more after the loop, so the final evaluation sweep is covered and
@@ -147,7 +176,7 @@ class MethodRunner:
             # on_cycle_end fires before each sweep rather than after it. That offset
             # is spelled out in Metrics.record_planning_outcomes and pinned by
             # tests/test_method_runner.py.
-            record_planning_outcomes()
+            record_cycle_end()
         finally:
             # In a finally so a crashed run still leaves a playable video of
             # everything up to the crash -- which is exactly when someone wants to
@@ -172,6 +201,19 @@ class MethodRunner:
         num_failed, num_attempted = metrics.total_planning_outcomes()
         if num_failed:
             print(f"planning failures: {num_failed}/{num_attempted} planner calls found no plan")
+        # One line per lifted skill, for the same reason: the question these counters
+        # exist to answer -- was the sampler starved, or is it unable -- gets asked
+        # while watching a run, not only afterwards. x/y throughout and never a bare
+        # percentage, since a rate over three attempts and a rate over three hundred
+        # support very different claims. Printed only by a Method that measures
+        # practice, so a non-learning baseline's output is exactly what it was before.
+        for skill_name, tally in metrics.total_practice_outcomes().items():
+            print(
+                f"practice {skill_name}: {tally.num_successes}/{tally.num_attempts} succeeded "
+                f"({tally.num_informed_successes}/{tally.num_informed_attempts} informed, "
+                f"{tally.num_random_successes}/{tally.num_random_attempts} epsilon-random, "
+                f"{tally.num_fallback_successes()}/{tally.num_fallback_attempts()} fallback)"
+            )
 
         if args.output_dir is not None:
             if written_clips:

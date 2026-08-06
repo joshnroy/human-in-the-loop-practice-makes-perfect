@@ -20,7 +20,11 @@ from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
-from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod, _EesEpisode
+from hitl_pmp.methods.practice_makes_perfect.ees_method import (
+    EesMethod,
+    _EesEpisode,
+    _SkillAttempt,
+)
 from hitl_pmp.planning.fast_downward import PlanningFailure
 
 
@@ -927,3 +931,142 @@ def test_a_successful_plan_is_not_counted_as_a_failure() -> None:
 
     assert plan
     assert method.planning_outcomes() == (0, 1)
+
+
+def test_practice_outcomes_start_empty() -> None:
+    """Empty rather than one zeroed entry per lifted skill: "never asked" is exactly
+    the state a missing key means, and it is one half of the discrimination these
+    counters exist for."""
+    method, _env = _build()
+    assert method.practice_outcomes() == {}
+
+
+def test_a_practice_attempt_is_tallied_against_its_lifted_skill() -> None:
+    """Keyed by the *lifted* skill name, not the grounding: one learned sampler is
+    fitted per skill name (predicators'
+    `active_sampler_learning_object_specific_samplers = False`), so "was this
+    sampler starved?" is a question about the lifted skill."""
+    method, env = _build()
+    turn_on = _turn_on_light(env=env)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    episode._pending = turn_on
+
+    episode.observe_pending(true_atoms=turn_on.add_effects)
+
+    tally = method.practice_outcomes()["TurnOnLight"]
+    assert (tally.num_successes, tally.num_attempts) == (1, 1)
+
+
+def test_an_evaluation_episode_tallies_nothing() -> None:
+    """Evaluation runs on held-out test tasks and observes no outcomes at all, so a
+    practice counter that ticked there would be counting the test set."""
+    method, env = _build()
+    turn_on = _turn_on_light(env=env)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=False)
+    episode._pending = turn_on
+
+    episode.observe_pending(true_atoms=turn_on.add_effects)
+
+    assert method.practice_outcomes() == {}
+
+
+def test_a_failed_attempt_counts_toward_attempts_but_not_successes() -> None:
+    """`0/17` and `0/0` are the two readings this instrument exists to tell apart."""
+    method, env = _build()
+    turn_on = _turn_on_light(env=env)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    episode._pending = turn_on
+
+    episode.observe_pending(true_atoms=frozenset())
+
+    tally = method.practice_outcomes()["TurnOnLight"]
+    assert (tally.num_successes, tally.num_attempts) == (0, 1)
+
+
+def test_an_epsilon_random_attempt_is_recorded_in_its_own_pool() -> None:
+    """A coin flip says nothing about what the sampler learned, so pooling it with
+    the greedy draws is what made a previous greedy-versus-random split provisional
+    (see `SamplerChoice`). The total still counts it: it really was an attempt."""
+    method, env = _build()
+    turn_on = _turn_on_light(env=env)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    episode._pending = turn_on
+    episode._pending_sampler_record = _SkillAttempt(
+        skill_name="TurnOnLight",
+        param_dim=1,
+        sampler_input=[1.0, 0.0],
+        was_random_exploration=True,
+        was_informed_choice=False,
+    )
+
+    episode.observe_pending(true_atoms=turn_on.add_effects)
+
+    tally = method.practice_outcomes()["TurnOnLight"]
+    assert (tally.num_successes, tally.num_attempts) == (1, 1)
+    assert (tally.num_random_successes, tally.num_random_attempts) == (1, 1)
+    assert (tally.num_informed_successes, tally.num_informed_attempts) == (0, 0)
+
+
+def test_an_informed_attempt_is_recorded_in_its_own_pool() -> None:
+    """The discriminating quantity between "the sampler was never really asked" and
+    "asked and missed": only an informed draw is one whose classifier actually ranked
+    the candidates."""
+    method, env = _build()
+    turn_on = _turn_on_light(env=env)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    episode._pending = turn_on
+    episode._pending_sampler_record = _SkillAttempt(
+        skill_name="TurnOnLight",
+        param_dim=1,
+        sampler_input=[1.0, 0.0],
+        was_random_exploration=False,
+        was_informed_choice=True,
+    )
+
+    episode.observe_pending(true_atoms=frozenset())
+
+    tally = method.practice_outcomes()["TurnOnLight"]
+    assert (tally.num_informed_successes, tally.num_informed_attempts) == (0, 1)
+    assert (tally.num_random_successes, tally.num_random_attempts) == (0, 0)
+
+
+def test_a_uniform_fallback_draw_is_neither_random_nor_informed() -> None:
+    """`LearnedSkillSampler.sample`'s deviation-6 branch: a fitted classifier whose
+    scores could not discriminate. It is an attempt and it is not evidence of
+    learning, so it must fall in neither pool -- the remainder is recoverable as
+    attempts minus the two."""
+    method, env = _build()
+    turn_on = _turn_on_light(env=env)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    episode._pending = turn_on
+    episode._pending_sampler_record = _SkillAttempt(
+        skill_name="TurnOnLight",
+        param_dim=1,
+        sampler_input=[1.0, 0.0],
+        was_random_exploration=False,
+        was_informed_choice=False,
+    )
+
+    episode.observe_pending(true_atoms=turn_on.add_effects)
+
+    tally = method.practice_outcomes()["TurnOnLight"]
+    assert (tally.num_successes, tally.num_attempts) == (1, 1)
+    assert tally.num_random_attempts == 0
+    assert tally.num_informed_attempts == 0
+    assert tally.num_fallback_attempts() == 1
+
+
+def test_practice_outcomes_accumulate_across_a_whole_run() -> None:
+    """Cumulative over the run, like `planning_outcomes`: the Method keeps monotonic
+    counters and method_runner.py owns the per-window differencing, so the two can
+    never get out of step with the loop's cadence."""
+    method, env = _build()
+    turn_on = _turn_on_light(env=env)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+
+    for hit in (True, False, True):
+        episode._pending = turn_on
+        episode.observe_pending(true_atoms=turn_on.add_effects if hit else frozenset())
+
+    tally = method.practice_outcomes()["TurnOnLight"]
+    assert (tally.num_successes, tally.num_attempts) == (2, 3)
