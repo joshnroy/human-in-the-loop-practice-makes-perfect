@@ -18,23 +18,21 @@ pip install -e ".[dev]"
 
 **Fast Downward** is required by any planning-based `Method` (`--method ees`, and
 `planning/`'s own tests). It is deliberately not vendored — build it once and it is
-found automatically if it sits beside this repo (the same sibling convention as
-`../hitl-practice`), or point `FD_EXEC_PATH` at any other checkout:
+found automatically if it sits beside this repo, or point `FD_EXEC_PATH` at any other
+checkout:
 
 ```bash
 cd .. && git clone https://github.com/aibasel/downward.git && cd downward && ./build.py
 ```
 
-A working `python` and that checkout are the whole dependency — unlike predicators,
-the planner does not shell out to coreutils' `timeout` (so macOS needs no
-`brew install coreutils` for `gtimeout`); the per-call budget is enforced by
-`subprocess` itself. See `planning/fast_downward.py`'s deviations list.
+A working `python` and that checkout are the whole dependency; the per-call budget is
+enforced by `subprocess` itself. See `planning/fast_downward.py`'s deviations list.
 
 ### `reference/`: third-party checkouts, read but never committed
 
 `reference/` holds upstream repos this project reads for API/behavior reference —
 `kindergarden`, `kinder-baselines`, `predicators`. It is **gitignored and never
-committed** (`.gitignore`): ~1.9 GB, and an embedded git repo inside this one
+committed** (`.gitignore`): ~4.4 GB, and an embedded git repo inside this one
 confuses `git add -A`. It belongs to the *main* checkout, not to each worktree.
 
 Clone or refresh all of them with one idempotent command — run it as often as you
@@ -76,9 +74,7 @@ sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf 
 With those present the compile is stock: `compile.py`'s own default paths, no
 `BLAS_DIR`/`LAPACK_DIR`/`LIBGFORTRAN_DIR` and no `CC`/`CXX`/`LDSHARED` overrides, even
 in a venv seeded from conda's interpreter (which inherits conda's `compiler_compat`
-build flags). Without them the build fails, and the wheel-internal libraries an
-earlier session substituted instead are recorded — and retracted — in
-`docs/kinder-environment-validation.md`.
+build flags). Without them the build fails; do not substitute wheel-internal libraries.
 
 Four traps, each of which costs an hour:
 
@@ -142,11 +138,12 @@ coverage run --source=src/hitl_pmp -m pytest -q && coverage report -m  # coverag
 pre-commit install            # optional: run lint/format/typecheck locally pre-commit
 ```
 
-All four of lint/typecheck/import-direction/test run in CI (`.github/workflows/ci.yml`) on every push/PR
-to `main`. `main` only allows squash-merge (no merge commits, no rebase merge).
+CI (`.github/workflows/ci.yml`) runs these on every push/PR to `main`, as **three jobs**: `lint`
+(`ruff check .`, `ruff format --check .`, `lint-imports`), `typecheck` (`mypy src`), and `test`
+(`pytest -q`). `main` only allows squash-merge (no merge commits, no rebase merge).
 
 **Run the gate locally; do not block on GitHub CI.** The local gate is the real check — it is the
-same four commands, and it runs in ~1 minute against CI's ~10. Once it passes, open the PR, report
+same five commands, and it runs in ~1 minute against CI's ~10. Once it passes, open the PR, report
 whatever state CI happens to be in, and finish. Polling GitHub until every check goes green wastes
 minutes per PR and tells you nothing the local run did not. Two caveats worth knowing rather than
 waiting for: CI does **not** install the optional `tossing3d` extra, so KINDER-backed tests must skip
@@ -307,20 +304,12 @@ notebooks producing results/figures) will import from `hitl_pmp`, never the reve
 
 `core/` holds six **fixed abstract interfaces**: `Problem`, `Method`, `Renderer`
 (top-level), plus `Environment`, `HumanOracle`, `Tasks` (nested *under*
-`core/problem/`, not siblings of it — see below for why). These used to be a single
-static-method-container pattern applied uniformly to all six (never instantiated,
-state as a `ClassVar` mutated on the base class, Java static-class/singleton style)
-— that pattern caused real, repeated problems in practice: a caller had to remember
-to wire e.g. `Problem.env = ConcreteEnv` *before* calling anything, tests needed a
-hand-rolled snapshot/restore fixture around every mutation to avoid leaking state
-into other tests, and a `problem`/`method` value passed as a parameter could
-silently disagree with the separately-wired global ClassVar it actually read from
-at runtime.
+`core/problem/`, not siblings of it — see below for why).
 
-The dividing line now is **does this class carry real per-run state**:
+The dividing line is **does this class carry real per-run state**:
 - `Environment`, `Problem`, `Tasks`, `Method` genuinely do (`current_state`,
   `env`/`tasks`/`human`, RNG streams, etc.), so they're real pydantic
-  (`BaseModel, abc.ABC`) instances now, constructed with that state as keyword
+  (`BaseModel, abc.ABC`) instances, constructed with that state as keyword
   constructor arguments (e.g. `LightSwitchEnvironment(grid_size=10)`,
   `LightSwitchProblem(env=env, tasks=tasks)`) — every method is a normal instance
   method (`self`, not `@staticmethod`), and a concrete domain's own genuine
@@ -341,16 +330,13 @@ The dividing line now is **does this class carry real per-run state**:
   `Policy`) — but anything that needs a specific `Environment` instance's config now
   takes that instance as an explicit parameter instead of reading a class attribute.
 
-`Metrics` (`core/metrics/metrics.py`) sits alongside these but isn't actually
-abstract: every method there is already a genuine, reusable default (nothing in this
-codebase needs different behavior than "one task type, no real human-intervention
-tracking" yet), so there's no forced-must-override method the way `Problem` still has
-`run_task_episode`. Callers construct `Metrics()` directly, no per-domain subclass — a
-future `Method`/environment that genuinely needs different behavior overrides just the
-specific method that differs (ordinary subclassing, not contingent on the parent
-being an ABC). Constructing a fresh instance per run is also what replaced the old
-shared-`ClassVar`-plus-`reset()` pattern: there's no leftover state to explicitly
-clear anymore, since nothing is shared to begin with.
+`Metrics` (`core/metrics/metrics.py`) sits alongside these but isn't abstract: every
+method there is already a genuine, reusable default (nothing here needs different
+behavior than "one task type, no real human-intervention tracking" yet), so there is no
+forced-must-override method the way `Problem` still has `run_task_episode`. Callers
+construct `Metrics()` directly, no per-domain subclass; a future `Method`/environment
+that needs different behavior overrides just the specific method that differs. One fresh
+instance per run, so there is no shared state to clear.
 
 ```
 core/
@@ -367,7 +353,7 @@ core/
 │       └── types.py             Task, Goal, Predicate, GroundAtom
 ├── method/
 │   ├── method.py               Method — the agent side
-│   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand
+│   └── types.py                 LabeledAction, Policy, Rollout, SetupCommand, SetupCommandTarget, Skill, GroundSkill, Variable, LiftedAtom
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol
 └── renderer/
@@ -398,39 +384,30 @@ boilerplate. All flags are named, no positional arguments. `--output-dir DIR`
 readers reconstruct a `Metrics` and call its own computation methods) and, if the
 environment has a `renderer.py`, a demo `episode.mp4`. It also writes
 `config_snapshot.json` (`config_snapshot.py`'s `ConfigSnapshot`) — the conditions the
-run happened under: the *resolved* argparse namespace (so defaulted flags are
-recorded, not just passed ones), this repo's commit + dirty flag, and the same pair
-for Fast Downward and both KINDER upstreams (`kindergarden`, `kinder-baselines`),
-plus the Python/torch/numpy/platform stack. KINDER checkouts are located through the
-import system, never a hardcoded path, so a sibling clone and an editable install
-resolve identically; absent records `"unset"` and present-but-not-in-a-git-repo
-records `"unknown"`, and it never raises. A *separate* file for the same reason
-`timing.json` is: `stats.json`'s byte-stability is what verifies a change didn't
-alter results, and a commit SHA in it would break that on every commit.
-`--num-render-checkpoints N` (global) instead records N evaluation sweeps spread
-evenly from before any practice through the end of training, as
-`episode_<transitions>.mp4` — a visible progression for a `Method` that learns,
-rather than one clip of the finished policy. `--record-full-loop PATH` (global) is a
-different thing again: it records the *entire outer loop* — practice periods
-included, which nothing else renders — to one seekable `.mp4`, annotated with a
-status bar (phase, cycle, step, transitions, task, skill) and a distinctly coloured
-marker per reset kind. Off by default, and a pure observer: a recorded run takes the
-same actions and writes a byte-identical `stats.json`. See `recording/README.md`.
+run happened under: the *resolved* argparse namespace (so defaulted flags are recorded,
+not just passed ones), this repo's commit + dirty flag, the same pair for Fast Downward
+and both KINDER upstreams, and the Python/torch/numpy/platform stack. It locates
+checkouts through the import system rather than a hardcoded path, and never raises. A
+*separate* file for the same reason `timing.json` is: `stats.json`'s byte-stability is
+what verifies a change didn't alter results, and a commit SHA in it would break that on
+every commit. `--num-render-checkpoints N` (global) instead records N evaluation sweeps
+spread evenly from before any practice through the end of training, as
+`episode_<transitions>.mp4`. `--record-full-loop PATH` (global) records the *entire outer
+loop* — practice periods included, which nothing else renders — to one seekable annotated
+`.mp4`. Off by default and a pure observer: a recorded run takes the same actions and
+writes a byte-identical `stats.json`. See `recording/README.md`.
 
-**Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc
-defines only `Problem` and `Method` (plus `Metrics`) — the doc's `Problem` bundles task
-generation, `send_command_to_human`, `reset_environment`, and the "standard MDP
-functions" all as plain methods on one class. This codebase introduced `Environment`/
-`HumanOracle`/`Tasks` as separate classes (motivated by wanting one dynamics
+**Why `Environment`/`HumanOracle`/`Tasks` nest under `problem/`**: the design doc defines
+only `Problem` and `Method` (plus `Metrics`), bundling task generation, the human command
+and the standard MDP functions onto one class. Splitting them out buys one dynamics
 implementation reusable across different `HumanOracle`/task-distribution pairings, and
-Gym-compatibility for RL baselines), but they still conceptually belong to `Problem`,
-so they nest under it. To make `Problem` still read like the doc's flat class, it's a
-**facade**: `get_current_state`, `take_action`, `get_valid_actions`, `hard_reset`,
-`sample_train_task`, `sample_test_task`, `calculate_cost_for_human_command`, and
-`execute_human_command` are all concrete one-line passthroughs to
-`Problem.env`/`Problem.tasks`/`Problem.human`. The **only** abstract method on `Problem`
-itself is `run_task_episode` — genuine orchestration no single part can supply. Full
-rationale and a mermaid dependency graph: `src/hitl_pmp/core/README.md`.
+Gym-compatibility for RL baselines — but they still belong to `Problem`, so they nest
+under it. `Problem` stays a **facade**: `get_current_state`, `take_action`,
+`get_valid_actions`, `hard_reset`, `sample_train_task`, `sample_test_task`,
+`calculate_cost_for_human_command` and `execute_human_command` are concrete one-line
+passthroughs to `Problem.env`/`.tasks`/`.human`. The **only** abstract method on `Problem`
+is `run_task_episode`. Full rationale and a mermaid dependency graph:
+`src/hitl_pmp/core/README.md`.
 
 **Why this breaks from Gym's `reset()`-is-free assumption**: a robot can take
 **irreversible** actions, so ending an episode doesn't imply a free reset — a human
@@ -495,17 +472,22 @@ actually happened — it returns nothing; querying cost beforehand is
   under which a cube landing **in** the bin is a scored failure. Its simulator-backed
   tests gate on `importlib.util.find_spec("kinder")` — the *import* package name; the
   distribution is `kindergarden` — so they skip cleanly on CI.
-- `humans/` — concrete `HumanOracle` implementations, the v0 (unconditional) →
+- `humans/` — will hold concrete `HumanOracle` implementations, the v0 (unconditional) →
   v3 (natural-language, capability-aware) axis from the design doc. Domain-agnostic:
-  a `HumanOracle` knows nothing about any specific `Environment`'s dynamics.
-- `methods/` — concrete `Method`/baseline implementations. `practice_makes_perfect/`
-  reproduces the *original* PMP/EES paper's own method + every baseline it compares
-  against (Fail Focus, Competence Gradient, Skill Diversity, Task-Relevant, Task
-  Repeat, Random Skills, MAPLE-Q), on Light Switch — a faithfulness repro, not this
-  project's own research contribution. This project's *own* planned baselines
-  (trivial fixed-skill planner, `planning_to_practice.py`, `pure_vla.py`,
-  `in_context_vla.py` — see the design doc's baseline progression and expected
-  failure modes) stay unimplemented until that reproduction is done.
+  a `HumanOracle` knows nothing about any specific `Environment`'s dynamics. **None
+  exist yet** — the folder is a README and an `__init__.py`, which is why
+  `Metrics.num_human_interventions()` reports nothing: intervention is not
+  *representable* yet, not merely unobserved.
+- `methods/` — concrete `Method`/baseline implementations. `oracle/` holds the
+  privileged `skill-oracle`. `practice_makes_perfect/` is the *original* PMP/EES paper
+  reproduction on Light Switch — a faithfulness repro, not this project's own research
+  contribution — and so far contains **`ees_method.py` and `random_skills_method.py`
+  only**, plus `competence_models.py` and `wrapped_sampler.py`. The paper's other
+  baselines (Fail Focus, Competence Gradient, Skill Diversity, Task-Relevant, Task
+  Repeat, MAPLE-Q) are **not implemented**. Neither are this project's own planned
+  baselines (trivial fixed-skill planner, `planning_to_practice.py`, `pure_vla.py`,
+  `in_context_vla.py` — see the design doc's baseline progression and expected failure
+  modes), which wait on that reproduction.
 - `adapters/` — bidirectional `core.Environment` ↔ Gym/Gymnasium bridge:
   `from_gym.py` wraps a third-party `gym.Env` to satisfy `core.Environment`;
   `to_gym.py` wraps this project's `core.Environment` to expose the Gym interface for
@@ -529,14 +511,18 @@ actually happened — it returns nothing; querying cost beforehand is
   `seq-opt-lmcut`). Its tests genuinely shell out to a real FD rather than being
   skipped, so a missing/broken install fails loudly instead of silently.
 
-### Sibling repo: `hitl-practice`
+### The paper's own codebase: `reference/predicators`
 
-One directory up (`../hitl-practice`) is a fork of the `predicators` TAMP codebase that
-the original "Practice Makes Perfect" paper was built on. This project deliberately does
-**not** extend that codebase (it's entangled and hard to extend), but it's the reference
-implementation for porting any paper environment/behavior faithfully — e.g. the paper's
-"Light Switch" environment is `GridRowEnv` in `predicators/envs/grid_row.py`, with its
-skills/NSRTs in `predicators/ground_truth_models/grid_row/`. When the paper's prose is
-imprecise or silent on an exact number (tolerances, sampling ranges, defaults), treat
-`hitl-practice`'s code as ground truth over the paper text, and check
-`predicators/settings.py` for the actual default config values used.
+The original "Practice Makes Perfect" paper was built on the `predicators` TAMP codebase.
+This project deliberately does **not** extend it (it's entangled and hard to extend), but
+it is the reference implementation for porting any paper environment/behavior faithfully
+— e.g. the paper's "Light Switch" environment is `GridRowEnv` in
+`predicators/envs/grid_row.py`, with its skills/NSRTs in
+`predicators/ground_truth_models/grid_row/`. When the paper's prose is imprecise or
+silent on an exact number (tolerances, sampling ranges, defaults), treat that code as
+ground truth over the paper text, and check `predicators/settings.py` for the actual
+default config values used.
+
+Read it at `reference/predicators` (see the `reference/` section above). Earlier versions
+of this file pointed at a sibling fork, `../hitl-practice`, which is **not present on this
+machine** — if that fork exists somewhere and matters, restore the pointer.
