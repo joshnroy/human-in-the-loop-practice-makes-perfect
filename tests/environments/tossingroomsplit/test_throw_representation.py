@@ -23,7 +23,9 @@ almost entirely dead weight and the two causes are the only thing that saves it:
 import numpy as np
 import pytest
 
+from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossingroomsplit.environment import TossingRoomSplitEnvironment
+from hitl_pmp.environments.tossingroomsplit.skills import TossingRoomSplitSkills
 from hitl_pmp.environments.tossingroomsplit.tasks import (
     TossingRoomSplitGoalType,
     TossingRoomSplitTasks,
@@ -228,6 +230,95 @@ class TestTheCausesAreInTheState:
         _rows, required = _throw_rows(family=family, num_tasks=200, seed=2)
         assert float(np.min(required)) > _TOLERANCE
         assert float(np.max(required)) < 1.0 - _TOLERANCE
+
+    @staticmethod
+    @pytest.mark.parametrize("family", _FAMILIES)
+    def test_a_uniformly_random_force_lands_with_probability_exactly_one_fifth(
+        *, family: TossingRoomSplitGoalType
+    ) -> None:
+        """**The invariant any comparison against a different throw representation rests
+        on.** A random draw's landing rate is how hard the throw is to hit *by luck*. If
+        two representations differ on it, a difference in learned-sampler performance
+        between them could be that, rather than anything a classifier did or did not
+        learn.
+
+        Asserted per task and exactly, not as a pooled mean, because a mean hides
+        clipping: a representation whose tasks land 0.10 and 0.30 in equal numbers
+        averages 0.2 while making half its tasks twice as hard. That is not hypothetical
+        -- the pre-#80 `target_force ~ U[0.5, 1.0)` representation clips for
+        `target > 0.9`, giving a mean of 0.19 over a per-task range of 0.10 to 0.20.
+
+        Both halves of the probability are pinned here, because either alone is vacuous:
+
+        * the **window**, `(required - 0.1, required + 0.1)`, must have width
+          `2 * throw_tolerance` and lie wholly inside the draw band -- never clipped; and
+        * the **draw band** must actually be `Uniform(0, 1)`, read off
+          `TossingRoomSplitSkills.sample_params` rather than assumed. Without this,
+          widening the band to `Uniform(0, 2)` would halve the real landing rate with
+          every assertion still passing.
+
+        The empirical count is then the two together, through the REAL dynamics
+        (`env.take_action`), so the analytic window is checked against the code that
+        implements it rather than against a restatement of itself.
+        """
+        _rows, required = _throw_rows(family=family, num_tasks=400, seed=3)
+        overlap = np.minimum(1.0, required + _TOLERANCE) - np.maximum(0.0, required - _TOLERANCE)
+        assert np.allclose(overlap, 2 * _TOLERANCE)
+        exactly_one_fifth = int(np.sum(np.isclose(overlap, 0.2)))
+        assert exactly_one_fifth == len(required), (
+            f"{family.value}: {exactly_one_fifth}/{len(required)} tasks have a "
+            f"landing probability of exactly 0.2."
+        )
+
+        # The draw band itself. `sample_params` is the only thing that decides it, and a
+        # window of width 0.2 only means probability 0.2 against a Uniform(0, 1) draw.
+        env = _env()
+        kind = env.TRASH_KIND if family is TossingRoomSplitGoalType.TRASH else env.RECYCLING_KIND
+        item, bin_obj = env.item_for_kind(kind=kind), env.bin_for_kind(kind=kind)
+        bin_room = env.bin_room_for_kind(kind=kind)
+        ground = GroundSkill(
+            skill=TossingRoomSplitSkills.THROW_TRASH
+            if family is TossingRoomSplitGoalType.TRASH
+            else TossingRoomSplitSkills.THROW_RECYCLING,
+            objects=(env.robot, item, bin_obj, env.get_rooms()[bin_room]),
+        )
+        band_rng = np.random.default_rng(4)
+        sampled = np.array([
+            TossingRoomSplitSkills.sample_params(ground_skill=ground, rng=band_rng)[0]
+            for _ in range(4000)
+        ])
+        # Unit-interval uniform: the support and the first two moments a Uniform(0, 1)
+        # has, which is what makes a window of width 0.2 a probability of 0.2.
+        assert float(sampled.min()) >= 0.0
+        assert float(sampled.max()) < 1.0
+        assert float(sampled.mean()) == pytest.approx(0.5, abs=0.02)
+        assert float(sampled.std()) == pytest.approx(1 / np.sqrt(12), abs=0.02)
+
+        # End to end, through the real dynamics rather than the analytic window.
+        tasks = TossingRoomSplitTasks(env=env, seed=7, num_test_tasks=30)
+        rng = np.random.default_rng(7)
+        landed = 0
+        attempts = 0
+        for _ in range(200):
+            task = tasks.build_task(goal_type=family, rng=tasks.train_rng)
+            for _ in range(25):
+                params = TossingRoomSplitSkills.sample_params(ground_skill=ground, rng=rng)
+                state = task.initial_state.model_copy(deep=True)
+                state.set(obj=env.robot, feature_name="room", feature_val=float(bin_room))
+                state.set(obj=env.robot, feature_name="holding", feature_val=float(kind))
+                env.set_state(state=state)
+                after = env.take_action(
+                    action=TossingRoomSplitSkills.compute_action(
+                        ground_skill=ground, params=params, state=state
+                    )
+                )
+                landed += int(after.get(obj=bin_obj, feature_name="count") == 1.0)
+                attempts += 1
+        # 5000 draws at p = 0.2 has sd = 0.0057, so 4 sd is 0.023. A representation at
+        # 0.19 (the pre-#80 one) fails this; noise does not.
+        assert landed / attempts == pytest.approx(0.2, abs=0.023), (
+            f"{family.value}: a base-sampler force landed {landed}/{attempts}."
+        )
 
 
 class TestItVariesPerTask:

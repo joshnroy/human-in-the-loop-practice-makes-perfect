@@ -525,8 +525,15 @@ class TossingRoomSplitThrowRates:
         # cross-skill gap looks.
         random_draws = TossingRoomSplitThrowRates.random_landing_totals(traces=traces)
         print("\n  each skill's informed draws against its own epsilon-random control")
+        # Every row carries the MDE for ITS OWN two denominators. Without that column the
+        # only MDE on the page belonged to a neighbouring comparison, and PR #90's log
+        # duly borrowed it: it quoted 20.19pp (the floor for trash-random vs
+        # recycling-random, 310 vs 57) for the recycling-informed vs recycling-random null
+        # result, whose real denominators are 56 vs 57 and whose MDE is 26.36pp. A null
+        # result is only as strong as its own floor, so the floor travels with the row.
         header = (
-            f"{'skill':>18}{'landed/informed':>18}{'landed/random':>16}{'gap':>10}{'Fisher p':>12}"
+            f"{'skill':>18}{'landed/informed':>18}{'landed/random':>16}{'gap':>10}"
+            f"{'noise floor':>14}{'MDE (80%)':>12}{'Fisher p':>12}"
         )
         print(header)
         print("-" * len(header))
@@ -536,12 +543,17 @@ class TossingRoomSplitThrowRates:
             if not (i_total and r_total):
                 continue
             gap = i_landed / i_total - r_landed / r_total
+            floor = TossingRoomSplitThrowRates.noise_floor(n_first=i_total, n_second=r_total)
+            row_mde = TossingRoomSplitThrowRates.minimum_detectable_effect(
+                n_first=i_total, n_second=r_total
+            )
             p = TossingRoomComparison.fisher_exact_two_sided(
                 a=i_landed, b=i_total - i_landed, c=r_landed, d=r_total - r_landed
             )
             print(
                 f"{skill:>18}{f'{i_landed}/{i_total}':>18}{f'{r_landed}/{r_total}':>16}"
-                f"{f'{100 * gap:+.2f}pp':>10}"
+                f"{f'{100 * gap:+.2f}pp':>10}{f'{100 * floor:.2f}pp':>14}"
+                f"{f'{100 * row_mde:.2f}pp':>12}"
                 f"{TossingRoomSplitThrowRates.format_p_value(p=p):>12}"
             )
         print("\n  per seed, informed/greedy draws")
