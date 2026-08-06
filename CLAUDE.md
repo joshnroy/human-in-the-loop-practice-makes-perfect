@@ -160,6 +160,53 @@ reasons unrelated to any change: `PYTHONPATH=<worktree>/src`, because the editab
 because Fast Downward is found by a sibling-directory convention that resolves to a nonexistent path
 from inside `.claude/worktrees/`.
 
+## Ask before changing the state of anything public
+
+**Never create or change the state of a publicly visible repository object without
+explicit permission for that specific action.** Repos owned by the lab
+(`Princeton-Robot-Planning-and-Learning/*`) count as public here, as does this one.
+
+Covered: opening a PR **including a draft**, marking one ready, merging, closing,
+opening or commenting on an issue, posting a review, requesting reviewers, adding
+labels, editing a PR or issue body, and pushing a branch to a public remote.
+
+Not covered, and never needs asking: reading, fetching, local branches and commits,
+work inside a fork you were told to use, and CI that runs on its own.
+
+**"It's only a draft" is not a reason to skip asking.** Maintainers are notified on
+draft PRs, and anything posted under Josh's account is a statement he is accountable
+for — technical claims in it will be read as his.
+
+**Permission for one action is not permission for the next.** Approval to open a PR is
+not approval to mark it ready, to comment on it afterwards, or to open a follow-up
+issue. Ask again.
+
+To ask: name the exact object, the exact repo, and what it would say, then wait. This
+applies to subagents too — put it in every brief that can reach a public repo.
+
+## Task organization: tiers of tasks, each a stack of PRs
+
+A **task** is the unit of planning; a **PR is a subtask**. Implementing a task means
+shipping a stack of PRs in dependency order (see the section below for how to build
+one). Keep work that belongs together in the same task — "implement the bilevel
+planning model" and "consume it here" are one task with two subtasks, not two tasks.
+
+Tasks are prioritized in tiers, and within a tier by dependency:
+
+1. **Correctness** — the environment, its skills, or the measurement pipeline are
+   *wrong*, so anything measured on them is suspect. These come first regardless of
+   size, because every later result depends on them.
+2. **Methods and experiments** — the long-running scientific work.
+3. **Infra** — tooling, docs, ergonomics. **Exception:** infra that makes tier-2 work
+   significantly faster gets promoted into tier 2, since that is what it is for.
+
+Two scheduling rules on top of that ordering:
+
+- **When several tasks are ready, start the longest-running agent work first** so the
+  expensive jobs are running while the cheap ones are discussed and decided.
+- **Surface open decisions before delegating**, not after — a wrong assumption costs a
+  whole agent run, and agent wall-clock is roughly the number of tool calls times ~15s.
+
 ## Workflow: one independent feature per PR, stacked in dependency order
 
 Multi-piece work (e.g. "port this paper baseline") gets decomposed into a list of
