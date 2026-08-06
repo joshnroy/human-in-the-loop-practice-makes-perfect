@@ -80,7 +80,15 @@ costs patched into the translated SAS) is load-bearing rather than a convenience
 `wrapped_sampler.py` is the other learnable half: one `LearnedSkillSampler` per skill
 name, a torch MLP binary classifier over a per-candidate input row that scores
 candidate parameters, refit from scratch each cycle, epsilon-greedy (0.5) while
-practicing. The row is built by `EesMethod.sampler_input_row`, which asks the domain's
+practicing. The greedy branch is not a bare `np.argmax`: ties for the best score are
+broken uniformly rather than at the caller's first-drawn candidate, and a score vector
+that does not discriminate at all — unfitted, either single-class shortcut, or a
+saturated plateau covering more than `uninformative_tie_fraction` of the candidates —
+falls back to a uniform draw. `sample` returns a `SamplerChoice` carrying two separate
+flags for that: `was_random` (the epsilon branch fired, so the competence models skip
+the update) and `was_informed` (the scores actually ranked the candidates). See
+deviations 6 and 7 in `wrapped_sampler.py`'s module docstring.
+The row is built by `EesMethod.sampler_input_row`, which asks the domain's
 `SkillProvider.oracle_sampler_input` for a curated "oracle" feature vector
 (predicators' `active_sampler_learning_feature_selection = "oracle"`) and otherwise
 falls back to the default `"all"` layout `[1.0] + state_features + params` — Ball-Ring

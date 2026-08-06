@@ -78,15 +78,55 @@ Deviations from predicators, all deliberate:
    `skills.py`, and this file must stay domain-agnostic; `num_candidates` is kept
    as the documented count the caller should draw (predicators'
    `active_sampler_learning_num_samples`).
-6. Before any successful `fit` (no data at all, or all-one-class data that
-   predicators refuses to train on), `sample` returns a *uniformly random*
-   candidate rather than the argmax of a degenerate score vector. This matches what
-   predicators effectively does pre-learning -- the NSRT's own base sampler is used
-   unwrapped, i.e. a single unfiltered draw -- and avoids silently biasing every
-   early episode toward whichever candidate the caller happened to draw first.
+6. Whenever the classifier cannot *discriminate* among the candidates it was
+   handed, `sample` returns a *uniformly random* candidate rather than the argmax
+   of a degenerate score vector. This matches what predicators effectively does
+   pre-learning -- the NSRT's own base sampler is used unwrapped, i.e. a single
+   unfiltered draw -- and avoids silently biasing every early episode toward
+   whichever candidate the caller happened to draw first.
    `was_random` still reports `False` there: it means specifically "the
    epsilon-greedy branch fired", which is the signal the competence models key on,
-   and an unfitted sampler has no greedy branch to deviate from.
+   and a sampler with nothing to say has no greedy branch to deviate from.
+   `was_informed` is the flag that reports the fallback fired; see `SamplerChoice`
+   for why the two are kept separate.
+
+   The condition is a property of the *scores*, not of the training set. Gating on
+   how much data exists instead would be wrong: measured on `ThrowRecycling`, a
+   one-positive classifier's argmax still lands 97/275, above the 1-in-5 a uniform
+   draw gets, because the harm is concentrated in the 170/275 of refits whose
+   decision boundary came out backwards. A count-based gate would discard the good
+   half with the bad.
+
+   The cost of this branch, stated plainly: the fallback draws over *all*
+   candidates, so a plateau that covers most but not all of them has its implied
+   ranking thrown away, and a fitted classifier's uniform draw is now fed to the
+   competence models as a deliberate attempt. That is intended -- a plateau this
+   wide is the signature of the saturated box whose orientation one positive
+   cannot pin down, and a wrong-slope classifier's argmax lands 38/170, the 1-in-5
+   of a uniform draw -- but it is a real trade against `was_random`'s stated
+   rationale, not a free win. Suppressing the competence update instead would pin
+   a never-successful skill at its Beta(10, 1) prior forever, which is worse.
+7. `sample` breaks a tie among equally-scored candidates *uniformly at random*
+   rather than taking the lowest index. `np.argmax` returns the first maximal
+   index, which on a saturated classifier -- and the ported architecture does
+   saturate, interpolating <= 16 rows to a train BCE of ~5e-6 -- means the pick is
+   decided by the caller's draw order while `was_random` reports a deliberate
+   choice. Measured, 91/275 of one-positive probes were such ties.
+
+   This branch alone is *distribution-preserving*: the candidates are iid and
+   therefore exchangeable, so conditional on the multiset of candidates, "the first
+   one attaining the maximum" and "a uniform draw among those attaining it" have
+   the same law. It removes an order dependence and corrects a mislabelling without
+   changing the distribution of the parameters returned. **Deviation 6's fallback
+   is not** -- see above; it deliberately widens the draw from the plateau to the
+   whole candidate set, and the support of the output therefore jumps
+   discontinuously at `uninformative_tie_fraction`.
+
+Neither deviation detects a classifier that is flat to within a rounding error but
+not bit-identical: the guard is exact equality against `scores.max()`. All three
+measured degenerate cases (unfitted, both single-class shortcuts, and the saturated
+float32 sigmoid) do produce exactly equal scores, so it covers them -- but "cannot
+discriminate" is the broader property, and this detects only its exact form.
 """
 
 import copy
@@ -94,7 +134,7 @@ import math
 
 import numpy as np
 import torch
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr, model_validator
 from torch import nn
 
 
@@ -282,7 +322,7 @@ class LearnedSkillSampler(BaseModel):
             sampler.observe(sampler_input=..., success=...)   # a prebuilt input row
         sampler.fit()                      # refit from scratch on *all* data
         candidates = [base_sampler() for _ in range(100)]
-        params, was_random = sampler.sample(
+        choice = sampler.sample(
             sampler_inputs=[build_row(c) for c in candidates],
             candidates=candidates,
             explore=True,
@@ -305,6 +345,17 @@ class LearnedSkillSampler(BaseModel):
     # with active_sampler_learning_exploration_sample_strategy = "epsilon_greedy".
     exploration_epsilon: float = 0.5
     seed: int = 0
+    # Deviation 6: the maximum score being attained by *more* than this fraction of
+    # the candidates counts as "the classifier cannot discriminate here", and the
+    # pick falls back to a uniform draw over all candidates. At the default, a
+    # score vector whose argmax is a tie over more than half the candidate set is
+    # treated as carrying no information -- which is what the ported architecture
+    # produces in the low-positive regime (median tie plateau 23.4% of the axis at
+    # one positive, but 91/275 probes above half) and essentially never produces
+    # once it has real data (4/885 probes at 9-16 positives). A degenerate score
+    # vector -- unfitted (all 0.5) or the single-class shortcut (all 0.0 / all 1.0)
+    # -- ties over *every* candidate and so always lands here.
+    uninformative_tie_fraction: float = 0.5
     hid_sizes: tuple[int, ...] = (32, 32)
     # See deviation 1: cheap test-only default, always overridden by EesMethod.
     max_train_iters: int = 1000
@@ -433,9 +484,8 @@ class LearnedSkillSampler(BaseModel):
         sampler_inputs: list[list[float]],
         candidates: list[np.ndarray],
         explore: bool,
-    ) -> tuple[np.ndarray, bool]:
-        """Choose one candidate parameter vector; return it with a flag saying whether
-        it was chosen by the epsilon-random branch.
+    ) -> "SamplerChoice":
+        """Choose one candidate parameter vector; return it alongside how it was chosen.
 
         `candidates[i]` is the raw parameter vector (what the caller will realize into
         an action) and `sampler_inputs[i]` is its already-built classifier input row --
@@ -444,16 +494,24 @@ class LearnedSkillSampler(BaseModel):
         coordinates), but `sample` must return the untransformed parameter vector the
         caller drew, or `compute_action` would receive the wrong representation.
 
-        `explore=False` is predicators' `_wrap_sampler_test`: pure argmax of the
-        classifier scores, epsilon never consulted, flag always `False`.
+        `explore=False` is predicators' `_wrap_sampler_test`: the argmax of the
+        classifier scores, epsilon never consulted, `was_random` always `False`.
         `explore=True` is `_wrap_sampler_exploration` with
-        `strategy="epsilon_greedy"`: argmax unless `rng.uniform() <=
+        `strategy="epsilon_greedy"`: the same argmax unless `rng.uniform() <=
         exploration_epsilon`, in which case a uniformly random candidate is returned
-        with the flag set. The caller is expected to suppress its competence update
-        when the flag is `True`.
+        with `was_random` set. The caller is expected to suppress its competence
+        update when `was_random` is `True`.
 
-        When unfitted, a uniformly random candidate is returned with the flag `False`
-        -- see deviation 6 in the module docstring.
+        That argmax is not predicators' `np.argmax`, in two ways, and both matter --
+        see deviations 6 and 7. Ties for the best score are broken uniformly rather
+        than at the lowest index; and when the scores do not discriminate at all, a
+        uniformly random candidate is returned with `was_random` **`False`** and
+        `was_informed` `False`. `SamplerChoice` says why those are two separate flags
+        rather than one.
+
+        Note the degenerate configuration: with a single candidate there is nothing
+        to discriminate between, so every draw takes deviation 6's branch and
+        `was_random` can never be `True`. `num_candidates` is 100 in every real run.
         """
         if not candidates:
             raise ValueError(f"{self.skill_name}: sample requires at least one candidate.")
@@ -468,12 +526,69 @@ class LearnedSkillSampler(BaseModel):
                     f"{self.skill_name}: expected candidates of shape ({self.param_dim},), "
                     f"got {candidate.shape}."
                 )
-        if not self.is_fitted:
-            return candidates[int(self._rng.integers(0, len(candidates)))], False
-        scores = self.score_inputs(sampler_inputs=sampler_inputs)
-        index = int(np.argmax(scores))
+        scores = np.asarray(self.score_inputs(sampler_inputs=sampler_inputs), dtype=np.float64)
+        # The candidates attaining the maximum. An unfitted sampler (all 0.5) and the
+        # single-class shortcut (all 0.0 or all 1.0) both put every candidate in here.
+        # A NaN anywhere makes the comparison all-False and empties `best`; that is a
+        # score vector nothing can be ranked by, so it takes the fallback rather than
+        # indexing into an empty array.
+        best = np.flatnonzero(scores == scores.max())
+        if len(best) == 0 or len(best) > self.uninformative_tie_fraction * len(candidates):
+            # Deviation 6: no discrimination, so no greedy branch to deviate from.
+            # `was_random` stays False so the competence models still count this
+            # outcome -- a skill whose sampler has learned nothing is a skill whose
+            # competence *should* fall, and suppressing the update here would pin a
+            # never-successful skill at its prior forever.
+            index = int(self._rng.integers(0, len(candidates)))
+            return SamplerChoice(params=candidates[index], was_random=False, was_informed=False)
+        # Deviation 7: break the remaining ties uniformly rather than at the lowest
+        # index, which would be the caller's draw order.
+        index = int(best[self._rng.integers(0, len(best))])
         was_random = False
         if explore and self._rng.uniform() <= self.exploration_epsilon:
-            index = int(self._rng.integers(0, len(scores)))
+            index = int(self._rng.integers(0, len(candidates)))
             was_random = True
-        return candidates[index], was_random
+        return SamplerChoice(
+            params=candidates[index], was_random=was_random, was_informed=not was_random
+        )
+
+
+class SamplerChoice(BaseModel):
+    """What `LearnedSkillSampler.sample` decided, and how.
+
+    The two flags are orthogonal and are consumed by different things, which is why
+    this is a model rather than a second `bool` on a tuple:
+
+    - `was_random` means exactly "the epsilon-greedy branch fired". It is the signal
+      the competence models key on (`EesMethod.observe_outcome` skips the update when
+      it is set), and its meaning is unchanged from before deviations 6 and 7 existed.
+    - `was_informed` means "the classifier's scores actually discriminated among the
+      candidates, so this parameter vector reflects something it learned". It is an
+      *analysis* signal: without it, a greedy draw made on a degenerate score vector
+      is indistinguishable in the record from one a trained classifier chose, and any
+      greedy-versus-random statistic silently pools the two. Nothing records it yet
+      -- `EesMethod._SkillAttempt` still carries only `was_random_exploration`. The
+      collector and analysis that consume it are the follow-up this PR is stacked
+      under; the flag ships here because `sample` is the only place the distinction
+      can be observed.
+
+    Exactly three of the four combinations are reachable. A draw can be neither
+    (`was_random=False, was_informed=False`): that is deviation 6's fallback, an
+    honest uniform draw that no competence model should discount but no analysis
+    should count as evidence of learning. It can never be both.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    params: np.ndarray
+    was_random: bool
+    was_informed: bool
+
+    @model_validator(mode="after")
+    def _an_epsilon_random_draw_is_never_informed(self) -> "SamplerChoice":
+        if self.was_random and self.was_informed:
+            raise ValueError(
+                "was_random and was_informed cannot both be set: an epsilon-random "
+                "draw ignores the classifier's scores by construction."
+            )
+        return self

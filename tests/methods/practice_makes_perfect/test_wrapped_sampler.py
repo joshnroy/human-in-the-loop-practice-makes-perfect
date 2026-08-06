@@ -1,6 +1,11 @@
 import numpy as np
+import pytest
+from pydantic import Field, ValidationError
 
-from hitl_pmp.methods.practice_makes_perfect.wrapped_sampler import LearnedSkillSampler
+from hitl_pmp.methods.practice_makes_perfect.wrapped_sampler import (
+    LearnedSkillSampler,
+    SamplerChoice,
+)
 
 # Every sampler in this file is trained with a deliberately tiny iteration cap: the
 # whole point of the tests is behavior (layout, argmax, epsilon, determinism), and
@@ -65,12 +70,12 @@ def test_build_sampler_input_with_no_state_features():
 def test_sample_without_training_returns_a_given_candidate():
     sampler = _make_sampler()
     candidates = _candidate_grid()
-    chosen, was_random = sampler.sample(
+    choice = sampler.sample(
         sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
     )
-    assert any(np.array_equal(chosen, c) for c in candidates)
-    assert not np.isnan(chosen).any()
-    assert was_random is False
+    assert any(np.array_equal(choice.params, c) for c in candidates)
+    assert not np.isnan(choice.params).any()
+    assert choice.was_random is False
 
 
 def test_fit_with_no_data_is_a_noop_and_sample_still_works():
@@ -78,10 +83,10 @@ def test_fit_with_no_data_is_a_noop_and_sample_still_works():
     sampler.fit()
     assert not sampler.is_fitted
     candidates = _candidate_grid()
-    chosen, _ = sampler.sample(
+    choice = sampler.sample(
         sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
     )
-    assert chosen.shape == (1,)
+    assert choice.params.shape == (1,)
 
 
 def test_single_class_data_does_not_crash_and_still_returns_a_candidate():
@@ -92,12 +97,181 @@ def test_single_class_data_does_not_crash_and_still_returns_a_candidate():
         sampler.observe(sampler_input=_row(params=np.array([value])), success=True)
     sampler.fit()
     candidates = _candidate_grid()
-    chosen, _ = sampler.sample(
+    choice = sampler.sample(
         sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
     )
-    assert any(np.array_equal(chosen, c) for c in candidates)
+    assert any(np.array_equal(choice.params, c) for c in candidates)
     scores = sampler.score_inputs(sampler_inputs=_rows(candidates=candidates))
     assert all(s == 1.0 for s in scores)
+
+
+def test_all_negative_data_does_not_pin_the_choice_to_the_first_candidate():
+    """Deviation 6's contract: when the classifier cannot discriminate, the pick must
+    be a uniform draw, not "whichever candidate the caller happened to draw first".
+
+    All-negative data trips `MlpBinaryClassifier`'s single-class shortcut, which sets
+    `_single_class_prediction = 0.0` without building a net. `score_inputs` then
+    returns one identical value per candidate, so an argmax over them is decided
+    entirely by draw order."""
+    sampler = _make_sampler()
+    for value in [0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9]:
+        sampler.observe(sampler_input=_row(params=np.array([value])), success=False)
+    sampler.fit()
+    candidates = _candidate_grid()
+    rows = _rows(candidates=candidates)
+    chosen = [
+        sampler.sample(sampler_inputs=rows, candidates=candidates, explore=False).params
+        for _ in range(50)
+    ]
+    num_first = sum(1 for c in chosen if np.array_equal(c, candidates[0]))
+    assert num_first < 50, (
+        f"{num_first}/50 draws returned candidates[0]; an all-negative classifier "
+        "carries no information, so the pick must be uniform over the candidates"
+    )
+    # `< 50` alone would still pass on a sampler pinned to candidates[1] instead, so
+    # also require the draw to actually range over the candidate set. Under a uniform
+    # draw over 10 candidates, 50 draws miss at least one with probability ~7e-3.
+    distinct = {next(i for i, c in enumerate(candidates) if np.array_equal(p, c)) for p in chosen}
+    assert distinct == set(range(len(candidates))), (
+        f"50 draws only ever returned candidates {sorted(distinct)}"
+    )
+
+
+class _FixedScoreSampler(LearnedSkillSampler):
+    """A sampler whose classifier scores are dictated by the test.
+
+    The tie-breaking and can-it-discriminate branches are properties of the *score
+    vector*, and an MLP cannot be asked for an exact tie on demand -- so the one
+    input those branches read is supplied directly instead of trained for."""
+
+    scores: list[float] = Field(default_factory=list)
+
+    def score_inputs(self, *, sampler_inputs: list[list[float]]) -> list[float]:
+        assert len(sampler_inputs) == len(self.scores)
+        return list(self.scores)
+
+
+def _fixed(*, scores, **kwargs):
+    return _FixedScoreSampler(
+        skill_name="TurnOnLight", param_dim=1, num_candidates=len(scores), scores=scores, **kwargs
+    )
+
+
+def test_a_tie_for_the_best_score_is_broken_randomly_not_at_the_lowest_index():
+    """`np.argmax` returns the first maximal index, so a tie was previously decided by
+    the order the caller drew its candidates in -- and reported as a deliberate
+    choice. Three of ten candidates tie here, which is under the
+    `uninformative_tie_fraction`, so the pick must stay inside the tied set *and*
+    move around within it."""
+    scores = [0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+    tied = {1, 3, 6}
+    sampler = _fixed(scores=scores)
+    candidates = _candidate_grid()
+    rows = _rows(candidates=candidates)
+    picked = set()
+    for _ in range(50):
+        choice = sampler.sample(sampler_inputs=rows, candidates=candidates, explore=False)
+        index = next(i for i, c in enumerate(candidates) if np.array_equal(choice.params, c))
+        assert index in tied, f"picked index {index}, which does not attain the maximum score"
+        assert choice.was_informed is True
+        picked.add(index)
+    assert picked == tied, f"only ever picked {sorted(picked)} of the tied {sorted(tied)}"
+
+
+def test_a_maximum_shared_by_most_of_the_candidates_counts_as_no_discrimination():
+    """Six of ten candidates tie at the top, above the 0.5 default, so the score
+    vector is treated as carrying no information: the draw is uniform over *all*
+    candidates, including ones that did not attain the maximum."""
+    sampler = _fixed(scores=[1.0] * 6 + [0.0] * 4)
+    candidates = _candidate_grid()
+    rows = _rows(candidates=candidates)
+    picked = set()
+    for _ in range(200):
+        choice = sampler.sample(sampler_inputs=rows, candidates=candidates, explore=False)
+        assert choice.was_informed is False
+        assert choice.was_random is False
+        picked.add(next(i for i, c in enumerate(candidates) if np.array_equal(choice.params, c)))
+    assert picked == set(range(10)), f"never drew {sorted(set(range(10)) - picked)}"
+
+
+def test_exactly_the_tie_fraction_still_counts_as_discrimination():
+    """The boundary is strict: `uninformative_tie_fraction` of the candidates tying
+    is still informative, and one more is not. This is the semantics of the whole
+    change, so it is pinned rather than left to the two tests either side of it."""
+    candidates = _candidate_grid()
+    rows = _rows(candidates=candidates)
+    at_the_line = _fixed(scores=[1.0] * 5 + [0.0] * 5)
+    over_the_line = _fixed(scores=[1.0] * 6 + [0.0] * 4)
+    assert at_the_line.sample(
+        sampler_inputs=rows, candidates=candidates, explore=False
+    ).was_informed
+    assert not over_the_line.sample(
+        sampler_inputs=rows, candidates=candidates, explore=False
+    ).was_informed
+
+
+def test_a_non_default_tie_fraction_moves_the_line():
+    candidates = _candidate_grid()
+    rows = _rows(candidates=candidates)
+    strict = _fixed(scores=[1.0] * 3 + [0.0] * 7, uninformative_tie_fraction=0.2)
+    assert not strict.sample(sampler_inputs=rows, candidates=candidates, explore=False).was_informed
+
+
+def test_epsilon_can_still_escape_an_informative_tie():
+    """The tie-break confines the *greedy* pick to the tied set; the epsilon branch
+    must remain free to draw outside it, or exploration would be silently narrowed
+    to whatever the classifier already likes."""
+    scores = [0.0] * 7 + [1.0] * 3
+    sampler = _fixed(scores=scores, exploration_epsilon=1.0)
+    candidates = _candidate_grid()
+    rows = _rows(candidates=candidates)
+    outside = 0
+    for _ in range(50):
+        choice = sampler.sample(sampler_inputs=rows, candidates=candidates, explore=True)
+        assert choice.was_random is True
+        index = next(i for i, c in enumerate(candidates) if np.array_equal(choice.params, c))
+        outside += index < 7
+    assert outside > 0, "every epsilon-random draw stayed inside the tied set"
+
+
+def test_a_choice_cannot_be_both_random_and_informed():
+    with pytest.raises(ValidationError):
+        SamplerChoice(params=np.array([0.5]), was_random=True, was_informed=True)
+
+
+def test_an_uninformative_draw_is_not_reported_as_epsilon_random():
+    """`was_random` means exactly "the epsilon-greedy branch fired", and
+    `EesMethod.observe_outcome` suppresses the competence update when it is set.
+    Reporting the deviation-6 fallback as random would stop a skill that has never
+    succeeded from ever receiving competence evidence, pinning it at its prior --
+    so the fallback must keep `was_random` False while still saying, through
+    `was_informed`, that nothing was learned."""
+    sampler = _fixed(scores=[0.0] * 10, exploration_epsilon=1.0)
+    candidates = _candidate_grid()
+    rows = _rows(candidates=candidates)
+    for _ in range(20):
+        choice = sampler.sample(sampler_inputs=rows, candidates=candidates, explore=True)
+        assert choice.was_random is False
+        assert choice.was_informed is False
+
+
+def test_an_unfitted_sampler_reports_that_its_draw_was_not_informed():
+    sampler = _make_sampler()
+    candidates = _candidate_grid()
+    choice = sampler.sample(
+        sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
+    )
+    assert choice.was_informed is False
+
+
+def test_a_discriminating_classifier_reports_an_informed_draw():
+    sampler = _fit_separable_sampler()
+    candidates = _candidate_grid()
+    choice = sampler.sample(
+        sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
+    )
+    assert choice.was_informed is True
+    assert choice.params[0] > 0.5
 
 
 def test_learns_a_separable_task_and_greedily_picks_the_good_side():
@@ -110,10 +284,10 @@ def test_learns_a_separable_task_and_greedily_picks_the_good_side():
     num_good = 0
     for _ in range(num_trials):
         candidates = [np.array([v]) for v in rng.uniform(0.0, 1.0, size=10)]
-        chosen, _ = sampler.sample(
+        choice = sampler.sample(
             sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
         )
-        if chosen[0] > 0.5:
+        if choice.params[0] > 0.5:
             num_good += 1
     assert num_good >= 18, f"only {num_good}/{num_trials} greedy picks were on the good side"
 
@@ -130,25 +304,26 @@ def test_exploration_epsilon_one_always_reports_random():
     sampler = _fit_separable_sampler(exploration_epsilon=1.0)
     candidates = _candidate_grid()
     for _ in range(10):
-        chosen, was_random = sampler.sample(
+        choice = sampler.sample(
             sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=True
         )
-        assert was_random is True
-        assert any(np.array_equal(chosen, c) for c in candidates)
+        assert choice.was_random is True
+        assert choice.was_informed is False
+        assert any(np.array_equal(choice.params, c) for c in candidates)
 
 
 def test_exploration_epsilon_zero_matches_greedy_and_never_reports_random():
     sampler = _fit_separable_sampler(exploration_epsilon=0.0)
     candidates = _candidate_grid()
-    greedy, _ = sampler.sample(
+    greedy = sampler.sample(
         sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
     )
     for _ in range(10):
-        chosen, was_random = sampler.sample(
+        choice = sampler.sample(
             sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=True
         )
-        assert was_random is False
-        assert np.array_equal(chosen, greedy)
+        assert choice.was_random is False
+        assert np.array_equal(choice.params, greedy.params)
 
 
 def test_explore_false_never_reports_random_even_with_epsilon_one():
@@ -157,10 +332,10 @@ def test_explore_false_never_reports_random_even_with_epsilon_one():
     sampler = _fit_separable_sampler(exploration_epsilon=1.0)
     candidates = _candidate_grid()
     for _ in range(5):
-        _, was_random = sampler.sample(
+        choice = sampler.sample(
             sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
         )
-        assert was_random is False
+        assert choice.was_random is False
 
 
 def test_same_seed_and_same_data_give_identical_choices():
@@ -168,14 +343,15 @@ def test_same_seed_and_same_data_give_identical_choices():
     a = _fit_separable_sampler(seed=3, exploration_epsilon=0.5)
     b = _fit_separable_sampler(seed=3, exploration_epsilon=0.5)
     for _ in range(10):
-        chosen_a, random_a = a.sample(
+        choice_a = a.sample(
             sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=True
         )
-        chosen_b, random_b = b.sample(
+        choice_b = b.sample(
             sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=True
         )
-        assert np.array_equal(chosen_a, chosen_b)
-        assert random_a == random_b
+        assert np.array_equal(choice_a.params, choice_b.params)
+        assert choice_a.was_random == choice_b.was_random
+        assert choice_a.was_informed == choice_b.was_informed
 
 
 def test_two_instances_do_not_share_training_data():
