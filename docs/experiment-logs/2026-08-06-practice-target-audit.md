@@ -152,14 +152,36 @@ placements while the decisive one is practised throughout.
   mirror image of the pre-fix `PlaceBallOnFloor` defect (2026-08-02) — but it is a
   different defect class from the one audited here (EES is practising it, loudly), and it
   was **not investigated**. It deserves its own look.
-- **This Ball-Ring arm scored 91/100 (mean of per-seed rates 0.910, sd 0.110) where the
-  published arm at identical settings scored 99/100 (sd 3.2).** Not investigated. The
-  branch postdates #112, which pinned the sampler's torch reductions and so changes the
-  numeric realisation of a given seed; the published number predates it. That is a
-  hypothesis, not a tested claim. It does not bear on the conclusions above, which are
-  structural — `PlaceBallOnFloor` succeeds on every attempt in every seed, and
-  `PlaceCupWithoutBallOnTable` is selected in every seed, under either realisation.
-  Light Switch reproduced exactly: 100/100.
+- **This Ball-Ring arm scored 91/100 where the published `iters10k` arm at identical
+  settings scored 99/100 — unexplained.** Both arms share the fixed seeds 0-9, so they
+  are paired:
+
+  | seed | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | published | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 10/10 | 9/10 | 10/10 | 10/10 |
+  | this audit | 10/10 | 10/10 | 9/10 | 10/10 | 8/10 | 9/10 | 10/10 | 8/10 | 7/10 | 10/10 |
+
+  5/10 seeds are tied and **5/5** of the non-tied ones move the same way, mean −0.80
+  solved tasks per seed. An exact paired permutation test over all 1024 sign flips gives
+  **p = 0.0625** — but that is the *floor* for 5 non-tied pairs (2 × 2⁻⁵), so **no
+  two-sided test on this data can reach 0.05**. The right summary is "a consistent
+  one-directional shift that this design cannot resolve", not "no difference" and not
+  "a significant regression".
+
+  **Both numbers came through `scripts/run_sweep.py`** — mine directly, the published one
+  per the command in `2026-08-03-ballring-iters.md`'s "Reproducing the runs". That rules
+  out the obvious candidate: #112 pinned the sampler's torch reductions, but `run_sweep`
+  already pins `OMP_NUM_THREADS=1`, so #112 is a **no-op for any swept run** and cannot
+  explain this. An earlier draft of this log offered #112 as the explanation; it is wrong
+  and has been withdrawn. The provenance is documentary rather than verified from
+  artifacts — that arm's raw directories did not survive the move between machines, so
+  there is no `config_snapshot.json` to confirm it against, which is itself the reason
+  this audit commits all 20 of its own.
+
+  **This does not bear on the conclusions above**, which are structural and hold under
+  either realisation: `PlaceBallOnFloor` succeeds on every attempt in every seed, and
+  `PlaceCupWithoutBallOnTable` is selected in every seed. Light Switch reproduced
+  exactly at 100/100.
 - **No `skip_perfect` counterfactual was run.** Whether practising the two declined
   floor-place skills would change anything is untested; this audit deliberately did not
   alter EES.
