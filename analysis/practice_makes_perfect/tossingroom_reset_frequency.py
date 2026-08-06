@@ -4,13 +4,28 @@ harness hands the robot a free reset?
 
 `PracticeLoop.run` calls `problem.reset_to_task` once per practice cycle, so the
 robot gets a free environment reset every `--max-steps-per-interaction` steps.
-Tossing Room has exactly one genuinely terminal failure -- a missed `Throw` on the
-RECYCLING family strands the robot behind the one-way ledge with the item gone, so
-Fast Downward correctly reports no plan for the rest of the period. A missed TRASH
-throw is merely expensive (a round trip buys a fresh item), and the EMPTY family
-has no `Throw` at all. The hypothesis was that longer practice periods (fewer free
-resets) waste more experience per stranding, so RECYCLING should fall further
-behind TRASH as the period lengthens.
+Tossing Room has **two** genuinely terminal failures, both caused by the same one-way
+ledge. A missed `Throw` on the RECYCLING family strands the robot behind the ledge with
+the item gone, so Fast Downward correctly reports no plan for the rest of the period. A
+missed TRASH throw is merely expensive (a round trip buys a fresh item). The EMPTY
+family has no `Throw` at all, but it is **not** free: emptying both bins is an ordering
+task whose recycling button sits behind the ledge, so pressing that one first puts the
+trash button permanently out of reach. Measured signature of the stranding, from the
+**standard-budget** split-throw run -- 25 cycles x 100 steps x 10 seeds, so 24,750
+practice actions in all (`2026-08-05-tossingroomsplit-throw-rates.json`):
+`PressRecycling` accounts for **3,576/24,750** of them (14.4%), a stranded robot
+pressing an already-empty button -- 22x that run's recycling-throw count. PR #103's
+10x-budget run has a ~10x larger denominator, so its tallies are not comparable to
+these and neither contradicts the other.
+
+Only the "exactly one" framing was wrong; the experiment below is unaffected. It is a
+within-arm (TRASH - RECYCLING) contrast, and EMPTY scored 1020/1020, 520/520, 220/220
+and 120/120 across arms A-D -- not one miss anywhere in the committed aggregate -- so
+the ordering trap never fired at evaluation.
+
+The hypothesis was that longer practice periods (fewer free resets) waste more
+experience per stranding, so RECYCLING should fall further behind TRASH as the period
+lengthens.
 
 The four arms hold total online transitions fixed at 2500 and trade cycles against
 steps (50x50, 25x100, 10x250, 5x500). The designed metric was the *within-arm*
@@ -46,9 +61,12 @@ above, and this design still cannot tell that apart from a reset effect. Anythin
 here that quotes a number quotes the fixed-composition run; the 2026-08-03 numbers
 it replaced are recorded in the experiment log's *previously* columns.
 
-EMPTY is the control: no `Throw`, no stochastic skill, solved by a deterministic
-`MoveRoom`-then-`Press` plan. If its rate moves across arms, something other than
-irreversibility is in play, so the summary table prints it alongside. Under the
+EMPTY is the control: no `Throw` and no stochastic skill, solved by a deterministic
+`MoveRoom`-then-`Press` plan. It is a control for *sampler* learning specifically, not
+for irreversibility -- its plan still has to cross the ledge in the right order (see
+above), it just never has to hit a tolerance to do so. If its rate moves across arms,
+something other than sampler quality is in play, so the summary table prints it
+alongside. Under the
 fixed composition it is only **2 tasks per seed**, so its 100% is 2/2 -- a
 plan-and-execute smoke test rather than a control with the power to detect a
 moderate regression, and it is read that way.
@@ -353,7 +371,8 @@ class ResetFrequencyReport:
         before the gap comparison. The gap is hump-shaped in training progress, so
         two arms only have comparable gaps if they end at comparable competence.
         Run it on TRASH (are the arms equally trained?) and on EMPTY (the control:
-        no Throw, no stochastic skill, so any movement here is not irreversibility).
+        no Throw, no stochastic skill, so any movement here is not sampler quality --
+        EMPTY does still cross the irreversible ledge, see the module docstring).
         """
         return [
             t - f
@@ -1061,7 +1080,8 @@ def _print_report(*, arms: dict) -> None:
     # The discriminating check. The gap is hump-shaped in training progress, so a
     # cross-arm gap difference is only attributable to reset frequency if the arms
     # end at comparable competence. TRASH answers "equally trained?"; EMPTY is the
-    # control, where no Throw and no irreversible action exist at all.
+    # control, where no Throw and no stochastic skill exist. (Not "no irreversible
+    # action": EMPTY's plan crosses the ledge too -- see the module docstring.)
     print("\nAre the arms equally trained? (paired, armD 500 - armA 50, exact tests)")
     for family in _FAMILY_STYLE:
         differences = ResetFrequencyReport.family_differences(

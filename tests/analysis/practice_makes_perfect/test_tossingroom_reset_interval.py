@@ -20,6 +20,7 @@ log or the PR can drift away from the data that produced it without a test
 failing.
 """
 
+import importlib
 import itertools
 import math
 import statistics
@@ -464,3 +465,26 @@ def test_the_per_family_curves_are_steps_rather_than_ramps():
     assert ResetIntervalReport.single_step_runs(arms=arms, family="TRASH") == (33, 80)
     assert ResetIntervalReport.ceiling_collapses(arms=arms, family="RECYCLING") == 4
     assert ResetIntervalReport.ceiling_collapses(arms=arms, family="TRASH") == 2
+
+
+def test_neither_the_docstring_nor_the_log_claims_a_single_terminal_failure() -> None:
+    """Tossing Room has TWO terminal failure families, not one. Besides the missed
+    `RECYCLING` throw, the `EMPTY` family is an ordering trap: its recycling button
+    sits behind the one-way ledge, so pressing that one first puts the trash button
+    out of reach for the rest of the period. Pinned behaviourally by
+    tests/environments/tossingroom/test_environment.py's
+    TestTheEmptyFamilyHasItsOwnTerminalFailure.
+
+    Both this analysis module's docstring and the committed log asserted "exactly one
+    genuinely terminal failure". This keeps the retraction from being quietly undone by
+    a later copy-edit."""
+    module = importlib.import_module("analysis.practice_makes_perfect.tossingroom_reset_interval")
+    sources = {
+        "module docstring": module.__doc__ or "",
+        "experiment log": (
+            _ARMS_JSON.parent / "2026-08-04-tossingroom-reset-interval.md"
+        ).read_text(),
+    }
+    for name, text in sources.items():
+        assert "exactly one genuinely terminal failure" not in text, name
+        assert "PressRecycling" in text, name

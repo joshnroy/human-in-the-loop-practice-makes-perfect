@@ -174,13 +174,33 @@ reproduction. But it also caps what an irreversible action can cost: the worst
 outcome is "you wasted the rest of this practice period", never "you wasted the
 rest of the run".
 
-Tossing Room has exactly one genuinely terminal failure family:
+Tossing Room has **two** genuinely terminal failure families, both caused by the same
+one-way ledge:
 
-| family | `Throw`? | a miss costs |
+| family | `Throw`? | what goes terminal |
 |---|---|---|
-| `EMPTY` | no — `MoveRoom`xk + `Press` | nothing; the family is deterministic |
-| `TRASH` | yes | a round trip to the pile for a fresh item — expensive, recoverable |
+| `EMPTY` | no — `MoveRoom`xk + `Press`x2 | **terminal** — an *ordering* trap, not a sampler miss: the recycling button sits behind the ledge, so pressing it before the trash one puts the trash button permanently out of reach |
+| `TRASH` | yes | nothing terminal — a missed throw costs a round trip to the pile for a fresh item; expensive, recoverable |
 | `RECYCLING` | yes | **terminal** — pile in room 3, recycling bin in room 1, `blocked_right_from = 2` makes room 3 unreachable once the item is gone, so Fast Downward correctly reports no plan |
+
+> **Correction.** This page originally claimed a *single* terminal failure family, and
+> called `EMPTY` the deterministic control whose miss "costs nothing".
+> That was wrong: `EMPTY`'s press ordering is terminal for the same reason
+> `RECYCLING`'s throw is, and `environments/tossingroom/environment.py`'s own module
+> docstring said so all along ("the reverse order is unsolvable"). The measured
+> signature is `PressRecycling` at **3,576/24,750** practice actions (14.4%) in the
+> **standard-budget** split-throw run — 25 cycles × 100 steps × 10 seeds, so 24,750
+> practice actions in all — a stranded robot pressing an already-empty button, 22x that
+> run's recycling-throw count
+> ([`2026-08-05-tossingroomsplit-throw-rates.md`](./2026-08-05-tossingroomsplit-throw-rates.md)).
+> PR #103's 10x-budget run has a ~10x larger denominator, so its tallies are not
+> comparable to this one and neither contradicts the other.
+>
+> **Nothing else on this page changes.** The experiment is a within-arm
+> (TRASH − RECYCLING) contrast, and `EMPTY` scored **1020/1020**, **520/520**,
+> **220/220** and **120/120** across arms A–D — not one miss anywhere in the committed
+> aggregate — so the ordering trap never fired at evaluation and every number below
+> stands.
 
 At the shipped config (25 cycles x 100 steps, 10 seeds, 30 test tasks) RECYCLING
 trails TRASH at every checkpoint but does not stall. Pooled over 10 seeds, so each
