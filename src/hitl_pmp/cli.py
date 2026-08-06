@@ -30,6 +30,7 @@ from hitl_pmp.environments.tossingroomsplit.cli import TossingRoomSplitCli
 from hitl_pmp.environments.tossingroomsplitidentity.cli import TossingRoomSplitIdentityCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
+from hitl_pmp.practice_loop import PracticeResetPolicy
 
 # Registering tossing3d here costs nothing on a machine without KINDER: importing
 # Tossing3DCli imports no simulator (see environments/tossing3d/kinder_backend.py), so
@@ -116,6 +117,20 @@ class Cli:
             help="If set, additionally write <output-dir>/stats.json (the run's "
             "Metrics) and render demo episodes to <output-dir>/episode*.mp4. "
             "Disabled (nothing written) if omitted.",
+        )
+        parser.add_argument(
+            "--practice-reset-policy",
+            type=PracticeResetPolicy,
+            choices=list(PracticeResetPolicy),
+            default=PracticeResetPolicy.SCHEDULED,
+            help="Whether each interaction period starts by putting the environment "
+            "back to its train task's initial state. 'scheduled' (the default) is the "
+            "long-standing behaviour: one reset at the top of every period, plus "
+            "whatever --practice-reset-interval adds within it. 'never' turns the "
+            "per-period reset off entirely, so practice state runs continuously across "
+            "period boundaries -- the reset-free condition. 'never' is incompatible "
+            "with --practice-reset-interval, and is only meaningful on an environment "
+            "whose evaluation runs on its own instance (tossingroomsplit today).",
         )
         parser.add_argument(
             "--practice-reset-interval",

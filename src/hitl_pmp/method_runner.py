@@ -12,7 +12,7 @@ from hitl_pmp.core.method.types import SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
-from hitl_pmp.practice_loop import PracticeLoop
+from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 
 
@@ -166,6 +166,9 @@ class MethodRunner:
                 # harness knobs owned by cli.py's global flags, not per-domain or
                 # per-method configuration.
                 practice_reset_interval=getattr(args, "practice_reset_interval", None),
+                practice_reset_policy=getattr(
+                    args, "practice_reset_policy", PracticeResetPolicy.SCHEDULED
+                ),
                 # Checkpoint clips are an --output-dir product; without one there is
                 # nowhere to write them, so nothing is rendered for them either. The
                 # recorder carries its own renderer, so --record-full-loop still

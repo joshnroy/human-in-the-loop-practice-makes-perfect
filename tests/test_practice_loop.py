@@ -14,7 +14,7 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
-from hitl_pmp.practice_loop import PracticeLoop
+from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 
 _BLOCK = Type(name="block", feature_names=("x",))
@@ -1216,3 +1216,158 @@ def test_recording_does_not_change_what_the_run_does() -> None:
     assert recorded_problem.env.pre_action_xs == plain_problem.env.pre_action_xs
     assert recorded_method.policy_call_count == plain_method.policy_call_count
     assert recorded_method.reset_observation_xs == plain_method.reset_observation_xs
+
+
+def test_practice_reset_policy_defaults_to_scheduled() -> None:
+    """The default must be the behaviour that shipped before the knob existed:
+    one reset at the top of every period. Every existing run depends on it."""
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+    )
+    assert metrics.num_practice_resets == 3
+    # Every period restarts at its own train task's x=100.0.
+    assert problem.env.pre_action_xs == [100.0, 101.0, 100.0, 101.0, 100.0, 101.0]
+
+
+def test_practice_reset_policy_never_skips_the_per_period_reset() -> None:
+    """The manipulation this flag exists to express: practice state runs
+    continuously across period boundaries instead of being put back to each
+    freshly-sampled train task's initial state."""
+    practice, evaluation, method, metrics = _build_split()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.NEVER,
+    )
+    # hard_reset leaves x=0.0, and nothing ever puts it back: the trace is one
+    # unbroken +1.0 ramp across all three periods, never returning to 100.0.
+    assert practice.env.pre_action_xs == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+
+def test_practice_reset_policy_never_records_no_practice_resets() -> None:
+    """num_practice_resets is what an experiment reads back out of stats.json to
+    confirm the manipulation actually happened, rather than trusting the flag."""
+    practice, evaluation, method, metrics = _build_split()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=4,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.NEVER,
+    )
+    assert metrics.num_practice_resets == 0
+
+
+def test_practice_reset_policy_never_still_samples_a_train_task_per_cycle() -> None:
+    """Only the reset is suppressed, not the cycle structure: each period still
+    draws its own train task and still hands it to get_practice_policy, so the
+    train-task distribution is identical between the two arms and the only
+    difference is whether the environment is put back."""
+    practice, evaluation, method, metrics = _build_split()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.NEVER,
+    )
+    assert practice.tasks.train_task_count == 3
+    assert method.practice_policy_calls == 3
+    assert method.end_cycle_calls == 3
+
+
+def test_practice_reset_policy_never_rejects_a_reset_interval() -> None:
+    """A within-period reset interval under a 'never reset' policy is a
+    contradiction, and a silently-ignored flag would make an arm look reset-free
+    while it was being reset every k steps. Rejected up front, before the run
+    mutates anything."""
+    practice, evaluation, method, metrics = _build_split()
+    with pytest.raises(ValueError, match="practice_reset_policy"):
+        PracticeLoop.run(
+            problem=practice,
+            evaluation_problem=evaluation,
+            method=method,
+            metrics=metrics,
+            num_cycles=1,
+            max_steps_per_interaction=4,
+            num_test_tasks=1,
+            practice_reset_interval=2,
+            practice_reset_policy=PracticeResetPolicy.NEVER,
+        )
+    assert practice.env.hard_reset_count == 0
+
+
+def test_practice_reset_policy_never_requires_a_separate_evaluation_problem() -> None:
+    """The larger of the two confounds, and the one that was unguarded. Without its
+    own evaluation environment, every sweep's per-episode `reset_to_task` resets the
+    practice environment `num_test_tasks` times -- so a `never` arm would be reset
+    hundreds of times while `Metrics.num_practice_resets` still reported 0, which is
+    the very field an experiment reads to certify the manipulation happened. Rejected
+    up front, exactly like the `practice_reset_interval` combination."""
+    problem, method, metrics = _build()
+    with pytest.raises(ValueError, match="evaluation_problem"):
+        PracticeLoop.run(
+            problem=problem,
+            method=method,
+            metrics=metrics,
+            num_cycles=1,
+            max_steps_per_interaction=2,
+            num_test_tasks=3,
+            practice_reset_policy=PracticeResetPolicy.NEVER,
+        )
+    assert problem.env.hard_reset_count == 0
+
+
+def test_practice_reset_policy_never_rejects_an_evaluation_problem_that_is_the_same_object() -> (
+    None
+):
+    """Passing the practice Problem as its own evaluation Problem satisfies "not
+    None" while providing none of the isolation, so it must be rejected too."""
+    problem, method, metrics = _build()
+    with pytest.raises(ValueError, match="evaluation_problem"):
+        PracticeLoop.run(
+            problem=problem,
+            evaluation_problem=problem,
+            method=method,
+            metrics=metrics,
+            num_cycles=1,
+            max_steps_per_interaction=2,
+            num_test_tasks=3,
+            practice_reset_policy=PracticeResetPolicy.NEVER,
+        )
+
+
+def test_practice_reset_policy_never_tells_the_recorder_of_no_period_reset() -> None:
+    """The full-loop recording must not draw a reset marker for a reset that did
+    not happen -- the markers are how a viewer reads the arm off the video."""
+    practice, evaluation, method, metrics = _build_split()
+    recorder = _spy_recorder(problem=practice, num_cycles=2, max_steps=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.NEVER,
+        recorder=recorder,
+    )
+    assert "period_reset" not in recorder.calls

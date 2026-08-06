@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import enum
 from collections.abc import Callable
 from typing import Protocol
 
@@ -12,6 +13,38 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.recording.loop_recorder import LoopRecorder
+
+
+class PracticeResetPolicy(str, enum.Enum):
+    """Whether an interaction period is put back to its train task's initial state
+    before it begins.
+
+    Defined above `PracticeLoop` rather than below it (which the file's top-down
+    convention would otherwise want) for one mechanical reason: it is the *default
+    value* of a `PracticeLoop.run` parameter, so it has to exist by the time that
+    `def` is evaluated.
+
+    A `(str, Enum)` -- matching this project's other domain enums, e.g.
+    `environments/tossingroomsplit/tasks.py`'s `TossingRoomSplitGoalType` -- so
+    argparse can offer the members directly as `choices`, so a member compares equal
+    to its own wire string, and so the chosen value lands in `config_snapshot.json`
+    as a readable word rather than an integer nobody can interpret later."""
+
+    # Today's behaviour, and the default: reset at the top of every period. Named
+    # "scheduled" rather than "always" because --practice-reset-interval may add
+    # further resets *within* the period on a schedule of its own.
+    SCHEDULED = "scheduled"
+    # No practice reset, ever. The environment carries whatever state the previous
+    # period left it in, across the period boundary and across the train task
+    # changing underneath it. This is only truthful because evaluation now runs on
+    # its own Environment -- otherwise each sweep's per-episode reset_to_task would
+    # silently reset this arm num_test_tasks times per sweep.
+    NEVER = "never"
+
+    def __str__(self) -> str:
+        """So argparse prints `scheduled`/`never` in --help and in its error message
+        for a bad value, rather than `PracticeResetPolicy.SCHEDULED`."""
+        return self.value
 
 
 class PracticeLoop:
@@ -36,6 +69,45 @@ class PracticeLoop:
     the robot standing at the light, skipping the whole traversal and spending
     every step of its budget practicing the toggle. That inflates practice
     throughput per period and makes grid_size stop affecting results at all.
+
+    **The per-period reset is optional.** `practice_reset_policy` (`SCHEDULED` by
+    default, i.e. exactly the behaviour described above) turns that reset off
+    entirely at `NEVER`: the environment carries whatever the previous period left
+    behind, across the period boundary and across the train task changing underneath
+    it. A train task is still sampled per period and still handed to
+    `get_practice_policy`, so the *sequence of `Task` objects* is identical between
+    the two policies.
+
+    **But the two policies are NOT "the same run minus one reset", and an experiment
+    comparing them must say so.** A `Task`'s continuous parameters live in its
+    `initial_state`, and `reset_to_task` is the only thing that installs one. Under
+    `NEVER` the environment therefore keeps whatever `hard_reset()` put there for the
+    whole run, so any state feature no action writes is **frozen at its canonical
+    value**. On `tossingroomsplit` those features are a bin's `throw_distance` and an
+    item's `weight` -- which are exactly the learned sampler's input row -- so a
+    `NEVER` run practices every throw at a single point of the task distribution
+    while a `SCHEDULED` run sees a fresh draw per period. Measured on the 2026-08-06
+    A/B: 194 greedy throws at **1** distinct required-force target under `NEVER`,
+    against 86 distinct targets over 440 throws under `SCHEDULED`.
+
+    That is a second, entangled difference, not a side note: it collapses the
+    sampler's training distribution at the same time as it removes the rescue. The
+    two cannot be separated by this flag alone, and any result comparing the policies
+    is a result about both mechanisms together. See
+    `docs/experiment-logs/2026-08-06-reset-free-practice-ab.md`.
+
+    That is the reset-free condition the paragraph above argues *against* on Light
+    Switch, and stating it as a flag is the point: the argument is an empirical claim
+    about how much a free reset is worth, and it was never measured. `NEVER` is what
+    makes it measurable, and `Metrics.num_practice_resets` (0 for the whole run) is
+    how a reader confirms from a run's own output that the manipulation happened.
+
+    It is only truthful in combination with `evaluation_problem` above. Without a
+    separate evaluation environment, every sweep's per-episode `reset_to_task` resets
+    this arm `num_test_tasks` times anyway, and `NEVER` would be a label rather than
+    a condition. Combining `NEVER` with `practice_reset_interval` is rejected up
+    front for the same reason -- it would be a reset-free arm that is reset every k
+    steps.
 
     **Reset frequency, decoupled from refit frequency.** `practice_reset_interval`
     (None by default, i.e. exactly the behaviour described above) additionally puts
@@ -194,6 +266,7 @@ class PracticeLoop:
         max_steps_per_interaction: int,
         num_test_tasks: int,
         evaluation_problem: Problem | None = None,
+        practice_reset_policy: PracticeResetPolicy = PracticeResetPolicy.SCHEDULED,
         practice_reset_interval: int | None = None,
         on_cycle_end: Callable[[], None] | None = None,
         renderer: type[Renderer] | None = None,
@@ -208,6 +281,37 @@ class PracticeLoop:
                 "on_checkpoint_frames is required when renderer is given: rendered "
                 "frames are streamed to the sink and never retained, so without one "
                 "every recorded clip would be silently discarded."
+            )
+        if practice_reset_policy is PracticeResetPolicy.NEVER and (
+            evaluation_problem is None or evaluation_problem is problem
+        ):
+            # The larger of the two ways a "never reset" arm silently gets reset
+            # anyway, and the one worth refusing rather than documenting: every
+            # evaluation episode opens with reset_to_task, so a shared Problem hands
+            # this arm num_test_tasks resets per sweep while num_practice_resets --
+            # the field an experiment reads to certify the manipulation -- still
+            # reports 0. `is problem` is checked as well as None because passing the
+            # practice Problem as its own evaluation Problem provides no isolation.
+            raise ValueError(
+                "practice_reset_policy=never requires its own evaluation_problem: "
+                "without one, every evaluation episode's reset_to_task writes into "
+                "the practice environment, so the arm is reset num_test_tasks times "
+                "per sweep while num_practice_resets still reports 0. Build a second, "
+                "independent Environment + Tasks + Problem for evaluation."
+            )
+        if (
+            practice_reset_policy is PracticeResetPolicy.NEVER
+            and practice_reset_interval is not None
+        ):
+            # Rejected rather than resolved by precedence: whichever way it went,
+            # one of the two flags would be silently ignored, and an arm that looked
+            # reset-free while being reset every k steps is exactly the kind of
+            # invisible confound this whole change exists to remove.
+            raise ValueError(
+                "practice_reset_policy=never is incompatible with a "
+                f"practice_reset_interval ({practice_reset_interval}): the interval "
+                "resets the environment within a period, so the arm would not be "
+                "reset-free. Drop one of the two."
             )
         rendered_sweeps = PracticeLoop.render_sweep_indices(
             num_cycles=num_cycles, num_render_checkpoints=num_render_checkpoints
@@ -276,10 +380,23 @@ class PracticeLoop:
             # request), and it is load-bearing: an evaluation episode ends with the
             # environment in a *solved* state, so resuming from it would hand every
             # free period a head start it never earned.
-            state = problem.reset_to_task(task=task)
-            metrics.record_practice_reset()
-            if recorder is not None:
-                recorder.record_period_reset(state=state)
+            if practice_reset_policy is PracticeResetPolicy.NEVER:
+                # Pick up wherever the last period left off. The sampled `task` is
+                # still what get_practice_policy was given, but its initial_state is
+                # NOT installed -- so every state feature no action writes stays at
+                # its hard_reset value for the whole run. See the class docstring:
+                # that freezes the sampler's own input features, which is a second
+                # difference from the scheduled arm, not merely a missing reset.
+                state = problem.get_current_state()
+            else:
+                # Tested against NEVER rather than for SCHEDULED so that anything
+                # unexpected -- a hand-built argparse.Namespace carrying the string
+                # "never", say -- degrades to the INCUMBENT behaviour rather than
+                # silently running the experimental arm.
+                state = problem.reset_to_task(task=task)
+                metrics.record_practice_reset()
+                if recorder is not None:
+                    recorder.record_period_reset(state=state)
             for step in range(max_steps_per_interaction):
                 try:
                     labeled_action = policy(state)
