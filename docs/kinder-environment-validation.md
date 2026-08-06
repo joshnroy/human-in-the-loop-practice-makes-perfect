@@ -10,7 +10,7 @@ Every claim below names the command that produced it. Where a previously-recorde
 claim did **not** reproduce, this file says so in bold rather than repeating the old
 number.
 
-**Audited 2026-08-06** against `main` at `891bee0`. §1, §2, §3 and §5 reproduce unchanged;
+**Audited 2026-08-06** against `main` at `db2589f`. §1, §2, §3 and §5 reproduce unchanged;
 **§4 no longer holds at upstream `main`** — see the note there.
 
 ## What was validated
@@ -171,7 +171,8 @@ Both figures read live, not re-derived: the goal box from `Region.bbox` on
 
 `blocks_goal_region` is a single box (`goal_region_num_boxes: 1`), and its bbox is the
 task JSON's `[1.90, 2.10]` inflated by `ground_placement_threshold = 0.05` on every side
-(`objects/base.py:840, 874-880`) — unchanged at `main`.
+(`MujocoGround`'s `ground_placement_threshold` and `_create_regions`,
+`objects/base.py:840` and `:874-881`) — unchanged at `main`.
 
 **Against the earlier record:** the goal box `[1.8500, 2.1500]` matches exactly. The bin
 footprint was previously recorded as `[2.0807, 2.3807]`; measured here it is

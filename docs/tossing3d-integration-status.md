@@ -13,7 +13,7 @@ it does not describe the code on `main`: the live description of the domain as i
 today is `src/hitl_pmp/environments/tossing3d/README.md`.
 
 **Written 2026-08-04**, against `main` at `d6ae54c` and the top of the stack at `3565312`;
-audited and corrected 2026-08-06 against `main` at `891bee0`.
+audited and corrected 2026-08-06 against `main` at `db2589f`.
 
 ### How to read the claims in here
 
@@ -23,6 +23,13 @@ on branch `josh/experiment/tossing3d-ees` (and later branches) — that file is 
 marked **(inferred)** inline. Where the record is silent, this file says so rather than
 filling the gap. Counts are `x/y` throughout — a percentage without its denominator is
 never the primary record.
+
+**Citations are symbol-first; the line number is a convenience that rots.** A reference
+here names the symbol you can `grep` for and gives `file:line` after it, pinned to a stated
+commit. Read the symbol as the claim and the line as a shortcut: line numbers in this file
+went stale on two consecutive merges into `main` during the audit that produced it (#85,
+then #90, both moving `ees_method.py`'s `PlanningFailure` sites). If a line does not point
+where it says, `grep` the symbol — the claim is probably still true.
 
 **Every measurement in §5 was taken on the closed branches**, whose adapter differs from
 `main`'s in ways that matter — `main` has no `swing` dial, no `ORACLE_SWING`, no
@@ -121,9 +128,10 @@ on a machine with no MuJoCo.
   i.e. 200 substeps per env step.
 - Every controller. `pick_shelf` from `kinder_models.dynamic3d.shelf`; `move_to_target`,
   `move_arm_to_conf` and `toss` from `kinder_models.dynamic3d.tossing`.
-- **The success criterion.** `Tossing3D-o1.json:81` declares one goal predicate,
-  `["on", "cube_0", "blocks_goal_region"]`, evaluated by `_check_goals` (`envs.py:1053-1167`)
-  as containment in a ground region via `MujocoGround.check_in_region`.
+- **The success criterion.** `Tossing3D-o1.json`'s `"goal_state"` key (`:81`) declares one
+  goal predicate, `["on", "cube_0", "blocks_goal_region"]`, evaluated by
+  `ObjectCentricRobotEnv._check_goals` (`envs.py:1053-1167`) as containment in a ground
+  region via `MujocoGround.check_in_region`.
 - The rendering path and the `task_view` camera; `render_fps` metadata (20);
   `kinder.gif_utils.optimize_gif`.
 - The task JSON scenes for `o1` and `o2`.
@@ -326,7 +334,7 @@ Two concrete reasons, both structural:
 
 1. **The harness hands out a free reset.** `PracticeLoop.run` calls
    `problem.reset_to_task(task=task)` at the top of every practice cycle
-   (`practice_loop.py:236` on `main` at `891bee0`; the line has moved since this was
+   (`practice_loop.py:236` on `main` at `db2589f`; the line has moved since this was
    written) and `run_task_episode` resets per evaluation episode — a free
    reset every `--max-steps-per-interaction` steps. That is faithful to predicators and
    correct for a reproduction, and it supplies **precisely** the resets the hypothesis is
@@ -347,7 +355,8 @@ confound, in one frame.
 anything against that literal.** `MujocoGround._create_regions` (`objects/base.py:874-881`)
 inflates the range by `ground_placement_threshold = 0.05` m (`base.py:840`) on every side,
 z clamped at 0, and stores the result as `Region.bbox` — which is what
-`Region.check_in_region` (`base.py:148-185`) tests, and therefore what `_check_goals`
+`Region.check_in_region` (`base.py:148-185`) tests — it takes a **point**, the object's
+own position — and therefore what `ObjectCentricRobotEnv._check_goals`
 (`envs.py:1053-1167`) decides success by.
 
 | | x | y | z |
@@ -362,7 +371,9 @@ re-deriving the inflation, so the two cannot drift apart again, and raises loudl
 `blocks_goal_region` ever stops being a single box.
 
 Both arms were **re-run rather than rescored**, because the predicate is the goal atom
-(`tasks.py:66-69`) and a `Toss` add-effect (`skills.py:73`) and `run_task_episode` returns
+(the `Goal` built in `tasks.py:66-69`) and a `Toss` add-effect (`skills.py:73`) — both on
+the closed branches, so those lines cannot be re-checked against `main` — and
+`run_task_episode` returns
 early on `is_satisfied`, so a wider box *could* have changed behaviour.
 
 **Empirically it did not.** Of the 220 `(transitions, solved, total)` triples the two arms
@@ -415,16 +426,18 @@ The single most misreadable thing about this domain. **A cube that lands in the 
 scored failure, every time.** Three independent checks against upstream:
 
 1. **The goal never consults the bin.** One goal predicate,
-   `["on", "cube_0", "blocks_goal_region"]` (`Tossing3D-o1.json:81`), evaluated as
+   `["on", "cube_0", "blocks_goal_region"]` (`Tossing3D-o1.json`'s `"goal_state"`), evaluated as
    containment in a **ground** region. No bin body, no bin site, no second condition, in
    either shipped variant.
 2. **The overlap is arithmetic only.** The 0.30 m bin sits at x = 2.2305, footprint
-   x ∈ [2.080, 2.380], against the corrected region x ∈ [1.85, 2.15]. The bin's near wall
-   occupies x ∈ [2.080, 2.100] (`primitive_objects.py:368-380`), so once the cube's 0.025 m
-   half-extent is counted the part of the overlap a cube can *rest* in is x ∈ [2.126, 2.150]
-   — 2.4 cm. Nothing lands there (see 5.4).
-3. **Upstream's own prose is stale, not loose.** `docs/envs/Tossing3D.md:8` says the robot
-   "must toss the object into a bin". That was true at KINDER's initial commit, when the
+   x ∈ [2.0805, 2.3805], against the corrected region x ∈ [1.85, 2.15] — an overlap of
+   x ∈ [2.0805, 2.1500], 69.5 mm. The bin's near wall occupies x ∈ [2.0805, 2.1005]
+   (`Bin._create_xml_element`'s left wall, `primitive_objects.py:368-380`), so once the
+   cube's 0.025 m half-extent is counted the
+   part of that overlap a cube can *rest* in is x ∈ [2.1255, 2.1500] — 24.5 mm. Nothing
+   lands there (see 5.4).
+3. **Upstream's own prose is stale, not loose.** `docs/envs/Tossing3D.md`'s `## Description`
+   paragraph (`:8`) says the robot "must toss the object into a bin". That was true at KINDER's initial commit, when the
    bin sat at x = 2.0005 with footprint x ∈ [1.8505, 2.1505] — the inflated goal region
    x ∈ [1.85, 2.15] to within half a millimetre, and the same on y. **The region *was* the
    bin.** Commit `1183de7` ("merge final changes from prpl-mono", 2026-03-20) moved
@@ -562,7 +575,10 @@ level of the method body, recomputed from the current state
 (`kinder_models/dynamic3d/shelf/parameterized_skills.py:199`). It is stale-free by
 construction and cannot be the cause.
 
-**The real cause is the controller's own progress flags.**
+**The real cause is the controller's own progress flags.** All bare `:NNN` in the table
+below are in `PickShelfController`, `kinder_models/dynamic3d/shelf/parameterized_skills.py`,
+at `kinder-baselines` `main` (`9512b9e`); the symbol in the first column is the durable
+locator, the line is the shortcut.
 
 | symbol | set `False` | set `True` | cleared by `reset()`? |
 | --- | --- | --- | --- |
@@ -655,21 +671,25 @@ and the bin is scenery that drifted.
 `blocks_goal_region` onto the bin instead "would have implied a goal box at x ∈ [2.13, 2.33]
 after inflation, extending ~18 cm past the bin's far wall onto open floor, so a cube that
 overshot the bin entirely would score as a success". Re-derived from upstream `main`'s
-`Tossing3D-o1.json`, `objects/base.py:874-881` and `primitive_objects.py:368-380`:
+`Tossing3D-o1.json`, `MujocoGround._create_regions` (`objects/base.py:874-881`) and
+`Bin._create_xml_element` (`primitive_objects.py:368-380`):
 
 - The raw `blocks_goal_region` range is `[1.90, -0.10, 0.0, 2.10, 0.10, 0.10]`, 0.20 m wide
   on x about 2.0. Recentring it on the bin (`bin_init_region` x ∈ [2.23, 2.231], midpoint
   2.2305) gives a **raw** range of x ∈ [2.1305, 2.3305]. So `[2.13, 2.33]` is the range
   *before* inflation, not after; after the 0.05 m per-side inflation it is
   x ∈ **[2.0805, 2.3805]**.
-- The bin is 0.3 m with 0.02 m walls, so its footprint is x ∈ [2.0805, 2.3805] and its far
-  wall's outer face is at **2.3805**. The quoted 2.33 is **5.1 cm short of** that face, not
-  18 cm past it. The 18 cm figure is `2.33 − 2.15` — the distance past the *current* goal
-  box's far edge, a different reference point.
-- The inflated box [2.0805, 2.3805] coincides with the bin footprint to 0.0 mm — the exact
-  mirror of what moving the bin to 2.0 achieves. A cube that overshot the bin entirely
-  comes to rest past 2.3805, i.e. **outside** that box, so it would **not** score. The
-  stated consequence does not follow.
+- The bin's outer length is 0.3 m, so its footprint is x ∈ [2.0805, 2.3805]; its walls are
+  0.02 m, so the far wall's **outer face** is at **2.3805**. The quoted 2.33 is
+  **5.05 cm short of** that face, not 18 cm past it. The 18 cm figure is `2.33 − 2.15` —
+  the distance past the *current* goal box's far edge, a different reference point.
+- The inflated box [2.0805, 2.3805] coincides with the bin footprint to **0.0 mm**, and
+  does so **by identity, not by luck**: half the raw range (0.10) plus the inflation (0.05)
+  is 0.15, which is exactly half the bin's 0.30 m length. Recentring this particular region
+  on this particular bin can therefore never overshoot it, whatever x the bin is sampled
+  at. That is the exact mirror of what moving the bin to 2.0 achieves. A cube that overshot
+  the bin entirely comes to rest past 2.3805, i.e. **outside** that box, so it would
+  **not** score. The stated consequence does not follow.
 
 The two remaining reasons are unaffected, and moving the bin is still the right call — but
 this ground was not one.
@@ -701,8 +721,8 @@ and a starved FD returns no plan, which would make a curve measure timeouts rath
 learning.
 
 **This cannot be checked the obvious way.** `ees_method.py` swallows `PlanningFailure` at
-all three call sites (lines 386, 778, 802 as written; **404, 818, 842** on `main` at
-`891bee0`) without logging it, so a timeout and a genuinely
+all three call sites (lines 386, 778, 802 as written; **404, 829, 853** on `main` at
+`db2589f`) without logging it, so a timeout and a genuinely
 unreachable goal are indistinguishable and neither reaches `log.txt`. A re-run diff was
 substituted, since a timeout would necessarily change the plan and hence the trajectory:
 
@@ -714,8 +734,8 @@ IDENTICAL
 
 **The first attempt returned DIFFERS and would have become a false finding.** It drove
 `hitl_pmp.cli` directly, missing the `OMP_NUM_THREADS=1` / `MKL_NUM_THREADS=1` that
-`run_sweep` pins on every child (`run_sweep.py:153` as written; `:426` on `main` at
-`891bee0`), so it compared a many-thread run
+`run_sweep` pins on every child (`SweepRunner._execute_one`'s `child_env`;
+`run_sweep.py:153` as written, `:426` on `main` at `db2589f`), so it compared a many-thread run
 against a one-thread run and was about to report "concurrency perturbs Tossing3D".
 
 Two facts fall out, both worth more than the check itself:
@@ -793,7 +813,7 @@ sweep never had a GPU option in the first place.
   sweep.
 - **`core/renderer/renderer.py` writes GIFs through an mp4 round trip** —
   `VideoWriter.write_gif` takes an already-written `video_path` and re-reads it
-  (`renderer.py:105-124` on `main` at `891bee0`; the quoted "lines 58-68" no longer point at
+  (`renderer.py:105-124` on `main` at `db2589f`; the quoted "lines 58-68" no longer point at
   it), pushing frames through lossy 4:2:0 H.264 before the palette is chosen. Cross-domain,
   still unfixed.
 
@@ -822,15 +842,17 @@ not run.
   `TossController.reset` already clears `_has_released`.** Use §5.6's mechanism, not #42's
   original — a wrong mechanism sends maintainers after the wrong field.
   - **(inferred)** A second candidate, never framed as an upstream issue in the record:
-    `docs/envs/Tossing3D.md:8` describes the pre-`1183de7` scene (§5.3). That is the subject
+    `docs/envs/Tossing3D.md`'s `## Description` paragraph describes the pre-`1183de7` scene
+    (§5.3). That is the subject
     of kindergarden PR #126, still open.
 - **The KINDER-backed claims are unverified on CI.** CI never installs KINDER, so at
   `3565312`: **11/11** tests in `test_kinder_fidelity.py` skip, and **7/8** of #64's own
   `test_task_configs.py` skip (1 of the 8 runs offline). CI therefore **cannot** catch a
   wrong goal box or a broken task-config provenance pin. The `79/79` tossing3d figure quoted
   in #64 was measured in a venv with the simulator installed, before that PR's final rebase,
-  and was **not** re-run for the rebased head. The same gap holds on `main`, where 15 tests
-  skip on CI for the same reason.
+  and was **not** re-run for the rebased head. The same gap holds on `main`: **15/15** of
+  the suite's skips are these KINDER-gated tests — 13 in `test_kinder_fidelity.py` and 2 in
+  `test_operator_fidelity.py`, re-counted at `db2589f`.
 - **No `HumanOracle`.** This is the domain in the repo that most needs one.
   `Metrics.num_human_interventions()` reports `(0.0, 0)` — not because no intervention was
   needed, but because none is representable.
@@ -839,8 +861,10 @@ not run.
   would be under-specified.
 - **The planning-failure rate cannot be read out of any run log.** `ees_method.py` catches
   `PlanningFailure` silently at three call sites and never logs it. Still true on `main`
-  (lines 404, 818, 842). This is a gap in the harness's observability, not something
-  specific to this domain.
+  (lines 404, 829, 853 at `db2589f`). **Re-find them with
+  `grep -n 'except PlanningFailure'` rather than trusting those numbers** — two of the
+  three moved on each of the last two merges into `main` (#85, then #90), so a line pin
+  here decays faster than anything else in this file.
 - **The irreversibility hypothesis is untested.** Changing `PracticeLoop`'s reset behaviour
   is a separate design decision, deliberately not made anywhere in this stack. The EES log is
   the reproduction baseline such a change would be measured against.
