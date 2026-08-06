@@ -237,9 +237,9 @@ from inside `.claude/worktrees/`.
 explicit permission for that specific action.** Repos owned by the lab
 (`Princeton-Robot-Planning-and-Learning/*`) count as public here, as does this one.
 
-Covered: opening a PR **including a draft**, marking one ready, merging, closing,
-opening or commenting on an issue, posting a review, requesting reviewers, adding
-labels, editing a PR or issue body, and pushing a branch to a public remote.
+Covered: opening a PR **including a draft**, merging, closing, opening or commenting on
+an issue, posting a review, requesting reviewers, adding labels, editing a PR or issue
+body, and pushing a branch to a public remote.
 
 Not covered, and never needs asking: reading, fetching, local branches and commits,
 work inside a fork you were told to use, and CI that runs on its own.
@@ -248,8 +248,19 @@ work inside a fork you were told to use, and CI that runs on its own.
 draft PRs, and anything posted under Josh's account is a statement he is accountable
 for — technical claims in it will be read as his.
 
+**And an agent's PR *stays* a draft — always, on every repo.** `gh pr create --draft`;
+never `gh pr ready`, including flipping one back to ready as part of a rebase or a fix.
+Josh promotes them himself, so this is not on the ask-first list above — it is a thing not
+to do at all. It matters most on repos not owned by `joshnroy`
+(`Princeton-Robot-Planning-and-Learning/*` and anything else lab- or third-party-owned).
+Since a draft notifies maintainers anyway, draft-versus-ready is not about privacy: it is
+about who is asserting "this is finished and worth your time". Assistant-authored
+technical claims in these PRs have already needed public correction, so the person
+accountable for a claim should be the one who releases it. This goes in every subagent
+brief that can open a PR, the same way the permission rule does.
+
 **Permission for one action is not permission for the next.** Approval to open a PR is
-not approval to mark it ready, to comment on it afterwards, or to open a follow-up
+not approval to comment on it afterwards, to edit its body, or to open a follow-up
 issue. Ask again.
 
 To ask: name the exact object, the exact repo, and what it would say, then wait. This

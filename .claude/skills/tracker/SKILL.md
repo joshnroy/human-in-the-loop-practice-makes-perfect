@@ -78,6 +78,7 @@ agent will find.
   against that repo's `main`; kindergarden PRs are usually one-file fixes.
 - Josh is in the PRPL lab and owns both upstreams, so upstream merge latency is a
   scheduling detail, not a risk — do not weight it when recommending.
-- Anything touching a public repo (opening, commenting, marking ready, pushing) needs
-  his permission first; the tracker should surface those as decisions rather than
-  actions taken.
+- Anything touching a public repo (opening, commenting, pushing) needs his permission
+  first; the tracker should surface those as decisions rather than actions taken.
+  **Marking a PR ready is Josh's alone** — agent PRs stay drafts, so "ready for review"
+  is never a state the tracker puts one into, only one it reports.
