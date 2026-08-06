@@ -720,7 +720,15 @@ class _EesEpisode:
         self._goal_pursuit_remaining: int | None = method.goal_pursuit_horizon
 
     def _noop_action(self) -> np.ndarray:
-        return np.zeros(self._method.env.action_space.shape)
+        """Ask the environment what inaction means, rather than assuming zeros.
+
+        This used to be `np.zeros(env.action_space.shape)`, which is a *real* action
+        on two of the six domains here: `pick_shelf` at distance 0.0 on Tossing3D
+        (`pick_id == 0`) and "navigate to (0, 0)" on Ball-Ring. There, a method that
+        failed to plan quietly acted anyway and the run reported whatever that action
+        caused. Light Switch and the Tossing Rooms happened to be unaffected -- see
+        `Environment.noop_action` for why that was luck rather than design."""
+        return self._method.env.noop_action()
 
     def step(self, *, state: State) -> LabeledAction:
         method = self._method
@@ -759,7 +767,8 @@ class _EesEpisode:
                 raise InteractionComplete
             # Evaluation: run_task_episode owns termination (goal check + horizon),
             # so degrade to a no-op rather than ending its episode from in here.
-            # Sized to this env's action space (Light Switch 2-D, Ball-Ring 5-D).
+            # The environment supplies the action, since only it knows what inaction
+            # means in its own action space -- see Environment.noop_action.
             return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)

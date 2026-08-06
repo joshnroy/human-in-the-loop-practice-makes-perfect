@@ -31,6 +31,9 @@ class _Env(Environment):
     def get_valid_actions(self) -> list[Action]:
         return [np.array([1.0])]
 
+    def noop_action(self) -> Action:
+        return np.zeros(1)
+
     def hard_reset(self) -> None:
         self.set_state(state=_state(x=0.0))
 

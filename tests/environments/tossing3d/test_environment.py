@@ -137,3 +137,17 @@ def test_an_unknown_skill_id_is_recorded_as_a_no_op_rather_than_raising() -> Non
     env = Tossing3DEnvironment()
     assert env._execute(action=np.array([7.0, 0.0, 0.0])) == []
     assert "unknown skill id: 7" in str(env.last_skill_error())
+
+
+def test_the_noop_action_runs_no_controller_at_all() -> None:
+    """The defect this domain surfaced: `pick_id == 0`, so the `np.zeros(3)` that
+    `EesMethod` used to emit when it could not plan was a real `pick_shelf` at
+    distance 0.0. `_execute` returning no runs is exactly "no controller ran"."""
+    env = Tossing3DEnvironment()
+    assert env._execute(action=env.noop_action()) == []
+    assert "unknown skill id" in str(env.last_skill_error())
+
+
+def test_the_noop_id_is_not_a_real_skill_id() -> None:
+    env = Tossing3DEnvironment()
+    assert env.noop_id not in {env.pick_id, env.move_to_throw_pose_id, env.toss_id}

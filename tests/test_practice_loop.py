@@ -75,6 +75,9 @@ class _FakeEnv(Environment):
     def get_valid_actions(self) -> list[Action]:
         return []
 
+    def noop_action(self) -> Action:
+        return np.zeros(1)
+
     def hard_reset(self) -> None:
         self.hard_reset_count += 1
         self.set_state(state=_state(x=0.0))

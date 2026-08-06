@@ -860,3 +860,28 @@ def test_the_number_of_observed_outcomes_does_not_depend_on_the_reset_interval()
         assert metrics.evaluations[-1][0] == 16
         observed[interval] = method.observe_outcome_calls
     assert set(observed.values()) == {2 * (8 - 1)}, observed
+
+
+def test_the_no_plan_no_op_really_leaves_the_environment_alone() -> None:
+    """The defect: this branch used to emit `np.zeros(action_space.shape)`, which is
+    a real action on nearly every domain here. On Ball-Ring zeros decodes to
+    "navigate to (0, 0)", so a method that could not plan silently walked the robot
+    across the table and the run reported whatever that caused.
+
+    Ball-Ring rather than Light Switch precisely because Light Switch is the one
+    domain where zeros happens to be inert -- it is why this went unnoticed. The goal
+    is empty, which is satisfied by every state, so the goal phase ends immediately
+    and the episode reaches the no-plan branch without invoking a planner at all."""
+    env = BallRingEnvironment()
+    env.hard_reset()
+    method = EesMethod(env=env, skill_provider=BallRingSkillProvider(env=env), seed=0)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=False)
+
+    state = env.get_current_state()
+    before = {obj.name: tuple(features) for obj, features in state.data.items()}
+    labeled = episode.step(state=state)
+    assert labeled.label == "no-op (no plan)"
+
+    env.take_action(action=labeled.action)
+    after = env.get_current_state()
+    assert {obj.name: tuple(features) for obj, features in after.data.items()} == before

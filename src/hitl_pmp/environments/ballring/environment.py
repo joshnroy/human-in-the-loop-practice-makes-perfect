@@ -463,6 +463,31 @@ class BallRingEnvironment(Environment):
         # enumerate. A discrete skill layer lives in skills.py (see README), not here.
         return []
 
+    def noop_action(self) -> Action:
+        """Navigate the robot to the position it is already standing in.
+
+        The only inert action this Box can express, and it is state-dependent, which
+        is why `noop_action` is a method rather than a constant. Slot 0 is binary
+        (1.0 = pick/place, anything else = navigate) with a *bounded* [0, 1] range, so
+        there is no unrecognised-id escape hatch of the sort the Tossing Rooms have;
+        and the pick/place arm is worse than useless as a no-op, since
+        `_handle_picking` asserts `obj_type_id in {1, 2}` and would crash on a
+        placeholder. Navigating to (rx, ry) writes the coordinates the robot already
+        holds, so the state is unchanged whether or not the collision check fires.
+
+        Note what this is *not*: `np.zeros(5)` navigates to (0, 0), which really moves
+        the robot -- the defect this method closes, pinned in
+        tests/environments/test_noop_action.py.
+        """
+        state = self.get_current_state()
+        return np.array([
+            0.0,
+            0.0,
+            0.0,
+            state.get(obj=self.robot, feature_name="x"),
+            state.get(obj=self.robot, feature_name="y"),
+        ])
+
     def hard_reset(self) -> None:
         self.set_state(state=self.sample_initial_state(rng=np.random.default_rng(self.noise_seed)))
 

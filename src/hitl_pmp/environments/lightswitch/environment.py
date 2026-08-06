@@ -109,6 +109,13 @@ class LightSwitchEnvironment(Environment):
         # layer on top, like GridRowEnv's MoveTo/ToggleLight/JumpToLight options).
         return []
 
+    def noop_action(self) -> Action:
+        """[dx, dlight] = [0, 0]: the robot moves nowhere and the light level changes
+        by zero. Light Switch is the one domain here where the zero vector really is
+        inert -- both slots are *deltas*, not a skill id -- which is exactly why the
+        `np.zeros(action_space.shape)` this replaces looked correct for so long."""
+        return np.zeros(2)
+
     def hard_reset(self) -> None:
         self.set_state(
             state=self.build_initial_state(

@@ -166,6 +166,10 @@ class TossingRoomSplitIdentityEnvironment(Environment):
     SKILL_MOVE_ROOM: ClassVar[int] = 1
     SKILL_THROW: ClassVar[int] = 2
     SKILL_PRESS: ClassVar[int] = 3
+    # Not a skill: the id a `noop_action` carries, chosen outside the real ids so
+    # the decode below falls through every branch. Negative rather than 4 so that
+    # adding a fifth skill can never silently turn every no-op into it.
+    SKILL_NOOP: ClassVar[int] = -1
 
     # Item-kind discriminators (also the robot's "holding" encoding: 0 = empty hand).
     TRASH_KIND: ClassVar[int] = 1
@@ -461,6 +465,18 @@ class TossingRoomSplitIdentityEnvironment(Environment):
         # The force dimension is continuous and unbounded (matches Light Switch's
         # convention), so there is no finite/enumerable action list to return.
         return []
+
+    def noop_action(self) -> Action:
+        """`SKILL_NOOP` in slot 0, which `take_action`'s decode falls through to its
+        "any other skill_id is unknown -> no-op" arm.
+
+        Deliberately not a zero vector, even though zeros *is* inert here today: slot
+        0 is the skill id and `SKILL_PICKUP == 0`, so zeros decodes as a real `Pickup`
+        and survives only because its item-kind argument rounds to 0, which names no
+        kind. That is a coincidence of a second field rather than a property of the
+        no-op -- anything keying on the skill id already mislabels it, and giving
+        `Pickup` a zero-valid argument would turn every no-op into a real pickup."""
+        return np.array([float(self.SKILL_NOOP), 0.0, 0.0])
 
     def hard_reset(self) -> None:
         self.set_state(
