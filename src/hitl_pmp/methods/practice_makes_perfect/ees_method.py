@@ -11,6 +11,7 @@ from hitl_pmp.core.method.types import (
     LabeledAction,
     Policy,
     Rollout,
+    SamplerConsultation,
     SetupCommand,
     Skill,
     SkillPracticeTally,
@@ -419,7 +420,7 @@ class EesMethod(Method):
     # ------------------------------------------------------- practice bookkeeping
 
     def record_practice_attempt(
-        self, *, skill_name: str, success: bool, was_random: bool, was_informed: bool
+        self, *, skill_name: str, success: bool, consultation: SamplerConsultation
     ) -> None:
         """Tally one observed practice execution against its lifted skill.
 
@@ -431,17 +432,18 @@ class EesMethod(Method):
         Kept off `observe_outcome`'s own signature deliberately. That method is a
         documented extension point (`scripts/tossingroomsplit_skill_traces.py`
         overrides it), and a subclass's override would silently drop a new keyword,
-        leaving every traced run reporting `was_informed=False`. The flag also is not
+        leaving every traced run misreported. The classification also is not
         `observe_outcome`'s business: competence keys on `was_random` alone.
 
-        `was_informed` is `SamplerChoice.was_informed` carried through
-        `_SkillAttempt.was_informed_choice`. A skill with no continuous parameters, and
-        one executed with `explore=False`, has no `_SkillAttempt` at all and so lands in
-        the fallback pool -- neither random nor informed, which is the honest reading:
-        nothing the sampler learned went into it."""
+        `consultation` is `SamplerChoice.consultation` carried through
+        `_SkillAttempt.consultation`, or `NO_SAMPLER` for a skill with no continuous
+        parameters. It replaces the `was_random`/`was_informed` pair, which could not
+        express the difference between "no sampler was ever consultable" and "consulted
+        and could not discriminate" -- both were `(False, False)`. See
+        `SamplerConsultation` for why those two needed telling apart."""
         self._practice_tallies[skill_name] = self._practice_tallies.get(
             skill_name, SkillPracticeTally()
-        ).with_attempt(success=success, was_random=was_random, was_informed=was_informed)
+        ).with_attempt(success=success, consultation=consultation)
 
     def practice_outcomes(self) -> dict[str, SkillPracticeTally]:
         """Per lifted skill, cumulative over the run; method_runner.py differences them
@@ -648,9 +650,19 @@ class EesMethod(Method):
     def execute_ground_skill(
         self, *, ground_skill: GroundSkill, state: State, explore: bool
     ) -> tuple[LabeledAction, "_SkillAttempt | None"]:
-        """Returns the action plus, when this skill has continuous parameters and
-        we're practicing, the record to label with the outcome once it's
-        observed."""
+        """Returns the action plus, when this skill has continuous parameters, the
+        record to label with the outcome once it's observed.
+
+        A record is built whenever a sampler was consulted -- i.e. exactly when
+        `param_dim > 0` -- and *not* only when practicing. `_SkillAttempt.
+        records_training_row` carries the practicing/exploring distinction instead, so
+        `record is None` means precisely "no sampler exists for this skill" and nothing
+        else. That equivalence is the whole point: it is what lets `observe_pending`
+        tell a parameter-free skill from a sampler that could not discriminate, which
+        `record is None` previously conflated (see `SamplerConsultation`). The extra
+        work in the non-exploring case is one `sampler_input_row` call, which is a pure
+        function of its arguments and draws no randomness, so nothing a run does
+        changes."""
         skill = ground_skill.skill
         if skill.param_dim == 0:
             params: np.ndarray = np.zeros(0)
@@ -669,21 +681,19 @@ class EesMethod(Method):
                 sampler_inputs=sampler_inputs, candidates=candidates, explore=explore
             )
             params = choice.params
-            record = (
-                _SkillAttempt(
-                    skill_name=skill.name,
-                    param_dim=skill.param_dim,
-                    # Snapshot the chosen candidate's row at *this* state -- observing
-                    # it later, after the state has changed, would build a different
-                    # (desynced) row. Same-state, same-params rebuild is deterministic.
-                    sampler_input=self.sampler_input_row(
-                        ground_skill=ground_skill, state=state, params=params
-                    ),
-                    was_random_exploration=choice.was_random,
-                    was_informed_choice=choice.was_informed,
-                )
-                if explore
-                else None
+            record = _SkillAttempt(
+                skill_name=skill.name,
+                param_dim=skill.param_dim,
+                # Snapshot the chosen candidate's row at *this* state -- observing
+                # it later, after the state has changed, would build a different
+                # (desynced) row. Same-state, same-params rebuild is deterministic.
+                sampler_input=self.sampler_input_row(
+                    ground_skill=ground_skill, state=state, params=params
+                ),
+                was_random_exploration=choice.was_random,
+                was_informed_choice=choice.was_informed,
+                consultation=choice.consultation,
+                records_training_row=explore,
             )
 
         action = self.skill_provider.compute_action(
@@ -766,6 +776,17 @@ class _SkillAttempt(BaseModel):
     # greedy-versus-random split in
     # docs/experiment-logs/2026-08-05-tossingroomsplit-throw-rates.md provisional.
     was_informed_choice: bool
+    # The two flags above as the single pool the practice tally files this attempt
+    # into, taken from `SamplerChoice.consultation` so the mapping has one home. Never
+    # `NO_SAMPLER`: a skill with no sampler has no `_SkillAttempt` at all, which is
+    # exactly how `observe_pending` recognizes that case.
+    consultation: SamplerConsultation
+    # Whether this execution's row becomes sampler *training* data. False for a
+    # non-exploring step under `reproduce_predicators_explore_target_only`, which is
+    # the only reason a record now exists that did not before -- the diagnostic tally
+    # wants those attempts classified honestly, while the learning path must keep
+    # ignoring them exactly as it did.
+    records_training_row: bool
 
 
 class _EesEpisode:
@@ -893,11 +914,15 @@ class _EesEpisode:
             # the method actually learns from can never disagree about what happened.
             # Practice only: an evaluation episode observes nothing, and a counter that
             # ticked there would be counting the held-out test set.
+            # `attempt is None` is exactly "this skill declares param_dim == 0", so no
+            # sampler exists for it -- see execute_ground_skill on why that equivalence
+            # now holds unconditionally.
             self._method.record_practice_attempt(
                 skill_name=self._pending.skill.name,
                 success=success,
-                was_random=attempt is not None and attempt.was_random_exploration,
-                was_informed=attempt is not None and attempt.was_informed_choice,
+                consultation=(
+                    SamplerConsultation.NO_SAMPLER if attempt is None else attempt.consultation
+                ),
             )
             # observe_outcome() owns what an epsilon-greedy random attempt does to
             # competence; sampler data below is kept either way.
@@ -906,7 +931,10 @@ class _EesEpisode:
                 success=success,
                 was_random_exploration=attempt is not None and attempt.was_random_exploration,
             )
-            if attempt is not None:
+            # `records_training_row`, not `attempt is not None`: a record now exists for
+            # every sampler-backed execution, but only an exploring one is training
+            # data. This gate is what keeps the learning path byte-identical.
+            if attempt is not None and attempt.records_training_row:
                 self._method.observe_sampler_outcome(
                     skill_name=attempt.skill_name,
                     param_dim=attempt.param_dim,

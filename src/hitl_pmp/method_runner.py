@@ -207,12 +207,20 @@ class MethodRunner:
         # percentage, since a rate over three attempts and a rate over three hundred
         # support very different claims. Printed only by a Method that measures
         # practice, so a non-learning baseline's output is exactly what it was before.
+        # The last two are printed apart rather than as one "fallback" number because
+        # they call for opposite fixes and are otherwise indistinguishable here: a
+        # `param_dim == 0` skill can never be improved by practice at all, while a
+        # sampler that was consulted and could not discriminate points at the success
+        # predicate. See SamplerConsultation.
         for skill_name, tally in metrics.total_practice_outcomes().items():
             print(
                 f"practice {skill_name}: {tally.num_successes}/{tally.num_attempts} succeeded "
                 f"({tally.num_informed_successes}/{tally.num_informed_attempts} informed, "
                 f"{tally.num_random_successes}/{tally.num_random_attempts} epsilon-random, "
-                f"{tally.num_fallback_successes()}/{tally.num_fallback_attempts()} fallback)"
+                f"{tally.num_unparameterized_successes}/{tally.num_unparameterized_attempts} "
+                f"no sampler, "
+                f"{tally.num_uninformative_successes()}/{tally.num_uninformative_attempts()} "
+                f"uninformative)"
             )
 
         if args.output_dir is not None:

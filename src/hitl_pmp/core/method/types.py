@@ -44,7 +44,7 @@ class Rollout(BaseModel):
 
 class SkillPracticeTally(BaseModel):
     """One lifted skill's practice record: how often it was executed during practice,
-    how often that worked, and -- split three ways -- what chose its parameters.
+    how often that worked, and -- split four ways -- what chose its parameters.
 
     **Why this exists.** Two experiments finished on this project unable to say why
     their result happened, for the same reason: a run's `stats.json` recorded *tasks
@@ -56,17 +56,36 @@ class SkillPracticeTally(BaseModel):
     domain-agnostic half of that collector, moved into `core` where every `Method` on
     every domain reaches it.
 
-    **The six numbers, and why six.** An attempt falls in exactly one of three pools,
-    named for `SamplerChoice`'s own two flags:
+    **The four pools.** An attempt falls in exactly one, named for the
+    `SamplerConsultation` value that produced it (see that enum for the runtime states
+    each one corresponds to):
 
     - *random* -- the epsilon-greedy branch fired. A coin flip carries no belief, so
       it is evidence about the domain, never about the sampler.
-    - *informed* -- `was_informed`: the classifier's scores actually ranked the
-      candidates, so these parameters reflect something it learned.
-    - *fallback* -- the remainder: `LearnedSkillSampler.sample`'s uniform draw on a
-      score vector that could not discriminate, plus every parameter-free skill.
-      Recoverable as `num_attempts - num_random_attempts - num_informed_attempts`
-      rather than stored, so the three can never disagree about the total.
+    - *informed* -- the classifier's scores actually ranked the candidates, so these
+      parameters reflect something it learned.
+    - *unparameterized* -- the skill declares `param_dim == 0`, so no sampler was ever
+      constructed for it and none ever could be. Nothing was consultable.
+    - *uninformative* -- the remainder: a sampler existed, was consulted, and could not
+      discriminate, so `LearnedSkillSampler.sample` fell back to a uniform draw.
+      Recoverable as `num_attempts` minus the three stored pools rather than stored, so
+      the four can never disagree about the total.
+
+    **Why the last two are split, which #111 did not do.** They were one pool
+    ("fallback"), and their remedies are opposite. *Unparameterized* means the domain is
+    decomposed wrong: the skill has no learnable parameter, so practice cannot improve
+    it and the parameter has to move or the skills have to fuse. *Uninformative* means
+    the sampler has a parameter and the labels do not separate it: the success predicate
+    is too permissive and has to be tightened. Reported as one number they are
+    indistinguishable from `stats.json`, and only reading the `Method`'s own
+    skill-execution code tells them apart -- which is a code-level argument propping up a
+    measurement, exactly what this instrument exists to remove. That conflation is how
+    a Tossing3D design flaw survived two experiments and ~200 tasks of measurement:
+    `MoveToThrowPose` (`param_dim = 1`, add effect satisfied by every standoff its
+    sampler could draw) and `Toss` (`param_dim = 0`) rendered identically.
+
+    `num_fallback_attempts` is kept, and still means exactly what it did in #111 -- the
+    union of the two -- so nothing that read it changes meaning.
 
     Successes are carried per pool as well as overall, because the pools are what the
     diagnosis turns on and a pooled rate silently averages them. Pooling these two
@@ -75,10 +94,12 @@ class SkillPracticeTally(BaseModel):
     which is its own epsilon-random rate.
 
     **How to read it.** `num_attempts == 0` (i.e. no entry at all) is "never asked".
-    `num_informed_attempts == 0` with `num_attempts > 0` is "asked, but never with a
-    classifier that had anything to say" -- starvation. A healthy `num_informed_attempts`
-    with a low `num_informed_successes` is "asked and missed" -- inability. Those are
-    different diagnoses and only this split tells them apart.
+    `num_unparameterized_attempts == num_attempts` is "there is nothing here to learn"
+    -- a structural fact about the domain, not an outcome. `num_uninformative_attempts`
+    high with `num_informed_attempts == 0` is "asked every time, and the classifier
+    never had anything to say" -- starvation or an uninformative label. A healthy
+    `num_informed_attempts` with a low `num_informed_successes` is "asked and missed" --
+    inability. Those are different diagnoses and only this split tells them apart.
 
     Frozen, and every counter validated against every other, so an inconsistent tally
     cannot be constructed at all -- including by `minus`, which is how a cumulative
@@ -93,37 +114,68 @@ class SkillPracticeTally(BaseModel):
     num_random_successes: int = 0
     num_informed_attempts: int = 0
     num_informed_successes: int = 0
+    num_unparameterized_attempts: int = 0
+    num_unparameterized_successes: int = 0
+
+    def num_uninformative_attempts(self) -> int:
+        """Attempts on which a sampler existed, was consulted, and could not
+        discriminate -- `LearnedSkillSampler.sample`'s uniform draw on a degenerate
+        score vector. The derived remainder, so the pools can never disagree about the
+        total; see this class's docstring for why this one is the remainder."""
+        return (
+            self.num_attempts
+            - self.num_random_attempts
+            - self.num_informed_attempts
+            - self.num_unparameterized_attempts
+        )
+
+    def num_uninformative_successes(self) -> int:
+        return (
+            self.num_successes
+            - self.num_random_successes
+            - self.num_informed_successes
+            - self.num_unparameterized_successes
+        )
 
     def num_fallback_attempts(self) -> int:
         """Attempts that were neither an epsilon-greedy coin flip nor an informed
         draw: the uniform fallback on a degenerate score vector, and every execution
-        of a skill with no continuous parameters to choose. Derived rather than
-        stored -- see this class's docstring."""
+        of a skill with no continuous parameters to choose.
+
+        Unchanged in meaning and value from #111, which is why it is kept -- but it is
+        the *union* of the two pools whose remedies differ, so prefer
+        `num_unparameterized_attempts` and `num_uninformative_attempts` for any
+        diagnosis. Derived rather than stored."""
         return self.num_attempts - self.num_random_attempts - self.num_informed_attempts
 
     def num_fallback_successes(self) -> int:
         return self.num_successes - self.num_random_successes - self.num_informed_successes
 
     def with_attempt(
-        self, *, success: bool, was_random: bool, was_informed: bool
+        self, *, success: bool, consultation: SamplerConsultation
     ) -> SkillPracticeTally:
         """This tally plus one execution, filed into exactly one pool.
 
         The single place an attempt is classified, so no caller can put one in two
-        pools or in none. Returns a new instance (the model is frozen); the counts are
-        six ints, so there is nothing to gain by mutating."""
-        if was_random and was_informed:
-            raise ValueError(
-                "an epsilon-random draw is never informed: it ignores the classifier's "
-                "scores by construction (see SamplerChoice)."
-            )
+        pools or in none -- and taking one `SamplerConsultation` rather than a bundle of
+        booleans is what makes that structural rather than validated: there is no
+        "random and informed" value to reject, and no way to describe an attempt that
+        belongs nowhere. Returns a new instance (the model is frozen); the counts are
+        eight ints, so there is nothing to gain by mutating."""
+        random = consultation is SamplerConsultation.EPSILON_RANDOM
+        informed = consultation is SamplerConsultation.INFORMED
+        unparameterized = consultation is SamplerConsultation.NO_SAMPLER
         return SkillPracticeTally(
             num_attempts=self.num_attempts + 1,
             num_successes=self.num_successes + int(success),
-            num_random_attempts=self.num_random_attempts + int(was_random),
-            num_random_successes=self.num_random_successes + int(was_random and success),
-            num_informed_attempts=self.num_informed_attempts + int(was_informed),
-            num_informed_successes=self.num_informed_successes + int(was_informed and success),
+            num_random_attempts=self.num_random_attempts + int(random),
+            num_random_successes=self.num_random_successes + int(random and success),
+            num_informed_attempts=self.num_informed_attempts + int(informed),
+            num_informed_successes=self.num_informed_successes + int(informed and success),
+            num_unparameterized_attempts=self.num_unparameterized_attempts + int(unparameterized),
+            num_unparameterized_successes=(
+                self.num_unparameterized_successes + int(unparameterized and success)
+            ),
         )
 
     def plus(self, *, other: SkillPracticeTally) -> SkillPracticeTally:
@@ -135,6 +187,12 @@ class SkillPracticeTally(BaseModel):
             num_random_successes=self.num_random_successes + other.num_random_successes,
             num_informed_attempts=self.num_informed_attempts + other.num_informed_attempts,
             num_informed_successes=self.num_informed_successes + other.num_informed_successes,
+            num_unparameterized_attempts=(
+                self.num_unparameterized_attempts + other.num_unparameterized_attempts
+            ),
+            num_unparameterized_successes=(
+                self.num_unparameterized_successes + other.num_unparameterized_successes
+            ),
         )
 
     def minus(self, *, previous: SkillPracticeTally) -> SkillPracticeTally:
@@ -151,6 +209,12 @@ class SkillPracticeTally(BaseModel):
             num_random_successes=self.num_random_successes - previous.num_random_successes,
             num_informed_attempts=self.num_informed_attempts - previous.num_informed_attempts,
             num_informed_successes=(self.num_informed_successes - previous.num_informed_successes),
+            num_unparameterized_attempts=(
+                self.num_unparameterized_attempts - previous.num_unparameterized_attempts
+            ),
+            num_unparameterized_successes=(
+                self.num_unparameterized_successes - previous.num_unparameterized_successes
+            ),
         )
 
     @model_validator(mode="after")
@@ -162,6 +226,8 @@ class SkillPracticeTally(BaseModel):
             "num_random_successes": self.num_random_successes,
             "num_informed_attempts": self.num_informed_attempts,
             "num_informed_successes": self.num_informed_successes,
+            "num_unparameterized_attempts": self.num_unparameterized_attempts,
+            "num_unparameterized_successes": self.num_unparameterized_successes,
         }
         negative = {name: value for name, value in counts.items() if value < 0}
         if negative:
@@ -180,16 +246,86 @@ class SkillPracticeTally(BaseModel):
                 f"informed successes cannot exceed informed attempts: got "
                 f"{self.num_informed_successes}/{self.num_informed_attempts}"
             )
-        # The two named pools are disjoint subsets of the attempts, so together they
-        # can at most account for all of them; the slack is the uniform-fallback pool.
-        # An overflow means one execution was filed into two pools.
-        if self.num_random_attempts + self.num_informed_attempts > self.num_attempts:
+        if self.num_unparameterized_successes > self.num_unparameterized_attempts:
             raise ValueError(
-                f"epsilon-random ({self.num_random_attempts}) plus informed "
-                f"({self.num_informed_attempts}) attempts exceed the "
-                f"{self.num_attempts} attempts they are drawn from"
+                f"unparameterized successes cannot exceed unparameterized attempts: got "
+                f"{self.num_unparameterized_successes}/{self.num_unparameterized_attempts}"
+            )
+        # The three stored pools are disjoint subsets of the attempts, so together they
+        # can at most account for all of them; the slack is the uninformative pool.
+        # An overflow means one execution was filed into two pools.
+        stored_attempts = (
+            self.num_random_attempts
+            + self.num_informed_attempts
+            + self.num_unparameterized_attempts
+        )
+        if stored_attempts > self.num_attempts:
+            raise ValueError(
+                f"epsilon-random ({self.num_random_attempts}), informed "
+                f"({self.num_informed_attempts}) and unparameterized "
+                f"({self.num_unparameterized_attempts}) attempts sum to {stored_attempts}, "
+                f"which exceeds the {self.num_attempts} attempts they are drawn from"
+            )
+        stored_successes = (
+            self.num_random_successes
+            + self.num_informed_successes
+            + self.num_unparameterized_successes
+        )
+        if stored_successes > self.num_successes:
+            raise ValueError(
+                f"epsilon-random ({self.num_random_successes}), informed "
+                f"({self.num_informed_successes}) and unparameterized "
+                f"({self.num_unparameterized_successes}) successes sum to {stored_successes}, "
+                f"which exceeds the {self.num_successes} successes they are drawn from"
+            )
+        # The derived pool needs its own check: none of the constraints above imply it.
+        # `num_attempts=1, num_successes=1, num_random_attempts=1` satisfies every one of
+        # them while leaving the remainder at 1 success out of 0 attempts -- a rate above
+        # 1.0 that #111 would have serialized without complaint, and the exact class of
+        # silent disagreement storing a fourth pool instead of deriving it would allow.
+        if self.num_uninformative_successes() > self.num_uninformative_attempts():
+            raise ValueError(
+                f"uninformative successes cannot exceed uninformative attempts: got "
+                f"{self.num_uninformative_successes()}/{self.num_uninformative_attempts()} "
+                f"as the remainder of {self.num_successes}/{self.num_attempts}"
             )
         return self
+
+
+class SamplerConsultation(Enum):
+    """What, if anything, a learned parameter sampler contributed to one skill
+    execution -- the pool `SkillPracticeTally` files that execution into.
+
+    An enum rather than the `(was_random, was_informed)` pair #111 threaded through,
+    because the pair could express neither of the two states that actually needed
+    telling apart: both rendered as `(False, False)`. Four values, each of which the
+    runtime genuinely produces, and no fifth invented for symmetry:
+
+    - `NO_SAMPLER` -- the skill declares `param_dim == 0`. No sampler was ever
+      constructed for it, so none could be consulted and none ever will be. There is
+      nothing here for practice to improve; if this skill is failing, the fix is to the
+      domain's decomposition, not to the sampler.
+    - `UNINFORMATIVE` -- a sampler exists and was consulted, and its scores did not
+      discriminate among the candidates, so `LearnedSkillSampler.sample` took
+      deviation 6's uniform draw. Reached by an unfitted sampler (all 0.5), by the
+      single-class shortcut (all 0.0 or all 1.0), and by any fitted classifier whose
+      maximum is attained by more than `uninformative_tie_fraction` of the candidates.
+      If this skill is failing, the fix is to the labels -- most often a success
+      predicate so permissive that every draw is a positive.
+    - `INFORMED` -- the scores ranked the candidates and the argmax was taken, so the
+      parameters reflect something the classifier learned.
+    - `EPSILON_RANDOM` -- the epsilon-greedy branch fired. A coin flip, carrying no
+      belief about the sampler.
+
+    `NO_SAMPLER` is a property of the *skill*; the other three are properties of one
+    *draw*, so a single skill's tally mixes the last three freely but is either entirely
+    `NO_SAMPLER` or contains none at all.
+    """
+
+    NO_SAMPLER = "no_sampler"
+    UNINFORMATIVE = "uninformative"
+    INFORMED = "informed"
+    EPSILON_RANDOM = "epsilon_random"
 
 
 class SetupCommand(BaseModel):

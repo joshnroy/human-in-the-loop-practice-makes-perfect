@@ -155,6 +155,33 @@ def test_the_printed_table_reports_counts_never_bare_percentages(
     assert "%" not in out
 
 
+def test_the_table_separates_a_parameter_free_skill_from_an_uninformative_sampler(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The Tossing3D pair, as it would now print. `Toss` has no sampler and `MoveToThrow`
+    has one that never discriminated; #111 printed both as `0/9` fallback and an operator
+    reading `stats.json` had no way to tell that the two need opposite fixes."""
+    summary = {
+        "ees": [
+            _metrics(
+                windows=[
+                    {
+                        "Toss": SkillPracticeTally(num_attempts=9, num_unparameterized_attempts=9),
+                        "MoveToThrow": SkillPracticeTally(num_attempts=9),
+                    }
+                ]
+            )
+        ]
+    }
+    PracticeDiagnostics.print_table(summary=summary)
+    lines = {line.split()[0]: line for line in capsys.readouterr().out.splitlines() if line.strip()}
+
+    assert "no sampler" in lines["skill"] and "uninformative" in lines["skill"]
+    # Both are 0/9 overall and 0/9 fallback; only the two new columns tell them apart.
+    assert lines["Toss"].endswith("0/9             0/0")
+    assert lines["MoveToThrow"].endswith("0/0             0/9")
+
+
 def test_a_method_that_measures_no_practice_says_so_rather_than_printing_an_empty_table(
     *, capsys: pytest.CaptureFixture[str]
 ) -> None:

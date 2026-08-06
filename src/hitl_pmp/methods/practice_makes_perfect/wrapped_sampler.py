@@ -139,6 +139,8 @@ import torch
 from pydantic import BaseModel, ConfigDict, PrivateAttr, model_validator
 from torch import nn
 
+from hitl_pmp.core.method.types import SamplerConsultation
+
 
 class SingleThreadedTorch:
     """Runs a block of torch arithmetic at exactly one intra-op thread.
@@ -631,6 +633,21 @@ class SamplerChoice(BaseModel):
     params: np.ndarray
     was_random: bool
     was_informed: bool
+
+    @property
+    def consultation(self) -> SamplerConsultation:
+        """These two flags as the single pool `SkillPracticeTally` files the attempt
+        into. The one place the mapping lives, so the tally and the flags can never
+        drift apart.
+
+        Only three of the four `SamplerConsultation` values are reachable from here:
+        `NO_SAMPLER` describes a skill that never reaches `sample` at all, so its
+        caller supplies it rather than this property."""
+        if self.was_random:
+            return SamplerConsultation.EPSILON_RANDOM
+        if self.was_informed:
+            return SamplerConsultation.INFORMED
+        return SamplerConsultation.UNINFORMATIVE
 
     @model_validator(mode="after")
     def _an_epsilon_random_draw_is_never_informed(self) -> "SamplerChoice":
