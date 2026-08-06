@@ -124,6 +124,63 @@ reused client id.
 it, and CI (which never installs the extra) skips only the simulator-backed tests. See
 that folder's own README for what is upstream's and what is ours.
 
+### Contributing upstream to `kindergarden` / `kinder-baselines`
+
+Neither repo has a `CONTRIBUTING.md` or a PR template, and **both `.gitignore` `CLAUDE.md`**
+— `kinder-baselines` since its initial prpl-mono extraction — so that convention is
+deliberate and their conventions live here instead. All of this is measured from their
+trees, not assumed.
+
+**Gates, and how they mislead.** Line length 88 (black, docformatter; pylint's
+`max-line-length` is 89 but black is the authority); isort profile black with
+`multi_line_output = 2` and `split_on_trailing_comma`; mypy `strict_equality` /
+`disallow_untyped_calls` / `warn_unreachable`. CI is four jobs on `kinder-baselines`
+(`autoformat`, `linting`, `static-type-checking`, `unit-tests`) and five on `kindergarden`
+(plus `notebooks`). Three traps:
+
+- **`run_autoformat.sh` reformats but never asserts a clean diff**, and CI runs that same
+  script — so unformatted code does not fail CI. Running it repo-wide currently rewrites
+  ~28 unrelated files from tool-version drift; format your own and revert the rest.
+- **The pylint plugin path is per-package**: point `PYTHONPATH` at the package directory,
+  since each package carries its own `pylint_plugins/` copy. With the wrong one pylint
+  prints `E0013` and **silently runs without the plugin, still reporting 10.00/10**. That
+  has already produced a meaningless pass here.
+- **`np.random` is banned** by that plugin — `default_rng` and `Generator` are
+  allow-listed.
+
+**`gh pr edit` fails on both repos** with a Projects-classic GraphQL error. Use
+`gh api -X PATCH .../pulls/<n> -F body=@file` and read `.body` back to confirm.
+
+**Titles are `<package>: <lowercase imperative>`;** bodies are `## Summary` / `## Test plan`
+(`- [x]` with the exact commands) / `## Followup`. Merged precedent is terse — their PR #66
+was two new files, +180 src / +214 test.
+
+**`kindergarden` specifics.** Dynamic3D env registration is **filesystem-derived**:
+`_register_dynamic3d()` walks `tasks/`, treating each subdirectory as a class and each JSON
+as a variant, so dropping a JSON in registers an environment with no code change — and a
+malformed one raises out of `register_all_environments()` and breaks *every* environment.
+`scripts/docs/generate_env_docs.py` **will not notice a task-JSON change**: it diffs against
+`origin/main` but then matches on `inspect.getfile(env.unwrapped.__class__)`, the env class's
+module file, so JSON, asset and scene edits go stale **silently** — regenerate with
+`--env <Name>` or `--force`. The MimicLabs download (~2 GB unpacked) fires on `kinder.make()`
+via `_ensure_assets_for_env`, not on first `reset()`, and is gated by
+`DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD`, which CI sets. Test files covering a TidyBot3D
+task use a `test_tidybot3d_*` prefix; unit-test files are instead named for the module they
+test. Tests call `env._check_goals()` with an inline `# pylint: disable=protected-access` at
+the call site rather than wrapping it. Assert messages are **not** a convention there
+(37/710).
+
+**`kinder-baselines` specifics.** The env-model dispatcher string must equal the module
+filename stem **including case** (`tidybot3d_sweep3D`). `invalid-name` and the `[DESIGN]`
+limits are disabled, so CapWords locals are idiomatic, and `duplicate-code` is off or set to
+`min-similarity-lines=100` — a near-copy env model is the accepted pattern. Selective CI
+falls back to all ten packages whenever a change touches `.github/`, `scripts/`, a root
+`run_*.sh`, or anything outside a package. **black and isort actively disagree** on
+`from X import (Y as Z,)`, live on `main` today. Two runtime facts worth knowing before
+debugging a planner: `TrajectorySamplingFailure` is **not an `Exception` subclass**, so
+`except Exception` misses every sampling failure; and refinement requires
+`final_abstract_state == ns`, **exact set equality**, not "the add effects hold".
+
 ## Commands
 
 ```bash
