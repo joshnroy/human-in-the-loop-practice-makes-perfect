@@ -12,8 +12,8 @@ not rest on, so it is asserted here directly, through the real `EesMethod`.
 identical body against `environments/tossingroom`, whose single `Throw` name makes both
 kinds land in one sampler with pooled data. It fails if the separation assertions were
 vacuously true of any domain, and it also documents the transfer channel this domain
-removes: in Tossing Room a trash throw's `(kind, target_force)` row trains the very
-classifier a recycling throw is later scored by.
+removes: in Tossing Room a trash throw's row trains the very classifier a recycling throw
+is later scored by.
 
 Nothing here runs Fast Downward: `execute_ground_skill` + `observe_sampler_outcome` is
 the whole path from "a skill was practiced" to "a sampler was trained", so driving those
@@ -143,7 +143,16 @@ class TestTheControl:
         env = TossingRoomEnvironment()
         method = EesMethod(env=env, skill_provider=TossingRoomSkillProvider(env=env), seed=0)
         rooms = env.get_rooms()
-        state = env.build_initial_state(trash_target_force=0.7, recycling_target_force=0.3)
+        # The two kinds differ only in item weight here, so a pooled row is identifiable
+        # by content rather than only by count. (`weight` is one of the two observable
+        # CAUSES of the required throw force; it replaced the `target_force` feature that
+        # used to *be* that force.)
+        state = env.build_initial_state(
+            trash_weight=0.7,
+            recycling_weight=0.3,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+        )
         trash_throw = GroundSkill(
             skill=TossingRoomSkills.THROW,
             objects=(env.robot, env.trash, env.trash_bin, rooms[env.trash_bin_room]),

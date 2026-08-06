@@ -1,3 +1,5 @@
+import pytest
+
 from hitl_pmp.core.problem.tasks.types import Goal
 from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
 from hitl_pmp.environments.tossingroom.predicates import BIN_EMPTY, ITEM_IN_BIN
@@ -28,7 +30,9 @@ def _empty_goal(*, state) -> Goal:
 
 
 def test_recycling_oracle_picks_up_first_when_hand_is_empty() -> None:
-    state = _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = _ENV.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     labeled = SkillOraclePolicy.get_labeled_action(
         state=state, env=_ENV, goal=_recycling_goal(state=state)
     )
@@ -38,7 +42,9 @@ def test_recycling_oracle_picks_up_first_when_hand_is_empty() -> None:
 
 
 def test_recycling_oracle_steps_left_toward_the_bin_room_while_holding() -> None:
-    state = _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = _ENV.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     state.set(
         obj=_ROBOT, feature_name="holding", feature_val=float(TossingRoomEnvironment.RECYCLING_KIND)
     )
@@ -51,8 +57,19 @@ def test_recycling_oracle_steps_left_toward_the_bin_room_while_holding() -> None
     assert labeled.label.startswith("MoveRoom(")
 
 
-def test_recycling_oracle_throws_with_the_exact_target_force_once_in_the_bin_room() -> None:
-    state = _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.73)
+def test_recycling_oracle_throws_with_the_exact_required_force_once_in_the_bin_room() -> None:
+    """The oracle no longer copies a `target_force` feature out of the state -- there is
+    none. It reads the two CAUSES (the bin's throw_distance, the item's weight) and
+    applies `TossingRoomEnvironment.required_force`, the coefficients of which are
+    privileged knowledge no learner has. Distance 2.5 and weight 1.25 make the required
+    force 0.5 + 0.2 * 0.5 + 0.4 * 0.25 = 0.70, a value equal to neither cause, so a
+    passthrough bug could not produce it."""
+    state = _ENV.build_initial_state(
+        trash_weight=1.0,
+        recycling_weight=1.25,
+        trash_bin_distance=2.0,
+        recycling_bin_distance=2.5,
+    )
     state.set(
         obj=_ROBOT, feature_name="holding", feature_val=float(TossingRoomEnvironment.RECYCLING_KIND)
     )
@@ -61,14 +78,20 @@ def test_recycling_oracle_throws_with_the_exact_target_force_once_in_the_bin_roo
         state=state, env=_ENV, goal=_recycling_goal(state=state)
     )
     assert labeled.action[0] == TossingRoomEnvironment.SKILL_THROW
-    assert labeled.action[2] == 0.73  # exactly the known target -> always within tolerance
+    # Exactly the required force -> always within tolerance, on any task.
+    assert labeled.action[2] == pytest.approx(0.70)
     assert labeled.label.startswith("Throw(")
-    assert "params=[0.73]" in labeled.label
+    assert "params=[0.7]" in labeled.label
 
 
 def _both_bins_full():
     return _ENV.build_initial_state(
-        trash_target_force=0.5, recycling_target_force=0.5, recycling_count=1, trash_count=1
+        trash_weight=1.0,
+        recycling_weight=1.0,
+        trash_bin_distance=2.0,
+        recycling_bin_distance=2.0,
+        recycling_count=1,
+        trash_count=1,
     )
 
 

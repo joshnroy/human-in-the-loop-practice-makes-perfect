@@ -1,5 +1,5 @@
 """Post-run analysis for the Tossing Room EES bring-up: does the learned sampler
-actually move `Throw`'s force onto each task's own `target_force`?
+actually move `Throw`'s force onto the force each grounding requires?
 
 Reads only already-produced output (CLAUDE.md's analysis/ convention -- never runs a
 simulation): one JSON per arm as written by `scripts/tossingroom_throw_traces.py`.
@@ -8,7 +8,7 @@ A success-rate curve alone cannot answer this domain's question, which is why th
 figure exists next to `tossingroom_comparison.py`. `Throw` is the only stochastic
 skill. Both panels here are horizon-independent:
 
-* **left** -- median |chosen force - target_force| over the greedy (non-epsilon)
+* **left** -- median |chosen force - required force| over the greedy (non-epsilon)
   throws of each evaluation sweep, against the `throw_tolerance` band a throw has to
   land inside. This is the learned quantity itself, with no retry accounting in it.
   It carries the whole result.
@@ -132,7 +132,7 @@ class TossingRoomThrowConvergence:
             fontsize=8,
             color="tab:green",
         )
-        axes[0].set_ylabel("median |force − target_force|")
+        axes[0].set_ylabel("median |force − required force|")
         axes[0].set_title("The learned quantity", fontsize=10)
         axes[1].axhline(1.0, color="grey", linewidth=1.2, linestyle=(0, (2, 3)))
         axes[1].text(
