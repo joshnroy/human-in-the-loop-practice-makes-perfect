@@ -4,13 +4,26 @@
 asked and how often it came back empty).
 
 **The question this is for.** A learning curve says a method scored 21/100. It cannot
-say *why*, and the two candidate answers need different fixes: the samplers were never
+say *why*, and the candidate answers need different fixes: the samplers were never
 given enough labels (starvation -- buy more transitions), or they have the labels and
-cannot fit them (inability -- change the representation). Those look identical in
-`evaluations` and different here. Read the per-skill panels as: no line at all means the
-skill was never practiced; a line whose *informed* attempts stay at zero means the
-sampler was asked but never had a classifier that could rank its candidates; a healthy
-informed count with a flat informed success count means it was asked and missed.
+cannot fit them (inability -- change the representation), or there was never a parameter
+to learn at all (the domain is decomposed wrong). Those look identical in `evaluations`
+and different here. Read the per-skill panels as: no line at all means the skill was
+never practiced; a line whose *informed* attempts stay at zero means the sampler was
+asked but never had a classifier that could rank its candidates; a healthy informed
+count with a flat informed success count means it was asked and missed.
+
+**The two dashed lines are the actionable distinction**, and they are the reason this
+script changed after #111. *Never consultable* (dashed grey) counts executions of a
+skill declaring `param_dim == 0`: no sampler exists, none can, and no amount of practice
+will improve it -- the fix is to the domain's decomposition, moving the parameter or
+fusing the skills. *Consulted, uninformative* (dotted purple) counts executions where a
+sampler existed, was asked, and could not discriminate -- the fix is to the success
+predicate, which is admitting parameters it should reject. #111 reported both as one
+"fallback" number, which is how a Tossing3D design flaw survived two experiments: `Toss`
+(`param_dim = 0`) and `MoveToThrowPose` (`param_dim = 1`, `NearBin` satisfied by every
+standoff its sampler could draw) rendered identically. A panel that is entirely dashed
+grey needs a different person to look at it than one that is entirely dotted purple.
 
 Domain- and method-agnostic: it keys on nothing but the lifted skill names a run
 happens to record, so the same script serves Light Switch, both Tossing Rooms, Ball-Ring
@@ -110,16 +123,30 @@ class PracticeDiagnostics:
     def per_seed_series(*, runs: Sequence[Metrics], skill_name: str, field: str) -> list[list[int]]:
         """One per-window series per seed, for one lifted skill and one counter.
 
+        `field` names either a stored counter or a derived one -- the derived pools are
+        zero-argument methods on `SkillPracticeTally`, so a callable attribute is called
+        rather than plotted as itself. Resolving both here means a caller names a pool
+        without having to know which of the two it is, which is the point of deriving
+        one pool rather than storing it.
+
         A seed that never practiced the skill still contributes a series -- of zeros,
         the same length as its own bucket list -- because "this seed never touched it"
         is data, and dropping it would quietly shrink the denominator of the mean."""
         series: list[list[int]] = []
         for metrics in runs:
             series.append([
-                getattr(window.get(skill_name, SkillPracticeTally()), field)
+                PracticeDiagnostics.read_pool(
+                    tally=window.get(skill_name, SkillPracticeTally()), field=field
+                )
                 for window in metrics.practice_outcomes_per_cycle
             ])
         return series
+
+    @staticmethod
+    def read_pool(*, tally: SkillPracticeTally, field: str) -> int:
+        """One counter off a tally, whether it is stored or derived."""
+        value = getattr(tally, field)
+        return int(value() if callable(value) else value)
 
     @staticmethod
     def mean_series(*, series: Sequence[Sequence[int]]) -> list[float]:
@@ -157,18 +184,28 @@ class PracticeDiagnostics:
             if not pooled:
                 print("practice: nothing recorded (this Method does not measure practice)")
                 continue
+            # The four pools are printed side by side, and "fallback" is deliberately
+            # not among them: it is their union, and printing a union beside its parts
+            # invites reading one number twice. Every row's four pools sum to its total.
             header = (
                 f"{'skill':<22}{'succeeded':>14}{'informed':>14}"
-                f"{'epsilon-random':>18}{'fallback':>14}"
+                f"{'epsilon-random':>18}{'no sampler':>14}{'uninformative':>16}"
             )
             print(header)
             for name, tally in pooled.items():
+                unparameterized = (
+                    f"{tally.num_unparameterized_successes}/{tally.num_unparameterized_attempts}"
+                )
+                uninformative = (
+                    f"{tally.num_uninformative_successes()}/{tally.num_uninformative_attempts()}"
+                )
                 print(
                     f"{name:<22}"
                     f"{f'{tally.num_successes}/{tally.num_attempts}':>14}"
                     f"{f'{tally.num_informed_successes}/{tally.num_informed_attempts}':>14}"
                     f"{f'{tally.num_random_successes}/{tally.num_random_attempts}':>18}"
-                    f"{f'{tally.num_fallback_successes()}/{tally.num_fallback_attempts()}':>14}"
+                    f"{unparameterized:>14}"
+                    f"{uninformative:>16}"
                 )
 
     @staticmethod
@@ -181,15 +218,20 @@ class PracticeDiagnostics:
         color: str,
         label: str,
         width: float,
+        linestyle: str = "-",
     ) -> None:
         """One counter for one skill: a faint line per seed, the mean on top.
 
         The per-seed lines are the point of the panel rather than decoration -- see the
         module docstring on why a mean alone can describe nothing that happened.
 
-        `width` descends across the four series a caller draws, so a skill whose
-        successes equal its attempts (every deterministic skill) shows both rather than
-        hiding one exactly under the other."""
+        `width` descends across the series a caller draws, so a skill whose successes
+        equal its attempts (every deterministic skill) shows both rather than hiding one
+        exactly under the other. `linestyle` separates the two fallback pools from the
+        four solid series for a stronger reason than crowding: they answer a different
+        question (why was nothing learned) than the counts above them (how much was
+        tried), and they are told apart from each other at a glance, which is what the
+        reader has to act on."""
         series = PracticeDiagnostics.per_seed_series(runs=runs, skill_name=skill_name, field=field)
         for metrics, entry in zip(runs, series, strict=True):
             transitions = PracticeDiagnostics.window_transitions(metrics=metrics)
@@ -199,7 +241,14 @@ class PracticeDiagnostics:
                 PracticeDiagnostics.practice_window_count(metrics=metrics),
             )
             if length:
-                axis.plot(transitions[:length], entry[:length], color=color, alpha=0.18, lw=1)
+                axis.plot(
+                    transitions[:length],
+                    entry[:length],
+                    color=color,
+                    alpha=0.18,
+                    lw=1,
+                    ls=linestyle,
+                )
         mean = PracticeDiagnostics.mean_series(series=series)
         if mean and runs:
             transitions = PracticeDiagnostics.window_transitions(metrics=runs[0])
@@ -213,6 +262,7 @@ class PracticeDiagnostics:
                 mean[:length],
                 color=color,
                 lw=width,
+                ls=linestyle,
                 marker="o",
                 ms=3,
                 label=label,
@@ -252,11 +302,28 @@ class PracticeDiagnostics:
                     axis.set_title(f"{method}: planning calls per window ({len(runs)} seeds)")
                     axis.set_ylabel("planner calls\n(failed / attempted)")
                 else:
-                    for field, color, label, width in (
-                        ("num_attempts", "tab:blue", "attempts", 3.2),
-                        ("num_successes", "tab:green", "successes", 2.4),
-                        ("num_informed_attempts", "tab:orange", "informed attempts", 1.8),
-                        ("num_informed_successes", "tab:red", "informed successes", 1.2),
+                    for field, color, label, width, linestyle in (
+                        ("num_attempts", "tab:blue", "attempts", 3.2, "-"),
+                        ("num_successes", "tab:green", "successes", 2.4, "-"),
+                        ("num_informed_attempts", "tab:orange", "informed attempts", 1.8, "-"),
+                        ("num_informed_successes", "tab:red", "informed successes", 1.2, "-"),
+                        # The actionable split -- see the module docstring. Dashed and
+                        # dotted so they read as a different kind of quantity from the
+                        # four above, and as different from each other.
+                        (
+                            "num_unparameterized_attempts",
+                            "tab:gray",
+                            "never consultable (param_dim 0)",
+                            2.0,
+                            "--",
+                        ),
+                        (
+                            "num_uninformative_attempts",
+                            "tab:purple",
+                            "consulted, uninformative",
+                            2.0,
+                            ":",
+                        ),
                     ):
                         PracticeDiagnostics._draw_panel(
                             axis=axis,
@@ -266,6 +333,7 @@ class PracticeDiagnostics:
                             color=color,
                             label=label,
                             width=width,
+                            linestyle=linestyle,
                         )
                     axis.set_title(f"{method}: {name} practice per window ({len(runs)} seeds)")
                     axis.set_ylabel("executions per window\n(count, not a rate)")

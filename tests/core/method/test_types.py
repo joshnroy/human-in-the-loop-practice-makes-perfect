@@ -6,6 +6,7 @@ from hitl_pmp.core.method.types import (
     GroundSkill,
     LiftedAtom,
     Rollout,
+    SamplerConsultation,
     SetupCommand,
     SetupCommandTarget,
     Skill,
@@ -243,35 +244,74 @@ def test_a_fresh_practice_tally_is_all_zeros() -> None:
     assert tally.num_random_successes == 0
     assert tally.num_informed_attempts == 0
     assert tally.num_informed_successes == 0
+    assert tally.num_unparameterized_attempts == 0
+    assert tally.num_unparameterized_successes == 0
 
 
 def test_with_attempt_files_one_execution_into_exactly_one_pool() -> None:
-    """Every attempt lands in exactly one of random / informed / fallback, which is
-    what makes the three recoverable from six numbers: fallback is the remainder."""
+    """Every attempt lands in exactly one of the four pools, which is what makes all
+    four recoverable from eight numbers: uninformative is the remainder."""
     tally = SkillPracticeTally()
-    tally = tally.with_attempt(success=True, was_random=True, was_informed=False)
-    tally = tally.with_attempt(success=False, was_random=False, was_informed=True)
-    tally = tally.with_attempt(success=True, was_random=False, was_informed=False)
-    assert (tally.num_successes, tally.num_attempts) == (2, 3)
+    tally = tally.with_attempt(success=True, consultation=SamplerConsultation.EPSILON_RANDOM)
+    tally = tally.with_attempt(success=False, consultation=SamplerConsultation.INFORMED)
+    tally = tally.with_attempt(success=True, consultation=SamplerConsultation.UNINFORMATIVE)
+    tally = tally.with_attempt(success=False, consultation=SamplerConsultation.NO_SAMPLER)
+    assert (tally.num_successes, tally.num_attempts) == (2, 4)
     assert (tally.num_random_successes, tally.num_random_attempts) == (1, 1)
     assert (tally.num_informed_successes, tally.num_informed_attempts) == (0, 1)
-    assert tally.num_fallback_attempts() == 1
+    assert (tally.num_unparameterized_successes, tally.num_unparameterized_attempts) == (0, 1)
+    assert (tally.num_uninformative_successes(), tally.num_uninformative_attempts()) == (1, 1)
+    # The #111 pool, unchanged in meaning: the union of the last two.
+    assert tally.num_fallback_attempts() == 2
     assert tally.num_fallback_successes() == 1
 
 
-def test_an_attempt_cannot_be_both_random_and_informed() -> None:
-    """SamplerChoice already forbids the combination; recording it would silently
-    double-count one execution into two pools."""
-    with pytest.raises(ValueError, match="never informed"):
-        SkillPracticeTally().with_attempt(success=True, was_random=True, was_informed=True)
+def test_the_four_pools_always_reconcile_against_the_total() -> None:
+    """The invariant that makes the instrument trustworthy: whatever sequence of
+    consultations arrives, the three stored pools plus the derived remainder account
+    for every attempt and every success exactly once. Checked over all four values so
+    no future pool can be added without either closing or failing this."""
+    tally = SkillPracticeTally()
+    for index, consultation in enumerate(SamplerConsultation):
+        for _ in range(index + 1):
+            tally = tally.with_attempt(success=index % 2 == 0, consultation=consultation)
+    assert (
+        tally.num_random_attempts
+        + tally.num_informed_attempts
+        + tally.num_unparameterized_attempts
+        + tally.num_uninformative_attempts()
+        == tally.num_attempts
+        == 1 + 2 + 3 + 4
+    )
+    assert (
+        tally.num_random_successes
+        + tally.num_informed_successes
+        + tally.num_unparameterized_successes
+        + tally.num_uninformative_successes()
+        == tally.num_successes
+    )
 
 
 def test_minus_differences_two_cumulative_readings() -> None:
-    earlier = SkillPracticeTally(num_attempts=4, num_successes=1, num_informed_attempts=2)
-    later = SkillPracticeTally(num_attempts=10, num_successes=6, num_informed_attempts=5)
-    assert later.minus(previous=earlier) == SkillPracticeTally(
-        num_attempts=6, num_successes=5, num_informed_attempts=3
+    earlier = SkillPracticeTally(
+        num_attempts=4, num_successes=1, num_informed_attempts=2, num_informed_successes=1
     )
+    later = SkillPracticeTally(
+        num_attempts=10, num_successes=6, num_informed_attempts=5, num_informed_successes=4
+    )
+    assert later.minus(previous=earlier) == SkillPracticeTally(
+        num_attempts=6, num_successes=5, num_informed_attempts=3, num_informed_successes=3
+    )
+
+
+def test_minus_and_plus_carry_the_unparameterized_pool() -> None:
+    """A field the windowing arithmetic forgot would read as zero in every per-window
+    record while the run total was right -- the quietest possible way to lose it."""
+    earlier = SkillPracticeTally(num_attempts=2, num_unparameterized_attempts=2)
+    later = SkillPracticeTally(num_attempts=7, num_unparameterized_attempts=5)
+    window = later.minus(previous=earlier)
+    assert window.num_unparameterized_attempts == 3
+    assert window.plus(other=earlier).num_unparameterized_attempts == 5
 
 
 def test_a_counter_that_went_backwards_is_rejected_rather_than_clamped() -> None:
@@ -295,10 +335,24 @@ def test_more_successes_than_attempts_is_rejected() -> None:
 
 
 def test_more_pooled_attempts_than_attempts_is_rejected() -> None:
-    """random + informed can at most account for every attempt; the remainder is the
-    uniform-fallback pool, so an overflow means one execution was filed twice."""
+    """The stored pools can at most account for every attempt; the remainder is the
+    uninformative pool, so an overflow means one execution was filed twice."""
     with pytest.raises(ValidationError):
         SkillPracticeTally(num_attempts=2, num_random_attempts=2, num_informed_attempts=1)
+    with pytest.raises(ValidationError):
+        SkillPracticeTally(num_attempts=2, num_random_attempts=1, num_unparameterized_attempts=2)
+
+
+def test_the_derived_pool_cannot_succeed_more_often_than_it_was_attempted() -> None:
+    """The hole #111 left open. Every one of its checks passes on this tally -- one
+    attempt, one success, both filed as epsilon-random -- while the derived remainder
+    comes out at 1 success from 0 attempts, a rate above 1.0 that would have serialized
+    into `stats.json` without complaint. Deriving a pool only closes the arithmetic if
+    the derived values are validated too."""
+    with pytest.raises(ValidationError, match="uninformative successes"):
+        SkillPracticeTally(
+            num_attempts=1, num_successes=1, num_random_attempts=1, num_random_successes=0
+        )
 
 
 def test_a_pool_cannot_succeed_more_often_than_it_was_attempted() -> None:

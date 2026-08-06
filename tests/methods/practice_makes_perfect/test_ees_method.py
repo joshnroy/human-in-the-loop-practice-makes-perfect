@@ -3,7 +3,7 @@ import math
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.environment.types import Object
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.ballring.environment import BallRingEnvironment
@@ -997,6 +997,8 @@ def test_an_epsilon_random_attempt_is_recorded_in_its_own_pool() -> None:
         sampler_input=[1.0, 0.0],
         was_random_exploration=True,
         was_informed_choice=False,
+        consultation=SamplerConsultation.EPSILON_RANDOM,
+        records_training_row=True,
     )
 
     episode.observe_pending(true_atoms=turn_on.add_effects)
@@ -1021,6 +1023,8 @@ def test_an_informed_attempt_is_recorded_in_its_own_pool() -> None:
         sampler_input=[1.0, 0.0],
         was_random_exploration=False,
         was_informed_choice=True,
+        consultation=SamplerConsultation.INFORMED,
+        records_training_row=True,
     )
 
     episode.observe_pending(true_atoms=frozenset())
@@ -1045,6 +1049,8 @@ def test_a_uniform_fallback_draw_is_neither_random_nor_informed() -> None:
         sampler_input=[1.0, 0.0],
         was_random_exploration=False,
         was_informed_choice=False,
+        consultation=SamplerConsultation.UNINFORMATIVE,
+        records_training_row=True,
     )
 
     episode.observe_pending(true_atoms=turn_on.add_effects)
@@ -1054,6 +1060,64 @@ def test_a_uniform_fallback_draw_is_neither_random_nor_informed() -> None:
     assert tally.num_random_attempts == 0
     assert tally.num_informed_attempts == 0
     assert tally.num_fallback_attempts() == 1
+
+
+def test_a_parameter_free_skill_tallies_apart_from_an_uninformative_sampler() -> None:
+    """The Tossing3D flaw, reduced to its smallest reproduction.
+
+    `Toss` (`param_dim = 0`, no sampler ever constructed) and `MoveToThrowPose`
+    (`param_dim = 1`, a sampler consulted on every execution that could never
+    discriminate) both rendered as pure fallback, so `stats.json` could not tell them
+    apart and only reading `execute_ground_skill` could. Their remedies are opposite:
+    the first means the domain is decomposed wrong and the parameter must move, the
+    second means the success predicate is uninformative and must be tightened.
+
+    Light Switch carries the same pair -- `MoveRobot` is `param_dim = 0`, `TurnOnLight`
+    is `param_dim = 1` -- so the discrimination is testable without a simulator. Both
+    executions here take `LearnedSkillSampler.sample`'s uniform draw or no draw at all;
+    the tallies must still differ."""
+    method, env = _build()
+    tasks = LightSwitchTasks(env=env, seed=0)
+    state = tasks.sample_train_task().initial_state
+    move = _move_robot_backwards(env=env)
+    turn_on = _turn_on_light(env=env)
+
+    # Fit TurnOnLight's sampler on a single class. `MlpBinaryClassifier` takes its
+    # single-class shortcut, every candidate scores identically, and `sample` therefore
+    # takes deviation 6's uniform fallback on every draw -- never the epsilon branch,
+    # which is only reached once the scores discriminate.
+    for _ in range(4):
+        method.observe_sampler_outcome(
+            skill_name="TurnOnLight",
+            param_dim=1,
+            sampler_input=method.sampler_input_row(
+                ground_skill=turn_on, state=state, params=np.zeros(1)
+            ),
+            success=True,
+        )
+    method.fit_samplers()
+
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    for ground_skill in (move, turn_on):
+        _labeled, record = method.execute_ground_skill(
+            ground_skill=ground_skill, state=state, explore=True
+        )
+        episode._pending = ground_skill
+        episode._pending_sampler_record = record
+        episode.observe_pending(true_atoms=ground_skill.add_effects)
+
+    unparameterized = method.practice_outcomes()["MoveRobot"]
+    uninformative = method.practice_outcomes()["TurnOnLight"]
+
+    # Both are one attempt that no classifier informed, so every pool #111 stored
+    # agrees -- which is exactly why the two were indistinguishable.
+    assert unparameterized.num_attempts == uninformative.num_attempts == 1
+    assert unparameterized.num_fallback_attempts() == uninformative.num_fallback_attempts() == 1
+    # ... and this is the discrimination that has to exist on top of that.
+    assert unparameterized.num_unparameterized_attempts == 1
+    assert unparameterized.num_uninformative_attempts() == 0
+    assert uninformative.num_unparameterized_attempts == 0
+    assert uninformative.num_uninformative_attempts() == 1
 
 
 def test_practice_outcomes_accumulate_across_a_whole_run() -> None:
