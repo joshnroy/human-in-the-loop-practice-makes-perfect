@@ -3,6 +3,8 @@ select which *lifted skill* the oracle uses, not just which objects it binds. Th
 assertions below are what pin that -- `PickupTrash(`/`ThrowRecycling(` rather than
 `Pickup(`/`Throw(`."""
 
+import pytest
+
 from hitl_pmp.core.problem.tasks.types import Goal
 from hitl_pmp.environments.tossingroomsplit.environment import TossingRoomSplitEnvironment
 from hitl_pmp.environments.tossingroomsplit.predicates import (
@@ -55,7 +57,9 @@ def _empty_goal(*, state) -> Goal:
 
 
 def test_recycling_oracle_picks_up_with_the_recycling_specific_skill() -> None:
-    state = _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = _ENV.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     labeled = SkillOraclePolicy.get_labeled_action(
         state=state, env=_ENV, goal=_recycling_goal(state=state)
     )
@@ -66,7 +70,9 @@ def test_recycling_oracle_picks_up_with_the_recycling_specific_skill() -> None:
 
 def test_trash_oracle_picks_up_with_the_trash_specific_skill() -> None:
     """The complement, so "always chooses the recycling branch" cannot pass."""
-    state = _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = _ENV.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     labeled = SkillOraclePolicy.get_labeled_action(
         state=state, env=_ENV, goal=_trash_goal(state=state)
     )
@@ -76,7 +82,9 @@ def test_trash_oracle_picks_up_with_the_trash_specific_skill() -> None:
 
 
 def test_recycling_oracle_steps_left_toward_the_bin_room_while_holding() -> None:
-    state = _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    state = _ENV.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
     state.set(
         obj=_ROBOT,
         feature_name="holding",
@@ -91,8 +99,19 @@ def test_recycling_oracle_steps_left_toward_the_bin_room_while_holding() -> None
     assert labeled.label.startswith("MoveRoom(")
 
 
-def test_recycling_oracle_throws_with_the_exact_target_force_once_in_the_bin_room() -> None:
-    state = _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.73)
+def test_recycling_oracle_throws_with_the_exact_required_force_once_in_the_bin_room() -> None:
+    """The oracle no longer copies a `target_force` feature out of the state -- there is
+    none. It reads the two CAUSES (the bin's throw_distance, the item's weight) and
+    applies `TossingRoomSplitEnvironment.required_force`, whose coefficients are
+    privileged knowledge neither throw sampler has. Distance 2.5 and weight 1.25 make the
+    required force 0.5 + 0.2 * 0.5 + 0.4 * 0.25 = 0.70, a value equal to neither cause,
+    so a passthrough bug could not produce it."""
+    state = _ENV.build_initial_state(
+        trash_weight=0.5,
+        recycling_weight=1.25,
+        trash_bin_distance=2.0,
+        recycling_bin_distance=2.5,
+    )
     state.set(
         obj=_ROBOT,
         feature_name="holding",
@@ -103,13 +122,22 @@ def test_recycling_oracle_throws_with_the_exact_target_force_once_in_the_bin_roo
         state=state, env=_ENV, goal=_recycling_goal(state=state)
     )
     assert labeled.action[0] == TossingRoomSplitEnvironment.SKILL_THROW
-    assert labeled.action[2] == 0.73  # exactly the known target -> always within tolerance
+    # Exactly the required force -> always within tolerance, on any task.
+    assert labeled.action[2] == pytest.approx(0.70)
     assert labeled.label.startswith("ThrowRecycling(")
-    assert "params=[0.73]" in labeled.label
+    assert "params=[0.7]" in labeled.label
 
 
-def test_trash_oracle_throws_with_the_trash_specific_skill_and_its_own_target() -> None:
-    state = _ENV.build_initial_state(trash_target_force=0.61, recycling_target_force=0.73)
+def test_trash_oracle_throws_with_the_trash_specific_skill_and_its_own_required_force() -> None:
+    """The two kinds' causes are drawn independently, so the two throws need genuinely
+    different forces in the same state -- which is what the split samplers have to learn
+    separately. Trash: distance 1.5, weight 0.75 -> 0.5 - 0.1 - 0.1 = 0.30."""
+    state = _ENV.build_initial_state(
+        trash_weight=0.75,
+        recycling_weight=1.25,
+        trash_bin_distance=1.5,
+        recycling_bin_distance=2.5,
+    )
     state.set(
         obj=_ROBOT,
         feature_name="holding",
@@ -120,13 +148,18 @@ def test_trash_oracle_throws_with_the_trash_specific_skill_and_its_own_target() 
         state=state, env=_ENV, goal=_trash_goal(state=state)
     )
     assert labeled.action[0] == TossingRoomSplitEnvironment.SKILL_THROW
-    assert labeled.action[2] == 0.61
+    assert labeled.action[2] == pytest.approx(0.30)
     assert labeled.label.startswith("ThrowTrash(")
 
 
 def _both_bins_full():
     return _ENV.build_initial_state(
-        trash_target_force=0.5, recycling_target_force=0.5, recycling_count=1, trash_count=1
+        trash_weight=1.0,
+        recycling_weight=1.0,
+        trash_bin_distance=2.0,
+        recycling_bin_distance=2.0,
+        recycling_count=1,
+        trash_count=1,
     )
 
 

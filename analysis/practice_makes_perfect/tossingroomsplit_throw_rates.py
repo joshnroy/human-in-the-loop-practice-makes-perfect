@@ -69,6 +69,10 @@ _FAMILY_GOALS: dict[str, str] = {
 }
 # (z_{0.025} + z_{0.20}): the standard two-sided 80%-power constant.
 _MDE_CONSTANT = 1.959963985 + 0.841621234
+# 3x the domain's throw_tolerance of 0.1. A greedy draw further than this from the force
+# its own grounding required is a wrong answer, not an inaccurate one -- see
+# `badly_missed_force_totals` for why this replaced a fixed "below 0.4" floor.
+_BADLY_MISSED_THRESHOLD = 0.30
 
 
 class TossingRoomSplitThrowRates:
@@ -353,15 +357,25 @@ class TossingRoomSplitThrowRates:
     # ------------------------------------------- what the sampler actually answered
 
     @staticmethod
-    def unreachable_force_totals(*, traces: list[dict], floor: float) -> dict[str, tuple[int, int]]:
-        """`{skill: (greedy draws below `floor`, greedy draws)}`.
+    def badly_missed_force_totals(
+        *, traces: list[dict], miss_threshold: float
+    ) -> dict[str, tuple[int, int]]:
+        """`{skill: (greedy draws missing by more than `miss_threshold`, greedy draws)}`.
 
-        A target force is drawn `U(target_low, target_high)` = `U(0.5, 1.0)` and the
-        tolerance is `throw_tolerance` = 0.1, so a force below `0.5 - 0.1 = 0.4` misses
-        whatever task it was aiming at. That makes "the sampler chose a force no task in
-        this domain could have wanted" a property of the choice alone, countable without
-        reference to any particular target -- which is what distinguishes a sampler that
-        has converged on a wrong answer from one that is merely inaccurate.
+        The question this answers is "did the sampler converge on a *wrong* answer rather
+        than merely an inaccurate one" -- the shape a stuck sampler has, and what
+        distinguishes it from one still hunting.
+
+        **This replaced a simpler count that the throw-representation change made
+        vacuous.** When a task's required force was drawn `U(0.5, 1.0)` at tolerance 0.1,
+        any force below `0.5 - 0.1 = 0.4` missed *whatever* task it was aiming at, so "a
+        force no task in this domain could have wanted" was countable from the choice
+        alone. The required force is now an unobserved function of the bin's
+        `throw_distance` and the item's `weight` and spans `[0.1, 0.9]`, so with tolerance
+        0.1 **every** force in the `U(0, 1)` draw range is right for *some* task and that
+        count is identically 0. The equivalent statement has to be made per grounding
+        instead, against the force that grounding actually required -- which the collector
+        already records alongside the force chosen, so this needs no new instrumentation.
 
         Greedy draws only. An epsilon-random force is a coin flip and carries no belief;
         the collector does not record them for this reason."""
@@ -370,11 +384,17 @@ class TossingRoomSplitThrowRates:
             for period in run["periods"]:
                 for name, tally in period["skills"].items():
                     forces = tally.get("greedy_forces")
-                    if forces is None:
+                    targets = tally.get("greedy_targets")
+                    if forces is None or targets is None:
                         continue
-                    below, drawn = totals.get(name, (0, 0))
+                    missed, drawn = totals.get(name, (0, 0))
                     totals[name] = (
-                        below + sum(1 for force in forces if force < floor),
+                        missed
+                        + sum(
+                            1
+                            for force, target in zip(forces, targets, strict=True)
+                            if abs(force - target) > miss_threshold
+                        ),
                         drawn + len(forces),
                     )
         return totals
@@ -795,14 +815,17 @@ class TossingRoomSplitThrowRates:
     def print_sampler_answers(*, traces: list[dict]) -> None:
         """What each sampler answered, not just how often it was asked.
 
-        The floor is `target_low - throw_tolerance` = 0.4: below it a throw misses
-        whatever task it was aiming at, so the count needs no reference to a target."""
-        unreachable = TossingRoomSplitThrowRates.unreachable_force_totals(traces=traces, floor=0.4)
+        The threshold is 3x `throw_tolerance` = 0.30: a draw that far from the force its
+        own grounding required is a wrong answer rather than an inaccurate one. See
+        `badly_missed_force_totals` for why this is measured per grounding now."""
+        unreachable = TossingRoomSplitThrowRates.badly_missed_force_totals(
+            traces=traces, miss_threshold=_BADLY_MISSED_THRESHOLD
+        )
         if not any(drawn for _below, drawn in unreachable.values()):
             print("\nNo greedy forces recorded -- these traces predate the force instrumentation.")
             return
-        print("\nWhat each sampler answered (greedy draws only; a force < 0.4 cannot land)")
-        header = f"{'skill':>18}{'force < 0.4':>16}{'longest all-miss streak, per seed':>36}"
+        print("\nWhat each sampler answered (greedy draws only; missed its grounding by >0.30)")
+        header = f"{'skill':>18}{'missed by >0.30':>18}{'longest all-miss streak, per seed':>36}"
         print(header)
         print("-" * len(header))
         for skill in _SKILL_STYLES:
@@ -924,17 +947,23 @@ class TossingRoomSplitThrowRates:
                     alpha=0.5,
                     color=color,
                 )
-        force_ax.axhspan(0.4, 1.0, color="0.6", alpha=0.15, linewidth=0)
+        # The shaded band is the support of the required force, [0.1, 0.9] on the
+        # defaults. Unlike the old U(0.5, 1.0) target band it covers nearly the whole draw
+        # range, so sitting inside it is no longer evidence of anything -- what the title
+        # reports is the per-grounding miss instead.
+        force_ax.axhspan(0.1, 0.9, color="0.6", alpha=0.15, linewidth=0)
         force_ax.set_ylim(0, 1.02)
         force_ax.set_xlabel("practice period (0-24)")
         force_ax.set_ylabel("mean greedy force chosen that period")
-        below_trash = TossingRoomSplitThrowRates.unreachable_force_totals(traces=traces, floor=0.4)
-        trash_below, trash_drawn = below_trash.get("ThrowTrash", (0, 0))
-        recyc_below, recyc_drawn = below_trash.get("ThrowRecycling", (0, 0))
+        missed = TossingRoomSplitThrowRates.badly_missed_force_totals(
+            traces=traces, miss_threshold=_BADLY_MISSED_THRESHOLD
+        )
+        trash_below, trash_drawn = missed.get("ThrowTrash", (0, 0))
+        recyc_below, recyc_drawn = missed.get("ThrowRecycling", (0, 0))
         force_ax.set_title(
-            "What each sampler answered — shaded band is reachable; below 0.4 nothing "
-            f"can land\nTRASH {trash_below}/{trash_drawn} draws below it, "
-            f"RECYCLING {recyc_below}/{recyc_drawn}",
+            "What each sampler answered — shaded band is the required-force support\n"
+            f"missed its own grounding by more than 0.30: TRASH {trash_below}/{trash_drawn}"
+            f" draws, RECYCLING {recyc_below}/{recyc_drawn}",
             fontsize=9,
         )
 

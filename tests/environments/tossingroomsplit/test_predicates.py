@@ -38,8 +38,10 @@ _RECYCLING_BUTTON = TossingRoomSplitEnvironment.recycling_button
 
 def _state(*, recycling_count: int = 0, trash_count: int = 0):
     return _ENV.build_initial_state(
-        trash_target_force=0.5,
-        recycling_target_force=0.5,
+        trash_weight=1.0,
+        recycling_weight=1.0,
+        trash_bin_distance=2.0,
+        recycling_bin_distance=2.0,
         recycling_count=recycling_count,
         trash_count=trash_count,
     )
