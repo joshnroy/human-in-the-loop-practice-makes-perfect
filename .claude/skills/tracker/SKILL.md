@@ -39,6 +39,15 @@ the agent that owns the branch (a stale checkout of an agent's branch has nearly
 clobbered work). `BLOCKED` on a draft usually just means draft + review-required, not a
 problem; say which.
 
+**Exception: an agent far into an experiment finishes first, then rebases** — provided
+the incoming changes cannot affect the result. Check that rather than assume it; if
+`main` moved the dynamics, the sampler or the analysis module, the numbers are stale and
+the rebase means a re-run. Surface such a PR as `BEHIND, rebasing after results` rather
+than holding it back.
+
+A `lint`/`test` failure is sometimes GitHub infrastructure, not the diff — read the log
+before reporting a red check as a real one, and re-run the job if it died in setup.
+
 Note that `main` moving does **not** move `reference/*` checkouts — those sit on feature
 branches and `update_reference_repos.sh` skips non-default branches, so fetch explicitly.
 
