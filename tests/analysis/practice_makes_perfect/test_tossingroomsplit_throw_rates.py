@@ -625,13 +625,16 @@ class TestWhatTheSamplerActuallyAnswered:
     that has convinced itself of a wrong force, with one datapoint per period to
     unconvince it -- is about WHAT it answered, and needs the forces themselves.
 
-    A target force is drawn `U(target_low, target_high)` = `U(0.5, 1.0)` and the tolerance
-    is 0.1, so any force below `0.5 - 0.1 = 0.4` misses whatever task it was aiming at.
-    That makes "chose an unreachable force" a property of the choice alone, with no
-    reference to the particular target -- which is what lets it be counted."""
+    That used to be countable from the choice alone: when a target force was drawn
+    `U(0.5, 1.0)` at tolerance 0.1, any force below 0.4 missed *whatever* task it was
+    aiming at. The throw-representation change made that vacuous -- the required force is
+    now derived from the bin's `throw_distance` and the item's `weight` and spans
+    `[0.1, 0.9]`, so every force in the `U(0, 1)` draw range is right for *some* task. The
+    statistic is therefore per grounding now: how far the chosen force was from the force
+    that grounding actually required, against a threshold of 3x the tolerance."""
 
     @staticmethod
-    def test_forces_below_the_reachable_band_are_counted_against_all_greedy_draws() -> None:
+    def test_draws_far_from_their_own_grounding_are_counted_against_all_greedy_draws() -> None:
         runs = [
             {
                 "seed": 0,
@@ -648,7 +651,8 @@ class TestWhatTheSamplerActuallyAnswered:
                                 "landed": 0,
                                 "landed_random": 0,
                                 "prefilled": 0,
-                                # 0.00, 0.02 and 0.39 are unreachable; 0.40 and 0.83 are not.
+                                # Misses of 0.70, 0.68 and 0.31 exceed the 0.30
+                                # threshold; 0.10 and 0.00 do not.
                                 "greedy_forces": [0.0, 0.02, 0.39, 0.4, 0.83],
                                 "greedy_targets": [0.7, 0.7, 0.7, 0.5, 0.83],
                             }
@@ -658,15 +662,15 @@ class TestWhatTheSamplerActuallyAnswered:
                 "competence": [{}],
             }
         ]
-        summary = TossingRoomSplitThrowRates.unreachable_force_totals(
-            traces=[{"label": "ees", "seeds": runs}], floor=0.4
+        summary = TossingRoomSplitThrowRates.badly_missed_force_totals(
+            traces=[{"label": "ees", "seeds": runs}], miss_threshold=0.30
         )
         assert summary["ThrowRecycling"] == (3, 5)
 
     @staticmethod
-    def test_a_sampler_choosing_only_reachable_forces_counts_zero() -> None:
+    def test_a_sampler_hitting_its_groundings_counts_zero() -> None:
         """Non-vacuity: the statistic must be able to come out at 0, or "recycling is
-        pinned below the band" would be unfalsifiable."""
+        pinned on a wrong answer" would be unfalsifiable."""
         runs = [
             {
                 "seed": 0,
@@ -692,8 +696,8 @@ class TestWhatTheSamplerActuallyAnswered:
                 "competence": [{}],
             }
         ]
-        summary = TossingRoomSplitThrowRates.unreachable_force_totals(
-            traces=[{"label": "ees", "seeds": runs}], floor=0.4
+        summary = TossingRoomSplitThrowRates.badly_missed_force_totals(
+            traces=[{"label": "ees", "seeds": runs}], miss_threshold=0.30
         )
         assert summary["ThrowTrash"] == (0, 2)
 

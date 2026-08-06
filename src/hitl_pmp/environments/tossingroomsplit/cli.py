@@ -65,13 +65,54 @@ class TossingRoomSplitCli:
             "--throw-tolerance",
             type=float,
             default=fields["throw_tolerance"].default,
-            help="Max |force - target| for a throw to land in the bin.",
+            help="Max |force - required_force| for a throw to land in the bin.",
+        )
+        # The unobserved required-force relation, in reference form: a reference_weight
+        # item into a bin reference_distance away needs reference_force, and each
+        # coefficient is the force per unit away from that reference. Same flags and same
+        # defaults as Tossing Room's, deliberately -- the two domains must stay the same
+        # learning problem under two skill decompositions.
+        parser.add_argument(
+            "--reference-force",
+            type=float,
+            default=fields["reference_force"].default,
+            help="Force the reference throw needs, in the (unobserved) required-force relation.",
         )
         parser.add_argument(
-            "--canonical-target-force",
+            "--reference-distance",
             type=float,
-            default=fields["canonical_target_force"].default,
-            help="Per-item target force used by Environment.hard_reset (not task sampling).",
+            default=fields["reference_distance"].default,
+            help="Bin throw distance at which --reference-force is exactly right.",
+        )
+        parser.add_argument(
+            "--reference-weight",
+            type=float,
+            default=fields["reference_weight"].default,
+            help="Item weight at which --reference-force is exactly right.",
+        )
+        parser.add_argument(
+            "--distance-coefficient",
+            type=float,
+            default=fields["distance_coefficient"].default,
+            help="Extra required force per unit of bin throw_distance beyond the reference.",
+        )
+        parser.add_argument(
+            "--weight-coefficient",
+            type=float,
+            default=fields["weight_coefficient"].default,
+            help="Extra required force per unit of item weight beyond the reference.",
+        )
+        parser.add_argument(
+            "--canonical-throw-distance",
+            type=float,
+            default=fields["canonical_throw_distance"].default,
+            help="Per-bin throw distance used by Environment.hard_reset (not task sampling).",
+        )
+        parser.add_argument(
+            "--canonical-item-weight",
+            type=float,
+            default=fields["canonical_item_weight"].default,
+            help="Per-item weight used by Environment.hard_reset (not task sampling).",
         )
         task_fields = TossingRoomSplitTasks.model_fields
         parser.add_argument(
@@ -81,16 +122,28 @@ class TossingRoomSplitCli:
             help="Offset added to --seed to derive the test RNG stream.",
         )
         parser.add_argument(
-            "--target-low",
+            "--distance-low",
             type=float,
-            default=task_fields["target_low"].default,
-            help="Lower bound of a task's sampled throw target (Uniform[low, high)).",
+            default=task_fields["distance_low"].default,
+            help="Lower bound of a task's sampled bin throw distance (Uniform[low, high)).",
         )
         parser.add_argument(
-            "--target-high",
+            "--distance-high",
             type=float,
-            default=task_fields["target_high"].default,
-            help="Upper bound of a task's sampled throw target.",
+            default=task_fields["distance_high"].default,
+            help="Upper bound of a task's sampled bin throw distance.",
+        )
+        parser.add_argument(
+            "--weight-low",
+            type=float,
+            default=task_fields["weight_low"].default,
+            help="Lower bound of a task's sampled item weight (Uniform[low, high)).",
+        )
+        parser.add_argument(
+            "--weight-high",
+            type=float,
+            default=task_fields["weight_high"].default,
+            help="Upper bound of a task's sampled item weight.",
         )
         parser.add_argument(
             "--goal-type",
@@ -120,7 +173,13 @@ class TossingRoomSplitCli:
             trash_bin_room=args.trash_bin_room,
             blocked_right_from=args.blocked_right_from,
             throw_tolerance=args.throw_tolerance,
-            canonical_target_force=args.canonical_target_force,
+            reference_force=args.reference_force,
+            reference_distance=args.reference_distance,
+            reference_weight=args.reference_weight,
+            distance_coefficient=args.distance_coefficient,
+            weight_coefficient=args.weight_coefficient,
+            canonical_throw_distance=args.canonical_throw_distance,
+            canonical_item_weight=args.canonical_item_weight,
         )
         forced_goal_type = (
             TossingRoomSplitGoalType(args.goal_type) if args.goal_type is not None else None
@@ -129,8 +188,10 @@ class TossingRoomSplitCli:
             env=env,
             seed=args.seed,
             test_env_seed_offset=args.test_env_seed_offset,
-            target_low=args.target_low,
-            target_high=args.target_high,
+            distance_low=args.distance_low,
+            distance_high=args.distance_high,
+            weight_low=args.weight_low,
+            weight_high=args.weight_high,
             forced_goal_type=forced_goal_type,
             # The global --num-test-tasks: this domain's test set has a *fixed*
             # goal-family composition (14 TRASH / 14 RECYCLING / 2 EMPTY at 30 tasks), so

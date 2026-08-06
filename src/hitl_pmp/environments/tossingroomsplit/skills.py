@@ -36,8 +36,8 @@ class TossingRoomSplitSkills:
     the same architecture and independent weights. In Tossing Room the single `Throw`
     name pools both kinds' training rows into one classifier, and since
     `EesMethod.state_features` is `concat(state[obj] for obj in ground_skill.objects)`
-    -- which for an item is `(kind, target_force)` -- that classifier can and does
-    transfer trash experience to recycling. Splitting the names removes the transfer.
+    -- which for an item is `(kind, weight)` -- that classifier can and does transfer
+    trash experience to recycling. Splitting the names removes the transfer.
     Competence is unaffected either way: `EesMethod.competence_model` is already keyed
     per *ground* skill, and `Throw(trash, ...)` and `Throw(recycling, ...)` were already
     two different groundings.
@@ -239,9 +239,12 @@ class TossingRoomSplitSkills:
         Deliberately the SAME base distribution for both throws, and the same one
         Tossing Room uses. The experiment compares how far each learned sampler moves
         away from this prior; giving one kind a head start here would be exactly the
-        confound to avoid. The range is a plausible force band but is not concentrated
-        on any item's target, so a random draw usually misses the throw_tolerance
-        window. The oracle bypasses this entirely, setting force to the known target."""
+        confound to avoid. The range is a plausible force band but is not concentrated on
+        the force any particular task requires, so a random draw misses the
+        throw_tolerance window with probability 0.8 on every task -- and there is no
+        single force that works everywhere, since the requirement is an unobserved
+        function of the bin's throw_distance and the item's weight. The oracle bypasses
+        this entirely via `TossingRoomSplitEnvironment.required_force`."""
         return rng.uniform(0.0, 1.0, size=ground_skill.skill.param_dim)
 
     @staticmethod

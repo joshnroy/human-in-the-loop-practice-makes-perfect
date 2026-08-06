@@ -5,7 +5,9 @@ from hitl_pmp.environments.tossingroomsplit.renderer import TossingRoomSplitRend
 
 
 def _state(*, env: TossingRoomSplitEnvironment):
-    return env.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    return env.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
 
 
 def test_render_frame_returns_an_rgb_uint8_array() -> None:
@@ -57,7 +59,11 @@ def test_render_frame_shows_a_bins_single_item() -> None:
     env = TossingRoomSplitEnvironment()
     empty = _state(env=env)
     full = env.build_initial_state(
-        trash_target_force=0.5, recycling_target_force=0.5, trash_count=1
+        trash_weight=1.0,
+        recycling_weight=1.0,
+        trash_bin_distance=2.0,
+        recycling_bin_distance=2.0,
+        trash_count=1,
     )
     assert not np.array_equal(
         TossingRoomSplitRenderer.render_frame(state=empty, env=env),
@@ -71,7 +77,12 @@ def test_render_frame_distinguishes_the_two_bins_buttons() -> None:
     was pressed by what changed."""
     env = TossingRoomSplitEnvironment()
     both_full = env.build_initial_state(
-        trash_target_force=0.5, recycling_target_force=0.5, trash_count=1, recycling_count=1
+        trash_weight=1.0,
+        recycling_weight=1.0,
+        trash_bin_distance=2.0,
+        recycling_bin_distance=2.0,
+        trash_count=1,
+        recycling_count=1,
     )
     trash_emptied = both_full.model_copy(deep=True)
     trash_emptied.set(

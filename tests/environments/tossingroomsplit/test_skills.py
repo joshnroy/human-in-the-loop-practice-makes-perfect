@@ -51,7 +51,9 @@ _RECYCLING_BIN = TossingRoomSplitEnvironment.recycling_bin
 
 
 def _state():
-    return _ENV.build_initial_state(trash_target_force=0.5, recycling_target_force=0.5)
+    return _ENV.build_initial_state(
+        trash_weight=1.0, recycling_weight=1.0, trash_bin_distance=2.0, recycling_bin_distance=2.0
+    )
 
 
 class TestThrowIsTwoSkills:

@@ -64,9 +64,26 @@ class TossingRoomSplitEnvironment(Environment):
     bin's button, and here the type does it outright, so the predicate would be a
     tautology (exactly like `BinAcceptsItem` -- see `predicates.py`).
 
+    **THE FORCE A THROW NEEDS IS NEVER IN THE STATE; ITS TWO CAUSES ARE.** Ported
+    unchanged from `TossingRoomEnvironment` -- read that class's docstring for the full
+    argument. In brief: a throw lands when `|force - required_force| < throw_tolerance`,
+    and `required_force` is `reference_force + distance_coefficient * (bin.throw_distance
+    - reference_distance) + weight_coefficient * (item.weight - reference_weight)`. The
+    bin's per-task `throw_distance` and the item's per-task `weight` are observable; the
+    five constants are environment configuration that never enters a State. This replaced
+    an `item.target_force` feature that sat at index 4 of each throw's own classifier
+    input row and *was* the answer, so both samplers were learning `|x_10 - x_4| < 0.1`.
+
+    **The port matters more here than anywhere else.** This domain exists to compare
+    `ThrowTrash` and `ThrowRecycling` as two samplers of identical architecture on
+    different practice budgets. If Tossing Room learned a relation and this fork still
+    learned an identity, the two domains would stop measuring the same thing, and the
+    comparison to `environments/tossingroom`'s baseline -- which the split-throw
+    experiment quotes directly -- would be between different learning problems.
+
     The feature schemas are kept **identical** across the split pairs
-    (`(kind, target_force)` for both item types, `(count, room, kind)` for both bin
-    types), even though `kind` is now derivable from the type. `EesMethod.state_features`
+    (`(kind, weight)` for both item types, `(count, room, kind, throw_distance)` for both
+    bin types), even though `kind` is now derivable from the type. `EesMethod.state_features`
     is `concat(state[obj] for obj in ground_skill.objects)`, so identical schemas are
     what make the two throw samplers have the same input width -- the same architecture
     with different weights, which is the comparison the experiment needs. Dropping the
@@ -121,11 +138,28 @@ class TossingRoomSplitEnvironment(Environment):
     # (including stepping LEFT back across it) is allowed.
     blocked_right_from: int = 2
     throw_tolerance: float = (
-        0.1  # max |force - target| for a Throw to land, like Light Switch's 0.1
+        0.1  # max |force - required| for a Throw to land, like Light Switch's 0.1
     )
-    # hard_reset's non-random per-item target force; only used by the canonical reset
-    # state, never by task sampling (Tasks samples its own per-task forces).
-    canonical_target_force: float = 0.5
+    # The unobserved required-force relation, ported verbatim from
+    # TossingRoomEnvironment -- see that class for why it is written around a reference
+    # throw rather than as a bare intercept, why it takes TWO causes, and the three
+    # constraints these numbers satisfy (required force spans exactly [0.1, 0.9] so a
+    # uniformly random force lands with probability 0.2 on every task; each cause
+    # contributes a 0.4-wide band against a 0.1 tolerance so neither can be ignored; the
+    # state-blind ceiling stays at parity with the target_force design). The values must
+    # stay in step with Tossing Room's: the split-throw experiment compares its numbers
+    # against that domain's baseline, and a different relation would make them different
+    # learning problems rather than the same one under two skill decompositions.
+    reference_force: float = 0.5
+    reference_distance: float = 2.0
+    reference_weight: float = 1.0
+    distance_coefficient: float = 0.2
+    weight_coefficient: float = 0.4
+    # hard_reset's non-random per-task values; only used by the canonical reset state,
+    # never by task sampling (Tasks samples its own per-task distances and weights).
+    # They are the reference throw, so the canonical state needs exactly reference_force.
+    canonical_throw_distance: float = 2.0
+    canonical_item_weight: float = 1.0
 
     robot_type: ClassVar[Type] = Type(name="robot", feature_names=("room", "holding"))
     # blocks_right marks the one-way ledge. Like the pile's room, this lives in the
@@ -140,9 +174,15 @@ class TossingRoomSplitEnvironment(Environment):
     # contents, read by BOTH the in-bin and the bin-empty predicate: with capacity 1 it
     # is already exactly the bit they each need, and a second "is an item in here"
     # feature would be the same fact stored twice.
-    trash_bin_type: ClassVar[Type] = Type(name="trash_bin", feature_names=("count", "room", "kind"))
+    # throw_distance is how far this bin sits from the doorway the robot throws from,
+    # redrawn per task -- one of the two observable CAUSES of the required force (the
+    # other is an item's weight). Present on BOTH bin types, identically, for the same
+    # sampler-width reason the rest of the schema is shared.
+    trash_bin_type: ClassVar[Type] = Type(
+        name="trash_bin", feature_names=("count", "room", "kind", "throw_distance")
+    )
     recycling_bin_type: ClassVar[Type] = Type(
-        name="recycling_bin", feature_names=("count", "room", "kind")
+        name="recycling_bin", feature_names=("count", "room", "kind", "throw_distance")
     )
     # A button carries `kind` for the same reason a bin does: it is what `compute_action`
     # reads to name the pressed button in the raw action, and what the raw `_apply_press`
@@ -157,8 +197,10 @@ class TossingRoomSplitEnvironment(Environment):
     # only (state, objects)) cannot read; putting the pile in the STATE is what lets
     # Pickup's symbolic precondition be exactly as strong as _apply_pickup's guard.
     pile_type: ClassVar[Type] = Type(name="pile", feature_names=("room",))
-    trash_type: ClassVar[Type] = Type(name="trash", feature_names=("kind", "target_force"))
-    recycling_type: ClassVar[Type] = Type(name="recycling", feature_names=("kind", "target_force"))
+    # weight is the second observable cause, redrawn per task. It replaces `target_force`,
+    # which was the answer itself sitting in each throw sampler's own input row.
+    trash_type: ClassVar[Type] = Type(name="trash", feature_names=("kind", "weight"))
+    recycling_type: ClassVar[Type] = Type(name="recycling", feature_names=("kind", "weight"))
 
     robot: ClassVar[Object] = Object(name="robot", type=robot_type)
     recycling_bin: ClassVar[Object] = Object(name="recycling_bin", type=recycling_bin_type)
@@ -197,19 +239,38 @@ class TossingRoomSplitEnvironment(Environment):
         """A button sits beside the bin it empties, so its room IS that bin's room."""
         return self.bin_room_for_kind(kind=kind)
 
+    def required_force(self, *, throw_distance: float, item_weight: float) -> float:
+        """The force a throw of `item_weight` into a bin `throw_distance` away must come
+        within `throw_tolerance` of. The ONE place this relation is written down for this
+        domain: both `_apply_throw` (the dynamics) and `skill_oracle_policy.py` (the
+        privileged solver) call it. Deliberately not a State feature and not derivable
+        from one -- see the class docstring and `TossingRoomEnvironment.required_force`.
+        """
+        return (
+            self.reference_force
+            + self.distance_coefficient * (throw_distance - self.reference_distance)
+            + self.weight_coefficient * (item_weight - self.reference_weight)
+        )
+
     def build_initial_state(
         self,
         *,
-        trash_target_force: float,
-        recycling_target_force: float,
+        trash_weight: float,
+        recycling_weight: float,
+        trash_bin_distance: float,
+        recycling_bin_distance: float,
         recycling_count: int = 0,
         trash_count: int = 0,
     ) -> State:
         """The robot always starts in start_room with an empty hand; each bin sits in its
-        configured room with its own button beside it. Only the per-item throw targets
-        and the initial bin counts vary between callers -- hard_reset uses canonical
-        values with empty bins, Tasks samples targets per episode (and a prefilled item
-        per bin for the empty-buckets goal).
+        configured room with its own button beside it. Only the per-task item weights,
+        the per-task bin throw distances and the initial bin counts vary between callers
+        -- hard_reset uses canonical values with empty bins, Tasks samples weights and
+        distances per episode (and a prefilled item per bin for the empty-buckets goal).
+
+        Both causes are per-item/per-bin rather than global, which matters more here than
+        in Tossing Room: `ThrowTrash`'s rows must say nothing about the recycling bin's
+        distance, or the two samplers would share information through the task draw.
 
         A count above BIN_CAPACITY raises rather than being clamped: it is a caller bug,
         and silently accepting it would put the environment in a state each throw's
@@ -227,11 +288,13 @@ class TossingRoomSplitEnvironment(Environment):
                 float(recycling_count),
                 float(self.recycling_bin_room),
                 float(self.RECYCLING_KIND),
+                float(recycling_bin_distance),
             ]),
             self.trash_bin: np.array([
                 float(trash_count),
                 float(self.trash_bin_room),
                 float(self.TRASH_KIND),
+                float(trash_bin_distance),
             ]),
             self.trash_button: np.array([
                 float(self.button_room_for_kind(kind=self.TRASH_KIND)),
@@ -242,8 +305,8 @@ class TossingRoomSplitEnvironment(Environment):
                 float(self.RECYCLING_KIND),
             ]),
             self.pile: np.array([float(self.start_room)]),
-            self.trash: np.array([float(self.TRASH_KIND), float(trash_target_force)]),
-            self.recycling: np.array([float(self.RECYCLING_KIND), float(recycling_target_force)]),
+            self.trash: np.array([float(self.TRASH_KIND), float(trash_weight)]),
+            self.recycling: np.array([float(self.RECYCLING_KIND), float(recycling_weight)]),
         }
         for i, room in enumerate(self.get_rooms()):
             data[room] = np.array([float(i), float(i == self.blocked_right_from)])
@@ -328,18 +391,23 @@ class TossingRoomSplitEnvironment(Environment):
         # bin first costs a press, which the planner has to schedule.)
         if count >= self.BIN_CAPACITY:
             return
-        target = state.get(obj=item_obj, feature_name="target_force")
+        # The two observable causes, read out of the State and combined by the
+        # environment's own (unobservable) relation. Nothing in the State equals this.
+        required = self.required_force(
+            throw_distance=float(state.get(obj=bin_obj, feature_name="throw_distance")),
+            item_weight=float(state.get(obj=item_obj, feature_name="weight")),
+        )
         # Throwing always releases the item, whether or not it lands. It lands only in
-        # the item's own bin room and only when the dial is within tolerance of that
-        # item's target. The release is what makes a miss cost something, and it is what
-        # gives this domain its 1-attempt-per-period recycling budget: the thrown item is
-        # gone (items carry only (kind, target_force), with no position, so "lying near
-        # the bin" is not representable), so trying again means a fresh item from the
-        # pile -- an 8-step round trip for trash, and impossible for recycling, since the
-        # one-way ledge has already closed behind the robot. Ported unchanged from
-        # TossingRoomEnvironment._apply_throw; see that file for the measurement history.
+        # the item's own bin room and only when the dial is within tolerance of the force
+        # that bin/item pair requires. The release is what makes a miss cost something,
+        # and it is what gives this domain its 1-attempt-per-period recycling budget: the
+        # thrown item is gone (items carry only (kind, weight), with no position, so
+        # "lying near the bin" is not representable), so trying again means a fresh item
+        # from the pile -- an 8-step round trip for trash, and impossible for recycling,
+        # since the one-way ledge has already closed behind the robot. Ported unchanged
+        # from TossingRoomEnvironment._apply_throw; see that file for the history.
         next_state.set(obj=self.robot, feature_name="holding", feature_val=0.0)
-        if robot_room == bin_room and abs(raw_force - target) < self.throw_tolerance:
+        if robot_room == bin_room and abs(raw_force - required) < self.throw_tolerance:
             next_state.set(obj=bin_obj, feature_name="count", feature_val=count + 1.0)
 
     def _apply_press(self, *, next_state: State, robot_room: int, arg: int) -> None:
@@ -360,7 +428,9 @@ class TossingRoomSplitEnvironment(Environment):
     def hard_reset(self) -> None:
         self.set_state(
             state=self.build_initial_state(
-                trash_target_force=self.canonical_target_force,
-                recycling_target_force=self.canonical_target_force,
+                trash_weight=self.canonical_item_weight,
+                recycling_weight=self.canonical_item_weight,
+                trash_bin_distance=self.canonical_throw_distance,
+                recycling_bin_distance=self.canonical_throw_distance,
             )
         )

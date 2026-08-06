@@ -19,9 +19,16 @@ def _tasks(**kwargs) -> TossingRoomSplitTasks:
     return TossingRoomSplitTasks(env=TossingRoomSplitEnvironment(), **kwargs)
 
 
-def _recycling_target(*, task) -> float:
+def _recycling_weight(*, task) -> float:
+    """One of the two per-task CAUSES of the throw force, standing in for "the continuous
+    value this task drew" throughout this file. There is no `target_force` feature any
+    more -- see tests/environments/tossingroomsplit/test_throw_representation.py."""
+    return task.initial_state.get(obj=TossingRoomSplitEnvironment.recycling, feature_name="weight")
+
+
+def _recycling_distance(*, task) -> float:
     return task.initial_state.get(
-        obj=TossingRoomSplitEnvironment.recycling, feature_name="target_force"
+        obj=TossingRoomSplitEnvironment.recycling_bin, feature_name="throw_distance"
     )
 
 
@@ -108,11 +115,12 @@ def test_empty_goal_prefills_exactly_one_item_per_bin() -> None:
         )
 
 
-def test_target_force_is_within_the_sampled_range() -> None:
+def test_both_throw_force_causes_are_within_their_sampled_ranges() -> None:
     tasks = _tasks(seed=3)
     for _ in range(20):
-        target = _recycling_target(task=tasks.sample_train_task())
-        assert tasks.target_low <= target <= tasks.target_high
+        task = tasks.sample_train_task()
+        assert tasks.weight_low <= _recycling_weight(task=task) <= tasks.weight_high
+        assert tasks.distance_low <= _recycling_distance(task=task) <= tasks.distance_high
 
 
 def test_seed_is_deterministic() -> None:
@@ -120,32 +128,32 @@ def test_seed_is_deterministic() -> None:
     second = _tasks(
         seed=42, forced_goal_type=TossingRoomSplitGoalType.RECYCLING
     ).sample_train_task()
-    assert _recycling_target(task=first) == _recycling_target(task=second)
+    assert _recycling_weight(task=first) == _recycling_weight(task=second)
 
 
-def test_different_seeds_change_the_sampled_target() -> None:
+def test_different_seeds_change_the_sampled_causes() -> None:
     a = _tasks(seed=1, forced_goal_type=TossingRoomSplitGoalType.RECYCLING).sample_train_task()
     b = _tasks(seed=2, forced_goal_type=TossingRoomSplitGoalType.RECYCLING).sample_train_task()
-    assert _recycling_target(task=a) != _recycling_target(task=b)
+    assert _recycling_weight(task=a) != _recycling_weight(task=b)
 
 
 def test_train_and_test_use_independent_streams() -> None:
-    """Disjointness keyed on the continuous target_force, not goal type -- with only
-    three discrete goal types a goal-type comparison would collide ~1/3 of the time
-    (advisor's item 4)."""
+    """Disjointness keyed on a continuous per-task draw, not goal type -- with only three
+    discrete goal types a goal-type comparison would collide ~1/3 of the time (advisor's
+    item 4)."""
     tasks = _tasks(seed=7, forced_goal_type=TossingRoomSplitGoalType.RECYCLING)
-    train_target = _recycling_target(task=tasks.sample_train_task())
-    test_target = _recycling_target(task=tasks.sample_test_task())
-    assert train_target != test_target
+    train_weight = _recycling_weight(task=tasks.sample_train_task())
+    test_weight = _recycling_weight(task=tasks.sample_test_task())
+    assert train_weight != test_weight
 
 
 def test_set_seed_rederives_both_streams() -> None:
     tasks = _tasks(seed=5, forced_goal_type=TossingRoomSplitGoalType.RECYCLING)
-    first_train = _recycling_target(task=tasks.sample_train_task())
-    first_test = _recycling_target(task=tasks.sample_test_task())
+    first_train = _recycling_weight(task=tasks.sample_train_task())
+    first_test = _recycling_weight(task=tasks.sample_test_task())
     tasks.set_seed(seed=5)
-    assert _recycling_target(task=tasks.sample_train_task()) == first_train
-    assert _recycling_target(task=tasks.sample_test_task()) == first_test
+    assert _recycling_weight(task=tasks.sample_train_task()) == first_train
+    assert _recycling_weight(task=tasks.sample_test_task()) == first_test
 
 
 def test_default_mix_produces_more_than_one_goal_type() -> None:
@@ -250,48 +258,58 @@ def test_forced_goal_type_still_overrides_the_test_schedule() -> None:
 
 
 @pytest.mark.parametrize(
-    ("seed", "expected_goal_types", "expected_first_target"),
+    ("seed", "expected_goal_types", "expected_first_weight", "expected_first_distance"),
     [
         (
             0,
-            "trash recycling trash empty empty recycling recycling recycling trash empty "
-            "trash trash",
-            0.520487,
+            "trash empty empty recycling recycling recycling trash recycling trash empty "
+            "trash recycling",
+            0.540974,
+            2.626540,
         ),
         (
             1,
-            "trash empty empty recycling recycling trash recycling recycling empty "
-            "recycling trash trash",
-            0.572080,
+            "trash trash trash trash trash trash trash empty trash trash trash recycling",
+            0.644160,
+            1.623663,
         ),
         (
             2,
-            "recycling recycling recycling trash trash trash recycling trash recycling trash "
-            "recycling empty",
-            0.907113,
+            "recycling trash trash trash recycling empty recycling trash empty recycling "
+            "trash empty",
+            1.314226,
+            2.200201,
         ),
     ],
 )
 def test_train_stream_is_unchanged_by_the_fixed_test_composition(
-    *, seed: int, expected_goal_types: str, expected_first_target: float
+    *,
+    seed: int,
+    expected_goal_types: str,
+    expected_first_weight: float,
+    expected_first_distance: float,
 ) -> None:
     """Golden values pinning the training stream, which the fixed-test-set change
     deliberately left untouched -- pinning training tasks too has silently turned a run
     into a different experiment on this project before.
 
-    RE-RECORDED ONCE, for the capacity-1 bin redesign ported here from Tossing Room: an
-    EMPTY task used to draw two extra `rng.integers` for its 1-3 prefill, and a bin now
-    holds exactly one item, so those draws are gone and every family drawn after the
-    first EMPTY of a seed shifts. That is a real change to the training distribution,
-    not a re-recording of noise: the first target (0.520487 / 0.572080 / 0.907113) is
-    identical because it is drawn before the first EMPTY, and seed 2's sequence is
-    unchanged because its first EMPTY is the twelfth task. The literals are also
-    identical to Tossing Room's, which is the point -- the distribution is deliberately
-    the same. Any *other* movement in them is a regression."""
+    RE-RECORDED ONCE BEFORE, for the capacity-1 bin redesign, and RE-RECORDED AGAIN here
+    for the throw-representation change ported from Tossing Room. `build_task` now draws
+    FOUR uniforms per task (two item weights, two bin distances) where it drew two
+    `target_force`s, so every draw after the first shifts and the goal-family sequences
+    move wholesale. That is a real change to the training distribution, not noise --
+    **every Tossing Room (split) number produced after this change is measured on
+    different tasks than every number produced before it**.
+
+    **The literals are byte-identical to `tests/environments/tossingroom/test_tasks.py`'s,
+    and that is the point**: the two domains are the same task distribution under two
+    skill decompositions, so the split-throw experiment can be compared against Tossing
+    Room's baseline. If these two files ever disagree, that comparison is invalid."""
     tasks = _tasks(seed=seed, num_test_tasks=30)
     drawn = [tasks.sample_train_task() for _ in range(12)]
     assert [_goal_type(task=task).value for task in drawn] == expected_goal_types.split()
-    assert _recycling_target(task=drawn[0]) == pytest.approx(expected_first_target, abs=1e-6)
+    assert _recycling_weight(task=drawn[0]) == pytest.approx(expected_first_weight, abs=1e-6)
+    assert _recycling_distance(task=drawn[0]) == pytest.approx(expected_first_distance, abs=1e-6)
 
 
 def test_train_stream_still_samples_its_goal_types_rather_than_fixing_them() -> None:

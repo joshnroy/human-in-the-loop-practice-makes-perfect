@@ -33,9 +33,13 @@ from scripts.tossingroomsplit_skill_traces import (
     TracingEesMethod,
 )
 
-# Small but real: 3 cycles is enough for the collector to have drained twice and for
-# both throws to have been reached, and cheap enough to keep the suite fast.
-_CYCLES = 3
+# Small but real: enough cycles for the collector to have drained more than once and for
+# both throws to have been reached, and cheap enough to keep the suite fast. It was 3
+# until the throw-representation change moved the training stream (`build_task` now draws
+# four uniforms per task, not two): seed 0's first three practice tasks are now
+# trash/empty/empty, so `ThrowRecycling` was never reached and the non-vacuity assertions
+# below went quiet. 4 is the smallest value that reaches a recycling task again.
+_CYCLES = 4
 _STEPS = 60
 _TEST_TASKS = 6
 _ITERS = 100
@@ -180,7 +184,11 @@ class TestAScoredSuccessIsNotTheSameThingAsALanding:
         )
         method.practicing = True
         state = env.build_initial_state(
-            trash_target_force=0.9, recycling_target_force=0.9, trash_count=1
+            trash_weight=0.9,
+            recycling_weight=0.9,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+            trash_count=1,
         )
         state.set(obj=env.robot, feature_name="room", feature_val=float(env.trash_bin_room))
         state.set(obj=env.robot, feature_name="holding", feature_val=float(env.TRASH_KIND))
@@ -239,7 +247,10 @@ class TestTheForceEachSamplerChose:
                 assert len(forces) == len(targets), name
                 assert len(forces) == record["attempts"] - record["random_attempts"], name
                 assert all(0.0 <= force <= 1.0 for force in forces), name
-                assert all(0.5 <= target <= 1.0 for target in targets), name
+                # The required force spans [0.1, 0.9] -- it is derived from the bin's
+                # throw_distance and the item's weight, not drawn as a U(0.5, 1.0)
+                # `target_force` feature.
+                assert all(0.1 <= target <= 0.9 for target in targets), name
                 seen += len(forces)
         # Non-vacuity: a run in which no throw was ever chosen greedily would satisfy
         # every assertion above.

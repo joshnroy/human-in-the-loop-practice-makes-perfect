@@ -86,7 +86,7 @@ class SkillTally(BaseModel):
     random_attempts: int = 0
     random_successes: int = 0
     # Throws only. Read from the DYNAMICS -- the bin had room, the robot stood in that
-    # bin's own room, and |force - target_force| < throw_tolerance -- not from the
+    # bin's own room, and |force - required_force| < throw_tolerance -- not from the
     # add-effect check, so this says what the environment did rather than what EES scored.
     landed: int = 0
     landed_random: int = 0
@@ -146,7 +146,7 @@ class ThrowObservation(BaseModel):
 
     `landed` reimplements `TossingRoomSplitEnvironment._apply_throw`'s own condition --
     the bin has room under `BIN_CAPACITY`, the robot is in that bin's room, and
-    `|force - target_force| < throw_tolerance` -- rather than asking whether the add
+    `|force - required_force| < throw_tolerance` -- rather than asking whether the add
     effects held, which is the very thing being audited. The capacity term is part of
     that condition and not an optional refinement: `_apply_throw` returns without
     releasing the item when the bin is full, so a throw refused that way landed nothing
@@ -154,9 +154,12 @@ class ThrowObservation(BaseModel):
 
     landed: bool
     prefilled: bool
-    # The force actually issued and the item's own `target_force`. Kept alongside the
-    # verdict rather than derived from it: `landed` collapses everything about a throw
-    # into one bit, and "missed by 0.02" and "missed by 0.75" are different findings.
+    # The force actually issued and the force that grounding REQUIRED. The latter is not
+    # a state feature -- it is `required_force` of the bound bin's `throw_distance` and
+    # the bound item's `weight`, which only the environment can compute. Kept alongside
+    # the verdict rather than derived from it: `landed` collapses everything about a
+    # throw into one bit, and "missed by 0.02" and "missed by 0.75" are different
+    # findings.
     force: float
     target: float
 
@@ -212,7 +215,10 @@ class TracingEesMethod(EesMethod):
         item = env.trash if trash else env.recycling
         bin_obj = env.trash_bin if trash else env.recycling_bin
         bin_room = env.trash_bin_room if trash else env.recycling_bin_room
-        target = float(state.get(obj=item, feature_name="target_force"))
+        target = env.required_force(
+            throw_distance=float(state.get(obj=bin_obj, feature_name="throw_distance")),
+            item_weight=float(state.get(obj=item, feature_name="weight")),
+        )
         robot_room = int(round(state.get(obj=env.robot, feature_name="room")))
         count = int(round(state.get(obj=bin_obj, feature_name="count")))
         refused = count >= env.BIN_CAPACITY

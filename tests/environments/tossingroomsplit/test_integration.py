@@ -106,8 +106,13 @@ class TestEesRunsOnThisDomainAndTrainsBothThrowsSeparately:
     Fast Downward, practices both throws, and accumulates their training data into two
     different samplers.
 
-    Deliberately short (3 cycles x 60 steps) -- this is a wiring check, not a
-    measurement. The counts are asserted as inequalities for exactly that reason: how
+    Deliberately short (4 cycles x 60 steps) -- this is a wiring check, not a
+    measurement. It was 3 until the throw-representation change moved the training stream
+    (`build_task` now draws four uniforms per task, not two): seed 0's first three
+    practice tasks are now trash/empty/empty, so `ThrowRecycling` was never reached and
+    the non-vacuity assertion below went quiet.
+
+    The counts are asserted as inequalities for exactly that reason: how
     *many* attempts each throw gets is what the experiment measures, and pinning it here
     would either duplicate that result or make this test fail whenever the measurement
     legitimately moves.
@@ -128,7 +133,7 @@ class TestEesRunsOnThisDomainAndTrainsBothThrowsSeparately:
             problem=problem,
             method=method,
             metrics=Metrics(),
-            num_cycles=3,
+            num_cycles=4,
             max_steps_per_interaction=60,
             num_test_tasks=4,
         )

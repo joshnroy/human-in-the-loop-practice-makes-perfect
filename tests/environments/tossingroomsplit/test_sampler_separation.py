@@ -79,7 +79,12 @@ class TestTheTwoThrowSamplersAreSeparate:
     @staticmethod
     def test_practising_one_leaves_the_other_with_no_data() -> None:
         method, env = _split_method()
-        state = env.build_initial_state(trash_target_force=0.7, recycling_target_force=0.3)
+        state = env.build_initial_state(
+            trash_weight=0.7,
+            recycling_weight=0.3,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+        )
         trash_throw, recycling_throw = _split_throws(env=env)
 
         for _ in range(12):
@@ -93,7 +98,12 @@ class TestTheTwoThrowSamplersAreSeparate:
         """Stronger than the counts: the recycling sampler must not contain any row
         recorded for a trash throw, matched by content rather than by count."""
         method, env = _split_method()
-        state = env.build_initial_state(trash_target_force=0.7, recycling_target_force=0.3)
+        state = env.build_initial_state(
+            trash_weight=0.7,
+            recycling_weight=0.3,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+        )
         trash_throw, recycling_throw = _split_throws(env=env)
 
         for _ in range(8):
@@ -105,8 +115,9 @@ class TestTheTwoThrowSamplersAreSeparate:
         recycling_rows = method.sampler(skill_name="ThrowRecycling", param_dim=1).observed_inputs()
         assert len(trash_rows) == 8
         assert len(recycling_rows) == 3
-        # The item's target_force feature differs between the two kinds in this state,
-        # so a leaked row is identifiable by content, not just by count.
+        # The item's weight feature -- one of the two observable CAUSES of the required
+        # throw force -- differs between the two kinds in this state, so a leaked row is
+        # identifiable by content, not just by count.
         assert not [row for row in recycling_rows if 0.7 in row]
         assert not [row for row in trash_rows if 0.3 in row]
 
@@ -116,7 +127,12 @@ class TestTheTwoThrowSamplersAreSeparate:
         recycling sampler score anything at all? An unfitted `LearnedSkillSampler`
         returns a flat 0.5 for every candidate, i.e. it is still choosing uniformly."""
         method, env = _split_method()
-        state = env.build_initial_state(trash_target_force=0.7, recycling_target_force=0.3)
+        state = env.build_initial_state(
+            trash_weight=0.7,
+            recycling_weight=0.3,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+        )
         trash_throw, _recycling_throw = _split_throws(env=env)
         rng = np.random.default_rng(0)
         for _ in range(20):

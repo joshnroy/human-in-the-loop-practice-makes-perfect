@@ -36,8 +36,15 @@ class TossingRoomSplitTasks(Tasks):
     Everything about the *distribution* is deliberately identical, so a result here is
     comparable with Tossing Room's.
 
-    Each task draws per-item throw targets (Uniform[target_low, target_high)) -- the
-    continuous per-episode value the throw samplers specialize on. The two streams
+    Each task draws the two CAUSES of the throw force -- a per-bin `throw_distance`
+    (Uniform[distance_low, distance_high)) and a per-item `weight`
+    (Uniform[weight_low, weight_high)) -- and never the force itself, which
+    `TossingRoomSplitEnvironment.required_force` derives from them with coefficients the
+    agent cannot see. Those are the continuous per-episode values the two throw samplers
+    specialize on; before this they drew a per-item `target_force` that sat in each
+    sampler's own input row (see the environment's class docstring). Identical to
+    `TossingRoomTasks` on purpose -- the split-throw experiment compares against Tossing
+    Room's baseline, so the task distribution has to be the same one. The two streams
     differ in RNG seed (predicators' test_env_seed_offset convention) *and* in how each
     task's goal family is chosen.
 
@@ -68,8 +75,15 @@ class TossingRoomSplitTasks(Tasks):
     env: TossingRoomSplitEnvironment
     seed: int = 0
     test_env_seed_offset: int = 10000
-    target_low: float = 0.5
-    target_high: float = 1.0
+    # The two per-task cause ranges, identical to TossingRoomTasks'. Together with the
+    # environment's relation they make the required force span exactly [0.1, 0.9], so
+    # every winning window sits wholly inside the U(0, 1) band `sample_params` draws
+    # from: every task reachable, none clipped, and a uniformly random force landing with
+    # probability exactly 0.2 on every task.
+    distance_low: float = 1.0
+    distance_high: float = 3.0
+    weight_low: float = 0.5
+    weight_high: float = 1.5
     # Sampling weights over (RECYCLING, TRASH, EMPTY) for the *training* stream only.
     goal_weights: tuple[float, float, float] = (0.4, 0.4, 0.2)
     forced_goal_type: TossingRoomSplitGoalType | None = None
@@ -178,10 +192,14 @@ class TossingRoomSplitTasks(Tasks):
         return [block[int(index)] for index in self._test_rng.permutation(len(block))]
 
     def build_task(self, *, goal_type: TossingRoomSplitGoalType, rng: np.random.Generator) -> Task:
-        # Always draw both per-item targets (regardless of goal type) so the
-        # continuous per-task value stays comparable across streams/seeds.
-        trash_target = float(rng.uniform(self.target_low, self.target_high))
-        recycling_target = float(rng.uniform(self.target_low, self.target_high))
+        # Always draw all four per-task causes (regardless of goal type) so the
+        # continuous per-task values stay comparable across streams/seeds. Order is fixed
+        # -- weights then distances -- because a run is fully determined by --seed, and it
+        # matches TossingRoomTasks so the two domains draw the same tasks at a given seed.
+        trash_weight = float(rng.uniform(self.weight_low, self.weight_high))
+        recycling_weight = float(rng.uniform(self.weight_low, self.weight_high))
+        trash_bin_distance = float(rng.uniform(self.distance_low, self.distance_high))
+        recycling_bin_distance = float(rng.uniform(self.distance_low, self.distance_high))
 
         if goal_type is TossingRoomSplitGoalType.EMPTY:
             # One item per bin: a bin holds at most one, so the old Uniform{1, 2, 3}
@@ -190,8 +208,10 @@ class TossingRoomSplitTasks(Tasks):
             # -- and since each bin now has its own button, emptying both is what makes
             # this an ordering task rather than one walk and one press.
             initial_state = self.env.build_initial_state(
-                trash_target_force=trash_target,
-                recycling_target_force=recycling_target,
+                trash_weight=trash_weight,
+                recycling_weight=recycling_weight,
+                trash_bin_distance=trash_bin_distance,
+                recycling_bin_distance=recycling_bin_distance,
                 recycling_count=self.env.BIN_CAPACITY,
                 trash_count=self.env.BIN_CAPACITY,
             )
@@ -205,7 +225,10 @@ class TossingRoomSplitTasks(Tasks):
         # kind (TrashInBin or RecyclingInBin -- split, unlike Tossing Room's shared
         # ItemInBin, because the item and bin types are split).
         initial_state = self.env.build_initial_state(
-            trash_target_force=trash_target, recycling_target_force=recycling_target
+            trash_weight=trash_weight,
+            recycling_weight=recycling_weight,
+            trash_bin_distance=trash_bin_distance,
+            recycling_bin_distance=recycling_bin_distance,
         )
         if goal_type is TossingRoomSplitGoalType.RECYCLING:
             atom: GroundAtom = RECYCLING_IN_BIN(
