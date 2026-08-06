@@ -52,6 +52,7 @@ different worlds and must not be pooled or compared.
 import argparse
 import json
 from pathlib import Path
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -146,6 +147,25 @@ class SkillTally(BaseModel):
     informed_landed: int = 0
     informed_forces: list[float] = Field(default_factory=list)
     informed_targets: list[float] = Field(default_factory=list)
+    # Throws only. EVERY attempt in this period, in execution order, one entry per list.
+    #
+    # The `greedy_*`/`informed_*` lists above deliberately exclude the epsilon-random
+    # draws, because a coin flip carries no belief and pooling the two washes out what a
+    # sampler ANSWERED. But what a classifier can represent is set by its POSITIVES, and
+    # `observe_outcome` feeds it every landed attempt including the random ones -- which
+    # early in a run are most of them. So the greedy lists drop exactly the targets that
+    # matter for the mechanism: one landing pins where the good force region sits for one
+    # target, and only two landings at well-separated targets reveal the SLOPE of the
+    # force/target relation. `throw_targets` restricted to `throw_landed_flags` is that
+    # variable, and it is not computable from any field above.
+    #
+    # `throw_kinds` splits three ways rather than two, since "the epsilon branch fired"
+    # and "the classifier could not rank the candidates" are different facts about a
+    # non-informed draw -- the same distinction `was_random` and `was_informed` carry on
+    # `SamplerChoice`. Every count above re-derives from these three lists.
+    throw_targets: list[float] = Field(default_factory=list)
+    throw_landed_flags: list[bool] = Field(default_factory=list)
+    throw_kinds: list[Literal["random", "informed", "fallback"]] = Field(default_factory=list)
 
 
 class PeriodLog(BaseModel):
@@ -172,6 +192,11 @@ class PeriodLog(BaseModel):
         if throw is not None:
             tally.landed += int(throw.landed)
             tally.prefilled += int(throw.prefilled)
+            tally.throw_targets.append(throw.target)
+            tally.throw_landed_flags.append(throw.landed)
+            tally.throw_kinds.append(
+                "random" if was_random else ("informed" if throw.informed else "fallback")
+            )
             if was_random:
                 tally.landed_random += int(throw.landed)
             else:

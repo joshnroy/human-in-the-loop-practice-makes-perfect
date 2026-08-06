@@ -324,6 +324,45 @@ class TestWhichGreedyDrawsTheClassifierActuallyInformed:
         assert tally.informed_targets == [0.83]
 
     @staticmethod
+    def test_every_throw_records_its_own_target_landing_and_kind_of_draw() -> None:
+        """The `greedy_*`/`informed_*` lists are per-period COUNTS plus the greedy pool's
+        forces and targets. Neither is enough for the scaling question.
+
+        What the classifier can represent is set by its POSITIVES -- every landed attempt,
+        epsilon-random ones included, since `observe_outcome` feeds them all back. One
+        success pins where the good force region sits for one target; only two successes
+        at well-separated targets reveal the slope of the force/target relation. So the
+        separation among the targets of the landings is the mechanism variable, and the
+        greedy lists exclude the random draws by construction -- the targets of exactly
+        the landings that are most numerous early on are the ones they drop.
+
+        These three lists are positionally aligned, one entry per throw attempt in
+        execution order, and every existing count re-derives from them."""
+        log = PeriodLog()
+        for force, landed, random, informed in (
+            (0.20, False, False, True),
+            (0.83, True, False, True),
+            (0.55, True, True, False),
+            (0.41, False, False, False),
+        ):
+            log.record(
+                name="ThrowTrash",
+                success=landed,
+                was_random=random,
+                throw=ThrowObservation(
+                    landed=landed, prefilled=False, force=force, target=0.83, informed=informed
+                ),
+            )
+        tally = log.skills["ThrowTrash"]
+        assert tally.throw_landed_flags == [False, True, True, False]
+        assert tally.throw_targets == [0.83, 0.83, 0.83, 0.83]
+        assert tally.throw_kinds == ["informed", "informed", "random", "fallback"]
+        # The counts the previous log reported re-derive from the per-draw lists.
+        assert sum(tally.throw_landed_flags) == tally.landed
+        assert tally.throw_kinds.count("random") == tally.random_attempts
+        assert tally.throw_kinds.count("informed") == tally.informed_attempts
+
+    @staticmethod
     def test_an_epsilon_random_draw_is_never_counted_as_informed() -> None:
         log = PeriodLog()
         log.record(
@@ -351,6 +390,13 @@ class TestWhichGreedyDrawsTheClassifierActuallyInformed:
                 assert len(record["informed_targets"]) == record["informed_attempts"], name
                 assert record["informed_successes"] <= record["informed_attempts"], name
                 assert record["informed_landed"] <= record["informed_attempts"], name
+                kinds = record["throw_kinds"]
+                assert len(kinds) == record["attempts"], name
+                assert len(record["throw_targets"]) == record["attempts"], name
+                assert len(record["throw_landed_flags"]) == record["attempts"], name
+                assert sum(record["throw_landed_flags"]) == record["landed"], name
+                assert kinds.count("informed") == record["informed_attempts"], name
+                assert kinds.count("random") == record["random_attempts"], name
                 seen_greedy += greedy
                 seen_informed += record["informed_attempts"]
         # Non-vacuity, and the claim the split exists for: this fixture's 4 cycles
