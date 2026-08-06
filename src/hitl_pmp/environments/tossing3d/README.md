@@ -204,3 +204,23 @@ PYTHONPATH=$(pwd)/src /path/to/kinder-venv/bin/python -m pytest tests/environmen
   ~55 online transitions (p = 0.1328, not established) against a 99/100 oracle ceiling.
   **That run predates the widening above** and was taken under `(1.20, 1.65)`, so its
   counts are not reproducible at HEAD and must not be compared against one that is.
+- **Re-running it under the widened bounds is also a null result**, and a sharper one:
+  `docs/experiment-logs/2026-08-06-tossing3d-ees-widened.md`. EES went 19/100 to 21/100
+  over ~53 online transitions (exact paired Wilcoxon n = 8 non-tied of 10, p = 0.8281),
+  against a uniform-draw baseline of 543/2700 and a 99/100 oracle ceiling — that is, it
+  ends within this design's resolution (~11 pp) of where its own prior started, despite
+  the prior now being wrong on roughly 4 draws in 5. **Whether that is too few positive
+  labels or a sampler that cannot use them is not determined**, because `stats.json`
+  records no practice outcomes; see that log's recommendations.
+- **A single `--seed` does not fully determine a run here.** Seed 0 was run twice under
+  identical arguments and identical code, once alone and once inside a 10-worker sweep,
+  and ended 3/10 versus 2/10 with `evaluations` diverging at several checkpoints. The
+  repo-wide guarantee that `--seed` pins a run is enforced by
+  `tests/scripts/test_reproducibility.py`, which covers **`--env lightswitch` only** and
+  cannot cover this domain because CI never installs KINDER. Treat every Tossing3D count
+  as carrying an unquantified run-to-run term of at least 1 episode in 10; see
+  `docs/experiment-logs/2026-08-06-tossing3d-ees-widened.md`.
+- **One practice period is one throw**, so `--max-steps-per-interaction` never binds:
+  `Toss` deletes `Reachable` unconditionally, nothing applies afterwards, and the period
+  ends. Measured, 20 cycles used **51 of 400 permitted steps**. `--num-cycles` is the only
+  lever on how many `MoveToThrowPose` executions a run gets.
