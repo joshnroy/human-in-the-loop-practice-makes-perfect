@@ -170,6 +170,25 @@ PYTHONPATH=$(pwd)/src /path/to/kinder-venv/bin/python -m pytest tests/environmen
 - **The oracle's weak link is the grasp, not the throw.** `pick_shelf` is marginal on
   some scene seeds — a previously recorded pair, seed 1 losing the cube during the base
   move and seed 3 never releasing it. Per-seed solve counts should be read with that in
-  mind.
-- **No learning run has been made on this domain in this repo.** Nothing here says
-  whether EES or any other method should use it.
+  mind. (At the coincident config's default standoff the oracle measured 99/100 over
+  seeds 0-9 × 10 test tasks, so on this scene the grasp is close to reliable.)
+- **What there is to learn is a constant, not a function of state.** `bin_init_region` is
+  1 mm wide, so the bin is in the same place every episode; `Toss` has `param_dim = 0`;
+  and only `MoveToThrowPose`'s standoff decides success. Swept over 11 standoffs the
+  oracle solves 6/11 points, all in [1.20, 1.425] m with the edge between 1.380 and
+  1.425 — so a uniform draw from `THROW_STANDOFF_BOUNDS` already succeeds a bit under
+  half the time. **Do not read a result on this domain as evidence about learning a
+  state-dependent sampler.** Widening `bin_init_region` is the change that would make it
+  one.
+- **`RandomSkillsMethod` cannot run here.** After a `Toss` the cube is past the barrier,
+  `Reachable` is false, and no ground skill's preconditions hold — the first genuine
+  dead-end state in any domain in this repo. `EesMethod` degrades to `no-op (no plan)`;
+  `RandomSkillsMethod.get_labeled_action` asserts and the run dies. The paper's own
+  lower-bound baseline is therefore unavailable until that is fixed.
+- **EES's "no-op" is not inert on this domain.** `EesMethod._noop_action()` returns
+  `np.zeros(action_space.shape)` = `[0, 0, 0]`, and `pick_id` is `0`, so a
+  `no-op (no plan)` step runs a real `pick_shelf` at distance 0.0. Harmless to the
+  symbolic outcome so far, but it burns simulator time and moves the robot.
+- **One learning run has now been made**, and it is a null result:
+  `docs/experiment-logs/2026-08-06-tossing3d-ees.md`. EES went from 24/90 to 33/90 over
+  ~55 online transitions (p = 0.1328, not established) against a 99/100 oracle ceiling.
