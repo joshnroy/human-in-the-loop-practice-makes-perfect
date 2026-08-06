@@ -987,3 +987,47 @@ def _throw(*, forces: list[float], targets: list[float]) -> dict:
         "greedy_forces": forces,
         "greedy_targets": targets,
     }
+
+
+class TestWhichArmProducedTheseShards:
+    """`scripts/tossingroomsplit_skill_traces.py` serves two throw representations of the
+    same world, and their shards are deliberately the same shape. That is what lets one
+    analysis read both -- and it is also why a figure has to say which arm it came from,
+    or the two arms' figures become indistinguishable.
+
+    The label is derived from the shard's own `env` key rather than from a flag, so it
+    cannot be set wrong. These pin that, and pin that pooling the two arms is refused."""
+
+    @staticmethod
+    def test_the_identity_arm_labels_itself() -> None:
+        label = TossingRoomSplitThrowRates.arm_label(
+            traces=[{"env": "tossingroomsplitidentity", "seeds": []}]
+        )
+        assert "IDENTITY" in label
+
+    @staticmethod
+    def test_the_causal_arm_labels_itself() -> None:
+        label = TossingRoomSplitThrowRates.arm_label(
+            traces=[{"env": "tossingroomsplit", "seeds": []}]
+        )
+        assert "CAUSAL" in label
+
+    @staticmethod
+    def test_a_shard_predating_the_env_key_is_the_causal_arm() -> None:
+        """The committed 2026-08-05 traces were written before `--env` existed. They are
+        the causal arm by definition, and must keep labelling themselves as one rather
+        than becoming unlabelled."""
+        assert "CAUSAL" in TossingRoomSplitThrowRates.arm_label(traces=[{"seeds": []}])
+
+    @staticmethod
+    def test_pooling_the_two_arms_is_refused() -> None:
+        """They are the same world under two representations: comparable side by side,
+        never summed. A pooled figure would be a category error, so it raises rather than
+        silently taking one arm's label for a mixture of both."""
+        with pytest.raises(ValueError, match="more than one arm"):
+            TossingRoomSplitThrowRates.arm_label(
+                traces=[
+                    {"env": "tossingroomsplit", "seeds": []},
+                    {"env": "tossingroomsplitidentity", "seeds": []},
+                ]
+            )

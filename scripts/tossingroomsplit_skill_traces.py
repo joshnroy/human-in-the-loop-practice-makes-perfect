@@ -3,6 +3,20 @@ times each lifted skill was attempted during practice, how many of those attempt
 achieved the skill's own add effects, and where each skill's competence got to -- dumped
 as JSON for `analysis/practice_makes_perfect/tossingroomsplit_throw_rates.py` to render.
 
+**It serves BOTH throw representations, selected by `--env`.** `tossingroomsplit` (the
+default, and every pre-existing caller's behaviour) is the CAUSAL arm: the required
+force is an unobserved affine function of a bin's `throw_distance` and an item's
+`weight`. `tossingroomsplitidentity` is the degenerate IDENTITY arm: the required force
+IS `item.target_force`, a column every sampler already reads at index 4 of its own
+classifier row. The two are otherwise the same world under the same protocol, and
+`tests/environments/tossingroomsplitidentity/test_fork_equivalence.py` pins that.
+
+One script rather than two because the shards must be the same SHAPE -- the experiment
+lays the arms side by side, and the analysis keys on lifted skill names and goal
+descriptions that are identical in both. `ThrowTarget` is the only place the two
+representations differ here. Each shard records its own `env`, so a pooled analysis
+cannot silently mix them: they are comparable side by side, never summed.
+
 **Why this exists rather than being read off `--output-dir`.** `stats.json` is the
 serialized `core.Metrics`: it records *tasks solved*, per evaluation sweep, with a
 per-task goal breakdown. That is the right record of outcomes and it is what
@@ -43,14 +57,31 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy
 from hitl_pmp.core.metrics.metrics import Metrics
-from hitl_pmp.core.problem.environment.types import State
+from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.environments.tossingroomsplit.environment import TossingRoomSplitEnvironment
 from hitl_pmp.environments.tossingroomsplit.problem import TossingRoomSplitProblem
 from hitl_pmp.environments.tossingroomsplit.skill_provider import TossingRoomSplitSkillProvider
 from hitl_pmp.environments.tossingroomsplit.tasks import TossingRoomSplitTasks
+from hitl_pmp.environments.tossingroomsplitidentity.environment import (
+    TossingRoomSplitIdentityEnvironment,
+)
+from hitl_pmp.environments.tossingroomsplitidentity.problem import TossingRoomSplitIdentityProblem
+from hitl_pmp.environments.tossingroomsplitidentity.skill_provider import (
+    TossingRoomSplitIdentitySkillProvider,
+)
+from hitl_pmp.environments.tossingroomsplitidentity.tasks import TossingRoomSplitIdentityTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeLoop
+
+# The two arms this collector serves. Both are the same world under the same protocol
+# and differ only in the THROW REPRESENTATION, so they produce trace shards of identical
+# shape and `analysis/practice_makes_perfect/tossingroomsplit_throw_rates.py` reads
+# either without knowing which is which -- the lifted skill names and the goal
+# descriptions it keys on are the same in both.
+CAUSAL_ENV = "tossingroomsplit"
+IDENTITY_ENV = "tossingroomsplitidentity"
+ENV_CHOICES = (CAUSAL_ENV, IDENTITY_ENV)
 
 
 class SkillTally(BaseModel):
@@ -172,12 +203,14 @@ class ThrowObservation(BaseModel):
 
     landed: bool
     prefilled: bool
-    # The force actually issued and the force that grounding REQUIRED. The latter is not
-    # a state feature -- it is `required_force` of the bound bin's `throw_distance` and
-    # the bound item's `weight`, which only the environment can compute. Kept alongside
-    # the verdict rather than derived from it: `landed` collapses everything about a
-    # throw into one bit, and "missed by 0.02" and "missed by 0.75" are different
-    # findings.
+    # The force actually issued and the force that grounding REQUIRED, the latter via
+    # `ThrowTarget.of` so this file does not care which arm produced it. In the CAUSAL
+    # arm the target is not a state feature at all -- it is `required_force` of the bound
+    # bin's `throw_distance` and the bound item's `weight`, which only the environment
+    # can compute. In the IDENTITY arm it is simply `item.target_force`, a column every
+    # sampler already sees. Kept alongside the verdict rather than derived from it:
+    # `landed` collapses everything about a throw into one bit, and "missed by 0.02" and
+    # "missed by 0.75" are different findings.
     force: float
     target: float
     # `SamplerChoice.was_informed` for the draw that produced this throw, read off the
@@ -186,6 +219,83 @@ class ThrowObservation(BaseModel):
     # privileged instrumentation, exactly like `force`/`target` above. Defaulted so a
     # test can construct a bare observation without asserting on the sampler.
     informed: bool = False
+
+
+class ThrowTarget:
+    """The force one throw REQUIRED, for whichever arm's environment is in play.
+
+    This is the ONLY place in this collector that the two arms' throw representations
+    differ, which is the same claim `environments/tossingroomsplitidentity` makes about
+    the domains themselves. Dispatching here rather than forking the whole script keeps
+    the two arms' traces provably identical in shape -- and a shape difference is exactly
+    what would make the side-by-side comparison unreadable.
+
+    Both branches call the environment's own `required_force` rather than reimplementing
+    it, so neither can drift from the dynamics that actually scored the throw.
+
+    A static-method container, never instantiated, same as every other business-logic
+    class in this project."""
+
+    @staticmethod
+    def of(
+        *,
+        env: TossingRoomSplitEnvironment | TossingRoomSplitIdentityEnvironment,
+        state: State,
+        item: Object,
+        bin_obj: Object,
+    ) -> float:
+        if isinstance(env, TossingRoomSplitIdentityEnvironment):
+            # IDENTITY: the answer is a feature of the item, at index 4 of the throw's
+            # own classifier row. Nothing privileged is being read here.
+            return env.required_force(
+                item_target_force=float(state.get(obj=item, feature_name="target_force"))
+            )
+        # CAUSAL: two observable causes combined by coefficients no sampler can see.
+        return env.required_force(
+            throw_distance=float(state.get(obj=bin_obj, feature_name="throw_distance")),
+            item_weight=float(state.get(obj=item, feature_name="weight")),
+        )
+
+
+class DomainBinding:
+    """Builds the `(problem, skill_provider)` pair for one arm.
+
+    The two arms' composition roots are structurally identical -- same `Problem`, same
+    `Tasks`, same `SkillProvider`, all at their defaults -- so this is a dispatch on the
+    `--env` name and nothing more. Anything that had to differ beyond the throw
+    representation would show up here as a divergence, which is why it is one function
+    rather than two scripts.
+
+    A static-method container, never instantiated, same as every other business-logic
+    class in this project."""
+
+    @staticmethod
+    def build(
+        *, env_name: str, seed: int, num_test_tasks: int
+    ) -> tuple[
+        TossingRoomSplitProblem | TossingRoomSplitIdentityProblem,
+        TossingRoomSplitSkillProvider | TossingRoomSplitIdentitySkillProvider,
+        TossingRoomSplitEnvironment | TossingRoomSplitIdentityEnvironment,
+    ]:
+        if env_name == IDENTITY_ENV:
+            identity_env = TossingRoomSplitIdentityEnvironment()
+            identity_tasks = TossingRoomSplitIdentityTasks(
+                env=identity_env, seed=seed, num_test_tasks=num_test_tasks
+            )
+            return (
+                TossingRoomSplitIdentityProblem(env=identity_env, tasks=identity_tasks),
+                TossingRoomSplitIdentitySkillProvider(env=identity_env),
+                identity_env,
+            )
+        if env_name != CAUSAL_ENV:
+            raise ValueError(f"unknown --env {env_name!r}; expected one of {ENV_CHOICES}")
+        env = TossingRoomSplitEnvironment()
+        tasks = TossingRoomSplitTasks(env=env, seed=seed, num_test_tasks=num_test_tasks)
+        return (
+            TossingRoomSplitProblem(env=env, tasks=tasks),
+            TossingRoomSplitSkillProvider(env=env),
+            env,
+        )
 
 
 class TracingEesMethod(EesMethod):
@@ -253,15 +363,12 @@ class TracingEesMethod(EesMethod):
         self, *, name: str, state: State, force: float, informed: bool = False
     ) -> ThrowObservation:
         env = self.env
-        assert isinstance(env, TossingRoomSplitEnvironment)
+        assert isinstance(env, TossingRoomSplitEnvironment | TossingRoomSplitIdentityEnvironment)
         trash = name == "ThrowTrash"
         item = env.trash if trash else env.recycling
         bin_obj = env.trash_bin if trash else env.recycling_bin
         bin_room = env.trash_bin_room if trash else env.recycling_bin_room
-        target = env.required_force(
-            throw_distance=float(state.get(obj=bin_obj, feature_name="throw_distance")),
-            item_weight=float(state.get(obj=item, feature_name="weight")),
-        )
+        target = ThrowTarget.of(env=env, state=state, item=item, bin_obj=bin_obj)
         robot_room = int(round(state.get(obj=env.robot, feature_name="room")))
         count = int(round(state.get(obj=bin_obj, feature_name="count")))
         refused = count >= env.BIN_CAPACITY
@@ -327,21 +434,31 @@ class SkillTraceCollector:
 
     @staticmethod
     def run_seed(
-        *, seed: int, sampler_iters: int, num_cycles: int, max_steps: int, num_test_tasks: int
+        *,
+        # Defaulted to the causal arm so every pre-existing caller -- and the committed
+        # 2026-08-05 reproduction command -- keeps its exact previous behaviour, with the
+        # identity arm strictly opt-in. Same default as the `--env` flag, for the same
+        # reason.
+        env_name: str = CAUSAL_ENV,
+        seed: int,
+        sampler_iters: int,
+        num_cycles: int,
+        max_steps: int,
+        num_test_tasks: int,
     ) -> dict:
         """One full EES run, returning per-period skill tallies, per-cycle competence,
         and the per-sweep evaluation record (with its goal-family breakdown).
 
-        `num_test_tasks` must be passed to `TossingRoomSplitTasks` as well as to
+        `num_test_tasks` must be passed to the domain's `Tasks` as well as to
         `PracticeLoop.run`: the field is what the fixed goal-family composition is
         divided out of, and a disagreement silently measures a different test set."""
         log = PeriodLog()
-        env = TossingRoomSplitEnvironment()
-        tasks = TossingRoomSplitTasks(env=env, seed=seed, num_test_tasks=num_test_tasks)
-        problem = TossingRoomSplitProblem(env=env, tasks=tasks)
+        problem, skill_provider, env = DomainBinding.build(
+            env_name=env_name, seed=seed, num_test_tasks=num_test_tasks
+        )
         method = TracingEesMethod(
             env=env,
-            skill_provider=TossingRoomSplitSkillProvider(env=env),
+            skill_provider=skill_provider,
             seed=seed,
             sampler_max_train_iters=sampler_iters,
             log=log,
@@ -397,6 +514,7 @@ class SkillTraceCollector:
     def collect(
         *,
         label: str,
+        env_name: str = CAUSAL_ENV,
         sampler_iters: int,
         seeds: list[int],
         num_cycles: int,
@@ -405,12 +523,17 @@ class SkillTraceCollector:
     ) -> dict:
         return {
             "label": label,
+            # Recorded in the shard so a pooled analysis cannot silently mix the two
+            # arms: they are the same world under two throw representations, and their
+            # numbers are only comparable side by side, never summed.
+            "env": env_name,
             "sampler_iters": sampler_iters,
             "num_cycles": num_cycles,
             "max_steps_per_interaction": max_steps,
             "num_test_tasks": num_test_tasks,
             "seeds": [
                 SkillTraceCollector.run_seed(
+                    env_name=env_name,
                     seed=seed,
                     sampler_iters=sampler_iters,
                     num_cycles=num_cycles,
@@ -425,6 +548,14 @@ class SkillTraceCollector:
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--label", required=True, help="Name for this run set in the JSON.")
+    parser.add_argument(
+        "--env",
+        choices=ENV_CHOICES,
+        default=CAUSAL_ENV,
+        help="Which throw representation to trace. Both arms are the same world under "
+        "the same protocol and produce shards of identical shape, so the analysis reads "
+        "either -- but shards of the two arms must never be pooled into one run set.",
+    )
     parser.add_argument(
         "--sampler-max-train-iters",
         type=int,
@@ -458,6 +589,7 @@ def main() -> None:
     seeds = args.seeds if args.seeds is not None else list(range(args.num_seeds))
     traces = SkillTraceCollector.collect(
         label=args.label,
+        env_name=args.env,
         sampler_iters=args.sampler_max_train_iters,
         seeds=seeds,
         num_cycles=args.num_cycles,
