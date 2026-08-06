@@ -67,6 +67,20 @@ _FAMILY_GOALS: dict[str, str] = {
     "ThrowTrash": "TrashInBin(trash, trash_bin)",
     "ThrowRecycling": "RecyclingInBin(recycling, recycling_bin)",
 }
+# How each arm names itself on a figure. `scripts/tossingroomsplit_skill_traces.py` now
+# serves TWO throw representations of the same world, and their shards are deliberately
+# the same shape -- so a figure that did not say which arm produced it would be
+# indistinguishable from the other arm's, which is exactly the confusion a side-by-side
+# comparison cannot afford. Derived from the shard's own `env` key rather than from a
+# flag, so it cannot be set wrong. Shards written before that key existed are the causal
+# arm by definition.
+_ARM_LABELS: dict[str, str] = {
+    "tossingroomsplit": "Tossing Room (split throws), capacity-1 — CAUSAL representation",
+    "tossingroomsplitidentity": (
+        "Tossing Room (split throws), capacity-1 — IDENTITY representation"
+    ),
+}
+_DEFAULT_ARM = "tossingroomsplit"
 # (z_{0.025} + z_{0.20}): the standard two-sided 80%-power constant.
 _MDE_CONSTANT = 1.959963985 + 0.841621234
 # 3x the domain's throw_tolerance of 0.1. A greedy draw further than this from the force
@@ -112,6 +126,22 @@ class TossingRoomSplitThrowRates:
         return problems
 
     # -------------------------------------------------------------- reading the traces
+
+    @staticmethod
+    def arm_label(*, traces: list[dict]) -> str:
+        """Which throw representation produced these shards, for the figure titles.
+
+        Raises on a mixed set rather than picking one: the two arms are the same world
+        under two representations, so their numbers are comparable side by side but must
+        never be pooled into a single figure."""
+        names = {trace.get("env", _DEFAULT_ARM) for trace in traces}
+        if len(names) > 1:
+            raise ValueError(
+                f"shards come from more than one arm ({sorted(names)}); they are "
+                "comparable side by side but must never be pooled"
+            )
+        name = names.pop() if names else _DEFAULT_ARM
+        return _ARM_LABELS.get(name, name)
 
     @staticmethod
     def runs(*, traces: list[dict]) -> list[dict]:
@@ -1193,8 +1223,8 @@ class TossingRoomSplitThrowRates:
             loc="best",
         )
         fig.suptitle(
-            "Tossing Room (split throws), capacity-1: the per-seed spread a mean hides "
-            "(10 seeds, 14 tasks per throw family)",
+            f"{TossingRoomSplitThrowRates.arm_label(traces=traces)}\n"
+            "the per-seed spread a mean hides (10 seeds, 14 tasks per throw family)",
             fontsize=12,
         )
         fig.tight_layout()
@@ -1370,8 +1400,9 @@ class TossingRoomSplitThrowRates:
             for spine in ("top", "right"):
                 ax.spines[spine].set_visible(False)
         fig.suptitle(
-            "Tossing Room (split throws), capacity-1: two lifted skills, two samplers, "
-            "very different practice budgets (mean ± stderr over 10 seeds)",
+            f"{TossingRoomSplitThrowRates.arm_label(traces=traces)}\n"
+            "two lifted skills, two samplers, very different practice budgets "
+            "(mean ± stderr over 10 seeds)",
             fontsize=12,
         )
         fig.tight_layout()
@@ -1469,7 +1500,8 @@ class TossingRoomSplitThrowRates:
         rate_ax.legend(fontsize=7)
 
         fig.suptitle(
-            "Separating a trained classifier's greedy draws from sample()'s uniform "
+            f"{TossingRoomSplitThrowRates.arm_label(traces=traces)}\n"
+            "separating a trained classifier's greedy draws from sample()'s uniform "
             "fallback, per seed",
             fontsize=12,
         )

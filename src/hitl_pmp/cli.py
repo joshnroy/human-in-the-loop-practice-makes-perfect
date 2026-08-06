@@ -27,6 +27,7 @@ from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.environments.tossingroomsplit.cli import TossingRoomSplitCli
+from hitl_pmp.environments.tossingroomsplitidentity.cli import TossingRoomSplitIdentityCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
@@ -42,6 +43,15 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     # Tossing Room with the two throws as separate lifted skills -- same world, same
     # flags, two `LearnedSkillSampler`s instead of one. See its own cli.py/skills.py.
     "tossingroomsplit": TossingRoomSplitCli,
+    # The SAME world and the same split throws, under the degenerate IDENTITY throw
+    # representation: the item carries `target_force` and a throw lands iff
+    # |force - target_force| < tolerance, so the answer sits in each sampler's own
+    # classifier row at index 4 and the optimal policy is `force* = x_4`. The counterpart
+    # arm to tossingroomsplit (which learns a relation between two observable causes);
+    # the two exist side by side so the representations can be compared at a matched
+    # protocol. tests/environments/tossingroomsplitidentity/test_fork_equivalence.py
+    # pins that the throw representation is the ONLY difference.
+    "tossingroomsplitidentity": TossingRoomSplitIdentityCli,
 }
 
 

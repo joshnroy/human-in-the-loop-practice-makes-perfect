@@ -169,6 +169,49 @@ predicate definitions play in `predicators/envs/`.
   the item). Runnable as `python -m hitl_pmp.cli --env tossingroomsplit --method ees`,
   on the identical flag set as `--env tossingroom`. See its `skills.py` docstring for
   the full rationale.
+- `tossingroomsplitidentity/` — **the same domain again under the degenerate identity
+  throw representation**, and the counterpart arm to `tossingroomsplit/` above rather
+  than a replacement for it. There, the required force is an unobserved affine function
+  of two observable causes (a bin's per-task `throw_distance` and an item's per-task
+  `weight`), so a sampler must learn a *relation*. Here the item carries `target_force`
+  and a throw lands iff `|force - item.target_force| < throw_tolerance` — so the answer
+  sits in each throw's own classifier row
+  (`[1.0] + concat(state[obj] for obj in ground_skill.objects) + [force]`) at **index
+  4**, and the optimal policy is the literal transformation `force* = x₄`: copy input
+  index 4. That is what PRs #80/#81 removed, restored deliberately so the two
+  representations can be compared at a matched protocol.
+
+  **Exactly one delta, and it is enforced.** Layout, one-way ledge, capacity-1 bins,
+  button wiring, the seven lifted skills and their arities, the 14 TRASH / 14 RECYCLING
+  / 2 EMPTY test composition and the horizon of 12 are all identical, and
+  `tests/environments/tossingroomsplitidentity/test_fork_equivalence.py` asserts each of
+  them rather than leaving it to a reviewer's diff — the permitted differences are
+  enumerated in one place there.
+
+  **Difficulty is matched by construction, because the two arms draw the same tasks.**
+  `Tasks` here draws the causal arm's two causes — from the same ranges, in the same
+  order, with the same number of draws — and resolves them with the same five constants,
+  then puts the *result* in the State as `target_force` and discards the causes. So the
+  arms consume their RNG in lockstep: at a given seed they present the identical practice
+  and test tasks with the identical required force for every throw, which makes them
+  **paired** rather than merely comparable. A uniformly random force lands with
+  probability exactly 0.20 on every task in both, and the best single *fixed* force scores
+  the same in both (185/400 at seed 0).
+
+  Two simpler draw ranges were rejected, both of which would have been a second delta: the
+  pre-#80 `U[0.5, 1.0)`, whose top decile has its winning window clipped by the U(0, 1)
+  force band (0.20 on only 8/10 of its range); and `U[0.1, 0.9)`, which fixes that but not
+  the *marginal* — the causal arm's required force is a sum of two uniforms and so is
+  triangular, and a flat target scores 120/400 for the best fixed force against 185/400.
+
+  Runnable as `python -m hitl_pmp.cli --env tossingroomsplitidentity --method ees`, on the
+  causal arm's flag set minus the five relation flags (`--reference-force`,
+  `--reference-distance`, `--reference-weight`, `--distance-coefficient`,
+  `--weight-coefficient`) and minus `--canonical-throw-distance`/`--canonical-item-weight`,
+  plus `--canonical-target-force`. `--distance-low/high` and `--weight-low/high` are
+  retained and mean exactly what they do in the causal arm. The five relation constants
+  live on `Tasks` here and are deliberately **not** flags: they are what keeps the two
+  arms paired, so changing one would silently unpair them.
 - The remaining domain subfolders (`ballring/`, `tossingroom/`) are implemented but not
   written up in this Status section; their own module docstrings and the experiment
   logs under `docs/experiment-logs/` are the current record. The convention above

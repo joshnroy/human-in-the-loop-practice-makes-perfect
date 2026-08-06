@@ -1,0 +1,471 @@
+from typing import ClassVar
+
+import numpy as np
+from gymnasium.spaces import Box
+
+from hitl_pmp.core.problem.environment.environment import Environment
+from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
+
+
+class TossingRoomSplitIdentityEnvironment(Environment):
+    """ "Tossing Room (split throws, identity representation)":
+    `environments/tossingroomsplit` with **exactly one** change -- the throw
+    representation is the degenerate IDENTITY one. The item carries `target_force`, the
+    bin carries no `throw_distance`, and a throw lands iff
+    `|force - item.target_force| < throw_tolerance`. Everything else in this file is that
+    domain's code verbatim, including the split throws it inherits from
+    `environments/tossingroom` (throwing trash and throwing recycling are two separate
+    lifted skills rather than one `Throw` whose `item` variable ranges over both kinds).
+
+    **The layout is deliberately identical**, room for room: 7 rooms, the pile and the
+    robot start in room 3, the recycling bin (and its own empty/incinerate button) in
+    room 1, the trash bin (and its own button) in room 6, and the one-way ledge between
+    rooms 2 and 3 (the RIGHTWARD step out of room 2 is the domain's single
+    irreversible-blocked action). The dynamics below are the same code as Tossing Room's,
+    unchanged: the raw action is still `[skill_id, arg, force]`, `take_action` is still
+    total over the whole `Box`, and every guard is the same -- **including the capacity-1
+    bin and its per-bin buttons**, which are ported here verbatim rather than reinvented.
+    Nothing about the *world* differs, so a reviewer can diff the two files and see the
+    change is entirely in the symbolic layer.
+
+    **A BIN HOLDS AT MOST ONE ITEM**, and `_apply_throw` REFUSES a throw at a full one
+    (a silent no-op, like every other out-of-context action). That capacity is what makes
+    the count-based in-bin predicate -- which is also each throw's add-effect -- mean
+    "this throw landed" rather than "somebody's item is in there": with each throw
+    carrying its bin's matching empty precondition, the count is provably 0 at throw
+    time, so the atom goes false -> true exactly once per throw. One button per bin
+    follows from the same choice: a single button emptying both bins made `Press`'s
+    effect on the in-bin atoms a universal delete that no per-bin effect could express.
+
+    Consequence, deliberately accepted and shared with Tossing Room: the EMPTY goal
+    family is an ORDERING task. Both buttons must be pressed, the recycling one sits
+    behind the one-way ledge, so the only solution is to press the trash button first and
+    then drop across. The reverse order is unsolvable.
+
+    That layout is what makes the domain interesting, and it is why it was not
+    simplified:
+
+    * **Trash** is a round trip -- `PickupTrash` in room 3, three `MoveRoom`s right to
+      room 6, `ThrowTrash`, then three `MoveRoom`s back for another item. Eight steps per
+      attempt, so a practice period buys several attempts. (A throw that *landed* fills
+      the bin, so the next attempt also needs a `PressTrash` -- the trash button is in
+      room 6 beside its bin, so that costs one extra step and no extra walking.)
+    * **Recycling** is one-way -- `PickupRecycling` in room 3, one `MoveRoom` LEFT across
+      the ledge into room 2 and one more into room 1, `ThrowRecycling`. The ledge makes
+      the return to room 3 impossible, and the pile is the only source of items, so once
+      that throw is spent there is no second attempt at any horizon. A practice period
+      therefore buys exactly one.
+
+    **What differs from Tossing Room, and why.** `item_type` is split into `trash_type`
+    and `recycling_type`, `bin_type` into `trash_bin_type` and `recycling_bin_type`, and
+    `button_type` into `trash_button_type` and `recycling_button_type`. The types are the
+    enforcement mechanism: `SkillGrounder` binds a skill parameter only to objects whose
+    `type` matches exactly, and `GroundSkill` validates the same thing at construction,
+    so `ThrowTrash` provably cannot bind the recycling item. A precondition could not do
+    this as strongly -- it would leave an `item` variable that still *ranges* over both
+    kinds, and a future edit dropping the precondition would silently restore the shared
+    binding. The button split is the same argument applied to Tossing Room's
+    `ButtonForBin`: that predicate exists there to stop one `Press` binding the wrong
+    bin's button, and here the type does it outright, so the predicate would be a
+    tautology (exactly like `BinAcceptsItem` -- see `predicates.py`).
+
+    **THE ANSWER IS IN THE STATE, ON PURPOSE. THAT IS WHY THIS DOMAIN EXISTS.** A throw
+    lands when `|force - item.target_force| < throw_tolerance`, and `target_force` is a
+    per-task feature of the item that the agent observes directly. `EesMethod`'s
+    classifier row for a throw is
+    `[1.0] + concat(state[obj] for obj in ground_skill.objects) + [force]`, which for
+    `ThrowTrash(robot, trash, trash_bin, room)` lays out as
+
+        index 0  1.0                 (bias)
+        index 1  robot.room
+        index 2  robot.holding
+        index 3  trash.kind
+        index 4  trash.target_force  <-- THE ANSWER
+        index 5  trash_bin.count
+        index 6  trash_bin.room
+        index 7  trash_bin.kind
+        index 8  room.index
+        index 9  room.blocks_right
+        index 10 force               (the sampled parameter)
+
+    so the optimal policy is the literal transformation `force* = x_4` -- copy input
+    index 4 -- and the classifier is being asked to learn `|x_10 - x_4| < 0.1`, a
+    comparison between two of its own inputs. This is the **degenerate identity
+    representation**, restored deliberately.
+
+    **This is the counterpart arm to `environments/tossingroomsplit`, not a replacement
+    for it.** That domain (PRs #80/#81) replaced exactly this `target_force` feature with
+    two observable *causes* -- a per-bin `throw_distance` and a per-item `weight`,
+    combined by an unobserved affine relation whose five constants never enter a State --
+    so its samplers must learn a relation rather than copy a column. Both arms now exist
+    side by side so the representations can be compared directly at a matched protocol.
+    Everything except the throw representation is identical between them, and
+    `tests/environments/tossingroomsplitidentity/test_fork_equivalence.py` asserts that
+    rather than leaving it to a reviewer's diff -- layout, ledge direction, bin capacity,
+    button wiring, lifted skill names and arities, test-task composition and horizon all
+    have to agree, or the difference in results stops being attributable to the
+    representation.
+
+    **Difficulty is matched exactly, because the two arms draw the SAME TASKS.**
+    `TossingRoomSplitIdentityTasks` draws the same two causes the causal arm draws, from
+    the same ranges in the same order, and combines them with the same five constants --
+    then puts the *result* in the State as `target_force` and discards the causes. So at
+    any seed the two arms present the identical sequence of goal families with the
+    identical required force for every throw, and the only difference is whether that
+    force is a column or must be inferred. A uniformly random force lands with
+    probability exactly 0.20 on every task in both.
+
+    Two rejected alternatives, both of which would have introduced a second delta:
+
+    * **The pre-#80 draw, `target_force ~ U[0.5, 1.0)`.** Its top decile has its winning
+      window clipped by the top of the U(0, 1) force band, so a random force lands with
+      probability 0.20 on only 8/10 of its range and 0.19 on average (PR #80's own body
+      records the measured 16/80) -- harder than the causal arm, under a random draw.
+    * **`target_force ~ U[0.1, 0.9)`**, which fixes that (0.20 on every task, and [0.1,
+      0.9] is exactly the span the causal arm's `required_force` occupies) but not the
+      *marginal*: the causal arm's required force is a sum of two uniforms and so is
+      triangular on that span, concentrating mass near 0.5. Measured over 400 groundings
+      per family, the best single FIXED force lands 119/400 under the uniform target
+      against 185/400 in the causal arm -- so a state-blind sampler would score very
+      differently in the two arms, and "how much did conditioning on the state buy" would
+      not be comparable across them.
+
+    Drawing the causes and resolving them is the only construction that matches on both.
+
+    The feature schemas are kept **identical** across the split pairs
+    (`(kind, target_force)` for both item types, `(count, room, kind)` for both
+    bin types), even though `kind` is now derivable from the type. `EesMethod.state_features`
+    is `concat(state[obj] for obj in ground_skill.objects)`, so identical schemas are
+    what make the two throw samplers have the same input width -- the same architecture
+    with different weights, which is the comparison the experiment needs. Dropping the
+    now-redundant `kind` feature would have made the two samplers differently shaped and
+    confounded "learned less" with "a different network".
+
+    Splitting the item types also forces `Pickup` to split into `PickupTrash`/
+    `PickupRecycling` (a `trash` object cannot bind a parameter typed `recycling`), and
+    splitting the bin/button types forces `Press` to split into `PressTrash`/
+    `PressRecycling`. All three are `param_dim=0`, so none has a sampler and nothing
+    about learning changes; the throw split is still the only one that does. See
+    `skills.py`.
+
+    Structure otherwise mirrors `TossingRoomEnvironment` exactly, including the same
+    real-per-instance vs. `ClassVar` split: layout config is genuine per-run
+    configuration and so lives in constructor arguments, while the types, the fixed
+    `Object`s, the skill-id encoding and the `action_space` are structural constants.
+    """
+
+    # Discrete skill ids, shared by the decode below and skills.py's compute_action
+    # encode -- one source of truth for both directions. Unchanged from Tossing Room:
+    # the RAW action space does not split, only the symbolic layer above it does, so a
+    # `ThrowTrash` and a `ThrowRecycling` both encode to SKILL_THROW with their own
+    # kind in `arg`, and `PressTrash`/`PressRecycling` both encode to SKILL_PRESS with
+    # the kind of the bin they empty in `arg` (which is how the pressed button is named
+    # by the action rather than inferred from the robot's position -- it was unused when
+    # one button emptied both bins).
+    SKILL_PICKUP: ClassVar[int] = 0
+    SKILL_MOVE_ROOM: ClassVar[int] = 1
+    SKILL_THROW: ClassVar[int] = 2
+    SKILL_PRESS: ClassVar[int] = 3
+
+    # Item-kind discriminators (also the robot's "holding" encoding: 0 = empty hand).
+    TRASH_KIND: ClassVar[int] = 1
+    RECYCLING_KIND: ClassVar[int] = 2
+
+    # A bin's capacity. Deliberately NOT configurable: each throw's bin-empty
+    # precondition, the in-bin predicates' once-per-throw semantics and EMPTY's
+    # one-item-per-bin prefill are all statements about capacity 1, so a knob here would
+    # let a config silently reopen the vacuous-success defect this design closes.
+    BIN_CAPACITY: ClassVar[int] = 1
+
+    num_rooms: int = 7
+    start_room: int = 3
+    recycling_bin_room: int = 1
+    trash_bin_room: int = 6
+    # There is no button-room config: each bin's button sits in that bin's own room, so
+    # its placement is derived (button_room_for_kind) rather than separately configured.
+    # Two knobs that must agree would be a footgun -- "beside its bin" is structural.
+    # The one-way ledge sits between blocked_right_from and blocked_right_from + 1:
+    # stepping RIGHT from blocked_right_from is blocked; every other adjacent step
+    # (including stepping LEFT back across it) is allowed.
+    blocked_right_from: int = 2
+    throw_tolerance: float = (
+        0.1  # max |force - target| for a Throw to land, like Light Switch's 0.1
+    )
+    # hard_reset's non-random per-item target force; only used by the canonical reset
+    # state, never by task sampling (Tasks resolves its own per-task targets). 0.5 is
+    # exactly what the causal arm's canonical throw -- reference_distance into
+    # reference_weight -- requires, so the two domains' canonical reset states still need
+    # the identical force. It is the mode of the (triangular) target distribution, not
+    # the midpoint of a uniform one; there is no uniform draw range here.
+    canonical_target_force: float = 0.5
+
+    robot_type: ClassVar[Type] = Type(name="robot", feature_names=("room", "holding"))
+    # blocks_right marks the one-way ledge. Like the pile's room, this lives in the
+    # STATE rather than in config so a module-level Predicate -- whose signature is
+    # only (state, objects) -- can read it and keep MoveRoom's model as strong as
+    # _apply_move's guard.
+    room_type: ClassVar[Type] = Type(name="room", feature_names=("index", "blocks_right"))
+    # THE SPLIT. Tossing Room has one `bin`, one `item` and one `button` type; here each
+    # kind has its own, which is what stops a grounding crossing the two. Feature schemas
+    # stay identical within each pair -- see the class docstring for why that matters to
+    # the sampler comparison. `count` stays the single representation of a bin's
+    # contents, read by BOTH the in-bin and the bin-empty predicate: with capacity 1 it
+    # is already exactly the bit they each need, and a second "is an item in here"
+    # feature would be the same fact stored twice.
+    # NO throw_distance: under the identity representation a bin contributes nothing to
+    # the required force, so the causal arm's per-task distance feature has no meaning
+    # here and is dropped rather than carried as a decorative column. That is half of
+    # this domain's single delta; the other half is the item's target_force below.
+    trash_bin_type: ClassVar[Type] = Type(name="trash_bin", feature_names=("count", "room", "kind"))
+    recycling_bin_type: ClassVar[Type] = Type(
+        name="recycling_bin", feature_names=("count", "room", "kind")
+    )
+    # A button carries `kind` for the same reason a bin does: it is what `compute_action`
+    # reads to name the pressed button in the raw action, and what the raw `_apply_press`
+    # routes on. At the symbolic layer the type already ties a button to its bin.
+    trash_button_type: ClassVar[Type] = Type(name="trash_button", feature_names=("room", "kind"))
+    recycling_button_type: ClassVar[Type] = Type(
+        name="recycling_button", feature_names=("room", "kind")
+    )
+    # The limitless item pile. Modelled as a real object with a room feature -- the
+    # same shape as `button` -- so a module-level Predicate can tell which room it is
+    # in. `start_room` is per-instance config, which a Predicate (whose signature is
+    # only (state, objects)) cannot read; putting the pile in the STATE is what lets
+    # Pickup's symbolic precondition be exactly as strong as _apply_pickup's guard.
+    pile_type: ClassVar[Type] = Type(name="pile", feature_names=("room",))
+    # target_force IS the answer, sitting in each throw sampler's own input row at index
+    # 4 (see the class docstring's row layout). Redrawn per task. This is the degenerate
+    # identity representation this domain exists to restore -- it is not an oversight.
+    trash_type: ClassVar[Type] = Type(name="trash", feature_names=("kind", "target_force"))
+    recycling_type: ClassVar[Type] = Type(name="recycling", feature_names=("kind", "target_force"))
+
+    robot: ClassVar[Object] = Object(name="robot", type=robot_type)
+    recycling_bin: ClassVar[Object] = Object(name="recycling_bin", type=recycling_bin_type)
+    trash_bin: ClassVar[Object] = Object(name="trash_bin", type=trash_bin_type)
+    trash_button: ClassVar[Object] = Object(name="trash_button", type=trash_button_type)
+    recycling_button: ClassVar[Object] = Object(name="recycling_button", type=recycling_button_type)
+    pile: ClassVar[Object] = Object(name="pile", type=pile_type)
+    # Singleton discriminator objects, one per item type. Their kind feature is what
+    # maps a held item back to the right bin/room at the raw-dynamics layer, which is
+    # unchanged; at the symbolic layer the type now does that job.
+    trash: ClassVar[Object] = Object(name="trash", type=trash_type)
+    recycling: ClassVar[Object] = Object(name="recycling", type=recycling_type)
+
+    action_space: ClassVar[Box] = Box(-np.inf, np.inf, (3,))
+
+    def get_rooms(self) -> tuple[Object, ...]:
+        """One Object per room, index feature = i. Built fresh every call (not cached)
+        -- num_rooms can differ between instances (CLI override, test overrides), so
+        caching risks a stale value; Object equality/hash are value-based (frozen
+        pydantic), so rebuilding is correct, just not free (negligible at this scale)."""
+        return tuple(Object(name=f"room_{i}", type=self.room_type) for i in range(self.num_rooms))
+
+    def bin_for_kind(self, *, kind: int) -> Object:
+        return self.recycling_bin if kind == self.RECYCLING_KIND else self.trash_bin
+
+    def item_for_kind(self, *, kind: int) -> Object:
+        return self.recycling if kind == self.RECYCLING_KIND else self.trash
+
+    def bin_room_for_kind(self, *, kind: int) -> int:
+        return self.recycling_bin_room if kind == self.RECYCLING_KIND else self.trash_bin_room
+
+    def button_for_kind(self, *, kind: int) -> Object:
+        return self.recycling_button if kind == self.RECYCLING_KIND else self.trash_button
+
+    def button_room_for_kind(self, *, kind: int) -> int:
+        """A button sits beside the bin it empties, so its room IS that bin's room."""
+        return self.bin_room_for_kind(kind=kind)
+
+    def required_force(self, *, item_target_force: float) -> float:
+        """The force a throw of this item must come within `throw_tolerance` of.
+
+        Under the identity representation this is the **identity function** on a feature
+        the agent can already read: `item.target_force`. It is kept as a named method
+        anyway, mirroring the causal arm's `required_force`, so that `_apply_throw` (the
+        dynamics) and `skill_oracle_policy.py` (the privileged solver) still share one
+        definition and cannot drift apart -- and so the two domains' oracles read the
+        same shape. The privilege the oracle has here is nil: every sampler observes this
+        value too, at input index 4."""
+        return item_target_force
+
+    def build_initial_state(
+        self,
+        *,
+        trash_target_force: float,
+        recycling_target_force: float,
+        recycling_count: int = 0,
+        trash_count: int = 0,
+    ) -> State:
+        """The robot always starts in start_room with an empty hand; each bin sits in its
+        configured room with its own button beside it. Only the per-item target forces
+        and the initial bin counts vary between callers -- hard_reset uses a canonical
+        value with empty bins, Tasks samples a target per item per episode (and a
+        prefilled item per bin for the empty-buckets goal).
+
+        The target is per-item rather than global so that the two throw families stay
+        genuinely separate learning problems: a `ThrowTrash` row says nothing about what
+        the recycling item's target happens to be this task. (Under this representation
+        that separation buys less than it does in the causal arm -- each sampler's own
+        answer is already in its own row -- but it is kept identical so the only
+        difference between the arms remains the representation itself.)
+
+        A count above BIN_CAPACITY raises rather than being clamped: it is a caller bug,
+        and silently accepting it would put the environment in a state each throw's
+        bin-empty precondition and the in-bin predicates' once-per-throw reading both
+        assume away."""
+        for name, count in (("trash", trash_count), ("recycling", recycling_count)):
+            if not 0 <= count <= self.BIN_CAPACITY:
+                raise ValueError(
+                    f"{name}_count={count}: a bin holds at most one item "
+                    f"(BIN_CAPACITY={self.BIN_CAPACITY})"
+                )
+        data: dict[Object, np.ndarray] = {
+            self.robot: np.array([float(self.start_room), 0.0]),
+            self.recycling_bin: np.array([
+                float(recycling_count),
+                float(self.recycling_bin_room),
+                float(self.RECYCLING_KIND),
+            ]),
+            self.trash_bin: np.array([
+                float(trash_count),
+                float(self.trash_bin_room),
+                float(self.TRASH_KIND),
+            ]),
+            self.trash_button: np.array([
+                float(self.button_room_for_kind(kind=self.TRASH_KIND)),
+                float(self.TRASH_KIND),
+            ]),
+            self.recycling_button: np.array([
+                float(self.button_room_for_kind(kind=self.RECYCLING_KIND)),
+                float(self.RECYCLING_KIND),
+            ]),
+            self.pile: np.array([float(self.start_room)]),
+            self.trash: np.array([float(self.TRASH_KIND), float(trash_target_force)]),
+            self.recycling: np.array([float(self.RECYCLING_KIND), float(recycling_target_force)]),
+        }
+        for i, room in enumerate(self.get_rooms()):
+            data[room] = np.array([float(i), float(i == self.blocked_right_from)])
+        return State(data=data)
+
+    def take_action(self, *, action: Action) -> State:
+        state = self.get_current_state()
+        next_state = state.model_copy(deep=True)
+
+        raw_skill, raw_arg, raw_force = float(action[0]), float(action[1]), float(action[2])
+        # Totality guard: the Box contains +-inf, and round(inf) raises OverflowError.
+        # A non-finite skill/arg is out of context -- a silent no-op, never a crash.
+        if np.isfinite(raw_skill) and np.isfinite(raw_arg):
+            skill_id, arg = int(round(raw_skill)), int(round(raw_arg))
+            robot_room = int(round(state.get(obj=self.robot, feature_name="room")))
+            holding = int(round(state.get(obj=self.robot, feature_name="holding")))
+
+            if skill_id == self.SKILL_PICKUP:
+                self._apply_pickup(
+                    next_state=next_state, robot_room=robot_room, holding=holding, arg=arg
+                )
+            elif skill_id == self.SKILL_MOVE_ROOM:
+                self._apply_move(next_state=next_state, robot_room=robot_room, to_room=arg)
+            elif skill_id == self.SKILL_THROW:
+                self._apply_throw(
+                    state=state,
+                    next_state=next_state,
+                    robot_room=robot_room,
+                    holding=holding,
+                    raw_force=raw_force,
+                )
+            elif skill_id == self.SKILL_PRESS:
+                self._apply_press(next_state=next_state, robot_room=robot_room, arg=arg)
+            # Any other skill_id is unknown -> no-op.
+
+        self.set_state(state=next_state)
+        return next_state
+
+    def _apply_pickup(self, *, next_state: State, robot_room: int, holding: int, arg: int) -> None:
+        # Pickup only from the limitless pile at start_room, and only with an empty
+        # hand; arg must name a real item kind.
+        if (
+            robot_room == self.start_room
+            and holding == 0
+            and arg in (self.TRASH_KIND, self.RECYCLING_KIND)
+        ):
+            next_state.set(obj=self.robot, feature_name="holding", feature_val=float(arg))
+
+    def _apply_move(self, *, next_state: State, robot_room: int, to_room: int) -> None:
+        if 0 <= to_room < self.num_rooms and abs(to_room - robot_room) == 1:
+            # The one-way ledge: stepping RIGHT from blocked_right_from is the single
+            # irreversible-blocked move (a no-op). Everything else, including stepping
+            # LEFT back across it, is allowed.
+            crosses_ledge_rightward = (
+                robot_room == self.blocked_right_from and to_room == self.blocked_right_from + 1
+            )
+            if not crosses_ledge_rightward:
+                next_state.set(obj=self.robot, feature_name="room", feature_val=float(to_room))
+
+    def _apply_throw(
+        self,
+        *,
+        state: State,
+        next_state: State,
+        robot_room: int,
+        holding: int,
+        raw_force: float,
+    ) -> None:
+        if holding not in (self.TRASH_KIND, self.RECYCLING_KIND) or not np.isfinite(raw_force):
+            return
+        bin_obj = self.bin_for_kind(kind=holding)
+        item_obj = self.item_for_kind(kind=holding)
+        bin_room = self.bin_room_for_kind(kind=holding)
+        count = state.get(obj=bin_obj, feature_name="count")
+        # Capacity 1: a full bin REFUSES the throw outright -- the item stays in hand and
+        # nothing happens, exactly like every other out-of-context action here. Refusing
+        # rather than swallowing the item is what makes each throw's bin-empty
+        # precondition exactly as strong as this guard, and it is why the count is
+        # provably 0 below, so a landed throw flips the in-bin atom false -> true instead
+        # of finding it already true. (A refusal is not a miss: nothing was consumed, so
+        # this is not the free re-roll the release below exists to close. Emptying the
+        # bin first costs a press, which the planner has to schedule.)
+        if count >= self.BIN_CAPACITY:
+            return
+        # The identity representation: the required force IS a feature of the item, read
+        # straight out of the State. Every throw sampler observes this same value at
+        # index 4 of its own classifier row, so "the answer" is an input, not something
+        # to be inferred. This one line is the entire difference from
+        # `environments/tossingroomsplit`.
+        required = self.required_force(
+            item_target_force=float(state.get(obj=item_obj, feature_name="target_force"))
+        )
+        # Throwing always releases the item, whether or not it lands. It lands only in
+        # the item's own bin room and only when the dial is within tolerance of the force
+        # that bin/item pair requires. The release is what makes a miss cost something,
+        # and it is what gives this domain its 1-attempt-per-period recycling budget: the
+        # thrown item is gone (items carry only (kind, target_force), with no position, so
+        # "lying near the bin" is not representable), so trying again means a fresh item
+        # from the pile -- an 8-step round trip for trash, and impossible for recycling,
+        # since the one-way ledge has already closed behind the robot. Ported unchanged
+        # from TossingRoomEnvironment._apply_throw; see that file for the history.
+        next_state.set(obj=self.robot, feature_name="holding", feature_val=0.0)
+        if robot_room == bin_room and abs(raw_force - required) < self.throw_tolerance:
+            next_state.set(obj=bin_obj, feature_name="count", feature_val=count + 1.0)
+
+    def _apply_press(self, *, next_state: State, robot_room: int, arg: int) -> None:
+        """Empty the bin belonging to the button named by `arg`, and ONLY that bin --
+        each bin has its own button, beside it. Naming the button in the action rather
+        than inferring it from the room keeps this unambiguous under any layout,
+        including a degenerate one that puts both bins in the same room."""
+        if arg not in (self.TRASH_KIND, self.RECYCLING_KIND):
+            return
+        if robot_room == self.button_room_for_kind(kind=arg):
+            next_state.set(obj=self.bin_for_kind(kind=arg), feature_name="count", feature_val=0.0)
+
+    def get_valid_actions(self) -> list[Action]:
+        # The force dimension is continuous and unbounded (matches Light Switch's
+        # convention), so there is no finite/enumerable action list to return.
+        return []
+
+    def hard_reset(self) -> None:
+        self.set_state(
+            state=self.build_initial_state(
+                trash_target_force=self.canonical_target_force,
+                recycling_target_force=self.canonical_target_force,
+            )
+        )

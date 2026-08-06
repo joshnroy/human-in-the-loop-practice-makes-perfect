@@ -24,12 +24,18 @@ from hitl_pmp.environments.tossingroomsplit.problem import TossingRoomSplitProbl
 from hitl_pmp.environments.tossingroomsplit.skill_provider import TossingRoomSplitSkillProvider
 from hitl_pmp.environments.tossingroomsplit.skills import TossingRoomSplitSkills
 from hitl_pmp.environments.tossingroomsplit.tasks import TossingRoomSplitTasks
+from hitl_pmp.environments.tossingroomsplitidentity.environment import (
+    TossingRoomSplitIdentityEnvironment,
+)
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.practice_loop import PracticeLoop
 from scripts.tossingroomsplit_skill_traces import (
+    CAUSAL_ENV,
+    IDENTITY_ENV,
     PeriodLog,
     SkillTraceCollector,
     ThrowObservation,
+    ThrowTarget,
     TracingEesMethod,
 )
 
@@ -402,3 +408,94 @@ def test_two_different_seeds_do_not_produce_identical_traces() -> None:
         num_test_tasks=4,
     )["seeds"]
     assert runs[0]["periods"] != runs[1]["periods"]
+
+
+class TestTheCollectorServesBothThrowRepresentations:
+    """The collector drives two arms: `tossingroomsplit` (the CAUSAL representation, the
+    default and every pre-existing caller's behaviour) and `tossingroomsplitidentity`
+    (the degenerate IDENTITY one, where the required force IS `item.target_force` and
+    sits at index 4 of each throw's own classifier row).
+
+    They are traced by one script rather than two so the shards are provably the same
+    SHAPE -- the experiment lays the two arms side by side, and a shape difference would
+    make that unreadable. `ThrowTarget` is the only place the two differ here, which is
+    the same claim the domains themselves make."""
+
+    def test_the_identity_arm_produces_a_shard_of_the_same_shape(self) -> None:
+        run = SkillTraceCollector.run_seed(
+            env_name=IDENTITY_ENV,
+            seed=0,
+            sampler_iters=_ITERS,
+            num_cycles=_CYCLES,
+            max_steps=_STEPS,
+            num_test_tasks=_TEST_TASKS,
+        )
+        causal = _traced()
+        assert set(run) == set(causal)
+        assert len(run["sweeps"]) == len(causal["sweeps"])
+        assert set(run["sweeps"][0]) == set(causal["sweeps"][0])
+        # ...and at THIS scale the two shards are not merely the same shape, they are
+        # identical, which is the pairing showing through rather than a bug. The arms
+        # draw the same tasks with the same required forces and consume the same RNG, so
+        # the only thing that can separate them is what each classifier learns -- and at
+        # 4 cycles and 100 training iterations neither discriminates, so both samplers
+        # are taking `sample`'s uniform fallback and both make the same throws.
+        #
+        # It is asserted rather than merely observed because it is the sharpest available
+        # statement of what this fork does and does not change: NOTHING outside the
+        # classifier's view differs. The arms separate at experiment scale (2500
+        # transitions), where the identity arm's `ThrowRecycling` lands 36/56 of its
+        # informed draws against the causal arm's 11/56.
+        assert run["periods"] == causal["periods"]
+        assert run["sweeps"] == causal["sweeps"]
+
+    def test_a_shard_records_which_arm_produced_it(self) -> None:
+        """So a pooled analysis cannot silently mix the two. They are the same world
+        under two representations: comparable side by side, never summed."""
+        collected = SkillTraceCollector.collect(
+            label="identity",
+            env_name=IDENTITY_ENV,
+            sampler_iters=_ITERS,
+            seeds=[0],
+            num_cycles=1,
+            max_steps=20,
+            num_test_tasks=4,
+        )
+        assert collected["env"] == IDENTITY_ENV
+        assert (
+            SkillTraceCollector.collect(
+                label="causal",
+                sampler_iters=_ITERS,
+                seeds=[0],
+                num_cycles=1,
+                max_steps=20,
+                num_test_tasks=4,
+            )["env"]
+            == CAUSAL_ENV
+        ), "the default must stay the causal arm, so pre-existing callers are unchanged"
+
+    def test_the_identity_arms_target_is_literally_the_items_own_feature(self) -> None:
+        """The whole point of that arm, at the one place this script reads the target:
+        no relation is applied, the answer is read straight out of the State."""
+        env = TossingRoomSplitIdentityEnvironment()
+        state = env.build_initial_state(trash_target_force=0.37, recycling_target_force=0.62)
+        assert ThrowTarget.of(env=env, state=state, item=env.trash, bin_obj=env.trash_bin) == 0.37
+        assert (
+            ThrowTarget.of(env=env, state=state, item=env.recycling, bin_obj=env.recycling_bin)
+            == 0.62
+        )
+
+    def test_the_causal_arms_target_is_not_any_single_state_feature(self) -> None:
+        """Non-vacuity for the test above: the same call on the causal arm combines two
+        features with coefficients that are not in the State at all, so it equals
+        neither of them."""
+        env = TossingRoomSplitEnvironment()
+        state = env.build_initial_state(
+            trash_weight=1.4,
+            recycling_weight=0.6,
+            trash_bin_distance=2.8,
+            recycling_bin_distance=1.2,
+        )
+        target = ThrowTarget.of(env=env, state=state, item=env.trash, bin_obj=env.trash_bin)
+        assert target == env.required_force(throw_distance=2.8, item_weight=1.4)
+        assert target not in (1.4, 2.8)
