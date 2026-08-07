@@ -171,22 +171,6 @@ def test_load_arms_raises_when_a_cell_of_the_square_is_missing(*, tmp_path: Path
 # ------------------------------------------------------------------- classification
 
 
-def test_empty_is_classified_before_recycling_and_the_naive_rule_would_be_wrong() -> None:
-    """The EMPTY goal string contains both "Recycling" and "Trash", so a rule list that
-    tested either throw family first would bucket EMPTY's 2 tasks per seed into a throw
-    family's denominator and report 16 RECYCLING / 0 EMPTY."""
-    assert "Recycling" in _EMPTY
-    assert "Trash" in _EMPTY
-    assert TwoWayLedgeReport.classify(goal=_EMPTY) == "EMPTY"
-    assert TwoWayLedgeReport.classify(goal=_TRASH) == "TRASH"
-    assert TwoWayLedgeReport.classify(goal=_RECYCLING) == "RECYCLING"
-
-
-def test_an_unrecognised_goal_raises_rather_than_bucketing_as_other() -> None:
-    with pytest.raises(ValueError, match="unrecognised goal"):
-        TwoWayLedgeReport.classify(goal="SomethingElse(a, b)")
-
-
 def test_the_domain_supplies_the_designed_composition() -> None:
     assert expected_denominators() == {"TRASH": 14, "RECYCLING": 14, "EMPTY": 2}
 

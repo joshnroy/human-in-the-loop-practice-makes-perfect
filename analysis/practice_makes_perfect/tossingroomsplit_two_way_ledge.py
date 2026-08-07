@@ -88,9 +88,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import Rectangle  # noqa: E402
 
-from analysis.practice_makes_perfect.tossingroom_reset_interval import (  # noqa: E402
-    PairedTests,
-)
+from analysis.practice_makes_perfect.goal_families import GoalFamilies  # noqa: E402
+from analysis.practice_makes_perfect.paired_tests import PairedTests  # noqa: E402
 from analysis.practice_makes_perfect.tossingroomsplit_reset_policy import (  # noqa: E402
     TwoProportionSensitivity,
 )
@@ -127,15 +126,6 @@ _EXPECTED_RESETS = {"scheduled": _NUM_CYCLES, "never": 0}
 # though the flag makes the two-way world easier.
 _NUM_TEST_TASKS = 30
 
-# Goal-family classification, as an ORDERED rule list, and the order is load-bearing.
-# `Goal.describe()` renders the EMPTY family as
-# "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)" -- it names BOTH bins, so
-# a naive "does it mention recycling?" test swallows it and silently reports 16
-# RECYCLING / 0 EMPTY. Matching the `BinEmpty` predicate first is what keeps the two
-# throw families' denominators honest. `composition_violations` is the backstop: a
-# misclassification shows up there as a wrong denominator rather than as a plausible
-# wrong answer.
-_FAMILY_RULES = (("BinEmpty", "EMPTY"), ("Trash", "TRASH"), ("Recycling", "RECYCLING"))
 # Report/figure order for the families: the two throw families first (where the mechanism
 # under test lives), the no-throw control last.
 _FAMILIES = ("TRASH", "RECYCLING", "EMPTY")
@@ -317,24 +307,10 @@ class TwoWayLedgeReport:
         """family -> (num_solved, num_total) for one evaluation sweep."""
         counts: dict[str, list[int]] = {family: [0, 0] for family in _FAMILIES}
         for outcome in breakdown.outcomes:
-            family = TwoWayLedgeReport.classify(goal=outcome.goal)
+            family = GoalFamilies.classify(goal=outcome.goal)
             counts[family][0] += int(outcome.solved)
             counts[family][1] += 1
         return {family: (solved, total) for family, (solved, total) in counts.items()}
-
-    @staticmethod
-    def classify(*, goal: str) -> str:
-        """The task family one `Goal.describe()` string belongs to.
-
-        Walks `_FAMILY_RULES` in order, so EMPTY is tested for first -- see that constant
-        for why the order is the whole point. An unmatched goal raises rather than
-        bucketing as "other": it means a domain change or the wrong sweep directory, and
-        a silent "other" bucket would quietly shrink a denominator.
-        """
-        for token, family in _FAMILY_RULES:
-            if token in goal:
-                return family
-        raise ValueError(f"unrecognised goal description: {goal!r}")
 
     # ------------------------------------------------------------------ reading back
 

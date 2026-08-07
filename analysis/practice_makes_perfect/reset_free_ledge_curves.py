@@ -54,11 +54,10 @@ and a ceiling that would read as a result if it were plotted beside the throw fa
 **Statistics.** All four arms ran the same fixed seeds, so every comparison is *paired*
 and the test is `PairedTests.sign_flip`, exact by enumerating its null in full -- no
 normal approximation, no continuity or tie correction, no scipy. It is imported from
-`tossingroom_reset_interval` rather than reimplemented: a second copy of a hand-rolled
-significance test is exactly how a sign error gets published. The same goes for goal
-classification, which comes from `tossingroomsplit_two_way_ledge.TwoWayLedgeReport`
-(there are already three separate classifiers in this folder and they disagree on goal
-shapes from other domains; adding a fourth is how a denominator drifts).
+`paired_tests` rather than reimplemented: a second copy of a hand-rolled significance
+test is exactly how a sign error gets published -- and there genuinely were two copies,
+which had already diverged. The same goes for goal classification, which comes from
+`goal_families.GoalFamilies` (adding another classifier is how a denominator drifts).
 
 **No minimum-detectable-effect is reported here.** The two merged conventions for it on
 this project -- pooled and unpooled -- disagree materially on these rows, and the paired
@@ -83,12 +82,8 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 
-from analysis.practice_makes_perfect.tossingroom_reset_interval import (  # noqa: E402
-    PairedTests,
-)
-from analysis.practice_makes_perfect.tossingroomsplit_two_way_ledge import (  # noqa: E402
-    TwoWayLedgeReport,
-)
+from analysis.practice_makes_perfect.goal_families import GoalFamilies  # noqa: E402
+from analysis.practice_makes_perfect.paired_tests import PairedTests  # noqa: E402
 
 # The 2x2, in the order every table, legend and report below uses: the incumbent first in
 # each factor. `one-way` is the ledge every banked number on this project was measured
@@ -273,7 +268,7 @@ class ResetFreeLedgeCurves:
     def sweep_counts(*, outcomes: list[dict]) -> dict[str, tuple[int, int]]:
         """One sweep's `(solved, total)` per family.
 
-        Classification is `TwoWayLedgeReport.classify`, reused rather than recopied. It
+        Classification is `GoalFamilies.classify`, reused rather than recopied. It
         tests the `BinEmpty` predicate before the item names, because `Goal.describe()`
         renders EMPTY as "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)" --
         it names BOTH bins, so a naive "does it mention recycling?" test swallows it and
@@ -282,7 +277,7 @@ class ResetFreeLedgeCurves:
         solved: Counter[str] = Counter()
         total: Counter[str] = Counter()
         for outcome in outcomes:
-            family = TwoWayLedgeReport.classify(goal=outcome["goal"])
+            family = GoalFamilies.classify(goal=outcome["goal"])
             total[family] += 1
             solved[family] += int(outcome["solved"])
         return {family: (solved[family], total[family]) for family in total}
