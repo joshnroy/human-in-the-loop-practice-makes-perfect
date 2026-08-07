@@ -64,10 +64,22 @@ def _write_run(
         }
         for index, (trash, recycling, empty) in enumerate(sweeps)
     ]
+    # One practice window per cycle plus the trailing empty one the harness records.
+    # `MoveRoom` is present throughout so the "effective" filter has something to reject.
+    windows = [
+        {
+            "MoveRoom": {"num_attempts": 100, "num_successes": 100},
+            "PickupTrash": {"num_attempts": 2, "num_successes": 2},
+            "ThrowTrash": {"num_attempts": 3, "num_successes": 3},
+        }
+        for _ in range(len(sweeps) - 1)
+    ]
+    windows.append({"MoveRoom": {"num_attempts": 0, "num_successes": 0}})
     run.joinpath("stats.json").write_text(
         json.dumps({
             "breakdowns": breakdowns,
             "num_practice_resets": num_practice_resets,
+            "practice_outcomes_per_cycle": windows,
             "task_name": "default",
         })
     )
@@ -231,6 +243,61 @@ def test_paired_differences_are_empty_of_meaning_when_arms_are_identical(
 
 
 # ------------------------------------------------------------------ presentation
+
+
+def test_effective_attempts_count_only_pile_reaching_skills() -> None:
+    """A stranded robot walks and presses buttons all period. Counting `MoveRoom` would
+    report it as busy, which is the exact opposite of the measurement's purpose."""
+    windows = [
+        {
+            "MoveRoom": {"num_attempts": 140, "num_successes": 140},
+            "PressTrash": {"num_attempts": 8, "num_successes": 8},
+            "PickupTrash": {"num_attempts": 1, "num_successes": 1},
+            "ThrowTrash": {"num_attempts": 1, "num_successes": 1},
+        },
+        {"MoveRoom": {"num_attempts": 150, "num_successes": 150}},
+        {"MoveRoom": {"num_attempts": 0, "num_successes": 0}},
+    ]
+    # Checkpoint 0 is before any practice; checkpoint i accumulates windows 0..i-1. The
+    # second cycle attempted nothing effective, so the total must not move.
+    assert ResetFreeLedgeCurves.cumulative_effective_attempts(
+        windows=windows, num_checkpoints=3
+    ) == [0, 2, 2]
+
+
+def test_the_trailing_practice_window_is_not_attributed_to_a_checkpoint() -> None:
+    """`practice_outcomes_per_cycle` carries one window past the last cycle. Folding it
+    in would credit an arm with practice no checkpoint ever saw."""
+    windows = [
+        {"PickupTrash": {"num_attempts": 5, "num_successes": 5}},
+        {"PickupTrash": {"num_attempts": 7, "num_successes": 7}},
+        {"PickupTrash": {"num_attempts": 999, "num_successes": 999}},
+    ]
+    assert ResetFreeLedgeCurves.cumulative_effective_attempts(
+        windows=windows, num_checkpoints=3
+    ) == [0, 5, 12]
+
+
+def test_mean_transitions_per_cycle_is_measured_not_assumed(*, tmp_path: Path) -> None:
+    """This is the number a cycles axis would rest on. The fixture charges 150 per
+    cycle over 1 cycle, matching the real sweeps -- and it is computed rather than
+    asserted, because a period that ends early would legitimately lower it."""
+    loaded = ResetFreeLedgeCurves.load_arms(directories=_square(root=tmp_path))
+    assert ResetFreeLedgeCurves.mean_transitions_per_cycle(
+        arm=loaded[("one-way", "never")]
+    ) == pytest.approx(150.0)
+
+
+def test_policy_display_names_never_leak_the_flag_value_into_a_label() -> None:
+    """The `--practice-reset-policy` values stay `scheduled`/`never` in keys, paths and
+    committed `config_snapshot.json`; only the display label changes."""
+    scheduled = ResetFreeLedgeCurves.label(ledge="one-way", policy="scheduled")
+    never = ResetFreeLedgeCurves.label(ledge="two-way", policy="never")
+    assert scheduled == "one-way ledge, practice-session env resets"
+    assert never == "two-way ledge, never env reset"
+    assert "scheduled" not in scheduled
+    # "never env reset" legitimately contains the word, so check the flag-ish forms.
+    assert "`never`" not in never
 
 
 def test_counts_are_formatted_as_x_over_y_never_a_bare_percentage() -> None:

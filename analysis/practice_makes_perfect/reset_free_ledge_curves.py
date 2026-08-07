@@ -23,12 +23,29 @@ therefore not a like-for-like comparison. The reset-free penalty is a within-led
 difference, so both of its terms carry the same domain difficulty and it cancels. Nothing
 below ever subtracts a two-way count from a one-way one.
 
-**Three figures, one axes each, all four arms on every one.** Overall task success
+**Three figures, two panels each, all four arms on every panel.** Overall task success
 (`x/300` pooled), then TRASH (`x/140`) and RECYCLING (`x/140`) separately -- because the
 pooled curve cannot show *which* tasks a policy loses, and on this domain the two throw
 families behave completely differently under the one-way ledge. Bold is the mean over the
 ten fixed seeds, faint is one line per seed, because a mean over ten seeds can describe
 none of them when an arm is bimodal.
+
+**The second panel is effective practice attempts, not cycles, and that is a measured
+choice.** A cycles axis was the first thing tried, on the theory that a stranded robot's
+practice periods end early (the `Method` raises `InteractionComplete` and untaken steps
+are not charged), giving equal cycles but fewer transitions. **That does not happen in
+this data:** all 40 runs charge exactly 150.0 transitions per cycle, so cycles is
+`transitions / 150` -- a pure rescale that would redraw the identical curve with different
+tick labels, and would imply a corroboration it cannot supply. `mean_transitions_per_cycle`
+computes the rate rather than assuming it, and `print_report` prints it, so the day a
+period *does* end early this stops being true loudly rather than silently.
+
+The starvation is real, just on a different axis: the one-way reset-free arm spends its
+full 150 transitions per cycle **walking**. Counting only the skills that need the robot
+at the pile (`Pickup*`, `Throw*`) it manages **207** attempts pooled against the
+scheduled-reset arm's **1191**, with **85/100** cycles attempting not one. Under the
+two-way ledge the two arms are level (4021 against 3982, 0/100 starved each). That is what
+the second panel plots.
 
 **EMPTY gets no figure.** It is 2 tasks per seed, 20 pooled per arm, and it is solved
 20/20 in every one of the four arms -- a denominator that supports almost no inference,
@@ -101,6 +118,19 @@ _COLORS = {
 }
 _LINESTYLES = {"scheduled": "-", "never": "--"}
 
+# Display names for the two `--practice-reset-policy` values. DISPLAY ONLY: the keys,
+# directory names and flag values stay `scheduled`/`never`, because those are what the
+# CLI accepts and what every committed `config_snapshot.json` already records.
+_POLICY_DISPLAY = {
+    "scheduled": "practice-session env resets",
+    "never": "never env reset",
+}
+
+# Skills that require the robot to be at the item pile. A stranded robot can still walk
+# (`MoveRoom`) and press buttons (`Press*`) for a whole period, so those are excluded --
+# counting them would report a starved arm as busy.
+_EFFECTIVE_PREFIXES = ("Pickup", "Throw")
+
 
 class ResetFreeLedgeCurves:
     """A static-method container, never instantiated."""
@@ -119,8 +149,11 @@ class ResetFreeLedgeCurves:
 
     @staticmethod
     def label(*, ledge: str, policy: str) -> str:
-        """The legend entry, which is where the ledge/policy pairing has to be legible."""
-        return f"{ledge} ledge, `{policy}`"
+        """The legend entry, which is where the ledge/policy pairing has to be legible.
+
+        Uses the display name for the policy, never the flag value -- see
+        `_POLICY_DISPLAY`."""
+        return f"{ledge} ledge, {_POLICY_DISPLAY[policy]}"
 
     @staticmethod
     def format_count(*, solved: int, total: int) -> str:
@@ -188,8 +221,53 @@ class ResetFreeLedgeCurves:
                 "transitions": transitions,
                 "families": families,
                 "overall": overall,
+                "effective_attempts": ResetFreeLedgeCurves.cumulative_effective_attempts(
+                    windows=stats["practice_outcomes_per_cycle"],
+                    num_checkpoints=len(transitions),
+                ),
             }
         return arm
+
+    @staticmethod
+    def cumulative_effective_attempts(*, windows: list[dict], num_checkpoints: int) -> list[int]:
+        """Effective practice attempts accumulated *before* each evaluation checkpoint.
+
+        "Effective" means a skill that needs the robot to be at the item pile -- the
+        `Pickup*` and `Throw*` families. `MoveRoom` and the `Press*` skills are excluded
+        deliberately: a stranded robot can still walk and press buttons all period, so
+        counting those would report a starved arm as busy.
+
+        Checkpoint 0 is taken before any practice, so it accumulates nothing; checkpoint
+        `i` accumulates practice windows `0..i-1`. `practice_outcomes_per_cycle` carries
+        one trailing window past the last cycle (it records zero attempts), which this
+        slicing drops rather than mis-attributing to a checkpoint that never saw it.
+        """
+        cumulative = [0]
+        running = 0
+        for window in windows[: num_checkpoints - 1]:
+            running += sum(
+                record["num_attempts"]
+                for name, record in window.items()
+                if name.startswith(_EFFECTIVE_PREFIXES)
+            )
+            cumulative.append(running)
+        return cumulative
+
+    @staticmethod
+    def mean_transitions_per_cycle(*, arm: dict) -> float:
+        """Online transitions charged per practice cycle, averaged over seeds.
+
+        This is the quantity a "cycles" axis would rest on. A period that ends early
+        (the `Method` raises `InteractionComplete`) contributes only the steps it
+        actually took, so a starved arm *could* show fewer transitions per cycle -- see
+        `PracticeLoop`'s docstring. Whether it did is a measurement, not an assumption,
+        which is why this is computed and printed rather than asserted."""
+        rates = []
+        for seed in sorted(arm):
+            transitions = arm[seed]["transitions"]
+            num_cycles = len(transitions) - 1
+            rates.append((transitions[-1] - transitions[0]) / num_cycles)
+        return sum(rates) / len(rates)
 
     @staticmethod
     def sweep_counts(*, outcomes: list[dict]) -> dict[str, tuple[int, int]]:
@@ -270,6 +348,32 @@ class ResetFreeLedgeCurves:
     @staticmethod
     def print_report(*, arms: dict) -> None:
         """Every number the write-up quotes, as `x/y`, re-derived here."""
+        print("practice budget actually spent, per arm\n")
+        for ledge, policy in ResetFreeLedgeCurves.arms():
+            arm = arms[(ledge, policy)]
+            rate = ResetFreeLedgeCurves.mean_transitions_per_cycle(arm=arm)
+            effective = sum(arm[seed]["effective_attempts"][-1] for seed in sorted(arm))
+            starved = sum(
+                1
+                for seed in sorted(arm)
+                for before, after in zip(
+                    arm[seed]["effective_attempts"][:-1],
+                    arm[seed]["effective_attempts"][1:],
+                    strict=True,
+                )
+                if after == before
+            )
+            cycles = sum(len(arm[seed]["effective_attempts"]) - 1 for seed in sorted(arm))
+            print(
+                f"  {ledge:>8} {policy:>9}   {rate:6.1f} transitions/cycle"
+                f"   {effective:>5} effective attempts pooled"
+                f"   {starved}/{cycles} cycles with zero"
+            )
+        print(
+            "\n  A cycles axis would be transitions/rate. Every arm above charges the "
+            "same\n  rate, so cycles is a pure rescale of transitions here and is not "
+            "plotted.\n"
+        )
         print("final-checkpoint scores, pooled over seeds\n")
         for family in (None, "TRASH", "RECYCLING", "EMPTY"):
             name = "OVERALL" if family is None else family
@@ -302,52 +406,77 @@ class ResetFreeLedgeCurves:
 
     @staticmethod
     def render(*, arms: dict, family: str | None, output: Path, title: str, legend_loc: str):
-        """One axes, all four arms, bold pooled mean over faint per-seed lines."""
-        fig, ax = plt.subplots(1, 1, figsize=(9.0, 5.4))
+        """Two panels sharing a y axis, all four arms on each, bold pooled mean over
+        faint per-seed lines.
+
+        **Left: online transitions. Right: cumulative effective practice attempts.**
+
+        The right panel is deliberately *not* a cycles axis. Cycles were measured first,
+        and in all 40 runs a cycle charges exactly 150 transitions -- no period ended
+        early anywhere in this data -- so a cycles axis is `transitions / 150`, a pure
+        rescale that would draw the identical curve with different tick labels. Putting
+        that beside the transitions panel would imply a corroboration it cannot supply.
+
+        What *is* true is that the arms are starved of **useful** experience rather than
+        of steps: a stranded robot spends its full 150 transitions walking. So the second
+        axis counts the practice attempts that need the robot at the pile, which is the
+        starvation the equal-transitions grid hides."""
+        fig, (ax_transitions, ax_effective) = plt.subplots(1, 2, figsize=(13.6, 5.4), sharey=True)
         seed_total = 0
         for ledge, policy in ResetFreeLedgeCurves.arms():
             arm = arms[(ledge, policy)]
             color, linestyle = ResetFreeLedgeCurves.style(ledge=ledge, policy=policy)
             xs = ResetFreeLedgeCurves.transitions(arm=arm)
+            seeds = sorted(arm)
             # Every seed as a thin line first: the spread is the point. On this domain
             # the one-way `never` arm is bimodal, so its mean describes none of its seeds.
-            for seed in sorted(arm):
+            for seed in seeds:
                 entry = arm[seed]["overall"] if family is None else arm[seed]["families"][family]
                 seed_total = entry[-1][1]
-                ax.plot(
-                    xs,
-                    [solved for solved, _ in entry],
-                    color=color,
-                    alpha=0.22,
-                    linewidth=0.9,
+                ys = [solved for solved, _ in entry]
+                ax_transitions.plot(xs, ys, color=color, alpha=0.22, linewidth=0.9)
+                ax_effective.plot(
+                    arm[seed]["effective_attempts"], ys, color=color, alpha=0.22, linewidth=0.9
                 )
             pooled = ResetFreeLedgeCurves.pooled_curve(arm=arm, family=family)
             # Per-seed lines are counts out of `seed_total`; the pooled line is out of
             # `total`. Scaling the pooled line back onto the per-seed axis is what lets
             # one y axis carry both without either meaning the wrong thing.
             scale = seed_total / pooled[-1][1]
+            pooled_ys = [solved * scale for solved, _ in pooled]
             final = pooled[-1]
-            ax.plot(
-                xs,
-                [solved * scale for solved, _ in pooled],
-                color=color,
-                linestyle=linestyle,
-                linewidth=2.4,
-                label=(
-                    f"{ResetFreeLedgeCurves.label(ledge=ledge, policy=policy)} — "
-                    f"{ResetFreeLedgeCurves.format_count(solved=final[0], total=final[1])}"
-                ),
+            rate = ResetFreeLedgeCurves.mean_transitions_per_cycle(arm=arm)
+            label = (
+                f"{ResetFreeLedgeCurves.label(ledge=ledge, policy=policy)} — "
+                f"{ResetFreeLedgeCurves.format_count(solved=final[0], total=final[1])}"
+                f"  ({rate:.1f} transitions/cycle)"
+            )
+            ax_transitions.plot(
+                xs, pooled_ys, color=color, linestyle=linestyle, linewidth=2.4, label=label
+            )
+            # The pooled line's x on the effective axis is the per-seed mean, so a point
+            # means "at this many effective attempts on average, this many tasks solved".
+            mean_effective = [
+                sum(arm[seed]["effective_attempts"][i] for seed in seeds) / len(seeds)
+                for i in range(len(xs))
+            ]
+            ax_effective.plot(
+                mean_effective, pooled_ys, color=color, linestyle=linestyle, linewidth=2.4
             )
 
-        ax.set_xlabel("online transitions")
-        ax.set_ylim(-seed_total * 0.04, seed_total * 1.06)
-        ax.grid(alpha=0.25, linewidth=0.6)
-        ax.set_ylabel(
+        ax_transitions.set_xlabel("online transitions")
+        ax_effective.set_xlabel(
+            "cumulative effective practice attempts (`Pickup*` + `Throw*`), mean over seeds"
+        )
+        for axes in (ax_transitions, ax_effective):
+            axes.grid(alpha=0.25, linewidth=0.6)
+            axes.set_ylim(-seed_total * 0.04, seed_total * 1.06)
+        ax_transitions.set_ylabel(
             f"test tasks solved per seed (x/{seed_total});  legend gives the pooled count",
             fontsize=9,
         )
-        ax.legend(fontsize=9, loc=legend_loc, framealpha=0.95)
-        ax.set_title(title, fontsize=10.5)
+        ax_transitions.legend(fontsize=8.5, loc=legend_loc, framealpha=0.95)
+        fig.suptitle(title, fontsize=10.5)
         fig.tight_layout()
         fig.savefig(output, dpi=160)
         print(f"wrote {output}")
