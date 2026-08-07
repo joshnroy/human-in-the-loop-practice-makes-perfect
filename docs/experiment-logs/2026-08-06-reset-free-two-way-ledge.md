@@ -428,6 +428,39 @@ throws, and the effect did not go away.** Reset-free practice in a world with no
 irreversible action still loses 44.0pp to scheduled-reset practice, on both throw
 families, in 10/10 seeds.
 
+### The training curves, across all three variants
+
+The outcome tables above report each arm's final count. The curves report its *shape*,
+and they were drawn from the same 60 committed `stats.json` files by
+`analysis/practice_makes_perfect/reset_free_training_curves.py` — no new run, and the
+per-seed finals reproduce every number already published on this stack.
+
+![Training curves for all three Tossing Room variants](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PLACEHOLDER_SHA/docs/experiment-logs/2026-08-06-reset-free-two-way-ledge-curves.png)
+
+Two things are visible there that no table in this log states.
+
+**The two-way ledge lifted the `scheduled` arm too, and that is the honest frame for the
+headline.** `scheduled` went 151/300 → 276/300 and `never` went 85/300 → 144/300. So
+reset-free practice did **not** get worse in absolute terms when stranding was removed —
+it improved, and significantly. What grew is the gap, because `scheduled` improved far
+more. This is the same ceiling caveat stated just above, but the interaction statistic
+cannot show it: an interaction is a difference of differences and is blind to both arms
+rising together. The curve makes it a shape rather than an inference.
+
+**`pickup-weight / never` is bimodal, and its mean describes none of its seeds.** Its
+per-seed finals are 18, 16, 5, 6, 7, 6, 21, 20, 7, 6 — four seeds tracking the one-way
+arm and six collapsed, with nothing between 7 and 15. The arm mean, 11.2/30, falls
+squarely in that empty gap. That is #122's stranding split appearing directly in task
+outcomes rather than only in the practice tallies, and it is the clearest argument on
+this stack for plotting per-seed spread rather than arm means. Pinned by
+`test_pickup_weight_never_is_bimodal_rather_than_merely_low`, so a change to the
+extraction cannot quietly dissolve it.
+
+One outlier worth naming: `one-way / scheduled` seed 8 finishes **6/30** while the other
+nine seeds finish 16-18, and it drags that arm's mean visibly. The same seed is
+unremarkable in every other variant, so it is a seed-specific failure in the one-way
+world rather than a bad seed.
+
 ### Against the pre-registered decision rule
 
 None of the three pre-registered outcomes occurred. "Positive control succeeds" required
