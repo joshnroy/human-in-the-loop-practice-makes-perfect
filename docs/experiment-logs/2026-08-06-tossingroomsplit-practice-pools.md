@@ -211,6 +211,14 @@ not eyeballed.
 Aggregate over all 24,750 practice executions: **23,863/24,750** `NO_SAMPLER`,
 **367/24,750** `EPSILON_RANDOM`, **357/24,750** `INFORMED`, **163/24,750** `UNINFORMATIVE`.
 
+**The tally accounts for every transition, which is a check on the instrument rather than a
+result.** The budget is 25 cycles x 100 steps x 10 seeds = **25,000** online transitions,
+and the pools sum to **24,750** — short by exactly **250 = 25 cycles x 10 seeds**, one per
+practice period. That is precisely deviation 2 in `EesMethod`'s docstring: the outcome of
+the *last* skill in an interaction period is never observed, because there is no subsequent
+state to check `add_effects` against. One unobserved execution per period, no more and no
+fewer, means nothing is being silently dropped from the four pools.
+
 ## 2. The domain is clean, and clean in the way Tossing3D was not
 
 Three separate checks, each of which Tossing3D failed:
