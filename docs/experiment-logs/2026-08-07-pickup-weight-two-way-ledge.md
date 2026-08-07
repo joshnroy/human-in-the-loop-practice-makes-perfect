@@ -1,8 +1,9 @@
 # Pre-registration: the pickup-weight fork under the two-way ledge
 
-**Status: PRE-REGISTRATION. Written and committed before any sweep ran.** Every number
-below is a prediction or a threshold. No result appears in this file at this commit; the
-results section is added in a later commit on the same branch.
+**Status: pre-registration (commit `8cb89ec`) plus results, added in a later commit.**
+Everything from "Question / goal" down to "Disclosure of prior observations" is the
+pre-registration exactly as committed before any sweep ran, unedited. The results follow
+it, under "Results".
 
 ## Question / goal
 
@@ -181,3 +182,132 @@ probe, not a timing run. The wiring change is verified only against the fork's *
 
 The two directionally-conflicting observations disclosed in PR #125's own
 pre-registration remain the relevant priors and are not restated here.
+
+---
+
+# Results
+
+**Everything above this line was committed before the sweep ran (`8cb89ec`) and has not
+been edited.** No number published by PR #115, #122 or #125 is edited, restated or
+recomputed anywhere below; the three existing cells are re-extracted only to check that
+the extraction reproduces them, and it does, exactly.
+
+## Headline
+
+> **Removing both mechanisms closes the gap.** `never` 287/300 against `scheduled`
+> 300/300 — a difference of 13/300 that sits entirely in one seed, with an exact paired
+> sign-flip p-value of 1.0 (9/10 seeds have a difference of exactly zero). The
+> pre-registered **SUPER-ADDITIVE / GAP CLOSES** branch of the decision rule is the one
+> that fires.
+
+The effects are **not** additive: additivity predicted `never` = 171/300 and the observed
+value is 287/300, a deviation of `+116/300` against an MDE of `29.2/300` for that
+contrast. That deviation is descriptive rather than a test, because 171/300 is a
+prediction assembled from point estimates, not a measured arm.
+
+## The completed 2x2
+
+Final evaluation scores, 10 fixed seeds, `x/300` (30 test tasks x 10 seeds). The bottom
+right cell is this experiment; the other three are re-extracted from committed data.
+
+| variant | ledge | `scheduled` | `never` | within-world gap | MDE |
+|---|---|---|---|---|---|
+| `tossingroomsplit` | one-way | 151/300 | 85/300 | 66/300 | 33.5/300 |
+| `tossingroomsplit` | two-way | 276/300 | 144/300 | 132/300 | 31.4/300 |
+| `tossingroomsplitpickupweight` | one-way | 183/300 | 112/300 | 71/300 | 34.3/300 |
+| **`tossingroomsplitpickupweight`** | **two-way** | **300/300** | **287/300** | **13/300** | **10.0/300** |
+
+MDE is `2.801585 * sqrt(p_bar*(1-p_bar)*(1/n1 + 1/n2))`, computed per row from that row's
+own two denominators.
+
+**Extraction check.** All six previously-published per-seed vectors reproduce exactly
+from the committed `stats.json`, and their sums reproduce the published `x/300`. The
+fourth panel was only added after that check passed.
+
+## The interaction, which is the surprising part
+
+The two-way ledge does **opposite** things to the reset-free penalty in the two variants:
+
+| variant | gap one-way | gap two-way | interaction |
+|---|---|---|---|
+| `tossingroomsplit` (frozen inputs) | 66/300 | 132/300 | **+66/300 — the gap WIDENS** |
+| `tossingroomsplitpickupweight` (weight at pickup) | 71/300 | 13/300 | **-58/300 — the gap COLLAPSES** |
+
+Three-way interaction: `-124/300`.
+
+On the frozen-inputs domain, opening the ledge helped `scheduled` far more than `never`
+(151 -> 276 against 85 -> 144), so the penalty got *bigger*. Only when the sampler's
+inputs also keep varying does removing stranding let `never` catch up. **Neither
+mechanism is the cause on its own; the penalty needs both present.** That is a stronger
+statement than "the two fixes add up", and it is the opposite of what the pre-registration
+predicted.
+
+## Is the new cell bimodal? No.
+
+Pre-registered prediction: the bimodality vanishes. **It does.**
+
+| cell | per-seed finals | largest-gap split |
+|---|---|---|
+| pickup-weight / one-way / `never` | `[18, 16, 5, 6, 7, 6, 21, 20, 7, 6]` | 6/10 low `[5,6,6,6,7,7]`, 4/10 high `[16,18,20,21]`, gap 9 |
+| pickup-weight / two-way / `never` | `[30, 30, 17, 30, 30, 30, 30, 30, 30, 30]` | 1/10 low `[17]`, 9/10 high `[30 x 9]`, gap 13 |
+
+The one-way arm's 6/4 split at a gap of 9 is a genuine two-mode distribution. The two-way
+arm is 9/10 seeds at the ceiling with a single low outlier — one tail, not a second mode.
+
+## Stranding, measured rather than assumed
+
+Read with `analysis/practice_makes_perfect/pickup_weight_stranding.py` off #111's
+`practice_outcomes_per_cycle`, using **`num_stranded_before_last_period`**, not raw onset
+(PR #122 established that onset cannot distinguish "stranded going into the last period"
+from "took no pickup in the last period").
+
+| arm | stranded seeds | ...before the last period | seeds drawing 1 weight | periods with pile access |
+|---|---|---|---|---|
+| two-way / `scheduled` | 0/10 | 0/10 | 0/10 | 10/10 every seed |
+| two-way / `never` | 0/10 | 0/10 | 0/10 | 10/10 every seed |
+
+Against 6/10 seeds drawing exactly one weight in the one-way pickup-weight cell. Both
+mechanisms are confirmed removed by measurement, not by assumption: weight draws per seed
+run 183-232 on the `never` arm.
+
+## The one seed that is not at ceiling
+
+Seed 2 of the `never` arm finishes 17/30 and carries the entire 13/300 difference. Its
+per-family breakdown is **TRASH 1/14, RECYCLING 14/14, EMPTY 2/2**, and its practice
+tallies are **1 trash pickup against 231 recycling pickups** for the whole run. So it is
+a practice-*allocation* imbalance under reset-free exploration — the run essentially never
+practised `ThrowTrash` — and specifically **not** stranding: it reached the pile in 10/10
+periods and drew 232 weights.
+
+Pooled per-family, `never` is TRASH 127/140, RECYCLING 140/140, EMPTY 20/20; `scheduled`
+is 140/140, 140/140, 20/20.
+
+## What this does NOT show
+
+**The ceiling limits what can be concluded.** `scheduled` is at 300/300 — no headroom at
+all. So this design cannot distinguish "reset-free practice is exactly as good as
+scheduled-reset practice here" from "it is slightly worse, on a task set that has become
+too easy to reveal it". The two-way pickup-weight world is the easiest of the four cells
+by construction (EMPTY solve 9, horizon 11, RECYCLING repeatable), and both arms nearly
+saturate it.
+
+What is **not** a ceiling artifact is the `never` arm's own movement: 112/300 -> 287/300
+between the one-way and two-way pickup-weight cells. That is a real gain on the arm that
+had room to move.
+
+A cross-world comparison of raw counts is never made here. The two-way world is an easier
+domain, so only the within-world gaps are compared across worlds.
+
+## Reproducing
+
+```text
+analysis/practice_makes_perfect/cross_variant_reset_policy_curves.py \
+  --arms-json docs/experiment-logs/2026-08-07-pickup-weight-two-way-ledge.json \
+  --output docs/experiment-logs/2026-08-07-cross-variant-reset-policy-curves.png
+```
+
+All 20 runs' `stats.json`, `config_snapshot.json` and `timing.json` are committed under
+`docs/experiment-logs/2026-08-07-pickup-weight-two-way-ledge-runs/` (1,284,762 bytes, 60
+files). Settings are asserted equal to PR #122's banked cells key-by-key, with
+`two_way_ledge` and `output_dir` the only permitted differences, by
+`tests/analysis/practice_makes_perfect/test_cross_variant_reset_policy_curves.py`.
