@@ -252,8 +252,8 @@ pre-commit install            # optional: run lint/format/typecheck locally pre-
 ```
 
 CI (`.github/workflows/ci.yml`) runs these on every push/PR to `main`, as **three jobs**: `lint`
-(`ruff check .`, `ruff format --check .`, `lint-imports`), `typecheck` (`mypy src`), and `test`
-(`pytest -q`). `main` only allows squash-merge (no merge commits, no rebase merge).
+(`ruff check .`, `ruff format --check .`, `lint-imports`, `scripts/check_doc_links.sh`),
+`typecheck` (`mypy src`), and `test` (`pytest -q`). `main` only allows squash-merge (no merge commits, no rebase merge).
 
 **A branch that is `BEHIND` gets rebased before it is surfaced** — it has never been tested against
 what it would merge into, and `MERGEABLE` only means "no textual conflict". Prefer resuming the
@@ -436,7 +436,8 @@ effect. Keep the table too; the figure shows the shape, the table carries the nu
 - **Experiment-log PRs commit them**, alongside the `docs/experiment-logs/` entry, and
   reference them **from the log itself by repo-relative link** — `![alt](2026-08-07-foo.png)`,
   the bare filename, since the figure sits in the same directory as the entry. **Never a URL
-  in a committed file.** `main` allows squash-merge only, so merging mints a new commit and
+  in a committed file** — CI's `lint` job enforces this, via `scripts/check_doc_links.sh`.
+  `main` allows squash-merge only, so merging mints a new commit and
   **orphans every SHA that branch pinned**; a relative link resolves against whatever ref the
   reader is viewing, so it cannot orphan and cannot go stale. The failure is silent — GitHub
   keeps orphaned commits reachable until it garbage-collects, so a dead pin still returns
