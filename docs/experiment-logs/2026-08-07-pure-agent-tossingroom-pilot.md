@@ -92,7 +92,7 @@ The described arm was run twice. The first attempt is preserved as
 | `ees` | 6/30 | 20/30 | 14/14 | 4/14 | 2/2 |
 | `skill-oracle` | 30/30 | 30/30 | 14/14 | 14/14 | 2/2 |
 
-![learning curves](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PIN_SHA/docs/experiment-logs/2026-08-07-pure-agent-tossingroom-pilot.png)
+![learning curves](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/ba15bd7164e5725e7f52d31ec76aa55a254ff5a1/docs/experiment-logs/2026-08-07-pure-agent-tossingroom-pilot.png)
 
 Every arm ran the full 300 online transitions; `skill-oracle` is a single point because it
 never practises (`--num-cycles 0`). The described arm is deliberately **absent from the
