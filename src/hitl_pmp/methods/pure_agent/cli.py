@@ -3,7 +3,7 @@ from pathlib import Path
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.methods.practice_makes_perfect.cli import PracticeCycleCli
-from hitl_pmp.methods.pure_agent.prompts import PromptArm
+from hitl_pmp.methods.pure_agent.prompts import FeedbackArm, PromptArm
 from hitl_pmp.methods.pure_agent.pure_agent_method import PureAgentMethod
 from hitl_pmp.methods.pure_agent.transcript_store import TranscriptStore
 
@@ -52,6 +52,17 @@ class PureAgentCli:
             "Recorded into config_snapshot.json so a replayed run says which arm it "
             "belongs to; it does not change what a replay does, since a replay builds no "
             "prompts.",
+        )
+        parser.add_argument(
+            "--pure-agent-feedback",
+            type=FeedbackArm,
+            choices=list(FeedbackArm),
+            default=FeedbackArm.ZERO_SHOT,
+            help="Which feedback arm the transcript being replayed was authored under. "
+            "Recorded into config_snapshot.json for the same reason as the prompt arm, "
+            "and with the same non-effect: a replay builds no prompts, so this cannot "
+            "change what it does. It is how a results directory says which arm it is, "
+            "which matters when the two arms differ only in a transcript.",
         )
 
     @staticmethod

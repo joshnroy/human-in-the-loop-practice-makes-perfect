@@ -2,6 +2,7 @@ import enum
 
 from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.method.types import Skill, SkillPracticeTally
+from hitl_pmp.methods.pure_agent.types import PracticeTransition
 
 # The contract half of every prompt: what the agent must write and what it will be
 # called with. Identical on both arms -- the arms differ only in whether a
@@ -78,6 +79,52 @@ class PromptArm(str, enum.Enum):
         return self.value
 
 
+class FeedbackArm(str, enum.Enum):
+    """Which of the two *feedback* baselines to run. Orthogonal to `PromptArm`, which
+    varies what the agent is told about the domain up front; this varies what it is told
+    about its own behaviour between rounds.
+
+    `(str, Enum)` for the same three reasons `PromptArm` is.
+
+    **"Zero-shot" here means no worked examples, not no feedback.** Both arms get the
+    aggregate `x/y` tallies -- that is what makes the axis clean, since a difference
+    between them is then a difference in examples and nothing else. The names are the
+    in-context-learning ones because that is exactly the distinction: the in-context arm's
+    prompt carries demonstrations of `(observation, action, outcome)`, and the zero-shot
+    arm's carries none. Do not read `ZERO_SHOT` as "round 0 only"."""
+
+    # What this method shipped with, unchanged: per-lifted-skill `num_successes/
+    # num_attempts` and the practice-goal count. The control arm.
+    ZERO_SHOT = "zero-shot"
+    # The same, plus a `model_dump_json()` dump of the parameterized practice transitions
+    # -- what the policy saw, what parameters it chose, and whether they worked.
+    IN_CONTEXT = "in-context"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+# Deliberately a cap on RECORDS rather than on characters or tokens. A record is the unit
+# an agent reasons over, and half a record is worse than none; a byte budget would also
+# vary the count between domains and make two runs incomparable for a reason that has
+# nothing to do with either.
+#
+# **40 rather than "one period's worth", and the reason is identifiability.** A single
+# period's records come from a single policy, so they can carry no variation in the
+# parameter that policy chose. Rendered against the 2026-08-07 pilot's own round-0 policy,
+# all 19 Tossing Room throws sit at `force=2.0` with `achieved_add_effects=False`; only the
+# item weight varies. That dump says "2.0 is wrong" and cannot say what is right -- a
+# relation between an observable and a working parameter needs two different parameters
+# tried, and those only ever come from two different rounds. So the window is sized to span
+# more than one period (~20 throws each on that pilot) and keep the previous policy's
+# attempts alive beside the current one's.
+#
+# 40 at ~2.9 KB per Tossing Room observation is ~116 KB, comfortably inside a context
+# window. Kept finite because a run with many cycles would otherwise grow the prompt
+# without bound.
+DEFAULT_MAX_DUMPED_TRANSITIONS = 40
+
+
 class PromptBuilder:
     """Renders the prompts sent to the agent. A static-method container, never
     instantiated, same as every other business-logic class in this project.
@@ -105,6 +152,9 @@ class PromptBuilder:
         num_practice_goals_reached: int,
         num_practice_periods: int,
         previous_error: str | None,
+        feedback_arm: FeedbackArm = FeedbackArm.ZERO_SHOT,
+        practice_transitions: tuple[PracticeTransition, ...] = (),
+        max_dumped_transitions: int = DEFAULT_MAX_DUMPED_TRANSITIONS,
     ) -> str:
         """The feedback prompt: how the last round's policy did, and what to do next.
 
@@ -166,11 +216,71 @@ class PromptBuilder:
             "attempted in states where it cannot work. A skill never executed at all is "
             "one your policy never selected -- which may itself be the problem.",
             "",
+        ]
+        if feedback_arm is FeedbackArm.IN_CONTEXT:
+            lines += PromptBuilder.transition_dump(
+                practice_transitions=practice_transitions,
+                max_dumped_transitions=max_dumped_transitions,
+            )
+        lines += [
             "Revise `policy.py` to solve more tasks. Keep the same function signature "
             "and the same return shape.",
             "",
         ]
         return "\n".join(lines)
+
+    @staticmethod
+    def transition_dump(
+        *,
+        practice_transitions: tuple[PracticeTransition, ...],
+        max_dumped_transitions: int,
+    ) -> list[str]:
+        """The in-context arm's worked examples: one `model_dump_json()` per line.
+
+        **JSON rather than prose**, because the agent is being asked to do arithmetic on
+        these and a schema it can `json.loads` beats one it has to read. One record per
+        line so the dump stays greppable and a truncated tail is still parseable.
+
+        **The observation is dumped whole**, not reduced to the features that happen to
+        matter. Which feature matters is precisely what the agent is being asked to work
+        out, and picking for it would smuggle in the domain knowledge the MINIMAL arm
+        exists to withhold -- the comparison would then be against a hint, not a method.
+
+        **Truncation is announced, never silent.** An agent told "these are your throws"
+        reasons about the denominator it was shown; if that is 30 of 97 it must be told so,
+        or every rate it computes is wrong. Reported `x/y`, like every count in this
+        project. The most recent are kept: they are the ones the policy under revision
+        produced, and older records describe code that no longer exists."""
+        total = len(practice_transitions)
+        if total == 0:
+            return [
+                "No parameterized skill was executed during practice, so there are no "
+                "per-attempt records to show you. A skill your policy never selects "
+                "produces no evidence about its parameters.",
+                "",
+            ]
+        kept = practice_transitions[-max_dumped_transitions:]
+        header = (
+            f"Below are {len(kept)}/{total} of the individual parameterized skill "
+            "executions from practice, one JSON record per line."
+        )
+        if len(kept) < total:
+            header += (
+                f" The other {total - len(kept)}/{total} are omitted to bound this "
+                "prompt; these are the most recent ones."
+            )
+        return [
+            header,
+            "",
+            "Each record has the `observation` your policy was called with, the "
+            "`skill_index` and `params` it returned, and `achieved_add_effects`: whether "
+            "the skill achieved its own declared add effects once executed. This is the "
+            "evidence for what your parameters actually do -- the relationship between "
+            "the observable state and the values that work is recoverable from it.",
+            "",
+            *(transition.model_dump_json() for transition in kept),
+            "",
+        ]
 
     @staticmethod
     def symbolic_layer(*, skill_provider: SkillProvider) -> str:

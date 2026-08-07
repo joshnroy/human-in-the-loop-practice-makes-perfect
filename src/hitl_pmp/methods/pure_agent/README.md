@@ -184,6 +184,35 @@ skill carries a continuous decision to learn about. What is lost — how often a
 `param_dim=0` skill was selected — is still carried by `practice_outcomes()`, which covers
 every skill.
 
+## Two feedback arms: `zero-shot` and `in-context`
+
+`--pure-agent-feedback` selects what the between-round prompt carries. It is orthogonal to
+`--pure-agent-prompt-arm`, which varies what the agent is told about the *domain*; this
+varies what it is told about its *own behaviour*.
+
+| arm | between-round feedback |
+| --- | --- |
+| `zero-shot` (default) | per-lifted-skill `x/y` tallies and the practice-goal count |
+| `in-context` | the same tallies, **plus** a `model_dump_json()` dump of the parameterized practice transitions |
+
+**"Zero-shot" means no worked examples, not no feedback.** Both arms get the aggregate
+tallies, which is what keeps the axis clean — a difference between them is a difference in
+examples and nothing else. Do not read `zero-shot` as "round 0 only".
+
+**One period's dump cannot identify a relation, and that is not a defect of the dump.**
+Rendered against the 2026-08-07 pilot's own round-0 policy, all 19 Tossing Room throws sit
+at `force=2.0` with `achieved_add_effects=False`; only the item weight varies. That is
+strictly more than `ThrowTrash: 0/19` — it says *which* force failed and at which weights —
+but it cannot say which force works, because a single policy tries a single force. Two
+different parameters have to be tried, and those only come from two different rounds. The
+40-record window is sized to span more than one period (~20 throws each on that pilot) so
+the previous policy's attempts stay alive beside the current one's. Expect the arm to pay
+off across rounds, not within one.
+
+**The observation is dumped whole.** Reducing it to the features that matter would smuggle
+in the domain knowledge the `minimal` prompt arm exists to withhold — which feature matters
+is exactly what the agent is being asked to work out.
+
 ## Testing
 
 `ScriptedAgentBackend` is a deterministic stand-in that hands back a fixed sequence of

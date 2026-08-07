@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from hitl_pmp.core.method.method import InteractionComplete
@@ -6,8 +8,9 @@ from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.pure_agent.agent_backend import ScriptedAgentBackend
-from hitl_pmp.methods.pure_agent.prompts import PromptArm, PromptBuilder
+from hitl_pmp.methods.pure_agent.prompts import FeedbackArm, PromptArm, PromptBuilder
 from hitl_pmp.methods.pure_agent.pure_agent_method import PureAgentMethod
+from hitl_pmp.methods.pure_agent.types import PracticeTransition
 
 # A policy that always takes the first applicable ground skill, with zero parameters.
 # Deliberately trivial: these tests pin the *plumbing* (the observation contract, the
@@ -519,6 +522,114 @@ def test_a_transition_is_attributed_to_the_policy_that_made_it_not_the_latest_ro
 
     rounds = {transition.round_index for transition in method.practice_transitions()}
     assert rounds == {0}, "round 1 never loaded, so no transition can belong to it"
+
+
+def _practised(*, env: LightSwitchEnvironment, arm: FeedbackArm, steps: int = 6) -> str:
+    """Run one practice period under `arm`, then return the revision prompt it produced."""
+    method = PureAgentMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        backend=ScriptedAgentBackend(
+            sources=(SEEKS_A_PARAMETERIZED_SKILL, SEEKS_A_PARAMETERIZED_SKILL)
+        ),
+        feedback_arm=arm,
+    )
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    _drive(env=env, policy=method.get_practice_policy(task=task), steps=steps)
+    method.end_cycle()
+    backend = method.backend
+    assert isinstance(backend, ScriptedAgentBackend)
+    return backend.prompts_seen()[1]
+
+
+def test_the_in_context_arm_dumps_transitions_and_the_zero_shot_arm_does_not() -> None:
+    """The 2x2's feedback axis. Both arms get the aggregate counts; only the in-context
+    arm gets worked examples, which is what "zero-shot" and "in-context" name here."""
+    zero_shot = _practised(env=_env(), arm=FeedbackArm.ZERO_SHOT)
+    in_context = _practised(env=_env(), arm=FeedbackArm.IN_CONTEXT)
+
+    # The aggregate tallies are on BOTH arms -- the axis is the examples, nothing else.
+    assert "JumpToLight: 0/" in zero_shot
+    assert "JumpToLight: 0/" in in_context
+
+    assert '"params":[0.3]' in in_context.replace(" ", "")
+    assert "0.3" not in zero_shot, "the zero-shot arm never sees a parameter that was tried"
+    assert "achieved_add_effects" in in_context
+    assert "achieved_add_effects" not in zero_shot
+
+
+def test_the_dumped_transitions_are_pydantic_json() -> None:
+    """Josh's call: a `model_dump_json()` dump, not a prose rendering. The agent is being
+    asked to do arithmetic on these, and a schema it can parse beats one it must read."""
+    prompt = _practised(env=_env(), arm=FeedbackArm.IN_CONTEXT)
+    dumped = [json.loads(line) for line in prompt.splitlines() if line.startswith('{"round_index"')]
+    assert dumped, "the in-context arm must dump at least one record"
+    record = PracticeTransition.model_validate(dumped[0])
+    assert record.skill_name == "JumpToLight"
+    assert record.params == (0.3,)
+    assert set(record.observation) == {"goal", "objects", "atoms", "skills"}
+
+
+def test_truncation_is_stated_in_the_prompt_rather_than_silent() -> None:
+    """A cap is necessary and a silent one is a lie: an agent told these are its throws
+    would reason about a denominator that is not the real one. So the prompt says how many
+    were kept out of how many happened -- x/y, like every other count here."""
+    env = _env()
+    method = PureAgentMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        backend=ScriptedAgentBackend(
+            sources=(SEEKS_A_PARAMETERIZED_SKILL, SEEKS_A_PARAMETERIZED_SKILL)
+        ),
+        feedback_arm=FeedbackArm.IN_CONTEXT,
+        max_dumped_transitions=3,
+    )
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    _drive(env=env, policy=method.get_practice_policy(task=task), steps=10)
+    method.end_cycle()
+
+    backend = method.backend
+    assert isinstance(backend, ScriptedAgentBackend)
+    prompt = backend.prompts_seen()[1]
+    total = len(method.practice_transitions())
+    assert total > 3, "the test needs more transitions than the cap to exercise truncation"
+    assert f"3/{total}" in prompt
+    assert prompt.count('{"round_index"') == 3
+
+
+def test_the_zero_shot_arm_is_byte_identical_to_the_arm_that_shipped() -> None:
+    """The 2x2 only isolates the examples if the control arm is unchanged. Pinned against
+    `PromptBuilder.revision`'s own output rather than a copied string, so this stays true
+    if the aggregate wording is ever revised."""
+    env = _env()
+    provider = LightSwitchSkillProvider(env=env)
+    shared = {
+        "skill_provider": provider,
+        "arm": PromptArm.MINIMAL,
+        "domain_description": "",
+        "practice_outcomes": {},
+        "num_practice_goals_reached": 0,
+        "num_practice_periods": 1,
+        "previous_error": None,
+    }
+    assert PromptBuilder.revision(
+        feedback_arm=FeedbackArm.ZERO_SHOT, practice_transitions=(), **shared
+    ) == PromptBuilder.revision(
+        feedback_arm=FeedbackArm.ZERO_SHOT,
+        practice_transitions=(
+            PracticeTransition(
+                round_index=0,
+                observation={"goal": [], "objects": [], "atoms": [], "skills": []},
+                skill_index=0,
+                skill_name="JumpToLight",
+                params=(0.3,),
+                achieved_add_effects=False,
+            ),
+        ),
+        **shared,
+    ), "the zero-shot arm must ignore transitions entirely, not merely be given none"
 
 
 def test_the_transcript_records_what_each_round_cost() -> None:

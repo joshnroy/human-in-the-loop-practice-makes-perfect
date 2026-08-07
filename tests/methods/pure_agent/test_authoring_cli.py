@@ -10,7 +10,7 @@ from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillPro
 from hitl_pmp.methods.pure_agent.agent_backend import ScriptedAgentBackend
 from hitl_pmp.methods.pure_agent.authoring_cli import PureAgentAuthoringCli
 from hitl_pmp.methods.pure_agent.claude_code_backend import ClaudeCodeAgentBackend
-from hitl_pmp.methods.pure_agent.prompts import PromptArm
+from hitl_pmp.methods.pure_agent.prompts import FeedbackArm, PromptArm
 from hitl_pmp.methods.pure_agent.pure_agent_method import PureAgentMethod
 from hitl_pmp.methods.pure_agent.transcript_store import TranscriptStore
 
@@ -193,3 +193,43 @@ def test_the_prompt_arm_parses_to_the_enum(*, tmp_path: Path) -> None:
         _args(sandbox=tmp_path, arm="described", description=None).pure_agent_prompt_arm
         is PromptArm.DESCRIBED
     )
+
+
+def test_the_feedback_arm_parses_to_the_enum_and_defaults_to_the_shipped_one(
+    *, tmp_path: Path
+) -> None:
+    """`--pure-agent-feedback` is the 2x2's second axis, and its default must stay the arm
+    that shipped: a run that does not name an arm is the control, not the new thing."""
+    assert (
+        _args(sandbox=tmp_path, arm="minimal", description=None).pure_agent_feedback
+        is FeedbackArm.ZERO_SHOT
+    )
+    argv = [
+        "--env",
+        "lightswitch",
+        "--method",
+        "pure-agent-author",
+        "--pure-agent-sandbox-dir",
+        str(tmp_path),
+        "--pure-agent-feedback",
+        "in-context",
+    ]
+    assert Cli.parse_args(argv=argv).pure_agent_feedback is FeedbackArm.IN_CONTEXT
+
+
+def test_the_replay_cli_records_which_feedback_arm_a_transcript_belongs_to() -> None:
+    """A replay builds no prompts, so this flag cannot change what it does. It exists so
+    `config_snapshot.json` says which arm a results directory is -- and on this 2x2 the two
+    arms differ only in which transcript was replayed, so without it they are
+    indistinguishable after the fact."""
+    argv = [
+        "--env",
+        "lightswitch",
+        "--method",
+        "pure-agent",
+        "--pure-agent-replay",
+        "unused.json",
+        "--pure-agent-feedback",
+        "in-context",
+    ]
+    assert Cli.parse_args(argv=argv).pure_agent_feedback is FeedbackArm.IN_CONTEXT

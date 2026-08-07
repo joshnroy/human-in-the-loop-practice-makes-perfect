@@ -6,7 +6,11 @@ from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.methods.practice_makes_perfect.cli import PracticeCycleCli
 from hitl_pmp.methods.pure_agent.claude_code_backend import ClaudeCodeAgentBackend
-from hitl_pmp.methods.pure_agent.prompts import PromptArm
+from hitl_pmp.methods.pure_agent.prompts import (
+    DEFAULT_MAX_DUMPED_TRANSITIONS,
+    FeedbackArm,
+    PromptArm,
+)
 from hitl_pmp.methods.pure_agent.pure_agent_method import PureAgentMethod
 from hitl_pmp.methods.pure_agent.transcript_store import TranscriptStore
 
@@ -55,6 +59,26 @@ class PureAgentAuthoringCli:
             "the same plus --pure-agent-domain-description, the analogue of the "
             "reference notebook naming its environment, which flags itself as a large "
             "hint.",
+        )
+        parser.add_argument(
+            "--pure-agent-feedback",
+            type=FeedbackArm,
+            choices=list(FeedbackArm),
+            default=FeedbackArm.ZERO_SHOT,
+            help="zero-shot: between-round feedback is the per-lifted-skill x/y tallies "
+            "alone, which is what this method shipped with. in-context: the same tallies "
+            "PLUS a JSON dump of the individual parameterized practice executions -- what "
+            "the policy saw, the parameters it chose, and whether they worked. Both arms "
+            "get the tallies; the axis is the worked examples. 'Zero-shot' does not mean "
+            "'no feedback'.",
+        )
+        parser.add_argument(
+            "--pure-agent-max-dumped-transitions",
+            type=int,
+            default=DEFAULT_MAX_DUMPED_TRANSITIONS,
+            help="Cap on how many practice transitions the in-context arm dumps. The most "
+            "recent are kept and the prompt states x/y whenever it truncated. Unused on "
+            "the zero-shot arm.",
         )
         parser.add_argument(
             "--pure-agent-domain-description",
@@ -112,6 +136,8 @@ class PureAgentAuthoringCli:
                 skill_provider=context.skill_provider,
                 prompt_arm=args.pure_agent_prompt_arm,
                 domain_description=description,
+                feedback_arm=args.pure_agent_feedback,
+                max_dumped_transitions=args.pure_agent_max_dumped_transitions,
                 backend=ClaudeCodeAgentBackend(
                     sandbox_dir=args.pure_agent_sandbox_dir,
                     model=args.pure_agent_model,

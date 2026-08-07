@@ -19,7 +19,12 @@ from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.methods.pure_agent.agent_backend import AgentBackend
 from hitl_pmp.methods.pure_agent.authored_policy import AuthoredPolicy, AuthoredPolicyError
 from hitl_pmp.methods.pure_agent.observation import ObservationBuilder
-from hitl_pmp.methods.pure_agent.prompts import PromptArm, PromptBuilder
+from hitl_pmp.methods.pure_agent.prompts import (
+    DEFAULT_MAX_DUMPED_TRANSITIONS,
+    FeedbackArm,
+    PromptArm,
+    PromptBuilder,
+)
 from hitl_pmp.methods.pure_agent.types import (
     AuthoringRound,
     AuthoringTranscript,
@@ -90,6 +95,11 @@ class PureAgentMethod(Method):
 
     skill_provider: SkillProvider
     prompt_arm: PromptArm = PromptArm.MINIMAL
+    # Which of the two feedback baselines this is. Defaults to the arm that shipped, so an
+    # existing caller keeps its behaviour and the 2x2's control arm needs no flag.
+    feedback_arm: FeedbackArm = FeedbackArm.ZERO_SHOT
+    # Only read on the IN_CONTEXT arm. See `DEFAULT_MAX_DUMPED_TRANSITIONS`.
+    max_dumped_transitions: int = DEFAULT_MAX_DUMPED_TRANSITIONS
     # Only read on the DESCRIBED arm; supplied by `--pure-agent-domain-description`,
     # which reads it from a file. A plain string here rather than a path, so this class
     # stays domain-agnostic and testable without a filesystem.
@@ -235,6 +245,9 @@ class PureAgentMethod(Method):
             num_practice_goals_reached=self._num_practice_goals_reached,
             num_practice_periods=self._num_practice_periods,
             previous_error=previous_error,
+            feedback_arm=self.feedback_arm,
+            practice_transitions=self.practice_transitions(),
+            max_dumped_transitions=self.max_dumped_transitions,
         )
 
     def _install(self, *, source: str | None, index: int) -> str | None:
