@@ -338,9 +338,9 @@ against `Pick`'s `200` and `Toss`'s `156`. Before #123 it was scored `-inf` by
 `skip_perfect` and `choose_practice_target` never selected it at all. So the fix changed
 both halves: the sampler can now learn, and EES now chooses to teach it.
 
-![Tossing3D, two panels: learning curves against practice cycles, and end-of-training task success](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/b51869153528fbd7d5cf57c2f5c1ae4f3bf46bac/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
+![Tossing3D, two panels: learning curves against practice cycles, and end-of-training task success](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/11f995fb2a729a2e0e9dd8bf5b6ce288d4c5b9cd/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
 
-> **The pin above is to `b518691`, an unmerged commit on this branch.** It is the commit
+> **The pin above is to `11f995f`, an unmerged commit on this branch.** It is the commit
 > that carries the figure, taken from `git rev-parse` rather than hand-expanded. It must
 > be **re-pinned after merge**, since a squash-merge mints a new SHA and the branch commit
 > stops being reachable once the branch is deleted.
@@ -479,11 +479,11 @@ rendered sweep is the one the renderer records — again a rule, not a selection
 
 Before any practice:
 
-![Tossing3D seed 0, pre-practice: the robot repeatedly attempts Pick, never lifts the cube, and the episode ends on a no-op](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/bcbd3bbd3e0037295dbbf44a051b4e4c66eae81a/docs/experiment-logs/2026-08-06-tossing3d-ees-pre-practice-episode.gif)
+![Tossing3D seed 0, pre-practice: the robot repeatedly attempts Pick, never lifts the cube, and the episode ends on a no-op](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/06584bae93779c6c674c471374f6cfb941963f4e/docs/experiment-logs/2026-08-06-tossing3d-ees-pre-practice-episode.gif)
 
 After 20 practice cycles:
 
-![Tossing3D seed 0, end-trained: the robot picks the cube, drives to the learned throw standoff, tosses, and the cube lands in the bin](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/bcbd3bbd3e0037295dbbf44a051b4e4c66eae81a/docs/experiment-logs/2026-08-06-tossing3d-ees-end-trained-episode.gif)
+![Tossing3D seed 0, end-trained: the robot picks the cube, drives to the learned throw standoff, tosses, and the cube lands in the bin](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/06584bae93779c6c674c471374f6cfb941963f4e/docs/experiment-logs/2026-08-06-tossing3d-ees-end-trained-episode.gif)
 
 **The end-trained clip shows the learned quantity directly.** Its status bar steps through
 `Pick(...)`, then `MoveToThrowPose(robot, cube_0, bin_0, blocks_goal_region), params=[1.2]`
@@ -537,7 +537,7 @@ registered under "Noise floor" above** — it is one more observation on the rep
 against the earlier `3/10` vs `2/10` same-seed swing. It is recorded as such, not as a
 resolution.
 
-> **The two clip pins above are to `bcbd3bb`, an unmerged commit on this branch** — the
+> **The two clip pins above are to `06584ba`, an unmerged commit on this branch** — the
 > commit that carries the GIFs, taken from `git rev-parse`. Like the figure pin further up,
 > they must be **re-pinned after merge**: a squash-merge mints a new SHA and these commits
 > stop being reachable once the branch is deleted.
