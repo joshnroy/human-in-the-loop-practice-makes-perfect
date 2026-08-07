@@ -93,7 +93,7 @@ from hitl_pmp.environments.tossingroomsplitidentity.skill_provider import (
 )
 from hitl_pmp.environments.tossingroomsplitidentity.tasks import TossingRoomSplitIdentityTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
-from hitl_pmp.practice_loop import PracticeLoop
+from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 
 # The two arms this collector serves. Both are the same world under the same protocol
 # and differ only in the THROW REPRESENTATION, so they produce trace shards of identical
@@ -326,25 +326,43 @@ class DomainBinding:
         TossingRoomSplitProblem | TossingRoomSplitIdentityProblem,
         TossingRoomSplitSkillProvider | TossingRoomSplitIdentitySkillProvider,
         TossingRoomSplitEnvironment | TossingRoomSplitIdentityEnvironment,
+        TossingRoomSplitProblem | TossingRoomSplitIdentityProblem,
     ]:
+        """Returns (practice problem, skill provider, practice env, EVALUATION problem).
+
+        The fourth element mirrors what `--env tossingroomsplit` does through the real
+        CLI: evaluation runs on its own Environment + Tasks, so a sweep's per-episode
+        `reset_to_task` cannot write into the environment practice inherits. Without it
+        this script would silently reset a `never` arm `num_test_tasks` times per sweep
+        and its traces would describe an arm that does not exist. Both problems are
+        built from the same seed, so the evaluation Tasks yields the same test set the
+        practice Tasks would have and the scheduled arm is unchanged."""
         if env_name == IDENTITY_ENV:
             identity_env = TossingRoomSplitIdentityEnvironment()
             identity_tasks = TossingRoomSplitIdentityTasks(
                 env=identity_env, seed=seed, num_test_tasks=num_test_tasks
             )
+            identity_eval_env = TossingRoomSplitIdentityEnvironment()
+            identity_eval_tasks = TossingRoomSplitIdentityTasks(
+                env=identity_eval_env, seed=seed, num_test_tasks=num_test_tasks
+            )
             return (
                 TossingRoomSplitIdentityProblem(env=identity_env, tasks=identity_tasks),
                 TossingRoomSplitIdentitySkillProvider(env=identity_env),
                 identity_env,
+                TossingRoomSplitIdentityProblem(env=identity_eval_env, tasks=identity_eval_tasks),
             )
         if env_name != CAUSAL_ENV:
             raise ValueError(f"unknown --env {env_name!r}; expected one of {ENV_CHOICES}")
         env = TossingRoomSplitEnvironment()
         tasks = TossingRoomSplitTasks(env=env, seed=seed, num_test_tasks=num_test_tasks)
+        eval_env = TossingRoomSplitEnvironment()
+        eval_tasks = TossingRoomSplitTasks(env=eval_env, seed=seed, num_test_tasks=num_test_tasks)
         return (
             TossingRoomSplitProblem(env=env, tasks=tasks),
             TossingRoomSplitSkillProvider(env=env),
             env,
+            TossingRoomSplitProblem(env=eval_env, tasks=eval_tasks),
         )
 
 
@@ -506,6 +524,9 @@ class SkillTraceCollector:
         num_cycles: int,
         max_steps: int,
         num_test_tasks: int,
+        # SCHEDULED keeps every pre-existing caller -- and the committed 2026-08-05
+        # reproduction command -- byte-identical; the reset-free arm is strictly opt-in.
+        practice_reset_policy: PracticeResetPolicy = PracticeResetPolicy.SCHEDULED,
     ) -> dict:
         """One full EES run, returning per-period skill tallies, per-cycle competence,
         and the per-sweep evaluation record (with its goal-family breakdown).
@@ -514,7 +535,7 @@ class SkillTraceCollector:
         `PracticeLoop.run`: the field is what the fixed goal-family composition is
         divided out of, and a disagreement silently measures a different test set."""
         log = PeriodLog()
-        problem, skill_provider, env = DomainBinding.build(
+        problem, skill_provider, env, evaluation_problem = DomainBinding.build(
             env_name=env_name, seed=seed, num_test_tasks=num_test_tasks
         )
         method = TracingEesMethod(
@@ -535,11 +556,13 @@ class SkillTraceCollector:
 
         PracticeLoop.run(
             problem=problem,
+            evaluation_problem=evaluation_problem,
             method=method,
             metrics=metrics,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps,
             num_test_tasks=num_test_tasks,
+            practice_reset_policy=practice_reset_policy,
             on_cycle_end=on_cycle_end,
         )
 
@@ -582,6 +605,7 @@ class SkillTraceCollector:
         num_cycles: int,
         max_steps: int,
         num_test_tasks: int,
+        practice_reset_policy: PracticeResetPolicy = PracticeResetPolicy.SCHEDULED,
     ) -> dict:
         return {
             "label": label,
@@ -593,6 +617,10 @@ class SkillTraceCollector:
             "num_cycles": num_cycles,
             "max_steps_per_interaction": max_steps,
             "num_test_tasks": num_test_tasks,
+            # Recorded in the shard for the same reason `env` is: a scheduled-arm shard
+            # and a never-arm shard describe two different practice conditions and must
+            # never be pooled.
+            "practice_reset_policy": practice_reset_policy.value,
             "seeds": [
                 SkillTraceCollector.run_seed(
                     env_name=env_name,
@@ -601,6 +629,7 @@ class SkillTraceCollector:
                     num_cycles=num_cycles,
                     max_steps=max_steps,
                     num_test_tasks=num_test_tasks,
+                    practice_reset_policy=practice_reset_policy,
                 )
                 for seed in seeds
             ],
@@ -639,6 +668,16 @@ def _parse_args() -> argparse.Namespace:
         "as one process per seed and the analysis pools the shards. Still fixed values, "
         "never drawn -- a shard's seed is chosen by the caller, not by an RNG.",
     )
+    parser.add_argument(
+        "--practice-reset-policy",
+        type=PracticeResetPolicy,
+        choices=list(PracticeResetPolicy),
+        default=PracticeResetPolicy.SCHEDULED,
+        help="Same flag as the global CLI's. 'scheduled' (the default) is every "
+        "pre-existing caller's behaviour. 'never' traces the reset-free arm -- which is "
+        "the whole reason this collector reports per-period skill tallies: it is what "
+        "shows WHAT practice did differently, not just how the run scored.",
+    )
     parser.add_argument("--num-cycles", type=int, default=25)
     parser.add_argument("--max-steps-per-interaction", type=int, default=100)
     parser.add_argument("--num-test-tasks", type=int, default=30)
@@ -657,6 +696,7 @@ def main() -> None:
         num_cycles=args.num_cycles,
         max_steps=args.max_steps_per_interaction,
         num_test_tasks=args.num_test_tasks,
+        practice_reset_policy=args.practice_reset_policy,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(traces, indent=1))
