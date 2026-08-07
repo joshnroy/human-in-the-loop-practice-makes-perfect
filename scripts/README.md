@@ -40,8 +40,10 @@ there is no conda, e.g. CI).
 
 ## `check_doc_links.sh`
 
-A CI guard, run as a step of the `lint` job. It fails if a Markdown file under
-`docs/experiment-logs/` links back at *this* repository by URL:
+A CI guard, run as a step of the `lint` job. It runs two checks over the Markdown
+under `docs/experiment-logs/` — **a link into this repository by URL**, and **a
+relative link whose target does not exist** — and reports both in one run, so
+fixing a log is one pass rather than two CI rounds:
 
 ```bash
 scripts/check_doc_links.sh                      # exit 0 clean, 1 violation, 2 cannot run
@@ -63,6 +65,15 @@ scanned, because `CLAUDE.md` has to keep saying `raw.githubusercontent.com` in p
 and a repo-wide guard would fail on the file that documents the rule. A
 `blob/<sha>/` or `tree/<sha>/` link is banned alongside the raw one, since it orphans
 identically; a `/pull/<n>` link is not, since it pins no commit.
+
+The second check exists because making every figure reference relative **moved** that
+failure mode rather than removing it: a relative link cannot orphan, but it can name a
+file that was never committed or was later renamed, and GitHub renders that as a dead
+link with no warning anywhere. It is deliberately not a Markdown parser — fenced code
+blocks and inline code spans are dropped first, since `CLAUDE.md` writes the rule as
+`![alt](2026-08-07-foo.png)` inside backticks and a log quoting it must not be flagged
+for a figure it never claimed to have. Reference-style links, angle-bracket targets and
+percent-encoded paths are not resolved; none are in use here.
 
 It is a script rather than a few lines of YAML so that
 `tests/scripts/test_check_doc_links.py` can exercise it directly. Those tests are
