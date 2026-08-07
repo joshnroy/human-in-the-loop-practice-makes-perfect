@@ -1,3 +1,5 @@
+import math
+
 import pytest
 
 from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
@@ -54,11 +56,10 @@ def test_train_metrics_are_not_tracked() -> None:
     assert metrics.percentage_success_per_task_train() == {}
 
 
-def test_human_and_reset_metrics_are_always_zero() -> None:
-    metrics = Metrics()
-    assert metrics.num_complete_environment_resets() == 0
-    assert metrics.num_human_interventions() == (0.0, 0)
-    assert metrics.summed_human_cost() == 0.0
+def test_complete_environment_resets_are_always_zero() -> None:
+    """Still hardcoded, unlike the human counters beside it: nothing in this codebase
+    performs a complete environment reset mid-run, so there is nothing to count."""
+    assert Metrics().num_complete_environment_resets() == 0
 
 
 def test_two_instances_do_not_share_evaluations() -> None:
@@ -300,3 +301,57 @@ def test_practice_target_outcomes_are_stored_in_sorted_skill_order() -> None:
         }
     )
     assert list(metrics.practice_target_outcomes_per_cycle[0]) == ["Alpha", "Zeta"]
+
+
+def test_human_intervention_counts_start_at_zero() -> None:
+    """A run with no HumanOracle wired reports exactly what it reported before this
+    field existed, so nothing that predates the human ladder changes."""
+    metrics = Metrics()
+    assert metrics.num_human_interventions() == (0.0, 0)
+    assert metrics.summed_human_cost() == 0.0
+
+
+def test_record_human_intervention_counts_and_sums() -> None:
+    metrics = Metrics()
+    metrics.record_human_intervention(cost=1.0)
+    metrics.record_human_intervention(cost=2.5)
+    assert metrics.num_human_interventions() == (3.5, 2)
+    assert metrics.summed_human_cost() == 3.5
+
+
+def test_a_zero_cost_intervention_still_counts() -> None:
+    """The count and the cost are separate measurements: a free human is still a human,
+    and an arm that was rescued 40 times for nothing is not an arm that was never
+    rescued."""
+    metrics = Metrics()
+    metrics.record_human_intervention(cost=0.0)
+    assert metrics.num_human_interventions() == (0.0, 1)
+
+
+def test_record_human_intervention_rejects_a_negative_cost() -> None:
+    metrics = Metrics()
+    with pytest.raises(ValueError, match="negative"):
+        metrics.record_human_intervention(cost=-1.0)
+    assert metrics.num_human_interventions() == (0.0, 0)
+
+
+def test_record_human_intervention_rejects_an_infinite_cost() -> None:
+    """Cost is inf exactly when the command is infeasible, so recording one means an
+    impossible command was executed -- and summing it would make every later comparison
+    inf."""
+    metrics = Metrics()
+    with pytest.raises(ValueError, match="finite"):
+        metrics.record_human_intervention(cost=math.inf)
+    assert metrics.num_human_interventions() == (0.0, 0)
+
+
+def test_human_interventions_survive_a_round_trip_through_stats_json() -> None:
+    metrics = Metrics()
+    metrics.record_human_intervention(cost=1.0)
+    restored = Metrics.model_validate_json(metrics.model_dump_json())
+    assert restored.num_human_interventions() == (1.0, 1)
+
+
+def test_a_stats_json_predating_human_fields_still_loads() -> None:
+    restored = Metrics.model_validate_json('{"evaluations": [[0, 1, 2]]}')
+    assert restored.num_human_interventions() == (0.0, 0)
