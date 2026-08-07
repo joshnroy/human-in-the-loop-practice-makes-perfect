@@ -109,11 +109,12 @@ def test_every_reset_kind_has_its_own_colour_and_label() -> None:
     assert len(set(labels)) == len(list(ResetKind))
 
 
-def test_the_four_reset_kinds_cover_every_reset_the_loop_performs() -> None:
+def test_the_reset_kinds_cover_every_reset_the_loop_performs() -> None:
     assert {kind.value for kind in ResetKind} == {
         "hard",
         "period",
         "interval",
+        "human",
         "evaluation_task",
     }
 
