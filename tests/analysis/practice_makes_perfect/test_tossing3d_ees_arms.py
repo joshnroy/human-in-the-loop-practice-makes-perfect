@@ -213,10 +213,20 @@ class TestReporting:
         assert Tossing3DEesArms.pooled_success(runs=[metrics], index=0) == (1, 10)
         assert Tossing3DEesArms.pooled_success(runs=[metrics], index=-1) == (7, 10)
 
-    def test_plot_writes_a_figure(self, *, tmp_path: Path) -> None:
-        output = tmp_path / "figure.png"
-        Tossing3DEesArms.plot(arms=_two_arm_curves(), output_path=output)
-        assert output.exists() and output.stat().st_size > 0
+    def test_plot_writes_all_three_figures(self, *, tmp_path: Path) -> None:
+        """Three separate files, not three panels of one. Each of the two learning-curve
+        axes is its own graph; task success is the third."""
+        cycles = tmp_path / "cycles.png"
+        transitions = tmp_path / "transitions.png"
+        task_success = tmp_path / "task-success.png"
+        Tossing3DEesArms.plot(
+            arms=_two_arm_curves(),
+            cycles_path=cycles,
+            transitions_path=transitions,
+            task_success_path=task_success,
+        )
+        for output in (cycles, transitions, task_success):
+            assert output.exists() and output.stat().st_size > 0, f"{output.name} not written"
 
 
 def _two_arm_curves() -> dict[str, list[Metrics]]:
@@ -241,15 +251,17 @@ def _two_arm_curves() -> dict[str, list[Metrics]]:
 
 
 class TestLearningCurveAxis:
-    """The learning-curve panel plots against *cycles*, the controlled variable, and not
-    against online transitions, which are an outcome.
+    """The cycles figure plots against *cycles*, the controlled variable.
 
     Both arms run the same 21 evaluation checkpoints, but `Toss` deletes `Reachable`, so a
     practice period ends after one throw: `ees` plans `Pick -> MoveToThrowPose -> Toss` in
-    about 3-4 transitions per cycle where `random-skills` flails through about 7. On a
-    transitions axis EES's curve therefore stops at roughly half the width of the panel
-    and *looks truncated when it is in fact more efficient* -- the axis penalises the arm
-    that wastes fewer transitions. These tests pin the fix.
+    about 3-4 transitions per cycle where `random-skills` flails through about 7. On the
+    cycle axis the arms therefore align and are compared like with like.
+
+    The transitions axis is not a defect to be removed but a second view, drawn as its own
+    graph -- see `TestTransitionsAxis`. Both are kept because on *this* domain they genuinely
+    differ; on Tossing Room every run charged exactly 150.0 transitions per cycle, so there
+    the two axes were the same curve with different tick labels and only one was drawn.
     """
 
     def test_the_cycle_grid_is_the_checkpoint_index(self) -> None:
@@ -274,7 +286,7 @@ class TestLearningCurveAxis:
     def test_both_arms_span_the_same_x_axis(self) -> None:
         """The defect, stated as an assertion. On a transitions axis the two arms' mean
         lines ended at about 84 and about 144; on the cycle axis they must end together."""
-        figure = Tossing3DEesArms.figure(arms=_two_arm_curves())
+        figure = Tossing3DEesArms.figure_cycles(arms=_two_arm_curves())
         axis = figure.axes[0]
         # The bold means are the only labelled *curves*; per-seed lines are unlabelled
         # (matplotlib gives those a `_child`-prefixed label) and the oracle is a flat
@@ -290,7 +302,7 @@ class TestLearningCurveAxis:
         assert spans == {(0, 2)}
 
     def test_the_x_axis_is_labelled_as_cycles_not_transitions(self) -> None:
-        figure = Tossing3DEesArms.figure(arms=_two_arm_curves())
+        figure = Tossing3DEesArms.figure_cycles(arms=_two_arm_curves())
         label = figure.axes[0].get_xlabel().lower()
         assert "cycle" in label
         assert "transition" not in label
@@ -306,16 +318,92 @@ class TestLearningCurveAxis:
 
     def test_every_curve_legend_entry_carries_a_count(self) -> None:
         """`x/y` never a bare percentage, in the legend as much as in the prose."""
-        figure = Tossing3DEesArms.figure(arms=_two_arm_curves())
+        figure = Tossing3DEesArms.figure_cycles(arms=_two_arm_curves())
         labels = [text.get_text() for text in figure.axes[0].get_legend().get_texts()]
         assert labels, "the curve panel must carry a legend"
         for label in labels:
             assert "/" in label, f"legend entry without an x/y count: {label!r}"
 
     def test_the_oracle_ceiling_is_still_drawn(self) -> None:
-        figure = Tossing3DEesArms.figure(arms=_two_arm_curves())
+        figure = Tossing3DEesArms.figure_cycles(arms=_two_arm_curves())
         labels = [text.get_text() for text in figure.axes[0].get_legend().get_texts()]
         assert any("skill-oracle" in label for label in labels)
+
+
+class TestTransitionsAxis:
+    """The transitions figure is the second view, and it is a *separate graph*.
+
+    On this domain the two axes are not proportional, which is the whole reason both are
+    drawn. Measured from the committed `stats.json`: a practice period costs `ees` 4.19
+    transitions against `random-skills` 7.20 averaged over 10 seeds, every seed sits on its
+    own irregular grid (per-cycle steps run 1..20 within a single seed), and the arms finish
+    at 69..101 against 92..174. Contrast Tossing Room, where every run charged exactly 150.0
+    transitions per cycle and a cycles graph would have been the transitions graph with
+    relabelled ticks.
+
+    So the two axes answer different questions: against cycles the arms align and are
+    compared like with like; against transitions EES's line ends earlier because it reached
+    the same 21/21 checkpoints for fewer steps.
+    """
+
+    def test_the_x_axis_is_labelled_as_transitions(self) -> None:
+        figure = Tossing3DEesArms.figure_transitions(arms=_two_arm_curves())
+        label = figure.axes[0].get_xlabel().lower()
+        assert "transition" in label
+
+    def test_the_arms_end_at_different_x_because_ees_spends_fewer_steps(self) -> None:
+        """The contrast that earns this second graph. `ees` means end at 82.5 transitions
+        and `random-skills` at 155.0, where on the cycle axis both end at 2."""
+        figure = Tossing3DEesArms.figure_transitions(arms=_two_arm_curves())
+        means = _mean_lines(axis=figure.axes[0])
+        ends = {str(line.get_label()).split(" ")[0]: line.get_xdata()[-1] for line in means}
+        assert ends["ees"] == pytest.approx(82.5)
+        assert ends["random-skills"] == pytest.approx(155.0)
+        assert ends["ees"] < ends["random-skills"]
+
+    def test_the_mean_curve_averages_the_x_positions_too(self) -> None:
+        """Seeds do not share a transition grid, so a per-checkpoint mean has to average
+        the x positions as well as the y. Pinned because silently reusing one seed's grid
+        would draw a mean at transition counts no seed actually reached."""
+        figure = Tossing3DEesArms.figure_transitions(arms=_two_arm_curves())
+        means = _mean_lines(axis=figure.axes[0])
+        ees = next(line for line in means if str(line.get_label()).startswith("ees"))
+        # Seed grids are [0, 40, 80] and [0, 45, 85]; the mean grid is their elementwise mean.
+        assert list(ees.get_xdata()) == pytest.approx([0.0, 42.5, 82.5])
+
+    def test_mean_transitions_per_cycle_is_reported(self) -> None:
+        """The per-period cost is the mechanism behind the two axes differing, so it is a
+        number the figure can carry rather than a claim only the prose makes."""
+        runs = [
+            _curve(solved=[1, 4, 8], transitions=[0, 40, 80]),
+            _curve(solved=[0, 3, 7], transitions=[0, 45, 85]),
+        ]
+        # 80/2 = 40.0 and 85/2 = 42.5, averaged over the two seeds.
+        assert Tossing3DEesArms.mean_transitions_per_cycle(runs=runs) == pytest.approx(41.25)
+
+    def test_every_curve_legend_entry_carries_a_count(self) -> None:
+        figure = Tossing3DEesArms.figure_transitions(arms=_two_arm_curves())
+        labels = [text.get_text() for text in figure.axes[0].get_legend().get_texts()]
+        assert labels, "the transitions graph must carry a legend"
+        for label in labels:
+            assert "/" in label, f"legend entry without an x/y count: {label!r}"
+
+    def test_the_oracle_ceiling_is_still_drawn(self) -> None:
+        figure = Tossing3DEesArms.figure_transitions(arms=_two_arm_curves())
+        labels = [text.get_text() for text in figure.axes[0].get_legend().get_texts()]
+        assert any("skill-oracle" in label for label in labels)
+
+
+def _mean_lines(*, axis) -> list:  # type: ignore[no-untyped-def]
+    """The bold per-arm mean lines on a curve axes.
+
+    Per-seed lines are unlabelled (matplotlib gives those a `_child`-prefixed label) and the
+    oracle ceiling is drawn by `axhline`, so matching on the arm name selects exactly the
+    means.
+    """
+    return [
+        line for line in axis.lines if str(line.get_label()).startswith(("ees", "random-skills"))
+    ]
 
 
 class TestPriorVersusBeliefPanelIsGone:
@@ -325,8 +413,18 @@ class TestPriorVersusBeliefPanelIsGone:
     def test_the_helper_is_removed(self) -> None:
         assert not hasattr(Tossing3DEesArms, "_plot_skill_rate")
 
-    def test_the_figure_has_two_panels(self) -> None:
-        assert len(Tossing3DEesArms.figure(arms=_two_arm_curves()).axes) == 2
+    def test_each_figure_is_a_single_panel(self) -> None:
+        """Renamed from `test_the_figure_has_two_panels`: the shape changed again. The
+        dropped prior-versus-belief panel stays dropped, and the two remaining learning-curve
+        views were split apart into their own graphs rather than sharing one canvas, so every
+        figure this module produces is now exactly one axes."""
+        arms = _two_arm_curves()
+        for build in (
+            Tossing3DEesArms.figure_cycles,
+            Tossing3DEesArms.figure_transitions,
+            Tossing3DEesArms.figure_task_success,
+        ):
+            assert len(build(arms=arms).axes) == 1, f"{build.__name__} is not a single panel"
 
     def test_the_verdict_still_reports_both_counts(self) -> None:
         """Dropping the panel must not drop the number it drew."""

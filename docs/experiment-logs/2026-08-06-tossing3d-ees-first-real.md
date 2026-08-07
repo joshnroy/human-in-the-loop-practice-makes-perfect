@@ -338,16 +338,93 @@ against `Pick`'s `200` and `Toss`'s `156`. Before #123 it was scored `-inf` by
 `skip_perfect` and `choose_practice_target` never selected it at all. So the fix changed
 both halves: the sampler can now learn, and EES now chooses to teach it.
 
-![Tossing3D, two panels: learning curves against practice cycles, and end-of-training task success](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/11f995fb2a729a2e0e9dd8bf5b6ce288d4c5b9cd/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
+**Learning curves against practice cycles** — the controlled variable, so the arms align and
+are compared like with like:
 
-> **The pin above is to `11f995f`, an unmerged commit on this branch.** It is the commit
-> that carries the figure, taken from `git rev-parse` rather than hand-expanded. It must
-> be **re-pinned after merge**, since a squash-merge mints a new SHA and the branch commit
-> stops being reachable once the branch is deleted.
+![Tossing3D learning curves against practice cycles, per seed, with the skill-oracle ceiling](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PIN_FIGURES/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
 
-### Figure revision: the learning curves are plotted against cycles, not transitions
+**Learning curves against online transitions** — an outcome, so the EES line ends earlier,
+having reached the same `21/21` checkpoints for fewer steps:
 
-The figure above is a revision of the one first committed here. **No number changed** — it
+![Tossing3D learning curves against online transitions, per seed, with the skill-oracle ceiling](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PIN_FIGURES/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real-transitions.png)
+
+**End-of-training task success** — context only, never an input to the verdict:
+
+![Tossing3D end-of-training task success by arm, with every seed drawn over the pooled bars](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PIN_FIGURES/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real-task-success.png)
+
+> **The three pins above are to `PIN_FIGURES_SHORT`, an unmerged commit on this branch.** It is
+> the commit that carries the figures, taken from `git rev-parse` rather than hand-expanded.
+> They must be **re-pinned after merge**, since a squash-merge mints a new SHA and the branch
+> commit stops being reachable once the branch is deleted.
+
+### Figure revision 2: both axes are drawn, as two separate graphs
+
+The three figures above replace the two-panel figure this log previously carried. **No number
+changed**: they are regenerated from the same committed `stats.json`, and the analysis prints
+the identical `117/206`, `48/275`, `165/481`, `80/100`, `24/100` and `100/100`.
+
+Revision 1 (below) removed the transitions axis on the grounds that it made the *more*
+efficient arm look truncated. That reasoning was sound about the reading, but the fix was too
+strong: it deleted a real result instead of labelling it. **Both axes are now drawn, each as
+its own graph**, because on this domain they are not two views of the same curve.
+
+**Verified non-proportional, from the committed `stats.json` rather than assumed.** If a cycle
+cost a fixed number of transitions, the two axes would be the same curve with relabelled
+ticks and only one would be worth drawing. Measured here:
+
+| | `ees` | `random-skills` |
+| --- | --- | --- |
+| transitions per cycle, per-seed range | `3.45`–`5.05` | `4.60`–`8.70` |
+| transitions per cycle, mean over 10 seeds | **`4.19`** | **`7.20`** |
+| final transitions, per-seed range | `69`–`101` | `92`–`174` |
+| seeds sharing a transition grid | `0/10` — 8 distinct finals | `0/10` — 10 distinct finals |
+| within-seed per-cycle step range | `1`–`20` | `1`–`20` |
+
+Every seed sits on its own irregular grid, and the step from one checkpoint to the next varies
+by a factor of twenty *within a single seed*. **Contrast Tossing Room**, where every run
+charged exactly `150.0` transitions per cycle: there a sibling analysis correctly declined to
+draw a cycles graph, because it would have been the transitions graph with different tick
+labels. That refusal does not transfer here, and the table above is why.
+
+So the two graphs answer different questions, and both are worth having:
+
+- **Against cycles** the arms align by construction — both ran `--num-cycles 20`, both have
+  `21/21` checkpoints — so the comparison is like with like.
+- **Against transitions** the EES line ends at about `84` where `random-skills` runs on to
+  about `144`. That is EES reaching the same checkpoints for fewer steps, and it is the
+  efficiency result, not an artefact. Each graph's legend carries the other's number, so
+  neither view loses it.
+
+One drawing consequence, stated on the transitions figure itself: since the seeds share no
+transition grid, each bold mean **averages the x positions as well as the y**. Taking one
+seed's grid instead would draw the mean at transition counts no seed actually reached.
+
+**Task success is unchanged** beyond moving to its own canvas, and the dropped
+"does the sampler's belief beat its own prior?" panel **stays dropped** — its `48/275` uniform
+against `117/206` informed comparison remains the headline result in the TL;DR, in the table
+above, in `verdict`'s evidence string and in this log.
+
+> **Correction to revision 1's no-op paragraph (below).** That paragraph states that a no-op
+> "*does* consume a step and *does* count as a transition", and so lengthens a cycle. **That is
+> wrong for the code this experiment ran**, and the claim should not be reused. `_noop_action`
+> is called at exactly one site (`EesPolicy.step`, `ees_method.py:908`), and it is reached only
+> when `self._practicing` is false — that is, inside an *evaluation* episode. During practice
+> the same "no plan" condition raises `InteractionComplete` instead (`ees_method.py:897-903`),
+> which **shortens** the period. And evaluation steps are deliberately never charged as online
+> transitions at all (`PracticeLoop.run`, `practice_loop.py:150-152`). So a no-op appears on
+> **neither** axis, and nothing lengthens a practice cycle beyond `--max-steps-per-interaction`.
+> The original paragraph is left in place below rather than rewritten, so what was published
+> and why it is wrong both stay visible. Nothing measured in this log depends on it: it was an
+> explanatory aside, and the transitions and cycle counts it purported to explain are read
+> straight from `stats.json`.
+
+### Figure revision 1: the learning curves are plotted against cycles, not transitions
+
+*(Historical: this describes the two-panel figure revision 1 produced, which revision 2 above
+has since replaced with three separate graphs. Kept because it records why the cycles axis was
+introduced.)*
+
+The cycles figure above is a revision of the one first committed here. **No number changed** — it
 is regenerated from the same `stats.json` files, and the analysis prints the identical
 `117/206`, `48/275`, `165/481`, `80/100`, `24/100` and `100/100` reported throughout this
 log. Three things about the drawing changed.
