@@ -1,25 +1,25 @@
 {
-  "sweep_id": "20260806T182858-0400-95221-52c0d837",
+  "sweep_id": "20260807T122205-0400-353482-b9e52071",
   "method": "ees",
   "seed": 2,
-  "start_time": "2026-08-06T18:28:58.470578-04:00",
-  "end_time": "2026-08-06T18:30:35.512171-04:00",
-  "start_epoch_seconds": 1786055338.470578,
-  "end_epoch_seconds": 1786055435.512171,
-  "elapsed_seconds": 97.04158224300045,
+  "start_time": "2026-08-07T12:22:05.903990-04:00",
+  "end_time": "2026-08-07T12:23:22.124704-04:00",
+  "start_epoch_seconds": 1786119725.90399,
+  "end_epoch_seconds": 1786119802.124704,
+  "elapsed_seconds": 76.22070829400036,
   "returncode": 0,
   "succeeded": true,
   "spawn_attempts": 1,
-  "max_workers": 5,
+  "max_workers": 10,
   "cpu_count": 24,
   "sweep_runs_in_flight_at_start": 3,
-  "sweep_runs_in_flight_at_end": 5,
+  "sweep_runs_in_flight_at_end": 2,
   "machine_at_start": {
-    "cli_processes": 11,
-    "load_average_1min": 35.45068359375
+    "cli_processes": 0,
+    "load_average_1min": 2.150390625
   },
   "machine_at_end": {
-    "cli_processes": 5,
-    "load_average_1min": 36.13232421875
+    "cli_processes": 1,
+    "load_average_1min": 6.78759765625
   }
 }
