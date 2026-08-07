@@ -93,7 +93,7 @@ because with `reproduce_predicators_explore_target_only` off (the default) *ever
 executed during practice explores and records training rows, target or not. It is simply
 outranked; `unreachable` is 0/10 seeds, so it never lost on reachability.
 
-![Light Switch practice-target decisions](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/1effdfe6646ff3316755976bde5fe784e82ce381/docs/experiment-logs/2026-08-06-lightswitch-practice-targets.png)
+![Light Switch practice-target decisions](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/2e26c7345292ce9a5c10083346475a180655bc37/docs/experiment-logs/2026-08-06-lightswitch-practice-targets.png)
 
 ## Ball-Ring: three of five parameterised skills are never practised
 
@@ -129,7 +129,7 @@ sampler ("the entire learning problem is specializing the cup-placement sampler"
 `PlaceCupWithoutBallOnTable`: selected in 10/10 seeds, 902/1067 informed draws. It is
 practised and its sampler is learned.
 
-![Ball-Ring practice-target decisions](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/1effdfe6646ff3316755976bde5fe784e82ce381/docs/experiment-logs/2026-08-06-ballring-practice-targets.png)
+![Ball-Ring practice-target decisions](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/2e26c7345292ce9a5c10083346475a180655bc37/docs/experiment-logs/2026-08-06-ballring-practice-targets.png)
 
 ### Is the floor-place result a defect?
 
