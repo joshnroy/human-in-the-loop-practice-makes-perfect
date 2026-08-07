@@ -128,7 +128,7 @@ class Cli:
             "per-period reset off entirely, so practice state runs continuously across "
             "period boundaries -- the reset-free condition. 'never' is incompatible "
             "with --practice-reset-interval, and is only meaningful on an environment "
-            "whose evaluation runs on its own instance (tossingroom "
+            "whose evaluation runs on its own instance (tossingroom and tossing3d "
             "today).",
         )
         parser.add_argument(

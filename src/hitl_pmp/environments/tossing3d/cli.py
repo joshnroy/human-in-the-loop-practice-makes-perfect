@@ -117,10 +117,84 @@ class Tossing3DCli:
         """This domain's composition root. Mirrors
         `TossingRoomCli.run_method`.
 
-        The environment is closed in a `finally`: it owns a live MuJoCo context and,
+        Both environments are closed in a `finally`: each owns a live MuJoCo context and,
         through each controller, PyBullet clients, and leaving those behind in a process
         that goes on to do something else is exactly how this domain's memory problems
-        started.
+        started. `close()` is guarded on the backend existing and is idempotent, so
+        closing an evaluation environment that never woke up costs nothing.
+
+        **It builds that triple twice**, one for practice and one wholly separate for
+        evaluation, matching `TossingRoomCli.run_method`. Every evaluation episode opens
+        with `reset_to_task`, a privileged state-write, so sharing the triple hands the
+        practice environment `--num-test-tasks` free resets per sweep. Under the default
+        per-period reset that is invisible; for `--practice-reset-policy never` it is
+        fatal, because the arm would be reset every sweep while `num_practice_resets`
+        still reported 0. See PracticeLoop's "separate evaluation environment" section.
+
+        **Why this domain can be split, when `ballring` cannot.** The split is only
+        sound if the second instance cannot shift what practice draws.
+        `Tossing3DEnvironment` holds no RNG field at all -- the only randomness in the
+        domain lives in `Tossing3DTasks`' train/test streams, derived independently from
+        the same seed -- and the simulator is re-seeded on every `reset` from the scene
+        seed, so no history carries across. `ballring`'s `_noise_rng` is consumed by
+        evaluation and therefore does shift the practice stream, which is why it stays
+        excluded and would need a re-baseline rather than a wiring change.
+
+        The cost this domain pays that Tossing Room does not is a **second live MuJoCo
+        scene** for the length of the run. That is real and is the reason this was
+        deferred; it is not free, and a sweep's memory cap has to be sized for it.
+        """
+        practice_problem = Tossing3DCli.build_problem(args=args)
+        # Same args, same seed, independent objects: its Tasks derives the same test
+        # scene-seed stream, so it yields exactly the test tasks the practice Tasks
+        # would have. Pinned by test_both_problems_draw_the_same_test_scene_seeds.
+        evaluation_problem = Tossing3DCli.build_problem(args=args)
+        # The Method is wired to the *practice* environment deliberately: its env
+        # reference is structural config (skills, predicates, object handles, all of
+        # which are ClassVars here), and the two instances are configured identically,
+        # so evaluation reads the same world.
+        context = DomainContext(
+            env=practice_problem.env,
+            skill_provider=Tossing3DSkillProvider(env=practice_problem.env),
+            oracle=Tossing3DOracle(
+                env=practice_problem.env, throw_standoff=args.oracle_throw_standoff
+            ),
+        )
+        renderer: type[Renderer] | None = Tossing3DRenderer if args.output_dir is not None else None
+        try:
+            MethodRunner.run(
+                args=args,
+                method=method_factory(context),
+                problem=practice_problem,
+                evaluation_problem=evaluation_problem,
+                num_cycles=num_cycles,
+                max_steps_per_interaction=max_steps_per_interaction,
+                renderer=renderer,
+                # The EVALUATION environment, not the practice one. resolve_render_fps
+                # hard_resets whatever it is handed in order to read live metadata, and
+                # rendering happens on the evaluation problem anyway -- so pointing it
+                # at practice would deal the reset-free arm a privileged state-write
+                # from the CLI before the run even starts.
+                render_fps=Tossing3DCli.resolve_render_fps(
+                    env=evaluation_problem.env, renderer=renderer
+                ),
+                num_render_checkpoints=getattr(args, "num_render_checkpoints", 1),
+            )
+        finally:
+            practice_problem.env.close()
+            evaluation_problem.env.close()
+
+    @staticmethod
+    def build_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
+        """One fully-independent Environment + Tasks + Problem triple from args.
+
+        Called twice by `run_method` (practice and evaluation) -- factored out so the
+        two cannot drift apart in configuration, which would silently make the
+        evaluation set a different set of tasks than the one being trained against.
+
+        Constructing this builds **no simulator**: `Tossing3DEnvironment.backend()` is
+        lazy, so the MuJoCo scene appears on first reset/step rather than here. That is
+        what lets the tests above run on CI without the optional KINDER extra.
         """
         env = Tossing3DEnvironment(
             task_config=Tossing3DTaskConfig(args.task_config),
@@ -131,23 +205,4 @@ class Tossing3DCli:
         tasks = Tossing3DTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
         )
-        problem = Tossing3DProblem(env=env, tasks=tasks)
-        context = DomainContext(
-            env=env,
-            skill_provider=Tossing3DSkillProvider(env=env),
-            oracle=Tossing3DOracle(env=env, throw_standoff=args.oracle_throw_standoff),
-        )
-        renderer: type[Renderer] | None = Tossing3DRenderer if args.output_dir is not None else None
-        try:
-            MethodRunner.run(
-                args=args,
-                method=method_factory(context),
-                problem=problem,
-                num_cycles=num_cycles,
-                max_steps_per_interaction=max_steps_per_interaction,
-                renderer=renderer,
-                render_fps=Tossing3DCli.resolve_render_fps(env=env, renderer=renderer),
-                num_render_checkpoints=getattr(args, "num_render_checkpoints", 1),
-            )
-        finally:
-            env.close()
+        return Tossing3DProblem(env=env, tasks=tasks)
