@@ -39,10 +39,10 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt  # noqa: E402
 
+from analysis.practice_makes_perfect.paired_tests import PairedTests  # noqa: E402
 from analysis.practice_makes_perfect.tossingroom_goal_family_curves import (  # noqa: E402
     TossingRoomGoalFamilyCurves,
 )
-from analysis.practice_makes_perfect.tossingroom_reset_interval import PairedTests  # noqa: E402
 
 # The two throw families this figure contrasts, in the order they are drawn. EMPTY is
 # deliberately absent: it contains no throw, so neither sampler can touch it, and adding

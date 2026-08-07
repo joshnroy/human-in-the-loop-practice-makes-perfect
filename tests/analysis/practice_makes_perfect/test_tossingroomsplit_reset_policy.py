@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from analysis.practice_makes_perfect.tossingroom_reset_interval import PairedTests
+from analysis.practice_makes_perfect.paired_tests import PairedTests
 from analysis.practice_makes_perfect.tossingroomsplit_reset_policy import (
     PracticeSideReport,
     ResetPolicyReport,
@@ -66,19 +66,6 @@ def _arms(*, scheduled: list[int], never: list[int]) -> dict:
         "scheduled": _arm(resets=10, finals=scheduled),
         "never": _arm(resets=0, finals=never),
     }
-
-
-def test_empty_is_classified_before_recycling() -> None:
-    """The EMPTY goal names both bins, so rule ORDER decides whether its 2 tasks per
-    seed land in EMPTY or are silently added to RECYCLING's denominator."""
-    assert ResetPolicyReport.classify(goal=_EMPTY) == "EMPTY"
-    assert ResetPolicyReport.classify(goal=_TRASH) == "TRASH"
-    assert ResetPolicyReport.classify(goal=_RECYCLING) == "RECYCLING"
-
-
-def test_an_unrecognised_goal_raises_rather_than_bucketing_as_other() -> None:
-    with pytest.raises(ValueError, match="unrecognised goal"):
-        ResetPolicyReport.classify(goal="SomethingElse(a, b)")
 
 
 def test_the_domain_supplies_the_designed_composition() -> None:

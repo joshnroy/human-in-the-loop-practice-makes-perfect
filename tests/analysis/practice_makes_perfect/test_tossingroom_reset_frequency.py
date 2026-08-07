@@ -24,10 +24,8 @@ from pathlib import Path
 
 import pytest
 
-from analysis.practice_makes_perfect.tossingroom_reset_frequency import (
-    PairedTests,
-    ResetFrequencyReport,
-)
+from analysis.practice_makes_perfect.paired_tests import PairedTests
+from analysis.practice_makes_perfect.tossingroom_reset_frequency import ResetFrequencyReport
 
 _LOGS = Path(__file__).parents[3] / "docs/experiment-logs"
 
