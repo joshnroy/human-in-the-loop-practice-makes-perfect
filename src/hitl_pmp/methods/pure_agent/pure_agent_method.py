@@ -464,7 +464,12 @@ class PureAgentMethod(Method):
         """Always False: this baseline has no self-navigation to offer, so it declines
         rather than reporting a success it did not achieve (matches every other Method
         here). Satisfying this by calling `env.set_state` would be a privileged external
-        state write dressed up as the agent recovering under its own power."""
+        state write dressed up as the ROBOT recovering under its own power.
+
+        Robot, not agent, and on this baseline the distinction is not pedantry: both
+        exist here at once. The *agent* is Claude Code, which authored `policy.py` and is
+        not running any more; the *robot* is what that file drives around the
+        environment. Only the robot could navigate, and it cannot."""
         del start_state
         return False
 

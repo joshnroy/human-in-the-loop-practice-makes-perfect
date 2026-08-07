@@ -29,6 +29,20 @@ The same arithmetic is worse here than on Pendulum, and this baseline measures i
 action over a whole run. That count is the price of the be-the-policy variant, recorded
 so that arm can be priced from a run that already happened rather than by building it.
 
+## Agent and robot are two different things here
+
+This is the one place in the repo where both exist at once, so the project's naming rule
+matters more here than anywhere else:
+
+- The **agent** is Claude Code. It runs in a sandbox, writes `policy.py`, and is not
+  running at all by the time anything moves in the environment.
+- The **robot** is what that file drives. Every step, every skill, every throw is the
+  robot's.
+
+So "the agent recovered the force relation" is a claim about the authoring; "the robot
+never landed a throw" is a claim about the run. They can both be true at once, and the
+whole point of this baseline is the gap between them.
+
 ## How it maps onto this harness — no `core/` change
 
 | Notebook | Here |
