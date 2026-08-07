@@ -338,12 +338,12 @@ against `Pick`'s `200` and `Toss`'s `156`. Before #123 it was scored `-inf` by
 `skip_perfect` and `choose_practice_target` never selected it at all. So the fix changed
 both halves: the sampler can now learn, and EES now chooses to teach it.
 
-![Tossing3D, three arms, post-fix](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/1219df7c6ad2c88342f99fbde0259f72bfa1dca8/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
+![Tossing3D, two panels: learning curves against practice cycles, and end-of-training task success](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/33f8589a130b27f2dd7bb174497df75ff928a036/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
 
-> **The pin above is to an unmerged commit on this branch.** It is the commit that carries
-> the figure, taken from `git rev-parse` rather than hand-expanded. It must be **re-pinned
-> after merge**, since a squash-merge mints a new SHA and the branch commit stops being
-> reachable once the branch is deleted.
+> **The pin above is to `33f8589`, an unmerged commit on this branch.** It is the commit
+> that carries the figure, taken from `git rev-parse` rather than hand-expanded. It must
+> be **re-pinned after merge**, since a squash-merge mints a new SHA and the branch commit
+> stops being reachable once the branch is deleted.
 
 ### Figure revision: the learning curves are plotted against cycles, not transitions
 
