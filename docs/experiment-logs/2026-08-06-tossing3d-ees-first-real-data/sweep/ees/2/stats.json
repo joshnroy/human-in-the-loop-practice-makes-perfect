@@ -1,0 +1,1988 @@
+{
+  "evaluations": [
+    [
+      0,
+      4,
+      10
+    ],
+    [
+      3,
+      2,
+      10
+    ],
+    [
+      4,
+      2,
+      10
+    ],
+    [
+      10,
+      0,
+      10
+    ],
+    [
+      30,
+      7,
+      10
+    ],
+    [
+      32,
+      4,
+      10
+    ],
+    [
+      48,
+      7,
+      10
+    ],
+    [
+      51,
+      4,
+      10
+    ],
+    [
+      55,
+      7,
+      10
+    ],
+    [
+      56,
+      10,
+      10
+    ],
+    [
+      61,
+      9,
+      10
+    ],
+    [
+      65,
+      9,
+      10
+    ],
+    [
+      68,
+      10,
+      10
+    ],
+    [
+      71,
+      8,
+      10
+    ],
+    [
+      74,
+      8,
+      10
+    ],
+    [
+      77,
+      7,
+      10
+    ],
+    [
+      80,
+      8,
+      10
+    ],
+    [
+      83,
+      9,
+      10
+    ],
+    [
+      87,
+      7,
+      10
+    ],
+    [
+      90,
+      8,
+      10
+    ],
+    [
+      92,
+      7,
+      10
+    ]
+  ],
+  "breakdowns": [
+    {
+      "num_online_transitions": 0,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 3,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 4,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 10,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 30,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 32,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 48,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 51,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 55,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 56,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 61,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 65,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 68,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 71,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 74,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 77,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 80,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 83,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 87,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 90,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 92,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    }
+  ],
+  "num_practice_resets": 20,
+  "planning_failures_per_cycle": [
+    3,
+    6,
+    5,
+    0,
+    6,
+    7,
+    5,
+    8,
+    6,
+    2,
+    3,
+    3,
+    2,
+    4,
+    4,
+    5,
+    4,
+    3,
+    5,
+    5,
+    3
+  ],
+  "planning_attempts_per_cycle": [
+    29,
+    34,
+    39,
+    63,
+    22,
+    41,
+    26,
+    30,
+    27,
+    27,
+    28,
+    24,
+    23,
+    25,
+    25,
+    26,
+    27,
+    25,
+    26,
+    26,
+    13
+  ],
+  "practice_outcomes_per_cycle": [
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 4,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 18,
+        "num_successes": 0,
+        "num_random_attempts": 5,
+        "num_random_successes": 0,
+        "num_informed_attempts": 13,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 14,
+        "num_successes": 1,
+        "num_random_attempts": 13,
+        "num_random_successes": 1,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 2,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 0,
+        "num_random_attempts": 1,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 3,
+        "num_successes": 1,
+        "num_random_attempts": 2,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 2,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 2,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 1,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveToThrowPose": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Pick": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "Toss": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    }
+  ],
+  "task_name": "default"
+}

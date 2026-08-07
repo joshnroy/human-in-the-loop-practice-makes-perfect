@@ -9,6 +9,23 @@ has `param_dim = 0` and no sampler at all. "Starved versus unable" was the wrong
 dichotomy: there is no amount of practice that changes this, and #105's widening was never
 the problem.
 
+> **STALENESS NOTE (added 2026-08-06, after PR #123 merged as `8647550`).** Every number
+> in this log was measured against a build in which `MoveToThrowPose`'s add effect was
+> `NearBin`, whose acceptance interval was read off `THROW_STANDOFF_BOUNDS` — the identical
+> symbol the sampler draws from. That is the defect this log diagnosed, and `main` has
+> since fixed it: the predicate is now `RobotAtSuccessfulThrowPose`, deriving its band per
+> call from the live goal-region bounding box with only `THROW_RANGE` calibrated.
+>
+> **Nothing above or below is edited or recomputed**, and the diagnosis itself still
+> stands — it is a correct description of the build it was run on, and it is why the fix
+> exists. What is now stale is any use of these counts as a *baseline*: `175/175`,
+> `174/174`, `0/175`, `0/174`, the `543/2700` uniform-draw reference and both task-success
+> rows describe a domain whose standoff sampler was never consulted. `Pick`'s control
+> counts (`43/200`, `35/200`) are stale in the other direction — post-fix, `Pick` ties at
+> `57/60` and falls back to `0/0` informed, so it is no longer a usable control.
+>
+> Re-measured post-fix in `2026-08-06-tossing3d-ees-first-real.md`.
+
 **Everything through the `Method (to be run, not yet run)` section below is the
 pre-registration, committed verbatim in `97ec173` before any `stats.json` carrying
 `practice_outcomes_per_cycle` existed for this domain**, in the manner of the
