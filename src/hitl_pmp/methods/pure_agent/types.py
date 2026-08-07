@@ -121,6 +121,59 @@ class AgentReply(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class PracticeTransition(BaseModel):
+    """One practice decision and what came of it: what the policy saw, what it chose, and
+    whether that choice achieved the skill's own declared add effects.
+
+    **This is the in-context arm's whole payload, and it is a `model_dump_json()` dump.**
+    The arm this method shipped with hands the agent per-lifted-skill ratios and nothing
+    else -- `ThrowTrash: 0/19` on the 2026-08-07 Tossing Room pilot. A ratio cannot carry
+    a *relation*: the prompt asks the agent to find how the observable state maps to
+    parameter values that work, and Tossing Room's answer is one scalar line through
+    `(weight, force)` that two landed throws would identify. The agent was shown neither
+    coordinate. These records are those coordinates.
+
+    **PRACTICE ONLY, and that is a structural guarantee rather than a naming convention.**
+    Nothing on the evaluation path ever constructs one of these -- see
+    `PureAgentMethod.practice_step`, which is the only caller, and the test named
+    `test_evaluation_transitions_never_reach_the_practice_transition_log`. A `Method` that
+    could see its own evaluation outcomes would be able to train on the test set, and
+    `choose_ground_skill` -- the natural place to record, since it is where the observation
+    and the choice both exist -- is shared by both phases. So the record is deliberately
+    assembled one level up, where only practice reaches.
+
+    **Only parameterized skills are recorded.** See
+    `test_the_transition_log_holds_only_parameterized_skills` for the volume argument: a
+    `param_dim=0` skill contributes ~15,000 records per Tossing Room seed and no
+    continuous relation to learn, and its selection frequency is already carried by the
+    aggregate tallies, which still cover every skill.
+
+    Frozen: a transition is a record of something that already happened."""
+
+    model_config = ConfigDict(frozen=True)
+
+    # Which authoring round's policy made this decision. Kept because the prompt for round
+    # k+1 should be able to say which records came from the code it is about to revise
+    # rather than from an earlier draft.
+    round_index: int
+    # Verbatim the dict `AuthoredPolicy.choose` was handed -- plain JSON-shaped builtins,
+    # so it dumps as-is. Not a summary and not a hand-picked subset of features: which
+    # feature matters is exactly what the agent is being asked to work out, and choosing
+    # for it would be the domain hint the MINIMAL arm exists to withhold.
+    observation: dict[str, Any]
+    # Indexes `observation["skills"]`, the applicable set, so the record is self-contained:
+    # the skill it names is in the observation beside it.
+    skill_index: int
+    # Denormalised out of the observation so a reader (and a grep) can see which skill a
+    # record is about without resolving the index by hand.
+    skill_name: str
+    params: tuple[float, ...]
+    # `add_effects <= true_atoms` once the skill had executed -- the same success predicate
+    # `EesMethod` and `RandomSkillsMethod` score by, and the same one the aggregate tallies
+    # count, so a record and the tally it rolls into cannot disagree.
+    achieved_add_effects: bool
+
+
 class SkillChoice(BaseModel):
     """What an authored policy returns: which of the *applicable* ground skills to
     execute, and the continuous parameters to execute it with.

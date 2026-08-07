@@ -154,6 +154,36 @@ reflect something the method learned — the authored policy *is* what this meth
 not, and a chart putting this arm's `informed` bucket beside EES's would be comparing a
 classifier's argmax against a line of hand-written arithmetic.
 
+## Practice transitions, and the firewall that keeps evaluation out of them
+
+`practice_transitions()` returns a `PracticeTransition` per parameterized practice
+decision: the observation the policy was called with, the `skill_index` and `params` it
+returned, and whether the executed skill achieved its own declared add effects.
+
+**Why it exists.** `practice_outcomes()` reports per-lifted-skill ratios and nothing else.
+The 2026-08-07 Tossing Room pilot fed the agent `ThrowTrash: 0/19` while the prompt asked
+it to "find the relationship between the observable state and the parameter values that
+work". Tossing Room's answer is a line through `(weight, force)`, and a ratio carries
+neither coordinate — so the agent was asked a question its feedback could not answer.
+
+**Practice only, structurally.** `choose_ground_skill` is shared by both phases, so it is
+the obvious place to record and the wrong one: recording there logs every evaluation
+decision and hands the test set back to the agent. The single construction site is
+`_open_practice_transition`, reachable only from `practice_step`; the single append site is
+`_settle_pending_transition`, reachable only from `settle_pending_practice_skill`, which
+`practice_loop.py`'s `_evaluate` never calls.
+
+`test_evaluation_transitions_never_reach_the_practice_transition_log` pins this, and it is
+paired with a positive control in the same test — an empty-log assertion proves nothing
+unless the same path demonstrably fills it. It was verified against a deliberate breach
+(appending from `choose_ground_skill`), which it caught with 10 leaked transitions.
+
+**Only parameterized skills are recorded.** One Tossing Room seed runs ~15,000 practice
+transitions, which no prompt holds; only ~20 of them are throws, and only a parameterized
+skill carries a continuous decision to learn about. What is lost — how often a
+`param_dim=0` skill was selected — is still carried by `practice_outcomes()`, which covers
+every skill.
+
 ## Testing
 
 `ScriptedAgentBackend` is a deterministic stand-in that hands back a fixed sequence of

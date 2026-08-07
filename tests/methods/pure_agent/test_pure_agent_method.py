@@ -1,7 +1,7 @@
 import pytest
 
 from hitl_pmp.core.method.method import InteractionComplete
-from hitl_pmp.core.method.types import Skill
+from hitl_pmp.core.method.types import Policy, Skill
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
@@ -397,6 +397,109 @@ def test_every_prompt_names_the_domain_s_own_skills_and_predicates() -> None:
         assert predicate.name in prompt
     for object_type in provider.types():
         assert object_type.name in prompt
+
+
+# Walks right until a parameterized skill becomes applicable, then takes it forever.
+# Light Switch's `JumpToLight` is `param_dim=1` and becomes applicable two moves in, so
+# this reaches a *parameterized* decision under both phases -- which is what makes the
+# firewall test below non-vacuous. `FIRST_SKILL` would oscillate between two `MoveRobot`
+# groundings and never select a parameterized skill at all, so an empty transition log
+# would prove nothing.
+SEEKS_A_PARAMETERIZED_SKILL = """
+def policy(observation):
+    skills = observation["skills"]
+    for skill in skills:
+        if skill["param_dim"] > 0:
+            return {"skill_index": skill["index"], "params": [0.3] * skill["param_dim"]}
+    return {"skill_index": len(skills) - 1, "params": []}
+"""
+
+
+def _drive(*, env: LightSwitchEnvironment, policy: Policy, steps: int) -> None:
+    state = env.get_current_state()
+    for _ in range(steps):
+        state = env.take_action(action=policy(state).action)
+
+
+def test_practice_transitions_record_the_observation_the_choice_and_the_outcome() -> None:
+    """The in-context arm's payload: what the policy saw, what it did, and what happened.
+
+    The aggregate tallies this arm shipped with say `JumpToLight: 0/9` and nothing more --
+    not which parameter was tried, not what the state was when it was tried. A relation
+    between an observable feature and a working parameter is not recoverable from a
+    ratio, which is the whole defect the 2026-08-07 pilot measured."""
+    env = _env()
+    method = _method(env=env, sources=(SEEKS_A_PARAMETERIZED_SKILL,))
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    _drive(env=env, policy=method.get_practice_policy(task=task), steps=6)
+
+    transitions = method.practice_transitions()
+    assert transitions, "a parameterized skill was executed, so something must be recorded"
+    first = transitions[0]
+    assert first.skill_name == "JumpToLight"
+    assert first.params == (0.3,)
+    # The observation is the one the policy was called with, verbatim -- so a recorded
+    # transition is replayable against the authored file without the environment.
+    assert set(first.observation) == {"goal", "objects", "atoms", "skills"}
+    assert first.observation["skills"][first.skill_index]["name"] == "JumpToLight"
+    assert first.achieved_add_effects is False, "0.3 is outside the tolerance window"
+
+
+def test_evaluation_transitions_never_reach_the_practice_transition_log() -> None:
+    """**The firewall.** A `Method` is never shown its own evaluation outcomes; that is
+    what makes training on the test set structurally impossible here rather than merely
+    discouraged, and it is the property this whole feature could most easily destroy.
+
+    `choose_ground_skill` is shared by both phases, so recording there -- the obvious
+    place, since that is where the observation and the choice both exist -- would silently
+    log every evaluation decision and feed the test set straight back to the agent. The
+    append lives on the practice path only, and this test fails if it ever moves.
+
+    Paired with a positive control in the same test on purpose: an assertion that a log is
+    empty is worthless unless the same code path demonstrably fills it, and the evaluation
+    phase here selects the same parameterized skill practice did."""
+    env = _env()
+    method = _method(env=env, sources=(SEEKS_A_PARAMETERIZED_SKILL,))
+    tasks = LightSwitchTasks(env=env, seed=0)
+    practice_task = tasks.sample_train_task()
+
+    env.set_state(state=practice_task.initial_state)
+    _drive(env=env, policy=method.get_practice_policy(task=practice_task), steps=6)
+    after_practice = method.practice_transitions()
+    assert after_practice, "positive control: practice must fill the log"
+
+    # A *test* task, driven through the evaluation entrypoint, for at least as many steps.
+    test_task = tasks.sample_test_task()
+    env.set_state(state=test_task.initial_state)
+    _drive(env=env, policy=method.get_task_policy(task=test_task), steps=12)
+
+    assert method.practice_transitions() == after_practice, (
+        "an evaluation transition reached the practice log: this Method is now able to "
+        "train on the test set"
+    )
+
+
+def test_the_transition_log_holds_only_parameterized_skills() -> None:
+    """Volume, and the reason the dump is small enough to be a prompt at all.
+
+    One Tossing Room seed runs ~15,000 practice transitions, which no prompt holds. Only a
+    parameterized skill carries a continuous decision to learn anything about, so those are
+    the ones kept -- ~20 records rather than ~15,000. What is lost is real and is covered
+    by the aggregate tallies, which still report every skill: a `param_dim=0` skill can
+    only be right or wrong about *when* it was selected, and the tally says how often."""
+    env = _env()
+    method = _method(env=env, sources=(SEEKS_A_PARAMETERIZED_SKILL,))
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    _drive(env=env, policy=method.get_practice_policy(task=task), steps=6)
+
+    outcomes = method.practice_outcomes()
+    assert outcomes["MoveRobot"].num_attempts > 0, "unparameterized skills were executed"
+    assert {transition.skill_name for transition in method.practice_transitions()} == {
+        "JumpToLight"
+    }
+    assert all(transition.params for transition in method.practice_transitions())
 
 
 def test_the_transcript_records_what_each_round_cost() -> None:

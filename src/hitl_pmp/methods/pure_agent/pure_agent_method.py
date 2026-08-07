@@ -20,7 +20,12 @@ from hitl_pmp.methods.pure_agent.agent_backend import AgentBackend
 from hitl_pmp.methods.pure_agent.authored_policy import AuthoredPolicy, AuthoredPolicyError
 from hitl_pmp.methods.pure_agent.observation import ObservationBuilder
 from hitl_pmp.methods.pure_agent.prompts import PromptArm, PromptBuilder
-from hitl_pmp.methods.pure_agent.types import AuthoringRound, AuthoringTranscript
+from hitl_pmp.methods.pure_agent.types import (
+    AuthoringRound,
+    AuthoringTranscript,
+    PracticeTransition,
+    SkillChoice,
+)
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -108,6 +113,17 @@ class PureAgentMethod(Method):
     _num_decisions: int = PrivateAttr(default=0)
     _num_malformed_decisions: int = PrivateAttr(default=0)
     _last_observation: dict[str, Any] | None = PrivateAttr(default=None)
+    # The decision `choose_ground_skill` last got out of the authored policy. Written on
+    # BOTH phases, exactly like `_last_observation` -- what is practice-only is the
+    # *append* into `_practice_transitions`, not this scratch slot.
+    _last_choice: SkillChoice | None = PrivateAttr(default=None)
+    # The in-context arm's payload. Appended to from the practice path alone; see
+    # `PracticeTransition` for why that placement is the firewall and not a convention.
+    _practice_transitions: list[PracticeTransition] = PrivateAttr(default_factory=list)
+    # This step's record, still missing its outcome -- the skill has been chosen but not
+    # yet executed. Settled alongside `_pending_practice_skill`, from the same call, so the
+    # two can never disagree about whether an attempt happened.
+    _pending_transition: PracticeTransition | None = PrivateAttr(default=None)
     # Practice-side goal signal, the only outcome number this Method can honestly observe
     # for itself: it holds the practice task, so it can see that task's goal become
     # satisfied. It never observes an EVALUATION outcome -- `Metrics` owns those and a
@@ -304,10 +320,12 @@ class PureAgentMethod(Method):
             ground_skills=ground_skills,
         )
         self._last_observation = observation
+        self._last_choice = None
         policy = self._policy
         if policy is None:
             return self._no_op(reason="no authored policy yet"), None
         choice = policy.choose(observation=observation)
+        self._last_choice = choice
         if choice is None:
             # Deterministic, and deliberately NOT a random draw: an RNG stream in this
             # path would be consumed a different number of times depending on how often
@@ -371,7 +389,38 @@ class PureAgentMethod(Method):
             raise InteractionComplete
         labeled, ground_skill = self.choose_ground_skill(state=state, goal=goal)
         self._pending_practice_skill = ground_skill
+        self._open_practice_transition(ground_skill=ground_skill)
         return labeled
+
+    def _open_practice_transition(self, *, ground_skill: GroundSkill | None) -> None:
+        """Start a record for the decision just made, to be closed once it has executed.
+
+        **The one place a `PracticeTransition` is ever constructed, and it is reachable
+        only from `practice_step`.** That is the firewall: `choose_ground_skill` is shared
+        by practice and evaluation, so recording there would feed evaluation outcomes back
+        to the agent and let this Method train on the test set.
+
+        Skipped for unparameterized skills -- see `PracticeTransition` for the volume
+        argument -- and for a decision the authored policy failed to make at all, which
+        became a no-op and executed no skill to have an outcome."""
+        self._pending_transition = None
+        choice = self._last_choice
+        observation = self._last_observation
+        if ground_skill is None or choice is None or observation is None:
+            return
+        if ground_skill.skill.param_dim == 0:
+            return
+        self._pending_transition = PracticeTransition(
+            round_index=self._round_index - 1,
+            observation=observation,
+            skill_index=choice.skill_index,
+            skill_name=ground_skill.skill.name,
+            params=choice.params,
+            # A placeholder, overwritten the moment the skill settles. Never read before
+            # then: an unsettled record is held in `_pending_transition` and only an
+            # appended one is ever handed out.
+            achieved_add_effects=False,
+        )
 
     def _observe_practice_goal(self, *, state: State, goal: Goal) -> None:
         """Count this period as having reached its train task's goal, at most once.
@@ -398,9 +447,35 @@ class PureAgentMethod(Method):
         if pending is None:
             return
         self._pending_practice_skill = None
-        self.observe_practice_attempt(
-            ground_skill=pending, true_atoms=self.abstract_state(state=state)
+        true_atoms = self.abstract_state(state=state)
+        self.observe_practice_attempt(ground_skill=pending, true_atoms=true_atoms)
+        self._settle_pending_transition(
+            success=self.achieved_add_effects(ground_skill=pending, true_atoms=true_atoms)
         )
+
+    def _settle_pending_transition(self, *, success: bool) -> None:
+        """Close this step's record with its outcome and file it.
+
+        Reached from `settle_pending_practice_skill` only, which is itself called from
+        `practice_step` and `observe_environment_reset` -- both practice-side. `_evaluate`
+        in `practice_loop.py` calls neither, which is what keeps the log free of evaluation
+        transitions without depending on anyone remembering the rule."""
+        pending = self._pending_transition
+        if pending is None:
+            return
+        self._pending_transition = None
+        self._practice_transitions.append(
+            pending.model_copy(update={"achieved_add_effects": success})
+        )
+
+    @staticmethod
+    def achieved_add_effects(
+        *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom]
+    ) -> bool:
+        """The success predicate, defined once so a transition record and the aggregate
+        tally it rolls into cannot drift apart. `EesMethod` and `RandomSkillsMethod` score
+        by this same subset test, which is what lets all three arms share a chart."""
+        return ground_skill.add_effects <= true_atoms
 
     def observe_practice_attempt(
         self, *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom]
@@ -418,7 +493,18 @@ class PureAgentMethod(Method):
         )
         self._practice_tallies[name] = self._practice_tallies.get(
             name, SkillPracticeTally()
-        ).with_attempt(success=ground_skill.add_effects <= true_atoms, consultation=consultation)
+        ).with_attempt(
+            success=self.achieved_add_effects(ground_skill=ground_skill, true_atoms=true_atoms),
+            consultation=consultation,
+        )
+
+    def practice_transitions(self) -> tuple[PracticeTransition, ...]:
+        """Every parameterized practice decision so far, oldest first.
+
+        A tuple rather than the live list, for the same reason `practice_outcomes` returns
+        a copy: a caller holding this while practice continues must not have it grow
+        underneath them. **Practice only** -- see `PracticeTransition`."""
+        return tuple(self._practice_transitions)
 
     def practice_outcomes(self) -> dict[str, SkillPracticeTally]:
         """Per lifted skill, cumulative over the run; `method_runner.py` differences them
