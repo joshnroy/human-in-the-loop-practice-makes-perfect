@@ -219,9 +219,20 @@ __marimo__/
 results/
 .claude/worktrees/
 
-# Third-party reference checkouts, for coding-style/API reference only. Never committed:
-# 1.9GB, and an embedded git repo inside this one confuses `git add -A`.
-reference/
+# `reference/` used to be ignored here, because an embedded git repo inside this one
+# confuses `git add -A`. The three checkouts are now **git submodules**, which is the
+# supported way to do exactly that -- so the ignore is gone and each is pinned to an
+# exact commit in `.gitmodules` plus a gitlink. See CLAUDE.md's Setup section.
+#
+# Two of the three point at *forks* (`joshnroy/kinder-baselines`, `joshnroy/kindergarden`)
+# rather than the lab originals: the commits we depend on live on unmerged branches, and a
+# submodule hard-fails when a pinned SHA is force-pushed away during review. A fork Josh
+# controls cannot be force-pushed under us.
+#
+# Agent worktrees do not populate submodules (`git worktree add` skips them), so the
+# ~1 GB kindergarden cost is opt-in per worktree. KINDER-backed tests gate on
+# `importlib.util.find_spec`, so a worktree without them skips rather than fails.
+reference/*/.claude/
 
 # Local working area: drafts under review, raw evidence behind a report, one-off probes.
 # Deliberately in-repo rather than /tmp so a draft survives a reboot and sits beside the

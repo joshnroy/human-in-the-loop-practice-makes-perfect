@@ -236,10 +236,12 @@ pinned one. For everything Tossing3D touches this is believed harmless (the sing
 intervening commit is the cluttered-retrieval fix above), but it is a real gap between what
 the code cites and what a reader has locally.
 
-The local `reference/` checkouts are not reliably at `main` either:
-`scripts/update_reference_repos.sh` skips a checkout that is not on its default branch, so
-either one may be sitting on a topic branch someone is working in. As of 2026-08-06 both
-are.
+The local `reference/` checkouts are not at `main` either, and since 2026-08-07 that is
+recorded rather than incidental: both are **git submodules pinned to a fork branch** —
+`joshnroy/kinder-baselines` @ `11eace5` and `joshnroy/kindergarden` @ `4113237`. Read the
+exact pin with `scripts/update_reference_repos.sh --check`, which reports drift and never
+resets a checkout. A checkout on some other commit is somebody's work, so the script says
+so instead of moving it.
 
 ### The `kindergarden` / `kinder` naming trap
 

@@ -48,8 +48,10 @@ than holding it back.
 A `lint`/`test` failure is sometimes GitHub infrastructure, not the diff — read the log
 before reporting a red check as a real one, and re-run the job if it died in setup.
 
-Note that `main` moving does **not** move `reference/*` checkouts — those sit on feature
-branches and `update_reference_repos.sh` skips non-default branches, so fetch explicitly.
+Note that `main` moving does **not** move `reference/*` checkouts — they are git
+submodules pinned to a fork branch, so the pin changes only when someone commits a new
+gitlink. `update_reference_repos.sh --check` reports the pin and any drift without
+touching anything; fetch explicitly if you need what a fork branch has since gained.
 
 ## Render
 
