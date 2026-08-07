@@ -20,6 +20,13 @@ number.
 | `reference/kindergarden` | `Princeton-Robot-Planning-and-Learning/kindergarden` | `main` | `cdf1b8ba0ed0d4fbf0390e336bea748e83d517d5` |
 | `reference/kinder-baselines` | `Princeton-Robot-Planning-and-Learning/kinder-baselines` | `main` | `4c731dc81d68ee6888ef3a989034991cd0694630` |
 
+> **Note, 2026-08-07.** The `remote` column above is a record of where these checkouts
+> pointed when the validation ran, not where they point now. Both are **git submodules**
+> pinned to fork branches today — `joshnroy/kinder-baselines` @ `11eace5` and
+> `joshnroy/kindergarden` @ `4113237`. The measurements below are left exactly as
+> published; only the pointer is out of date. `scripts/update_reference_repos.sh --check`
+> prints the current pins.
+
 Both SHAs were read back from the checkouts rather than assumed, and both were
 confirmed to be the current tip of their remote's default branch **at the time of
 writing**:

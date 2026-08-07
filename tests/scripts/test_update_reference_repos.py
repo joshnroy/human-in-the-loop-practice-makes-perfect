@@ -1,24 +1,35 @@
-"""`scripts/update_reference_repos.sh` is how `reference/` is kept current, so the
-claims worth pinning are the ones whose failure would be silent or destructive.
+"""`scripts/update_reference_repos.sh` keeps `reference/` in sync with the pins this
+repository records, so the claims worth pinning are the ones whose failure would be
+silent or destructive.
 
-Two of them are load-bearing:
+`reference/` used to be gitignored, and the script was the substitute for a pin: it
+fast-forwarded each checkout to its own remote's default branch. Submodules are the
+pin now, so two of the old contract's three rules are gone with it -- a submodule
+tracks a *commit*, so there is no default branch to resolve (the old
+`predicators`-is-on-`master` test is deliberately deleted, not ported) and nothing to
+fast-forward.
 
-* **The default branch is per-repo, not `main`.** `reference/predicators` sits on
-  `master`. A script that assumed `main` would report a spurious "skipped: not on
-  the default branch" for it forever, and the skip would look like a deliberate
-  choice rather than a bug.
+The one rule that survives is the important one, and it is the reason this file exists:
+
 * **Local work is never clobbered.** Someone may be mid-investigation inside a
-  reference checkout -- a dirty tree, a scratch branch, a detached HEAD at some
-  commit they are bisecting. The script must refuse to touch those rather than
-  stash/reset/checkout over them, because the loss would be silent and
-  unrecoverable.
+  reference checkout -- an edit, a scratch branch, a commit they are bisecting. A
+  submodule makes clobbering *easier* than it was, because `git submodule update` will
+  happily detach a populated checkout back onto the recorded gitlink and say nothing.
+  So the script only ever initialises a submodule that is **not yet there**; anything
+  populated is reported, never touched.
 
-Every test builds its remotes as local git repositories in a tmpdir and points the
-script at them through `--manifest`. Nothing here touches the network, and nothing
-here touches the real `reference/` directory.
+Every test builds a synthetic superproject with local-path submodules in a tmpdir and
+points the script at it with `--repo-root`. Nothing here touches the network, and
+nothing here touches the real `reference/` directory.
+
+Local-path submodules need `protocol.file.allow=always`: git has refused the `file`
+transport for submodules by default since CVE-2022-39253. It is passed to the script
+through `GIT_CONFIG_*` environment variables rather than baked into the script, so the
+script itself carries no test-only affordance.
 """
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -30,32 +41,39 @@ EXIT_OK = 0
 EXIT_FAILED = 1
 EXIT_SKIPPED = 2
 
+# git refuses `file://` submodule transport by default (CVE-2022-39253). Every git
+# invocation in this file -- and the script under test -- needs it re-enabled.
+_ALLOW_FILE_TRANSPORT = {
+    "GIT_CONFIG_COUNT": "1",
+    "GIT_CONFIG_KEY_0": "protocol.file.allow",
+    "GIT_CONFIG_VALUE_0": "always",
+}
+
+_GIT_IDENTITY = {
+    "GIT_AUTHOR_NAME": "test",
+    "GIT_AUTHOR_EMAIL": "test@example.com",
+    "GIT_COMMITTER_NAME": "test",
+    "GIT_COMMITTER_EMAIL": "test@example.com",
+}
+
+
+def _env() -> dict[str, str]:
+    return {**os.environ, **_GIT_IDENTITY, **_ALLOW_FILE_TRANSPORT}
+
 
 def _git(*args: str, cwd: Path) -> str:
     """Run git with a fixed identity so commits work on a bare CI machine."""
-    env = {
-        **os.environ,
-        "GIT_AUTHOR_NAME": "test",
-        "GIT_AUTHOR_EMAIL": "test@example.com",
-        "GIT_COMMITTER_NAME": "test",
-        "GIT_COMMITTER_EMAIL": "test@example.com",
-    }
     completed = subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, check=True, env=env
+        ["git", *args], cwd=cwd, capture_output=True, text=True, check=True, env=_env()
     )
     return completed.stdout.strip()
 
 
-def _make_origin(*, tmp_path: Path, name: str, default_branch: str) -> Path:
-    """Create a non-bare origin repo with one commit on `default_branch`.
-
-    `git clone` reads the remote's own HEAD to decide what the default branch is,
-    which is exactly the mechanism the script has to respect, so the fixture sets
-    HEAD rather than relying on the ambient `init.defaultBranch`.
-    """
+def _make_origin(*, tmp_path: Path, name: str) -> Path:
+    """Create a non-bare origin repo with one commit."""
     origin = tmp_path / "origins" / name
     origin.mkdir(parents=True)
-    _git("init", f"--initial-branch={default_branch}", cwd=origin)
+    _git("init", "--initial-branch=main", cwd=origin)
     (origin / "README.md").write_text("v1\n", encoding="utf-8")
     _git("add", "README.md", cwd=origin)
     _git("commit", "-m", "v1", cwd=origin)
@@ -69,27 +87,40 @@ def _advance_origin(*, origin: Path, text: str) -> str:
     return _git("rev-parse", "HEAD", cwd=origin)
 
 
-def _write_manifest(*, tmp_path: Path, entries: list[tuple[str, Path]]) -> Path:
-    """Manifest format: one `name<TAB>url<TAB>extra-clone-flags` line per repo."""
-    manifest = tmp_path / "manifest.tsv"
-    manifest.write_text(
-        "".join(f"{name}\t{origin}\t\n" for name, origin in entries), encoding="utf-8"
-    )
-    return manifest
+def _make_superproject(*, tmp_path: Path, names: list[str]) -> tuple[Path, dict[str, Path]]:
+    """A repo that records one gitlink per name under `reference/`, as this repo does.
+
+    Returns the superproject and each submodule's origin, so a test can move the
+    origin forward independently of the recorded pin.
+    """
+    super_root = tmp_path / "super"
+    super_root.mkdir(parents=True)
+    _git("init", "--initial-branch=main", cwd=super_root)
+    (super_root / "README.md").write_text("superproject\n", encoding="utf-8")
+    _git("add", "README.md", cwd=super_root)
+    _git("commit", "-m", "init", cwd=super_root)
+
+    origins: dict[str, Path] = {}
+    for name in names:
+        origin = _make_origin(tmp_path=tmp_path, name=name)
+        origins[name] = origin
+        _git("submodule", "add", str(origin), f"reference/{name}", cwd=super_root)
+    _git("commit", "-m", "record the reference pins", cwd=super_root)
+    return super_root, origins
 
 
-def _run(*, reference_dir: Path, manifest: Path) -> subprocess.CompletedProcess[str]:
+def _deinit(*, super_root: Path, name: str) -> None:
+    """Return a submodule to the state a fresh clone is in: recorded, not populated."""
+    _git("submodule", "deinit", "--force", f"reference/{name}", cwd=super_root)
+
+
+def _run(*, super_root: Path, extra: list[str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [
-            str(SCRIPT),
-            "--reference-dir",
-            str(reference_dir),
-            "--manifest",
-            str(manifest),
-        ],
+        [str(SCRIPT), "--repo-root", str(super_root), *(extra or [])],
         capture_output=True,
         text=True,
         check=False,
+        env=_env(),
     )
 
 
@@ -100,169 +131,172 @@ def test_the_script_exists_and_is_executable() -> None:
     assert os.access(SCRIPT, os.X_OK)
 
 
-def test_a_missing_repo_is_cloned(*, tmp_path: Path) -> None:
-    origin = _make_origin(tmp_path=tmp_path, name="alpha", default_branch="main")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("alpha", origin)])
-    result = _run(reference_dir=reference_dir, manifest=manifest)
+def test_an_uninitialised_submodule_is_initialised(*, tmp_path: Path) -> None:
+    """The fresh-clone case: `git clone` records gitlinks but leaves empty directories,
+    so the whole of `reference/` is absent until something populates it."""
+    super_root, _ = _make_superproject(tmp_path=tmp_path, names=["alpha"])
+    _deinit(super_root=super_root, name="alpha")
+    checkout = super_root / "reference" / "alpha"
+    assert not (checkout / "README.md").exists()
 
-    assert result.returncode == EXIT_OK, result.stderr
-    assert (reference_dir / "alpha" / "README.md").read_text(encoding="utf-8") == "v1\n"
-    assert "cloned" in result.stdout
+    result = _run(super_root=super_root)
+
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
+    assert (checkout / "README.md").read_text(encoding="utf-8") == "v1\n"
+    assert "initialised" in result.stdout
 
 
-def test_an_already_current_repo_is_a_no_op(*, tmp_path: Path) -> None:
+def test_an_already_initialised_submodule_is_a_no_op(*, tmp_path: Path) -> None:
     """Idempotence: the second run must change nothing and say so."""
-    origin = _make_origin(tmp_path=tmp_path, name="alpha", default_branch="main")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("alpha", origin)])
+    super_root, _ = _make_superproject(tmp_path=tmp_path, names=["alpha"])
+    _deinit(super_root=super_root, name="alpha")
 
-    first = _run(reference_dir=reference_dir, manifest=manifest)
-    assert first.returncode == EXIT_OK, first.stderr
-    head_after_clone = _git("rev-parse", "HEAD", cwd=reference_dir / "alpha")
+    first = _run(super_root=super_root)
+    assert first.returncode == EXIT_OK, first.stdout + first.stderr
+    checkout = super_root / "reference" / "alpha"
+    head_after_init = _git("rev-parse", "HEAD", cwd=checkout)
 
-    second = _run(reference_dir=reference_dir, manifest=manifest)
-    assert second.returncode == EXIT_OK, second.stderr
+    second = _run(super_root=super_root)
+
+    assert second.returncode == EXIT_OK, second.stdout + second.stderr
     assert "already current" in second.stdout
-    assert _git("rev-parse", "HEAD", cwd=reference_dir / "alpha") == head_after_clone
+    assert _git("rev-parse", "HEAD", cwd=checkout) == head_after_init
 
 
-def test_a_behind_repo_fast_forwards(*, tmp_path: Path) -> None:
-    origin = _make_origin(tmp_path=tmp_path, name="alpha", default_branch="main")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("alpha", origin)])
-    _run(reference_dir=reference_dir, manifest=manifest)
+def test_a_drifted_submodule_is_reported_not_reset(*, tmp_path: Path) -> None:
+    """The commit someone is sitting on is work. `git submodule update` would detach it
+    back onto the pin without a word; this script must not."""
+    super_root, origins = _make_superproject(tmp_path=tmp_path, names=["alpha"])
+    checkout = super_root / "reference" / "alpha"
+    pinned = _git("rev-parse", "HEAD", cwd=checkout)
+    moved = _advance_origin(origin=origins["alpha"], text="v2\n")
+    _git("fetch", "origin", cwd=checkout)
+    _git("checkout", "--detach", moved, cwd=checkout)
 
-    new_sha = _advance_origin(origin=origin, text="v2\n")
-    result = _run(reference_dir=reference_dir, manifest=manifest)
+    result = _run(super_root=super_root)
 
-    assert result.returncode == EXIT_OK, result.stderr
-    assert (reference_dir / "alpha" / "README.md").read_text(encoding="utf-8") == "v2\n"
-    assert _git("rev-parse", "HEAD", cwd=reference_dir / "alpha") == new_sha
-    # The report must name both ends of the move, not just say "updated".
-    assert new_sha[:7] in result.stdout
-
-
-def test_a_repo_whose_default_branch_is_master_is_handled(*, tmp_path: Path) -> None:
-    """`reference/predicators` is on `master`. Hardcoding `main` would break it,
-    and the breakage would look like a legitimate skip."""
-    origin = _make_origin(tmp_path=tmp_path, name="oldstyle", default_branch="master")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("oldstyle", origin)])
-    _run(reference_dir=reference_dir, manifest=manifest)
-
-    new_sha = _advance_origin(origin=origin, text="v2\n")
-    result = _run(reference_dir=reference_dir, manifest=manifest)
-
-    assert result.returncode == EXIT_OK, result.stderr
-    assert _git("rev-parse", "HEAD", cwd=reference_dir / "oldstyle") == new_sha
-    # Nothing was skipped: a `master` default must not read as "not on main".
-    assert "skipped  0/1" in result.stdout
+    assert result.returncode == EXIT_SKIPPED, result.stdout + result.stderr
+    assert _git("rev-parse", "HEAD", cwd=checkout) == moved
+    assert moved != pinned
+    assert "drift" in result.stdout.lower()
+    # Naming both ends is the point: "drifted" alone does not say from what, to what.
+    assert moved[:7] in result.stdout
+    assert pinned[:7] in result.stdout
 
 
-def test_a_dirty_tree_is_skipped_not_clobbered(*, tmp_path: Path) -> None:
+def test_a_dirty_submodule_is_reported_not_clobbered(*, tmp_path: Path) -> None:
     """Someone may be mid-investigation. Their edit must survive."""
-    origin = _make_origin(tmp_path=tmp_path, name="alpha", default_branch="main")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("alpha", origin)])
-    _run(reference_dir=reference_dir, manifest=manifest)
-
-    dirty = reference_dir / "alpha" / "README.md"
+    super_root, _ = _make_superproject(tmp_path=tmp_path, names=["alpha"])
+    dirty = super_root / "reference" / "alpha" / "README.md"
     dirty.write_text("local edit I care about\n", encoding="utf-8")
-    _advance_origin(origin=origin, text="v2\n")
 
-    result = _run(reference_dir=reference_dir, manifest=manifest)
+    result = _run(super_root=super_root)
 
-    assert result.returncode == EXIT_SKIPPED
+    assert result.returncode == EXIT_SKIPPED, result.stdout + result.stderr
     assert dirty.read_text(encoding="utf-8") == "local edit I care about\n"
-    assert "skipped" in result.stdout.lower()
     assert "dirty" in result.stdout.lower()
 
 
-def test_a_non_default_branch_is_skipped_not_clobbered(*, tmp_path: Path) -> None:
-    origin = _make_origin(tmp_path=tmp_path, name="alpha", default_branch="main")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("alpha", origin)])
-    _run(reference_dir=reference_dir, manifest=manifest)
-
-    checkout = reference_dir / "alpha"
+def test_a_local_branch_at_the_pin_survives(*, tmp_path: Path) -> None:
+    """A submodule at the recorded commit but on a named branch is in sync, not drifted
+    -- and must still be reported without being detached back onto the gitlink."""
+    super_root, _ = _make_superproject(tmp_path=tmp_path, names=["alpha"])
+    checkout = super_root / "reference" / "alpha"
     _git("checkout", "-b", "my-investigation", cwd=checkout)
-    _advance_origin(origin=origin, text="v2\n")
 
-    result = _run(reference_dir=reference_dir, manifest=manifest)
+    result = _run(super_root=super_root)
 
-    assert result.returncode == EXIT_SKIPPED
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
     assert _git("rev-parse", "--abbrev-ref", "HEAD", cwd=checkout) == "my-investigation"
-    assert (checkout / "README.md").read_text(encoding="utf-8") == "v1\n"
-    assert "skipped" in result.stdout.lower()
+    assert "already current" in result.stdout
 
 
-def test_a_detached_head_is_skipped_not_clobbered(*, tmp_path: Path) -> None:
-    origin = _make_origin(tmp_path=tmp_path, name="alpha", default_branch="main")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("alpha", origin)])
-    _run(reference_dir=reference_dir, manifest=manifest)
+def test_one_drifted_submodule_does_not_stop_the_others(*, tmp_path: Path) -> None:
+    """A pre-flight check should still restore everything it safely can."""
+    super_root, origins = _make_superproject(tmp_path=tmp_path, names=["alpha", "beta"])
+    alpha = super_root / "reference" / "alpha"
+    moved = _advance_origin(origin=origins["alpha"], text="v2\n")
+    _git("fetch", "origin", cwd=alpha)
+    _git("checkout", "--detach", moved, cwd=alpha)
+    _deinit(super_root=super_root, name="beta")
 
-    checkout = reference_dir / "alpha"
-    pinned = _git("rev-parse", "HEAD", cwd=checkout)
-    _git("checkout", "--detach", pinned, cwd=checkout)
-    _advance_origin(origin=origin, text="v2\n")
+    result = _run(super_root=super_root)
 
-    result = _run(reference_dir=reference_dir, manifest=manifest)
-
-    assert result.returncode == EXIT_SKIPPED
-    assert _git("rev-parse", "HEAD", cwd=checkout) == pinned
-    assert "skipped" in result.stdout.lower()
+    assert result.returncode == EXIT_SKIPPED, result.stdout + result.stderr
+    assert _git("rev-parse", "HEAD", cwd=alpha) == moved
+    assert (super_root / "reference" / "beta" / "README.md").exists()
 
 
-def test_one_skipped_repo_does_not_stop_the_others(*, tmp_path: Path) -> None:
-    """A pre-flight check should still update everything it safely can."""
-    alpha = _make_origin(tmp_path=tmp_path, name="alpha", default_branch="main")
-    beta = _make_origin(tmp_path=tmp_path, name="beta", default_branch="master")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("alpha", alpha), ("beta", beta)])
-    _run(reference_dir=reference_dir, manifest=manifest)
+def test_check_reports_without_initialising(*, tmp_path: Path) -> None:
+    """`--check` is the cheap pre-flight: a worktree must be able to ask "am I in sync?"
+    without paying kindergarden's 1.08 GiB pack to find out it is not."""
+    super_root, _ = _make_superproject(tmp_path=tmp_path, names=["alpha"])
+    _deinit(super_root=super_root, name="alpha")
+    checkout = super_root / "reference" / "alpha"
 
-    (reference_dir / "alpha" / "README.md").write_text("dirty\n", encoding="utf-8")
-    beta_sha = _advance_origin(origin=beta, text="v2\n")
+    result = _run(super_root=super_root, extra=["--check"])
 
-    result = _run(reference_dir=reference_dir, manifest=manifest)
-
-    assert result.returncode == EXIT_SKIPPED
-    assert _git("rev-parse", "HEAD", cwd=reference_dir / "beta") == beta_sha
+    assert result.returncode == EXIT_SKIPPED, result.stdout + result.stderr
+    assert not (checkout / "README.md").exists()
+    assert "not initialised" in result.stdout.lower()
 
 
 def test_the_summary_reports_counts_as_x_of_y(*, tmp_path: Path) -> None:
     """House rule: counts, never bare percentages."""
-    alpha = _make_origin(tmp_path=tmp_path, name="alpha", default_branch="main")
-    beta = _make_origin(tmp_path=tmp_path, name="beta", default_branch="main")
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("alpha", alpha), ("beta", beta)])
+    super_root, _ = _make_superproject(tmp_path=tmp_path, names=["alpha", "beta"])
 
-    result = _run(reference_dir=reference_dir, manifest=manifest)
+    result = _run(super_root=super_root)
 
-    assert result.returncode == EXIT_OK, result.stderr
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
     assert "2/2" in result.stdout
     assert "%" not in result.stdout
 
 
-def test_the_builtin_manifest_covers_the_three_reference_repos() -> None:
-    """The default manifest is what runs when nobody passes `--manifest`, so the
-    set of repos it names is part of the contract. Checked by reading the script,
-    which needs no network and no clone."""
+def test_an_uninitialisable_submodule_exits_nonzero(*, tmp_path: Path) -> None:
+    """An origin that has gone away must fail loudly, not be silently skipped.
+
+    `git submodule deinit` leaves the clone cached under `.git/modules`, so re-init
+    would otherwise succeed with no origin at all -- the cache has to go too, or this
+    test passes without ever reaching the network path it claims to cover.
+    """
+    super_root, origins = _make_superproject(tmp_path=tmp_path, names=["alpha"])
+    _deinit(super_root=super_root, name="alpha")
+    shutil.rmtree(origins["alpha"])
+    shutil.rmtree(super_root / ".git" / "modules" / "reference" / "alpha")
+
+    result = _run(super_root=super_root)
+
+    assert result.returncode == EXIT_FAILED, result.stdout + result.stderr
+    assert "failed" in (result.stdout + result.stderr).lower()
+
+
+def test_a_non_repository_fails_rather_than_reporting_success(*, tmp_path: Path) -> None:
+    """Exit 0 from a directory that is not a git repository would make the pre-flight
+    check a no-op that always passes."""
+    not_a_repo = tmp_path / "elsewhere"
+    not_a_repo.mkdir()
+
+    result = _run(super_root=not_a_repo)
+
+    assert result.returncode == EXIT_FAILED, result.stdout + result.stderr
+
+
+def test_the_recorded_pins_are_the_three_reference_repos() -> None:
+    """`.gitmodules` is the pin now, so the set of submodules it records is part of the
+    contract the script implements. Read from the file, which needs no network and does
+    not touch the real `reference/` checkouts."""
+    gitmodules = (REPO_ROOT / ".gitmodules").read_text(encoding="utf-8")
+    for path in ("reference/kindergarden", "reference/kinder-baselines", "reference/predicators"):
+        assert f"path = {path}" in gitmodules
+    # Two of the three are forks on purpose: the commits this repo depends on live on
+    # unmerged branches, and a submodule hard-fails when a pinned SHA is force-pushed
+    # away. A fork Josh controls cannot be force-pushed under us.
+    assert "joshnroy/kindergarden" in gitmodules
+    assert "joshnroy/kinder-baselines" in gitmodules
+
+
+def test_kindergarden_is_initialised_blobless_by_default() -> None:
+    """Its pack is 1.08 GiB; a full-blob clone is a several-minute mistake. Checked by
+    reading the script, which needs no network and no clone."""
     body = SCRIPT.read_text(encoding="utf-8")
-    for name in ("kindergarden", "kinder-baselines", "predicators"):
-        assert name in body
-    # Its pack is 1.08 GiB; a full-blob clone is a several-minute mistake.
     assert "--filter=blob:none" in body
-
-
-def test_a_failing_repo_exits_nonzero(*, tmp_path: Path) -> None:
-    """A URL that cannot be cloned must fail loudly, not be silently skipped."""
-    reference_dir = tmp_path / "reference"
-    manifest = _write_manifest(tmp_path=tmp_path, entries=[("ghost", tmp_path / "does-not-exist")])
-
-    result = _run(reference_dir=reference_dir, manifest=manifest)
-
-    assert result.returncode == EXIT_FAILED
-    assert "failed" in result.stdout.lower() or "failed" in result.stderr.lower()

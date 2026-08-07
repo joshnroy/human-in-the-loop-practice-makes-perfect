@@ -28,31 +28,66 @@ cd .. && git clone https://github.com/aibasel/downward.git && cd downward && ./b
 A working `python` and that checkout are the whole dependency; the per-call budget is
 enforced by `subprocess` itself. See `planning/fast_downward.py`'s deviations list.
 
-### `reference/`: third-party checkouts, read but never committed
+### `reference/`: third-party checkouts, pinned as git submodules
 
 `reference/` holds upstream repos this project reads for API/behavior reference —
-`kindergarden`, `kinder-baselines`, `predicators`. It is **gitignored and never
-committed** (`.gitignore`): ~4.4 GB, and an embedded git repo inside this one
-confuses `git add -A`. It belongs to the *main* checkout, not to each worktree.
+`kindergarden`, `kinder-baselines`, `predicators`. All three are **git submodules**,
+so `.gitmodules` plus one gitlink per path pins each to an exact commit through this
+repo's own history. They were gitignored plain clones until that change; submodules
+are the supported way to embed a git repo in another, which is what the old ignore was
+working around.
 
-Clone or refresh all of them with one idempotent command — run it as often as you
-like, including as a pre-flight check:
+| path | url | pinned at |
+| --- | --- | --- |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `11eace5` |
+| `reference/kindergarden` | `joshnroy/kindergarden` | `4113237` |
+| `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
+
+**Two of the three point at forks on purpose.** The commits this repo depends on live
+on unmerged branches, and a submodule *hard-fails* when its pinned SHA is force-pushed
+away mid-review — unlike a recorded SHA, which merely reports drift. A fork Josh
+controls cannot be force-pushed under us. `predicators` needs no fork: it is read-only
+reference, pinned at the tip of its own default branch (`master`, not `main`).
+
+**A fresh clone gets empty directories until you populate them:**
 
 ```bash
-scripts/update_reference_repos.sh
+git submodule update --init          # or: git clone --recurse-submodules
 ```
 
-It resolves each repo's **own** default branch rather than assuming `main`
-(`predicators` is on `master`), fast-forwards with `--ff-only`, and **skips rather
-than clobbers** any checkout with a dirty tree, a non-default branch, or a detached
-HEAD — someone may be mid-investigation in there. It exits `0` when everything is
-current, `1` if a repo failed, and `2` if one was skipped.
+Then sync or audit them with one idempotent command:
+
+```bash
+scripts/update_reference_repos.sh            # initialise anything missing
+scripts/update_reference_repos.sh --check    # report only, clone nothing
+```
+
+It initialises submodules that are missing or uninitialised, and **reports** — never
+resets — any that are dirty or sitting on a commit other than the pin. That refusal is
+the point: `git submodule update` would silently detach someone's mid-investigation
+checkout back onto the gitlink. It exits `0` when everything is current or was
+initialised, `1` on a real failure, and `2` when nothing failed but something was
+skipped or has drifted.
+
+**`git worktree add` does not populate submodules**, which is deliberate leverage
+rather than a wart: a worktree starts with empty `reference/` directories and stays
+that way unless someone runs that script *inside it*, so kindergarden's 912 MB is
+opt-in per worktree (measured 2026-08-07: 1.1 GB for all three — kindergarden 912 MB,
+predicators 147 MB, kinder-baselines 5.0 MB). Nothing breaks without them: the
+KINDER-backed tests gate on `importlib.util.find_spec`, so a worktree with an empty
+`reference/` **skips** those tests rather than failing — exactly what CI does, since CI
+never installs the optional extra either. Most worktrees should therefore never
+populate `reference/` at all; `--check` answers "am I in sync?" without paying for the
+clone to find out.
 
 **KINDER** (the `Tossing3D` benchmark and its parameterized controllers) is two of
 those repos, installed into a **separate venv — never `hitl-pmp`**, because it pulls
-MuJoCo, PyBullet and OpenCV and `kindergarden` caps `requires-python` at `<3.13`:
+MuJoCo, PyBullet and OpenCV and `kindergarden` caps `requires-python` at `<3.13`. The
+submodules must be populated first, or both `-e` paths are empty directories and pip
+fails:
 
 ```bash
+git submodule update --init reference/kindergarden reference/kinder-baselines
 python3.10 -m venv ../kinder-venv
 ../kinder-venv/bin/pip install -e reference/kindergarden -e reference/kinder-baselines/kinder-models
 ```
@@ -105,14 +140,35 @@ Four traps, each of which costs an hour:
 upstream `main` — including that a cube landing **in** the bin scores a **failure**,
 which is the single most misreadable thing about `Tossing3D`.
 
-`reference/kinder-baselines` is deliberately **not** on its default branch. The leak fix
-it used to be pinned for landed upstream (PR #87, squash-merged as `9512b9e`), so the old
-`pinned-with-leak-fix` pin is gone; the checkout now sits on the **Tossing3D port stack**
-— `josh/feature/tossing3d-bilevel-model`, the top of `josh/feature/tossing-state-abstractions`
-→ `-throw-controllers` → `-oracle-policy` → `-bilevel-model`, open upstream as PRs #89–#92.
-`scripts/update_reference_repos.sh` skips rather than clobbers a non-default branch, so a
-refresh leaves it alone; that also means **it will not pull `main` for you** — fetch
-explicitly (`git fetch origin main:main`) rather than assuming a refresh moved it.
+**Where the two KINDER pins come from, and what they deliberately leave out.**
+
+`reference/kinder-baselines` is pinned at `11eace5`, the head of
+`josh/feature/tossing-throw-controllers`. That branch is the **Tossing3D port stack**'s
+second rung: `josh/feature/tossing-state-abstractions` → `-throw-controllers` →
+`-oracle-policy` → `-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92,
+which are all **closed**; it now lives on the fork as `joshnroy/kinder-baselines`
+**PRs #1–#4** (`#1` targets `main`, each later one targets its predecessor).
+
+The pin is rung two rather than the top on purpose: **that is the only rung this repo
+imports.** `kinder_backend.py` and `scripts/tossing3d_oracle_demo.py` pull
+`kinder_models.dynamic3d.tossing.parameterized_skills` and
+`kinder_models.dynamic3d.shelf.parameterized_skills`, and nothing else from the stack.
+The oracle policy (#3) and the bilevel model (#4) are never imported — we carry our own
+`environments/tossing3d/predicates.py` and `skill_oracle_policy.py`. **So the working
+tree no longer carries either of them**; `docs/` prose that assumes they are on disk is
+wrong. `9512b9e` — the PyBullet leak fix, upstream PR #87 — is an ancestor of the pin, so
+that fix is present.
+
+`reference/kindergarden` is pinned at `4113237`, the head of
+`josh/bugfix/tossing3d-bin-outside-goal-region`: the bin fix every committed run recorded
+in its `config_snapshot.json`. Upstream that is `kindergarden` PR #126, still **open**;
+on the fork it is `joshnroy/kindergarden` **PR #1**.
+
+Because both pins are gitlinks, a refresh moves nothing on its own — **the pin only
+changes when someone commits a new gitlink here**. Bumping one is
+`git -C reference/<name> fetch && git -C reference/<name> checkout <sha>` followed by
+committing the changed gitlink in this repo, and it is a deliberate act, not a side
+effect of running the sync script.
 
 **Do not add a `_release`-style explicit `close()`** on top of the finalizer: that
 double-disconnects. `close()` itself is safe and idempotent — it calls the finalizer — so

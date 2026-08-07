@@ -41,9 +41,10 @@ Grounding a KINDER controller mints a fresh instance, and `MoveArmToConfControll
 disconnected them, so an iterative run leaked ~136 MB and one client per skill
 execution, without bound.
 
-`reference/kinder-baselines` is pinned to `pinned-with-leak-fix` @ `566d49b`, which is
-upstream `main` plus a `weakref.finalize(self, p.disconnect, ...)` in `PyBulletSim`
-(upstream PR #87). The client is therefore released when the controller is collected.
+The fix is a `weakref.finalize(self, p.disconnect, ...)` in `PyBulletSim`, which landed
+upstream as PR #87 (squash-merged as `9512b9e`). `reference/kinder-baselines` is a git
+submodule pinned at `11eace5`, and `9512b9e` is an ancestor of that pin, so the fix is
+present and the client is released when the controller is collected.
 **Do not add a `_release`-style explicit `close()` here**: with the finalizer in place
 that double-disconnects.
 
