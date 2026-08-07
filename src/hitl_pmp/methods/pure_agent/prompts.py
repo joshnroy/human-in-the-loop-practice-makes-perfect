@@ -98,6 +98,9 @@ class PromptBuilder:
     @staticmethod
     def revision(
         *,
+        skill_provider: SkillProvider,
+        arm: PromptArm,
+        domain_description: str,
         practice_outcomes: dict[str, SkillPracticeTally],
         num_practice_goals_reached: int,
         num_practice_periods: int,
@@ -114,12 +117,32 @@ class PromptBuilder:
         evaluation results -- `Metrics` owns those -- and that is what makes training on
         the test set structurally impossible here rather than merely discouraged. The
         agent is told what happened during practice on training tasks, which is exactly
-        the notebook's "evaluate on the training seeds and hand the score back"."""
+        the notebook's "evaluate on the training seeds and hand the score back".
+
+        **The ERROR branch restates the whole task; the feedback branch does not.** Both
+        rely on the CLI's `--continue` to carry the conversation, and that reliance is
+        safe only when the previous query *finished*. It does not always: a query stopped
+        by its own `--max-budget-usd` cap can be cut off mid-turn, and the resumed session
+        then carries no usable memory of what was asked. Measured on the described arm of
+        the 2026-08-07 Tossing Room pilot -- round 0 was cut off before writing anything,
+        and rounds 1 and 2 received only "Your policy could not be evaluated: policy.py
+        was not created. Fix `policy.py`." The agent searched the sandbox, found no file
+        and no task specification, and correctly reported that it had nothing to go on.
+        All three rounds produced no policy, at $1.9544, and the arm measured nothing.
+
+        A cut-off is *precisely* the case that reaches this branch, so this branch is the
+        one that cannot assume context. The feedback branch is only reached after a round
+        that ran to completion and left a loadable file, where `--continue` has been
+        observed to work, so it is left short deliberately rather than by omission."""
         if previous_error is not None:
             return (
-                f"Your policy could not be evaluated: {previous_error}\n\n"
-                "Fix `policy.py`. Keep the same function signature and the same "
-                "return shape.\n"
+                f"Your previous attempt did not produce a usable policy: {previous_error}\n\n"
+                "Start again from the full task below. Do not assume anything from "
+                "earlier in this conversation is still available to you -- write "
+                "`policy.py` from scratch if it does not already exist.\n\n"
+                + PromptBuilder.initial(
+                    skill_provider=skill_provider, arm=arm, domain_description=domain_description
+                )
             )
         lines = [
             f"Your policy reached the practice task's goal in "
