@@ -204,7 +204,10 @@ def test_one_informed_draw_in_any_window_falsifies_the_flat_at_zero_clause() -> 
                 },
                 {
                     _TARGET: SkillPracticeTally(
-                        num_attempts=100, num_successes=100, num_informed_attempts=1
+                        num_attempts=100,
+                        num_successes=100,
+                        num_informed_attempts=1,
+                        num_informed_successes=1,
                     ),
                     _CONTROL: _informed_control(),
                 },
@@ -240,7 +243,14 @@ def test_informed_per_window_sums_across_seeds_rather_than_averaging() -> None:
     quiet = _metrics(windows=[{_TARGET: SkillPracticeTally(num_attempts=5, num_successes=5)}, {}])
     loud = _metrics(
         windows=[
-            {_TARGET: SkillPracticeTally(num_attempts=5, num_successes=5, num_informed_attempts=1)},
+            {
+                _TARGET: SkillPracticeTally(
+                    num_attempts=5,
+                    num_successes=5,
+                    num_informed_attempts=1,
+                    num_informed_successes=1,
+                )
+            },
             {},
         ]
     )
