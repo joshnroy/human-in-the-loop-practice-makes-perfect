@@ -102,7 +102,7 @@ layers = [
     "hitl_pmp.environments",
     "hitl_pmp.cli_protocols",
     "hitl_pmp.method_runner",
-    "hitl_pmp.practice_loop | hitl_pmp.config_snapshot | hitl_pmp.humans | hitl_pmp.planning | hitl_pmp.adapters",
+    "hitl_pmp.practice_loop | hitl_pmp.config_snapshot | hitl_pmp.sampler_draws | hitl_pmp.humans | hitl_pmp.planning | hitl_pmp.adapters",
     # recording/ sits between practice_loop.py and core/: practice_loop.py drives a
     # LoopRecorder, and a LoopRecorder knows nothing about the loop's internals --
     # it is handed State/Renderer (core) and told what just happened.

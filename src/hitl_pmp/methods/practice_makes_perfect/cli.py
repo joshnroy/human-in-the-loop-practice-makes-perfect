@@ -1,6 +1,7 @@
 import argparse
 
 from hitl_pmp.cli_protocols import EnvironmentCli
+from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .ees_method import EesMethod
 from .random_skills_method import RandomSkillsMethod
@@ -114,12 +115,18 @@ class EesCli:
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        # Built here rather than inside the factory lambda so a missing --output-dir is
+        # rejected before the environment is constructed, and so it is built exactly
+        # once even if a caller ever invokes the factory more than once (two recorders
+        # on one path would truncate each other's file).
+        draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,
             method_factory=lambda ctx: EesMethod(
                 env=ctx.env,
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
+                draw_recorder=draw_recorder,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
