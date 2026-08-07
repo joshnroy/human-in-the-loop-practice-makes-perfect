@@ -53,6 +53,16 @@ exclude_lines = [
 [tool.ruff]
 line-length = 100
 preview = true
+# Committed run artifacts under docs/experiment-logs/ are DATA, not source. The
+# pure-agent baseline records the `policy.py` a coding agent wrote in each authoring
+# round, and the whole value of that artifact is that it is verbatim: it is the primary
+# evidence for what the agent did, it is what a replay executes, and the transcript.json
+# beside it holds the same bytes. Left unexcluded, `ruff format` rewrites those files --
+# so the committed artifact would stop matching the run that produced it, and a replay
+# would silently be replaying something nobody authored. Their lint findings are equally
+# meaningless: this project's conventions (keyword-only parameters, f-strings) are not
+# ones an agent writing a standalone file was ever told about.
+extend-exclude = ["docs/experiment-logs/**/*.py"]
 
 [tool.ruff.lint]
 # N999 bans non-lower_case.py module/file names.
