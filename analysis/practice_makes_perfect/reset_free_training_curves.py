@@ -103,7 +103,7 @@ _POLICY_LABELS = {
 
 # Okabe-Ito blue/orange, the same pair the sibling reports in this folder use and the
 # widest-separated two under deuteranopia and protanopia alike. Policy carries colour
-# here (rather than world, as in `tossingroomsplit_two_way_ledge`) because policy is the
+# here (rather than world, as the retired two-way-ledge report did) because policy is the
 # comparison made *within* each panel; world is carried by the panels themselves, so the
 # two factors are still never distinguished by colour alone.
 _POLICY_COLOR = {_SCHEDULED: "#0072B2", _NEVER: "#D55E00"}

@@ -1,8 +1,8 @@
 """Which task family a Tossing Room `Goal.describe()` string belongs to.
 
 **Why this is its own module, and why it is not named for an experiment.** This rule was
-written out twice, character-identical, in `tossingroomsplit_reset_policy.py` and
-`tossingroomsplit_two_way_ledge.py`, and imported out of the latter by
+written out twice, character-identical, in two per-experiment Tossing Room reset-policy
+reports (both since deleted by #141), and imported out of the later one by
 `reset_free_ledge_curves.py`. Naming a shared helper after the one experiment that
 happened to need it first is precisely what let a second copy appear unnoticed -- the same
 thing that happened to `PairedTests` (see `paired_tests.py`), except that those two had

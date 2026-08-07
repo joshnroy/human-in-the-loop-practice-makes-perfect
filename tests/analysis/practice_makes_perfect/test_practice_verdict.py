@@ -5,8 +5,8 @@
 pinned *here* is the arithmetic of each new gate on its own: the power threshold, the
 plateau test stated so a reader can apply it by eye, and the empty-arm guard.
 
-The cases that drove the amendment ran through `tossingroomsplit_practice_pools.py`,
-which retired with the Tossing Room Split environment (PR #141). Their tallies survive
+The cases that drove the amendment ran through the Tossing Room Split practice-pools
+report, which retired with that environment in PR #141. Their tallies survive
 below as the literal numbers the gates are checked against -- `ThrowRecycling` at the
 standard budget (11/56 informed, MDE 20.87 points) against its own 10x arm (901/982,
 MDE 6.34 points), and that skill's informed successes by fifths in both arms.
