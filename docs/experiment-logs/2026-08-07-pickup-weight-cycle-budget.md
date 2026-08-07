@@ -282,7 +282,7 @@ empty; at 10x, `36/180` against `71/120`, with `12/30` to `17/30` empty. A mean 
 describes no seed. The *comparisons* the experiment draws are unaffected, because every
 one of them is paired within a seed.
 
-![The one-way reset-free cell is two populations](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/853467e569119ef1fe07999797db69ae2159169f/docs/experiment-logs/2026-08-07-pickup-weight-cycle-budget-wallclock-modes.png)
+![The one-way reset-free cell is two populations](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/f20eec629b511e2ecdfc6105c6f01ffeaefab4ce/docs/experiment-logs/2026-08-07-pickup-weight-cycle-budget-wallclock-modes.png)
 
 Per seed throughout, never an aggregate. **(a)** each seed's effective practice attempts at
 1x joined to its own value at 10x — ten flat lines, the tenfold budget change buying
@@ -293,14 +293,41 @@ shaded — this is why the pooled figure is a mixture. **(d)** the confound pane
 against the load each run actually started against, showing the 1x runs stacked at one
 identical load and the 10x modes fully interleaved.
 
-Regenerate the figure and every number in this section with:
+**The learning curves themselves, grouped by mode.** The split is not a late divergence:
+the two groups separate at the **first** evaluation checkpoint after practice begins and
+never re-converge, at either budget.
+
+![Learning curves grouped by stranding mode](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/f20eec629b511e2ecdfc6105c6f01ffeaefab4ce/docs/experiment-logs/2026-08-07-pickup-weight-cycle-budget-mode-curves.png)
+
+Faint per-seed traces under a bold per-group mean, one row per budget, and the two x axes
+this project pairs for learning curves. **The two columns are the same curve rescaled**:
+`150` online transitions per cycle exactly, on `40/40` runs, so "by transitions" carries no
+information "by cycle" does not. The right column is drawn on a symlog axis for that
+reason — the entire divergence is complete within three cycles of a hundred, which a
+linear axis compresses into the leftmost few percent and hides.
+
+**The early-stranded group does not measurably learn at all.** Its curve is flat for the
+whole run at both budgets, and its final score is not an improvement on its score *before
+any practice*: `50/180` at checkpoint 0 against `37/180` final at 1x and `36/180` at 10x.
+The point estimate is slightly negative, but that is a **null result** in both budgets
+(exact paired sign-flip p = 0.1250 at 1x and p = 0.3750 at 10x; 12 and 42 seeds
+respectively would be needed for 80% power), so what is established is the *absence of
+improvement*, not a decline. Across every checkpoint of every run, no early-stranded seed
+ever exceeds `15/30`, while every late-stranded seed reaches at least `20/30`.
+
+The late-stranded group does improve — `27/120` at checkpoint 0 to `75/120` at 1x and
+`71/120` at 10x, rising on `4/4` seeds at both budgets. Its p = 0.1250 is the **floor** for
+four seeds (`2/2**4`), not weak evidence: no four-seed comparison can return less.
+
+Regenerate both figures and every number in this section with:
 
 ```bash
 D=docs/experiment-logs
 python -m analysis.practice_makes_perfect.reset_free_wallclock_modes \
   --budget "1x=$D/2026-08-07-pickup-weight-reset-free-runs/never/ees" \
   --budget "10x=$D/2026-08-07-pickup-weight-cycle-budget-10x-runs/oneway-never" \
-  --output "$D/2026-08-07-pickup-weight-cycle-budget-wallclock-modes.png"
+  --output "$D/2026-08-07-pickup-weight-cycle-budget-wallclock-modes.png" \
+  --curves-output "$D/2026-08-07-pickup-weight-cycle-budget-mode-curves.png"
 ```
 
 ### Figures
