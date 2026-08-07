@@ -14,6 +14,19 @@ p = 0.001953, widened on 10/10 seeds). The reason is visible in one number: the 
 reset-free arm logs **207 effective practice attempts at 10x — the identical 207 it logged
 at 1x**. The extra ninety cycles bought it exactly zero additional practice.
 
+> **Addendum, added 2026-08-07 after this log was merged as #166. Two things below are now
+> qualified, and neither changes the headline.**
+>
+> 1. The two per-run figures in [Cost](#cost) — `279` s and `955` s — are labelled "mean"
+>    but are the **medians**. The original sentence is left exactly as published; the note
+>    beside it gives both statistics.
+> 2. Chasing that label surfaced the larger point: **the one-way `never` cell is two
+>    populations, not one**, split deterministically by seed, so *no* single-number summary
+>    of it describes any run. See
+>    [Addendum: the one-way `never` cell is a mixture](#addendum-the-one-way-never-cell-is-a-mixture-of-two-populations),
+>    which qualifies every pooled one-way `never` figure in the Results tables — `112/300`,
+>    `107/300`, `70/140`, `17/140`.
+
 ## Question / goal
 
 The merged 1x A/B attributes the reset-free arm's deficit to *starvation* rather than to an
@@ -163,6 +176,12 @@ but that is **1/10** seeds moving with **9/10** tied, p = 1: a **null result** o
 change, and the minimum per-seed change this design had 80% power to detect is 3.64 tasks.
 The two-way 10x cells are nonetheless a clean 300/300 in both arms.
 
+> **Note added 2026-08-07, after merge.** The one-way `never` column above (`112/300` and
+> `107/300`) pools two non-overlapping groups of seeds and is a **mixture, not a
+> performance level** — see
+> [Addendum: the one-way `never` cell is a mixture](#addendum-the-one-way-never-cell-is-a-mixture-of-two-populations).
+> The gaps and their p-values are unaffected: every comparison here is paired within a seed.
+
 ### Per family, under the one-way ledge
 
 | family | budget | `scheduled` | `never` | gap | exact paired sign-flip on the gap |
@@ -188,6 +207,101 @@ are different families, which a pooled number alone would hide.
 
 EMPTY is 20/20 in all four one-way cells at both budgets. It is 2 tasks per seed and its
 denominator supports almost no inference; it is reported for completeness, not as a result.
+
+### Addendum: the one-way `never` cell is a mixture of two populations
+
+*Added 2026-08-07, after this log was merged as #166. Nothing above is edited. This
+section adds a decomposition; it recomputes none of the published numbers, and the
+headline — ten times the budget bought zero additional practice — is unaffected.*
+
+**What prompted it.** The [Cost](#cost) paragraph quoted a per-run figure for the one-way
+`never` cell that turned out to be a median labelled a mean. The two statistics diverge
+there (`279` s against `418` s) and essentially nowhere else, and that asymmetry is not an
+arithmetic curiosity: it is the signature of a cell whose runs fall into two separated
+groups.
+
+**The split, per seed.** Under the one-way ledge with no practice resets, `10/10` seeds
+strand — but not at the same time, and *when* a seed strands is fixed by the seed. Six
+seeds take their last effective practice attempt in cycle 1 and two attempts in total;
+four take theirs in cycle 2 or 3, and 40 to 75 attempts. Those are the same six and the
+same four at both budgets:
+
+| stranding cycle | seeds | effective attempts, 1x | effective attempts, 10x | wall clock, 1x | wall clock, 10x |
+| --- | --- | --- | --- | --- | --- |
+| cycle 1 | 2, 3, 4, 5, 8, 9 (6/10) | 2 each | 2 each | 24.9-25.8 s | 254.4-285.8 s |
+| cycle 2 | 0, 1, 6 (3/10) | 40 each | 40 each | 57.3-61.8 s | 595.4-658.8 s |
+| cycle 3 | 7 (1/10) | 75 | 75 | 62.0 s | 670.4 s |
+
+The per-seed change in effective attempts between the two budgets is **exactly zero on
+10/10 seeds** (exact paired sign-flip p = 1, a **null result** in the strongest available
+form — every difference is `0`, not merely small). So the published `207` is not an
+aggregate that happens to repeat; it is `2, 2, 2, 2, 2, 2, 40, 40, 40, 75` reproducing
+seed-for-seed across a tenfold change of budget.
+
+**The wall-clock partition is the stranding partition.** Partitioning the 10x cell at its
+widest wall-clock gap (309.6 s, between 285.8 s and 595.4 s) puts seeds `{0, 1, 6, 7}`
+above it. Partitioning it instead by last effective practice cycle — a quantity read out
+of `stats.json`, with `timing.json` never consulted — puts the same `{0, 1, 6, 7}` on the
+late side. The two partitions agree on **10/10** seeds, two-sided Fisher exact
+p = 0.00476. The 1x sweep gives the same partition at its own gap (31.5 s, between 25.8 s
+and 57.3 s), also p = 0.00476.
+
+**That p is the floor, not a measure of size.** With a 6/4 margin there are
+`C(10, 4) = 210` labellings and only the single most extreme table clears the observed
+probability, so `1/210 = 0.00476` is the smallest p this design can return. Perfect
+agreement on ten seeds is a real observation and a small one.
+
+**Concurrency does not explain it.** These runs shared a machine, so wall clock is not a
+pure measure of work. At 1x the control is exact rather than statistical: all ten runs
+launched **in the same second** at `--max-workers 10`, against an identical 1-minute load
+average of `6.32` and `0` other `hitl_pmp.cli` processes — so no per-seed difference in
+starting conditions exists there at all, and the same 4/10 still came out slow. At 10x,
+where the runs were staggered, none of the six recorded concurrency covariates separates
+the modes (exact permutation, smallest p = 0.15 for load average at start).
+
+Two 1x covariates measured **at run end** do separate (`p = 0.005` for both the
+machine-wide process count and the load average). That is reverse causation, not a
+confound: a run still going when the fast six have finished necessarily observes a
+different machine state at its end. The at-*start* covariates are the ones that could
+cause anything, and those are identical.
+
+**A residual this does not explain, stated as one.** The slow runs did not take more
+steps. Total practice skill attempts are **14900 on 10/10 seeds** and online transitions
+**15000 on 10/10 seeds** at 10x; only the *composition* differs. Nor does planner work
+account for it: seed 6 logs **21475** planning attempts, *fewer* than every one of the six
+fast seeds (`22692`-`22790`), yet runs 595.4 s against their 254-286 s. So effective
+attempts identify the two groups cleanly, but the per-second mechanism converting them
+into wall clock is **not established here**. Do not read the correlation as a cost model.
+
+**What this qualifies.** Every pooled one-way `never` figure in the tables above —
+`112/300` and `107/300` overall, `70/140` TRASH, `17/140` RECYCLING — is a **mixture of
+two populations rather than a performance level**. At the final checkpoint the two modes
+do not overlap on score in either budget: at 1x, `37/180` pooled over the six early-stranded
+seeds against `75/120` over the four late-stranded ones, with the range `7/30` to `16/30`
+empty; at 10x, `36/180` against `71/120`, with `12/30` to `17/30` empty. A mean over that
+describes no seed. The *comparisons* the experiment draws are unaffected, because every
+one of them is paired within a seed.
+
+![The one-way reset-free cell is two populations](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/853467e569119ef1fe07999797db69ae2159169f/docs/experiment-logs/2026-08-07-pickup-weight-cycle-budget-wallclock-modes.png)
+
+Per seed throughout, never an aggregate. **(a)** each seed's effective practice attempts at
+1x joined to its own value at 10x — ten flat lines, the tenfold budget change buying
+nothing on any seed. **(b)** wall clock against the cycle of the last effective attempt,
+both budgets on one log axis, with each budget's widest gap drawn: the same 4/10 sit above
+it in both. **(c)** final-checkpoint score per seed, with the empty band between the modes
+shaded — this is why the pooled figure is a mixture. **(d)** the confound panel: wall clock
+against the load each run actually started against, showing the 1x runs stacked at one
+identical load and the 10x modes fully interleaved.
+
+Regenerate the figure and every number in this section with:
+
+```bash
+D=docs/experiment-logs
+python -m analysis.practice_makes_perfect.reset_free_wallclock_modes \
+  --budget "1x=$D/2026-08-07-pickup-weight-reset-free-runs/never/ees" \
+  --budget "10x=$D/2026-08-07-pickup-weight-cycle-budget-10x-runs/oneway-never" \
+  --output "$D/2026-08-07-pickup-weight-cycle-budget-wallclock-modes.png"
+```
 
 ### Figures
 
@@ -277,3 +391,27 @@ number (27/27 byte-identical) and is not part of the experiment's cost. Per-run 
 one-way `scheduled`. The pre-run estimate assumed a uniform 12.97x scaling from the 1x
 grid; the real scaling is strongly cell-dependent, because a stranded run does almost no
 work no matter how many cycles it is given, which is itself the result.
+
+> **Note added 2026-08-07, after merge: `279` and `955` above are the medians, not the
+> means.** The sentence is left exactly as published. Recomputed from the committed
+> `timing.json` files (`elapsed_seconds`, 10 runs per cell), the four 10x cells are:
+>
+> | cell | median | mean |
+> | --- | --- | --- |
+> | one-way `never` | 279.0 s | 417.7 s |
+> | one-way `scheduled` | 954.8 s | 985.0 s |
+> | two-way `never` | 1096.0 s | 1115.4 s |
+> | two-way `scheduled` | 1114.9 s | 1118.9 s |
+>
+> This is a mislabelled statistic, not a wrong measurement: nothing else in this log reads
+> these two figures, and the cost asymmetry the paragraph draws — a stranded run does far
+> less work, so it costs far less — holds on either statistic (279 s against 955 s by
+> median, 418 s against 985 s by mean).
+>
+> The two statistics diverge by 139 s in the one-way `never` cell and by at most 30 s in
+> the other three, because that cell alone is **bimodal**: its per-seed wall clocks are
+> 254.4, 256.9, 259.4, 267.5, 272.2, 285.8, 595.4, 655.9, 658.8 and 670.4 s — six runs and
+> four runs, with nothing between 286 s and 595 s. That split is the stranding split, and
+> it is what
+> [Addendum: the one-way `never` cell is a mixture](#addendum-the-one-way-never-cell-is-a-mixture-of-two-populations)
+> works through.
