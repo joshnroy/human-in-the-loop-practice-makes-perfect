@@ -12,6 +12,9 @@ from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.environments.tossingroom.environment import (
     TossingRoomEnvironment,
 )
+from hitl_pmp.environments.tossingroom.skill_provider import (
+    TossingRoomSkillProvider,
+)
 from hitl_pmp.environments.tossingroom.tasks import (
     TossingRoomTasks,
 )
@@ -309,3 +312,33 @@ def test_two_way_ledge_reaches_the_built_environment() -> None:
     assert two_way.env.two_way_ledge is True
     # ...and the world it built really is two-way, not merely labelled so.
     assert two_way.rooms_to_walk_between(from_room=1, to_room=3) == 2
+
+
+def test_unsplit_skills_defaults_off_and_is_a_store_true_flag() -> None:
+    """Opt-in, so every banked split-throw result is reproduced by the default command
+    line."""
+    assert _build_parser().parse_args([]).unsplit_skills is False
+    assert _build_parser().parse_args(["--unsplit-skills"]).unsplit_skills is True
+    assert (
+        _build_parser().parse_args([]).unsplit_skills
+        == TossingRoomEnvironment.model_fields["unsplit_skills"].default
+    )
+
+
+def test_unsplit_skills_reaches_the_built_environment_and_its_skill_set() -> None:
+    """A flag that parses but never reaches the Environment would run the split arm while
+    `config_snapshot.json` recorded the unsplit one -- the exact failure that makes a
+    banked result unattributable. Asserted through to the lifted skills a Method would
+    actually be handed, not just to the field."""
+    parser = _build_parser()
+    split = TossingRoomCli.build_problem(args=parser.parse_args([]))
+    assert split.env.unsplit_skills is False
+    assert "ThrowTrash" in {
+        skill.name for skill in TossingRoomSkillProvider(env=split.env).skills()
+    }
+
+    unsplit = TossingRoomCli.build_problem(args=parser.parse_args(["--unsplit-skills"]))
+    assert unsplit.env.unsplit_skills is True
+    names = {skill.name for skill in TossingRoomSkillProvider(env=unsplit.env).skills()}
+    assert "Throw" in names
+    assert not {"ThrowTrash", "ThrowRecycling"} & names

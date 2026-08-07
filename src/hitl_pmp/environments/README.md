@@ -176,6 +176,28 @@ predicate definitions play in `predicators/envs/`.
   action the robot takes, so the two mechanisms separate.
 
   Runnable as `python -m hitl_pmp.cli --env tossingroom --method ees`.
+  `--unsplit-skills` selects the other side of that comparison: **one** lifted
+  `Throw(robot, item, bin, room)` whose `?item` ranges over both kinds, so EES trains a
+  single pooled sampler and trash experience can transfer to recycling. Off by default,
+  and a default run is byte-identical to one from before the flag existed. It is a flag
+  rather than a fourth fork because it changes only the symbolic layer — the world, the
+  task distribution and the raw action space are identical on both arms, so the two
+  really are comparable.
+
+  **It collapses `Pickup` and `Press` too, and that is forced rather than chosen.**
+  `Type` carries no hierarchy and grounding matches on exact type equality, so an `?item`
+  ranging over both kinds requires both item objects to share one type — and a single
+  lifted throw has a single `?bin`, forcing the same on the bins (dropping the `?bin`
+  parameter instead would change the sampler's input width and make the arms
+  incomparable). Once those types are shared, `PickupTrash` would ground with recycling
+  and `PressTrash` with the recycling bin, so the per-kind versions stop being
+  *representable*. `BinAcceptsItem` and `ButtonForBin` come back with them, as live
+  constraints rather than the tautologies they are by default. `Pickup` and `Press` are
+  both `param_dim=0`, so neither gets a sampler: the throw is still the only skill whose
+  collapse touches learning. `MoveRoom` is literally the same `Skill` object on both arms.
+  See `environment.py`'s `unsplit_skills` field and `skills.py`'s
+  `TossingRoomUnsplitSkills`.
+
   `--two-way-ledge` makes the ledge traversable rightward as well, leaving the domain
   with no irreversible action at all. It is off by default, and a default run is
   byte-identical to one from before the flag existed. It is the positive control for the
@@ -198,7 +220,11 @@ predicate definitions play in `predicators/envs/`.
   variants. Their published results stay in `docs/experiment-logs/` behind staleness
   notes — nothing measured is being restated or recomputed — but they cannot be re-run
   from HEAD. The representation A/B in particular (causal versus identity) is not
-  reproducible without re-adding an identity representation.
+  reproducible without re-adding an identity representation. The original's *shared*
+  `Throw` is the one piece of the three that did come back: `--unsplit-skills` above makes
+  it expressible again, as an arm of the canonical domain rather than as a fork. That is
+  not the same thing as reproducing the original's numbers — it carries the pickup-weight
+  dynamics the fork lacked, so a run under the flag is a NEW measurement.
 
 - The remaining domain subfolder (`ballring/`) is implemented but not
   written up in this Status section; their own module docstrings and the experiment

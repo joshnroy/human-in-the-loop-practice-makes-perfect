@@ -8,6 +8,8 @@ from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 
 from .environment import TossingRoomEnvironment
 from .predicates import (
+    BIN_EMPTY,
+    ITEM_IN_BIN,
     RECYCLING_BIN_EMPTY,
     RECYCLING_IN_BIN,
     TRASH_BIN_EMPTY,
@@ -211,20 +213,37 @@ class TossingRoomTasks(Tasks):
                 recycling_count=self.env.BIN_CAPACITY,
                 trash_count=self.env.BIN_CAPACITY,
             )
+            recycling_bin = self.env.bin_for_kind(kind=self.env.RECYCLING_KIND)
+            trash_bin = self.env.bin_for_kind(kind=self.env.TRASH_KIND)
+            # One shared `BinEmpty` on the `--unsplit-skills` arm, where the bin types are
+            # not split; the two bound bins still make it two distinct goal atoms.
+            if self.env.unsplit_skills:
+                recycling_empty, trash_empty = BIN_EMPTY, BIN_EMPTY
+            else:
+                recycling_empty, trash_empty = RECYCLING_BIN_EMPTY, TRASH_BIN_EMPTY
             atoms = frozenset({
-                RECYCLING_BIN_EMPTY(state=initial_state, objects=(self.env.recycling_bin,)),
-                TRASH_BIN_EMPTY(state=initial_state, objects=(self.env.trash_bin,)),
+                recycling_empty(state=initial_state, objects=(recycling_bin,)),
+                trash_empty(state=initial_state, objects=(trash_bin,)),
             })
             return Task(initial_state=initial_state, goal=Goal(atoms=atoms))
 
-        # A throw goal: bins start empty; the goal is the single in-bin atom for that
-        # kind (TrashInBin or RecyclingInBin -- split, unlike Tossing Room's shared
-        # ItemInBin, because the item and bin types are split).
+        # A throw goal: bins start empty; the goal is the single in-bin atom for that kind
+        # (TrashInBin or RecyclingInBin -- split, because the item and bin types are). On
+        # the `--unsplit-skills` arm there is one shared `ItemInBin` instead, over the one
+        # item type and the one bin type; the bound OBJECTS still say which kind, so the
+        # task distribution is unchanged either way.
         initial_state = self.env.build_initial_state(weight_seed=weight_seed)
-        if goal_type is TossingRoomGoalType.RECYCLING:
-            atom: GroundAtom = RECYCLING_IN_BIN(
-                state=initial_state, objects=(self.env.recycling, self.env.recycling_bin)
-            )
+        kind = (
+            self.env.RECYCLING_KIND
+            if goal_type is TossingRoomGoalType.RECYCLING
+            else self.env.TRASH_KIND
+        )
+        objects = (self.env.item_for_kind(kind=kind), self.env.bin_for_kind(kind=kind))
+        if self.env.unsplit_skills:
+            in_bin = ITEM_IN_BIN
+        elif goal_type is TossingRoomGoalType.RECYCLING:
+            in_bin = RECYCLING_IN_BIN
         else:
-            atom = TRASH_IN_BIN(state=initial_state, objects=(self.env.trash, self.env.trash_bin))
+            in_bin = TRASH_IN_BIN
+        atom: GroundAtom = in_bin(state=initial_state, objects=objects)
         return Task(initial_state=initial_state, goal=Goal(atoms=frozenset({atom})))

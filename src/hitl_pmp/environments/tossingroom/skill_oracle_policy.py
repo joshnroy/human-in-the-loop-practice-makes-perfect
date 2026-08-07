@@ -2,11 +2,11 @@ import numpy as np
 
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction
 from hitl_pmp.core.problem.environment.types import Object, State
-from hitl_pmp.core.problem.tasks.types import Goal
+from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import TossingRoomEnvironment
-from .predicates import RECYCLING_BIN_EMPTY, RECYCLING_IN_BIN, TRASH_BIN_EMPTY
-from .skills import TossingRoomSkills
+from .predicates import BIN_EMPTY, RECYCLING_BIN_EMPTY, RECYCLING_IN_BIN, TRASH_BIN_EMPTY
+from .skills import TossingRoomSkills, TossingRoomUnsplitSkills
 
 
 class SkillOraclePolicy:
@@ -28,6 +28,11 @@ class SkillOraclePolicy:
     human help to recover. For the EMPTY family that forward-only walk is no longer
     automatic -- both buttons must be pressed, rightmost first -- see `_empty_step`.
 
+    Both arms of `--unsplit-skills` route through here: which lifted skills it grounds and
+    which predicates identify a goal family are `env.unsplit_skills`'s call, made in the
+    three helpers below. The WALK is identical either way -- the flag changes the symbolic
+    layer, not the world.
+
     A static-method container, never instantiated, same as every other business-logic
     class in this project."""
 
@@ -38,7 +43,10 @@ class SkillOraclePolicy:
         rooms = env.get_rooms()
         robot_room = int(round(state.get(obj=env.robot, feature_name="room")))
 
-        if any(atom.predicate in (TRASH_BIN_EMPTY, RECYCLING_BIN_EMPTY) for atom in goal.atoms):
+        if any(
+            atom.predicate in SkillOraclePolicy._bin_empty_predicates(env=env)
+            for atom in goal.atoms
+        ):
             ground_skill, params = SkillOraclePolicy._empty_step(
                 state=state, env=env, rooms=rooms, robot_room=robot_room, goal=goal
             )
@@ -48,17 +56,30 @@ class SkillOraclePolicy:
                 env=env,
                 rooms=rooms,
                 robot_room=robot_room,
-                recycling=SkillOraclePolicy._goal_is_recycling(goal=goal),
+                recycling=SkillOraclePolicy._goal_is_recycling(goal=goal, env=env),
             )
         return SkillOraclePolicy._to_labeled_action(
-            ground_skill=ground_skill, params=params, state=state
+            ground_skill=ground_skill, params=params, state=state, env=env
         )
 
     @staticmethod
-    def _goal_is_recycling(*, goal: Goal) -> bool:
-        """Which throw family this goal names. The in-bin predicate is split per kind,
-        so the goal's own predicate identifies the family -- there is no need to inspect
-        the bound objects the way Tossing Room's `_goal_item` had to."""
+    def _bin_empty_predicates(*, env: TossingRoomEnvironment) -> tuple[Predicate, ...]:
+        """Which predicate(s) mark an EMPTY goal on this arm: the split pair by default,
+        the one shared `BinEmpty` under `--unsplit-skills`."""
+        if env.unsplit_skills:
+            return (BIN_EMPTY,)
+        return (TRASH_BIN_EMPTY, RECYCLING_BIN_EMPTY)
+
+    @staticmethod
+    def _goal_is_recycling(*, goal: Goal, env: TossingRoomEnvironment) -> bool:
+        """Which throw family this goal names. By default the in-bin predicate is split
+        per kind, so the goal's own predicate identifies the family. Under
+        `--unsplit-skills` there is one `ItemInBin` for both, so the bound item object has
+        to be inspected instead -- the same thing the retired unsplit fork's `_goal_item`
+        did."""
+        if env.unsplit_skills:
+            recycling = env.item_for_kind(kind=env.RECYCLING_KIND)
+            return any(recycling in atom.objects for atom in goal.atoms)
         return any(atom.predicate == RECYCLING_IN_BIN for atom in goal.atoms)
 
     @staticmethod
@@ -82,7 +103,7 @@ class SkillOraclePolicy:
         goal_bins = [
             atom.objects[0]
             for atom in goal.atoms
-            if atom.predicate in (TRASH_BIN_EMPTY, RECYCLING_BIN_EMPTY)
+            if atom.predicate in SkillOraclePolicy._bin_empty_predicates(env=env)
         ]
         full = [
             bin_obj
@@ -103,11 +124,12 @@ class SkillOraclePolicy:
             return SkillOraclePolicy._move_toward(
                 rooms=rooms, robot_room=robot_room, target_room=button_room
             )
-        skill = (
-            TossingRoomSkills.PRESS_RECYCLING
-            if kind == env.RECYCLING_KIND
-            else TossingRoomSkills.PRESS_TRASH
-        )
+        if env.unsplit_skills:
+            skill = TossingRoomUnsplitSkills.PRESS
+        elif kind == env.RECYCLING_KIND:
+            skill = TossingRoomSkills.PRESS_RECYCLING
+        else:
+            skill = TossingRoomSkills.PRESS_TRASH
         ground_skill = GroundSkill(
             skill=skill,
             objects=(
@@ -129,11 +151,16 @@ class SkillOraclePolicy:
         robot_room: int,
         recycling: bool,
     ) -> tuple[GroundSkill, np.ndarray]:
-        item = env.recycling if recycling else env.trash
-        bin_obj = env.recycling_bin if recycling else env.trash_bin
+        kind_of_goal = env.RECYCLING_KIND if recycling else env.TRASH_KIND
+        item = env.item_for_kind(kind=kind_of_goal)
+        bin_obj = env.bin_for_kind(kind=kind_of_goal)
         bin_room = env.recycling_bin_room if recycling else env.trash_bin_room
-        pickup = TossingRoomSkills.PICKUP_RECYCLING if recycling else TossingRoomSkills.PICKUP_TRASH
-        throw = TossingRoomSkills.THROW_RECYCLING if recycling else TossingRoomSkills.THROW_TRASH
+        if env.unsplit_skills:
+            pickup, throw = TossingRoomUnsplitSkills.PICKUP, TossingRoomUnsplitSkills.THROW
+        elif recycling:
+            pickup, throw = TossingRoomSkills.PICKUP_RECYCLING, TossingRoomSkills.THROW_RECYCLING
+        else:
+            pickup, throw = TossingRoomSkills.PICKUP_TRASH, TossingRoomSkills.THROW_TRASH
 
         kind = int(round(state.get(obj=item, feature_name="kind")))
         holding = int(round(state.get(obj=env.robot, feature_name="holding")))
@@ -165,6 +192,8 @@ class SkillOraclePolicy:
     def _move_toward(
         *, rooms: tuple[Object, ...], robot_room: int, target_room: int
     ) -> tuple[GroundSkill, np.ndarray]:
+        """No `--unsplit-skills` branch here, deliberately: `MoveRoom` is literally the
+        same `Skill` object on both arms (`robot`/`room` carry no kind to split on)."""
         step = 1 if target_room > robot_room else -1
         to_room = robot_room + step
         ground_skill = GroundSkill(
@@ -179,11 +208,10 @@ class SkillOraclePolicy:
 
     @staticmethod
     def _to_labeled_action(
-        *, ground_skill: GroundSkill, params: np.ndarray, state: State
+        *, ground_skill: GroundSkill, params: np.ndarray, state: State, env: TossingRoomEnvironment
     ) -> LabeledAction:
-        action = TossingRoomSkills.compute_action(
-            ground_skill=ground_skill, params=params, state=state
-        )
+        skills = TossingRoomUnsplitSkills if env.unsplit_skills else TossingRoomSkills
+        action = skills.compute_action(ground_skill=ground_skill, params=params, state=state)
         objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
         label = f"{ground_skill.skill.name}({objects_desc})"
         if params.size > 0:
