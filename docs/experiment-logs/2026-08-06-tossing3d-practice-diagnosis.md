@@ -190,11 +190,11 @@ two domains, measured from a quantity the decision rule does not read.
 
 Arm A (widened bounds, #108's domain):
 
-![Tossing3D practice diagnosis, widened bounds](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/f4d0c670e3c5ad757fefe9d68d519f04d049fd09/docs/experiment-logs/2026-08-06-tossing3d-practice-diagnosis.png)
+![Tossing3D practice diagnosis, widened bounds](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/ebf3d92ce14b1b3d87a9137ffbb5aff1bcc79c1a/docs/experiment-logs/2026-08-06-tossing3d-practice-diagnosis.png)
 
 Arm B (`main`'s narrow bounds):
 
-![Tossing3D practice diagnosis, narrow bounds](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/f4d0c670e3c5ad757fefe9d68d519f04d049fd09/docs/experiment-logs/2026-08-06-tossing3d-practice-diagnosis-narrow-bounds.png)
+![Tossing3D practice diagnosis, narrow bounds](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/ebf3d92ce14b1b3d87a9137ffbb5aff1bcc79c1a/docs/experiment-logs/2026-08-06-tossing3d-practice-diagnosis-narrow-bounds.png)
 
 Arm A per seed, so the effect is visibly not one seed's doing:
 
