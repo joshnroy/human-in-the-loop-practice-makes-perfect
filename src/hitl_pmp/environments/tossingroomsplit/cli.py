@@ -165,7 +165,56 @@ class TossingRoomSplitCli:
         from args, bundles this domain's SkillProvider/OraclePolicyProvider into a
         DomainContext, calls method_factory(context), then delegates the domain-agnostic
         rest (driving through PracticeLoop, printing, video-writing) to
-        method_runner.py's MethodRunner."""
+        method_runner.py's MethodRunner.
+
+        It builds that triple **twice**: one for practice and a wholly separate one for
+        evaluation. Every evaluation episode opens with `reset_to_task`, a privileged
+        state-write, so sharing the triple hands the practice environment
+        `--num-test-tasks` free resets per sweep -- 30 of them by default. That is
+        invisible under the per-period reset and fatal to any reset-free practice arm.
+        See PracticeLoop's own "separate evaluation environment" section.
+
+        Doing this is only sound because this domain's environment consumes **no**
+        randomness (`take_action` is pure, and the only RNG lives in Tasks' train/test
+        streams, which are derived independently from the same seed). A second instance
+        therefore cannot shift what practice draws, and the split is a no-op on results
+        -- pinned by the byte-identity of `stats.json`. Domains whose environment does
+        draw (`ballring`'s `_noise_rng`) must not be wired this way without a
+        re-baseline."""
+        practice_problem = TossingRoomSplitCli.build_problem(args=args)
+        # Same args, same seed, independent objects: its Tasks derives the same test
+        # stream, so it yields exactly the test tasks the practice Tasks would have.
+        evaluation_problem = TossingRoomSplitCli.build_problem(args=args)
+        # The Method is wired to the *practice* environment, deliberately: its env
+        # reference is for structural config (skills, predicates, layout), and the two
+        # instances are configured identically, so evaluation reads the same world.
+        context = DomainContext(
+            env=practice_problem.env,
+            skill_provider=TossingRoomSplitSkillProvider(env=practice_problem.env),
+            oracle=TossingRoomSplitOracle(env=practice_problem.env),
+        )
+
+        renderer: type[Renderer] | None = (
+            TossingRoomSplitRenderer if args.output_dir is not None else None
+        )
+        MethodRunner.run(
+            args=args,
+            method=method_factory(context),
+            problem=practice_problem,
+            evaluation_problem=evaluation_problem,
+            num_cycles=num_cycles,
+            max_steps_per_interaction=max_steps_per_interaction,
+            renderer=renderer,
+            render_fps=TossingRoomSplitCli.render_fps,
+            num_render_checkpoints=getattr(args, "num_render_checkpoints", 1),
+        )
+
+    @staticmethod
+    def build_problem(*, args: argparse.Namespace) -> TossingRoomSplitProblem:
+        """One fully-independent Environment + Tasks + Problem triple from args.
+        Called twice by run_method (practice and evaluation) -- factored out so the two
+        cannot drift apart in configuration, which would silently make the evaluation
+        set a different set of tasks."""
         env = TossingRoomSplitEnvironment(
             num_rooms=args.num_rooms,
             start_room=args.start_room,
@@ -199,23 +248,4 @@ class TossingRoomSplitCli:
             # divide them up. See TossingRoomSplitTasks.test_goal_type_counts.
             num_test_tasks=args.num_test_tasks,
         )
-        problem = TossingRoomSplitProblem(env=env, tasks=tasks)
-        context = DomainContext(
-            env=env,
-            skill_provider=TossingRoomSplitSkillProvider(env=env),
-            oracle=TossingRoomSplitOracle(env=env),
-        )
-
-        renderer: type[Renderer] | None = (
-            TossingRoomSplitRenderer if args.output_dir is not None else None
-        )
-        MethodRunner.run(
-            args=args,
-            method=method_factory(context),
-            problem=problem,
-            num_cycles=num_cycles,
-            max_steps_per_interaction=max_steps_per_interaction,
-            renderer=renderer,
-            render_fps=TossingRoomSplitCli.render_fps,
-            num_render_checkpoints=getattr(args, "num_render_checkpoints", 1),
-        )
+        return TossingRoomSplitProblem(env=env, tasks=tasks)

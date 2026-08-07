@@ -1,6 +1,7 @@
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from hitl_pmp.cli import Cli
@@ -96,6 +97,94 @@ def test_run_method_passes_num_test_tasks_into_tasks(*, monkeypatch: pytest.Monk
         max_steps_per_interaction=0,
     )
     assert captured["num_test_tasks"] == 7
+
+
+def test_run_method_hands_the_loop_a_separate_evaluation_problem(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """This domain's composition root builds two independent triples, so evaluation's
+    per-episode `reset_to_task` lands on an environment practice never sees. The two
+    must be genuinely distinct objects all the way down -- a shared Environment or a
+    shared Tasks would put the write straight back."""
+    captured: dict[str, object] = {}
+    real_run = tossingroomsplit_cli.MethodRunner.run
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return real_run(**kwargs)
+
+    monkeypatch.setattr(tossingroomsplit_cli.MethodRunner, "run", spy)
+    TossingRoomSplitCli.run_method(
+        args=_build_parser().parse_args(["--num-test-tasks", "4"]),
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    practice = captured["problem"]
+    evaluation = captured["evaluation_problem"]
+    assert evaluation is not None
+    assert evaluation is not practice
+    assert evaluation.env is not practice.env
+    assert evaluation.tasks is not practice.tasks
+
+
+def test_the_two_problems_are_configured_identically(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Separate instances, same configuration -- including the seed. That is what makes
+    the split a no-op on results: the evaluation Tasks' test stream is derived from the
+    same seed, so it yields exactly the test tasks the practice Tasks would have."""
+    captured: dict[str, object] = {}
+    real_run = tossingroomsplit_cli.MethodRunner.run
+
+    def spy(**kwargs):
+        captured.update(kwargs)
+        return real_run(**kwargs)
+
+    monkeypatch.setattr(tossingroomsplit_cli.MethodRunner, "run", spy)
+    TossingRoomSplitCli.run_method(
+        args=_build_parser().parse_args(["--num-test-tasks", "4", "--seed", "3"]),
+        method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
+        num_cycles=0,
+        max_steps_per_interaction=0,
+    )
+    practice = captured["problem"]
+    evaluation = captured["evaluation_problem"]
+    # Every configured field of both models, compared by name rather than by a
+    # whole-model dump (which cannot serialize the numpy-backed current_state).
+    # Enumerated rather than spot-checked so a field added later is covered too --
+    # test_env_seed_offset in particular is what derives the test stream.
+    for field in TossingRoomSplitEnvironment.model_fields:
+        if field == "current_state":
+            continue
+        assert getattr(evaluation.env, field) == getattr(practice.env, field), field
+    for field in TossingRoomSplitTasks.model_fields:
+        if field == "env":  # the two Environments are distinct objects by design
+            continue
+        assert getattr(evaluation.tasks, field) == getattr(practice.tasks, field), field
+    assert evaluation.tasks.seed == 3
+    assert evaluation.tasks.num_test_tasks == 4
+
+
+def test_the_two_problems_draw_the_same_test_tasks() -> None:
+    """The property that matching configuration is only a proxy for, asserted
+    directly: two independently-built triples yield the SAME test set, in the same
+    order. That is what makes moving the draw from the practice Tasks to the
+    evaluation Tasks a no-op on results rather than a silent change of which tasks
+    are measured."""
+    args = _build_parser().parse_args(["--num-test-tasks", "6", "--seed", "5"])
+    practice = TossingRoomSplitCli.build_problem(args=args)
+    evaluation = TossingRoomSplitCli.build_problem(args=args)
+    # Whole sequences, not one draw each: the goal-family schedule is a permutation
+    # built once from the test stream, so a per-instance divergence would only show
+    # up part-way through.
+    left = [practice.tasks.sample_test_task() for _ in range(6)]
+    right = [evaluation.tasks.sample_test_task() for _ in range(6)]
+    for first, second in zip(left, right, strict=True):
+        assert first.goal.describe() == second.goal.describe()
+        # Compared feature-vector by feature-vector: State wraps numpy arrays, so
+        # `==` on the model is ambiguous rather than false.
+        assert set(first.initial_state.data) == set(second.initial_state.data)
+        for obj, features in first.initial_state.data.items():
+            assert np.array_equal(features, second.initial_state.data[obj]), obj.name
 
 
 def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[str]) -> None:
