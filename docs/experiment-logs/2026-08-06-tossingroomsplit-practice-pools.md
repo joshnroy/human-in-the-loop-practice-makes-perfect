@@ -324,6 +324,27 @@ TODO(10x) — filled in when the sweep lands.
   per-seed spread; the tables do not, and no per-seed paired test was run, because the
   question is categorical (which pool) rather than a rate comparison across arms.
 
+## Recommendation
+
+1. **Tossing Room needs no fix.** The reset-free result does not rest on a mis-graded
+   skill, a degenerate label, or a skill that should have had a sampler and does not. This
+   is the answer the audit was for, and it is a clean one. Report it as clean.
+2. **Amend #127's decision rule before it is used again.** It is on `main` and it returns a
+   false verdict on this project's main domain. It needs two things it does not have: a
+   **power requirement** on the `inability` cell (an explicit MDE derived from `I` and the
+   control's size, so the cell cannot fire when the test could not have detected the effect
+   at all), and a **plateau check** (inability should require the informed-success curve to
+   have flattened; a curve still rising at the final window is starvation by construction).
+   Not changed here — that is Josh's call, and this page is measurement.
+3. **Fix the two tests failing on `main`**, and note that they and recommendation 2 are the
+   same root cause: **#127 appears to have been merged without being rebased onto #119.**
+   Its fixtures violate a validator #119 added, and its decision rule was written against
+   the pre-#119 world in which `NO_SAMPLER` and `UNINFORMATIVE` were one pooled "fallback"
+   number — which is exactly the distinction a power-aware `inability` cell would need. One
+   rebase-and-re-run addresses both.
+4. **Land #126, then re-read this page's `NO_SAMPLER` column**, which is an *execution*
+   count and cannot speak to target selection. See below.
+
 ## Figures
 
 One row per lifted skill plus a planning row, per arm, from `practice_diagnostics.py
