@@ -4,9 +4,16 @@
 > called `tossingroomsplitpickupweight` at the time, and every command below names
 > it that way. It is now registered as **`tossingroom`**, having taken over the name
 > of a retired fork; the three superseded forks were deleted in the same stack. The
-> domain itself is unchanged, so **every number below still reproduces** -- but the
-> commands need `--env tossingroom` to run against current code. Nothing here has
-> been edited, restated or recomputed.
+> domain is unchanged *by the rename*, so nothing here has been edited, restated or
+> recomputed -- but the commands need `--env tossingroom` against current code.
+>
+> **Separately, these artifacts no longer reproduce byte-for-byte**, and that is not
+> the rename's doing. #130 (`947af7b`) changed this domain after these runs were
+> made -- the committed `config_snapshot.json` files here carry no `two_way_ledge`
+> key, while current code records one. Re-running this config at HEAD yields a
+> different `stats.json` (68,803 bytes against the 62,305 committed here). The
+> published numbers are left exactly as they are; what is no longer true is that
+> re-running the recorded command reproduces them.
 
 Domain `tossingroomsplitpickupweight`, method `ees`, 10 fixed seeds (0-9), 30 test tasks
 (14 TRASH / 14 RECYCLING / 2 EMPTY), 10 cycles x 150 steps per interaction period. The
