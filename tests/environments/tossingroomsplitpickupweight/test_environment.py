@@ -469,3 +469,73 @@ def test_action_space_is_three_dimensional_unbounded_box() -> None:
     assert TossingRoomSplitPickupWeightEnvironment.action_space.shape == (3,)
     assert np.all(np.isinf(TossingRoomSplitPickupWeightEnvironment.action_space.low))
     assert np.all(np.isinf(TossingRoomSplitPickupWeightEnvironment.action_space.high))
+
+
+def test_two_way_ledge_is_off_by_default() -> None:
+    """The positive control is opt-in. PR #122's ten banked seeds were run without it,
+    so the default must reproduce the one-way world exactly."""
+    assert TossingRoomSplitPickupWeightEnvironment.model_fields["two_way_ledge"].default is False
+    assert _env().two_way_ledge is False
+
+
+def test_two_way_ledge_permits_stepping_right_across_the_ledge() -> None:
+    """The whole point of the flag: the domain's single irreversible-blocked action
+    becomes an ordinary move, so rooms {0..blocked_right_from} stop being absorbing."""
+    env = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    state = _fresh_state(env=env)
+    state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.blocked_right_from))
+    env.set_state(state=state)
+    next_state = env.take_action(action=_move(to_room=env.blocked_right_from + 1))
+    assert next_state.get(obj=_ROBOT, feature_name="room") == env.blocked_right_from + 1
+
+
+def test_two_way_ledge_still_allows_stepping_left_across_the_ledge() -> None:
+    env = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    state = _fresh_state(env=env)
+    state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.blocked_right_from + 1))
+    env.set_state(state=state)
+    next_state = env.take_action(action=_move(to_room=env.blocked_right_from))
+    assert next_state.get(obj=_ROBOT, feature_name="room") == env.blocked_right_from
+
+
+def test_two_way_ledge_clears_the_blocks_right_state_feature() -> None:
+    """`blocks_right` is the SYMBOLIC half of the ledge -- CanMoveRoom reads it off the
+    State. Dynamics and model must agree, so turning the flag on has to clear it as well
+    as unblocking `_apply_move`; a flag that changed only one of the two would let the
+    planner and the world disagree about the same edge."""
+    blocked = _env().build_initial_state(weight_seed=0)
+    two_way_env = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    two_way = two_way_env.build_initial_state(weight_seed=0)
+    assert [blocked.get(obj=room, feature_name="blocks_right") for room in _env().get_rooms()] == [
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+    ]
+    assert all(
+        two_way.get(obj=room, feature_name="blocks_right") == 0.0
+        for room in two_way_env.get_rooms()
+    )
+
+
+def test_two_way_ledge_leaves_non_adjacent_moves_no_ops() -> None:
+    """The flag removes ONE edge's direction, not the adjacency rule itself."""
+    env = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    _fresh_state(env=env)
+    next_state = env.take_action(action=_move(to_room=env.start_room + 2))
+    assert next_state.get(obj=_ROBOT, feature_name="room") == env.start_room
+
+
+def test_two_way_ledge_leaves_the_weight_schedule_untouched() -> None:
+    """The flag is a LAYOUT change and must not perturb the pickup-weight draw, which is
+    this fork's whole reason to exist. Same weight seed, same pre-sampled array -- so any
+    score difference between the two ledge worlds is the ledge, not a different weight
+    stream."""
+    one_way = _env()
+    two_way = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    assert np.array_equal(
+        one_way.weight_schedule(weight_seed=7), two_way.weight_schedule(weight_seed=7)
+    )

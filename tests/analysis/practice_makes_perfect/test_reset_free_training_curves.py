@@ -1,5 +1,5 @@
 """Tests for the cross-variant training-curve figure: `scheduled` against `never` in
-each of the three Tossing Room variants this stack measured.
+each of the four Tossing Room variants this stack measured.
 
 The figure is drawn from the 60 `stats.json` files committed under
 `docs/experiment-logs/`, so the extraction is the only thing between the committed data
@@ -15,7 +15,7 @@ entirely plausible:
 2. **Silently short seed sets.** A glob that finds 8 of 10 seeds still means and plots
    without complaint, and a mean over 8 seeds is not the published 300-task denominator.
    `load_arm` raises instead.
-3. **Unaligned x-grids.** The three variants do not share an evaluation horizon
+3. **Unaligned x-grids.** The four variants do not share an evaluation horizon
    (`--two-way-ledge` drops EMPTY's shortest solve, so its horizon differs), so a mean
    taken across seeds whose checkpoint grids differ silently averages different amounts
    of practice together. Alignment is asserted within each arm.
@@ -48,6 +48,9 @@ _PUBLISHED_FINALS = {
     ("two-way", "never"): [16, 10, 17, 13, 14, 19, 10, 15, 16, 14],
     ("pickup-weight", "scheduled"): [27, 18, 16, 18, 15, 18, 17, 19, 18, 17],
     ("pickup-weight", "never"): [18, 16, 5, 6, 7, 6, 21, 20, 7, 6],
+    # The fourth cell (this stack's own new run), pinned the same way the banked six are.
+    ("pickup-weight-two-way", "scheduled"): [30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+    ("pickup-weight-two-way", "never"): [30, 30, 17, 30, 30, 30, 30, 30, 30, 30],
 }
 
 _PUBLISHED_TOTALS = {
@@ -57,6 +60,8 @@ _PUBLISHED_TOTALS = {
     ("two-way", "never"): 144,
     ("pickup-weight", "scheduled"): 183,
     ("pickup-weight", "never"): 112,
+    ("pickup-weight-two-way", "scheduled"): 300,
+    ("pickup-weight-two-way", "never"): 287,
 }
 
 
@@ -141,10 +146,57 @@ def test_the_two_way_ledge_lifts_the_scheduled_arm_too() -> None:
     assert scheduled_gain > never_gain
 
 
-def test_render_writes_a_three_panel_figure(*, tmp_path: Path) -> None:
-    """The artifact itself: three panels, and a PNG on disk with real bytes in it."""
+def _totals() -> dict[tuple[str, str], int]:
+    return {
+        (panel, policy): ResetFreeTrainingCurves.arm_total(
+            runs=ResetFreeTrainingCurves.load_arm(
+                logs_root=_LOGS, arm=_arm(panel=panel, policy=policy)
+            )
+        )[0]
+        for panel, policy in _PUBLISHED_TOTALS
+    }
+
+
+def test_the_fourth_cells_bimodality_is_gone() -> None:
+    """The falsifiable prediction the fourth cell's pre-registration committed *before*
+    the sweep ran: removing stranding should remove the low mode. The one-way arm splits
+    6/10 low and 4/10 high with an empty band between 7 and 15; the two-way arm must not.
+
+    Asserted as "no cluster in the low band", not as "unimodal" -- one seed does finish
+    17/30, and calling a single tail a mode would be the same mistake in reverse."""
+    finals = ResetFreeTrainingCurves.per_seed_finals(
+        runs=ResetFreeTrainingCurves.load_arm(
+            logs_root=_LOGS, arm=_arm(panel="pickup-weight-two-way", policy="never")
+        )
+    )
+    assert [f for f in finals if f <= 7] == [], f"the collapsed mode should be gone: {finals}"
+    assert len([f for f in finals if f == 30]) == 9, f"expected 9 seeds at ceiling: {finals}"
+
+
+def test_removing_both_mechanisms_closes_the_gap() -> None:
+    """The fourth cell's headline, pinned so the write-up cannot drift from the data.
+
+    The within-world gap collapses to 13/300, an order below every other panel's -- and
+    the interaction runs in OPPOSITE directions in the two variants, which is the finding
+    the outcome tables state but no single number carries: the two-way ledge widens the
+    gap on `tossingroomsplit` and collapses it on the pickup-weight fork."""
+    totals = _totals()
+    gap = {
+        panel: totals[(panel, "scheduled")] - totals[(panel, "never")]
+        for panel in ("one-way", "two-way", "pickup-weight", "pickup-weight-two-way")
+    }
+    assert gap["pickup-weight-two-way"] == 13
+    assert gap["pickup-weight-two-way"] < min(gap["one-way"], gap["two-way"], gap["pickup-weight"])
+    # Opposite-signed interactions: +66 on tossingroomsplit, -58 on the pickup-weight fork.
+    assert gap["two-way"] - gap["one-way"] > 0
+    assert gap["pickup-weight-two-way"] - gap["pickup-weight"] < 0
+
+
+def test_render_writes_a_four_panel_figure(*, tmp_path: Path) -> None:
+    """The artifact itself: four panels -- the completed 2x2 -- and a PNG on disk with
+    real bytes in it."""
     out = tmp_path / "curves.png"
     figure = ResetFreeTrainingCurves.render(logs_root=_LOGS, output=out)
-    assert len(figure.axes) == 3
+    assert len(figure.axes) == 4
     assert out.exists()
     assert out.stat().st_size > 10_000

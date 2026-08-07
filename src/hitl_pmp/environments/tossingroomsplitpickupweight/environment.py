@@ -203,6 +203,21 @@ class TossingRoomSplitPickupWeightEnvironment(Environment):
     # stepping RIGHT from blocked_right_from is blocked; every other adjacent step
     # (including stepping LEFT back across it) is allowed.
     blocked_right_from: int = 2
+    # THE POSITIVE CONTROL SWITCH, ported from TossingRoomSplitEnvironment (PR #124),
+    # which scoped it to that domain only. True makes that same edge traversable
+    # RIGHTWARD too, so the hallway becomes an ordinary two-way corridor and the domain
+    # has no irreversible action left at all. Default False, so PR #122's ten banked
+    # seeds are reproduced by the default command line, byte for byte.
+    #
+    # It exists here so the 2x2 of {frozen inputs, weight-at-pickup} x {one-way, two-way}
+    # can be completed: each of those two fixes was measured to remove part of the
+    # reset-free penalty, on different domains, and never together. This fork is the
+    # "weight drawn at pickup" axis; the flag is the "no irreversible action" axis.
+    #
+    # NOT the same knob as `blocked_right_from`: that MOVES the ledge, this REMOVES its
+    # direction. See TossingRoomSplitEnvironment's own field comment for why a
+    # bounds-check-based fully-connected hallway would be indistinguishable from a typo.
+    two_way_ledge: bool = False
     throw_tolerance: float = (
         0.1  # max |force - required| for a Throw to land, like Light Switch's 0.1
     )
@@ -337,6 +352,21 @@ class TossingRoomSplitPickupWeightEnvironment(Environment):
         pydantic), so rebuilding is correct, just not free (negligible at this scale)."""
         return tuple(Object(name=f"room_{i}", type=self.room_type) for i in range(self.num_rooms))
 
+    def ledge_blocks_rightward(self, *, from_room: int) -> bool:
+        """Whether the RIGHTWARD step out of `from_room` is refused. **The one place the
+        ledge is decided**, read by all three layers that have to agree about it:
+        `_apply_move` (the dynamics), `build_initial_state` (which writes the answer into
+        each room's `blocks_right` feature, where `CanMoveRoomClassifier` picks it up for
+        the planner) and `TossingRoomSplitPickupWeightProblem.rooms_to_walk_between`
+        (which sizes the evaluation horizon).
+
+        One function rather than three copies of `room == self.blocked_right_from`
+        because `--two-way-ledge` has to move all three at once. A flag that unblocked
+        the dynamics but left `blocks_right` set would leave the planner refusing a move
+        the world allows; one that cleared `blocks_right` but left `_apply_move` guarding
+        would let it schedule a move the world silently drops."""
+        return not self.two_way_ledge and from_room == self.blocked_right_from
+
     def bin_for_kind(self, *, kind: int) -> Object:
         return self.recycling_bin if kind == self.RECYCLING_KIND else self.trash_bin
 
@@ -455,7 +485,7 @@ class TossingRoomSplitPickupWeightEnvironment(Environment):
             ]),
         }
         for i, room in enumerate(self.get_rooms()):
-            data[room] = np.array([float(i), float(i == self.blocked_right_from)])
+            data[room] = np.array([float(i), float(self.ledge_blocks_rightward(from_room=i))])
         return State(data=data)
 
     def take_action(self, *, action: Action) -> State:
@@ -544,9 +574,10 @@ class TossingRoomSplitPickupWeightEnvironment(Environment):
         if 0 <= to_room < self.num_rooms and abs(to_room - robot_room) == 1:
             # The one-way ledge: stepping RIGHT from blocked_right_from is the single
             # irreversible-blocked move (a no-op). Everything else, including stepping
-            # LEFT back across it, is allowed.
+            # LEFT back across it, is allowed. Under --two-way-ledge nothing is blocked
+            # -- see ledge_blocks_rightward, which is also what writes the symbolic half.
             crosses_ledge_rightward = (
-                robot_room == self.blocked_right_from and to_room == self.blocked_right_from + 1
+                self.ledge_blocks_rightward(from_room=robot_room) and to_room == robot_room + 1
             )
             if not crosses_ledge_rightward:
                 next_state.set(obj=self.robot, feature_name="room", feature_val=float(to_room))
