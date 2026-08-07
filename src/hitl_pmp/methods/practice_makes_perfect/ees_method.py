@@ -20,6 +20,7 @@ from hitl_pmp.core.method.types import (
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
+from hitl_pmp.methods.help_seeking import HelpSeekingMixin
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.planning.types import TranslationCache
@@ -29,7 +30,7 @@ from .competence_models import OptimisticSkillCompetenceModel
 from .wrapped_sampler import LearnedSkillSampler
 
 
-class EesMethod(Method):
+class EesMethod(HelpSeekingMixin, Method):
     """EES (Estimate / Extrapolate / Situate) -- the "Practice Makes Perfect"
     paper's own method, ported from predicators' `active_sampler_learning`
     approach + `active_sampler` explorer with
@@ -81,6 +82,14 @@ class EesMethod(Method):
        refreshed only every `replan_frequency` scoring calls -- predicators'
        own optimization (`active_sampler_explorer_replan_frequency`), and the
        reason scoring is cheap enough to do per candidate per step.
+
+    **`HelpSeekingMixin` is what makes this the Method that can ask for a human**
+    (`--ask-for-help`). It contributes one optional field and two `Method` overrides,
+    and it changes nothing at all when unconfigured -- `get_practice_policy` then
+    returns exactly the lambda it always returned. Composed rather than inherited from
+    `Method` itself because asking for help is not something every Method does, and
+    listed first so its `may_request_human_help`/`observe_help_granted` win over
+    `Method`'s no-op defaults.
     """
 
     env: Environment
@@ -670,12 +679,19 @@ class EesMethod(Method):
     def get_practice_policy(self, *, task: Task) -> Policy:
         """Practice: pursue the assigned goal first (predicators'
         `pursue_task_goal_first`), then spend the rest of the period practicing
-        whichever skill scores best."""
+        whichever skill scores best.
+
+        `seeking_help` wraps that policy so EES can raise `HumanHelpRequested` from
+        inside it -- and returns it *untouched* when `--ask-for-help never` (the
+        default) left `help_seeking` as None, which is what makes such a run take
+        structurally the pre-change code path. Only the practice policy is wrapped:
+        `get_task_policy` deliberately cannot ask, because no evaluation episode is ever
+        rescued."""
         init_atoms = self.abstract_state(state=task.initial_state)
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
         episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
         self._practice_episode = episode
-        return lambda state: episode.step(state=state)
+        return self.seeking_help(policy=lambda state: episode.step(state=state))
 
     def observe_environment_reset(self, *, state: State) -> None:
         """Score the in-flight skill against the state the harness is about to
