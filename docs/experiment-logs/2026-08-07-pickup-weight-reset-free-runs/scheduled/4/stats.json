@@ -1798,7 +1798,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 114,
+        "num_unparameterized_successes": 114
       },
       "PressRecycling": {
         "num_attempts": 34,
@@ -1806,7 +1808,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 34,
+        "num_unparameterized_successes": 34
       },
       "PressTrash": {
         "num_attempts": 1,
@@ -1814,7 +1818,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       }
     },
     {
@@ -1824,7 +1830,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 114,
+        "num_unparameterized_successes": 114
       },
       "PressRecycling": {
         "num_attempts": 34,
@@ -1832,7 +1840,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 34,
+        "num_unparameterized_successes": 34
       },
       "PressTrash": {
         "num_attempts": 1,
@@ -1840,7 +1850,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       }
     },
     {
@@ -1850,7 +1862,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 118,
+        "num_unparameterized_successes": 118
       },
       "PickupRecycling": {
         "num_attempts": 1,
@@ -1858,7 +1872,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       },
       "PressRecycling": {
         "num_attempts": 29,
@@ -1866,7 +1882,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 29,
+        "num_unparameterized_successes": 29
       },
       "PressTrash": {
         "num_attempts": 0,
@@ -1874,7 +1892,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowRecycling": {
         "num_attempts": 1,
@@ -1882,7 +1902,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     },
     {
@@ -1892,7 +1914,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 120,
+        "num_unparameterized_successes": 120
       },
       "PickupRecycling": {
         "num_attempts": 1,
@@ -1900,7 +1924,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       },
       "PressRecycling": {
         "num_attempts": 27,
@@ -1908,7 +1934,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 27,
+        "num_unparameterized_successes": 27
       },
       "PressTrash": {
         "num_attempts": 0,
@@ -1916,7 +1944,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowRecycling": {
         "num_attempts": 1,
@@ -1924,7 +1954,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     },
     {
@@ -1934,7 +1966,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 118,
+        "num_unparameterized_successes": 118
       },
       "PickupRecycling": {
         "num_attempts": 0,
@@ -1942,7 +1976,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PressRecycling": {
         "num_attempts": 30,
@@ -1950,7 +1986,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 30,
+        "num_unparameterized_successes": 30
       },
       "PressTrash": {
         "num_attempts": 1,
@@ -1958,7 +1996,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       },
       "ThrowRecycling": {
         "num_attempts": 0,
@@ -1966,7 +2006,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     },
     {
@@ -1976,7 +2018,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 128,
+        "num_unparameterized_successes": 128
       },
       "PickupRecycling": {
         "num_attempts": 0,
@@ -1984,7 +2028,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PressRecycling": {
         "num_attempts": 20,
@@ -1992,7 +2038,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 20,
+        "num_unparameterized_successes": 20
       },
       "PressTrash": {
         "num_attempts": 1,
@@ -2000,7 +2048,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       },
       "ThrowRecycling": {
         "num_attempts": 0,
@@ -2008,7 +2058,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     },
     {
@@ -2018,7 +2070,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 111,
+        "num_unparameterized_successes": 111
       },
       "PickupRecycling": {
         "num_attempts": 0,
@@ -2026,7 +2080,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PickupTrash": {
         "num_attempts": 19,
@@ -2034,7 +2090,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 19,
+        "num_unparameterized_successes": 19
       },
       "PressRecycling": {
         "num_attempts": 0,
@@ -2042,7 +2100,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PressTrash": {
         "num_attempts": 0,
@@ -2050,7 +2110,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowRecycling": {
         "num_attempts": 0,
@@ -2058,7 +2120,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowTrash": {
         "num_attempts": 19,
@@ -2066,7 +2130,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     },
     {
@@ -2076,7 +2142,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 124,
+        "num_unparameterized_successes": 124
       },
       "PickupRecycling": {
         "num_attempts": 1,
@@ -2084,7 +2152,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       },
       "PickupTrash": {
         "num_attempts": 5,
@@ -2092,7 +2162,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 5,
+        "num_unparameterized_successes": 5
       },
       "PressRecycling": {
         "num_attempts": 13,
@@ -2100,7 +2172,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 13,
+        "num_unparameterized_successes": 13
       },
       "PressTrash": {
         "num_attempts": 0,
@@ -2108,7 +2182,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowRecycling": {
         "num_attempts": 1,
@@ -2116,7 +2192,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowTrash": {
         "num_attempts": 5,
@@ -2124,7 +2202,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     },
     {
@@ -2134,7 +2214,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 111,
+        "num_unparameterized_successes": 111
       },
       "PickupRecycling": {
         "num_attempts": 1,
@@ -2142,7 +2224,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       },
       "PickupTrash": {
         "num_attempts": 10,
@@ -2150,7 +2234,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 10,
+        "num_unparameterized_successes": 10
       },
       "PressRecycling": {
         "num_attempts": 16,
@@ -2158,7 +2244,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 16,
+        "num_unparameterized_successes": 16
       },
       "PressTrash": {
         "num_attempts": 0,
@@ -2166,7 +2254,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowRecycling": {
         "num_attempts": 1,
@@ -2174,7 +2264,9 @@
         "num_random_attempts": 1,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowTrash": {
         "num_attempts": 10,
@@ -2182,7 +2274,9 @@
         "num_random_attempts": 5,
         "num_random_successes": 1,
         "num_informed_attempts": 5,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     },
     {
@@ -2192,7 +2286,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 124,
+        "num_unparameterized_successes": 124
       },
       "PickupRecycling": {
         "num_attempts": 0,
@@ -2200,7 +2296,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PickupTrash": {
         "num_attempts": 0,
@@ -2208,7 +2306,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PressRecycling": {
         "num_attempts": 24,
@@ -2216,7 +2316,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 24,
+        "num_unparameterized_successes": 24
       },
       "PressTrash": {
         "num_attempts": 1,
@@ -2224,7 +2326,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
       },
       "ThrowRecycling": {
         "num_attempts": 0,
@@ -2232,7 +2336,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowTrash": {
         "num_attempts": 0,
@@ -2240,7 +2346,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     },
     {
@@ -2250,7 +2358,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PickupRecycling": {
         "num_attempts": 0,
@@ -2258,7 +2368,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PickupTrash": {
         "num_attempts": 0,
@@ -2266,7 +2378,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PressRecycling": {
         "num_attempts": 0,
@@ -2274,7 +2388,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "PressTrash": {
         "num_attempts": 0,
@@ -2282,7 +2398,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowRecycling": {
         "num_attempts": 0,
@@ -2290,7 +2408,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       },
       "ThrowTrash": {
         "num_attempts": 0,
@@ -2298,7 +2418,9 @@
         "num_random_attempts": 0,
         "num_random_successes": 0,
         "num_informed_attempts": 0,
-        "num_informed_successes": 0
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
       }
     }
   ],
