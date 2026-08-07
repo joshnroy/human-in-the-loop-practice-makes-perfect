@@ -103,6 +103,17 @@ layers = [
     "hitl_pmp.cli_protocols",
     "hitl_pmp.method_runner",
     "hitl_pmp.practice_loop | hitl_pmp.config_snapshot | hitl_pmp.humans | hitl_pmp.planning | hitl_pmp.adapters",
+    # human_intervention.py holds only WHAT a human is asked to restore
+    # (HumanResetTarget) -- the human's half. WHEN to ask is the Method's, and lives in
+    # methods/help_seeking.py, up in the hitl_pmp.methods layer above alongside the
+    # stuck rule it drives. That is not a stylistic split: because hitl_pmp.methods
+    # sits above hitl_pmp.method_runner, the runner *cannot* import a trigger policy,
+    # so the only place the decision can live is inside the Method. practice_loop.py
+    # reads this enum and nothing else about intervention; it learns a rescue is wanted
+    # by catching core's HumanHelpRequested. humans/ stays in the layer above and
+    # independent of both: a HumanOracle models what a human can do and what it costs,
+    # never when to call one.
+    "hitl_pmp.human_intervention",
     # recording/ sits between practice_loop.py and core/: practice_loop.py drives a
     # LoopRecorder, and a LoopRecorder knows nothing about the loop's internals --
     # it is handed State/Renderer (core) and told what just happened.
