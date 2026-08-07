@@ -178,6 +178,7 @@ class PureAgentMethod(Method):
                 total_cost_usd=metadata.get("total_cost_usd"),
                 num_turns=metadata.get("num_turns"),
                 num_tool_calls=metadata.get("num_tool_calls"),
+                query_error=metadata.get("query_error"),
             )
         )
         # A fresh round starts each period's practice-goal bookkeeping clean, so the

@@ -100,6 +100,25 @@ argument `TossingRoomEnvironment`'s weight schedule makes for never wrapping.
 
 It also resolves the sweep-width problem: authoring is serial, replay parallelises.
 
+The two are **separate `--method` names**, not a flag on one:
+
+    # authors, spends money, writes <output-dir>/transcript.json
+    python -m hitl_pmp.cli --env tossingroom --method pure-agent-author \
+      --pure-agent-sandbox-dir <fresh dir> --output-dir <dir> --num-cycles 2
+
+    # measures, free, deterministic
+    python -m hitl_pmp.cli --env tossingroom --method pure-agent \
+      --pure-agent-replay <dir> --output-dir <other dir> --num-cycles 2
+
+so a measured run has no code path that could reach a backend at all, and a mistyped
+flag cannot spend money. Use a **fresh** sandbox directory per authoring run: the
+conversation persists in it, so reusing one silently makes round 0 something other than a
+zero-feedback policy.
+
+On a machine where the shell predates the `docker` group being added, wrap the authoring
+command in `sg docker -c "..."`; a bare `docker` call returns permission-denied on the
+socket, which is not Docker being broken.
+
 ## Two prompt arms
 
 `--pure-agent-prompt-arm minimal|described`.

@@ -30,6 +30,7 @@ from hitl_pmp.environments.tossingroom.cli import (
 )
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
+from hitl_pmp.methods.pure_agent.authoring_cli import PureAgentAuthoringCli
 from hitl_pmp.methods.pure_agent.cli import PureAgentCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
@@ -64,6 +65,10 @@ METHODS: dict[str, type[MethodCli]] = {
     # decision time). Replay-only from here; authoring is a separate entrypoint, so a
     # measured run cannot spend money by accident. See methods/pure_agent/README.md.
     "pure-agent": PureAgentCli,
+    # The other half of record-then-replay, and a separate name rather than a flag on
+    # `pure-agent` precisely because this one spends real money and cannot be reproduced.
+    # Two names means a measured run has no code path that could reach an agent at all.
+    "pure-agent-author": PureAgentAuthoringCli,
 }
 
 

@@ -97,6 +97,13 @@ class AuthoringRound(BaseModel):
     total_cost_usd: float | None = None
     num_turns: int | None = None
     num_tool_calls: int | None = None
+    # Set when the backend's query itself failed but the round was salvaged anyway --
+    # today, only the `--max-budget-usd` stop, which writes `policy.py` and reports its
+    # cost and then exits 1 in a shape `prpl_agent_utils` treats as fatal. See
+    # `ClaudeCodeAgentBackend.query`. A round carrying this may still hold a perfectly
+    # usable policy; it is recorded so a reader can tell a query that ran to completion
+    # from one that was cut off, since the two are otherwise indistinguishable.
+    query_error: str | None = None
 
 
 class AgentReply(BaseModel):
