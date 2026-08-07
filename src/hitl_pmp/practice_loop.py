@@ -275,6 +275,13 @@ class PracticeLoop:
         practice_reset_policy: PracticeResetPolicy = PracticeResetPolicy.SCHEDULED,
         practice_reset_interval: int | None = None,
         on_cycle_end: Callable[[], None] | None = None,
+        # Fired after every evaluation sweep, including the one before any practice --
+        # so a caller sees num_cycles + 1 calls. Distinct from on_cycle_end, which
+        # fires *before* the sweep that measures the cycle it ends: a caller reporting
+        # progress needs the sweep's result, which does not exist yet at that point.
+        # Purely an observer, like recorder: it is handed nothing to decide and its
+        # return value is ignored, so a run with one takes the same actions.
+        on_sweep_end: Callable[[], None] | None = None,
         renderer: type[Renderer] | None = None,
         num_render_checkpoints: int = 1,
         on_checkpoint_frames: CheckpointFramesSink | None = None,
@@ -366,6 +373,8 @@ class PracticeLoop:
             sweep_index=0,
         )
         hand_over(transitions=num_online_transitions, sweep_frames=frames)
+        if on_sweep_end is not None:
+            on_sweep_end()
         for cycle in range(num_cycles):
             task = problem.sample_train_task()
             # get_practice_policy, not get_task_policy: a learning Method explores
@@ -460,6 +469,8 @@ class PracticeLoop:
                 sweep_index=cycle + 1,
             )
             hand_over(transitions=num_online_transitions, sweep_frames=frames)
+            if on_sweep_end is not None:
+                on_sweep_end()
 
     @staticmethod
     def render_sweep_indices(*, num_cycles: int, num_render_checkpoints: int) -> frozenset[int]:
