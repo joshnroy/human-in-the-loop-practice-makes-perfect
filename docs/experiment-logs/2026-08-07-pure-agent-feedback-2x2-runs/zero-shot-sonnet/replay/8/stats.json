@@ -1,0 +1,1266 @@
+{
+  "evaluations": [
+    [
+      0,
+      0,
+      30
+    ],
+    [
+      150,
+      0,
+      30
+    ],
+    [
+      300,
+      0,
+      30
+    ],
+    [
+      450,
+      0,
+      30
+    ],
+    [
+      600,
+      0,
+      30
+    ],
+    [
+      750,
+      12,
+      30
+    ]
+  ],
+  "breakdowns": [
+    {
+      "num_online_transitions": 0,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 12,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 16,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 19,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 23,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 28,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 150,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 12,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 16,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 19,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 23,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 28,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 300,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 12,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 16,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 19,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 23,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 28,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 450,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 12,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 16,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 19,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 23,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 28,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 600,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 12,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 16,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 19,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 23,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 28,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 750,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 12,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 16,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 19,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 23,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 28,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": true
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    }
+  ],
+  "num_practice_resets": 5,
+  "planning_failures_per_cycle": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "planning_attempts_per_cycle": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "practice_outcomes_per_cycle": [
+    {
+      "MoveRoom": {
+        "num_attempts": 147,
+        "num_successes": 147,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 147,
+        "num_unparameterized_successes": 147
+      },
+      "PickupRecycling": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      },
+      "ThrowRecycling": {
+        "num_attempts": 1,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveRoom": {
+        "num_attempts": 147,
+        "num_successes": 147,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 147,
+        "num_unparameterized_successes": 147
+      },
+      "PickupRecycling": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      },
+      "ThrowRecycling": {
+        "num_attempts": 1,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveRoom": {
+        "num_attempts": 111,
+        "num_successes": 111,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 111,
+        "num_unparameterized_successes": 111
+      },
+      "PickupRecycling": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PickupTrash": {
+        "num_attempts": 19,
+        "num_successes": 19,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 19,
+        "num_unparameterized_successes": 19
+      },
+      "ThrowRecycling": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "ThrowTrash": {
+        "num_attempts": 19,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 19,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveRoom": {
+        "num_attempts": 147,
+        "num_successes": 147,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 147,
+        "num_unparameterized_successes": 147
+      },
+      "PickupRecycling": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      },
+      "PickupTrash": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "ThrowRecycling": {
+        "num_attempts": 1,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "ThrowTrash": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveRoom": {
+        "num_attempts": 111,
+        "num_successes": 111,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 111,
+        "num_unparameterized_successes": 111
+      },
+      "PickupRecycling": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PickupTrash": {
+        "num_attempts": 19,
+        "num_successes": 19,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 19,
+        "num_unparameterized_successes": 19
+      },
+      "ThrowRecycling": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "ThrowTrash": {
+        "num_attempts": 19,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 19,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveRoom": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PickupRecycling": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PickupTrash": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "ThrowRecycling": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "ThrowTrash": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    }
+  ],
+  "practice_target_outcomes_per_cycle": [
+    {},
+    {},
+    {},
+    {},
+    {},
+    {}
+  ],
+  "task_name": "default"
+}
