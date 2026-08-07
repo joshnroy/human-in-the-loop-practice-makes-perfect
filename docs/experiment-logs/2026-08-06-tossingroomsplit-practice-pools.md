@@ -148,6 +148,21 @@ test for them; the two tests it does add cover the two ways the derived tables c
 computed wrongly (averaging across seeds instead of summing, and including the trailing
 evaluation-only window).
 
+### A base-branch check that passes for the wrong reason
+
+Worth recording because two agents hit it independently today. The standing pre-flight
+check for a stacked branch is `git merge-base --is-ancestor main HEAD`. In a worktree the
+**local `main` ref is often stale** — here it sat at `1ba2927` while `origin/main` was at
+`ebf3d92`, fourteen commits ahead. The check therefore **passes against a `main` that is
+not the real tip**, which is precisely the failure it exists to catch, and it passes
+silently. Check against `origin/main` instead, after a fetch:
+
+```bash
+git merge-base --is-ancestor origin/main HEAD && echo OK || echo "WRONG BASE"
+```
+
+This run's base was confirmed that way: `HEAD` == `origin/main` == `ebf3d92`.
+
 ### A pre-existing failure on `main`, not introduced here
 
 `scripts/with_env.sh pytest` reports **2 failed, 1695 passed, 21 skipped** on this branch,
