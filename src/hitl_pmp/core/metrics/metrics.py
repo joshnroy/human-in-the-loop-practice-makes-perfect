@@ -1,3 +1,5 @@
+import math
+
 from pydantic import BaseModel, Field
 
 from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
@@ -9,16 +11,15 @@ class Metrics(BaseModel):
     """Evaluation protocol -- a fully concrete, directly-usable instance now (not a
     static-method container): every method here is a genuine, reusable default, not
     a per-domain requirement, since nothing in this codebase today needs behavior
-    other than what's written here -- exactly one task/goal type, and no real
-    human-intervention tracking, since no Method here ever calls
-    Problem.execute_human_command. This is a step further than Problem's own facade
+    other than what's written here -- exactly one task/goal type. This is a step
+    further than Problem's own facade
     pattern (problem/problem.py): Problem still has one genuinely must-override
     method (run_task_episode); Metrics has none, so unlike Problem/Method/
     Environment/HumanOracle/Tasks/Renderer it isn't actually one of this project's
     abstract interfaces -- callers just construct Metrics() directly, with no
-    per-domain/per-method subclass needed. A future Method that tracks real
-    human-intervention cost would override num_human_interventions/
-    summed_human_cost; a future multi-task environment would override
+    per-domain/per-method subclass needed. Human-intervention cost is now genuinely
+    tracked rather than hardcoded to zero (see record_human_intervention), driven by
+    the harness rather than by any Method; a future multi-task environment would override
     task_training_curve_by_subtask/percentage_success_per_task_test --
     inheriting everything else unchanged either way (ordinary subclassing).
 
@@ -67,6 +68,23 @@ class Metrics(BaseModel):
     practice_target_outcomes_per_cycle: list[dict[str, PracticeTargetTally]] = Field(
         default_factory=list
     )
+    # How many times a human was asked to intervene, and what those interventions cost
+    # in total, counted as they happened. Both default to 0 so every stats.json written
+    # before these fields existed still loads -- and so a run with no HumanOracle wired
+    # at all reports exactly the zeros it reported before.
+    #
+    # Two scalars rather than a per-intervention list: the only HumanOracle that exists
+    # (humans/oracle.py's v0) charges a flat cost, so a list would be one number repeated
+    # up to `num_cycles * max_steps_per_interaction` times and would bloat every
+    # stats.json for no information. They are kept apart rather than collapsed into one
+    # because they come apart the moment a v1 cost model lands, and a metric that had to
+    # change shape then would invalidate the comparison to these runs.
+    #
+    # `float`, not `core.problem.human.types.Cost`, which is an alias for exactly `float`
+    # -- importing it would add a cross-subpackage dependency that buys no type
+    # information. It IS that Cost; this is the same quantity a HumanOracle returns.
+    num_human_interventions_recorded: int = 0
+    summed_human_cost_recorded: float = 0.0
     task_name: str = "default"
 
     def record_evaluation(
@@ -113,6 +131,39 @@ class Metrics(BaseModel):
         resets really happened, at the rate intended, from the run's own output
         instead of from an argument about the loop's arithmetic."""
         self.num_practice_resets += 1
+
+    def record_human_intervention(self, *, cost: float) -> None:
+        """Counts one human intervention and adds what it cost.
+
+        Recorded rather than rederived from the configured trigger for the same reason
+        `record_practice_reset` is: a flag is a claim and this is the measurement. An arm
+        configured to call a human "when stuck" and an arm that never actually got stuck
+        produce identical command lines, and only this number tells them apart -- which
+        matters most for a null result, where "the human did not help" and "the human was
+        never called" are completely different findings.
+
+        `cost` is `core.problem.human.types.Cost` -- what
+        `Problem.calculate_cost_for_human_command` returned for the command that was then
+        executed. The caller passes the *queried* cost rather than recomputing one, so
+        the number banked is the number the oracle actually quoted.
+
+        Rejects a negative or non-finite cost, and rejects it before either field moves
+        so a refused call leaves this Metrics untouched rather than half-updated. Non-
+        finite is the sharper of the two: `Cost` is documented as `inf` when the command
+        is infeasible, so an infinite cost here means a caller executed a command its own
+        oracle had already declared impossible. Summing that would make
+        `summed_human_cost` inf for the rest of the run and destroy every later
+        comparison, which is a failure worth stopping for rather than averaging away."""
+        if not math.isfinite(cost):
+            raise ValueError(
+                f"a human intervention's cost must be finite, got {cost}. Cost is inf "
+                "when the command is infeasible, so this means a command the oracle "
+                "refused to price was executed anyway."
+            )
+        if cost < 0:
+            raise ValueError(f"a human intervention's cost cannot be negative, got {cost}")
+        self.num_human_interventions_recorded += 1
+        self.summed_human_cost_recorded += cost
 
     def record_planning_outcomes(self, *, num_failures: int, num_attempts: int) -> None:
         """Records one window's planning failures **and** the attempts they are out of.
@@ -280,9 +331,20 @@ class Metrics(BaseModel):
 
     def num_human_interventions(self) -> tuple[float, int]:
         """Returns (summed cost, count); should trend down as the agent learns to
-        reset itself. Trivially zero: no Method in this codebase yet ever calls
-        Problem.execute_human_command."""
-        return (0.0, 0)
+        reset itself.
+
+        No longer trivially zero. It reported a hardcoded (0.0, 0) for as long as no
+        concrete `HumanOracle` existed -- intervention was not *representable*, not
+        merely unobserved -- and now reads the two fields `record_human_intervention`
+        maintains. A run with no human wired still reports (0.0, 0), so nothing that
+        predates this changes.
+
+        A pair rather than either number alone, and the pair is the whole point at v0:
+        `humans/oracle.py` charges a flat 1.0, so the two are proportional today and the
+        cost carries no information the count does not. They separate as soon as a v1
+        cost model prices a rescue by how far the robot has drifted -- and reporting only
+        the count now would mean a v1 comparison had no v0 cost baseline to sit against."""
+        return (self.summed_human_cost_recorded, self.num_human_interventions_recorded)
 
     def summed_human_cost(self) -> float:
-        return 0.0
+        return self.summed_human_cost_recorded
