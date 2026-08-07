@@ -181,13 +181,17 @@ class PracticeLoop:
 
     Passing one is safe only where the split is genuinely byte-identical -- the
     environment must consume no randomness of its own, or a second instance changes
-    which draws practice sees. Exactly one domain is wired today,
-    `tossingroom` (no environment RNG, pure `take_action`), because
-    that is where the reset-free measurement is being made. Two domains are *excluded
-    on the merits* and should not simply be wired by the next reader: `ballring`, whose
-    `_noise_rng` is consumed by evaluation today and therefore shifts the practice
-    stream, so a split needs a re-baseline rather than an identity check; and
-    `tossing3d`, where a second instance is a second live simulator backend.
+    which draws practice sees. Two domains are wired today: `tossingroom` (no
+    environment RNG, pure `take_action`), and `tossing3d`, which holds no RNG field at
+    all -- its only randomness lives in `Tossing3DTasks`' train/test streams, and the
+    simulator is re-seeded from the scene seed on every reset, so no history carries
+    across instances. `tossing3d` pays a cost the others do not, a **second live MuJoCo
+    scene** for the length of the run, which is why it was deferred rather than
+    excluded outright; a sweep's memory cap has to be sized for it.
+
+    `ballring` remains *excluded on the merits* and should not simply be wired by the
+    next reader: its `_noise_rng` is consumed by evaluation today and therefore shifts
+    the practice stream, so a split needs a re-baseline rather than an identity check.
     `lightswitch` is simply **not migrated yet**, not assessed and rejected; it is
     RNG-free in the same way and could be wired when something needs it. Every
     unmigrated domain omits the argument and keeps exactly its old behaviour, one
