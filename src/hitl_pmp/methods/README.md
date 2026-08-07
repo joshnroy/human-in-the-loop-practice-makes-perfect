@@ -127,6 +127,22 @@ generic tail is written once rather than copy-pasted into each domain's `cli.py`
 subclass, since nothing in this reproduction needs different behavior than the
 generic default yet.
 
+## `pure_agent/` — the pure agent (step 2.5)
+
+`--method pure-agent`. A coding agent **writes** the policy rather than **being** the
+policy: it authors a `policy.py` in a sandbox, that file is loaded and run, and its
+practice outcomes are handed back for it to revise. No API call happens at decision
+time, which is the only reason it fits a harness that runs thousands of steps per sweep.
+
+It sits between `random-skills` (step 2) and `skill-oracle` (step 3) in Tom Silver's
+recipe, needs no learned component, and so does not wait on the EES reproduction the way
+the VLA baselines below do. `end_cycle()` is the seam it hangs on, `practice_outcomes()`
+is the feedback payload, and everything domain-specific comes off the injected
+`SkillProvider`, so it runs on any `--env` with no `isinstance` dispatch. Authoring and
+measurement are deliberately separate entrypoints — see
+[`pure_agent/README.md`](pure_agent/README.md) for the record-then-replay design, the two
+prompt arms, and the security boundary (the sandbox protects authoring, not evaluation).
+
 ## This project's own planned baselines
 
 Per the design doc's "Baselines" section, baselines form a progression, each expected to

@@ -30,6 +30,7 @@ from hitl_pmp.environments.tossingroom.cli import (
 )
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
+from hitl_pmp.methods.pure_agent.cli import PureAgentCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
 # Registering tossing3d here costs nothing on a machine without KINDER: importing
@@ -58,6 +59,11 @@ METHODS: dict[str, type[MethodCli]] = {
     "skill-oracle": SkillOracleCli,
     "random-skills": RandomSkillsCli,
     "ees": EesCli,
+    # Step 2.5 of Tom Silver's recipe, between the random baseline and the oracle: a
+    # coding agent WRITES the policy (it is not the policy -- no API call happens at
+    # decision time). Replay-only from here; authoring is a separate entrypoint, so a
+    # measured run cannot spend money by accident. See methods/pure_agent/README.md.
+    "pure-agent": PureAgentCli,
 }
 
 
