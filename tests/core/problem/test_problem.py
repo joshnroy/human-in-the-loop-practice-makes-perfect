@@ -193,3 +193,66 @@ def test_two_problem_instances_are_wired_to_independent_environments() -> None:
     second.env.set_state(state=_state(x=2.0))
     assert first.get_current_state()[_OBJ].tolist() == [1.0]
     assert second.get_current_state()[_OBJ].tolist() == [2.0]
+
+
+class _SpyHuman(HumanOracle):
+    """Records the descriptions it was handed, so the facade's forwarding can be
+    asserted rather than inferred from an env mutation."""
+
+    seen: list[CommandGoalDescription] = []
+
+    @staticmethod
+    def calculate_cost_for_human_command(
+        *,
+        command_start_state_description: CommandStartStateDescription,
+        command_goal_description: CommandGoalDescription,
+    ) -> Cost:
+        del command_start_state_description
+        _SpyHuman.seen.append(command_goal_description)
+        return 1.0
+
+    @staticmethod
+    def execute_human_command(
+        *,
+        command_start_state_description: CommandStartStateDescription,
+        command_goal_description: CommandGoalDescription,
+        env: Environment,
+    ) -> None:
+        del command_start_state_description, env
+        _SpyHuman.seen.append(command_goal_description)
+
+
+def _build_spy_problem() -> _Problem:
+    _SpyHuman.seen = []
+    env = _Env()
+    env.set_state(state=_state(x=0.0))
+    return _Problem(env=env, tasks=_Tasks(env=env), human=_SpyHuman)
+
+
+def test_describe_command_carries_no_target_state_by_default() -> None:
+    problem = _build_problem()
+    problem.env.set_state(state=_state(x=3.0))
+    _start, end = problem._describe_command(goal=Goal(atoms=frozenset()))
+    assert end.target_state is None
+
+
+def test_describe_command_forwards_a_target_state() -> None:
+    problem = _build_problem()
+    problem.env.set_state(state=_state(x=3.0))
+    target = _state(x=9.0)
+    _start, end = problem._describe_command(goal=Goal(atoms=frozenset()), target_state=target)
+    assert end.target_state is target
+
+
+def test_execute_human_command_forwards_a_target_state() -> None:
+    problem = _build_spy_problem()
+    target = _state(x=9.0)
+    problem.execute_human_command(goal=Goal(atoms=frozenset()), target_state=target)
+    assert _SpyHuman.seen[-1].target_state is target
+
+
+def test_calculate_cost_for_human_command_forwards_a_target_state() -> None:
+    problem = _build_spy_problem()
+    target = _state(x=9.0)
+    problem.calculate_cost_for_human_command(goal=Goal(atoms=frozenset()), target_state=target)
+    assert _SpyHuman.seen[-1].target_state is target

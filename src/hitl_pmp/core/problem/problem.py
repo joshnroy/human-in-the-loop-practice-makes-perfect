@@ -60,29 +60,40 @@ class Problem(BaseModel, abc.ABC):
         return self.env.get_current_state()
 
     def _describe_command(
-        self, *, goal: Goal
+        self, *, goal: Goal, target_state: State | None = None
     ) -> tuple[CommandStartStateDescription, CommandGoalDescription]:
         return (
             CommandStartStateDescription(state=self.get_current_state()),
-            CommandGoalDescription(goal=goal),
+            CommandGoalDescription(goal=goal, target_state=target_state),
         )
 
-    def calculate_cost_for_human_command(self, *, goal: Goal) -> Cost:
-        """Query what asking the human for this would cost, without actually asking."""
+    def calculate_cost_for_human_command(
+        self, *, goal: Goal, target_state: State | None = None
+    ) -> Cost:
+        """Query what asking the human for this would cost, without actually asking.
+
+        target_state is passed straight through to the HumanOracle, defaulting to None
+        so every existing caller is unchanged -- see CommandGoalDescription.target_state
+        for what a command carrying one means."""
         assert self.human is not None, "calculate_cost_for_human_command needs self.human set."
-        start, end = self._describe_command(goal=goal)
+        start, end = self._describe_command(goal=goal, target_state=target_state)
         return self.human.calculate_cost_for_human_command(
             command_start_state_description=start, command_goal_description=end
         )
 
-    def execute_human_command(self, *, goal: Goal) -> None:
+    def execute_human_command(self, *, goal: Goal, target_state: State | None = None) -> None:
         """The only sanctioned reset: let the human work toward goal. No return value —
         query calculate_cost_for_human_command beforehand if the cost is needed; this
         method's only job is to make it happen. self.human is responsible for
         updating self.env (it was handed env directly) to reflect whatever actually
-        happened, since only it knows what that was."""
+        happened, since only it knows what that was.
+
+        Pass target_state to ask for a *reset* -- "put the world back into exactly this
+        configuration" -- rather than for the goal to be brought about. Both descriptions
+        reach the oracle together and it decides what it can do with them; this facade
+        neither interprets nor validates either one."""
         assert self.human is not None, "execute_human_command needs self.human set."
-        start, end = self._describe_command(goal=goal)
+        start, end = self._describe_command(goal=goal, target_state=target_state)
         self.human.execute_human_command(
             command_start_state_description=start, command_goal_description=end, env=self.env
         )
