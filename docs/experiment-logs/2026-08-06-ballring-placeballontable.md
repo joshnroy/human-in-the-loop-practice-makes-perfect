@@ -255,6 +255,32 @@ count and output distribution both changed. A secondary candidate is `6b90c66` (
 which changed Ball-Ring's no-plan placeholder from an action that moved the robot toward
 (0, 0) to a true no-op; it consumes no RNG but changes evaluation-path state.
 
+### Do sections 1-4 and section 5 share a cause?
+
+**They share a code path, not a cause**, and the distinction matters for what to fix.
+
+Section 1's impossibility is a *domain-config* fact — `place_ball_fall_prob = 1.0` — which
+predates PR #85 entirely and was equally true in the published arm. Nothing about #85
+made `PlaceBallOnTable` impossible.
+
+What #85 changed is how the sampler *responds* to that impossibility. The
+`uninformative_tie_fraction` branch is exactly where all 3280/3280 of this skill's
+executions land (section 2), and #85 altered both that branch's draw count and its output
+distribution. So section 1 explains why that branch is unusually hot on Ball-Ring, which
+is precisely what makes a change to it a credible candidate for section 5 — a branch taken
+thousands of times per run is a large lever on the RNG stream.
+
+But the implication runs one way only. Fixing the impossibility would not have prevented
+the section-5 shift (the branch is also taken 1082/3190 times by
+`PlaceCupWithoutBallOnTable`, which is genuinely learnable), and the section-5 shift did
+not cause the impossibility. Treat them as two findings that happen to meet at
+`LearnedSkillSampler.sample`, not as one defect with two symptoms.
+
+**An unquantified term remains either way.** The re-run's `config_snapshot.json` records
+`git_dirty: true`, so an unrecorded local diff sits on top of `77ba55e`. That is not
+recoverable from anything committed, which is why even the three-arm run in
+Recommendation 3 can *narrow* section 5 but cannot fully close it.
+
 ## Recommendation
 
 1. **Change nothing in EES or in Ball-Ring on the strength of this.** Sections 1-4 are
