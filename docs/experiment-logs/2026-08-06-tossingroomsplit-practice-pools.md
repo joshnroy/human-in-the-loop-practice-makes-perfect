@@ -2,8 +2,8 @@
 
 **TL;DR.** The per-skill practice-pool breakdown (`SamplerConsultation`, PR #119) had never
 been run on `tossingroomsplit` — the domain the reset-free result rests on. It is now, on
-the published standard arm (10 fixed seeds, 25 cycles x 100 steps = 2,500 online
-transitions). **The domain is clean, and
+both published arms (10 fixed seeds each: 2,500 and 25,000 online transitions).
+**The domain is clean, and
 it is clean in the specific way Tossing3D was not.** All five `param_dim = 0` skills fall
 entirely in the `NO_SAMPLER` pool — **23,863/24,750** of all practice executions at the
 standard budget — but every one of them succeeds **every single time** (`MoveRoom`
@@ -21,12 +21,15 @@ restatement of it.
 
 **One negative finding, about the instrument rather than the domain.** The decision rule
 this project has been using since #127 assigns `ThrowRecycling` to **inability** at the
-standard budget. That verdict is **wrong**: recycling's informed successes are *still
-rising* when the budget ends (0 -> 0 -> 2 -> 3 -> 6 over fifths of the run), which is the
-starvation signature, and the published 10x experiment (#103) independently found the same
-sampler separates from its control at a larger budget. The rule's `inability` cell has no
-power requirement and no plateau check, so at `I = 56` it fires on a sampler that is merely
-early.
+standard budget. That verdict is **wrong**, and the 10x arm run here proves it directly:
+the same sampler, on the same seeds, goes from **11/56 (p = 1.0000)** at 2,500 transitions
+to **901/982 (+69.73pp, p < 0.0001)** at 25,000. A classifier that cannot learn does not do
+that. The rule's `inability` cell has no power requirement and no plateau check, so at
+`I = 56` it fires on a sampler that is merely early — recycling's informed successes are
+still *rising* when the standard budget ends (0, 0, 2, 3, 6 by fifths).
+
+**Committed raw data: 17.7 MB total** — 1.7 MB standard, 16 MB for the 10x arm, three JSON
+files per seed with `.mp4`s excluded. 250 cycles is what makes each 10x `stats.json` ~1.6 MB.
 
 ![practice pools, standard arm](./2026-08-06-tossingroomsplit-practice-pools.png)
 
@@ -303,9 +306,53 @@ two-sided Fisher test against `11/57` cannot resolve the ~+70pp effect the 10x a
 let alone a small one — so "`IS/I` within ±0.10 of `p0`" is satisfied by *any* sampler that
 has not yet learned, including one that is about to.
 
-## 5. The 10x arm
+## 5. The 10x arm settles it: `ThrowRecycling` was starved, not unable
 
-TODO(10x) — filled in when the sweep lands.
+Same domain, same seeds, same instrument, ten times the budget (250 cycles x 100 steps =
+25,000 transitions per seed). All 10/10 runs succeeded. Every seed is a genuine full-length
+run — 251 evaluation checkpoints and `final_transitions = 25000`, checked per seed rather
+than assumed.
+
+| skill | succeeded | informed | epsilon-random | no sampler | uninformative |
+|---|---|---|---|---|---|
+| `MoveRoom` | 194308/194308 | 0/0 | 0/0 | **194308/194308** | 0/0 |
+| `PickupRecycling` | 1953/1953 | 0/0 | 0/0 | **1953/1953** | 0/0 |
+| `PickupTrash` | 2498/2498 | 0/0 | 0/0 | **2498/2498** | 0/0 |
+| `PressRecycling` | 43467/43467 | 0/0 | 0/0 | **43467/43467** | 0/0 |
+| `PressTrash` | 858/858 | 0/0 | 0/0 | **858/858** | 0/0 |
+| `ThrowRecycling` | 1115/1952 | 901/982 | 203/922 | 0/0 | 11/48 |
+| `ThrowTrash` | 1324/2464 | 1049/1153 | 251/1195 | 0/0 | 24/116 |
+
+**The structural result is unchanged at 10x**, which is the point: the five `param_dim = 0`
+skills are still 100% `NO_SAMPLER` and still at `succeeded == attempts` exactly, across
+243,084 executions. Being clean is not an artifact of the short budget.
+
+| skill | informed | epsilon-random | delta | Fisher exact two-sided |
+|---|---|---|---|---|
+| `ThrowTrash` | 1049/1153 | 251/1195 | **+69.98pp** | **p < 0.0001** |
+| `ThrowRecycling` | 901/982 | 203/922 | **+69.73pp** | **p < 0.0001** |
+
+**`ThrowRecycling` goes from 11/56 (p = 1.0000, indistinguishable from a coin flip) at 2,500
+transitions to 901/982 (+69.73pp, p < 0.0001) at 25,000 — on the same seeds, the same code
+and the same sampler architecture.** A classifier that *cannot* learn does not do that. The
+standard arm's null result was a statement about the budget, not about the sampler, and the
+`inability` verdict the #127 rule returns there is refuted by this arm directly.
+
+These counts also **reproduce the published 10x numbers exactly** (`2026-08-06-tossingroomsplit-10x-budget.md`:
+recycling `901/982` against `203/922`, trash `1049/1153` against `251/1195`), which is a
+second independent instrument agreeing with that page as well as with #90's.
+
+The trajectory shows why, summed over seeds, in fifths:
+
+| `ThrowRecycling`, by fifth | 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| informed attempts | 170 | 202 | 213 | 198 | 199 |
+| informed successes | 99 | 197 | 211 | 196 | 198 |
+| uninformative attempts | 48 | 0 | 0 | 0 | 0 |
+
+The `UNINFORMATIVE` pool is **48/1952 and then zero for the rest of the run** — the warm-up
+transient of result 2, seen through to its end. Informed successes converge to essentially
+every draw landing. The standard arm stopped inside that first bucket.
 
 ## What this experiment does not establish
 
@@ -368,6 +415,21 @@ single seed is visible as such.
 
 - Standard arm: `2026-08-06-tossingroomsplit-practice-pools.png`
 - 10x arm: `2026-08-06-tossingroomsplit-practice-pools-10x.png`
+
+### Compute, read from `timing.json` rather than re-measured
+
+| arm | wall clock | per-run mean |
+|---|---|---|
+| standard | 208.7 s | 203.7 s |
+| 10x | 2631.4 s (43 min 51 s) | 2595.1 s |
+
+The 10x arm ran **2.25x faster than the published 10x sweep's 5932.7 s**, which is worth
+stating because a large unexplained timing gap is usually a sign the run was not the same
+run. It was: 251 checkpoints and `final_transitions = 25000` per seed, verified. The
+published page explains its own figure — its hand-rolled trace collector ran without
+`OMP_NUM_THREADS=1`, took ~4 cores per process and starved the concurrent sweep to 0.32 of
+a core. This experiment ran the sweep alone, with no trace collector, so it did not pay
+that. Wall clock is not an input to any result here.
 
 In the five `param_dim = 0` panels the attempts, successes and *never consultable* lines
 coincide exactly — that coincidence **is** the clean result, and is why the panels look like
