@@ -5,15 +5,22 @@ import numpy as np
 import pytest
 from pydantic import ConfigDict, Field
 
-from hitl_pmp.core.method.method import InteractionComplete, Method
+from hitl_pmp.core.method.method import HumanHelpRequested, InteractionComplete, Method
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy, Rollout, SetupCommand
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
+from hitl_pmp.core.problem.human.human import HumanOracle
+from hitl_pmp.core.problem.human.types import (
+    CommandGoalDescription,
+    CommandStartStateDescription,
+    Cost,
+)
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
+from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 
@@ -1134,6 +1141,10 @@ class _SpyRecorder(LoopRecorder):
         del state, transitions
         self.calls.append(f"interval_reset:{step_index}")
 
+    def record_human_reset(self, *, state: State, step_index: int, transitions: int) -> None:
+        del state, transitions
+        self.calls.append(f"human_reset:{step_index}")
+
     def record_interaction_complete(
         self, *, state: State, step_index: int, transitions: int
     ) -> None:
@@ -1536,3 +1547,402 @@ def test_practice_reset_policy_never_refuses_a_domain_whose_in_place_sampling_st
             num_test_tasks=1,
             practice_reset_policy=PracticeResetPolicy.NEVER,
         )
+
+
+class _StuckEnv(_FakeEnv):
+    """An environment that never reaches anywhere new: every action leaves x alone.
+
+    The absorbing region a human rescue exists to break, reduced to its essentials --
+    _FakeEnv increments x on every step, so with it every state is novel forever and a
+    novelty-based help-seeking Method would never fire."""
+
+    def take_action(self, *, action: Action) -> State:
+        del action
+        current = self.get_current_state()
+        self.pre_action_xs.append(float(current[_OBJ][0]))
+        return current
+
+
+class _RecordingHuman(HumanOracle):
+    """Costs 2.0 per rescue and writes the commanded target state.
+
+    A distinct, non-1.0 cost so a test can tell a recorded cost apart from a recorded
+    count; the real v0 oracle's flat 1.0 would make the two indistinguishable."""
+
+    commands: list[CommandGoalDescription] = []
+
+    @staticmethod
+    def calculate_cost_for_human_command(
+        *,
+        command_start_state_description: CommandStartStateDescription,
+        command_goal_description: CommandGoalDescription,
+    ) -> Cost:
+        del command_start_state_description, command_goal_description
+        return 2.0
+
+    @staticmethod
+    def execute_human_command(
+        *,
+        command_start_state_description: CommandStartStateDescription,
+        command_goal_description: CommandGoalDescription,
+        env: Environment,
+    ) -> None:
+        del command_start_state_description
+        _RecordingHuman.commands.append(command_goal_description)
+        target = command_goal_description.target_state
+        assert target is not None
+        env.set_state(state=target.model_copy(deep=True))
+
+
+class _AskingMethod(_FakeMethod):
+    """A Method that owns the decision to ask, which is the whole point of the split:
+    the harness learns of it only by catching the exception this raises.
+
+    Asks once `steps_before_asking` calls have gone by, and stops asking the moment it
+    is told help was granted -- a minimal stand-in for what HelpSeekingPolicy does with
+    a StuckDetector, without importing it. Deliberately not imported: practice_loop.py
+    sits *below* methods/ in the layering, so testing it through a real Method would
+    test the pair rather than the mechanism."""
+
+    steps_before_asking: int = 2
+    steps_taken: int = 0
+    may_ask: bool = True
+    # x observed at each observe_help_granted call, in call order.
+    help_granted_xs: list[float] = Field(default_factory=list)
+
+    def may_request_human_help(self) -> bool:
+        return self.may_ask
+
+    def observe_help_granted(self, *, state: State) -> None:
+        self.help_granted_xs.append(float(state[_OBJ][0]))
+        self.event_log.record(event="observe_help_granted")
+        self.steps_taken = 0
+
+    def get_practice_policy(self, *, task: Task) -> Policy:
+        del task
+        self.practice_policy_calls += 1
+        return lambda state: self._asking_action(state=state)
+
+    def _asking_action(self, *, state: State) -> LabeledAction:
+        del state
+        if self.steps_taken >= self.steps_before_asking:
+            raise HumanHelpRequested
+        self.steps_taken += 1
+        return LabeledAction(action=np.array([0.0]), label="asking")
+
+
+def _build_asking(*, steps_before_asking: int = 2):
+    """A practice/evaluation split whose Method asks for help, with a human wired in."""
+    _RecordingHuman.commands = []
+    practice_env = _FakeEnv()
+    evaluation_env = _FakeEnv()
+    event_log = _EventLog()
+    practice = _FakeProblem(
+        env=practice_env,
+        tasks=_FakeTasks(env=practice_env),
+        event_log=event_log,
+        human=_RecordingHuman,
+    )
+    evaluation = _FakeProblem(env=evaluation_env, tasks=_FakeTasks(env=evaluation_env))
+    method = _AskingMethod(
+        env=practice_env, event_log=event_log, steps_before_asking=steps_before_asking
+    )
+    return practice, evaluation, method, Metrics()
+
+
+def test_a_method_that_never_asks_is_never_rescued() -> None:
+    """The incumbent path is untouched: a plain Method on a maximally absorbing
+    environment behaves exactly as it did before any of this existed. The harness has
+    no way to notice on its own, which is the design."""
+    _RecordingHuman.commands = []
+    practice_env = _StuckEnv()
+    practice = _FakeProblem(
+        env=practice_env, tasks=_FakeTasks(env=practice_env), human=_RecordingHuman
+    )
+    evaluation_env = _FakeEnv()
+    evaluation = _FakeProblem(env=evaluation_env, tasks=_FakeTasks(env=evaluation_env))
+    metrics = Metrics()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=_FakeMethod(env=practice_env),
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=10,
+        num_test_tasks=1,
+    )
+    assert _RecordingHuman.commands == []
+    assert metrics.num_human_interventions() == (0.0, 0)
+
+
+def test_a_method_that_asks_is_rescued_and_its_cost_recorded() -> None:
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+    )
+    summed_cost, count = metrics.num_human_interventions()
+    assert count == len(_RecordingHuman.commands)
+    assert count > 0
+    # The recording human charges 2.0, so the cost recorded is the one it quoted rather
+    # than an assumed unit.
+    assert summed_cost == 2.0 * count
+
+
+def test_the_period_continues_after_a_rescue_rather_than_ending() -> None:
+    """The difference from InteractionComplete, measured rather than asserted in prose:
+    a period whose Method asks after 2 steps keeps going and is rescued repeatedly,
+    where one that raised InteractionComplete would have stopped at 2.
+
+    Each rescue costs the loop iteration it was raised on, so the period spends 3
+    iterations per "act, act, ask" cycle: 9 steps is exactly 3 of them."""
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+    )
+    assert metrics.num_human_interventions()[1] == 3
+    assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 6]
+
+
+def test_a_rescue_consumes_its_loop_iteration_so_an_always_asking_method_cannot_spin() -> None:
+    """Bounded by the step budget like everything else. A Method that asks on its very
+    first call gets exactly max_steps_per_interaction rescues and no more."""
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=0)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=7,
+        num_test_tasks=1,
+    )
+    assert metrics.num_human_interventions()[1] == 7
+    assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 0]
+
+
+def test_the_method_is_told_which_state_the_human_left_behind() -> None:
+    """observe_help_granted is what lets a Method restart its detector. It gets the
+    state *read back* from the environment, not the one that was commanded -- a v1+
+    human that only partially succeeds would leave it somewhere else."""
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+    )
+    # _FakeTasks' train task starts at x=100.0 and TASK_INITIAL is the default target.
+    assert method.help_granted_xs == [100.0, 100.0, 100.0]
+
+
+def test_both_method_hooks_fire_on_a_rescue_in_order() -> None:
+    """observe_environment_reset against the state about to be lost, then
+    observe_help_granted against the state that replaced it. The first is the same
+    contract a mid-period interval reset has; the second is new and answers a different
+    question."""
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=3,
+        num_test_tasks=1,
+    )
+    assert [event for event in method.event_log.events if "observe" in event] == [
+        "observe_environment_reset",
+        "observe_help_granted",
+    ]
+    # Two actions were taken from x=100, so the state about to be lost is 102.
+    assert method.reset_observation_xs == [102.0]
+
+
+def test_a_rescue_is_not_counted_as_a_free_practice_reset() -> None:
+    """num_practice_resets certifies the reset-free manipulation, so a charged human
+    rescue must not land in it -- otherwise a `never` arm that asks would look like an
+    arm that was quietly reset for free."""
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.NEVER,
+    )
+    assert metrics.num_practice_resets == 0
+    assert metrics.num_human_interventions()[1] > 0
+
+
+def test_a_rescue_does_not_end_the_cycle_or_retrain() -> None:
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+    )
+    assert metrics.num_human_interventions()[1] > 2
+    assert method.end_cycle_calls == 2
+
+
+def test_the_task_initial_target_asks_for_this_periods_own_task() -> None:
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+        human_reset_target=HumanResetTarget.TASK_INITIAL,
+    )
+    # One train task drawn for the period and none for any rescue.
+    assert practice.tasks.train_task_count == 1
+    assert all(
+        float(command.target_state[_OBJ][0]) == 100.0 for command in _RecordingHuman.commands
+    )
+
+
+def test_the_random_target_draws_a_fresh_train_task_per_rescue() -> None:
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+        human_reset_target=HumanResetTarget.RANDOM,
+    )
+    rescues = len(_RecordingHuman.commands)
+    assert rescues > 0
+    # One for the period itself, plus one per rescue.
+    assert practice.tasks.train_task_count == 1 + rescues
+
+
+def test_no_evaluation_episode_is_ever_rescued() -> None:
+    """Measurement runs on the evaluation Problem, which is never handed a practice
+    policy -- so a rescued arm's score is still the robot's own. Pinned by giving the
+    evaluation Problem no human at all: if the loop ever tried, it would raise."""
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=0)
+    assert evaluation.human is None
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=4,
+        num_test_tasks=3,
+    )
+    assert metrics.num_human_interventions()[1] == 8
+
+
+def test_a_method_that_may_ask_requires_a_human_on_the_problem() -> None:
+    """Up front, before hard_reset, rather than at the first rescue: a run that would
+    crash three cycles in should not first spend three cycles. Read from the Method
+    exactly once -- the loop never polls it per step."""
+    practice_env = _FakeEnv()
+    practice = _FakeProblem(env=practice_env, tasks=_FakeTasks(env=practice_env))
+    evaluation_env = _FakeEnv()
+    evaluation = _FakeProblem(env=evaluation_env, tasks=_FakeTasks(env=evaluation_env))
+    with pytest.raises(ValueError, match="HumanOracle"):
+        PracticeLoop.run(
+            problem=practice,
+            evaluation_problem=evaluation,
+            method=_AskingMethod(env=practice_env),
+            metrics=Metrics(),
+            num_cycles=1,
+            max_steps_per_interaction=10,
+            num_test_tasks=1,
+        )
+    assert practice.env.hard_reset_count == 0
+
+
+def test_a_method_that_cannot_ask_needs_no_human_at_all() -> None:
+    """The converse: the validation keys off the Method's own declaration, not off the
+    environment or any flag, so a run whose Method never asks needs nothing wired."""
+    practice_env = _StuckEnv()
+    practice = _FakeProblem(env=practice_env, tasks=_FakeTasks(env=practice_env))
+    evaluation_env = _FakeEnv()
+    evaluation = _FakeProblem(env=evaluation_env, tasks=_FakeTasks(env=evaluation_env))
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=_AskingMethod(env=practice_env, may_ask=False),
+        metrics=Metrics(),
+        num_cycles=0,
+        max_steps_per_interaction=10,
+        num_test_tasks=1,
+    )
+    assert practice.env.hard_reset_count == 1
+
+
+def test_interaction_complete_still_ends_the_period_for_a_method_with_a_human() -> None:
+    """The two signals stay distinct at the harness too: a Method that raises
+    InteractionComplete ends its period exactly as it always did, and is not rescued --
+    there is no longer any path from that exception to the human."""
+    _RecordingHuman.commands = []
+    practice_env = _FakeEnv()
+    practice = _FakeProblem(
+        env=practice_env, tasks=_FakeTasks(env=practice_env), human=_RecordingHuman
+    )
+    evaluation_env = _FakeEnv()
+    evaluation = _FakeProblem(env=evaluation_env, tasks=_FakeTasks(env=evaluation_env))
+    metrics = Metrics()
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=_EarlyStoppingMethod(env=practice_env, steps_before_stopping=2),
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=10,
+        num_test_tasks=1,
+    )
+    assert metrics.num_human_interventions() == (0.0, 0)
+    assert _RecordingHuman.commands == []
+    assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 2]
+
+
+def test_a_rescue_is_handed_to_the_recorder_as_its_own_reset_kind() -> None:
+    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    recorder = _spy_recorder(problem=practice, num_cycles=1, max_steps=9)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=9,
+        num_test_tasks=1,
+        recorder=recorder,
+    )
+    assert [call for call in recorder.calls if call.startswith("human_reset")] == [
+        "human_reset:2",
+        "human_reset:5",
+        "human_reset:8",
+    ]

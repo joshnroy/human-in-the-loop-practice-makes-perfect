@@ -6,12 +6,14 @@ from typing import Protocol
 
 import numpy as np
 
-from hitl_pmp.core.method.method import InteractionComplete, Method
+from hitl_pmp.core.method.method import HumanHelpRequested, InteractionComplete, Method
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import TaskOutcome
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
+from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 
 
@@ -288,6 +290,7 @@ class PracticeLoop:
         evaluation_problem: Problem | None = None,
         practice_reset_policy: PracticeResetPolicy = PracticeResetPolicy.SCHEDULED,
         practice_reset_interval: int | None = None,
+        human_reset_target: HumanResetTarget = HumanResetTarget.TASK_INITIAL,
         on_cycle_end: Callable[[], None] | None = None,
         # Fired after every evaluation sweep, including the one before any practice --
         # so a caller sees num_cycles + 1 calls. Distinct from on_cycle_end, which
@@ -339,6 +342,21 @@ class PracticeLoop:
                 f"practice_reset_interval ({practice_reset_interval}): the interval "
                 "resets the environment within a period, so the arm would not be "
                 "reset-free. Drop one of the two."
+            )
+        if method.may_request_human_help() and problem.human is None:
+            # Up front, before hard_reset(), for the same reason as the sink check: a
+            # run that would fail at its first rescue three cycles in should not first
+            # spend three cycles. The evaluation Problem deliberately needs no human --
+            # nobody is rescued during measurement.
+            #
+            # This is the ONLY place the loop asks the Method whether it can ask. It is
+            # never polled per step: whether a rescue happens on a given step is the
+            # Method's own business, and it says so by raising HumanHelpRequested.
+            raise ValueError(
+                "this Method may request human help (Method.may_request_human_help is "
+                "True) but the practice Problem has no HumanOracle: Problem.human is "
+                "None, so there is nobody to ask. Wire one in the domain's composition "
+                "root (e.g. humans/oracle.py's UnconditionalHumanOracle)."
             )
         rendered_sweeps = PracticeLoop.render_sweep_indices(
             num_cycles=num_cycles, num_render_checkpoints=num_render_checkpoints
@@ -431,6 +449,37 @@ class PracticeLoop:
             for step in range(max_steps_per_interaction):
                 try:
                     labeled_action = policy(state)
+                except HumanHelpRequested:
+                    # The robot asked, so a human answers and the period CONTINUES --
+                    # the difference from InteractionComplete below, which ends it. The
+                    # harness's whole role here is mechanism: it does not decide that a
+                    # rescue is warranted, it only performs one that was requested.
+                    #
+                    # `continue` consumes this loop iteration, and that is deliberate
+                    # rather than incidental: it is what guarantees a Method that asks
+                    # on every call cannot spin, since it gets at most one rescue per
+                    # remaining step. The cost is that an asking arm takes about one
+                    # fewer online transition per rescue than the old harness-triggered
+                    # arm did -- roughly 36 out of ~15000 per seed, since the rescue is
+                    # charged a step the old design took for free.
+                    state = PracticeLoop._grant_human_help(
+                        problem=problem,
+                        method=method,
+                        metrics=metrics,
+                        task=task,
+                        human_reset_target=human_reset_target,
+                        state=state,
+                    )
+                    # After the write, with the state the human actually left behind, so
+                    # the Method can restart whatever made it ask. Without this a
+                    # rescued robot is re-rescued forever -- see
+                    # Method.observe_help_granted.
+                    method.observe_help_granted(state=state)
+                    if recorder is not None:
+                        recorder.record_human_reset(
+                            state=state, step_index=step, transitions=num_online_transitions
+                        )
+                    continue
                 except InteractionComplete:
                     # The Method has nothing further worth practicing. Ending
                     # early is normal, and the steps not taken are not charged --
@@ -487,6 +536,70 @@ class PracticeLoop:
             hand_over(transitions=num_online_transitions, sweep_frames=frames)
             if on_sweep_end is not None:
                 on_sweep_end()
+
+    @staticmethod
+    def _grant_human_help(
+        *,
+        problem: Problem,
+        method: Method,
+        metrics: Metrics,
+        task: Task,
+        human_reset_target: HumanResetTarget,
+        state: State,
+    ) -> State:
+        """Perform the rescue a `Method` asked for, charge it, and return the state that
+        results.
+
+        **Mechanism, not policy.** Nothing here decides that a rescue is warranted --
+        that decision was the Method's, and it arrived as a `HumanHelpRequested`. This
+        function only carries it out. What the human *does* is this function's business,
+        because it is a property of the human rather than of the Method: see
+        `HumanResetTarget`.
+
+        **Practice only.** No evaluation episode is ever rescued: measurement runs on
+        `evaluation_problem`, which is never handed a practice policy, so a rescued
+        arm's score is still the robot's own. A human who could be called during a sweep
+        would be measuring the human.
+
+        **Three things a rescue is deliberately not.** It is not a
+        `record_practice_reset` -- that counter certifies the reset-free manipulation,
+        and a charged rescue landing in it would make a `never` arm look like one that
+        was quietly reset for free. It is not charged as an online transition, matching
+        every other reset here, or an arm rescued more often would advance along every
+        learning curve's x-axis for free. And it does not end the period or fire
+        `end_cycle`, exactly like a `practice_reset_interval` reset.
+
+        **Order matters in two places.** The `Method` is told
+        (`observe_environment_reset`) *before* the environment is written, so a Method
+        scoring an in-flight skill scores it against what really happened rather than
+        against the state it is about to be teleported to -- the identical contract a
+        mid-period interval reset has. And the cost is *queried before* the command is
+        executed, so what is banked is the price the oracle actually quoted for the
+        command that then ran, not a recomputed one."""
+        target_task = (
+            task
+            if human_reset_target is HumanResetTarget.TASK_INITIAL
+            # A fresh draw from the train distribution, which is the only
+            # domain-agnostic notion of "somewhere else" available -- see
+            # HumanResetTarget.RANDOM. It advances the train-task stream, which is a
+            # real and intended difference between the two targets, not a leak: this arm
+            # genuinely sees more of the task distribution.
+            else problem.sample_train_task()
+        )
+        # The goal handed over is the one the robot was *pursuing*, not the target
+        # task's: a rescue is a request to be repositioned, and what the robot is trying
+        # to achieve has not changed. A capability-aware human (v1+) prices exactly that
+        # pairing -- "put it somewhere it can still finish this".
+        cost = problem.calculate_cost_for_human_command(
+            goal=task.goal, target_state=target_task.initial_state
+        )
+        method.observe_environment_reset(state=state)
+        problem.execute_human_command(goal=task.goal, target_state=target_task.initial_state)
+        metrics.record_human_intervention(cost=cost)
+        # Read back rather than assumed: the HumanOracle owns what actually happened to
+        # the environment, and a v1+ human that only partially succeeds would leave it
+        # somewhere other than the state that was asked for.
+        return problem.get_current_state()
 
     @staticmethod
     def render_sweep_indices(*, num_cycles: int, num_render_checkpoints: int) -> frozenset[int]:

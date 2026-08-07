@@ -28,6 +28,7 @@ from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossingroom.cli import (
     TossingRoomCli,
 )
+from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
@@ -141,6 +142,22 @@ class Cli:
             "one at the top of each cycle, so reset frequency is whatever "
             "--max-steps-per-interaction happens to be. Set it to decouple how often "
             "the robot is rescued from how often the method refits.",
+        )
+        parser.add_argument(
+            "--human-reset-target",
+            type=HumanResetTarget,
+            choices=list(HumanResetTarget),
+            default=HumanResetTarget.TASK_INITIAL,
+            help="What configuration a human is asked to restore when the method asks "
+            "for help. 'task-initial' (the default) is this period's own train task's "
+            "initial state -- back where the period started. 'random' is the initial "
+            "state of a freshly sampled train task, so the robot is put somewhere else "
+            "in the task distribution (which does advance the train-task stream, "
+            "deliberately). This is the HUMAN's behaviour and so lives here; WHEN help "
+            "is asked for is the method's own --ask-for-help. Ignored entirely by a "
+            "method that never asks. Every rescue costs what the domain's HumanOracle "
+            "charges and is counted in stats.json; it is never charged as an online "
+            "transition and never counts as a free practice reset.",
         )
         parser.add_argument(
             "--record-full-loop",

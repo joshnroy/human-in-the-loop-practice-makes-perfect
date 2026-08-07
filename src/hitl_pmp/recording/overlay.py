@@ -58,17 +58,21 @@ class StatusBarOverlay:
     }
 
     # Deliberately far apart from each other *and* from the phase colours: telling
-    # the four resets apart is the reason this recording exists.
+    # the five resets apart is the reason this recording exists.
     reset_colors: ClassVar[dict[ResetKind, tuple[int, int, int]]] = {
         ResetKind.HARD: (206, 40, 56),
         ResetKind.PERIOD: (206, 52, 176),
         ResetKind.INTERVAL: (16, 168, 208),
+        # Green, the one hue no other kind or phase uses -- the charged reset should be
+        # the one a viewer can pick out while scrubbing.
+        ResetKind.HUMAN: (40, 190, 110),
         ResetKind.EVALUATION_TASK: (226, 200, 40),
     }
     reset_labels: ClassVar[dict[ResetKind, str]] = {
         ResetKind.HARD: "HARD RESET (harness, once per run)",
         ResetKind.PERIOD: "PERIOD RESET (top of practice cycle)",
         ResetKind.INTERVAL: "INTERVAL RESET (mid-period)",
+        ResetKind.HUMAN: "HUMAN RESET (mid-period, charged)",
         ResetKind.EVALUATION_TASK: "EVAL-TASK RESET (per test task)",
     }
     event_color: ClassVar[tuple[int, int, int]] = (240, 244, 248)
