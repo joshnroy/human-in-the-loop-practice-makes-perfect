@@ -167,8 +167,19 @@ predicate definitions play in `predicators/envs/`.
   that the layout buys roughly a dozen trash attempts per practice period and at most
   one recycling attempt (the ledge closes behind the robot, and a missed throw spends
   the item). Runnable as `python -m hitl_pmp.cli --env tossingroomsplit --method ees`,
-  on the identical flag set as `--env tossingroom`. See its `skills.py` docstring for
-  the full rationale.
+  on the identical flag set as `--env tossingroom` **plus one**: `--two-way-ledge`,
+  which makes the ledge traversable rightward as well and so leaves the domain with no
+  irreversible action at all. It is off by default, and a default run is byte-identical
+  to one from before the flag existed. It is the positive control for the reset-free
+  experiment: reset-free practice is worse than scheduled-reset practice here, and the
+  attributed mechanism is that rooms 0–2 are absorbing while the pile — the only item
+  source — sits in room 3, so a robot that walks left once can never practice again.
+  Turning it on removes exactly that. **It also makes the domain easier**, in three ways
+  that are not method effects: EMPTY stops being an ordering task and its shortest solve
+  drops 10 → 9 (so the evaluation horizon drops 12 → 11), RECYCLING stops being
+  one-attempt-per-period, and rooms 0–2 stop being absorbing. Never put a two-way number
+  beside a one-way one without saying so. See its `skills.py` docstring for the full
+  rationale and `environment.py`'s `two_way_ledge` field for this flag's.
 - `tossingroomsplitidentity/` — **the same domain again under the degenerate identity
   throw representation**, and the counterpart arm to `tossingroomsplit/` above rather
   than a replacement for it. There, the required force is an unobserved affine function

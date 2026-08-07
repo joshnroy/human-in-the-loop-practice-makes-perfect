@@ -11,6 +11,7 @@ import pytest
 from hitl_pmp.environments.tossingroomsplit.environment import TossingRoomSplitEnvironment
 from hitl_pmp.environments.tossingroomsplit.predicates import (
     ADJACENT,
+    CAN_MOVE_ROOM,
     HAND_EMPTY,
     HOLDING_RECYCLING,
     HOLDING_TRASH,
@@ -220,3 +221,48 @@ class TestTheSplitPredicatesCannotBeAppliedAcrossKinds:
             if atom.predicate in (HOLDING_TRASH, HOLDING_RECYCLING)
         }
         assert holding == {("HoldingTrash", ("robot", "trash"))}
+
+
+class TestCanMoveRoomAndTheLedge:
+    """`CanMoveRoom` is the model of `_apply_move`'s guard, so it has to track
+    `--two-way-ledge` exactly. It reads `blocks_right` off the State rather than the
+    environment's config, which is what lets one flag move both halves at once."""
+
+    @staticmethod
+    def _state(*, env: TossingRoomSplitEnvironment):
+        return env.build_initial_state(
+            trash_weight=1.0,
+            recycling_weight=1.0,
+            trash_bin_distance=2.0,
+            recycling_bin_distance=2.0,
+        )
+
+    def test_one_way_ledge_refuses_the_rightward_step(self) -> None:
+        env = TossingRoomSplitEnvironment()
+        rooms = env.get_rooms()
+        state = TestCanMoveRoomAndTheLedge._state(env=env)
+        assert not CAN_MOVE_ROOM.holds(
+            state, (rooms[env.blocked_right_from], rooms[env.blocked_right_from + 1])
+        )
+
+    def test_two_way_ledge_permits_the_rightward_step(self) -> None:
+        env = TossingRoomSplitEnvironment(two_way_ledge=True)
+        rooms = env.get_rooms()
+        state = TestCanMoveRoomAndTheLedge._state(env=env)
+        assert CAN_MOVE_ROOM.holds(
+            state, (rooms[env.blocked_right_from], rooms[env.blocked_right_from + 1])
+        )
+
+    def test_two_way_ledge_permits_the_leftward_step_too(self) -> None:
+        env = TossingRoomSplitEnvironment(two_way_ledge=True)
+        rooms = env.get_rooms()
+        state = TestCanMoveRoomAndTheLedge._state(env=env)
+        assert CAN_MOVE_ROOM.holds(
+            state, (rooms[env.blocked_right_from + 1], rooms[env.blocked_right_from])
+        )
+
+    def test_two_way_ledge_does_not_make_non_adjacent_rooms_connected(self) -> None:
+        env = TossingRoomSplitEnvironment(two_way_ledge=True)
+        rooms = env.get_rooms()
+        state = TestCanMoveRoomAndTheLedge._state(env=env)
+        assert not CAN_MOVE_ROOM.holds(state, (rooms[0], rooms[2]))

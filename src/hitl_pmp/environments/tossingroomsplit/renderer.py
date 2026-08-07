@@ -234,10 +234,16 @@ class TossingRoomSplitRenderer(Renderer):
                     zorder=4,
                 )
             )
+            # Under --two-way-ledge the barrier is still THERE (same room boundary, so
+            # the layout reads the same) but it is passable both ways, so the caption,
+            # the arrow and the X all have to change. A renderer that kept saying
+            # "One-way" would put a false claim into every demo video and every
+            # --record-full-loop recording of the positive-control arm.
+            two_way = env.two_way_ledge
             ax.text(
                 lx,
                 1.12,
-                "One-way\nLedge/Barrier",
+                "Two-way\nLedge/Barrier" if two_way else "One-way\nLedge/Barrier",
                 ha="center",
                 va="bottom",
                 fontsize=8,
@@ -251,10 +257,20 @@ class TossingRoomSplitRenderer(Renderer):
                 arrowprops={"arrowstyle": "-|>", "color": r.ledge_color, "linewidth": 3},
                 zorder=6,
             )
-            # blocked return (rightward): a red X on the right side of the ledge.
-            xx = lx + 0.22
-            ax.plot([xx - 0.06, xx + 0.06], [0.24, 0.36], color=r.ledge_color, lw=3, zorder=6)
-            ax.plot([xx - 0.06, xx + 0.06], [0.36, 0.24], color=r.ledge_color, lw=3, zorder=6)
+            if two_way:
+                # the rightward crossing, now passable: the mirror arrow in place of the X.
+                ax.annotate(
+                    "",
+                    xy=(lx + 0.42, 0.30),
+                    xytext=(lx - 0.02, 0.30),
+                    arrowprops={"arrowstyle": "-|>", "color": r.ledge_color, "linewidth": 3},
+                    zorder=6,
+                )
+            else:
+                # blocked return (rightward): a red X on the right side of the ledge.
+                xx = lx + 0.22
+                ax.plot([xx - 0.06, xx + 0.06], [0.24, 0.36], color=r.ledge_color, lw=3, zorder=6)
+                ax.plot([xx - 0.06, xx + 0.06], [0.36, 0.24], color=r.ledge_color, lw=3, zorder=6)
 
             r._draw_robot(ax=ax, x=robot_room + 0.5, y=0.55, holding=holding)
 
