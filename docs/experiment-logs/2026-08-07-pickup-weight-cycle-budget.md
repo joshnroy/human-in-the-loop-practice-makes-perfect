@@ -191,14 +191,14 @@ denominator supports almost no inference; it is reported for completeness, not a
 
 ### Figures
 
-![Does ten times the budget close the reset-free gap?](FIGURE_GAP)
+![Does ten times the budget close the reset-free gap?](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/c76c1b16d84cccf8c990c86ca381d5fbe88f7b50/docs/experiment-logs/2026-08-07-pickup-weight-cycle-budget-gap.png)
 
 Per seed, the `scheduled - never` gap at 1x joined to the same seed's gap at 10x — one line
 per seed, so a closing gap would be ten lines sloping toward zero. The one-way panels slope
 the wrong way on 10/10 seeds. The two-way bottom row shows why per-seed plotting matters:
 its entire mean movement is one seed going 13 -> 0 with nine tied at zero.
 
-![1x against 10x learning curves](FIGURE_CURVES)
+![1x against 10x learning curves](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/c76c1b16d84cccf8c990c86ca381d5fbe88f7b50/docs/experiment-logs/2026-08-07-pickup-weight-cycle-budget-curves.png)
 
 All four (budget x policy) curves per panel on a shared online-transitions axis, bold
 pooled mean over faint per-seed lines. **The 1x curves lie exactly underneath the 10x ones
