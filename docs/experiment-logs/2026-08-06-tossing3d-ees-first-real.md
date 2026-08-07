@@ -341,18 +341,18 @@ both halves: the sampler can now learn, and EES now chooses to teach it.
 **Learning curves against practice cycles** — the controlled variable, so the arms align and
 are compared like with like:
 
-![Tossing3D learning curves against practice cycles, per seed, with the skill-oracle ceiling](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PIN_FIGURES/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
+![Tossing3D learning curves against practice cycles, per seed, with the skill-oracle ceiling](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/494b71103f93de50c194f36f1303fa6bb4e57d5b/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
 
 **Learning curves against online transitions** — an outcome, so the EES line ends earlier,
 having reached the same `21/21` checkpoints for fewer steps:
 
-![Tossing3D learning curves against online transitions, per seed, with the skill-oracle ceiling](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PIN_FIGURES/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real-transitions.png)
+![Tossing3D learning curves against online transitions, per seed, with the skill-oracle ceiling](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/494b71103f93de50c194f36f1303fa6bb4e57d5b/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real-transitions.png)
 
 **End-of-training task success** — context only, never an input to the verdict:
 
-![Tossing3D end-of-training task success by arm, with every seed drawn over the pooled bars](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PIN_FIGURES/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real-task-success.png)
+![Tossing3D end-of-training task success by arm, with every seed drawn over the pooled bars](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/494b71103f93de50c194f36f1303fa6bb4e57d5b/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real-task-success.png)
 
-> **The three pins above are to `PIN_FIGURES_SHORT`, an unmerged commit on this branch.** It is
+> **The three pins above are to `494b711`, an unmerged commit on this branch.** It is
 > the commit that carries the figures, taken from `git rev-parse` rather than hand-expanded.
 > They must be **re-pinned after merge**, since a squash-merge mints a new SHA and the branch
 > commit stops being reachable once the branch is deleted.
@@ -556,11 +556,11 @@ rendered sweep is the one the renderer records — again a rule, not a selection
 
 Before any practice:
 
-![Tossing3D seed 0, pre-practice: the robot repeatedly attempts Pick, never lifts the cube, and the episode ends on a no-op](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/06584bae93779c6c674c471374f6cfb941963f4e/docs/experiment-logs/2026-08-06-tossing3d-ees-pre-practice-episode.gif)
+![Tossing3D seed 0, pre-practice: the robot repeatedly attempts Pick, never lifts the cube, and the episode ends on a no-op](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/494b71103f93de50c194f36f1303fa6bb4e57d5b/docs/experiment-logs/2026-08-06-tossing3d-ees-pre-practice-episode.gif)
 
 After 20 practice cycles:
 
-![Tossing3D seed 0, end-trained: the robot picks the cube, drives to the learned throw standoff, tosses, and the cube lands in the bin](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/06584bae93779c6c674c471374f6cfb941963f4e/docs/experiment-logs/2026-08-06-tossing3d-ees-end-trained-episode.gif)
+![Tossing3D seed 0, end-trained: the robot picks the cube, drives to the learned throw standoff, tosses, and the cube lands in the bin](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/494b71103f93de50c194f36f1303fa6bb4e57d5b/docs/experiment-logs/2026-08-06-tossing3d-ees-end-trained-episode.gif)
 
 **The end-trained clip shows the learned quantity directly.** Its status bar steps through
 `Pick(...)`, then `MoveToThrowPose(robot, cube_0, bin_0, blocks_goal_region), params=[1.2]`
@@ -614,7 +614,7 @@ registered under "Noise floor" above** — it is one more observation on the rep
 against the earlier `3/10` vs `2/10` same-seed swing. It is recorded as such, not as a
 resolution.
 
-> **The two clip pins above are to `06584ba`, an unmerged commit on this branch** — the
+> **The two clip pins above are to `494b711`, an unmerged commit on this branch** — the
 > commit that carries the GIFs, taken from `git rev-parse`. Like the figure pin further up,
 > they must be **re-pinned after merge**: a squash-merge mints a new SHA and these commits
 > stop being reachable once the branch is deleted.
