@@ -40,6 +40,7 @@ matplotlib.use("Agg")  # headless rendering -- no GUI backend needed/available i
 import matplotlib.pyplot as plt  # noqa: E402
 
 from analysis.practice_makes_perfect.practice_diagnostics import PracticeDiagnostics  # noqa: E402
+from analysis.practice_makes_perfect.practice_verdict import PracticeVerdict  # noqa: E402
 from hitl_pmp.core.method.types import SkillPracticeTally  # noqa: E402
 from hitl_pmp.core.metrics.metrics import Metrics  # noqa: E402
 
@@ -64,7 +65,8 @@ UNIFORM_DRAW_TOTAL = 2700
 MOSTLY_POSITIVE_LABELS = 0.90
 NEVER_INFORMED = 0.05
 INFORMED_IN_QUANTITY = 0.30
-INABILITY_TOLERANCE = 0.10
+# The tolerance the `inability` cell asserts now lives on `PracticeVerdict`, where it also
+# sets the power threshold -- see `PracticeVerdict.has_power` for why those are one number.
 
 
 class Tossing3DPracticeDiagnosis:
@@ -99,9 +101,17 @@ class Tossing3DPracticeDiagnosis:
         return total
 
     @staticmethod
-    def informed_per_window(*, runs: Sequence[Metrics], skill_name: str) -> list[int]:
-        """Informed attempts per window, summed across seeds -- the series the rule's
-        "flat at zero to the final cycle" clause reads.
+    def informed_per_window(
+        *, runs: Sequence[Metrics], skill_name: str, field: str = "num_informed_attempts"
+    ) -> list[int]:
+        """One informed pool per window, summed across seeds -- the series the rule's
+        "flat at zero to the final cycle" clause reads attempts from, and the one its
+        plateau check reads successes from.
+
+        `field` defaults to attempts because that is what the starvation and H3 cells ask
+        about ("was the classifier ever consulted"); the `inability` cell asks the
+        different question of whether it was still *getting better*, which is a count of
+        successes.
 
         Summed rather than per-seed because the clause is about whether the classifier
         *ever* discriminated: one informed draw in one seed's last cycle would falsify
@@ -113,7 +123,7 @@ class Tossing3DPracticeDiagnosis:
         cycle against an empty one and never fire -- caught by
         `test_the_starvation_cell_fires_when_informed_draws_rise_as_labels_accumulate`."""
         series = PracticeDiagnostics.per_seed_series(
-            runs=runs, skill_name=skill_name, field="num_informed_attempts"
+            runs=runs, skill_name=skill_name, field=field
         )
         usable = [entry for entry in series if entry]
         if not usable:
@@ -187,16 +197,29 @@ class Tossing3DPracticeDiagnosis:
         ):
             return ("starvation", f"informed draws are rising as labels accumulate. {counts}")
         if informed_fraction >= INFORMED_IN_QUANTITY and target.num_informed_attempts:
-            informed_rate = target.num_informed_successes / target.num_informed_attempts
-            reference = UNIFORM_DRAW_SOLVED / UNIFORM_DRAW_TOTAL
-            if abs(informed_rate - reference) <= INABILITY_TOLERANCE:
-                return (
-                    "inability",
-                    f"the classifier is consulted in quantity and its informed draws "
-                    f"({target.num_informed_successes}/{target.num_informed_attempts}) land "
-                    f"at the uniform-draw rate ({UNIFORM_DRAW_SOLVED}/{UNIFORM_DRAW_TOTAL}). "
-                    f"{counts}",
-                )
+            # Delegated to `PracticeVerdict` rather than decided here, which is the #131
+            # amendment: this branch used to fire `inability` on the informed *share* plus
+            # a tolerance, with no power requirement and no plateau check, and that
+            # combination returns a verdict refuted by measurement on `tossingroomsplit`.
+            # See that module's docstring. The uniform-draw counts stay the reference for
+            # *this* domain -- Tossing3D's `MoveToThrowPose` has no epsilon-random control
+            # large enough to serve as one -- and the successes trajectory it plateau-tests
+            # is the same per-window series the starvation cell reads attempts from.
+            cell, reasoning = PracticeVerdict.classify(
+                informed_successes=target.num_informed_successes,
+                informed_attempts=target.num_informed_attempts,
+                control_successes=UNIFORM_DRAW_SOLVED,
+                control_attempts=UNIFORM_DRAW_TOTAL,
+                informed_success_trajectory=Tossing3DPracticeDiagnosis.informed_per_window(
+                    runs=runs, skill_name=THROW_POSE_SKILL, field="num_informed_successes"
+                ),
+            )
+            return (
+                cell,
+                f"{reasoning} The control is the uniform-draw rate over "
+                f"THROW_STANDOFF_BOUNDS, {UNIFORM_DRAW_SOLVED}/{UNIFORM_DRAW_TOTAL}. "
+                f"{counts}",
+            )
         return (
             "undecided",
             f"the counts fall between the pre-registered cells, so no conclusion is "
