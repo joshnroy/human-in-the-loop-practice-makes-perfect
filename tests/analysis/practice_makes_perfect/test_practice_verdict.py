@@ -36,7 +36,7 @@ _RECYCLING = "ThrowRecycling"
 _TRASH = "ThrowTrash"
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _runs(*, method_dir: str) -> tuple[Metrics, ...]:
     """Ten seeds of committed `stats.json`, loaded once for the whole module. Cached
     because every case below reads the same two sweeps and the 10x arm is ~590k lines."""
@@ -44,22 +44,16 @@ def _runs(*, method_dir: str) -> tuple[Metrics, ...]:
 
 
 def _committed_verdict(*, method_dir: Path, skill_name: str) -> tuple[str, str]:
-    """The amended rule applied to one committed sweep, with that skill's **own**
-    epsilon-random pool as the control.
+    """The amended rule applied to one committed sweep, **through the domain entrypoint**
+    rather than by calling `classify` with counts assembled here.
 
-    The control has to come from inside the same runs: it is the uniform-draw baseline
-    under the identical task distribution, which is what makes the comparison a statement
-    about the classifier rather than about how hard the tasks happened to be."""
-    runs = list(_runs(method_dir=str(method_dir)))
-    pooled = PracticeDiagnostics.totals(runs=runs)[skill_name]
-    return PracticeVerdict.classify(
-        informed_successes=pooled.num_informed_successes,
-        informed_attempts=pooled.num_informed_attempts,
-        control_successes=pooled.num_random_successes,
-        control_attempts=pooled.num_random_attempts,
-        informed_success_trajectory=TossingRoomSplitPracticePools.pool_trajectory(
-            runs=runs, skill_name=skill_name, field="num_informed_successes", num_buckets=5
-        ),
+    Going through `TossingRoomSplitPracticePools.verdict` is deliberate: it pins the
+    wiring as well as the rule, and the wiring is where the control gets chosen. That
+    module passes the skill's *own* epsilon-random pool, which is the uniform-draw
+    baseline under the identical task distribution -- a test that assembled the control
+    itself could pass while the shipped caller used a different one."""
+    return TossingRoomSplitPracticePools.verdict(
+        runs=list(_runs(method_dir=str(method_dir))), skill_name=skill_name, num_buckets=5
     )
 
 
@@ -93,16 +87,8 @@ def _fixture_verdict(*, windows: list[dict[str, SkillPracticeTally]]) -> tuple[s
             practice_outcomes_per_cycle=windows,
         )
     ]
-    pooled = PracticeDiagnostics.totals(runs=runs)[_RECYCLING]
-    trajectory = TossingRoomSplitPracticePools.pool_trajectory(
-        runs=runs, skill_name=_RECYCLING, field="num_informed_successes", num_buckets=len(windows)
-    )
-    return PracticeVerdict.classify(
-        informed_successes=pooled.num_informed_successes,
-        informed_attempts=pooled.num_informed_attempts,
-        control_successes=pooled.num_random_successes,
-        control_attempts=pooled.num_random_attempts,
-        informed_success_trajectory=trajectory,
+    return TossingRoomSplitPracticePools.verdict(
+        runs=runs, skill_name=_RECYCLING, num_buckets=len(windows)
     )
 
 

@@ -65,7 +65,9 @@ class PracticeVerdict:
     EQUIVALENCE_MARGIN = 0.10
 
     @staticmethod
-    def noise_floor(*, successes_a: int, attempts_a: int, successes_b: int, attempts_b: int) -> float:
+    def noise_floor(
+        *, successes_a: int, attempts_a: int, successes_b: int, attempts_b: int
+    ) -> float:
         """The two-proportion standard error under the pooled rate,
         `sqrt(p_bar (1 - p_bar) (1/n1 + 1/n2))`.
 
@@ -93,9 +95,7 @@ class PracticeVerdict:
         )
 
     @staticmethod
-    def has_power(
-        *, successes_a: int, attempts_a: int, successes_b: int, attempts_b: int
-    ) -> bool:
+    def has_power(*, successes_a: int, attempts_a: int, successes_b: int, attempts_b: int) -> bool:
         """Whether the design can support the equivalence claim the `inability` cell makes.
 
         **The threshold is the cell's own assertion, not a round number.** `inability` says

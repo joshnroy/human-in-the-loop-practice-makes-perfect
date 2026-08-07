@@ -122,9 +122,7 @@ class Tossing3DPracticeDiagnosis:
         than a measurement. Including it made the "rising" clause compare the last real
         cycle against an empty one and never fire -- caught by
         `test_the_starvation_cell_fires_when_informed_draws_rise_as_labels_accumulate`."""
-        series = PracticeDiagnostics.per_seed_series(
-            runs=runs, skill_name=skill_name, field=field
-        )
+        series = PracticeDiagnostics.per_seed_series(runs=runs, skill_name=skill_name, field=field)
         usable = [entry for entry in series if entry]
         if not usable:
             return []
