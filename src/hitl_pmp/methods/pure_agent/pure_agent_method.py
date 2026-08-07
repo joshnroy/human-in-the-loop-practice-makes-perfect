@@ -211,6 +211,9 @@ class PureAgentMethod(Method):
                 domain_description=self.domain_description,
             )
         return PromptBuilder.revision(
+            skill_provider=self.skill_provider,
+            arm=self.prompt_arm,
+            domain_description=self.domain_description,
             practice_outcomes=self.practice_outcomes(),
             num_practice_goals_reached=self._num_practice_goals_reached,
             num_practice_periods=self._num_practice_periods,

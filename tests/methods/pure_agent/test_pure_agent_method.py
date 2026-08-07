@@ -6,7 +6,7 @@ from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.pure_agent.agent_backend import ScriptedAgentBackend
-from hitl_pmp.methods.pure_agent.prompts import PromptArm
+from hitl_pmp.methods.pure_agent.prompts import PromptArm, PromptBuilder
 from hitl_pmp.methods.pure_agent.pure_agent_method import PureAgentMethod
 
 # A policy that always takes the first applicable ground skill, with zero parameters.
@@ -243,9 +243,55 @@ def test_the_round_after_a_failure_is_prompted_with_the_error() -> None:
 
     backend = method.backend
     assert isinstance(backend, ScriptedAgentBackend)
-    assert "could not be evaluated" in backend.prompts_seen()[1]
+    assert "did not produce a usable policy" in backend.prompts_seen()[1]
     label = method.get_task_policy(task=task)(env.get_current_state()).label
     assert "no-op" not in label
+
+
+def test_the_recovery_prompt_restates_the_whole_task() -> None:
+    """A round only reaches the error branch after the previous query failed, and the
+    commonest way it fails is being cut off mid-turn by its own budget cap -- after which
+    the CLI's `--continue` carries no usable memory of what was asked. Measured: on the
+    2026-08-07 Tossing Room pilot the described arm burned all three rounds and $1.9544
+    because the recovery prompt said only "Fix `policy.py`", and the agent had nothing to
+    go on. So the recovery prompt has to be self-contained."""
+    env = _env()
+    method = _method(env=env, sources=(DOES_NOT_IMPORT, FIRST_SKILL))
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    method.get_task_policy(task=task)(env.get_current_state())
+    method.end_cycle()
+
+    backend = method.backend
+    assert isinstance(backend, ScriptedAgentBackend)
+    initial, recovery = backend.prompts_seen()
+    # Everything the first prompt established -- the contract and the whole symbolic
+    # layer -- is present again, so the round can succeed with no conversation at all.
+    assert "def policy(observation)" in recovery
+    provider = LightSwitchSkillProvider(env=env)
+    for skill in provider.skills():
+        assert skill.name in recovery
+    assert PromptBuilder.symbolic_layer(skill_provider=provider) in recovery
+    assert PromptBuilder.symbolic_layer(skill_provider=provider) in initial
+
+
+def test_the_feedback_prompt_is_not_padded_with_the_whole_task() -> None:
+    """The other side of the rule above, and it is a rule rather than an oversight: the
+    feedback branch is only reached after a round that ran to completion and left a
+    loadable file, where `--continue` has been observed to work. Restating the domain
+    there would pay for it on every successful round for a case that cannot arise."""
+    env = _env()
+    method = _method(env=env, sources=(FIRST_SKILL, FIRST_SKILL))
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    method.get_task_policy(task=task)(env.get_current_state())
+    method.end_cycle()
+
+    backend = method.backend
+    assert isinstance(backend, ScriptedAgentBackend)
+    feedback = backend.prompts_seen()[1]
+    provider = LightSwitchSkillProvider(env=env)
+    assert PromptBuilder.symbolic_layer(skill_provider=provider) not in feedback
 
 
 def test_a_malformed_decision_is_a_no_op_rather_than_a_crash_or_a_random_draw() -> None:
