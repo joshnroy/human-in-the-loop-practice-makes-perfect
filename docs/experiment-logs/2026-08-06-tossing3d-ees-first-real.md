@@ -132,6 +132,41 @@ evaluation episodes, nothing under about `17/100` is detectable at all.** H3 is 
 registered as descriptive unless the gap is large, and a non-significant H3 is a statement
 about this design's power, not evidence of no effect.
 
+## Amendment 1, made before any result was read
+
+**Registered while the pre-flight probe was still running and before a single number from
+it had been looked at.** Recorded here rather than folded silently into the rule above,
+so the sequence stays auditable.
+
+`RandomSkillsMethod.practice_outcomes()` is not overridden and therefore returns `{}` —
+the concrete default on `Method`, whose docstring is explicit that `{}` means "this Method
+does not measure practice at all", as distinct from a present zero-attempt entry. So the
+`random-skills` arm records **no `MoveToThrowPose` tally at all**, and `U` as originally
+defined — that arm's own `S/A` for the standoff — does not exist and cannot be computed.
+This was found by reading `random_skills_method.py`, not by running it.
+
+**`U` is therefore redefined as EES's own non-informed draws of the same skill**:
+`num_random_attempts` (the epsilon-greedy coin flip) plus the uninformative fallback,
+both of which are uniform draws over `THROW_STANDOFF_BOUNDS` by construction. Three
+reasons this is a better reference than the one it replaces, not merely an available one:
+
+1. It is **within-run and within-seed** — same code, same scene seeds, same cycle
+   structure — so it removes the cross-arm confound the original rule carried.
+2. It is the comparison H2 already registered, so the two primary hypotheses collapse into
+   one test rather than one being dropped.
+3. It is the same asymmetry #127 used as a signature of the deviation-6 path, so it is
+   measured on a quantity this domain is already known to expose.
+
+The rule below is otherwise unchanged: same thresholds, same MDE formula, same Fisher
+test, same `undecided` cell. `random-skills` remains an arm and remains the **task-success**
+baseline for H3 — that is what it was needed for and it still serves it. What it cannot do
+is provide a standoff label rate.
+
+**H1 is restated** as: EES's informed draws of `MoveToThrowPose` succeed at a higher rate
+than its own non-informed draws of the same skill, by more than the MDE on those two
+denominators. MDE at the anticipated denominators (≈187 informed against ≈217 non-informed,
+scaling #123's probe to 10 seeds), planning `p̄ = 0.45`: **13.9 pp**.
+
 ## Decision rule
 
 Applied to `MoveToThrowPose` pooled over 10 seeds, from `practice_outcomes_per_cycle`.
