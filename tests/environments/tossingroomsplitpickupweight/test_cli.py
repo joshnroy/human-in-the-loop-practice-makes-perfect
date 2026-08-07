@@ -294,3 +294,29 @@ def test_run_method_without_output_dir_writes_nothing(*, tmp_path: Path) -> None
         max_steps_per_interaction=0,
     )
     assert list(tmp_path.iterdir()) == []
+
+
+def test_two_way_ledge_defaults_off_and_is_a_store_true_flag() -> None:
+    """Opt-in, so PR #122's ten banked seeds are reproduced by the default command
+    line."""
+    assert _build_parser().parse_args([]).two_way_ledge is False
+    assert _build_parser().parse_args(["--two-way-ledge"]).two_way_ledge is True
+    assert (
+        _build_parser().parse_args([]).two_way_ledge
+        == TossingRoomSplitPickupWeightEnvironment.model_fields["two_way_ledge"].default
+    )
+
+
+def test_two_way_ledge_reaches_the_built_environment() -> None:
+    """A flag that parses but never reaches the Environment would run the one-way world
+    while `config_snapshot.json` recorded the two-way one -- the exact failure that makes
+    a banked result unattributable."""
+    parser = _build_parser()
+    built = TossingRoomSplitPickupWeightCli.build_problem(args=parser.parse_args([]))
+    assert built.env.two_way_ledge is False
+    two_way = TossingRoomSplitPickupWeightCli.build_problem(
+        args=parser.parse_args(["--two-way-ledge"])
+    )
+    assert two_way.env.two_way_ledge is True
+    # ...and the world it built really is two-way, not merely labelled so.
+    assert two_way.rooms_to_walk_between(from_room=1, to_room=3) == 2

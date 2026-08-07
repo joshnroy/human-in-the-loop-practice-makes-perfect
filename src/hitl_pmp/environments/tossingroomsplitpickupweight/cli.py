@@ -65,6 +65,15 @@ class TossingRoomSplitPickupWeightCli:
             help="The one-way ledge: stepping RIGHT from this room to the next is blocked.",
         )
         parser.add_argument(
+            "--two-way-ledge",
+            action="store_true",
+            help="Make the ledge traversable RIGHTWARD too, so the domain has no "
+            "irreversible action at all. THE DOMAIN GETS EASIER: EMPTY's solve drops "
+            "10 -> 9, the evaluation horizon 12 -> 11, and RECYCLING stops being "
+            "one-shot -- so a two-way number is never directly comparable to a one-way "
+            "one. Default off.",
+        )
+        parser.add_argument(
             "--throw-tolerance",
             type=float,
             default=fields["throw_tolerance"].default,
@@ -246,6 +255,7 @@ class TossingRoomSplitPickupWeightCli:
             recycling_bin_room=args.recycling_bin_room,
             trash_bin_room=args.trash_bin_room,
             blocked_right_from=args.blocked_right_from,
+            two_way_ledge=args.two_way_ledge,
             throw_tolerance=args.throw_tolerance,
             reference_force=args.reference_force,
             reference_distance=args.reference_distance,
