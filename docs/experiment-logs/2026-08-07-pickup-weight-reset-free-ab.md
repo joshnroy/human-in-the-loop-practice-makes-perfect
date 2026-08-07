@@ -190,8 +190,16 @@ this is the figure the mechanism in this log's Background was established from:
 ### Reproducing this
 
 Every `stats.json`, `config_snapshot.json` and `timing.json` for all 20 runs is committed
-under `2026-08-07-pickup-weight-reset-free-runs/<arm>/<seed>/`, so both aggregates, every
-figure and every number below regenerate without re-running anything.
+under `2026-08-07-pickup-weight-reset-free-runs/<arm>/ees/<seed>/`, so both aggregates,
+every figure and every number below regenerate without re-running anything.
+
+> **Layout corrected (2026-08-07).** These 60 files were originally committed one level
+> flat, at `<arm>/<seed>/`, which is not the `<results-root>/<method>/<seed>/` layout
+> `scripts/run_sweep.py` writes and every `analysis/` reader globs for. The commands below
+> were always right -- they point at a sweep root and let the reader append `ees/` -- so
+> the mismatch was in the committed copy alone, and it meant
+> `pickup_weight_stranding.py` could not be pointed at this tree at all. The files were
+> re-laid by `git mv`, 60/60 byte-identical, and nothing measured changed.
 
 ```bash
 # The two arms (seeds 0-9 are fixed, never drawn). --max-workers 5 because the box was

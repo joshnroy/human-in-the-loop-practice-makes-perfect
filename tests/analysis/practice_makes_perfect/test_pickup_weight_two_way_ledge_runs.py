@@ -31,7 +31,9 @@ def test_new_cell_matches_the_banked_cells_settings_key_by_key(*, policy: str) -
 
     Everything else must be identical, including every value that was defaulted rather
     than passed."""
-    banked = json.loads((_BANKED / policy / "0" / "config_snapshot.json").read_text())["args"]
+    banked = json.loads((_BANKED / policy / "ees" / "0" / "config_snapshot.json").read_text())[
+        "args"
+    ]
     new = json.loads((_NEW / policy / "ees" / "0" / "config_snapshot.json").read_text())["args"]
     differing = {key for key in set(banked) | set(new) if banked.get(key) != new.get(key)}
     assert differing == {"two_way_ledge", "output_dir"}

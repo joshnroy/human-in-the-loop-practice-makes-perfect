@@ -125,11 +125,10 @@ class ArmSpec(BaseModel):
     """One (panel, policy) cell and the committed directory its ten runs live in.
 
     Frozen and carried as data rather than assembled from a format string at each call
-    site, because the two run trees this figure spans are *not* laid out the same way:
-    the two-way-ledge sweep has a `--method`-named `ees/` level between the arm and the
-    seed and the pickup-weight sweep does not. That asymmetry is a fact about what was
-    committed, so it is recorded here once instead of being rediscovered by every reader
-    who wonders why one path has an extra component."""
+    site, so no call site re-spells a committed path. Every tree this figure spans now
+    follows `run_sweep.py`'s `<results-root>/<method>/<seed>/`, so every `directory` below
+    ends in the same `ees` level; the pickup-weight reset-free set was the one exception
+    until it was re-laid."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -138,8 +137,7 @@ class ArmSpec(BaseModel):
     directory: str
 
 
-# The six arms, spelled out. The `ees/` level in the first four is not a typo -- see
-# `ArmSpec`.
+# The eight arms, spelled out. Every one ends in the `ees/` method level -- see `ArmSpec`.
 _ARMS = (
     ArmSpec(
         panel=_ONE_WAY,
@@ -164,15 +162,13 @@ _ARMS = (
     ArmSpec(
         panel=_PICKUP_WEIGHT,
         policy=_SCHEDULED,
-        directory="2026-08-07-pickup-weight-reset-free-runs/scheduled",
+        directory="2026-08-07-pickup-weight-reset-free-runs/scheduled/ees",
     ),
     ArmSpec(
         panel=_PICKUP_WEIGHT,
         policy=_NEVER,
-        directory="2026-08-07-pickup-weight-reset-free-runs/never",
+        directory="2026-08-07-pickup-weight-reset-free-runs/never/ees",
     ),
-    # The fourth cell's own sweep, which has the `ees/` level back -- it was driven by
-    # `scripts/run_sweep.py` in the same layout as the two-way-ledge runs.
     ArmSpec(
         panel=_PICKUP_WEIGHT_TWO_WAY,
         policy=_SCHEDULED,
