@@ -21,15 +21,15 @@ plausible implementation gets wrong on its own:
 import numpy as np
 import pytest
 
-from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
-    TossingRoomSplitPickupWeightEnvironment,
+from hitl_pmp.environments.tossingroom.environment import (
+    TossingRoomEnvironment,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.tasks import (
-    TossingRoomSplitPickupWeightGoalType,
-    TossingRoomSplitPickupWeightTasks,
+from hitl_pmp.environments.tossingroom.tasks import (
+    TossingRoomGoalType,
+    TossingRoomTasks,
 )
 
-_ENV = TossingRoomSplitPickupWeightEnvironment
+_ENV = TossingRoomEnvironment
 _ROBOT = _ENV.robot
 _PILE = _ENV.pile
 _TRASH = _ENV.trash
@@ -50,7 +50,7 @@ def _move(*, to_room: int) -> np.ndarray:
     return np.array([float(_ENV.SKILL_MOVE_ROOM), float(to_room), 0.0])
 
 
-def _started(*, env: TossingRoomSplitPickupWeightEnvironment, weight_seed: int = 11):
+def _started(*, env: TossingRoomEnvironment, weight_seed: int = 11):
     state = env.build_initial_state(weight_seed=weight_seed)
     env.set_state(state=state)
     return state
@@ -173,7 +173,7 @@ def test_restoring_a_task_state_replays_that_task_s_weights_from_the_start() -> 
 def test_a_task_s_weights_do_not_depend_on_how_many_pickups_an_earlier_task_took() -> None:
     """Per-task arrays, not one flat per-run stream. Two arms that spend different
     numbers of pickups on task A must still meet task B at identical weights."""
-    tasks = TossingRoomSplitPickupWeightTasks(env=_ENV(), seed=0)
+    tasks = TossingRoomTasks(env=_ENV(), seed=0)
     task_a, task_b = tasks.sample_train_task(), tasks.sample_train_task()
     env = tasks.env
 
@@ -193,7 +193,7 @@ def test_a_task_s_weights_do_not_depend_on_how_many_pickups_an_earlier_task_took
 
 
 def test_throw_distance_is_fixed_rather_than_drawn_per_task() -> None:
-    tasks = TossingRoomSplitPickupWeightTasks(env=_ENV(), seed=0)
+    tasks = TossingRoomTasks(env=_ENV(), seed=0)
     distances = {
         float(
             tasks.sample_train_task().initial_state.get(
@@ -244,9 +244,7 @@ def test_a_throw_lands_at_the_force_the_weight_drawn_at_pickup_requires() -> Non
 
 
 def test_each_task_carries_its_own_weight_seed() -> None:
-    tasks = TossingRoomSplitPickupWeightTasks(
-        env=_ENV(), seed=0, forced_goal_type=TossingRoomSplitPickupWeightGoalType.TRASH
-    )
+    tasks = TossingRoomTasks(env=_ENV(), seed=0, forced_goal_type=TossingRoomGoalType.TRASH)
     seeds = {
         float(tasks.sample_train_task().initial_state.get(obj=_PILE, feature_name="weight_seed"))
         for _ in range(20)
@@ -257,8 +255,8 @@ def test_each_task_carries_its_own_weight_seed() -> None:
 def test_the_test_stream_is_reproducible_across_instances() -> None:
     """Two identically-configured Tasks (practice's and evaluation's) must hand out the
     same test tasks, weight seeds included."""
-    first = TossingRoomSplitPickupWeightTasks(env=_ENV(), seed=4, num_test_tasks=10)
-    second = TossingRoomSplitPickupWeightTasks(env=_ENV(), seed=4, num_test_tasks=10)
+    first = TossingRoomTasks(env=_ENV(), seed=4, num_test_tasks=10)
+    second = TossingRoomTasks(env=_ENV(), seed=4, num_test_tasks=10)
     for _ in range(10):
         left = first.sample_test_task().initial_state.get(obj=_PILE, feature_name="weight_seed")
         right = second.sample_test_task().initial_state.get(obj=_PILE, feature_name="weight_seed")

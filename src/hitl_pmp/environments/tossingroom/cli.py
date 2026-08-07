@@ -7,17 +7,17 @@ from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.method_runner import MethodRunner
 
-from .environment import TossingRoomSplitPickupWeightEnvironment
-from .problem import TossingRoomSplitPickupWeightProblem
-from .renderer import TossingRoomSplitPickupWeightRenderer
+from .environment import TossingRoomEnvironment
+from .problem import TossingRoomProblem
+from .renderer import TossingRoomRenderer
 from .skill_provider import (
-    TossingRoomSplitPickupWeightOracle,
-    TossingRoomSplitPickupWeightSkillProvider,
+    TossingRoomOracle,
+    TossingRoomSkillProvider,
 )
-from .tasks import TossingRoomSplitPickupWeightGoalType, TossingRoomSplitPickupWeightTasks
+from .tasks import TossingRoomGoalType, TossingRoomTasks
 
 
-class TossingRoomSplitPickupWeightCli:
+class TossingRoomCli:
     """Plugs Tossing Room (split throws) into the generic runner (see hitl_pmp/cli.py):
     exposes its configurable values as argparse flags, then run_method (below) is this
     domain's composition root.
@@ -34,7 +34,7 @@ class TossingRoomSplitPickupWeightCli:
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         """--env/--seed/--num-test-tasks/--method/--output-dir are global flags added
         by hitl_pmp/cli.py, not here -- everything below is specific to this domain."""
-        fields = TossingRoomSplitPickupWeightEnvironment.model_fields
+        fields = TossingRoomEnvironment.model_fields
         parser.add_argument(
             "--num-rooms", type=int, default=fields["num_rooms"].default, help="Number of rooms."
         )
@@ -148,7 +148,7 @@ class TossingRoomSplitPickupWeightCli:
             "sized from the run's own step budget. Running off the end raises -- the "
             "schedule never wraps.",
         )
-        task_fields = TossingRoomSplitPickupWeightTasks.model_fields
+        task_fields = TossingRoomTasks.model_fields
         parser.add_argument(
             "--test-env-seed-offset",
             type=int,
@@ -157,7 +157,7 @@ class TossingRoomSplitPickupWeightCli:
         )
         parser.add_argument(
             "--goal-type",
-            choices=[goal_type.value for goal_type in TossingRoomSplitPickupWeightGoalType],
+            choices=[goal_type.value for goal_type in TossingRoomGoalType],
             default=None,
             help="Pin every sampled task to one goal family (recycling/trash/empty). "
             "Omit to sample the default mix. Use e.g. 'recycling' for a deterministic demo.",
@@ -196,15 +196,15 @@ class TossingRoomSplitPickupWeightCli:
         pickup rather than per task: the draw is a lookup into an array pre-sampled by
         `build_initial_state` from a seed carried in the State, so `take_action` still
         consumes no randomness and a second instance still derives byte-identical
-        arrays. See `TossingRoomSplitPickupWeightEnvironment.weight_schedule`."""
-        practice_problem = TossingRoomSplitPickupWeightCli.build_problem(
+        arrays. See `TossingRoomEnvironment.weight_schedule`."""
+        practice_problem = TossingRoomCli.build_problem(
             args=args,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
         )
         # Same args, same seed, independent objects: its Tasks derives the same test
         # stream, so it yields exactly the test tasks the practice Tasks would have.
-        evaluation_problem = TossingRoomSplitPickupWeightCli.build_problem(
+        evaluation_problem = TossingRoomCli.build_problem(
             args=args,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
@@ -214,12 +214,12 @@ class TossingRoomSplitPickupWeightCli:
         # instances are configured identically, so evaluation reads the same world.
         context = DomainContext(
             env=practice_problem.env,
-            skill_provider=TossingRoomSplitPickupWeightSkillProvider(env=practice_problem.env),
-            oracle=TossingRoomSplitPickupWeightOracle(env=practice_problem.env),
+            skill_provider=TossingRoomSkillProvider(env=practice_problem.env),
+            oracle=TossingRoomOracle(env=practice_problem.env),
         )
 
         renderer: type[Renderer] | None = (
-            TossingRoomSplitPickupWeightRenderer if args.output_dir is not None else None
+            TossingRoomRenderer if args.output_dir is not None else None
         )
         MethodRunner.run(
             args=args,
@@ -229,7 +229,7 @@ class TossingRoomSplitPickupWeightCli:
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
             renderer=renderer,
-            render_fps=TossingRoomSplitPickupWeightCli.render_fps,
+            render_fps=TossingRoomCli.render_fps,
             num_render_checkpoints=getattr(args, "num_render_checkpoints", 1),
         )
 
@@ -239,7 +239,7 @@ class TossingRoomSplitPickupWeightCli:
         args: argparse.Namespace,
         num_cycles: int = 0,
         max_steps_per_interaction: int = 0,
-    ) -> TossingRoomSplitPickupWeightProblem:
+    ) -> TossingRoomProblem:
         """One fully-independent Environment + Tasks + Problem triple from args.
         Called twice by run_method (practice and evaluation) -- factored out so the two
         cannot drift apart in configuration, which would silently make the evaluation
@@ -249,7 +249,7 @@ class TossingRoomSplitPickupWeightCli:
         only to size the pre-sampled weight schedule -- see `weight_schedule_length`
         below. They default to 0 so a caller that only wants a Problem (a test, a
         one-off) still gets one, at the Environment's own default length."""
-        env = TossingRoomSplitPickupWeightEnvironment(
+        env = TossingRoomEnvironment(
             num_rooms=args.num_rooms,
             start_room=args.start_room,
             recycling_bin_room=args.recycling_bin_room,
@@ -266,7 +266,7 @@ class TossingRoomSplitPickupWeightCli:
             canonical_item_weight=args.canonical_item_weight,
             pickup_weight_low=args.pickup_weight_low,
             pickup_weight_high=args.pickup_weight_high,
-            weight_schedule_length=TossingRoomSplitPickupWeightCli.weight_schedule_length(
+            weight_schedule_length=TossingRoomCli.weight_schedule_length(
                 args=args,
                 num_cycles=num_cycles,
                 max_steps_per_interaction=max_steps_per_interaction,
@@ -279,11 +279,9 @@ class TossingRoomSplitPickupWeightCli:
             canonical_weight_seed=args.seed,
         )
         forced_goal_type = (
-            TossingRoomSplitPickupWeightGoalType(args.goal_type)
-            if args.goal_type is not None
-            else None
+            TossingRoomGoalType(args.goal_type) if args.goal_type is not None else None
         )
-        tasks = TossingRoomSplitPickupWeightTasks(
+        tasks = TossingRoomTasks(
             env=env,
             seed=args.seed,
             test_env_seed_offset=args.test_env_seed_offset,
@@ -291,10 +289,10 @@ class TossingRoomSplitPickupWeightCli:
             # The global --num-test-tasks: this domain's test set has a *fixed*
             # goal-family composition (14 TRASH / 14 RECYCLING / 2 EMPTY at 30 tasks), so
             # Tasks has to know how many test tasks the harness will draw in order to
-            # divide them up. See TossingRoomSplitPickupWeightTasks.test_goal_type_counts.
+            # divide them up. See TossingRoomTasks.test_goal_type_counts.
             num_test_tasks=args.num_test_tasks,
         )
-        return TossingRoomSplitPickupWeightProblem(env=env, tasks=tasks)
+        return TossingRoomProblem(env=env, tasks=tasks)
 
     @staticmethod
     def weight_schedule_length(
@@ -318,7 +316,5 @@ class TossingRoomSplitPickupWeightCli:
         override = getattr(args, "weight_schedule_length", None)
         if override is not None:
             return int(override)
-        floor = int(
-            TossingRoomSplitPickupWeightEnvironment.model_fields["weight_schedule_length"].default
-        )
+        floor = int(TossingRoomEnvironment.model_fields["weight_schedule_length"].default)
         return max(floor, num_cycles * max_steps_per_interaction)

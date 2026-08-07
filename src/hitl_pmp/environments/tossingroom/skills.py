@@ -5,7 +5,7 @@ import numpy as np
 from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, State
 
-from .environment import TossingRoomSplitPickupWeightEnvironment
+from .environment import TossingRoomEnvironment
 from .predicates import (
     CAN_MOVE_ROOM,
     HAND_EMPTY,
@@ -24,7 +24,7 @@ from .predicates import (
 )
 
 
-class TossingRoomSplitPickupWeightSkills:
+class TossingRoomSkills:
     """Lifted skill templates for Tossing Room (split throws).
 
     **The one difference from `TossingRoomSkills`, and the reason this domain exists**:
@@ -77,39 +77,29 @@ class TossingRoomSplitPickupWeightSkills:
     class in this project.
     """
 
-    _robot: ClassVar[Variable] = Variable(
-        name="robot", type=TossingRoomSplitPickupWeightEnvironment.robot_type
-    )
-    _trash: ClassVar[Variable] = Variable(
-        name="trash", type=TossingRoomSplitPickupWeightEnvironment.trash_type
-    )
+    _robot: ClassVar[Variable] = Variable(name="robot", type=TossingRoomEnvironment.robot_type)
+    _trash: ClassVar[Variable] = Variable(name="trash", type=TossingRoomEnvironment.trash_type)
     _recycling: ClassVar[Variable] = Variable(
-        name="recycling", type=TossingRoomSplitPickupWeightEnvironment.recycling_type
+        name="recycling", type=TossingRoomEnvironment.recycling_type
     )
-    _room: ClassVar[Variable] = Variable(
-        name="room", type=TossingRoomSplitPickupWeightEnvironment.room_type
-    )
+    _room: ClassVar[Variable] = Variable(name="room", type=TossingRoomEnvironment.room_type)
     _from_room: ClassVar[Variable] = Variable(
-        name="from_room", type=TossingRoomSplitPickupWeightEnvironment.room_type
+        name="from_room", type=TossingRoomEnvironment.room_type
     )
-    _to_room: ClassVar[Variable] = Variable(
-        name="to_room", type=TossingRoomSplitPickupWeightEnvironment.room_type
-    )
+    _to_room: ClassVar[Variable] = Variable(name="to_room", type=TossingRoomEnvironment.room_type)
     _trash_bin: ClassVar[Variable] = Variable(
-        name="trash_bin", type=TossingRoomSplitPickupWeightEnvironment.trash_bin_type
+        name="trash_bin", type=TossingRoomEnvironment.trash_bin_type
     )
     _recycling_bin: ClassVar[Variable] = Variable(
-        name="recycling_bin", type=TossingRoomSplitPickupWeightEnvironment.recycling_bin_type
+        name="recycling_bin", type=TossingRoomEnvironment.recycling_bin_type
     )
     _trash_button: ClassVar[Variable] = Variable(
-        name="trash_button", type=TossingRoomSplitPickupWeightEnvironment.trash_button_type
+        name="trash_button", type=TossingRoomEnvironment.trash_button_type
     )
     _recycling_button: ClassVar[Variable] = Variable(
-        name="recycling_button", type=TossingRoomSplitPickupWeightEnvironment.recycling_button_type
+        name="recycling_button", type=TossingRoomEnvironment.recycling_button_type
     )
-    _pile: ClassVar[Variable] = Variable(
-        name="pile", type=TossingRoomSplitPickupWeightEnvironment.pile_type
-    )
+    _pile: ClassVar[Variable] = Variable(name="pile", type=TossingRoomEnvironment.pile_type)
 
     PICKUP_TRASH: ClassVar[Skill] = Skill(
         name="PickupTrash",
@@ -252,7 +242,7 @@ class TossingRoomSplitPickupWeightSkills:
         throw_tolerance window with probability 0.8 on every task -- and there is no
         single force that works everywhere, since the requirement is an unobserved
         function of the bin's throw_distance and the item's weight. The oracle bypasses
-        this entirely via `TossingRoomSplitPickupWeightEnvironment.required_force`."""
+        this entirely via `TossingRoomEnvironment.required_force`."""
         return rng.uniform(0.0, 1.0, size=ground_skill.skill.param_dim)
 
     @staticmethod
@@ -264,11 +254,11 @@ class TossingRoomSplitPickupWeightSkills:
 
         Both pickups, both throws and both presses encode to the same raw skill id -- the
         RAW action space is unchanged from Tossing Room (see
-        `TossingRoomSplitPickupWeightEnvironment`); the kind is carried in `arg` and
+        `TossingRoomEnvironment`); the kind is carried in `arg` and
         read off a bound object's own `kind` feature, so the two branches of each pair
         differ only in which object they read."""
-        skills = TossingRoomSplitPickupWeightSkills
-        env = TossingRoomSplitPickupWeightEnvironment
+        skills = TossingRoomSkills
+        env = TossingRoomEnvironment
         skill = ground_skill.skill
 
         if skill in (skills.PICKUP_TRASH, skills.PICKUP_RECYCLING):

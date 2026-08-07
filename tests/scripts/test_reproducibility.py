@@ -41,7 +41,7 @@ TOSSING3D_ARGS = ("--num-test-tasks", "2", "--num-cycles", "0")
 # This baseline solves 0/8 here at every seed, so the different-seeds assertion rests on
 # the rest of stats.json -- the per-skill practice outcomes and the per-window planning
 # counts, which do vary. Two short cycles are enough to produce them.
-TOSSINGROOMSPLITPICKUPWEIGHT_ARGS = (
+TOSSINGROOM_ARGS = (
     "--num-test-tasks",
     "8",
     "--num-cycles",
@@ -106,8 +106,8 @@ class ReproducibilityHarness:
             output_dir=output_dir,
             seed=seed,
             threads=threads,
-            env_name="tossingroomsplitpickupweight",
-            env_args=TOSSINGROOMSPLITPICKUPWEIGHT_ARGS,
+            env_name="tossingroom",
+            env_args=TOSSINGROOM_ARGS,
         )
 
 
@@ -168,7 +168,7 @@ def test_tossing3d_results_do_not_depend_on_the_math_thread_count(*, tmp_path: P
 # --- Tossing Room (split throws, weight drawn at pickup) --------------------------
 #
 # The third domain pinned here, and the only one whose ENVIRONMENT itself pre-samples
-# anything: `tossingroomsplitpickupweight` draws each task's pickup weights up front from
+# anything: `tossingroom` draws each task's pickup weights up front from
 # a seed that task carries in its own State. Nothing Light Switch exercises would notice
 # if that seed stopped depending on `--seed`, and the failure mode -- every seed of a
 # sweep practising on an identical weight sequence -- is invisible in a run's own output,

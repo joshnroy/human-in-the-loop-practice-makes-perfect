@@ -2,7 +2,7 @@
 axes per goal family, so what is pinned here is the arithmetic that turns four sweeps
 into those three figures -- not matplotlib.
 
-The domain is `tossingroomsplitpickupweight` throughout; the manipulation is the ledge
+The domain is `tossingroom` throughout; the manipulation is the ledge
 and the arms are the reset policy. Four things can go wrong silently and each has a test:
 
 - **the four arms stop being a square.** Three arms cannot express "the gap within a

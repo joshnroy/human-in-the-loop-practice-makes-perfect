@@ -5,28 +5,28 @@ import numpy as np
 import pytest
 
 from hitl_pmp.cli import Cli
-from hitl_pmp.environments.tossingroomsplitpickupweight import (
-    cli as tossingroomsplitpickupweight_cli,
+from hitl_pmp.environments.tossingroom import (
+    cli as tossingroom_cli,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.cli import TossingRoomSplitPickupWeightCli
-from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
-    TossingRoomSplitPickupWeightEnvironment,
+from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
+from hitl_pmp.environments.tossingroom.environment import (
+    TossingRoomEnvironment,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.tasks import (
-    TossingRoomSplitPickupWeightTasks,
+from hitl_pmp.environments.tossingroom.tasks import (
+    TossingRoomTasks,
 )
 from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
 
 
 def _build_parser() -> argparse.ArgumentParser:
     """Mimics hitl_pmp/cli.py's global flags plus this domain's own, so
-    TossingRoomSplitPickupWeightCli can be exercised in isolation (mirrors Light
+    TossingRoomCli can be exercised in isolation (mirrors Light
     Switch's test_cli)."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--num-test-tasks", type=int, default=20)
     parser.add_argument("--output-dir", type=Path, default=None)
-    TossingRoomSplitPickupWeightCli.add_arguments(parser=parser)
+    TossingRoomCli.add_arguments(parser=parser)
     return parser
 
 
@@ -40,7 +40,7 @@ def test_there_is_no_button_room_flag() -> None:
 
 def test_add_arguments_defaults_match_live_class_values() -> None:
     args = _build_parser().parse_args([])
-    fields = TossingRoomSplitPickupWeightEnvironment.model_fields
+    fields = TossingRoomEnvironment.model_fields
     assert args.num_rooms == fields["num_rooms"].default
     assert args.start_room == fields["start_room"].default
     assert args.recycling_bin_room == fields["recycling_bin_room"].default
@@ -80,27 +80,24 @@ def test_num_test_tasks_field_default_matches_the_global_flag_default() -> None:
     is divided out of."""
     parser = argparse.ArgumentParser()
     Cli.add_global_arguments(parser=parser)
-    args = parser.parse_args(["--env", "tossingroomsplitpickupweight", "--method", "skill-oracle"])
-    assert (
-        args.num_test_tasks
-        == TossingRoomSplitPickupWeightTasks.model_fields["num_test_tasks"].default
-    )
+    args = parser.parse_args(["--env", "tossingroom", "--method", "skill-oracle"])
+    assert args.num_test_tasks == TossingRoomTasks.model_fields["num_test_tasks"].default
 
 
 def test_run_method_passes_num_test_tasks_into_tasks(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """The composition is only fixed if Tasks knows how many test tasks the harness
     will draw -- so --num-test-tasks has to reach the constructor."""
     captured: dict[str, object] = {}
-    build = tossingroomsplitpickupweight_cli.TossingRoomSplitPickupWeightTasks
+    build = tossingroom_cli.TossingRoomTasks
     # Parsed before the patch: add_arguments reads defaults off the real class.
     args = _build_parser().parse_args(["--num-test-tasks", "7"])
 
-    def spy(**kwargs) -> TossingRoomSplitPickupWeightTasks:
+    def spy(**kwargs) -> TossingRoomTasks:
         captured.update(kwargs)
         return build(**kwargs)
 
-    monkeypatch.setattr(tossingroomsplitpickupweight_cli, "TossingRoomSplitPickupWeightTasks", spy)
-    TossingRoomSplitPickupWeightCli.run_method(
+    monkeypatch.setattr(tossingroom_cli, "TossingRoomTasks", spy)
+    TossingRoomCli.run_method(
         args=args,
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
@@ -117,14 +114,14 @@ def test_run_method_hands_the_loop_a_separate_evaluation_problem(
     must be genuinely distinct objects all the way down -- a shared Environment or a
     shared Tasks would put the write straight back."""
     captured: dict[str, object] = {}
-    real_run = tossingroomsplitpickupweight_cli.MethodRunner.run
+    real_run = tossingroom_cli.MethodRunner.run
 
     def spy(**kwargs):
         captured.update(kwargs)
         return real_run(**kwargs)
 
-    monkeypatch.setattr(tossingroomsplitpickupweight_cli.MethodRunner, "run", spy)
-    TossingRoomSplitPickupWeightCli.run_method(
+    monkeypatch.setattr(tossingroom_cli.MethodRunner, "run", spy)
+    TossingRoomCli.run_method(
         args=_build_parser().parse_args(["--num-test-tasks", "4"]),
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
@@ -143,14 +140,14 @@ def test_the_two_problems_are_configured_identically(*, monkeypatch: pytest.Monk
     the split a no-op on results: the evaluation Tasks' test stream is derived from the
     same seed, so it yields exactly the test tasks the practice Tasks would have."""
     captured: dict[str, object] = {}
-    real_run = tossingroomsplitpickupweight_cli.MethodRunner.run
+    real_run = tossingroom_cli.MethodRunner.run
 
     def spy(**kwargs):
         captured.update(kwargs)
         return real_run(**kwargs)
 
-    monkeypatch.setattr(tossingroomsplitpickupweight_cli.MethodRunner, "run", spy)
-    TossingRoomSplitPickupWeightCli.run_method(
+    monkeypatch.setattr(tossingroom_cli.MethodRunner, "run", spy)
+    TossingRoomCli.run_method(
         args=_build_parser().parse_args(["--num-test-tasks", "4", "--seed", "3"]),
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
@@ -162,11 +159,11 @@ def test_the_two_problems_are_configured_identically(*, monkeypatch: pytest.Monk
     # whole-model dump (which cannot serialize the numpy-backed current_state).
     # Enumerated rather than spot-checked so a field added later is covered too --
     # test_env_seed_offset in particular is what derives the test stream.
-    for field in TossingRoomSplitPickupWeightEnvironment.model_fields:
+    for field in TossingRoomEnvironment.model_fields:
         if field == "current_state":
             continue
         assert getattr(evaluation.env, field) == getattr(practice.env, field), field
-    for field in TossingRoomSplitPickupWeightTasks.model_fields:
+    for field in TossingRoomTasks.model_fields:
         if field == "env":  # the two Environments are distinct objects by design
             continue
         assert getattr(evaluation.tasks, field) == getattr(practice.tasks, field), field
@@ -181,8 +178,8 @@ def test_the_two_problems_draw_the_same_test_tasks() -> None:
     evaluation Tasks a no-op on results rather than a silent change of which tasks
     are measured."""
     args = _build_parser().parse_args(["--num-test-tasks", "6", "--seed", "5"])
-    practice = TossingRoomSplitPickupWeightCli.build_problem(args=args)
-    evaluation = TossingRoomSplitPickupWeightCli.build_problem(args=args)
+    practice = TossingRoomCli.build_problem(args=args)
+    evaluation = TossingRoomCli.build_problem(args=args)
     # Whole sequences, not one draw each: the goal-family schedule is a permutation
     # built once from the test stream, so a per-instance divergence would only show
     # up part-way through.
@@ -199,7 +196,7 @@ def test_the_two_problems_draw_the_same_test_tasks() -> None:
 
 def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[str]) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "8"])
-    TossingRoomSplitPickupWeightCli.run_method(
+    TossingRoomCli.run_method(
         args=args,
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
@@ -210,7 +207,7 @@ def test_run_method_solves_every_sampled_task(*, capsys: pytest.CaptureFixture[s
 
 def test_run_method_forces_a_single_goal_type(*, capsys: pytest.CaptureFixture[str]) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "5", "--goal-type", "recycling"])
-    TossingRoomSplitPickupWeightCli.run_method(
+    TossingRoomCli.run_method(
         args=args,
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
@@ -221,27 +218,21 @@ def test_run_method_forces_a_single_goal_type(*, capsys: pytest.CaptureFixture[s
 
 def test_run_method_applies_seed_deterministically() -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "3", "--seed", "99"])
-    TossingRoomSplitPickupWeightCli.run_method(
+    TossingRoomCli.run_method(
         args=args,
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
         max_steps_per_interaction=0,
     )
-    a = TossingRoomSplitPickupWeightTasks(
-        env=TossingRoomSplitPickupWeightEnvironment(), seed=99
-    ).sample_test_task()
-    b = TossingRoomSplitPickupWeightTasks(
-        env=TossingRoomSplitPickupWeightEnvironment(), seed=99
-    ).sample_test_task()
+    a = TossingRoomTasks(env=TossingRoomEnvironment(), seed=99).sample_test_task()
+    b = TossingRoomTasks(env=TossingRoomEnvironment(), seed=99).sample_test_task()
     assert a.initial_state.get(
-        obj=TossingRoomSplitPickupWeightEnvironment.recycling, feature_name="weight"
-    ) == b.initial_state.get(
-        obj=TossingRoomSplitPickupWeightEnvironment.recycling, feature_name="weight"
-    )
+        obj=TossingRoomEnvironment.recycling, feature_name="weight"
+    ) == b.initial_state.get(obj=TossingRoomEnvironment.recycling, feature_name="weight")
     assert a.initial_state.get(
-        obj=TossingRoomSplitPickupWeightEnvironment.recycling_bin, feature_name="throw_distance"
+        obj=TossingRoomEnvironment.recycling_bin, feature_name="throw_distance"
     ) == b.initial_state.get(
-        obj=TossingRoomSplitPickupWeightEnvironment.recycling_bin, feature_name="throw_distance"
+        obj=TossingRoomEnvironment.recycling_bin, feature_name="throw_distance"
     )
 
 
@@ -256,7 +247,7 @@ def test_run_method_respects_a_larger_layout(*, capsys: pytest.CaptureFixture[st
         "--goal-type",
         "trash",
     ])
-    TossingRoomSplitPickupWeightCli.run_method(
+    TossingRoomCli.run_method(
         args=args,
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
@@ -274,7 +265,7 @@ def test_run_method_with_output_dir_writes_a_video(*, tmp_path: Path) -> None:
         "--output-dir",
         str(tmp_path),
     ])
-    TossingRoomSplitPickupWeightCli.run_method(
+    TossingRoomCli.run_method(
         args=args,
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
@@ -287,7 +278,7 @@ def test_run_method_with_output_dir_writes_a_video(*, tmp_path: Path) -> None:
 
 def test_run_method_without_output_dir_writes_nothing(*, tmp_path: Path) -> None:
     args = _build_parser().parse_args(["--num-test-tasks", "2"])
-    TossingRoomSplitPickupWeightCli.run_method(
+    TossingRoomCli.run_method(
         args=args,
         method_factory=lambda ctx: SkillOracleMethod(env=ctx.env, oracle=ctx.oracle),
         num_cycles=0,
@@ -303,7 +294,7 @@ def test_two_way_ledge_defaults_off_and_is_a_store_true_flag() -> None:
     assert _build_parser().parse_args(["--two-way-ledge"]).two_way_ledge is True
     assert (
         _build_parser().parse_args([]).two_way_ledge
-        == TossingRoomSplitPickupWeightEnvironment.model_fields["two_way_ledge"].default
+        == TossingRoomEnvironment.model_fields["two_way_ledge"].default
     )
 
 
@@ -312,11 +303,9 @@ def test_two_way_ledge_reaches_the_built_environment() -> None:
     while `config_snapshot.json` recorded the two-way one -- the exact failure that makes
     a banked result unattributable."""
     parser = _build_parser()
-    built = TossingRoomSplitPickupWeightCli.build_problem(args=parser.parse_args([]))
+    built = TossingRoomCli.build_problem(args=parser.parse_args([]))
     assert built.env.two_way_ledge is False
-    two_way = TossingRoomSplitPickupWeightCli.build_problem(
-        args=parser.parse_args(["--two-way-ledge"])
-    )
+    two_way = TossingRoomCli.build_problem(args=parser.parse_args(["--two-way-ledge"]))
     assert two_way.env.two_way_ledge is True
     # ...and the world it built really is two-way, not merely labelled so.
     assert two_way.rooms_to_walk_between(from_room=1, to_room=3) == 2

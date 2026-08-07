@@ -5,7 +5,7 @@ from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
-from .environment import TossingRoomSplitPickupWeightEnvironment
+from .environment import TossingRoomEnvironment
 from .predicates import (
     ADJACENT,
     CAN_MOVE_ROOM,
@@ -24,28 +24,28 @@ from .predicates import (
     TRASH_IN_BIN,
 )
 from .skill_oracle_policy import SkillOraclePolicy
-from .skills import TossingRoomSplitPickupWeightSkills
+from .skills import TossingRoomSkills
 
 
-class TossingRoomSplitPickupWeightSkillProvider(SkillProvider):
-    """This domain's `SkillProvider`: exposes `TossingRoomSplitPickupWeightSkills` and this domain's
+class TossingRoomSkillProvider(SkillProvider):
+    """This domain's `SkillProvider`: exposes `TossingRoomSkills` and this domain's
     predicates/types/objects to a domain-agnostic Method.
 
     Seven lifted skills where Tossing Room has four -- `Pickup`, `Throw` and `Press` each
     split per kind. Only the throw split matters to learning (`Pickup` and both presses
     are `param_dim=0`, so none gets a sampler); see `skills.py`."""
 
-    env: TossingRoomSplitPickupWeightEnvironment
+    env: TossingRoomEnvironment
 
     def skills(self) -> tuple[Skill, ...]:
         return (
-            TossingRoomSplitPickupWeightSkills.PICKUP_TRASH,
-            TossingRoomSplitPickupWeightSkills.PICKUP_RECYCLING,
-            TossingRoomSplitPickupWeightSkills.MOVE_ROOM,
-            TossingRoomSplitPickupWeightSkills.THROW_TRASH,
-            TossingRoomSplitPickupWeightSkills.THROW_RECYCLING,
-            TossingRoomSplitPickupWeightSkills.PRESS_TRASH,
-            TossingRoomSplitPickupWeightSkills.PRESS_RECYCLING,
+            TossingRoomSkills.PICKUP_TRASH,
+            TossingRoomSkills.PICKUP_RECYCLING,
+            TossingRoomSkills.MOVE_ROOM,
+            TossingRoomSkills.THROW_TRASH,
+            TossingRoomSkills.THROW_RECYCLING,
+            TossingRoomSkills.PRESS_TRASH,
+            TossingRoomSkills.PRESS_RECYCLING,
         )
 
     def predicates(self) -> tuple[Predicate, ...]:
@@ -69,15 +69,15 @@ class TossingRoomSplitPickupWeightSkillProvider(SkillProvider):
 
     def types(self) -> tuple[Type, ...]:
         return (
-            TossingRoomSplitPickupWeightEnvironment.robot_type,
-            TossingRoomSplitPickupWeightEnvironment.room_type,
-            TossingRoomSplitPickupWeightEnvironment.trash_bin_type,
-            TossingRoomSplitPickupWeightEnvironment.recycling_bin_type,
-            TossingRoomSplitPickupWeightEnvironment.trash_button_type,
-            TossingRoomSplitPickupWeightEnvironment.recycling_button_type,
-            TossingRoomSplitPickupWeightEnvironment.trash_type,
-            TossingRoomSplitPickupWeightEnvironment.recycling_type,
-            TossingRoomSplitPickupWeightEnvironment.pile_type,
+            TossingRoomEnvironment.robot_type,
+            TossingRoomEnvironment.room_type,
+            TossingRoomEnvironment.trash_bin_type,
+            TossingRoomEnvironment.recycling_bin_type,
+            TossingRoomEnvironment.trash_button_type,
+            TossingRoomEnvironment.recycling_button_type,
+            TossingRoomEnvironment.trash_type,
+            TossingRoomEnvironment.recycling_type,
+            TossingRoomEnvironment.pile_type,
         )
 
     def objects(self) -> tuple[Object, ...]:
@@ -95,22 +95,22 @@ class TossingRoomSplitPickupWeightSkillProvider(SkillProvider):
         )
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        return TossingRoomSplitPickupWeightSkills.sample_params(ground_skill=ground_skill, rng=rng)
+        return TossingRoomSkills.sample_params(ground_skill=ground_skill, rng=rng)
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> Action:
-        return TossingRoomSplitPickupWeightSkills.compute_action(
+        return TossingRoomSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )
 
 
-class TossingRoomSplitPickupWeightOracle(OraclePolicyProvider):
+class TossingRoomOracle(OraclePolicyProvider):
     """This domain's privileged solver, driving `SkillOracleMethod` as the upper-bound
     baseline. Goal-DEPENDENT: the goal picks which throw *skill* to use, not merely
     which objects to bind -- see `skill_oracle_policy.py`."""
 
-    env: TossingRoomSplitPickupWeightEnvironment
+    env: TossingRoomEnvironment
 
     def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
         return SkillOraclePolicy.get_labeled_action(state=state, env=self.env, goal=goal)

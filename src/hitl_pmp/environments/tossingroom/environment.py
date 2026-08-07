@@ -8,7 +8,7 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
 
-class TossingRoomSplitPickupWeightEnvironment(Environment):
+class TossingRoomEnvironment(Environment):
     """ "Tossing Room (split throws, weight drawn at pickup)": `tossingroomsplit` with
     **one** change to the world -- an item's `weight` is a property of the item the
     robot actually picked up, drawn when it picks it up, rather than a per-task constant
@@ -357,7 +357,7 @@ class TossingRoomSplitPickupWeightEnvironment(Environment):
         ledge is decided**, read by all three layers that have to agree about it:
         `_apply_move` (the dynamics), `build_initial_state` (which writes the answer into
         each room's `blocks_right` feature, where `CanMoveRoomClassifier` picks it up for
-        the planner) and `TossingRoomSplitPickupWeightProblem.rooms_to_walk_between`
+        the planner) and `TossingRoomProblem.rooms_to_walk_between`
         (which sizes the evaluation horizon).
 
         One function rather than three copies of `room == self.blocked_right_from`

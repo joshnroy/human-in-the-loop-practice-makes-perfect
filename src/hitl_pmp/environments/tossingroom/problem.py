@@ -5,19 +5,19 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
 
-from .environment import TossingRoomSplitPickupWeightEnvironment
-from .tasks import TossingRoomSplitPickupWeightTasks
+from .environment import TossingRoomEnvironment
+from .tasks import TossingRoomTasks
 
 
-class TossingRoomSplitPickupWeightProblem(Problem):
+class TossingRoomProblem(Problem):
     """`TossingRoomProblem` verbatim, retyped to this domain: no HumanOracle is set
     (`Problem.human` stays None), since the irreversible ledge exists in the dynamics
     but the oracle solves every task forward-only and never needs to be lifted back up
     it. env/tasks are required constructor fields, narrowed to this domain's own
     concrete types."""
 
-    env: TossingRoomSplitPickupWeightEnvironment
-    tasks: TossingRoomSplitPickupWeightTasks
+    env: TossingRoomEnvironment
+    tasks: TossingRoomTasks
 
     def max_episode_steps(self) -> int:
         """The paper's H_eval convention (Appendix F): the **longest shortest solve

@@ -6,7 +6,7 @@ from pydantic import Field, PrivateAttr
 from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 
-from .environment import TossingRoomSplitPickupWeightEnvironment
+from .environment import TossingRoomEnvironment
 from .predicates import (
     RECYCLING_BIN_EMPTY,
     RECYCLING_IN_BIN,
@@ -15,7 +15,7 @@ from .predicates import (
 )
 
 
-class TossingRoomSplitPickupWeightGoalType(str, Enum):
+class TossingRoomGoalType(str, Enum):
     """The three goal families this domain supports. A str-Enum so the CLI's
     --goal-type choices map straight onto it. Kept here (not a bucket types.py) since
     only Tasks generates over it -- the same call it lives inside of."""
@@ -28,7 +28,7 @@ class TossingRoomSplitPickupWeightGoalType(str, Enum):
     EMPTY = "empty"
 
 
-class TossingRoomSplitPickupWeightTasks(Tasks):
+class TossingRoomTasks(Tasks):
     """Task/goal generation for Tossing Room (split throws) -- `TossingRoomTasks`
     unchanged except that a throw goal now names the per-kind in-bin predicate
     (`TrashInBin`/`RecyclingInBin`) instead of the shared `ItemInBin`, and the empty
@@ -42,7 +42,7 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
     item the robot picks up, drawn at pickup time off a pre-sampled array. So all a task
     draws is the **weight seed** that names that array, one integer, which
     `build_initial_state` parks on the pile. See
-    `TossingRoomSplitPickupWeightEnvironment` for the whole mechanism and why it lives in
+    `TossingRoomEnvironment` for the whole mechanism and why it lives in
     the State.
 
     That makes this a different task distribution from `tossingroomsplit`'s, not a
@@ -71,11 +71,11 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
     throw task on any seed and lets each oracle branch be tested without sampling until
     lucky.
 
-    env must be the same TossingRoomSplitPickupWeightEnvironment instance the surrounding Problem
+    env must be the same TossingRoomEnvironment instance the surrounding Problem
     drives: build_task calls self.env.build_initial_state, which needs that instance's
     layout (bin/button rooms, start room) to place everything correctly."""
 
-    env: TossingRoomSplitPickupWeightEnvironment
+    env: TossingRoomEnvironment
     seed: int = 0
     test_env_seed_offset: int = 10000
     # There are no cause ranges here: the weight range moved to the Environment
@@ -88,7 +88,7 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
     weight_seed_high: int = 2**31
     # Sampling weights over (RECYCLING, TRASH, EMPTY) for the *training* stream only.
     goal_weights: tuple[float, float, float] = (0.4, 0.4, 0.2)
-    forced_goal_type: TossingRoomSplitPickupWeightGoalType | None = None
+    forced_goal_type: TossingRoomGoalType | None = None
     # Size of the fixed test set, i.e. how many test tasks the harness will draw before
     # reusing them. Wired from the global --num-test-tasks flag; it is what
     # test_goal_type_counts divides up, and it has to move in step with
@@ -105,7 +105,7 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
     # The remaining goal families of the current test block, in draw order. Rebuilt
     # (reshuffled) whenever it empties, so drawing more than num_test_tasks test tasks
     # stays well defined and keeps the same composition block by block.
-    _test_schedule: list[TossingRoomSplitPickupWeightGoalType] = PrivateAttr()
+    _test_schedule: list[TossingRoomGoalType] = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self.set_seed(seed=self.seed)
@@ -132,7 +132,7 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
     def _make_rng(self, *, offset: int) -> np.random.Generator:
         return np.random.default_rng(self.seed + offset)
 
-    def test_goal_type_counts(self) -> dict[TossingRoomSplitPickupWeightGoalType, int]:
+    def test_goal_type_counts(self) -> dict[TossingRoomGoalType, int]:
         """The exact goal-family composition of this instance's fixed test set --
         public so an analysis script can assert the composition of a run it is reading
         back (nothing here depends on the layout or the seed).
@@ -149,9 +149,9 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
         remaining = self.num_test_tasks - num_empty
         num_recycling = remaining // 2
         return {
-            TossingRoomSplitPickupWeightGoalType.TRASH: remaining - num_recycling,
-            TossingRoomSplitPickupWeightGoalType.RECYCLING: num_recycling,
-            TossingRoomSplitPickupWeightGoalType.EMPTY: num_empty,
+            TossingRoomGoalType.TRASH: remaining - num_recycling,
+            TossingRoomGoalType.RECYCLING: num_recycling,
+            TossingRoomGoalType.EMPTY: num_empty,
         }
 
     def sample_train_task(self) -> Task:
@@ -160,18 +160,18 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
     def sample_test_task(self) -> Task:
         return self.build_task(goal_type=self._next_test_goal_type(), rng=self.test_rng)
 
-    def _sample_goal_type(self) -> TossingRoomSplitPickupWeightGoalType:
+    def _sample_goal_type(self) -> TossingRoomGoalType:
         """The *training* stream's goal family: an independent draw from goal_weights."""
         if self.forced_goal_type is not None:
             return self.forced_goal_type
         types = (
-            TossingRoomSplitPickupWeightGoalType.RECYCLING,
-            TossingRoomSplitPickupWeightGoalType.TRASH,
-            TossingRoomSplitPickupWeightGoalType.EMPTY,
+            TossingRoomGoalType.RECYCLING,
+            TossingRoomGoalType.TRASH,
+            TossingRoomGoalType.EMPTY,
         )
         return types[int(self.train_rng.choice(len(types), p=list(self.goal_weights)))]
 
-    def _next_test_goal_type(self) -> TossingRoomSplitPickupWeightGoalType:
+    def _next_test_goal_type(self) -> TossingRoomGoalType:
         """The *test* stream's goal family: the next entry of the fixed schedule (so
         the realised composition is exactly test_goal_type_counts(), every seed), or
         forced_goal_type when one is pinned -- which leaves the schedule untouched
@@ -182,7 +182,7 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
             self._test_schedule = self._build_test_schedule()
         return self._test_schedule.pop(0)
 
-    def _build_test_schedule(self) -> list[TossingRoomSplitPickupWeightGoalType]:
+    def _build_test_schedule(self) -> list[TossingRoomGoalType]:
         """One block of test_goal_type_counts() goal families in a test_rng-determined
         order. Shuffled rather than grouped by family: some analyses key on a task's
         index within the sweep, which a family-sorted test set would make misleading."""
@@ -193,16 +193,14 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
         ]
         return [block[int(index)] for index in self._test_rng.permutation(len(block))]
 
-    def build_task(
-        self, *, goal_type: TossingRoomSplitPickupWeightGoalType, rng: np.random.Generator
-    ) -> Task:
+    def build_task(self, *, goal_type: TossingRoomGoalType, rng: np.random.Generator) -> Task:
         # Exactly one draw per task, taken regardless of goal type -- an EMPTY task
         # carries no pickup and so needs no weights, but skipping the draw would make the
         # stream's position depend on the goal families sampled before it, so two seeds
         # with the same weight seed at task k would stop being the same comparison.
         weight_seed = int(rng.integers(self.weight_seed_high))
 
-        if goal_type is TossingRoomSplitPickupWeightGoalType.EMPTY:
+        if goal_type is TossingRoomGoalType.EMPTY:
             # One item per bin: a bin holds at most one, so the old Uniform{1, 2, 3}
             # prefill (and its initial_count_low/high knobs) has a single legal value
             # left. Both bins are filled, so the goal is never already or half satisfied
@@ -223,7 +221,7 @@ class TossingRoomSplitPickupWeightTasks(Tasks):
         # kind (TrashInBin or RecyclingInBin -- split, unlike Tossing Room's shared
         # ItemInBin, because the item and bin types are split).
         initial_state = self.env.build_initial_state(weight_seed=weight_seed)
-        if goal_type is TossingRoomSplitPickupWeightGoalType.RECYCLING:
+        if goal_type is TossingRoomGoalType.RECYCLING:
             atom: GroundAtom = RECYCLING_IN_BIN(
                 state=initial_state, objects=(self.env.recycling, self.env.recycling_bin)
             )

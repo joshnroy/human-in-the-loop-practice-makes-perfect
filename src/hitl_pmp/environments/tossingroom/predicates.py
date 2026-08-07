@@ -33,14 +33,14 @@ than dropping it: it reads as a live constraint while constraining nothing.
     it is unbindable, under any layout -- including a degenerate one that puts both bins
     in the same room, where `ButtonInRoom` alone would not separate them.
 
-`tests/environments/tossingroomsplitpickupweight/test_skills.py` asserts a cross-kind grounding is
+`tests/environments/tossingroom/test_skills.py` asserts a cross-kind grounding is
 rejected, which is the property both dropped predicates used to buy.
 """
 
 from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 
-from .environment import TossingRoomSplitPickupWeightEnvironment
+from .environment import TossingRoomEnvironment
 
 
 class RobotInRoomClassifier:
@@ -94,7 +94,7 @@ class ItemInBinClassifier:
     on its callers to have declared the right types.
 
     Deliberately still count-based, and deliberately NOT paired with an `in_bin` flag on
-    the item. A bin holds at most one item (`TossingRoomSplitPickupWeightEnvironment.BIN_CAPACITY`)
+    the item. A bin holds at most one item (`TossingRoomEnvironment.BIN_CAPACITY`)
     and each throw requires its bin to be empty, so the count is provably 0 at throw
     time -- which makes this predicate flip false -> true exactly once per throw and
     therefore an honest add-effect for EES to score against. `count in {0, 1}` is the
@@ -170,8 +170,8 @@ class ButtonInRoomClassifier:
 ROBOT_IN_ROOM = Predicate(
     name="RobotInRoom",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.robot_type,
-        TossingRoomSplitPickupWeightEnvironment.room_type,
+        TossingRoomEnvironment.robot_type,
+        TossingRoomEnvironment.room_type,
     ),
     holds=lambda state, objects: RobotInRoomClassifier.holds(
         state=state, robot=objects[0], room=objects[1]
@@ -180,15 +180,15 @@ ROBOT_IN_ROOM = Predicate(
 
 HAND_EMPTY = Predicate(
     name="HandEmpty",
-    types=(TossingRoomSplitPickupWeightEnvironment.robot_type,),
+    types=(TossingRoomEnvironment.robot_type,),
     holds=lambda state, objects: HandEmptyClassifier.holds(state=state, robot=objects[0]),
 )
 
 HOLDING_TRASH = Predicate(
     name="HoldingTrash",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.robot_type,
-        TossingRoomSplitPickupWeightEnvironment.trash_type,
+        TossingRoomEnvironment.robot_type,
+        TossingRoomEnvironment.trash_type,
     ),
     holds=lambda state, objects: HoldingClassifier.holds(
         state=state, robot=objects[0], item=objects[1]
@@ -198,8 +198,8 @@ HOLDING_TRASH = Predicate(
 HOLDING_RECYCLING = Predicate(
     name="HoldingRecycling",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.robot_type,
-        TossingRoomSplitPickupWeightEnvironment.recycling_type,
+        TossingRoomEnvironment.robot_type,
+        TossingRoomEnvironment.recycling_type,
     ),
     holds=lambda state, objects: HoldingClassifier.holds(
         state=state, robot=objects[0], item=objects[1]
@@ -209,8 +209,8 @@ HOLDING_RECYCLING = Predicate(
 ADJACENT = Predicate(
     name="Adjacent",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.room_type,
-        TossingRoomSplitPickupWeightEnvironment.room_type,
+        TossingRoomEnvironment.room_type,
+        TossingRoomEnvironment.room_type,
     ),
     holds=lambda state, objects: AdjacentClassifier.holds(
         state=state, room1=objects[0], room2=objects[1]
@@ -220,8 +220,8 @@ ADJACENT = Predicate(
 TRASH_IN_BIN = Predicate(
     name="TrashInBin",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.trash_type,
-        TossingRoomSplitPickupWeightEnvironment.trash_bin_type,
+        TossingRoomEnvironment.trash_type,
+        TossingRoomEnvironment.trash_bin_type,
     ),
     holds=lambda state, objects: ItemInBinClassifier.holds(
         state=state, item=objects[0], bin_obj=objects[1]
@@ -231,8 +231,8 @@ TRASH_IN_BIN = Predicate(
 RECYCLING_IN_BIN = Predicate(
     name="RecyclingInBin",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.recycling_type,
-        TossingRoomSplitPickupWeightEnvironment.recycling_bin_type,
+        TossingRoomEnvironment.recycling_type,
+        TossingRoomEnvironment.recycling_bin_type,
     ),
     holds=lambda state, objects: ItemInBinClassifier.holds(
         state=state, item=objects[0], bin_obj=objects[1]
@@ -241,21 +241,21 @@ RECYCLING_IN_BIN = Predicate(
 
 TRASH_BIN_EMPTY = Predicate(
     name="TrashBinEmpty",
-    types=(TossingRoomSplitPickupWeightEnvironment.trash_bin_type,),
+    types=(TossingRoomEnvironment.trash_bin_type,),
     holds=lambda state, objects: BinEmptyClassifier.holds(state=state, bin_obj=objects[0]),
 )
 
 RECYCLING_BIN_EMPTY = Predicate(
     name="RecyclingBinEmpty",
-    types=(TossingRoomSplitPickupWeightEnvironment.recycling_bin_type,),
+    types=(TossingRoomEnvironment.recycling_bin_type,),
     holds=lambda state, objects: BinEmptyClassifier.holds(state=state, bin_obj=objects[0]),
 )
 
 TRASH_BIN_IN_ROOM = Predicate(
     name="TrashBinInRoom",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.trash_bin_type,
-        TossingRoomSplitPickupWeightEnvironment.room_type,
+        TossingRoomEnvironment.trash_bin_type,
+        TossingRoomEnvironment.room_type,
     ),
     holds=lambda state, objects: BinInRoomClassifier.holds(
         state=state, bin_obj=objects[0], room=objects[1]
@@ -265,8 +265,8 @@ TRASH_BIN_IN_ROOM = Predicate(
 RECYCLING_BIN_IN_ROOM = Predicate(
     name="RecyclingBinInRoom",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.recycling_bin_type,
-        TossingRoomSplitPickupWeightEnvironment.room_type,
+        TossingRoomEnvironment.recycling_bin_type,
+        TossingRoomEnvironment.room_type,
     ),
     holds=lambda state, objects: BinInRoomClassifier.holds(
         state=state, bin_obj=objects[0], room=objects[1]
@@ -276,8 +276,8 @@ RECYCLING_BIN_IN_ROOM = Predicate(
 CAN_MOVE_ROOM = Predicate(
     name="CanMoveRoom",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.room_type,
-        TossingRoomSplitPickupWeightEnvironment.room_type,
+        TossingRoomEnvironment.room_type,
+        TossingRoomEnvironment.room_type,
     ),
     holds=lambda state, objects: CanMoveRoomClassifier.holds(
         state=state, from_room=objects[0], to_room=objects[1]
@@ -287,8 +287,8 @@ CAN_MOVE_ROOM = Predicate(
 PILE_IN_ROOM = Predicate(
     name="PileInRoom",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.pile_type,
-        TossingRoomSplitPickupWeightEnvironment.room_type,
+        TossingRoomEnvironment.pile_type,
+        TossingRoomEnvironment.room_type,
     ),
     holds=lambda state, objects: PileInRoomClassifier.holds(
         state=state, pile=objects[0], room=objects[1]
@@ -298,8 +298,8 @@ PILE_IN_ROOM = Predicate(
 TRASH_BUTTON_IN_ROOM = Predicate(
     name="TrashButtonInRoom",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.trash_button_type,
-        TossingRoomSplitPickupWeightEnvironment.room_type,
+        TossingRoomEnvironment.trash_button_type,
+        TossingRoomEnvironment.room_type,
     ),
     holds=lambda state, objects: ButtonInRoomClassifier.holds(
         state=state, button=objects[0], room=objects[1]
@@ -309,8 +309,8 @@ TRASH_BUTTON_IN_ROOM = Predicate(
 RECYCLING_BUTTON_IN_ROOM = Predicate(
     name="RecyclingButtonInRoom",
     types=(
-        TossingRoomSplitPickupWeightEnvironment.recycling_button_type,
-        TossingRoomSplitPickupWeightEnvironment.room_type,
+        TossingRoomEnvironment.recycling_button_type,
+        TossingRoomEnvironment.room_type,
     ),
     holds=lambda state, objects: ButtonInRoomClassifier.holds(
         state=state, button=objects[0], room=objects[1]

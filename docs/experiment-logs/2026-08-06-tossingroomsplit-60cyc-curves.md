@@ -4,8 +4,9 @@
 > measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
 > `--practice-reset-policy never` then never re-drew -- so a reset-free arm
 > practised at a single point of the task distribution. That is a defect, not a
-> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
-> the corrected domain. Every number below stands
+> variant, and `tossingroom` (which draws the weight at pickup) is the
+> corrected domain -- it was named `tossingroomsplitpickupweight` when the runs
+> on it were made, and was renamed once the forks above freed the shorter name. Every number below stands
 > exactly as it was published and none has been edited, restated or recomputed;
 > what has changed is only that the domain can no longer be instantiated from
 > HEAD. **Re-runnable as a new measurement, not as a reproduction.** This page's own

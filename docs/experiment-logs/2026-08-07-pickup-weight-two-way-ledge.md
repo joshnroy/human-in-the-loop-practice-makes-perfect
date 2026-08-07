@@ -1,5 +1,20 @@
 # Pre-registration: the pickup-weight fork under the two-way ledge
 
+> **Environment renamed (2026-08-07).** The domain these runs were made on was
+> called `tossingroomsplitpickupweight` at the time, and every command below names
+> it that way. It is now registered as **`tossingroom`**, having taken over the name
+> of a retired fork; the three superseded forks were deleted in the same stack. The
+> domain is unchanged *by the rename*, so nothing here has been edited, restated or
+> recomputed -- but the commands need `--env tossingroom` against current code.
+>
+> **Separately, these artifacts no longer reproduce byte-for-byte**, and that is not
+> the rename's doing. #130 (`947af7b`) changed this domain after these runs were
+> made -- the committed `config_snapshot.json` files here carry no `two_way_ledge`
+> key, while current code records one. Re-running this config at HEAD yields a
+> different `stats.json` (68,803 bytes against the 62,305 committed here). The
+> published numbers are left exactly as they are; what is no longer true is that
+> re-running the recorded command reproduces them.
+
 **Status: pre-registration (commit `8cb89ec`) plus results, added in a later commit.**
 Everything from "Question / goal" down to "Disclosure of prior observations" is the
 pre-registration exactly as committed before any sweep ran, unedited. The results follow

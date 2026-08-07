@@ -25,8 +25,8 @@ class PracticeResetPolicy(str, enum.Enum):
     `def` is evaluated.
 
     A `(str, Enum)` -- matching this project's other domain enums, e.g.
-    `environments/tossingroomsplitpickupweight/tasks.py`'s
-    `TossingRoomSplitPickupWeightGoalType` -- so
+    `environments/tossingroom/tasks.py`'s
+    `TossingRoomGoalType` -- so
     argparse can offer the members directly as `choices`, so a member compares equal
     to its own wire string, and so the chosen value lands in `config_snapshot.json`
     as a readable word rather than an integer nobody can interpret later."""
@@ -91,7 +91,7 @@ class PracticeLoop:
     2026-08-06 A/B: 194 greedy throws at **1** distinct required-force target under
     `NEVER`, against 86 distinct targets over 440 throws under `SCHEDULED`.
 
-    `tossingroomsplitpickupweight` exists to break that entanglement: it draws the
+    `tossingroom` exists to break that entanglement: it draws the
     weight at pickup, on an action the robot takes, so `NEVER` no longer collapses the
     sampler's training distribution. The general hazard below still applies to any
     domain whose sampler inputs no action writes.
@@ -182,7 +182,7 @@ class PracticeLoop:
     Passing one is safe only where the split is genuinely byte-identical -- the
     environment must consume no randomness of its own, or a second instance changes
     which draws practice sees. Exactly one domain is wired today,
-    `tossingroomsplitpickupweight` (no environment RNG, pure `take_action`), because
+    `tossingroom` (no environment RNG, pure `take_action`), because
     that is where the reset-free measurement is being made. Two domains are *excluded
     on the merits* and should not simply be wired by the next reader: `ballring`, whose
     `_noise_rng` is consumed by evaluation today and therefore shifts the practice

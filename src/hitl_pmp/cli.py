@@ -25,8 +25,8 @@ from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli
 from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
-from hitl_pmp.environments.tossingroomsplitpickupweight.cli import (
-    TossingRoomSplitPickupWeightCli,
+from hitl_pmp.environments.tossingroom.cli import (
+    TossingRoomCli,
 )
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
@@ -50,7 +50,7 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     # action the robot takes. The three forks that carried the frozen-weight defect
     # (`tossingroom`, `tossingroomsplit`, `tossingroomsplitidentity`) are retired; their
     # published results stay in docs/experiment-logs/ behind staleness notes.
-    "tossingroomsplitpickupweight": TossingRoomSplitPickupWeightCli,
+    "tossingroom": TossingRoomCli,
 }
 
 
@@ -128,7 +128,7 @@ class Cli:
             "per-period reset off entirely, so practice state runs continuously across "
             "period boundaries -- the reset-free condition. 'never' is incompatible "
             "with --practice-reset-interval, and is only meaningful on an environment "
-            "whose evaluation runs on its own instance (tossingroomsplitpickupweight "
+            "whose evaluation runs on its own instance (tossingroom "
             "today).",
         )
         parser.add_argument(

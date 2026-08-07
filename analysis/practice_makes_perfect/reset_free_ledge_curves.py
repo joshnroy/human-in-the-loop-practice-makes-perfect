@@ -12,7 +12,7 @@ pick anything up again, and under `never` that damage carries into every later p
 irreversible action and nothing else about the reset policy.
 
 So this reads back a 2x2 of **ledge** (`one-way`, `two-way`) x **policy** (`scheduled`,
-`never`), all on `tossingroomsplitpickupweight`, and the comparison that carries is the
+`never`), all on `tossingroom`, and the comparison that carries is the
 **gap within a ledge condition**.
 
 **Levels do not compare across ledge conditions, only gaps do.** Turning the flag on also

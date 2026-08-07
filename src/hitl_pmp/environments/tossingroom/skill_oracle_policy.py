@@ -4,9 +4,9 @@ from hitl_pmp.core.method.types import GroundSkill, LabeledAction
 from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Goal
 
-from .environment import TossingRoomSplitPickupWeightEnvironment
+from .environment import TossingRoomEnvironment
 from .predicates import RECYCLING_BIN_EMPTY, RECYCLING_IN_BIN, TRASH_BIN_EMPTY
-from .skills import TossingRoomSplitPickupWeightSkills
+from .skills import TossingRoomSkills
 
 
 class SkillOraclePolicy:
@@ -33,7 +33,7 @@ class SkillOraclePolicy:
 
     @staticmethod
     def get_labeled_action(
-        *, state: State, env: TossingRoomSplitPickupWeightEnvironment, goal: Goal
+        *, state: State, env: TossingRoomEnvironment, goal: Goal
     ) -> LabeledAction:
         rooms = env.get_rooms()
         robot_room = int(round(state.get(obj=env.robot, feature_name="room")))
@@ -65,7 +65,7 @@ class SkillOraclePolicy:
     def _empty_step(
         *,
         state: State,
-        env: TossingRoomSplitPickupWeightEnvironment,
+        env: TossingRoomEnvironment,
         rooms: tuple[Object, ...],
         robot_room: int,
         goal: Goal,
@@ -104,9 +104,9 @@ class SkillOraclePolicy:
                 rooms=rooms, robot_room=robot_room, target_room=button_room
             )
         skill = (
-            TossingRoomSplitPickupWeightSkills.PRESS_RECYCLING
+            TossingRoomSkills.PRESS_RECYCLING
             if kind == env.RECYCLING_KIND
-            else TossingRoomSplitPickupWeightSkills.PRESS_TRASH
+            else TossingRoomSkills.PRESS_TRASH
         )
         ground_skill = GroundSkill(
             skill=skill,
@@ -124,7 +124,7 @@ class SkillOraclePolicy:
     def _throw_step(
         *,
         state: State,
-        env: TossingRoomSplitPickupWeightEnvironment,
+        env: TossingRoomEnvironment,
         rooms: tuple[Object, ...],
         robot_room: int,
         recycling: bool,
@@ -132,16 +132,8 @@ class SkillOraclePolicy:
         item = env.recycling if recycling else env.trash
         bin_obj = env.recycling_bin if recycling else env.trash_bin
         bin_room = env.recycling_bin_room if recycling else env.trash_bin_room
-        pickup = (
-            TossingRoomSplitPickupWeightSkills.PICKUP_RECYCLING
-            if recycling
-            else TossingRoomSplitPickupWeightSkills.PICKUP_TRASH
-        )
-        throw = (
-            TossingRoomSplitPickupWeightSkills.THROW_RECYCLING
-            if recycling
-            else TossingRoomSplitPickupWeightSkills.THROW_TRASH
-        )
+        pickup = TossingRoomSkills.PICKUP_RECYCLING if recycling else TossingRoomSkills.PICKUP_TRASH
+        throw = TossingRoomSkills.THROW_RECYCLING if recycling else TossingRoomSkills.THROW_TRASH
 
         kind = int(round(state.get(obj=item, feature_name="kind")))
         holding = int(round(state.get(obj=env.robot, feature_name="holding")))
@@ -176,9 +168,9 @@ class SkillOraclePolicy:
         step = 1 if target_room > robot_room else -1
         to_room = robot_room + step
         ground_skill = GroundSkill(
-            skill=TossingRoomSplitPickupWeightSkills.MOVE_ROOM,
+            skill=TossingRoomSkills.MOVE_ROOM,
             objects=(
-                TossingRoomSplitPickupWeightEnvironment.robot,
+                TossingRoomEnvironment.robot,
                 rooms[robot_room],
                 rooms[to_room],
             ),
@@ -189,7 +181,7 @@ class SkillOraclePolicy:
     def _to_labeled_action(
         *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> LabeledAction:
-        action = TossingRoomSplitPickupWeightSkills.compute_action(
+        action = TossingRoomSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )
         objects_desc = ", ".join(obj.name for obj in ground_skill.objects)

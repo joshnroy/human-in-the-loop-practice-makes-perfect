@@ -3,7 +3,7 @@ argued, plus the redundancy measurement that motivated replacing it.
 
 The unsplit domain's version of this file
 (`tests/environments/tossingroom/test_throw_representation.py`) carries the full
-argument; this one exists because `environments/tossingroomsplitpickupweight` is a
+argument; this one exists because `environments/tossingroom` is a
 **verbatim fork**, not a subclass, so nothing propagates and the two domains would
 silently stop being the same learning problem.
 
@@ -24,18 +24,18 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
-    TossingRoomSplitPickupWeightEnvironment,
+from hitl_pmp.environments.tossingroom.environment import (
+    TossingRoomEnvironment,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.skills import (
-    TossingRoomSplitPickupWeightSkills,
+from hitl_pmp.environments.tossingroom.skills import (
+    TossingRoomSkills,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.tasks import (
-    TossingRoomSplitPickupWeightGoalType,
-    TossingRoomSplitPickupWeightTasks,
+from hitl_pmp.environments.tossingroom.tasks import (
+    TossingRoomGoalType,
+    TossingRoomTasks,
 )
 
-_TOLERANCE = TossingRoomSplitPickupWeightEnvironment.model_fields["throw_tolerance"].default
+_TOLERANCE = TossingRoomEnvironment.model_fields["throw_tolerance"].default
 
 # The row layout, by role, in each throw's own parameter order (robot, item, bin, room).
 # Identical for both throws by design -- see the environment's docstring on why the split
@@ -55,17 +55,17 @@ _COLUMN_NAMES = (
     "force",
 )
 _FAMILIES = (
-    TossingRoomSplitPickupWeightGoalType.TRASH,
-    TossingRoomSplitPickupWeightGoalType.RECYCLING,
+    TossingRoomGoalType.TRASH,
+    TossingRoomGoalType.RECYCLING,
 )
 
 
-def _env() -> TossingRoomSplitPickupWeightEnvironment:
-    return TossingRoomSplitPickupWeightEnvironment()
+def _env() -> TossingRoomEnvironment:
+    return TossingRoomEnvironment()
 
 
 def _throw_rows(
-    *, family: TossingRoomSplitPickupWeightGoalType, num_tasks: int = 80, seed: int = 0
+    *, family: TossingRoomGoalType, num_tasks: int = 80, seed: int = 0
 ) -> tuple[np.ndarray, np.ndarray]:
     """One classifier input row per applicable grounding of **one** throw skill, with
     that grounding's required force beside it. Per skill, not pooled, because that is
@@ -74,13 +74,9 @@ def _throw_rows(
     "Applicable" means the preconditions hold: holding that kind, standing in its bin's
     room, that bin empty. Returns (rows, required force per row)."""
     env = _env()
-    tasks = TossingRoomSplitPickupWeightTasks(env=env, seed=seed, num_test_tasks=30)
+    tasks = TossingRoomTasks(env=env, seed=seed, num_test_tasks=30)
     force_rng = np.random.default_rng(seed)
-    kind = (
-        env.TRASH_KIND
-        if family is TossingRoomSplitPickupWeightGoalType.TRASH
-        else env.RECYCLING_KIND
-    )
+    kind = env.TRASH_KIND if family is TossingRoomGoalType.TRASH else env.RECYCLING_KIND
     bin_room = env.bin_room_for_kind(kind=kind)
     item, bin_obj = env.item_for_kind(kind=kind), env.bin_for_kind(kind=kind)
     rows: list[list[float]] = []
@@ -114,9 +110,7 @@ def _throw_rows(
 
 
 @pytest.mark.parametrize("family", _FAMILIES)
-def test_the_row_layout_is_the_one_these_tests_assume(
-    *, family: TossingRoomSplitPickupWeightGoalType
-) -> None:
+def test_the_row_layout_is_the_one_these_tests_assume(*, family: TossingRoomGoalType) -> None:
     """Guard: every column index below is named, so a feature added to any of a throw's
     four object types has to come here and be classified rather than silently joining the
     row. Checked on both throws, which also pins that the two rows are the same width --
@@ -130,9 +124,7 @@ class TestTheAnswerIsNotInTheState:
 
     @staticmethod
     @pytest.mark.parametrize("family", _FAMILIES)
-    def test_no_state_feature_equals_the_required_force(
-        *, family: TossingRoomSplitPickupWeightGoalType
-    ) -> None:
+    def test_no_state_feature_equals_the_required_force(*, family: TossingRoomGoalType) -> None:
         rows, required = _throw_rows(family=family)
         for index, name in enumerate(_COLUMN_NAMES):
             if name == "force":
@@ -145,7 +137,7 @@ class TestTheAnswerIsNotInTheState:
     @staticmethod
     @pytest.mark.parametrize("family", _FAMILIES)
     def test_the_weight_predicts_the_required_force_affinely_and_nothing_else_does(
-        *, family: TossingRoomSplitPickupWeightGoalType
+        *, family: TossingRoomGoalType
     ) -> None:
         """**This is where this domain deliberately differs from `tossingroomsplit`, and
         it is a consequence of fixing the distance rather than an oversight.**
@@ -195,7 +187,7 @@ class TestTheCausesAreInTheState:
     @staticmethod
     @pytest.mark.parametrize("family", _FAMILIES)
     def test_the_required_force_is_a_function_of_two_observed_columns(
-        *, family: TossingRoomSplitPickupWeightGoalType
+        *, family: TossingRoomGoalType
     ) -> None:
         rows, required = _throw_rows(family=family)
         env = _env()
@@ -210,16 +202,12 @@ class TestTheCausesAreInTheState:
     @staticmethod
     @pytest.mark.parametrize("family", _FAMILIES)
     def test_throwing_at_the_required_force_lands_and_just_outside_it_misses(
-        *, family: TossingRoomSplitPickupWeightGoalType
+        *, family: TossingRoomGoalType
     ) -> None:
         """`required_force` is the dynamics, not a parallel description of them."""
         env = _env()
-        tasks = TossingRoomSplitPickupWeightTasks(env=env, seed=1, num_test_tasks=30)
-        kind = (
-            env.TRASH_KIND
-            if family is TossingRoomSplitPickupWeightGoalType.TRASH
-            else env.RECYCLING_KIND
-        )
+        tasks = TossingRoomTasks(env=env, seed=1, num_test_tasks=30)
+        kind = env.TRASH_KIND if family is TossingRoomGoalType.TRASH else env.RECYCLING_KIND
         item, bin_obj = env.item_for_kind(kind=kind), env.bin_for_kind(kind=kind)
         bin_room = env.bin_room_for_kind(kind=kind)
         for _ in range(10):
@@ -268,9 +256,9 @@ class TestTheCausesAreInTheState:
     @staticmethod
     @pytest.mark.parametrize("family", _FAMILIES)
     def test_every_sampled_task_is_reachable_by_a_force_the_base_sampler_can_draw(
-        *, family: TossingRoomSplitPickupWeightGoalType
+        *, family: TossingRoomGoalType
     ) -> None:
-        """`TossingRoomSplitPickupWeightSkills.sample_params` draws Uniform(0, 1) for BOTH throws --
+        """`TossingRoomSkills.sample_params` draws Uniform(0, 1) for BOTH throws --
         deliberately the same prior, so a head start cannot confound the comparison. If a
         task's required force sat within a tolerance of 0 or 1 its winning window would be
         clipped, and one family could be quietly harder for a reason unrelated to its
@@ -282,7 +270,7 @@ class TestTheCausesAreInTheState:
     @staticmethod
     @pytest.mark.parametrize("family", _FAMILIES)
     def test_a_uniformly_random_force_lands_with_probability_exactly_one_fifth(
-        *, family: TossingRoomSplitPickupWeightGoalType
+        *, family: TossingRoomGoalType
     ) -> None:
         """**The invariant any comparison against a different throw representation rests
         on.** A random draw's landing rate is how hard the throw is to hit *by luck*. If
@@ -301,7 +289,7 @@ class TestTheCausesAreInTheState:
         * the **window**, `(required - 0.1, required + 0.1)`, must have width
           `2 * throw_tolerance` and lie wholly inside the draw band -- never clipped; and
         * the **draw band** must actually be `Uniform(0, 1)`, read off
-          `TossingRoomSplitPickupWeightSkills.sample_params` rather than assumed. Without this,
+          `TossingRoomSkills.sample_params` rather than assumed. Without this,
           widening the band to `Uniform(0, 2)` would halve the real landing rate with
           every assertion still passing.
 
@@ -321,22 +309,18 @@ class TestTheCausesAreInTheState:
         # The draw band itself. `sample_params` is the only thing that decides it, and a
         # window of width 0.2 only means probability 0.2 against a Uniform(0, 1) draw.
         env = _env()
-        kind = (
-            env.TRASH_KIND
-            if family is TossingRoomSplitPickupWeightGoalType.TRASH
-            else env.RECYCLING_KIND
-        )
+        kind = env.TRASH_KIND if family is TossingRoomGoalType.TRASH else env.RECYCLING_KIND
         item, bin_obj = env.item_for_kind(kind=kind), env.bin_for_kind(kind=kind)
         bin_room = env.bin_room_for_kind(kind=kind)
         ground = GroundSkill(
-            skill=TossingRoomSplitPickupWeightSkills.THROW_TRASH
-            if family is TossingRoomSplitPickupWeightGoalType.TRASH
-            else TossingRoomSplitPickupWeightSkills.THROW_RECYCLING,
+            skill=TossingRoomSkills.THROW_TRASH
+            if family is TossingRoomGoalType.TRASH
+            else TossingRoomSkills.THROW_RECYCLING,
             objects=(env.robot, item, bin_obj, env.get_rooms()[bin_room]),
         )
         band_rng = np.random.default_rng(4)
         sampled = np.array([
-            TossingRoomSplitPickupWeightSkills.sample_params(ground_skill=ground, rng=band_rng)[0]
+            TossingRoomSkills.sample_params(ground_skill=ground, rng=band_rng)[0]
             for _ in range(4000)
         ])
         # Unit-interval uniform: the support and the first two moments a Uniform(0, 1)
@@ -347,7 +331,7 @@ class TestTheCausesAreInTheState:
         assert float(sampled.std()) == pytest.approx(1 / np.sqrt(12), abs=0.02)
 
         # End to end, through the real dynamics rather than the analytic window.
-        tasks = TossingRoomSplitPickupWeightTasks(env=env, seed=7, num_test_tasks=30)
+        tasks = TossingRoomTasks(env=env, seed=7, num_test_tasks=30)
         rng = np.random.default_rng(7)
         landed = 0
         attempts = 0
@@ -358,13 +342,11 @@ class TestTheCausesAreInTheState:
             picked_up = env.get_current_state().model_copy(deep=True)
             picked_up.set(obj=env.robot, feature_name="room", feature_val=float(bin_room))
             for _ in range(25):
-                params = TossingRoomSplitPickupWeightSkills.sample_params(
-                    ground_skill=ground, rng=rng
-                )
+                params = TossingRoomSkills.sample_params(ground_skill=ground, rng=rng)
                 state = picked_up.model_copy(deep=True)
                 env.set_state(state=state)
                 after = env.take_action(
-                    action=TossingRoomSplitPickupWeightSkills.compute_action(
+                    action=TossingRoomSkills.compute_action(
                         ground_skill=ground, params=params, state=state
                     )
                 )
@@ -384,16 +366,14 @@ class TestItVariesPerTask:
 
     @staticmethod
     @pytest.mark.parametrize("family", _FAMILIES)
-    def test_the_required_force_differs_between_tasks(
-        *, family: TossingRoomSplitPickupWeightGoalType
-    ) -> None:
+    def test_the_required_force_differs_between_tasks(*, family: TossingRoomGoalType) -> None:
         _rows, required = _throw_rows(family=family)
         assert len(np.unique(np.round(required, 9))) == len(required)
 
     @staticmethod
     @pytest.mark.parametrize("family", _FAMILIES)
     def test_no_single_fixed_force_lands_more_than_a_minority_of_throws(
-        *, family: TossingRoomSplitPickupWeightGoalType
+        *, family: TossingRoomGoalType
     ) -> None:
         """The state-blind cap: the best fixed force a sampler could settle on. About
         7/16 here (the required force is triangular on [0.1, 0.9], a sum of two uniforms)
@@ -412,7 +392,7 @@ class TestItVariesPerTask:
 
 @pytest.mark.parametrize("family", _FAMILIES)
 def test_two_of_the_eleven_state_and_force_columns_carry_signal(
-    *, family: TossingRoomSplitPickupWeightGoalType
+    *, family: TossingRoomGoalType
 ) -> None:
     """The measurement that motivated #80's change, re-run per throw on this domain.
 
