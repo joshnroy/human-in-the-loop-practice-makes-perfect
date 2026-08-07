@@ -15,6 +15,7 @@ from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchOracle
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.method_runner import MethodRunner
 from hitl_pmp.methods.oracle.skill_oracle_method import SkillOracleMethod
+from hitl_pmp.practice_loop import PracticeResetPolicy
 
 
 def _args(*, num_test_tasks: int = 5, output_dir: Path | None = None) -> argparse.Namespace:
@@ -270,6 +271,45 @@ def test_run_without_a_practice_reset_interval_resets_only_per_cycle() -> None:
     problem = _build_problem()
     metrics = MethodRunner.run(
         args=_args(num_test_tasks=1),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=2,
+        max_steps_per_interaction=6,
+        renderer=None,
+        render_fps=2,
+    )
+    assert metrics.num_practice_resets == 2
+
+
+def test_run_forwards_the_practice_reset_policy_from_args() -> None:
+    """Same reasoning as the interval above: a silently dropped flag produces a
+    sweep whose two arms are identical and whose null result looks real."""
+    problem = _build_problem()
+    args = _args(num_test_tasks=1)
+    args.practice_reset_policy = PracticeResetPolicy.NEVER
+    metrics = MethodRunner.run(
+        args=args,
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        # Required under `never`: without its own evaluation environment the arm
+        # would be reset once per test task per sweep and would not be reset-free.
+        evaluation_problem=_build_problem(),
+        num_cycles=2,
+        max_steps_per_interaction=6,
+        renderer=None,
+        render_fps=2,
+    )
+    assert metrics.num_practice_resets == 0
+
+
+def test_run_with_an_args_namespace_predating_the_policy_flag_still_resets() -> None:
+    """Every archived driver's namespace lacks the attribute entirely; the fallback
+    has to be the scheduled behaviour, not an accidental reset-free run."""
+    problem = _build_problem()
+    args = _args(num_test_tasks=1)
+    assert not hasattr(args, "practice_reset_policy")
+    metrics = MethodRunner.run(
+        args=args,
         method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
         problem=problem,
         num_cycles=2,

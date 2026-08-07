@@ -8,6 +8,7 @@ from hitl_pmp.cli import ENVIRONMENTS, METHODS, Cli, MethodCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossingroomsplit.cli import TossingRoomSplitCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
+from hitl_pmp.practice_loop import PracticeResetPolicy
 
 
 class _FakeMethodCli(MethodCli):
@@ -187,6 +188,29 @@ def test_parse_args_rejects_a_non_positive_practice_reset_interval() -> None:
     with pytest.raises(SystemExit):
         Cli.parse_args(
             argv=["--env", "tossingroom", "--method", "ees", "--practice-reset-interval", "0"]
+        )
+
+
+def test_parse_args_defaults_practice_reset_policy_to_scheduled() -> None:
+    """'scheduled' is the behaviour that predates the flag -- one reset at the top
+    of every period -- so every run that does not ask for it is unchanged."""
+    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
+    assert args.practice_reset_policy is PracticeResetPolicy.SCHEDULED
+
+
+def test_parse_args_accepts_never_as_a_practice_reset_policy() -> None:
+    args = Cli.parse_args(
+        argv=["--env", "tossingroomsplit", "--method", "ees", "--practice-reset-policy", "never"]
+    )
+    assert args.practice_reset_policy is PracticeResetPolicy.NEVER
+
+
+def test_parse_args_rejects_an_unknown_practice_reset_policy() -> None:
+    """The arm names are the experiment's own vocabulary; a typo must fail loudly
+    rather than fall back to the default and quietly run the wrong arm."""
+    with pytest.raises(SystemExit):
+        Cli.parse_args(
+            argv=["--env", "tossingroom", "--method", "ees", "--practice-reset-policy", "sometimes"]
         )
 
 
