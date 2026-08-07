@@ -7,13 +7,23 @@
 > domain is unchanged *by the rename*, so nothing here has been edited, restated or
 > recomputed -- but the commands need `--env tossingroom` against current code.
 >
-> **Separately, these artifacts no longer reproduce byte-for-byte**, and that is not
-> the rename's doing. #130 (`947af7b`) changed this domain after these runs were
-> made -- the committed `config_snapshot.json` files here carry no `two_way_ledge`
-> key, while current code records one. Re-running this config at HEAD yields a
-> different `stats.json` (68,803 bytes against the 62,305 committed here). The
-> published numbers are left exactly as they are; what is no longer true is that
-> re-running the recorded command reproduces them.
+> **Correction (2026-08-07).** An earlier version of this note said these artifacts no
+> longer reproduce, blamed #130 (`947af7b`), and quoted a byte comparison. None of that
+> was ever true of *this* page -- the paragraph was copied from the sibling reset-free
+> A/B, where only the "no longer reproduce" part was right and the cause was #119, not
+> #130. Every clause of it failed here:
+>
+> * These runs' `config_snapshot.json` files **do** carry a `two_way_ledge` key -- it is
+>   the intervention this page measures, and
+>   `tests/analysis/practice_makes_perfect/test_pickup_weight_two_way_ledge_runs.py`
+>   asserts it is `"True"`.
+> * These runs' `stats.json` files never moved. #146 re-ran all 20, and **20/20** are the
+>   same git blob before and after it (`never/ees/0` is `067cab87` in both trees).
+> * The quoted "68,803 against the 62,305" are the *other* page's files, and both figures
+>   were 15 low there as well. Nothing here is either size: these 20 files run 64,428 to
+>   69,687 bytes, and `never/ees/0` is 68,376.
+>
+> The published numbers on this page are unchanged, and were never in question.
 
 **Status: pre-registration (commit `8cb89ec`) plus results, added in a later commit.**
 Everything from "Question / goal" down to "Disclosure of prior observations" is the

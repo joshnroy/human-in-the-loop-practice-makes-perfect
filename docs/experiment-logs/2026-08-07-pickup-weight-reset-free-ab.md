@@ -7,13 +7,32 @@
 > domain is unchanged *by the rename*, so nothing here has been edited, restated or
 > recomputed -- but the commands need `--env tossingroom` against current code.
 >
-> **Separately, these artifacts no longer reproduce byte-for-byte**, and that is not
-> the rename's doing. #130 (`947af7b`) changed this domain after these runs were
-> made -- the committed `config_snapshot.json` files here carry no `two_way_ledge`
-> key, while current code records one. Re-running this config at HEAD yields a
-> different `stats.json` (68,803 bytes against the 62,305 committed here). The
-> published numbers are left exactly as they are; what is no longer true is that
-> re-running the recorded command reproduces them.
+> **Correction (2026-08-07).** An earlier version of this note said these artifacts no
+> longer reproduce and blamed **#130** (`947af7b`). The attribution was wrong, the byte
+> figures were wrong, and #146 has since regenerated the artifacts, so the claim is
+> superseded as well. The published numbers on this page were never affected and are
+> unchanged.
+>
+> **The cause was #119 (`2b59a3a`), not #130.** The entire delta between the old
+> artifacts and the regenerated ones is two keys --
+> `num_unparameterized_attempts` / `num_unparameterized_successes`, inside
+> `practice_outcomes_per_cycle` -- which #119 added when it split the practice fallback
+> pool. Every pre-existing key holds an identical value, so the change is purely
+> additive and `evaluations` and `breakdowns` are untouched. #119 is **not** in this
+> sweep's tree (`dbcaf32`) but **is** in the two-way-ledge sweep's (`cf5f3dd`), which is
+> exactly why that page's `stats.json` files did not move and these did.
+>
+> **What #130 actually did** was add the `--two-way-ledge` flag, touching only this
+> domain's `cli.py`, `environment.py`, `problem.py` and `renderer.py`. That is a real
+> reason the pre-#146 `config_snapshot.json` files here carried no `two_way_ledge` key
+> while current code recorded one -- but it is a fact about `config_snapshot.json`, not
+> about `stats.json`. The old note used the first to explain the second.
+>
+> **The byte figures were also both 15 low.** "68,803 bytes against the 62,305 committed"
+> should have read **68,818** against **62,320** (`never/0`, measured off the git blobs).
+>
+> #142's commit message carries the same wrong attribution. It is in merged history and
+> stays as it is.
 
 Domain `tossingroomsplitpickupweight`, method `ees`, 10 fixed seeds (0-9), 30 test tasks
 (14 TRASH / 14 RECYCLING / 2 EMPTY), 10 cycles x 150 steps per interaction period. The
