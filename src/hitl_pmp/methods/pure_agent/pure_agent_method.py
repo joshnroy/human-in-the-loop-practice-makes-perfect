@@ -406,12 +406,18 @@ class PureAgentMethod(Method):
         self._pending_transition = None
         choice = self._last_choice
         observation = self._last_observation
-        if ground_skill is None or choice is None or observation is None:
+        policy = self._policy
+        if ground_skill is None or choice is None or observation is None or policy is None:
             return
         if ground_skill.skill.param_dim == 0:
             return
         self._pending_transition = PracticeTransition(
-            round_index=self._round_index - 1,
+            # The round that authored the policy IN EFFECT, not the latest round -- the
+            # same distinction `_record_call_failure` makes and for the same reason. After
+            # a failed revision the policy still acting is an older one, and attributing
+            # its attempts to the newer round would show the agent records labelled as
+            # coming from code it did not write.
+            round_index=policy.round_index,
             observation=observation,
             skill_index=choice.skill_index,
             skill_name=ground_skill.skill.name,

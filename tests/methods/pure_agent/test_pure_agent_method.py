@@ -502,6 +502,25 @@ def test_the_transition_log_holds_only_parameterized_skills() -> None:
     assert all(transition.params for transition in method.practice_transitions())
 
 
+def test_a_transition_is_attributed_to_the_policy_that_made_it_not_the_latest_round() -> None:
+    """After a failed revision the policy still acting is an OLDER one.
+
+    Attributing its attempts to the round that failed would show the agent records
+    labelled as coming from code it never wrote -- the same mis-attribution
+    `_record_call_failure` exists to avoid. Round 1 here does not import, so round 0's
+    policy stays in effect and every transition after it is still round 0's."""
+    env = _env()
+    method = _method(env=env, sources=(SEEKS_A_PARAMETERIZED_SKILL, DOES_NOT_IMPORT))
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    _drive(env=env, policy=method.get_practice_policy(task=task), steps=6)
+    method.end_cycle()
+    _drive(env=env, policy=method.get_practice_policy(task=task), steps=6)
+
+    rounds = {transition.round_index for transition in method.practice_transitions()}
+    assert rounds == {0}, "round 1 never loaded, so no transition can belong to it"
+
+
 def test_the_transcript_records_what_each_round_cost() -> None:
     env = _env()
     method = _method(env=env, sources=(FIRST_SKILL, DECLINES))
