@@ -338,9 +338,9 @@ against `Pick`'s `200` and `Toss`'s `156`. Before #123 it was scored `-inf` by
 `skip_perfect` and `choose_practice_target` never selected it at all. So the fix changed
 both halves: the sampler can now learn, and EES now chooses to teach it.
 
-![Tossing3D, three arms, post-fix](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/33117262eb84bdb5df178b9bf266c32579ca02b7/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
+![Tossing3D, three arms, post-fix](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/1219df7c6ad2c88342f99fbde0259f72bfa1dca8/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
 
-> **The pin above is to `3311726`, an unmerged commit on this branch.** It is the commit
+> **The pin above is to `1219df7`, an unmerged commit on this branch.** It is the commit
 > that carries the figure, taken from `git rev-parse` rather than hand-expanded. It must
 > be **re-pinned after merge**, since a squash-merge mints a new SHA and the branch commit
 > stops being reachable once the branch is deleted.
