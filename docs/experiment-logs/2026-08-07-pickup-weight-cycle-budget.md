@@ -282,7 +282,7 @@ empty; at 10x, `36/180` against `71/120`, with `12/30` to `17/30` empty. A mean 
 describes no seed. The *comparisons* the experiment draws are unaffected, because every
 one of them is paired within a seed.
 
-![The one-way reset-free cell is two populations](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/386f53c222a04a815e50c780cddfd8979d9a9374/docs/experiment-logs/2026-08-07-pickup-weight-cycle-budget-wallclock-modes.png)
+![The one-way reset-free cell is two populations](2026-08-07-pickup-weight-cycle-budget-wallclock-modes.png)
 
 Per seed throughout, never an aggregate. **(a)** each seed's effective practice attempts at
 1x joined to its own value at 10x — ten flat lines, the tenfold budget change buying
@@ -297,7 +297,7 @@ identical load and the 10x modes fully interleaved.
 the two groups separate at the **first** evaluation checkpoint after practice begins and
 never re-converge, at either budget.
 
-![Learning curves grouped by stranding mode](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/386f53c222a04a815e50c780cddfd8979d9a9374/docs/experiment-logs/2026-08-07-pickup-weight-cycle-budget-mode-curves.png)
+![Learning curves grouped by stranding mode](2026-08-07-pickup-weight-cycle-budget-mode-curves.png)
 
 Faint per-seed traces under a bold per-group mean, one row per budget, and the two x axes
 this project pairs for learning curves. **The two columns are the same curve rescaled**:
@@ -340,7 +340,7 @@ of its committed run rather than assumed to be: `evaluations`, `breakdowns` and
 and the effective-attempt totals over 3 cycles (`2` and `40`) already equal the committed
 10-cycle totals — which is the stranding restated. No committed number is recomputed here.
 
-![Stranded against not stranded, same cycle and same step](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/386f53c222a04a815e50c780cddfd8979d9a9374/docs/experiment-logs/2026-08-07-pickup-weight-stranding-contrast.png)
+![Stranded against not stranded, same cycle and same step](2026-08-07-pickup-weight-stranding-contrast.png)
 
 The same four moments of practice cycle 1 — steps 9, 49, 89 and 129 of 150 — from each
 recording. The status bar the recorder draws carries the cycle and step, so the alignment
@@ -353,8 +353,8 @@ back into room 3, where the pile is.
 The full recordings — every practice step, every evaluation episode and every reset, in
 order — are committed beside this entry:
 
-- [seed 3, stranded in cycle 1](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/386f53c222a04a815e50c780cddfd8979d9a9374/docs/experiment-logs/2026-08-07-pickup-weight-stranded-seed3-cycle1.mp4) (2929 frames)
-- [seed 0, stranded in cycle 2](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/386f53c222a04a815e50c780cddfd8979d9a9374/docs/experiment-logs/2026-08-07-pickup-weight-stranded-seed0-cycle2.mp4) (2675 frames)
+- [seed 3, stranded in cycle 1](2026-08-07-pickup-weight-stranded-seed3-cycle1.mp4) (2929 frames)
+- [seed 0, stranded in cycle 2](2026-08-07-pickup-weight-stranded-seed0-cycle2.mp4) (2675 frames)
 
 GitHub serves these as downloads rather than an inline player, which is why the montage
 above exists.
