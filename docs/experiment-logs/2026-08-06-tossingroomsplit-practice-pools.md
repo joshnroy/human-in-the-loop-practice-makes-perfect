@@ -3,7 +3,7 @@
 **TL;DR.** The per-skill practice-pool breakdown (`SamplerConsultation`, PR #119) had never
 been run on `tossingroomsplit` — the domain the reset-free result rests on. It is now, on
 the published standard arm (10 fixed seeds, 25 cycles x 100 steps = 2,500 online
-transitions) and on the published 10x arm (250 cycles = 25,000). **The domain is clean, and
+transitions). **The domain is clean, and
 it is clean in the specific way Tossing3D was not.** All five `param_dim = 0` skills fall
 entirely in the `NO_SAMPLER` pool — **23,863/24,750** of all practice executions at the
 standard budget — but every one of them succeeds **every single time** (`MoveRoom`
@@ -21,11 +21,12 @@ restatement of it.
 
 **One negative finding, about the instrument rather than the domain.** The decision rule
 this project has been using since #127 assigns `ThrowRecycling` to **inability** at the
-standard budget. That verdict is **wrong**, and two things in this page show it is wrong:
-recycling's informed successes are *still rising* in the final window (0 -> 0 -> 2 -> 3 ->
-6 over fifths of the run), and the 10x arm shows the separation open up. The rule's
-`inability` cell has no power requirement, so at `I = 56` it fires on a sampler that is
-merely early.
+standard budget. That verdict is **wrong**: recycling's informed successes are *still
+rising* when the budget ends (0 -> 0 -> 2 -> 3 -> 6 over fifths of the run), which is the
+starvation signature, and the published 10x experiment (#103) independently found the same
+sampler separates from its control at a larger budget. The rule's `inability` cell has no
+power requirement and no plateau check, so at `I = 56` it fires on a sampler that is merely
+early.
 
 ![practice pools, standard arm](./2026-08-06-tossingroomsplit-practice-pools.png)
 
