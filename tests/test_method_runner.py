@@ -5,7 +5,7 @@ import imageio
 import pytest
 
 from hitl_pmp.config_snapshot import ConfigSnapshot
-from hitl_pmp.core.method.types import Policy, SkillPracticeTally
+from hitl_pmp.core.method.types import Policy, PracticeTargetTally, SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
@@ -565,6 +565,12 @@ class _CountingPracticeMethod(SkillOracleMethod):
             "Move": SkillPracticeTally(num_attempts=self.moves),
         }
 
+    def practice_target_outcomes(self) -> dict[str, PracticeTargetTally]:
+        return {
+            "Toggle": PracticeTargetTally(num_scored=self.toggles, num_selected=self.toggles),
+            "Move": PracticeTargetTally(num_declined_perfect=self.moves),
+        }
+
 
 def test_each_practice_bucket_covers_one_evaluation_sweep_and_the_practice_after_it() -> None:
     """The same window as the planning counters, and the same trap: `on_cycle_end`
@@ -600,6 +606,31 @@ def test_each_practice_bucket_covers_one_evaluation_sweep_and_the_practice_after
     assert (totals["Move"].num_successes, totals["Move"].num_attempts) == (0, 6)
 
 
+def test_practice_target_buckets_share_the_practice_window_and_reach_stats_json(
+    *, tmp_path: Path
+) -> None:
+    """Selection is differenced per window exactly like execution, so the two can be
+    laid beside each other at the same checkpoints -- which is the whole point of
+    recording them apart: a skill can be executed en route to a target it was never
+    itself selected as."""
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(num_test_tasks=2, output_dir=tmp_path),
+        method=_CountingPracticeMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=2,
+        max_steps_per_interaction=2,
+        renderer=None,
+        render_fps=2,
+    )
+    assert len(metrics.practice_target_outcomes_per_cycle) == len(metrics.evaluations) == 3
+    assert [
+        window["Toggle"].num_selected for window in metrics.practice_target_outcomes_per_cycle
+    ] == [1, 1, 0]
+    restored = Metrics.model_validate_json((tmp_path / "stats.json").read_text())
+    assert restored.total_practice_target_outcomes()["Move"].num_declined_perfect == 6
+
+
 def test_a_method_that_scores_no_skills_records_an_empty_window_per_cycle() -> None:
     """Present-and-empty rather than absent, so the buckets stay index-aligned with
     `evaluations` for a reader plotting the two together."""
@@ -615,6 +646,8 @@ def test_a_method_that_scores_no_skills_records_an_empty_window_per_cycle() -> N
     )
     assert metrics.practice_outcomes_per_cycle == [{}]
     assert metrics.total_practice_outcomes() == {}
+    assert metrics.practice_target_outcomes_per_cycle == [{}]
+    assert metrics.total_practice_target_outcomes() == {}
 
 
 def test_practice_outcomes_reach_stats_json(*, tmp_path: Path) -> None:

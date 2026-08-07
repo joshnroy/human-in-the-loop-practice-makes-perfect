@@ -8,7 +8,7 @@ import numpy as np
 
 from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.method.method import Method
-from hitl_pmp.core.method.types import SkillPracticeTally
+from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
@@ -138,9 +138,26 @@ class MethodRunner:
             )
             practice_recorded = current
 
+        # And once more for practice *targets*, which is a different event from a
+        # practice execution and so cannot share the reading above: a skill EES has
+        # stopped choosing keeps being executed en route to the skills it does choose.
+        target_recorded = method.practice_target_outcomes()
+
+        def record_practice_target_outcomes() -> None:
+            nonlocal target_recorded
+            current = method.practice_target_outcomes()
+            metrics.record_practice_target_outcomes(
+                outcomes={
+                    name: tally.minus(previous=target_recorded.get(name, PracticeTargetTally()))
+                    for name, tally in current.items()
+                }
+            )
+            target_recorded = current
+
         def record_cycle_end() -> None:
             record_planning_outcomes()
             record_practice_outcomes()
+            record_practice_target_outcomes()
 
         recorder = MethodRunner._build_recorder(
             args=args,

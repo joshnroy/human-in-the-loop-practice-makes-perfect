@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-from hitl_pmp.core.method.types import SkillPracticeTally
+from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
 
 from .types import EvaluationBreakdown, TaskOutcome
 
@@ -59,6 +59,14 @@ class Metrics(BaseModel):
     # does not compromise what TaskOutcome's docstring protects, which is that Metrics
     # depends on nothing DOMAIN-specific. core.method.types is six ints and a name.
     practice_outcomes_per_cycle: list[dict[str, SkillPracticeTally]] = Field(default_factory=list)
+    # Which lifted skills practice was actually *aimed at*, bucketed by the same window
+    # again. Separate from the field above because they count different events -- see
+    # PracticeTargetTally and Method.practice_target_outcomes -- and specifically because
+    # the field above cannot show a skill EES is declining to practice: that skill keeps
+    # being executed as a prefix step, so its execution tally never drops.
+    practice_target_outcomes_per_cycle: list[dict[str, PracticeTargetTally]] = Field(
+        default_factory=list
+    )
     task_name: str = "default"
 
     def record_evaluation(
@@ -199,6 +207,25 @@ class Metrics(BaseModel):
         for window in self.practice_outcomes_per_cycle:
             for name, tally in window.items():
                 totals[name] = totals.get(name, SkillPracticeTally()).plus(other=tally)
+        return {name: totals[name] for name in sorted(totals)}
+
+    def record_practice_target_outcomes(self, *, outcomes: dict[str, PracticeTargetTally]) -> None:
+        """Records one window's per-lifted-skill practice-*target* tallies.
+
+        Same window, same sorting, same append-an-empty-bucket rule as
+        `record_practice_outcomes` -- see there for all three, and for why the offset
+        between these buckets and `evaluations` is a trap worth reading about once."""
+        self.practice_target_outcomes_per_cycle.append({
+            name: outcomes[name] for name in sorted(outcomes)
+        })
+
+    def total_practice_target_outcomes(self) -> dict[str, PracticeTargetTally]:
+        """Each lifted skill's selection tally summed over the whole run, by
+        `PracticeTargetTally.plus`, so the total is validated like every window is."""
+        totals: dict[str, PracticeTargetTally] = {}
+        for window in self.practice_target_outcomes_per_cycle:
+            for name, tally in window.items():
+                totals[name] = totals.get(name, PracticeTargetTally()).plus(other=tally)
         return {name: totals[name] for name in sorted(totals)}
 
     def failures_by_goal(self) -> dict[str, tuple[int, int]]:

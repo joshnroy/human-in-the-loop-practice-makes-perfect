@@ -48,6 +48,19 @@ curve for that skill driven entirely by a geometry bug.
 The three floor-place skills (`PlaceBallOnFloor`, `PlaceCupWithoutBallOnFloor`,
 `PlaceCupWithBallOnFloor`) go `param_dim=0 -> 2`.
 
+> **Note added 2026-08-06 — those three parameters are never learned.** Nothing above is
+> retracted; this log's numbers stand and its headline is an explicit null result. But a
+> reader can reasonably take "goes `param_dim=0 -> 2`" to mean EES now practises these
+> skills, and measurement says it does not.
+> [`2026-08-06-practice-target-audit.md`](2026-08-06-practice-target-audit.md) finds that
+> over 10 seeds `PlaceBallOnFloor` (231/231) and `PlaceCupWithBallOnFloor` (150/150)
+> succeed on every attempt, so `skip_perfect` drops every grounding of them from the
+> practice-target list in **10/10 seeds**, and their samplers return an informed draw
+> **0/231** and **0/150** times; `PlaceCupWithoutBallOnFloor` is never executed at all.
+> That is most likely correct rather than a defect — the add-effects are insensitive to
+> where on the floor the object lands, so there is nothing for practice to improve — and
+> no conclusion in this log or any other depends on those three being learned.
+
 ### Measured, through the real path
 
 Driven end-to-end through `BallRingSkills.compute_action -> BallRingEnvironment._simulate`

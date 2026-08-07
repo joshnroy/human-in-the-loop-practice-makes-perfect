@@ -1,0 +1,1446 @@
+{
+  "evaluations": [
+    [
+      0,
+      0,
+      10
+    ],
+    [
+      150,
+      7,
+      10
+    ],
+    [
+      300,
+      9,
+      10
+    ],
+    [
+      450,
+      9,
+      10
+    ],
+    [
+      600,
+      10,
+      10
+    ],
+    [
+      750,
+      10,
+      10
+    ],
+    [
+      900,
+      10,
+      10
+    ],
+    [
+      1050,
+      10,
+      10
+    ],
+    [
+      1200,
+      10,
+      10
+    ],
+    [
+      1350,
+      10,
+      10
+    ],
+    [
+      1500,
+      10,
+      10
+    ]
+  ],
+  "breakdowns": [
+    {
+      "num_online_transitions": 0,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 150,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 300,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 450,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 600,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 750,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 900,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 1050,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 1200,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 1350,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 1500,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "LightOn(light)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "LightOn(light)",
+          "solved": true
+        }
+      ]
+    }
+  ],
+  "num_practice_resets": 10,
+  "planning_failures_per_cycle": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "planning_attempts_per_cycle": [
+    65,
+    57,
+    71,
+    60,
+    84,
+    77,
+    88,
+    79,
+    57,
+    53,
+    10
+  ],
+  "practice_outcomes_per_cycle": [
+    {
+      "JumpToLight": {
+        "num_attempts": 2,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 24,
+        "num_successes": 24,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 24,
+        "num_unparameterized_successes": 24
+      },
+      "TurnOffLight": {
+        "num_attempts": 7,
+        "num_successes": 7,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 116,
+        "num_successes": 7,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 24,
+        "num_successes": 24,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 24,
+        "num_unparameterized_successes": 24
+      },
+      "TurnOffLight": {
+        "num_attempts": 28,
+        "num_successes": 14,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 97,
+        "num_successes": 14,
+        "num_random_attempts": 49,
+        "num_random_successes": 14,
+        "num_informed_attempts": 48,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 24,
+        "num_successes": 24,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 24,
+        "num_unparameterized_successes": 24
+      },
+      "TurnOffLight": {
+        "num_attempts": 45,
+        "num_successes": 41,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 80,
+        "num_successes": 42,
+        "num_random_attempts": 35,
+        "num_random_successes": 2,
+        "num_informed_attempts": 45,
+        "num_informed_successes": 40,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 24,
+        "num_successes": 24,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 24,
+        "num_unparameterized_successes": 24
+      },
+      "TurnOffLight": {
+        "num_attempts": 28,
+        "num_successes": 27,
+        "num_random_attempts": 14,
+        "num_random_successes": 13,
+        "num_informed_attempts": 12,
+        "num_informed_successes": 12,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 97,
+        "num_successes": 28,
+        "num_random_attempts": 48,
+        "num_random_successes": 5,
+        "num_informed_attempts": 49,
+        "num_informed_successes": 23,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 24,
+        "num_successes": 24,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 24,
+        "num_unparameterized_successes": 24
+      },
+      "TurnOffLight": {
+        "num_attempts": 56,
+        "num_successes": 42,
+        "num_random_attempts": 27,
+        "num_random_successes": 13,
+        "num_informed_attempts": 28,
+        "num_informed_successes": 28,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 69,
+        "num_successes": 43,
+        "num_random_attempts": 35,
+        "num_random_successes": 9,
+        "num_informed_attempts": 34,
+        "num_informed_successes": 34,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 24,
+        "num_successes": 24,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 24,
+        "num_unparameterized_successes": 24
+      },
+      "TurnOffLight": {
+        "num_attempts": 46,
+        "num_successes": 45,
+        "num_random_attempts": 24,
+        "num_random_successes": 23,
+        "num_informed_attempts": 21,
+        "num_informed_successes": 21,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 79,
+        "num_successes": 45,
+        "num_random_attempts": 41,
+        "num_random_successes": 7,
+        "num_informed_attempts": 38,
+        "num_informed_successes": 38,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 1,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 28,
+        "num_successes": 28,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 28,
+        "num_unparameterized_successes": 28
+      },
+      "TurnOffLight": {
+        "num_attempts": 48,
+        "num_successes": 42,
+        "num_random_attempts": 14,
+        "num_random_successes": 12,
+        "num_informed_attempts": 9,
+        "num_informed_successes": 9,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 72,
+        "num_successes": 42,
+        "num_random_attempts": 32,
+        "num_random_successes": 2,
+        "num_informed_attempts": 40,
+        "num_informed_successes": 40,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 1,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 28,
+        "num_successes": 28,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 28,
+        "num_unparameterized_successes": 28
+      },
+      "TurnOffLight": {
+        "num_attempts": 43,
+        "num_successes": 40,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 77,
+        "num_successes": 40,
+        "num_random_attempts": 44,
+        "num_random_successes": 7,
+        "num_informed_attempts": 33,
+        "num_informed_successes": 33,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 122,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 26,
+        "num_successes": 26,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 26,
+        "num_unparameterized_successes": 26
+      },
+      "TurnOffLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 121,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 26,
+        "num_successes": 26,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 26,
+        "num_unparameterized_successes": 26
+      },
+      "TurnOffLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 2,
+        "num_successes": 1,
+        "num_random_attempts": 1,
+        "num_random_successes": 0,
+        "num_informed_attempts": 1,
+        "num_informed_successes": 1,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "MoveRobot": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOffLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "TurnOnLight": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    }
+  ],
+  "practice_target_outcomes_per_cycle": [
+    {
+      "JumpToLight": {
+        "num_scored": 115,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 2760,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 0,
+        "num_declined_perfect": 114,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 115,
+        "num_declined_perfect": 0,
+        "num_selected": 115,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 110,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 2640,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 109,
+        "num_declined_perfect": 1,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 110,
+        "num_declined_perfect": 0,
+        "num_selected": 110,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 84,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 2016,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 84,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 84,
+        "num_declined_perfect": 0,
+        "num_selected": 84,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 98,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 2352,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 98,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 98,
+        "num_declined_perfect": 0,
+        "num_selected": 98,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 82,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 1968,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 82,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 82,
+        "num_declined_perfect": 0,
+        "num_selected": 82,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 78,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 1872,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 78,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 78,
+        "num_declined_perfect": 0,
+        "num_selected": 78,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 79,
+        "num_declined_perfect": 0,
+        "num_selected": 1,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 1964,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 79,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 79,
+        "num_declined_perfect": 0,
+        "num_selected": 78,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 81,
+        "num_declined_perfect": 0,
+        "num_selected": 1,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 2106,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 81,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 81,
+        "num_declined_perfect": 0,
+        "num_selected": 80,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 123,
+        "num_declined_perfect": 0,
+        "num_selected": 123,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 3198,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 123,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 123,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 122,
+        "num_declined_perfect": 0,
+        "num_selected": 122,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 3172,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 122,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 122,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      }
+    },
+    {
+      "JumpToLight": {
+        "num_scored": 0,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "MoveRobot": {
+        "num_scored": 0,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOffLight": {
+        "num_scored": 0,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "TurnOnLight": {
+        "num_scored": 0,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      }
+    }
+  ],
+  "task_name": "default"
+}

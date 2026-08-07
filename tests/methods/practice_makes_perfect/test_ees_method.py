@@ -1134,3 +1134,132 @@ def test_practice_outcomes_accumulate_across_a_whole_run() -> None:
 
     tally = method.practice_outcomes()["TurnOnLight"]
     assert (tally.num_successes, tally.num_attempts) == (2, 3)
+
+
+# ------------------------------------------- practice-target selection (which skills
+# EES actually chooses, and which it silently declines)
+
+
+def test_practice_target_outcomes_is_empty_before_anything_is_scored() -> None:
+    method, _env = _build()
+    assert method.practice_target_outcomes() == {}
+
+
+def test_a_perfect_skill_is_recorded_as_declined_not_merely_absent() -> None:
+    """The Tossing3D blind spot in miniature. A grounding at a measured rate of 1.0
+    scores -inf under skip_perfect and choose_practice_target drops it, so it never
+    appears as a practice target -- indistinguishable, from the outside, from a
+    grounding that was never a candidate at all. This is the counter that tells them
+    apart."""
+    method, env = _build()
+    perfect = _turn_on_light(env=env)
+    for _ in range(5):
+        method.observe_outcome(ground_skill=perfect, success=True)
+    assert method.measured_success_rate(ground_skill=perfect) == 1.0
+
+    method.choose_practice_target()
+
+    tally = method.practice_target_outcomes()["TurnOnLight"]
+    assert tally.num_declined_perfect == 1
+    assert tally.num_scored == 0
+
+
+def test_an_imperfect_skill_is_recorded_as_scored() -> None:
+    method, env = _build()
+    imperfect = _turn_on_light(env=env)
+    method.observe_outcome(ground_skill=imperfect, success=True)
+    method.observe_outcome(ground_skill=imperfect, success=False)
+
+    method.choose_practice_target()
+
+    tally = method.practice_target_outcomes()["TurnOnLight"]
+    assert tally.num_scored == 1
+    assert tally.num_declined_perfect == 0
+
+
+def test_declining_is_counted_once_per_grounding_not_once_per_lifted_skill() -> None:
+    """score_ground_skill is keyed by GROUND skill while the tally is keyed by the
+    lifted name, so two perfect groundings of one skill must contribute 2, not 1."""
+    method, env = _build()
+    cells = env.get_cells()
+    groundings = [
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, cells[0], cells[1])),
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, cells[1], cells[2])),
+    ]
+    for grounding in groundings:
+        method.observe_outcome(ground_skill=grounding, success=True)
+
+    method.choose_practice_target()
+
+    assert method.practice_target_outcomes()["MoveRobot"].num_declined_perfect == 2
+
+
+def test_skip_perfect_off_scores_a_perfect_skill_instead_of_declining_it() -> None:
+    method, env = _build()
+    method.skip_perfect = False
+    perfect = _turn_on_light(env=env)
+    method.observe_outcome(ground_skill=perfect, success=True)
+
+    method.choose_practice_target()
+
+    tally = method.practice_target_outcomes()["TurnOnLight"]
+    assert tally.num_declined_perfect == 0
+    assert tally.num_scored == 1
+
+
+class _SilentTargetEesMethod(EesMethod):
+    """EES with the practice-target recorder removed, so a test can compare a run that
+    records against an otherwise identical one that does not."""
+
+    def record_practice_target(self, *, name: str, field: str) -> None:
+        return None
+
+
+def test_recording_practice_targets_does_not_change_what_ees_does() -> None:
+    """The claim the whole record rests on: this is an audit of EES, not a change to
+    it. Two methods built from one seed, one with the recorder replaced by a no-op,
+    must produce the identical ranked candidate list AND leave their RNGs in the
+    identical state -- an extra draw here would silently re-roll every later tiebreak
+    and every sampled parameter in the run."""
+    recording, env = _build(seed=3)
+    silent = _SilentTargetEesMethod(
+        env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=3
+    )
+
+    cells = env.get_cells()
+    groundings = [
+        _turn_on_light(env=env),
+        GroundSkill(skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, cells[0], cells[1])),
+    ]
+    for method in (recording, silent):
+        _record_one_seen_task(method=method, env=env)
+        method.observe_outcome(ground_skill=groundings[0], success=True)
+        method.observe_outcome(ground_skill=groundings[0], success=False)
+        # Perfect, so skip_perfect drops it -- the branch that records the most.
+        method.observe_outcome(ground_skill=groundings[1], success=True)
+
+    assert recording.choose_practice_target() == silent.choose_practice_target()
+    assert recording._rng.bit_generator.state == silent._rng.bit_generator.state
+    # And the recorder really was doing something in the arm that kept it.
+    assert recording.practice_target_outcomes()["MoveRobot"].num_declined_perfect == 1
+    assert silent.practice_target_outcomes() == {}
+
+
+def test_the_committed_practice_target_is_recorded_as_selected() -> None:
+    """_practice_plan takes the first candidate whose preconditions it can reach.
+    That commitment is what "EES practiced this skill on purpose" means, and it is
+    not what the execution tally counts -- an en-route prefix step is executed too."""
+    method, env = _build()
+    tasks = LightSwitchTasks(env=env, seed=0)
+    task = tasks.sample_train_task()
+    _record_one_seen_task(method=method, env=env)
+    target = _turn_on_light(env=env)
+    method.observe_outcome(ground_skill=target, success=False)
+
+    episode = _EesEpisode(method=method, goal=task.goal.atoms, practicing=True)
+    true_atoms = method.abstract_state(state=task.initial_state)
+    plan = episode._practice_plan(true_atoms=true_atoms)
+
+    assert plan, "expected _practice_plan to commit to some candidate"
+    selected = plan[-1].skill.name
+    assert method.practice_target_outcomes()[selected].num_selected == 1

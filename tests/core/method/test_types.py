@@ -5,6 +5,7 @@ from pydantic import ValidationError
 from hitl_pmp.core.method.types import (
     GroundSkill,
     LiftedAtom,
+    PracticeTargetTally,
     Rollout,
     SamplerConsultation,
     SetupCommand,
@@ -365,3 +366,65 @@ def test_a_pool_cannot_succeed_more_often_than_it_was_attempted() -> None:
 def test_a_negative_counter_is_rejected() -> None:
     with pytest.raises(ValidationError):
         SkillPracticeTally(num_attempts=-1)
+
+
+# --------------------------------------------------- PracticeTargetTally (selection)
+
+
+def test_practice_target_tally_defaults_to_all_zero() -> None:
+    tally = PracticeTargetTally()
+    assert tally.num_scored == 0
+    assert tally.num_declined_perfect == 0
+    assert tally.num_selected == 0
+    assert tally.num_unreachable == 0
+
+
+def test_practice_target_tally_records_a_declined_perfect_grounding() -> None:
+    """The Tossing3D failure state: a grounding whose measured rate hit 1.0, so
+    score_ground_skill returned -inf and choose_practice_target dropped it."""
+    tally = PracticeTargetTally().with_declined_perfect()
+    assert tally.num_declined_perfect == 1
+    assert tally.num_scored == 0
+
+
+def test_practice_target_tally_records_scored_selected_and_unreachable() -> None:
+    tally = PracticeTargetTally().with_scored().with_scored().with_selected().with_unreachable()
+    assert tally.num_scored == 2
+    assert tally.num_selected == 1
+    assert tally.num_unreachable == 1
+
+
+def test_practice_target_tally_plus_sums_every_counter() -> None:
+    left = PracticeTargetTally(num_scored=3, num_declined_perfect=1, num_selected=2)
+    right = PracticeTargetTally(num_scored=6, num_unreachable=5, num_selected=1)
+    total = left.plus(other=right)
+    assert total.num_scored == 9
+    assert total.num_declined_perfect == 1
+    assert total.num_selected == 3
+    assert total.num_unreachable == 5
+
+
+def test_practice_target_tally_minus_differences_a_cumulative_reading() -> None:
+    later = PracticeTargetTally(num_scored=7, num_declined_perfect=2, num_selected=3)
+    earlier = PracticeTargetTally(num_scored=4, num_declined_perfect=2, num_selected=1)
+    delta = later.minus(previous=earlier)
+    assert delta.num_scored == 3
+    assert delta.num_declined_perfect == 0
+    assert delta.num_selected == 2
+
+
+def test_practice_target_tally_rejects_a_counter_that_went_backwards() -> None:
+    with pytest.raises(ValidationError):
+        PracticeTargetTally(num_scored=2).minus(previous=PracticeTargetTally(num_scored=5))
+
+
+def test_practice_target_tally_rejects_more_selections_than_scorings() -> None:
+    """A grounding can only be selected out of the ranked list it was scored into,
+    so selections above scorings means one of the two counters is being fed wrong."""
+    with pytest.raises(ValidationError):
+        PracticeTargetTally(num_scored=1, num_selected=2)
+
+
+def test_practice_target_tally_rejects_selected_plus_unreachable_above_scored() -> None:
+    with pytest.raises(ValidationError):
+        PracticeTargetTally(num_scored=3, num_selected=2, num_unreachable=2)
