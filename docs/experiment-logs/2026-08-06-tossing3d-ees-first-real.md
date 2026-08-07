@@ -272,3 +272,133 @@ Task success over the 3 probe seeds moved `10/30` pre-practice to `24/30` at end
 training (per seed `9/10`, `8/10`, `7/10`). Reported as context only; the 10-seed arm
 below is what the pre-registration commits to, and the task-success axis is provisional
 for the two reasons registered above.
+
+## What was actually run
+
+`scripts/run_sweep.py`, `--env tossing3d --methods ees random-skills skill-oracle
+--num-seeds 10`, shared `--num-test-tasks 10`, with `--num-cycles 20
+--max-steps-per-interaction 20` given to `ees` and `random-skills` only (`skill-oracle`
+rejects both flags). KINDER venv, `MUJOCO_GL=egl`, inside `systemd-run --user --scope
+-p MemoryMax=16G -p MemorySwapMax=0 -p OOMPolicy=continue`. **`30/30` runs succeeded.**
+
+`--max-workers 8`, chosen from measured load rather than the default: the box already
+carried 15 runs from another agent, and `8 + 15 = 23` sits at the ~22 machine-wide budget.
+Recorded by `analysis/run_timing.py`: `2805.4 s` wall for the sweep, median `844.7 s` per
+run. Concurrency has been separately measured not to perturb results, so this cost wall
+clock only.
+
+**Provenance was verified per run, not assumed from the path.** All 30 `config_snapshot.json`
+files were checked to be `env=tossing3d` with the intended `num_cycles`,
+`max_steps_per_interaction`, `num_test_tasks` and `task_config=coincident`. That check
+earned its keep: the session scratchpad is **shared between agents**, a generic `sweep.sh`
+there was overwritten by another agent's script of the same name and executed by mistake,
+and the equally generic `probe/` directory turned out to contain a second agent's `never/`
+and `scheduled/` arms alongside mine. Nothing foreign entered any number below — the
+analysis only ever reads `ees/`, `random-skills/` and `skill-oracle/` — but the near miss
+is the reason the check exists.
+
+## The verdict: learns the constant
+
+Pooled over 10 seeds, every cell an `x/y` count of skill executions.
+
+| lifted skill | `param_dim` | attempts | succeeded | informed draws | informed succeeded | epsilon-random | unparameterized |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **`MoveToThrowPose`** (the standoff) | 1 | **481** | 165/481 | **206/481** | **117/206** | 188/481 | 0/481 |
+| `Toss` (adds `InGoalRegion`) | 0 | 156 | 150/156 | 0/156 | — | 0/156 | 156/156 |
+| `Pick` | 2 | 200 | 180/200 | 29/200 | 27/29 | 27/200 | 0/200 |
+
+Against the amended decision rule:
+
+- `I/A = 206/481 = 0.428 >= 0.20` — the sampler is consulted **and discriminates**, in
+  quantity.
+- Informed draws land **`117/206`**; the same arm's own uniform draws land **`48/275`**.
+  A gap of **`+39.3` pp** against an **MDE of `12.3` pp** on those two realized
+  denominators, and **Fisher exact `p = 1.968e-19`**.
+
+That is the **learns the constant** cell, on all three clauses, with no cell adjacent.
+
+**And it is not one seed's doing.** All `10/10` seeds have a higher informed rate than
+their own uniform rate — visible in the left panel as ten non-crossing lines:
+
+| seed | informed | uniform (same run) | attempts | pre-practice | end of training | `Toss` landed |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 10/21 | 6/21 | 42 | 1/10 | 9/10 | 16/16 |
+| 1 | 10/18 | 6/26 | 44 | 5/10 | 8/10 | 16/16 |
+| 2 | 12/26 | 5/30 | 56 | 4/10 | 7/10 | 15/15 |
+| 3 | 12/16 | 4/27 | 43 | 2/10 | 10/10 | 15/15 |
+| 4 | 12/18 | 6/30 | 48 | 4/10 | 8/10 | 16/17 |
+| 5 | 11/17 | 4/19 | 36 | 2/10 | 7/10 | 13/13 |
+| 6 | 13/20 | 4/26 | 46 | 3/10 | 7/10 | 13/14 |
+| 7 | 14/25 | 5/25 | 50 | 5/10 | 9/10 | 16/19 |
+| 8 | 10/23 | 4/44 | 67 | 5/10 | 6/10 | 13/14 |
+| 9 | 13/22 | 4/27 | 49 | 6/10 | 9/10 | 17/17 |
+
+**`MoveToThrowPose` is also now the most-practised skill in the domain** — `481` attempts
+against `Pick`'s `200` and `Toss`'s `156`. Before #123 it was scored `-inf` by
+`skip_perfect` and `choose_practice_target` never selected it at all. So the fix changed
+both halves: the sampler can now learn, and EES now chooses to teach it.
+
+![Tossing3D, three arms, post-fix](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/PLACEHOLDER_SHA/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
+
+## The fresh uniform baseline the old numbers cannot supply
+
+`543/2700` and `155/330` were measured under the pre-#123 bounds and do not transfer, so
+both are re-measured here:
+
+- **Uniform standoff draws: `48/275`.** From EES's own non-informed draws (Amendment 1),
+  because `random-skills` records no practice tally at all. Close to, but not the same
+  quantity as, the old `543/2700` — that was a solve rate over `THROW_SOLVING_BAND`, this
+  is the `RobotAtSuccessfulThrowPose` label rate over the widened `(0.45, 1.75)`.
+- **Uniform task success: `24/100`** at end of training (`26/100` before), from the
+  `random-skills` arm. It does not learn, which is what a uniform baseline should do.
+
+## Task success (secondary and provisional, exactly as pre-registered)
+
+| arm | pre-practice | end of training | per-seed change |
+| --- | --- | --- | --- |
+| **`ees`** | 37/100 | **80/100** | `+8, +3, +3, +8, +4, +5, +4, +4, +1, +3` |
+| `random-skills` | 26/100 | 24/100 | `0, +4, -3, +1, -1, -1, +3, -1, -2, -2` |
+| `skill-oracle` | 100/100 | 100/100 | one evaluation only — it never practices |
+
+- **EES improves on `10/10` seeds, no seed unchanged or worse.** Exact paired Wilcoxon on
+  the per-seed change, `n = 10` non-tied, **`p = 0.0020`**.
+- EES `80/100` against `random-skills` `24/100`: `+56.0` pp, MDE `19.8` pp, Fisher exact
+  `p = 1.199e-15`.
+- EES `80/100` against the `skill-oracle` ceiling `100/100`: `−20.0` pp, MDE `11.9` pp,
+  Fisher exact `p = 6.643e-07`. **EES does not reach the ceiling**, and that shortfall is
+  itself larger than its MDE, so it is a real remaining gap rather than noise.
+
+The pre-registration marked this axis provisional for two reasons and **both still stand**.
+The effect happens to be far larger than the `19.8` pp MDE, so it survives the power
+objection — but the same-seed reproducibility defect (a measured swing of at least 10 pp)
+is untouched by this experiment, and a `+56` pp gap is not evidence that the defect is
+gone. **No conclusion here rests on the task-success axis**; the verdict above reads
+practice counts only, and `verdict` cannot read `evaluations` at all.
+
+**The ceiling check passed:** `skill-oracle` is `100/100`, `10/10` per seed. So the domain
+is solvable at these settings and EES's shortfall is the method's, not the environment's.
+
+## What this does and does not demonstrate
+
+**It demonstrates sampler learning in the sense of finding and memorising a constant.**
+`bin_init_region` is degenerate — the bin does not move between episodes — so the correct
+standoff is the same number in every task. A classifier that has learned "about 1.275 m"
+and nothing else would produce exactly the numbers above.
+
+**It does not demonstrate representation learning.** That would require the target to be
+a function of observable state, and there is nothing here for a state-conditioned sampler
+to condition *on*. #99's standing concern is untouched by this result, and a domain where
+the bin moves is the experiment that would address it. Josh took this trade deliberately
+("memorizing sampler is ok"); it is recorded here so the result is not later read as more
+than it is.
+
+Three further limits worth stating:
+
+- **`Toss` still has `param_dim = 0`** and is `156/156` unparameterized. The skill whose
+  add effect is the domain's actual success criterion still has no sampler; what improved
+  is the standoff that feeds it.
+- **The remaining `20/100` gap to the oracle is unexplained.** Nothing here measures where
+  it goes.
+- **`--num-cycles 20` was not varied.** Whether the curve has plateaued or would keep
+  climbing is not answered; the middle panel suggests it flattens after roughly 40
+  transitions, but that is a reading of a figure, not a measurement.

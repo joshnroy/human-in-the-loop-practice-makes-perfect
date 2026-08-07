@@ -349,73 +349,108 @@ class Tossing3DEesArms:
 
     @staticmethod
     def _plot_skill_rate(*, axis: plt.Axes, arms: dict[str, list[Metrics]]) -> None:
-        present = Tossing3DEesArms._present_arms(arms=arms)
-        for position, arm in enumerate(present):
-            runs = arms[arm]
-            pooled = Tossing3DEesArms.pooled_tally(runs=runs, skill_name=THROW_POSE_SKILL)
-            rate = pooled.num_successes / pooled.num_attempts if pooled.num_attempts else 0.0
-            axis.bar(position, rate, color=_ARM_COLOURS[arm], alpha=0.55, width=0.6)
-            axis.annotate(
-                f"{pooled.num_successes}/{pooled.num_attempts}",
-                (position, rate),
-                textcoords="offset points",
-                xytext=(0, 6),
-                ha="center",
-                fontsize=9,
+        """The verdict's own quantity: within EES, do informed draws of the standoff beat
+        that same arm's uniform draws? One line per seed, so a pooled gap driven by one
+        seed would be visible as a single crossing line rather than hidden in a bar."""
+        runs = arms.get("ees", [])
+        for metrics in runs:
+            tally = metrics.total_practice_outcomes().get(THROW_POSE_SKILL)
+            if tally is None or tally.num_attempts == 0:
+                continue
+            uniform_attempts = tally.num_attempts - tally.num_informed_attempts
+            uniform_successes = tally.num_successes - tally.num_informed_successes
+            if tally.num_informed_attempts == 0 or uniform_attempts == 0:
+                continue
+            axis.plot(
+                [0, 1],
+                [
+                    uniform_successes / uniform_attempts,
+                    tally.num_informed_successes / tally.num_informed_attempts,
+                ],
+                "-o",
+                color="#1f77b4",
+                alpha=0.45,
+                markersize=4,
+                linewidth=1.2,
             )
-            for metrics in runs:
-                tally = metrics.total_practice_outcomes().get(THROW_POSE_SKILL)
-                if tally is not None and tally.num_attempts:
-                    axis.plot(
-                        position,
-                        tally.num_successes / tally.num_attempts,
-                        "o",
-                        color="black",
-                        markersize=4,
-                        alpha=0.6,
-                    )
-        axis.set_xticks(range(len(present)))
-        axis.set_xticklabels(present)
+        pooled = Tossing3DEesArms.pooled_tally(runs=runs, skill_name=THROW_POSE_SKILL)
+        uniform_attempts = pooled.num_attempts - pooled.num_informed_attempts
+        uniform_successes = pooled.num_successes - pooled.num_informed_successes
+        if pooled.num_informed_attempts and uniform_attempts:
+            heights = [
+                uniform_successes / uniform_attempts,
+                pooled.num_informed_successes / pooled.num_informed_attempts,
+            ]
+            labels = [
+                f"{uniform_successes}/{uniform_attempts}",
+                f"{pooled.num_informed_successes}/{pooled.num_informed_attempts}",
+            ]
+            axis.plot([0, 1], heights, "-o", color="black", linewidth=2.6, markersize=8, zorder=5)
+            for position, (height, label) in enumerate(zip(heights, labels, strict=True)):
+                axis.annotate(
+                    label,
+                    (position, height),
+                    textcoords="offset points",
+                    xytext=(0, 12),
+                    ha="center",
+                    fontsize=10,
+                    fontweight="bold",
+                )
+        axis.set_xticks([0, 1])
+        axis.set_xticklabels(["uniform draws\n(same runs)", "informed draws"])
+        axis.set_xlim(-0.35, 1.35)
         axis.set_ylabel("MoveToThrowPose successes / attempts")
-        axis.set_title("Did the standoff land in the accepting band?")
+        axis.set_title(
+            "Does the sampler's belief beat its own prior?\n(black = pooled, thin = one seed)"
+        )
         axis.set_ylim(0, 1.05)
         axis.grid(axis="y", alpha=0.3)
 
     @staticmethod
     def _plot_informed(*, axis: plt.Axes, arms: dict[str, list[Metrics]]) -> None:
-        present = Tossing3DEesArms._present_arms(arms=arms)
-        for position, arm in enumerate(present):
-            runs = arms[arm]
-            pooled = Tossing3DEesArms.pooled_tally(runs=runs, skill_name=THROW_POSE_SKILL)
-            rate = (
-                pooled.num_informed_attempts / pooled.num_attempts if pooled.num_attempts else 0.0
-            )
-            axis.bar(position, rate, color=_ARM_COLOURS[arm], alpha=0.55, width=0.6)
-            axis.annotate(
-                f"{pooled.num_informed_attempts}/{pooled.num_attempts}",
-                (position, rate),
-                textcoords="offset points",
-                xytext=(0, 6),
-                ha="center",
-                fontsize=9,
-            )
-            for metrics in runs:
-                tally = metrics.total_practice_outcomes().get(THROW_POSE_SKILL)
-                if tally is not None and tally.num_attempts:
-                    axis.plot(
-                        position,
-                        tally.num_informed_attempts / tally.num_attempts,
-                        "o",
-                        color="black",
-                        markersize=4,
-                        alpha=0.6,
+        """Learning curves, one faint line per seed per arm. The shape is the point: EES
+        rises, uniform does not, and the oracle is flat at the ceiling."""
+        for arm in Tossing3DEesArms._present_arms(arms=arms):
+            for metrics in arms[arm]:
+                if len(metrics.evaluations) < 2:
+                    continue
+                axis.plot(
+                    [transitions for transitions, _, _ in metrics.evaluations],
+                    [solved / total if total else 0.0 for _, solved, total in metrics.evaluations],
+                    color=_ARM_COLOURS[arm],
+                    alpha=0.35,
+                    linewidth=1.0,
+                )
+        for arm in Tossing3DEesArms._present_arms(arms=arms):
+            runs = [m for m in arms[arm] if len(m.evaluations) >= 2]
+            if not runs:
+                solved, total = Tossing3DEesArms.pooled_success(runs=arms[arm], index=-1)
+                if total:
+                    axis.axhline(
+                        solved / total,
+                        color=_ARM_COLOURS[arm],
+                        linestyle="--",
+                        linewidth=2.0,
+                        label=f"{arm} {solved}/{total}",
                     )
-        axis.set_xticks(range(len(present)))
-        axis.set_xticklabels(present)
-        axis.set_ylabel("informed draws / attempts")
-        axis.set_title("Was the sampler consulted and able to discriminate?")
+                continue
+            length = min(len(m.evaluations) for m in runs)
+            axis.plot(
+                [sum(m.evaluations[i][0] for m in runs) / len(runs) for i in range(length)],
+                [
+                    sum(m.evaluations[i][1] for m in runs) / sum(m.evaluations[i][2] for m in runs)
+                    for i in range(length)
+                ],
+                color=_ARM_COLOURS[arm],
+                linewidth=2.6,
+                label=f"{arm} (n={len(runs)} seeds)",
+            )
+        axis.set_xlabel("online transitions")
+        axis.set_ylabel("test tasks solved / attempted")
+        axis.set_title("Learning curves, per seed")
         axis.set_ylim(0, 1.05)
-        axis.grid(axis="y", alpha=0.3)
+        axis.legend(fontsize=8, loc="lower right")
+        axis.grid(alpha=0.3)
 
     @staticmethod
     def _plot_task_success(*, axis: plt.Axes, arms: dict[str, list[Metrics]]) -> None:
@@ -424,30 +459,32 @@ class Tossing3DEesArms:
             runs = arms[arm]
             solved, total = Tossing3DEesArms.pooled_success(runs=runs, index=-1)
             rate = solved / total if total else 0.0
-            axis.bar(position, rate, color=_ARM_COLOURS[arm], alpha=0.55, width=0.6)
+            axis.bar(position, rate, color=_ARM_COLOURS[arm], alpha=0.45, width=0.6)
             axis.annotate(
                 f"{solved}/{total}",
                 (position, rate),
                 textcoords="offset points",
-                xytext=(0, 6),
+                xytext=(0, 10),
                 ha="center",
-                fontsize=9,
+                fontsize=10,
+                fontweight="bold",
             )
-            for seed_solved, seed_total in Tossing3DEesArms.per_seed_success(runs=runs, index=-1):
+            per_seed = Tossing3DEesArms.per_seed_success(runs=runs, index=-1)
+            for offset, (seed_solved, seed_total) in enumerate(per_seed):
                 if seed_total:
                     axis.plot(
-                        position,
+                        position + (offset - len(per_seed) / 2) * 0.045,
                         seed_solved / seed_total,
                         "o",
                         color="black",
                         markersize=4,
-                        alpha=0.6,
+                        alpha=0.65,
                     )
         axis.set_xticks(range(len(present)))
         axis.set_xticklabels(present)
         axis.set_ylabel("test tasks solved at end of training")
         axis.set_title("Task success (context only — not an input to the verdict)")
-        axis.set_ylim(0, 1.05)
+        axis.set_ylim(0, 1.08)
         axis.grid(axis="y", alpha=0.3)
 
 

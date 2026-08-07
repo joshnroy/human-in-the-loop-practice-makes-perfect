@@ -1,0 +1,25 @@
+{
+  "sweep_id": "20260806T201317-0400-1158512-cd042468",
+  "method": "skill-oracle",
+  "seed": 3,
+  "start_time": "2026-08-06T20:48:25.272947-04:00",
+  "end_time": "2026-08-06T20:49:16.243007-04:00",
+  "start_epoch_seconds": 1786063705.272947,
+  "end_epoch_seconds": 1786063756.243007,
+  "elapsed_seconds": 50.97005180900305,
+  "returncode": 0,
+  "succeeded": true,
+  "spawn_attempts": 1,
+  "max_workers": 8,
+  "cpu_count": 24,
+  "sweep_runs_in_flight_at_start": 8,
+  "sweep_runs_in_flight_at_end": 8,
+  "machine_at_start": {
+    "cli_processes": 8,
+    "load_average_1min": 9.9287109375
+  },
+  "machine_at_end": {
+    "cli_processes": 7,
+    "load_average_1min": 9.69921875
+  }
+}

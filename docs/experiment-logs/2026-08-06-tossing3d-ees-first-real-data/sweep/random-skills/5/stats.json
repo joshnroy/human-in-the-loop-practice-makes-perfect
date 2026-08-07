@@ -1,0 +1,1337 @@
+{
+  "evaluations": [
+    [
+      0,
+      3,
+      10
+    ],
+    [
+      4,
+      3,
+      10
+    ],
+    [
+      18,
+      2,
+      10
+    ],
+    [
+      21,
+      0,
+      10
+    ],
+    [
+      23,
+      0,
+      10
+    ],
+    [
+      32,
+      1,
+      10
+    ],
+    [
+      43,
+      1,
+      10
+    ],
+    [
+      44,
+      3,
+      10
+    ],
+    [
+      49,
+      3,
+      10
+    ],
+    [
+      69,
+      2,
+      10
+    ],
+    [
+      73,
+      2,
+      10
+    ],
+    [
+      76,
+      5,
+      10
+    ],
+    [
+      83,
+      3,
+      10
+    ],
+    [
+      84,
+      2,
+      10
+    ],
+    [
+      85,
+      3,
+      10
+    ],
+    [
+      86,
+      1,
+      10
+    ],
+    [
+      97,
+      4,
+      10
+    ],
+    [
+      98,
+      2,
+      10
+    ],
+    [
+      102,
+      2,
+      10
+    ],
+    [
+      122,
+      1,
+      10
+    ],
+    [
+      138,
+      2,
+      10
+    ]
+  ],
+  "breakdowns": [
+    {
+      "num_online_transitions": 0,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 4,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 18,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 21,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 23,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 32,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 43,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 44,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 49,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 69,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 73,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 76,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 83,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 84,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 85,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 86,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 97,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 98,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 102,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 122,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 138,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 2,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": true
+        },
+        {
+          "task_index": 5,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "InGoalRegion(cube_0, blocks_goal_region)",
+          "solved": false
+        }
+      ]
+    }
+  ],
+  "num_practice_resets": 20,
+  "planning_failures_per_cycle": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "planning_attempts_per_cycle": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "practice_outcomes_per_cycle": [
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {}
+  ],
+  "task_name": "default"
+}
