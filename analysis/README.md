@@ -62,3 +62,13 @@ exactly one place those are computed, not a second copy living in `analysis/`.
   draws is reporting an instrument fault, and the module says so rather than
   concluding. The verdict deliberately reads no episode counts; see its docstring for
   why that is load-bearing on this domain today.
+- `pure_agent/pilot_curves.py` — the `--method pure-agent` pilot's figure and table:
+  the learning curve pooled and split by goal family, plus what the authoring cost.
+  Takes `--run label=DIR` repeatedly, so a caller names its own arms and the legend
+  reads in the caller's vocabulary; each `DIR` is one run's `--output-dir`, and it
+  additionally reads `transcript.json` when that directory happens to be an
+  *authoring* run (a replay directory has none, and the script says so rather than
+  reporting a zero spend). Every count is `x/y`, and the printed report opens by
+  stating that the pilot is one seed, so a reader who sees only the console output
+  still gets the caveat that no spread is established and no test is supported.
+  Cost is reported as a **lower bound** whenever any round failed to report one.

@@ -1,0 +1,508 @@
+{
+  "evaluations": [
+    [
+      0,
+      0,
+      30
+    ],
+    [
+      150,
+      0,
+      30
+    ],
+    [
+      300,
+      0,
+      30
+    ]
+  ],
+  "breakdowns": [
+    {
+      "num_online_transitions": 0,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 12,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 16,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 19,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 23,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 28,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 150,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 12,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 16,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 19,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 23,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 28,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 300,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 4,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 5,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 6,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 7,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 8,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 9,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 10,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 11,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 12,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 13,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 14,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 15,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 16,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 17,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 18,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 19,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 20,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 21,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 22,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 23,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 24,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 25,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 26,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 27,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 28,
+          "goal": "RecyclingBinEmpty(recycling_bin) & TrashBinEmpty(trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 29,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        }
+      ]
+    }
+  ],
+  "num_practice_resets": 2,
+  "planning_failures_per_cycle": [
+    0,
+    0,
+    0
+  ],
+  "planning_attempts_per_cycle": [
+    0,
+    0,
+    0
+  ],
+  "practice_outcomes_per_cycle": [
+    {},
+    {},
+    {}
+  ],
+  "practice_target_outcomes_per_cycle": [
+    {},
+    {},
+    {}
+  ],
+  "task_name": "default"
+}
