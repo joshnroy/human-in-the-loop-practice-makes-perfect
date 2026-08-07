@@ -131,10 +131,34 @@ python analysis/practice_makes_perfect/practice_diagnostics.py \
   --output docs/experiment-logs/2026-08-06-tossingroomsplit-practice-pools-10x.png
 ```
 
-**No code was written for this experiment.** `practice_diagnostics.py` on `main` answers the
-question as-is, and the seven `param_dim` values are already pinned by
-`tests/environments/tossingroomsplit/test_skills.py`. There is therefore no new test in this
-PR: there is no new behaviour to test.
+The **primary** table — the four-way pool split per lifted skill — comes from
+`practice_diagnostics.py` on `main`, **unmodified**. The two *derived* tables (informed
+against epsilon-random, and the per-window trajectories) come from
+`analysis/practice_makes_perfect/tossingroomsplit_practice_pools.py`, added by this PR:
+
+```bash
+python -m analysis.practice_makes_perfect.tossingroomsplit_practice_pools \
+  --results-root results/trs-pools-standard --num-buckets 5
+```
+
+No environment, `Method` or EES behaviour was changed. The seven `param_dim` values are
+already pinned by `tests/environments/tossingroomsplit/test_skills.py`, so this PR adds no
+test for them; the two tests it does add cover the two ways the derived tables can be
+computed wrongly (averaging across seeds instead of summing, and including the trailing
+evaluation-only window).
+
+### A pre-existing failure on `main`, not introduced here
+
+`scripts/with_env.sh pytest` reports **2 failed, 1695 passed, 21 skipped** on this branch,
+and the same two fail on `main` at `ebf3d92` — this branch's `src/`, `tests/`, `analysis/`
+and `scripts/` are byte-identical to `main`'s (`git diff origin/main HEAD -- src tests
+analysis scripts` is empty), so the failures cannot be this PR's. Both are in
+`tests/analysis/practice_makes_perfect/test_tossing3d_practice_diagnosis.py`, added by
+#127, and both construct a `SkillPracticeTally` that #119's own validator rejects, e.g.
+`SkillPracticeTally(num_attempts=100, num_successes=100, num_informed_attempts=1)` —
+the uninformative remainder is 100 successes out of 99 attempts. Reported, not fixed: it is
+#127's to correct, and silently repairing another PR's tests inside an experiment log is
+exactly the kind of scope creep that makes a result hard to trust.
 
 ### The structural claims, verified against the source
 
