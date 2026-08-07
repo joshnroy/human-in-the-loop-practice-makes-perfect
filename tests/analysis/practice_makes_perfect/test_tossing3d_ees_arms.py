@@ -64,6 +64,22 @@ def _run(*, tally: SkillPracticeTally, solved: int = 2, total: int = 10) -> Metr
     return metrics
 
 
+def _curve(*, solved: list[int], transitions: list[int], total: int = 10) -> Metrics:
+    """One seed's Metrics carrying a full evaluation curve on an explicit transition grid.
+
+    `transitions` is given per seed rather than derived, because the defect these tests
+    pin is precisely that Tossing3D's seeds do *not* share a transition grid: `Toss`
+    deletes `Reachable`, so a practice period ends after one throw and each seed spends a
+    different number of transitions reaching the same cycle.
+    """
+    metrics = Metrics()
+    for online, num_solved in zip(transitions, solved, strict=True):
+        metrics.record_evaluation(
+            num_online_transitions=online, num_solved=num_solved, num_total=total
+        )
+    return metrics
+
+
 class TestExactTests:
     def test_fisher_matches_the_tea_tasting_table(self) -> None:
         """Fisher's own 2x2. The two-sided p is 0.4857142857..., exactly 17/35."""
@@ -198,14 +214,122 @@ class TestReporting:
         assert Tossing3DEesArms.pooled_success(runs=[metrics], index=-1) == (7, 10)
 
     def test_plot_writes_a_figure(self, *, tmp_path: Path) -> None:
-        arms = {
-            "ees": [
-                _run(tally=_tally(attempts=40, successes=32, informed=20, informed_successes=18))
-            ]
-            * 3,
-            "random-skills": [_run(tally=_tally(attempts=40, successes=10))] * 3,
-            "skill-oracle": [_run(tally=_tally(attempts=0, successes=0), solved=10)] * 3,
-        }
         output = tmp_path / "figure.png"
-        Tossing3DEesArms.plot(arms=arms, output_path=output)
+        Tossing3DEesArms.plot(arms=_two_arm_curves(), output_path=output)
         assert output.exists() and output.stat().st_size > 0
+
+
+def _two_arm_curves() -> dict[str, list[Metrics]]:
+    """Two learning arms whose cycle grids match and whose transition grids do not.
+
+    This is the shape of the real sweep in miniature: both arms ran `--num-cycles 20`
+    and so have the same number of checkpoints, but `ees` reaches the last one in far
+    fewer transitions than `random-skills`. `skill-oracle` has a single evaluation and
+    no practice at all, which is why it is a ceiling line rather than a curve.
+    """
+    return {
+        "ees": [
+            _curve(solved=[1, 4, 8], transitions=[0, 40, 80]),
+            _curve(solved=[0, 3, 7], transitions=[0, 45, 85]),
+        ],
+        "random-skills": [
+            _curve(solved=[1, 2, 2], transitions=[0, 70, 140]),
+            _curve(solved=[0, 1, 3], transitions=[0, 80, 170]),
+        ],
+        "skill-oracle": [_curve(solved=[10], transitions=[0])] * 2,
+    }
+
+
+class TestLearningCurveAxis:
+    """The learning-curve panel plots against *cycles*, the controlled variable, and not
+    against online transitions, which are an outcome.
+
+    Both arms run the same 21 evaluation checkpoints, but `Toss` deletes `Reachable`, so a
+    practice period ends after one throw: `ees` plans `Pick -> MoveToThrowPose -> Toss` in
+    about 3-4 transitions per cycle where `random-skills` flails through about 7. On a
+    transitions axis EES's curve therefore stops at roughly half the width of the panel
+    and *looks truncated when it is in fact more efficient* -- the axis penalises the arm
+    that wastes fewer transitions. These tests pin the fix.
+    """
+
+    def test_the_cycle_grid_is_the_checkpoint_index(self) -> None:
+        runs = [
+            _curve(solved=[1, 4, 8], transitions=[0, 40, 80]),
+            _curve(solved=[0, 3, 7], transitions=[0, 999, 1234]),
+        ]
+        assert Tossing3DEesArms.cycle_grid(runs=runs) == [0, 1, 2]
+
+    def test_seeds_with_different_checkpoint_counts_raise(self) -> None:
+        """The replaced code took `min(len(m.evaluations) for m in runs)`, which silently
+        shortened the pooled curve to the shortest seed. Every seed has 21 here so it never
+        bit, but a mean that quietly drops a seed's tail is invisible in the drawn line.
+        Raising makes an unequal sweep loud instead."""
+        runs = [
+            _curve(solved=[1, 4, 8], transitions=[0, 40, 80]),
+            _curve(solved=[0, 3], transitions=[0, 45]),
+        ]
+        with pytest.raises(ValueError, match="different numbers of evaluation checkpoints"):
+            Tossing3DEesArms.cycle_grid(runs=runs)
+
+    def test_both_arms_span_the_same_x_axis(self) -> None:
+        """The defect, stated as an assertion. On a transitions axis the two arms' mean
+        lines ended at about 84 and about 144; on the cycle axis they must end together."""
+        figure = Tossing3DEesArms.figure(arms=_two_arm_curves())
+        axis = figure.axes[0]
+        # The bold means are the only labelled *curves*; per-seed lines are unlabelled
+        # (matplotlib gives those a `_child`-prefixed label) and the oracle is a flat
+        # ceiling drawn by `axhline`, which is excluded here by name.
+        means = [
+            line
+            for line in axis.lines
+            if str(line.get_label()).startswith(("ees", "random-skills"))
+        ]
+        assert len(means) == 2, f"expected one bold mean per learning arm, got {len(means)}"
+        spans = {(line.get_xdata()[0], line.get_xdata()[-1]) for line in means}
+        assert len(spans) == 1, f"arms span different x ranges: {spans}"
+        assert spans == {(0, 2)}
+
+    def test_the_x_axis_is_labelled_as_cycles_not_transitions(self) -> None:
+        figure = Tossing3DEesArms.figure(arms=_two_arm_curves())
+        label = figure.axes[0].get_xlabel().lower()
+        assert "cycle" in label
+        assert "transition" not in label
+
+    def test_mean_final_transitions_stay_available(self) -> None:
+        """Transitions are no longer the axis, but they are still the efficiency story --
+        so they are kept as a per-arm annotation rather than dropped."""
+        runs = [
+            _curve(solved=[1, 4, 8], transitions=[0, 40, 80]),
+            _curve(solved=[0, 3, 7], transitions=[0, 45, 90]),
+        ]
+        assert Tossing3DEesArms.mean_final_transitions(runs=runs) == pytest.approx(85.0)
+
+    def test_every_curve_legend_entry_carries_a_count(self) -> None:
+        """`x/y` never a bare percentage, in the legend as much as in the prose."""
+        figure = Tossing3DEesArms.figure(arms=_two_arm_curves())
+        labels = [text.get_text() for text in figure.axes[0].get_legend().get_texts()]
+        assert labels, "the curve panel must carry a legend"
+        for label in labels:
+            assert "/" in label, f"legend entry without an x/y count: {label!r}"
+
+    def test_the_oracle_ceiling_is_still_drawn(self) -> None:
+        figure = Tossing3DEesArms.figure(arms=_two_arm_curves())
+        labels = [text.get_text() for text in figure.axes[0].get_legend().get_texts()]
+        assert any("skill-oracle" in label for label in labels)
+
+
+class TestPriorVersusBeliefPanelIsGone:
+    """The `48/275` uniform against `117/206` informed comparison is still the headline
+    result -- it stays in the log and the PR body as a number. It is no longer a chart."""
+
+    def test_the_helper_is_removed(self) -> None:
+        assert not hasattr(Tossing3DEesArms, "_plot_skill_rate")
+
+    def test_the_figure_has_two_panels(self) -> None:
+        assert len(Tossing3DEesArms.figure(arms=_two_arm_curves()).axes) == 2
+
+    def test_the_verdict_still_reports_both_counts(self) -> None:
+        """Dropping the panel must not drop the number it drew."""
+        ees = [_run(tally=_tally(attempts=40, successes=26, informed=20, informed_successes=18))]
+        _, evidence = Tossing3DEesArms.verdict(ees_runs=ees)
+        assert "18/20" in evidence and "8/20" in evidence

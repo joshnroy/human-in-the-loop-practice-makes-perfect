@@ -44,6 +44,25 @@ finding and memorising a constant, not representation learning, which would need
 target to be a function of observable state. The verdict string says "learns the
 constant" for exactly that reason.
 
+**The learning curves are drawn against practice cycles, not online transitions.** Both
+learning arms ran `--num-cycles 20`, so both have 21 evaluation checkpoints -- but a cycle
+ends when the method raises `InteractionComplete`, and on Tossing3D `Toss` deletes
+`Reachable`, so nothing is applicable after a throw and a practice period is effectively one
+throw. The arms therefore spend very different numbers of transitions reaching the same
+cycle: EES finishes at 69..101 transitions (mean 83.8) against `random-skills` at 92..174
+(mean 144.0). On a transitions axis EES's curve stopped at about half the panel width and
+read as *truncated* when it was in fact more efficient. Cycles are the controlled variable
+and transitions are an outcome, so cycles are the axis; mean final transitions survive in
+the legend. `cycle_grid` carries the full argument, including that the cycle axis is also
+the only one the seeds *within* an arm share -- all ten seeds of each arm sit on ten
+distinct transition grids.
+
+**The figure is two panels.** It was three; the dropped one asked "does the sampler's
+belief beat its own prior?", plotting EES's `48/275` uniform draws against its `117/206`
+informed ones. That is still this experiment's headline result and is still reported --
+by `verdict`, by `print_report`, and in the log -- but a two-point comparison reads better
+as a sentence than as a chart.
+
 Reads only already-produced `--output-dir` output (CLAUDE.md's `analysis/` convention):
 `<results-root>/<method>/<seed>/stats.json`, the layout `scripts/run_sweep.py` writes.
 Counts, never bare percentages: every printed cell and every axis label is `x/y`.
@@ -59,6 +78,7 @@ import matplotlib
 matplotlib.use("Agg")  # headless rendering -- no GUI backend needed/available in CI
 
 import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 
 from analysis.practice_makes_perfect.practice_diagnostics import PracticeDiagnostics  # noqa: E402
 from analysis.practice_makes_perfect.tossingroom_reset_interval import PairedTests  # noqa: E402
@@ -86,7 +106,26 @@ INFORMED_IN_QUANTITY = 0.20
 SIGNIFICANCE = 0.05
 
 _ARM_ORDER = ("ees", "random-skills", "skill-oracle")
-_ARM_COLOURS = {"ees": "#1f77b4", "random-skills": "#7f7f7f", "skill-oracle": "#2ca02c"}
+
+# Okabe-Ito, the same palette every sibling report in this folder declares for itself
+# (`reset_free_training_curves`, `tossingroom_reset_interval`, `tossingroom_reset_
+# frequency`, `tossingroomsplit_reset_policy`, `tossingroomsplit_two_way_ledge`). It
+# replaces matplotlib's default blue/grey/green, which is not colourblind-safe and did
+# not match the sibling figures. Blue is the arm under test, vermillion the uniform
+# baseline, bluish-green the ceiling -- and the three are also distinguished by role in
+# the drawing (curve, curve, dashed horizontal line), so colour is never doing the work
+# alone.
+_ARM_COLOURS = {"ees": "#0072B2", "random-skills": "#D55E00", "skill-oracle": "#009E73"}
+
+# Per-seed lines are what the figure exists for, but ten of them at full strength hide
+# the mean. Matched to `reset_free_training_curves` so the two figures read as one system.
+_SEED_ALPHA = 0.18
+_SEED_WIDTH = 1.0
+_MEAN_WIDTH = 2.6
+
+# An explicit white canvas rather than matplotlib's transparent default, so a PNG dropped
+# into a dark-themed PR or Notion page keeps readable axes instead of black text on black.
+_CANVAS = "white"
 
 
 class UnpairedTests:
@@ -247,6 +286,84 @@ class Tossing3DEesArms:
         return ("starved", evidence)
 
     @staticmethod
+    def cycle_grid(*, runs: Sequence[Metrics]) -> list[int]:
+        """The shared x grid for a learning arm: the evaluation checkpoint index.
+
+        **Checkpoint index is the controlled variable; online transitions are an outcome.**
+        Every learning arm here ran `--num-cycles 20` and so has 21 evaluations -- index 0
+        is the pre-practice sweep and index `i` is the state after `i` practice cycles.
+
+        What differs between arms is how many transitions those cycles cost. A cycle ends
+        when the method raises `InteractionComplete` -- nothing further worth practising --
+        or when it exhausts `--max-steps-per-interaction`, whichever comes first, and
+        untaken steps are not charged (`practice_loop.py` breaks out of the step loop; the
+        count is data-driven rather than budget-driven). On Tossing3D the first case
+        dominates: `Toss` deletes `Reachable`, so no skill is applicable after a throw and a
+        practice period is effectively one throw. Measured over these runs, a period costs
+        4.19 transitions for `ees` against 7.20 for `random-skills`. Plotting against
+        transitions therefore stops EES's curve at roughly half the panel width and reads
+        as truncation when it is really efficiency -- the axis penalises the arm that
+        wastes fewer transitions.
+
+        Not to be confused with the opposite mechanism: when the planner finds no plan EES
+        emits a no-op, which *does* consume a step and *does* count as a transition (the
+        path #102 corrected). The early exit is the method declaring nothing is worth
+        practising, not the agent getting stuck.
+
+        It is also the only axis the seeds *within* one arm share. All 10 EES seeds and all
+        10 `random-skills` seeds were measured on 10 distinct transition grids each (they
+        finish at 69..101 and 92..174 respectively), so a per-checkpoint mean on a
+        transitions axis has to average the x positions too. On the cycle axis the grid is
+        identical by construction.
+
+        Raises when the seeds disagree on how many checkpoints they have. The replaced code
+        took `min(len(m.evaluations) for m in runs)` and silently shortened the pooled
+        curve to the shortest seed; every seed has 21 here so it never bit, but a mean that
+        quietly drops a seed's tail is invisible in the drawn line. This is the same
+        discipline `reset_free_training_curves.checkpoints` applies to its transition grid.
+        """
+        lengths = {len(metrics.evaluations) for metrics in runs}
+        if len(lengths) != 1:
+            raise ValueError(
+                f"seeds in this arm have different numbers of evaluation checkpoints "
+                f"({sorted(lengths)}), so a per-checkpoint mean would silently truncate to "
+                f"the shortest seed."
+            )
+        return list(range(next(iter(lengths))))
+
+    @staticmethod
+    def per_seed_solved_curves(*, runs: Sequence[Metrics]) -> list[list[int]]:
+        """Each seed's tasks-solved curve, one row per seed, on the cycle grid.
+
+        Counts rather than rates, matching the y-axis: the denominator is 10 test tasks per
+        evaluation and is small enough that a rate on an axis hides it.
+        """
+        return [[solved for _, solved, _ in metrics.evaluations] for metrics in runs]
+
+    @staticmethod
+    def mean_final_transitions(*, runs: Sequence[Metrics]) -> float:
+        """Mean online transitions at the last checkpoint, over the arm's seeds.
+
+        Transitions stopped being the x-axis (see `cycle_grid`) but they are still the
+        efficiency story, so they are kept as a per-arm legend annotation rather than
+        dropped: the same 20 cycles cost EES about 84 transitions and `random-skills`
+        about 144, which is the point the old axis was accidentally making backwards.
+        """
+        finals = [metrics.evaluations[-1][0] for metrics in runs if metrics.evaluations]
+        return sum(finals) / len(finals) if finals else 0.0
+
+    @staticmethod
+    def evaluation_size(*, runs: Sequence[Metrics]) -> int:
+        """Test tasks per evaluation sweep -- the y-axis denominator.
+
+        Read from the data rather than hardcoded, so an arm evaluated on a different number
+        of tasks changes the printed denominator instead of being silently divided by the
+        expected one.
+        """
+        sizes = {total for metrics in runs for _, _, total in metrics.evaluations}
+        return next(iter(sizes)) if len(sizes) == 1 else 0
+
+    @staticmethod
     def paired_change(*, runs: Sequence[Metrics]) -> tuple[PairedTests, list[float]]:
         """Exact paired Wilcoxon on each seed's pre-practice -> end-of-training change.
 
@@ -326,21 +443,38 @@ class Tossing3DEesArms:
         )
 
     @staticmethod
-    def plot(*, arms: dict[str, list[Metrics]], output_path: Path) -> None:
-        """Three panels, all per seed: the standoff's label rate, its informed draws, and
-        task success. Per-seed points over every bar, because a bar chart of two means
-        hides one seed driving the whole effect."""
-        figure, axes = plt.subplots(1, 3, figsize=(16, 5.2))
-        Tossing3DEesArms._plot_skill_rate(axis=axes[0], arms=arms)
-        Tossing3DEesArms._plot_informed(axis=axes[1], arms=arms)
-        Tossing3DEesArms._plot_task_success(axis=axes[2], arms=arms)
+    def figure(*, arms: dict[str, list[Metrics]]) -> Figure:
+        """Two panels: the learning curves and the task-success bars. Returns the figure
+        so a test can assert on its structure without reopening a PNG.
+
+        **Two panels, not three.** The third used to be "does the sampler's belief beat its
+        own prior?", drawing EES's `48/275` uniform draws against its `117/206` informed
+        ones. That comparison is still the headline result of this experiment -- it is
+        reported by `verdict`, printed by `print_report`, and stated in the log and the PR
+        body -- but it is a single two-point comparison, which a sentence carries better
+        than a chart does.
+
+        Per-seed detail under every mark, because a chart of two means hides one seed
+        driving the whole effect: faint lines under the bold means on the left, individual
+        dots over the bars on the right.
+        """
+        figure, axes = plt.subplots(1, 2, figsize=(13.0, 5.4), dpi=150, facecolor=_CANVAS)
+        Tossing3DEesArms._plot_learning_curves(axis=axes[0], arms=arms)
+        Tossing3DEesArms._plot_task_success(axis=axes[1], arms=arms)
         figure.suptitle(
             "Tossing3D, first run with the standoff sampler actually consulted "
-            "(post-#118/#123/#119) — every label is x/y, dots are individual seeds",
-            fontsize=11,
+            "(post-#118/#123/#119) — every label is x/y, bold = mean over faint seeds",
+            fontsize=12,
         )
         figure.tight_layout()
-        figure.savefig(output_path, dpi=150)
+        return figure
+
+    @staticmethod
+    def plot(*, arms: dict[str, list[Metrics]], output_path: Path) -> None:
+        """Render the figure and write the PNG."""
+        figure = Tossing3DEesArms.figure(arms=arms)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(output_path, bbox_inches="tight", facecolor=_CANVAS)
         plt.close(figure)
 
     @staticmethod
@@ -348,109 +482,87 @@ class Tossing3DEesArms:
         return [arm for arm in _ARM_ORDER if arms.get(arm)]
 
     @staticmethod
-    def _plot_skill_rate(*, axis: plt.Axes, arms: dict[str, list[Metrics]]) -> None:
-        """The verdict's own quantity: within EES, do informed draws of the standoff beat
-        that same arm's uniform draws? One line per seed, so a pooled gap driven by one
-        seed would be visible as a single crossing line rather than hidden in a bar."""
-        runs = arms.get("ees", [])
-        for metrics in runs:
-            tally = metrics.total_practice_outcomes().get(THROW_POSE_SKILL)
-            if tally is None or tally.num_attempts == 0:
-                continue
-            uniform_attempts = tally.num_attempts - tally.num_informed_attempts
-            uniform_successes = tally.num_successes - tally.num_informed_successes
-            if tally.num_informed_attempts == 0 or uniform_attempts == 0:
-                continue
-            axis.plot(
-                [0, 1],
-                [
-                    uniform_successes / uniform_attempts,
-                    tally.num_informed_successes / tally.num_informed_attempts,
-                ],
-                "-o",
-                color="#1f77b4",
-                alpha=0.45,
-                markersize=4,
-                linewidth=1.2,
-            )
-        pooled = Tossing3DEesArms.pooled_tally(runs=runs, skill_name=THROW_POSE_SKILL)
-        uniform_attempts = pooled.num_attempts - pooled.num_informed_attempts
-        uniform_successes = pooled.num_successes - pooled.num_informed_successes
-        if pooled.num_informed_attempts and uniform_attempts:
-            heights = [
-                uniform_successes / uniform_attempts,
-                pooled.num_informed_successes / pooled.num_informed_attempts,
-            ]
-            labels = [
-                f"{uniform_successes}/{uniform_attempts}",
-                f"{pooled.num_informed_successes}/{pooled.num_informed_attempts}",
-            ]
-            axis.plot([0, 1], heights, "-o", color="black", linewidth=2.6, markersize=8, zorder=5)
-            for position, (height, label) in enumerate(zip(heights, labels, strict=True)):
-                axis.annotate(
-                    label,
-                    (position, height),
-                    textcoords="offset points",
-                    xytext=(0, 12),
-                    ha="center",
-                    fontsize=10,
-                    fontweight="bold",
-                )
-        axis.set_xticks([0, 1])
-        axis.set_xticklabels(["uniform draws\n(same runs)", "informed draws"])
-        axis.set_xlim(-0.35, 1.35)
-        axis.set_ylabel("MoveToThrowPose successes / attempts")
-        axis.set_title(
-            "Does the sampler's belief beat its own prior?\n(black = pooled, thin = one seed)"
-        )
-        axis.set_ylim(0, 1.05)
-        axis.grid(axis="y", alpha=0.3)
+    def _plot_learning_curves(*, axis: plt.Axes, arms: dict[str, list[Metrics]]) -> None:
+        """Learning curves for every arm on one axes, against practice cycles.
 
-    @staticmethod
-    def _plot_informed(*, axis: plt.Axes, arms: dict[str, list[Metrics]]) -> None:
-        """Learning curves, one faint line per seed per arm. The shape is the point: EES
-        rises, uniform does not, and the oracle is flat at the ceiling."""
-        for arm in Tossing3DEesArms._present_arms(arms=arms):
-            for metrics in arms[arm]:
-                if len(metrics.evaluations) < 2:
-                    continue
-                axis.plot(
-                    [transitions for transitions, _, _ in metrics.evaluations],
-                    [solved / total if total else 0.0 for _, solved, total in metrics.evaluations],
-                    color=_ARM_COLOURS[arm],
-                    alpha=0.35,
-                    linewidth=1.0,
-                )
+        **The x-axis is cycles, not online transitions.** See `cycle_grid` for the full
+        reason; the short form is that both learning arms ran the same 21 checkpoints but
+        spent very different numbers of transitions reaching them, so a transitions axis
+        made the *more* efficient arm look truncated. Cycles are what the experiment
+        controlled. Mean final transitions survive in the legend, which is where the
+        efficiency difference belongs -- as a number, not as a distortion of the axis.
+
+        Bold mean over faint per-seed lines, matching `reset_free_training_curves`, because
+        a mean can describe no seed that was actually run.
+        """
+        denominator = 0
         for arm in Tossing3DEesArms._present_arms(arms=arms):
             runs = [m for m in arms[arm] if len(m.evaluations) >= 2]
+            colour = _ARM_COLOURS[arm]
             if not runs:
+                # An arm with a single evaluation never practices -- `skill-oracle` is the
+                # privileged ceiling, not a learner -- so it is a horizontal reference
+                # line rather than a curve. Drawn dashed as well as coloured, so the
+                # ceiling is distinguishable from a curve without relying on colour.
                 solved, total = Tossing3DEesArms.pooled_success(runs=arms[arm], index=-1)
+                size = Tossing3DEesArms.evaluation_size(runs=arms[arm])
                 if total:
                     axis.axhline(
-                        solved / total,
-                        color=_ARM_COLOURS[arm],
+                        solved / total * size if size else 0.0,
+                        color=colour,
                         linestyle="--",
                         linewidth=2.0,
-                        label=f"{arm} {solved}/{total}",
+                        label=f"{arm} (ceiling) — {solved}/{total}",
                     )
                 continue
-            length = min(len(m.evaluations) for m in runs)
+            grid = Tossing3DEesArms.cycle_grid(runs=runs)
+            curves = Tossing3DEesArms.per_seed_solved_curves(runs=runs)
+            denominator = Tossing3DEesArms.evaluation_size(runs=runs) or denominator
+            for row in curves:
+                axis.plot(grid, row, color=colour, alpha=_SEED_ALPHA, linewidth=_SEED_WIDTH)
+            # `strict` because a ragged transpose would silently truncate the mean to the
+            # shortest seed -- exactly what the old `min(len(...))` did. `cycle_grid` has
+            # already proved the rows align, so this can only fire on a coding error.
+            mean = [sum(column) / len(column) for column in zip(*curves, strict=True)]
+            solved, total = Tossing3DEesArms.pooled_success(runs=runs, index=-1)
+            transitions = Tossing3DEesArms.mean_final_transitions(runs=runs)
             axis.plot(
-                [sum(m.evaluations[i][0] for m in runs) / len(runs) for i in range(length)],
-                [
-                    sum(m.evaluations[i][1] for m in runs) / sum(m.evaluations[i][2] for m in runs)
-                    for i in range(length)
-                ],
-                color=_ARM_COLOURS[arm],
-                linewidth=2.6,
-                label=f"{arm} (n={len(runs)} seeds)",
+                grid,
+                mean,
+                color=colour,
+                linewidth=_MEAN_WIDTH,
+                label=(
+                    f"{arm} (n={len(runs)} seeds) — final {solved}/{total}, "
+                    f"{transitions:.0f} transitions mean"
+                ),
             )
-        axis.set_xlabel("online transitions")
-        axis.set_ylabel("test tasks solved / attempted")
-        axis.set_title("Learning curves, per seed")
-        axis.set_ylim(0, 1.05)
-        axis.legend(fontsize=8, loc="lower right")
-        axis.grid(alpha=0.3)
+        axis.set_xlabel("practice cycles completed (checkpoint index; 0 = before any practice)")
+        axis.set_ylabel(
+            f"test tasks solved per evaluation (x/{denominator})"
+            if denominator
+            else "test tasks solved per evaluation"
+        )
+        axis.set_title("Learning curves, per seed", loc="left", fontsize=11)
+        # Headroom above the oracle ceiling so the legend has somewhere to sit, and a
+        # near-opaque white box behind it: the ceiling line runs the full width at the top
+        # of the data, so a frameless legend in the usual upper-left corner would be read
+        # through it. The legend has to be legible on its own.
+        axis.set_ylim(0, (denominator or 10) * 1.3)
+        # Integer ticks: a cycle count of 2.5 does not exist. Left to matplotlib the axis
+        # labels every 2.5 checkpoints, which invites reading a fractional cycle.
+        axis.set_xticks([cycle for cycle in Tossing3DEesArms._cycle_ticks(axis=axis)])
+        axis.legend(frameon=True, framealpha=0.92, edgecolor="none", fontsize=8, loc="upper left")
+        axis.grid(alpha=0.25, linewidth=0.6)
+        for side in ("top", "right"):
+            axis.spines[side].set_visible(False)
+
+    @staticmethod
+    def _cycle_ticks(*, axis: plt.Axes) -> list[int]:
+        """Integer cycle ticks spanning whatever was plotted, at most about six of them."""
+        left, right = axis.get_xlim()
+        last = max(0, int(right))
+        step = max(1, round(last / 5)) if last else 1
+        return list(range(0, last + 1, step))
 
     @staticmethod
     def _plot_task_success(*, axis: plt.Axes, arms: dict[str, list[Metrics]]) -> None:
@@ -458,11 +570,15 @@ class Tossing3DEesArms:
         for position, arm in enumerate(present):
             runs = arms[arm]
             solved, total = Tossing3DEesArms.pooled_success(runs=runs, index=-1)
-            rate = solved / total if total else 0.0
-            axis.bar(position, rate, color=_ARM_COLOURS[arm], alpha=0.45, width=0.6)
+            size = Tossing3DEesArms.evaluation_size(runs=runs) or 1
+            # Bar height is the mean tasks-solved per seed, on the same x/10 count scale
+            # as the curve panel beside it, rather than a 0..1 rate. A rate on an axis is
+            # a bare percentage in everything but name; the count carries its denominator.
+            height = solved / total * size if total else 0.0
+            axis.bar(position, height, color=_ARM_COLOURS[arm], alpha=0.45, width=0.6)
             axis.annotate(
                 f"{solved}/{total}",
-                (position, rate),
+                (position, height),
                 textcoords="offset points",
                 xytext=(0, 10),
                 ha="center",
@@ -474,18 +590,27 @@ class Tossing3DEesArms:
                 if seed_total:
                     axis.plot(
                         position + (offset - len(per_seed) / 2) * 0.045,
-                        seed_solved / seed_total,
+                        seed_solved,
                         "o",
                         color="black",
                         markersize=4,
                         alpha=0.65,
                     )
+        size = Tossing3DEesArms.evaluation_size(runs=arms.get(present[0], [])) if present else 0
         axis.set_xticks(range(len(present)))
         axis.set_xticklabels(present)
-        axis.set_ylabel("test tasks solved at end of training")
-        axis.set_title("Task success (context only — not an input to the verdict)")
-        axis.set_ylim(0, 1.08)
-        axis.grid(axis="y", alpha=0.3)
+        axis.set_ylabel(
+            f"test tasks solved at end of training (x/{size})"
+            if size
+            else "test tasks solved at end of training"
+        )
+        axis.set_title(
+            "Task success (context only — not an input to the verdict)", loc="left", fontsize=11
+        )
+        axis.set_ylim(0, (size or 10) * 1.12)
+        axis.grid(axis="y", alpha=0.25, linewidth=0.6)
+        for side in ("top", "right"):
+            axis.spines[side].set_visible(False)
 
 
 def _parse_args() -> argparse.Namespace:

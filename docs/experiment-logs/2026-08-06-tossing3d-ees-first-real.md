@@ -340,10 +340,66 @@ both halves: the sampler can now learn, and EES now chooses to teach it.
 
 ![Tossing3D, three arms, post-fix](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/1219df7c6ad2c88342f99fbde0259f72bfa1dca8/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
 
-> **The pin above is to `1219df7`, an unmerged commit on this branch.** It is the commit
-> that carries the figure, taken from `git rev-parse` rather than hand-expanded. It must
-> be **re-pinned after merge**, since a squash-merge mints a new SHA and the branch commit
-> stops being reachable once the branch is deleted.
+> **The pin above is to an unmerged commit on this branch.** It is the commit that carries
+> the figure, taken from `git rev-parse` rather than hand-expanded. It must be **re-pinned
+> after merge**, since a squash-merge mints a new SHA and the branch commit stops being
+> reachable once the branch is deleted.
+
+### Figure revision: the learning curves are plotted against cycles, not transitions
+
+The figure above is a revision of the one first committed here. **No number changed** — it
+is regenerated from the same `stats.json` files, and the analysis prints the identical
+`117/206`, `48/275`, `165/481`, `80/100`, `24/100` and `100/100` reported throughout this
+log. Three things about the drawing changed.
+
+**The x-axis was wrong in a way that inverted the reading.** The learning curves were
+plotted against online transitions. Both learning arms ran `--num-cycles 20` and so have
+**21/21 evaluation checkpoints each**, but they reach them at very different costs: EES
+finishes at **69–101** transitions (mean 83.8), `random-skills` at **92–174** (mean 144.0).
+Per practice period that is **4.19** transitions for `ees` against **7.20** for
+`random-skills` averaged over all 10 seeds (**3.90** against **6.85** on seed 0). On a
+transitions axis EES's curve therefore stopped at about half the panel width while the axis
+ran on to 175 — it **looked truncated when it was in fact more efficient**. Transitions are
+an *outcome* of how well an arm plans, so plotting against them penalises the arm that
+wastes fewer. Cycles are the controlled variable and are now the axis; both curves span it
+fully, and mean final transitions are kept in the legend, which is where that efficiency
+difference belongs as a number rather than as a distortion of the axis.
+
+**Why a cycle costs a variable number of transitions.** A cycle ends when the method raises
+`InteractionComplete` — nothing further worth practising — or when it exhausts
+`--max-steps-per-interaction`, whichever comes first. Untaken steps are not charged. On
+Tossing3D the first case dominates: `Toss` deletes `Reachable`, so no skill is applicable
+after a throw and a practice period is effectively one throw. Cycles are therefore equal in
+count across arms but not in transitions.
+
+Two mechanisms pull in opposite directions here and are easy to confuse, so both are stated:
+`InteractionComplete` **shortens** a cycle — the policy signals it is done, the loop breaks,
+and the untaken steps are explicitly not charged, the count being data-driven rather than
+budget-driven. A **no-op lengthens** one: when the planner finds no plan EES emits a no-op
+action, which *does* consume a step and *does* count as a transition (the path #102
+corrected). The early exit here is the method declaring nothing is worth practising — not
+the agent getting stuck and not the planner no-opping out.
+
+Cycles are also the only axis the seeds *within* one arm share. All 10 EES seeds sit on 10
+distinct transition grids, as do all 10 `random-skills` seeds, so a per-checkpoint mean on
+a transitions axis had to average the x positions as well as the y. On the cycle grid the
+seeds align by construction.
+
+**The third panel is gone.** It plotted EES's `48/275` uniform standoff draws against its
+`117/206` informed ones. That comparison is still this experiment's headline result and is
+unchanged above, in `verdict`'s evidence string and in the table — a two-point comparison is
+carried better by a sentence than by a chart.
+
+**The format now matches the reset-free curve figure** (#130): all arms on one axes, a bold
+mean over faint per-seed lines, the Okabe-Ito palette the siblings in
+`analysis/practice_makes_perfect/` already use, `x/y` in every legend entry and axis label,
+and both panels on the same `x/10` count scale rather than one of them on a 0–1 rate.
+
+One latent defect was fixed with it: the pooled line was truncated to
+`min(len(m.evaluations) for m in runs)`. Every seed has 21 checkpoints here so it never
+bit, but it would silently shorten the mean to the shortest seed on any sweep whose seeds
+differed. `Tossing3DEesArms.cycle_grid` now raises instead, the same discipline
+`reset_free_training_curves.checkpoints` applies to its transition grid.
 
 ## The fresh uniform baseline the old numbers cannot supply
 
