@@ -14,10 +14,10 @@ from hitl_pmp.core.problem.environment.environment import Environment  # noqa: E
 from hitl_pmp.core.problem.environment.types import State  # noqa: E402
 from hitl_pmp.core.renderer.renderer import Renderer  # noqa: E402
 
-from .environment import TossingRoomSplitPickupWeightEnvironment  # noqa: E402
+from .environment import TossingRoomEnvironment  # noqa: E402
 
 
-class TossingRoomSplitPickupWeightRenderer(Renderer):
+class TossingRoomRenderer(Renderer):
     """`TossingRoomRenderer` verbatim, retyped to this domain. Nothing about the *world*
     differs between the two -- the split is entirely in the symbolic layer -- so the
     picture is identical, and keeping it identical is deliberate: a reviewer diffing the
@@ -52,15 +52,15 @@ class TossingRoomSplitPickupWeightRenderer(Renderer):
 
     @staticmethod
     def _hand_color(*, holding: int) -> str:
-        if holding == TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND:
-            return TossingRoomSplitPickupWeightRenderer.recycling_color
-        if holding == TossingRoomSplitPickupWeightEnvironment.TRASH_KIND:
-            return TossingRoomSplitPickupWeightRenderer.trash_color
+        if holding == TossingRoomEnvironment.RECYCLING_KIND:
+            return TossingRoomRenderer.recycling_color
+        if holding == TossingRoomEnvironment.TRASH_KIND:
+            return TossingRoomRenderer.trash_color
         return "black"
 
     @staticmethod
     def _draw_robot(*, ax: Axes, x: float, y: float, holding: int) -> None:
-        r = TossingRoomSplitPickupWeightRenderer
+        r = TossingRoomRenderer
         edge = r._hand_color(holding=holding)
         # body: a rounded blue box with two "eyes" -- a simple, legible robot glyph,
         # outlined in the color of whatever it is carrying (black when empty-handed).
@@ -153,8 +153,8 @@ class TossingRoomSplitPickupWeightRenderer(Renderer):
 
     @staticmethod
     def render_frame(*, state: State, env: Environment, label: str | None = None) -> np.ndarray:
-        assert isinstance(env, TossingRoomSplitPickupWeightEnvironment)
-        r = TossingRoomSplitPickupWeightRenderer
+        assert isinstance(env, TossingRoomEnvironment)
+        r = TossingRoomRenderer
         robot_room = int(round(state.get(obj=env.robot, feature_name="room")))
         holding = int(round(state.get(obj=env.robot, feature_name="holding")))
         recycling_count = int(round(state.get(obj=env.recycling_bin, feature_name="count")))

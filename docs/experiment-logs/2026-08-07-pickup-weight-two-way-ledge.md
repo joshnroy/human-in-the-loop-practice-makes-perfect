@@ -1,5 +1,13 @@
 # Pre-registration: the pickup-weight fork under the two-way ledge
 
+> **Environment renamed (2026-08-07).** The domain these runs were made on was
+> called `tossingroomsplitpickupweight` at the time, and every command below names
+> it that way. It is now registered as **`tossingroom`**, having taken over the name
+> of a retired fork; the three superseded forks were deleted in the same stack. The
+> domain itself is unchanged, so **every number below still reproduces** -- but the
+> commands need `--env tossingroom` to run against current code. Nothing here has
+> been edited, restated or recomputed.
+
 **Status: pre-registration (commit `8cb89ec`) plus results, added in a later commit.**
 Everything from "Question / goal" down to "Disclosure of prior observations" is the
 pre-registration exactly as committed before any sweep ran, unedited. The results follow

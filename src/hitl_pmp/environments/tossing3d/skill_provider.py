@@ -21,7 +21,7 @@ from .skills import Tossing3DSkills
 
 
 class Tossing3DSkillProvider(SkillProvider):
-    """Tossing3D's `SkillProvider`, mirroring `TossingRoomSplitPickupWeightSkillProvider`.
+    """Tossing3D's `SkillProvider`, mirroring `TossingRoomSkillProvider`.
 
     `objects()` is a fixed five: upstream's task JSON names exactly one cube, one bin and
     one barrier, plus the robot, plus the goal-region box this domain carries in the

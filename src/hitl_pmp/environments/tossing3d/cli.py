@@ -115,7 +115,7 @@ class Tossing3DCli:
         max_steps_per_interaction: int,
     ) -> None:
         """This domain's composition root. Mirrors
-        `TossingRoomSplitPickupWeightCli.run_method`.
+        `TossingRoomCli.run_method`.
 
         The environment is closed in a `finally`: it owns a live MuJoCo context and,
         through each controller, PyBullet clients, and leaving those behind in a process

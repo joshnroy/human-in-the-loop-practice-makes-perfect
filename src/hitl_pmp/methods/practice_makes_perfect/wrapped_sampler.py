@@ -468,7 +468,7 @@ class LearnedSkillSampler(BaseModel):
         Exists because "this sampler saw only its own skill's data" is a claim an
         experiment can rest on and a count alone cannot settle: two samplers can hold
         the same number of rows and still have been fed each other's. See
-        `tests/environments/tossingroomsplitpickupweight/test_sampler_separation.py`."""
+        `tests/environments/tossingroom/test_sampler_separation.py`."""
         return [list(row) for row in self._inputs]
 
     def observe(self, *, sampler_input: list[float], success: bool) -> None:

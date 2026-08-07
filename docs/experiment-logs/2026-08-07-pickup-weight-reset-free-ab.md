@@ -1,5 +1,13 @@
 # Reset-free practice when the training distribution varies at pickup: `scheduled` vs `never`
 
+> **Environment renamed (2026-08-07).** The domain these runs were made on was
+> called `tossingroomsplitpickupweight` at the time, and every command below names
+> it that way. It is now registered as **`tossingroom`**, having taken over the name
+> of a retired fork; the three superseded forks were deleted in the same stack. The
+> domain itself is unchanged, so **every number below still reproduces** -- but the
+> commands need `--env tossingroom` to run against current code. Nothing here has
+> been edited, restated or recomputed.
+
 Domain `tossingroomsplitpickupweight`, method `ees`, 10 fixed seeds (0-9), 30 test tasks
 (14 TRASH / 14 RECYCLING / 2 EMPTY), 10 cycles x 150 steps per interaction period. The
 two arms are invoked with different `--practice-reset-policy` values and no other flag

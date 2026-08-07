@@ -14,7 +14,7 @@ directions in the two variants: the two-way ledge widens the gap on `tossingroom
 caveat -- `scheduled` is at 300/300, so this world cannot resolve a small residual.
 
 **Background.** PR #115 measured the reset-free A/B on `tossingroomsplit`, #122 repeated
-it on `tossingroomsplitpickupweight` (weight drawn at pickup rather than at task build),
+it on `tossingroom` (weight drawn at pickup rather than at task build),
 and #124/#125 added the `--two-way-ledge` positive control that removes the domain's only
 irreversible action. Each of those reported *outcome counts* -- a final x/300 per arm,
 plus penalties and an interaction -- and #115 and #122 each committed a curve of their
@@ -85,10 +85,8 @@ _PANELS = (_ONE_WAY, _TWO_WAY, _PICKUP_WEIGHT, _PICKUP_WEIGHT_TWO_WAY)
 _PANEL_TITLES = {
     _ONE_WAY: "tossingroomsplit -- one-way ledge\n(the pile is unreachable once crossed)",
     _TWO_WAY: "tossingroomsplit -- two-way ledge\n(no irreversible action at all)",
-    _PICKUP_WEIGHT: "tossingroomsplitpickupweight\n(weight drawn at pickup, one-way ledge)",
-    _PICKUP_WEIGHT_TWO_WAY: (
-        "tossingroomsplitpickupweight -- two-way ledge\n(both mechanisms removed)"
-    ),
+    _PICKUP_WEIGHT: "tossingroom\n(weight drawn at pickup, one-way ledge)",
+    _PICKUP_WEIGHT_TWO_WAY: ("tossingroom -- two-way ledge\n(both mechanisms removed)"),
 }
 
 # The two arms compared inside every panel. `scheduled` is the incumbent -- the only

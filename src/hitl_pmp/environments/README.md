@@ -151,7 +151,7 @@ predicate definitions play in `predicators/envs/`.
   `../../methods/oracle/cli.py`'s `SkillOracleCli`), runnable via
   `python -m hitl_pmp.cli --env lightswitch --method skill-oracle
   [--output-dir DIR]`.
-- `tossingroomsplitpickupweight/` — **Tossing Room: the canonical domain, and the only
+- `tossingroom/` — **Tossing Room: the canonical domain, and the only
   one.** 7 rooms, pile and start in room 3, recycling bin + its own emptying button in
   room 1, trash bin + its own button in room 6, one-way ledge out of room 2, a bin
   holding at most **one** item and refusing a throw when full. `Throw` is split into
@@ -175,7 +175,7 @@ predicate definitions play in `predicators/envs/`.
   distribution" in a single flag. Drawing the weight at pickup puts the variation on an
   action the robot takes, so the two mechanisms separate.
 
-  Runnable as `python -m hitl_pmp.cli --env tossingroomsplitpickupweight --method ees`.
+  Runnable as `python -m hitl_pmp.cli --env tossingroom --method ees`.
   `--two-way-ledge` makes the ledge traversable rightward as well, leaving the domain
   with no irreversible action at all. It is off by default, and a default run is
   byte-identical to one from before the flag existed. It is the positive control for the
@@ -188,7 +188,9 @@ predicate definitions play in `predicators/envs/`.
   beside a one-way one without saying so. See its `skills.py` docstring for the full
   rationale and `environment.py`'s `two_way_ledge` field for this flag's.
 
-  **Three retired forks.** `tossingroom/` (one shared `Throw`), `tossingroomsplit/`
+  **Three retired forks.** The *original* `tossingroom/` (one shared `Throw`, and a
+  different domain from the one described above, which merely reuses the freed name),
+  `tossingroomsplit/`
   (split throws) and `tossingroomsplitidentity/` (split throws under a degenerate
   identity throw representation, where the item carried `target_force` and the optimal
   policy was the literal `force* = x₄`) all froze the weight into the task's initial

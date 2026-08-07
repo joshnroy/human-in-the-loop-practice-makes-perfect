@@ -17,10 +17,10 @@ import pytest
 
 from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
-from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
-    TossingRoomSplitPickupWeightEnvironment,
+from hitl_pmp.environments.tossingroom.environment import (
+    TossingRoomEnvironment,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.predicates import (
+from hitl_pmp.environments.tossingroom.predicates import (
     CAN_MOVE_ROOM,
     HAND_EMPTY,
     HOLDING_RECYCLING,
@@ -36,24 +36,24 @@ from hitl_pmp.environments.tossingroomsplitpickupweight.predicates import (
     TRASH_BUTTON_IN_ROOM,
     TRASH_IN_BIN,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.skill_provider import (
-    TossingRoomSplitPickupWeightSkillProvider,
+from hitl_pmp.environments.tossingroom.skill_provider import (
+    TossingRoomSkillProvider,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.skills import (
-    TossingRoomSplitPickupWeightSkills,
+from hitl_pmp.environments.tossingroom.skills import (
+    TossingRoomSkills,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.tasks import (
-    TossingRoomSplitPickupWeightGoalType,
-    TossingRoomSplitPickupWeightTasks,
+from hitl_pmp.environments.tossingroom.tasks import (
+    TossingRoomGoalType,
+    TossingRoomTasks,
 )
 from hitl_pmp.planning.grounding import SkillGrounder
 
-_ENV = TossingRoomSplitPickupWeightEnvironment()
-_ROBOT = TossingRoomSplitPickupWeightEnvironment.robot
-_TRASH = TossingRoomSplitPickupWeightEnvironment.trash
-_RECYCLING = TossingRoomSplitPickupWeightEnvironment.recycling
-_TRASH_BIN = TossingRoomSplitPickupWeightEnvironment.trash_bin
-_RECYCLING_BIN = TossingRoomSplitPickupWeightEnvironment.recycling_bin
+_ENV = TossingRoomEnvironment()
+_ROBOT = TossingRoomEnvironment.robot
+_TRASH = TossingRoomEnvironment.trash
+_RECYCLING = TossingRoomEnvironment.recycling
+_TRASH_BIN = TossingRoomEnvironment.trash_bin
+_RECYCLING_BIN = TossingRoomEnvironment.recycling_bin
 
 
 def _state():
@@ -66,9 +66,7 @@ class TestThrowIsTwoSkills:
 
     @staticmethod
     def test_there_are_two_differently_named_throw_skills() -> None:
-        names = [
-            skill.name for skill in TossingRoomSplitPickupWeightSkillProvider(env=_ENV).skills()
-        ]
+        names = [skill.name for skill in TossingRoomSkillProvider(env=_ENV).skills()]
         assert "ThrowTrash" in names
         assert "ThrowRecycling" in names
         assert names.count("ThrowTrash") == 1
@@ -78,17 +76,15 @@ class TestThrowIsTwoSkills:
     def test_no_shared_throw_skill_survives() -> None:
         """A single `Throw` is exactly what this domain exists not to have: one name is
         one sampler, so a shared name would restore the transfer being removed."""
-        names = {
-            skill.name for skill in TossingRoomSplitPickupWeightSkillProvider(env=_ENV).skills()
-        }
+        names = {skill.name for skill in TossingRoomSkillProvider(env=_ENV).skills()}
         assert "Throw" not in names
-        assert not hasattr(TossingRoomSplitPickupWeightSkills, "THROW")
+        assert not hasattr(TossingRoomSkills, "THROW")
 
     @staticmethod
     def test_the_two_throw_skills_are_distinct_objects_with_distinct_content() -> None:
         trash, recycling = (
-            TossingRoomSplitPickupWeightSkills.THROW_TRASH,
-            TossingRoomSplitPickupWeightSkills.THROW_RECYCLING,
+            TossingRoomSkills.THROW_TRASH,
+            TossingRoomSkills.THROW_RECYCLING,
         )
         assert trash is not recycling
         assert trash != recycling
@@ -99,26 +95,16 @@ class TestThrowIsTwoSkills:
         """No `item` variable ranging over both kinds: the trash throw's item parameter
         is typed `trash` and the recycling throw's is typed `recycling`, so grounding
         cannot cross them."""
-        _robot, trash_item, trash_bin, _room = (
-            TossingRoomSplitPickupWeightSkills.THROW_TRASH.parameters
-        )
-        assert trash_item.type == TossingRoomSplitPickupWeightEnvironment.trash_type
-        assert trash_bin.type == TossingRoomSplitPickupWeightEnvironment.trash_bin_type
+        _robot, trash_item, trash_bin, _room = TossingRoomSkills.THROW_TRASH.parameters
+        assert trash_item.type == TossingRoomEnvironment.trash_type
+        assert trash_bin.type == TossingRoomEnvironment.trash_bin_type
 
-        _robot, rec_item, rec_bin, _room = (
-            TossingRoomSplitPickupWeightSkills.THROW_RECYCLING.parameters
-        )
-        assert rec_item.type == TossingRoomSplitPickupWeightEnvironment.recycling_type
-        assert rec_bin.type == TossingRoomSplitPickupWeightEnvironment.recycling_bin_type
+        _robot, rec_item, rec_bin, _room = TossingRoomSkills.THROW_RECYCLING.parameters
+        assert rec_item.type == TossingRoomEnvironment.recycling_type
+        assert rec_bin.type == TossingRoomEnvironment.recycling_bin_type
 
-        assert (
-            TossingRoomSplitPickupWeightEnvironment.trash_type
-            != TossingRoomSplitPickupWeightEnvironment.recycling_type
-        )
-        assert (
-            TossingRoomSplitPickupWeightEnvironment.trash_bin_type
-            != TossingRoomSplitPickupWeightEnvironment.recycling_bin_type
-        )
+        assert TossingRoomEnvironment.trash_type != TossingRoomEnvironment.recycling_type
+        assert TossingRoomEnvironment.trash_bin_type != TossingRoomEnvironment.recycling_bin_type
 
     @staticmethod
     def test_a_cross_kind_grounding_is_rejected_outright() -> None:
@@ -127,7 +113,7 @@ class TestThrowIsTwoSkills:
         raises rather than silently becoming a skill that can never succeed."""
         with pytest.raises(ValueError, match="type"):
             GroundSkill(
-                skill=TossingRoomSplitPickupWeightSkills.THROW_TRASH,
+                skill=TossingRoomSkills.THROW_TRASH,
                 objects=(
                     _ROBOT,
                     _RECYCLING,
@@ -143,8 +129,8 @@ class TestThrowIsTwoSkills:
         samplers must see identically shaped rows or the comparison would confound a
         different network with different experience."""
         trash, recycling = (
-            TossingRoomSplitPickupWeightSkills.THROW_TRASH,
-            TossingRoomSplitPickupWeightSkills.THROW_RECYCLING,
+            TossingRoomSkills.THROW_TRASH,
+            TossingRoomSkills.THROW_RECYCLING,
         )
         assert trash.param_dim == recycling.param_dim == 1
         assert [parameter.type.dim for parameter in trash.parameters] == [
@@ -153,7 +139,7 @@ class TestThrowIsTwoSkills:
 
     @staticmethod
     def test_throw_trash_declares_its_own_preconditions_and_effects() -> None:
-        skill = TossingRoomSplitPickupWeightSkills.THROW_TRASH
+        skill = TossingRoomSkills.THROW_TRASH
         robot, item, bin_var, room = skill.parameters
         assert skill.preconditions == frozenset({
             LiftedAtom(predicate=HOLDING_TRASH, variables=(robot, item)),
@@ -176,7 +162,7 @@ class TestThrowIsTwoSkills:
 
     @staticmethod
     def test_throw_recycling_declares_its_own_preconditions_and_effects() -> None:
-        skill = TossingRoomSplitPickupWeightSkills.THROW_RECYCLING
+        skill = TossingRoomSkills.THROW_RECYCLING
         robot, item, bin_var, room = skill.parameters
         assert skill.preconditions == frozenset({
             LiftedAtom(predicate=HOLDING_RECYCLING, variables=(robot, item)),
@@ -205,8 +191,7 @@ class TestThrowIsTwoSkills:
         it empties, is dropped for exactly the same reason: the button types are split,
         so `PressTrash` can only bind `trash_button`."""
         predicate_names = {
-            predicate.name
-            for predicate in TossingRoomSplitPickupWeightSkillProvider(env=_ENV).predicates()
+            predicate.name for predicate in TossingRoomSkillProvider(env=_ENV).predicates()
         }
         assert "BinAcceptsItem" not in predicate_names
         assert "ButtonForBin" not in predicate_names
@@ -219,14 +204,14 @@ class TestPickupSplitsWithTheItemTypes:
 
     @staticmethod
     def test_there_are_two_pickups_and_neither_has_continuous_parameters() -> None:
-        assert TossingRoomSplitPickupWeightSkills.PICKUP_TRASH.name == "PickupTrash"
-        assert TossingRoomSplitPickupWeightSkills.PICKUP_RECYCLING.name == "PickupRecycling"
-        assert TossingRoomSplitPickupWeightSkills.PICKUP_TRASH.param_dim == 0
-        assert TossingRoomSplitPickupWeightSkills.PICKUP_RECYCLING.param_dim == 0
+        assert TossingRoomSkills.PICKUP_TRASH.name == "PickupTrash"
+        assert TossingRoomSkills.PICKUP_RECYCLING.name == "PickupRecycling"
+        assert TossingRoomSkills.PICKUP_TRASH.param_dim == 0
+        assert TossingRoomSkills.PICKUP_RECYCLING.param_dim == 0
 
     @staticmethod
     def test_pickup_trash_keeps_the_pile_room_precondition() -> None:
-        skill = TossingRoomSplitPickupWeightSkills.PICKUP_TRASH
+        skill = TossingRoomSkills.PICKUP_TRASH
         robot, item, room, pile = skill.parameters
         assert skill.preconditions == frozenset({
             LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(robot, room)),
@@ -239,7 +224,7 @@ class TestPickupSplitsWithTheItemTypes:
 
 
 def test_move_room_requires_a_traversable_step() -> None:
-    skill = TossingRoomSplitPickupWeightSkills.MOVE_ROOM
+    skill = TossingRoomSkills.MOVE_ROOM
     assert skill.name == "MoveRoom"
     assert skill.param_dim == 0
     robot, from_room, to_room = skill.parameters
@@ -261,17 +246,15 @@ class TestPressSplitsWithTheBinAndButtonTypes:
 
     @staticmethod
     def test_there_are_two_presses_and_no_shared_one() -> None:
-        names = {
-            skill.name for skill in TossingRoomSplitPickupWeightSkillProvider(env=_ENV).skills()
-        }
+        names = {skill.name for skill in TossingRoomSkillProvider(env=_ENV).skills()}
         assert "PressTrash" in names
         assert "PressRecycling" in names
         assert "Press" not in names
-        assert not hasattr(TossingRoomSplitPickupWeightSkills, "PRESS")
+        assert not hasattr(TossingRoomSkills, "PRESS")
 
     @staticmethod
     def test_press_trash_empties_only_the_trash_bin() -> None:
-        skill = TossingRoomSplitPickupWeightSkills.PRESS_TRASH
+        skill = TossingRoomSkills.PRESS_TRASH
         robot, button, room, bin_var, item = skill.parameters
         assert skill.param_dim == 0
         assert skill.preconditions == frozenset({
@@ -287,7 +270,7 @@ class TestPressSplitsWithTheBinAndButtonTypes:
 
     @staticmethod
     def test_press_recycling_empties_only_the_recycling_bin() -> None:
-        skill = TossingRoomSplitPickupWeightSkills.PRESS_RECYCLING
+        skill = TossingRoomSkills.PRESS_RECYCLING
         robot, button, room, bin_var, item = skill.parameters
         assert skill.preconditions == frozenset({
             LiftedAtom(predicate=ROBOT_IN_ROOM, variables=(robot, room)),
@@ -306,8 +289,8 @@ class TestPressSplitsWithTheBinAndButtonTypes:
         button emptied BOTH bins -- a universal delete no per-item `delete_effect` could
         express. One button per bin makes the delete ordinary, and keeping the blanket
         would now be strictly weaker than the truth."""
-        assert TossingRoomSplitPickupWeightSkills.PRESS_TRASH.ignore_effects == frozenset()
-        assert TossingRoomSplitPickupWeightSkills.PRESS_RECYCLING.ignore_effects == frozenset()
+        assert TossingRoomSkills.PRESS_TRASH.ignore_effects == frozenset()
+        assert TossingRoomSkills.PRESS_RECYCLING.ignore_effects == frozenset()
 
     @staticmethod
     def test_a_cross_kind_press_grounding_is_rejected_outright() -> None:
@@ -315,10 +298,10 @@ class TestPressSplitsWithTheBinAndButtonTypes:
         recycling button cannot even be *constructed* as a trash press."""
         with pytest.raises(ValueError, match="type"):
             GroundSkill(
-                skill=TossingRoomSplitPickupWeightSkills.PRESS_TRASH,
+                skill=TossingRoomSkills.PRESS_TRASH,
                 objects=(
                     _ROBOT,
-                    TossingRoomSplitPickupWeightEnvironment.recycling_button,
+                    TossingRoomEnvironment.recycling_button,
                     _ENV.get_rooms()[_ENV.trash_bin_room],
                     _TRASH_BIN,
                     _TRASH,
@@ -328,10 +311,10 @@ class TestPressSplitsWithTheBinAndButtonTypes:
 
 def test_sample_params_is_empty_for_zero_dim_skills() -> None:
     ground_skill = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.MOVE_ROOM,
+        skill=TossingRoomSkills.MOVE_ROOM,
         objects=(_ROBOT, _ENV.get_rooms()[3], _ENV.get_rooms()[2]),
     )
-    params = TossingRoomSplitPickupWeightSkills.sample_params(
+    params = TossingRoomSkills.sample_params(
         ground_skill=ground_skill, rng=np.random.default_rng(0)
     )
     assert params.shape == (0,)
@@ -341,7 +324,7 @@ def test_sample_params_is_empty_for_zero_dim_skills() -> None:
 def test_sample_params_for_each_throw_is_a_single_value_in_unit_interval(
     *, skill_name: str
 ) -> None:
-    skill = getattr(TossingRoomSplitPickupWeightSkills, skill_name)
+    skill = getattr(TossingRoomSkills, skill_name)
     item = _TRASH if skill_name == "THROW_TRASH" else _RECYCLING
     bin_obj = _TRASH_BIN if skill_name == "THROW_TRASH" else _RECYCLING_BIN
     room_index = _ENV.trash_bin_room if skill_name == "THROW_TRASH" else _ENV.recycling_bin_room
@@ -350,39 +333,37 @@ def test_sample_params_for_each_throw_is_a_single_value_in_unit_interval(
     )
     rng = np.random.default_rng(0)
     for _ in range(50):
-        params = TossingRoomSplitPickupWeightSkills.sample_params(
-            ground_skill=ground_skill, rng=rng
-        )
+        params = TossingRoomSkills.sample_params(ground_skill=ground_skill, rng=rng)
         assert params.shape == (1,)
         assert 0.0 <= params[0] <= 1.0
 
 
 def test_compute_action_for_pickup_trash_encodes_the_trash_kind() -> None:
     ground_skill = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.PICKUP_TRASH,
+        skill=TossingRoomSkills.PICKUP_TRASH,
         objects=(_ROBOT, _TRASH, _ENV.get_rooms()[3], _ENV.pile),
     )
-    action = TossingRoomSplitPickupWeightSkills.compute_action(
+    action = TossingRoomSkills.compute_action(
         ground_skill=ground_skill, params=np.zeros(0), state=_state()
     )
     assert action.tolist() == [
-        float(TossingRoomSplitPickupWeightEnvironment.SKILL_PICKUP),
-        float(TossingRoomSplitPickupWeightEnvironment.TRASH_KIND),
+        float(TossingRoomEnvironment.SKILL_PICKUP),
+        float(TossingRoomEnvironment.TRASH_KIND),
         0.0,
     ]
 
 
 def test_compute_action_for_pickup_recycling_encodes_the_recycling_kind() -> None:
     ground_skill = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.PICKUP_RECYCLING,
+        skill=TossingRoomSkills.PICKUP_RECYCLING,
         objects=(_ROBOT, _RECYCLING, _ENV.get_rooms()[3], _ENV.pile),
     )
-    action = TossingRoomSplitPickupWeightSkills.compute_action(
+    action = TossingRoomSkills.compute_action(
         ground_skill=ground_skill, params=np.zeros(0), state=_state()
     )
     assert action.tolist() == [
-        float(TossingRoomSplitPickupWeightEnvironment.SKILL_PICKUP),
-        float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+        float(TossingRoomEnvironment.SKILL_PICKUP),
+        float(TossingRoomEnvironment.RECYCLING_KIND),
         0.0,
     ]
 
@@ -390,13 +371,13 @@ def test_compute_action_for_pickup_recycling_encodes_the_recycling_kind() -> Non
 def test_compute_action_for_move_room_encodes_the_destination_index() -> None:
     rooms = _ENV.get_rooms()
     ground_skill = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.MOVE_ROOM, objects=(_ROBOT, rooms[3], rooms[2])
+        skill=TossingRoomSkills.MOVE_ROOM, objects=(_ROBOT, rooms[3], rooms[2])
     )
-    action = TossingRoomSplitPickupWeightSkills.compute_action(
+    action = TossingRoomSkills.compute_action(
         ground_skill=ground_skill, params=np.zeros(0), state=_state()
     )
     assert action.tolist() == [
-        float(TossingRoomSplitPickupWeightEnvironment.SKILL_MOVE_ROOM),
+        float(TossingRoomEnvironment.SKILL_MOVE_ROOM),
         2.0,
         0.0,
     ]
@@ -406,32 +387,32 @@ def test_compute_action_for_each_throw_uses_the_sampled_force_and_its_own_kind()
     state = _state()
     rooms = _ENV.get_rooms()
     trash_throw = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.THROW_TRASH,
+        skill=TossingRoomSkills.THROW_TRASH,
         objects=(_ROBOT, _TRASH, _TRASH_BIN, rooms[_ENV.trash_bin_room]),
     )
     recycling_throw = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.THROW_RECYCLING,
+        skill=TossingRoomSkills.THROW_RECYCLING,
         objects=(_ROBOT, _RECYCLING, _RECYCLING_BIN, rooms[_ENV.recycling_bin_room]),
     )
-    assert TossingRoomSplitPickupWeightSkills.compute_action(
+    assert TossingRoomSkills.compute_action(
         ground_skill=trash_throw, params=np.array([0.42]), state=state
     ).tolist() == [
-        float(TossingRoomSplitPickupWeightEnvironment.SKILL_THROW),
-        float(TossingRoomSplitPickupWeightEnvironment.TRASH_KIND),
+        float(TossingRoomEnvironment.SKILL_THROW),
+        float(TossingRoomEnvironment.TRASH_KIND),
         0.42,
     ]
-    assert TossingRoomSplitPickupWeightSkills.compute_action(
+    assert TossingRoomSkills.compute_action(
         ground_skill=recycling_throw, params=np.array([0.42]), state=state
     ).tolist() == [
-        float(TossingRoomSplitPickupWeightEnvironment.SKILL_THROW),
-        float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+        float(TossingRoomEnvironment.SKILL_THROW),
+        float(TossingRoomEnvironment.RECYCLING_KIND),
         0.42,
     ]
 
 
 def test_compute_action_dispatches_by_value_not_identity() -> None:
     rooms = _ENV.get_rooms()
-    move = TossingRoomSplitPickupWeightSkills.MOVE_ROOM
+    move = TossingRoomSkills.MOVE_ROOM
     reconstructed = Skill(
         name=move.name,
         parameters=move.parameters,
@@ -443,11 +424,11 @@ def test_compute_action_dispatches_by_value_not_identity() -> None:
     assert reconstructed is not move
     assert reconstructed == move
     ground_skill = GroundSkill(skill=reconstructed, objects=(_ROBOT, rooms[3], rooms[2]))
-    action = TossingRoomSplitPickupWeightSkills.compute_action(
+    action = TossingRoomSkills.compute_action(
         ground_skill=ground_skill, params=np.zeros(0), state=_state()
     )
     assert action.tolist() == [
-        float(TossingRoomSplitPickupWeightEnvironment.SKILL_MOVE_ROOM),
+        float(TossingRoomEnvironment.SKILL_MOVE_ROOM),
         2.0,
         0.0,
     ]
@@ -463,7 +444,7 @@ def test_compute_action_rejects_an_unknown_skill() -> None:
         param_dim=0,
     )
     with pytest.raises(ValueError, match="Unknown skill"):
-        TossingRoomSplitPickupWeightSkills.compute_action(
+        TossingRoomSkills.compute_action(
             ground_skill=GroundSkill(skill=unknown, objects=()), params=np.zeros(0), state=_state()
         )
 
@@ -471,7 +452,7 @@ def test_compute_action_rejects_an_unknown_skill() -> None:
 def test_move_room_ground_skill_grounds_preconditions() -> None:
     rooms = _ENV.get_rooms()
     ground_skill = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.MOVE_ROOM, objects=(_ROBOT, rooms[3], rooms[2])
+        skill=TossingRoomSkills.MOVE_ROOM, objects=(_ROBOT, rooms[3], rooms[2])
     )
     assert ground_skill.add_effects == frozenset({
         GroundAtom(predicate=ROBOT_IN_ROOM, objects=(_ROBOT, rooms[2]))
@@ -487,19 +468,17 @@ class TestGroundingCannotCrossTheTwoKinds:
         each throw carries its bin's empty precondition: an EMPTY task prefills both bins
         and no throw is applicable at all in it, which is the subject of its own test
         below rather than a confound for these."""
-        env = TossingRoomSplitPickupWeightEnvironment()
+        env = TossingRoomEnvironment()
         return (
-            TossingRoomSplitPickupWeightTasks(
-                env=env, seed=0, forced_goal_type=TossingRoomSplitPickupWeightGoalType.TRASH
-            )
+            TossingRoomTasks(env=env, seed=0, forced_goal_type=TossingRoomGoalType.TRASH)
             .sample_test_task()
             .initial_state
         )
 
     @staticmethod
     def _applicable(*, state):
-        env = TossingRoomSplitPickupWeightEnvironment()
-        provider = TossingRoomSplitPickupWeightSkillProvider(env=env)
+        env = TossingRoomEnvironment()
+        provider = TossingRoomSkillProvider(env=env)
         atoms = SkillGrounder.abstract_state(
             state=state, objects=provider.objects(), predicates=provider.predicates()
         )
@@ -509,7 +488,7 @@ class TestGroundingCannotCrossTheTwoKinds:
 
     @staticmethod
     def test_holding_trash_in_the_trash_bin_room_enables_only_throw_trash() -> None:
-        env = TossingRoomSplitPickupWeightEnvironment()
+        env = TossingRoomEnvironment()
         state = TestGroundingCannotCrossTheTwoKinds._throw_task_state()
         state.set(obj=env.robot, feature_name="holding", feature_val=float(env.TRASH_KIND))
         state.set(obj=env.robot, feature_name="room", feature_val=float(env.trash_bin_room))
@@ -522,7 +501,7 @@ class TestGroundingCannotCrossTheTwoKinds:
 
     @staticmethod
     def test_holding_recycling_in_the_recycling_bin_room_enables_only_throw_recycling() -> None:
-        env = TossingRoomSplitPickupWeightEnvironment()
+        env = TossingRoomEnvironment()
         state = TestGroundingCannotCrossTheTwoKinds._throw_task_state()
         state.set(obj=env.robot, feature_name="holding", feature_val=float(env.RECYCLING_KIND))
         state.set(obj=env.robot, feature_name="room", feature_val=float(env.recycling_bin_room))
@@ -539,7 +518,7 @@ class TestGroundingCannotCrossTheTwoKinds:
         bin, so the operator must be inapplicable there too -- otherwise the model claims
         more than the dynamics allow, which is exactly what the cross-domain fidelity
         walk exists to catch."""
-        env = TossingRoomSplitPickupWeightEnvironment()
+        env = TossingRoomEnvironment()
         state = TestGroundingCannotCrossTheTwoKinds._throw_task_state()
         state.set(obj=env.robot, feature_name="holding", feature_val=float(env.TRASH_KIND))
         state.set(obj=env.robot, feature_name="room", feature_val=float(env.trash_bin_room))
@@ -554,7 +533,7 @@ class TestGroundingCannotCrossTheTwoKinds:
     def test_holding_trash_in_the_recycling_bin_room_enables_no_throw_at_all() -> None:
         """The complement of the two above: standing at the wrong bin is not a throw the
         sampler could waste experience on, it is no throw at all."""
-        env = TossingRoomSplitPickupWeightEnvironment()
+        env = TossingRoomEnvironment()
         state = TestGroundingCannotCrossTheTwoKinds._throw_task_state()
         state.set(obj=env.robot, feature_name="holding", feature_val=float(env.TRASH_KIND))
         state.set(obj=env.robot, feature_name="room", feature_val=float(env.recycling_bin_room))
@@ -572,7 +551,7 @@ class TestPickupIsRestrictedToThePileRoom:
 
     @staticmethod
     def test_no_pickup_is_applicable_outside_the_pile_room() -> None:
-        env = TossingRoomSplitPickupWeightEnvironment()
+        env = TossingRoomEnvironment()
         state = TestGroundingCannotCrossTheTwoKinds._throw_task_state()
         other_room = (env.start_room + 1) % env.num_rooms
         state.set(obj=env.robot, feature_name="room", feature_val=float(other_room))
@@ -585,7 +564,7 @@ class TestPickupIsRestrictedToThePileRoom:
 
     @staticmethod
     def test_both_pickups_are_applicable_in_the_pile_room() -> None:
-        env = TossingRoomSplitPickupWeightEnvironment()
+        env = TossingRoomEnvironment()
         state = TestGroundingCannotCrossTheTwoKinds._throw_task_state()
         state.set(obj=env.robot, feature_name="room", feature_val=float(env.start_room))
         state.set(obj=env.robot, feature_name="holding", feature_val=0.0)
@@ -598,8 +577,8 @@ class TestPickupIsRestrictedToThePileRoom:
 
 
 def test_move_room_cannot_cross_the_ledge_rightward() -> None:
-    env = TossingRoomSplitPickupWeightEnvironment()
-    state = TossingRoomSplitPickupWeightTasks(env=env, seed=0).sample_test_task().initial_state
+    env = TossingRoomEnvironment()
+    state = TossingRoomTasks(env=env, seed=0).sample_test_task().initial_state
     state.set(obj=env.robot, feature_name="room", feature_val=float(env.blocked_right_from))
     rooms = env.get_rooms()
     assert not [
@@ -612,8 +591,8 @@ def test_move_room_cannot_cross_the_ledge_rightward() -> None:
 
 
 def test_move_room_can_still_cross_the_ledge_leftward() -> None:
-    env = TossingRoomSplitPickupWeightEnvironment()
-    state = TossingRoomSplitPickupWeightTasks(env=env, seed=0).sample_test_task().initial_state
+    env = TossingRoomEnvironment()
+    state = TossingRoomTasks(env=env, seed=0).sample_test_task().initial_state
     state.set(obj=env.robot, feature_name="room", feature_val=float(env.blocked_right_from + 1))
     rooms = env.get_rooms()
     assert [

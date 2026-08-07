@@ -6,6 +6,7 @@ import pytest
 import hitl_pmp.cli as cli_module
 from hitl_pmp.cli import ENVIRONMENTS, METHODS, Cli, MethodCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
@@ -40,22 +41,30 @@ def test_environments_registry_contains_lightswitch() -> None:
     assert ENVIRONMENTS["lightswitch"] is LightSwitchCli
 
 
-# The three superseded Tossing Room forks. Weight-drawn-at-pickup was a bug fix rather
-# than a variant, so every domain that froze the weight into the task's initial state
-# carried that defect; `tossingroomsplitidentity` additionally existed only as the
-# counterpart arm of a representation A/B that is now closed. Their published results
-# stay in docs/experiment-logs/ behind staleness notes -- what is retired is the ability
-# to run them again, which is why this asserts on the registry rather than on a file.
+# The two superseded Tossing Room forks, plus the fork name the canonical domain used
+# to answer to. Weight-drawn-at-pickup was a bug fix rather than a variant, so every
+# domain that froze the weight into the task's initial state carried that defect;
+# `tossingroomsplitidentity` additionally existed only as the counterpart arm of a
+# representation A/B that is now closed. `tossingroomsplitpickupweight` is retired as a
+# *name* only -- it is the surviving domain, now called `tossingroom`, and the old
+# spelling is gone so a stale sweep command fails loudly instead of silently selecting
+# nothing. Published results stay in docs/experiment-logs/ behind staleness notes.
 RETIRED_ENVIRONMENT_NAMES = (
-    "tossingroom",
     "tossingroomsplit",
     "tossingroomsplitidentity",
+    "tossingroomsplitpickupweight",
 )
 
 
 @pytest.mark.parametrize("retired_name", RETIRED_ENVIRONMENT_NAMES)
 def test_retired_tossingroom_forks_are_not_registered(*, retired_name: str) -> None:
     assert retired_name not in ENVIRONMENTS
+
+
+def test_the_canonical_domain_is_registered_as_tossingroom() -> None:
+    """The name freed by retiring the original fork is reused by the domain that
+    survived, so `--env tossingroom` selects the corrected weight-at-pickup domain."""
+    assert ENVIRONMENTS["tossingroom"] is TossingRoomCli
 
 
 def test_environments_registry_is_exactly_the_surviving_domains() -> None:
@@ -65,7 +74,7 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
         "ballring",
         "lightswitch",
         "tossing3d",
-        "tossingroomsplitpickupweight",
+        "tossingroom",
     }
 
 
@@ -75,7 +84,7 @@ def test_main_runs_tossingroom_skill_oracle_end_to_end() -> None:
     Cli.main(
         argv=[
             "--env",
-            "tossingroomsplitpickupweight",
+            "tossingroom",
             "--method",
             "skill-oracle",
             "--num-test-tasks",
@@ -180,7 +189,7 @@ def test_main_dispatches_to_the_selected_methods_own_run() -> None:
 def test_parse_args_defaults_practice_reset_interval_to_none() -> None:
     """None is "reset only at the cycle boundary", i.e. exactly the behaviour that
     predates the flag -- every run that does not ask for it is unchanged."""
-    args = Cli.parse_args(argv=["--env", "tossingroomsplitpickupweight", "--method", "ees"])
+    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
     assert args.practice_reset_interval is None
 
 
@@ -188,7 +197,7 @@ def test_parse_args_accepts_a_practice_reset_interval() -> None:
     args = Cli.parse_args(
         argv=[
             "--env",
-            "tossingroomsplitpickupweight",
+            "tossingroom",
             "--method",
             "ees",
             "--practice-reset-interval",
@@ -203,7 +212,7 @@ def test_parse_args_rejects_a_non_positive_practice_reset_interval() -> None:
         Cli.parse_args(
             argv=[
                 "--env",
-                "tossingroomsplitpickupweight",
+                "tossingroom",
                 "--method",
                 "ees",
                 "--practice-reset-interval",
@@ -215,7 +224,7 @@ def test_parse_args_rejects_a_non_positive_practice_reset_interval() -> None:
 def test_parse_args_defaults_practice_reset_policy_to_scheduled() -> None:
     """'scheduled' is the behaviour that predates the flag -- one reset at the top
     of every period -- so every run that does not ask for it is unchanged."""
-    args = Cli.parse_args(argv=["--env", "tossingroomsplitpickupweight", "--method", "ees"])
+    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
     assert args.practice_reset_policy is PracticeResetPolicy.SCHEDULED
 
 
@@ -223,7 +232,7 @@ def test_parse_args_accepts_never_as_a_practice_reset_policy() -> None:
     args = Cli.parse_args(
         argv=[
             "--env",
-            "tossingroomsplitpickupweight",
+            "tossingroom",
             "--method",
             "ees",
             "--practice-reset-policy",
@@ -240,7 +249,7 @@ def test_parse_args_rejects_an_unknown_practice_reset_policy() -> None:
         Cli.parse_args(
             argv=[
                 "--env",
-                "tossingroomsplitpickupweight",
+                "tossingroom",
                 "--method",
                 "ees",
                 "--practice-reset-policy",
@@ -252,7 +261,7 @@ def test_parse_args_rejects_an_unknown_practice_reset_policy() -> None:
 def test_parse_args_defaults_record_full_loop_to_none() -> None:
     """Off unless asked for: a run that does not pass it is unchanged, right down
     to taking no rendering path at all."""
-    args = Cli.parse_args(argv=["--env", "tossingroomsplitpickupweight", "--method", "ees"])
+    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
     assert args.record_full_loop is None
 
 
@@ -260,7 +269,7 @@ def test_parse_args_accepts_a_record_full_loop_path() -> None:
     args = Cli.parse_args(
         argv=[
             "--env",
-            "tossingroomsplitpickupweight",
+            "tossingroom",
             "--method",
             "ees",
             "--record-full-loop",

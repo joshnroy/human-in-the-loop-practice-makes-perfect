@@ -5,7 +5,7 @@ arm loses, is it because it stopped *reaching the pile*?
 pre-registration. The short version: the 2026-08-06 A/B on `tossingroomsplit` confounded
 two mechanisms -- practice stranding itself behind the one-way ledge, and the training
 distribution collapsing because `reset_to_task` is the only thing that installs a task's
-continuous parameters and the reset-free arm never calls it. `tossingroomsplitpickupweight`
+continuous parameters and the reset-free arm never calls it. `tossingroom`
 removes the second by construction (the item weight is drawn at pickup, off a per-task
 pre-sampled array, and the bin distance is fixed), so what is left to measure is the
 first.

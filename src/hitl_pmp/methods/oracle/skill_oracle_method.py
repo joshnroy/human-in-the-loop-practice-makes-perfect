@@ -15,8 +15,8 @@ class SkillOracleMethod(Method):
     Fully domain-agnostic now: the domain-specific oracle logic lives in the injected
     `oracle` (e.g. `environments/lightswitch/skill_provider.py`'s LightSwitchOracle,
     `environments/ballring/skill_provider.py`'s BallRingOracle,
-    `environments/tossingroomsplitpickupweight/skill_provider.py`'s
-    TossingRoomSplitPickupWeightOracle), rather than in
+    `environments/tossingroom/skill_provider.py`'s
+    TossingRoomOracle), rather than in
     an `isinstance(self.env, ...)` branch here. Adding a domain means adding its
     OraclePolicyProvider, not editing this class.
 

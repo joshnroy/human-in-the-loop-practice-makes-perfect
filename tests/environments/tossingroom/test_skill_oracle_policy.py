@@ -6,19 +6,19 @@ assertions below are what pin that -- `PickupTrash(`/`ThrowRecycling(` rather th
 import pytest
 
 from hitl_pmp.core.problem.tasks.types import Goal
-from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
-    TossingRoomSplitPickupWeightEnvironment,
+from hitl_pmp.environments.tossingroom.environment import (
+    TossingRoomEnvironment,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.predicates import (
+from hitl_pmp.environments.tossingroom.predicates import (
     RECYCLING_BIN_EMPTY,
     RECYCLING_IN_BIN,
     TRASH_BIN_EMPTY,
     TRASH_IN_BIN,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.skill_oracle_policy import SkillOraclePolicy
+from hitl_pmp.environments.tossingroom.skill_oracle_policy import SkillOraclePolicy
 
-_ENV = TossingRoomSplitPickupWeightEnvironment()
-_ROBOT = TossingRoomSplitPickupWeightEnvironment.robot
+_ENV = TossingRoomEnvironment()
+_ROBOT = TossingRoomEnvironment.robot
 
 
 def _recycling_goal(*, state) -> Goal:
@@ -27,8 +27,8 @@ def _recycling_goal(*, state) -> Goal:
             RECYCLING_IN_BIN(
                 state=state,
                 objects=(
-                    TossingRoomSplitPickupWeightEnvironment.recycling,
-                    TossingRoomSplitPickupWeightEnvironment.recycling_bin,
+                    TossingRoomEnvironment.recycling,
+                    TossingRoomEnvironment.recycling_bin,
                 ),
             )
         })
@@ -41,8 +41,8 @@ def _trash_goal(*, state) -> Goal:
             TRASH_IN_BIN(
                 state=state,
                 objects=(
-                    TossingRoomSplitPickupWeightEnvironment.trash,
-                    TossingRoomSplitPickupWeightEnvironment.trash_bin,
+                    TossingRoomEnvironment.trash,
+                    TossingRoomEnvironment.trash_bin,
                 ),
             )
         })
@@ -52,12 +52,8 @@ def _trash_goal(*, state) -> Goal:
 def _empty_goal(*, state) -> Goal:
     return Goal(
         atoms=frozenset({
-            RECYCLING_BIN_EMPTY(
-                state=state, objects=(TossingRoomSplitPickupWeightEnvironment.recycling_bin,)
-            ),
-            TRASH_BIN_EMPTY(
-                state=state, objects=(TossingRoomSplitPickupWeightEnvironment.trash_bin,)
-            ),
+            RECYCLING_BIN_EMPTY(state=state, objects=(TossingRoomEnvironment.recycling_bin,)),
+            TRASH_BIN_EMPTY(state=state, objects=(TossingRoomEnvironment.trash_bin,)),
         })
     )
 
@@ -67,8 +63,8 @@ def test_recycling_oracle_picks_up_with_the_recycling_specific_skill() -> None:
     labeled = SkillOraclePolicy.get_labeled_action(
         state=state, env=_ENV, goal=_recycling_goal(state=state)
     )
-    assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_PICKUP
-    assert labeled.action[1] == TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND
+    assert labeled.action[0] == TossingRoomEnvironment.SKILL_PICKUP
+    assert labeled.action[1] == TossingRoomEnvironment.RECYCLING_KIND
     assert labeled.label.startswith("PickupRecycling(")
 
 
@@ -78,8 +74,8 @@ def test_trash_oracle_picks_up_with_the_trash_specific_skill() -> None:
     labeled = SkillOraclePolicy.get_labeled_action(
         state=state, env=_ENV, goal=_trash_goal(state=state)
     )
-    assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_PICKUP
-    assert labeled.action[1] == TossingRoomSplitPickupWeightEnvironment.TRASH_KIND
+    assert labeled.action[0] == TossingRoomEnvironment.SKILL_PICKUP
+    assert labeled.action[1] == TossingRoomEnvironment.TRASH_KIND
     assert labeled.label.startswith("PickupTrash(")
 
 
@@ -88,12 +84,12 @@ def test_recycling_oracle_steps_left_toward_the_bin_room_while_holding() -> None
     state.set(
         obj=_ROBOT,
         feature_name="holding",
-        feature_val=float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+        feature_val=float(TossingRoomEnvironment.RECYCLING_KIND),
     )
     labeled = SkillOraclePolicy.get_labeled_action(
         state=state, env=_ENV, goal=_recycling_goal(state=state)
     )
-    assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_MOVE_ROOM
+    assert labeled.action[0] == TossingRoomEnvironment.SKILL_MOVE_ROOM
     # start_room 3 -> steps LEFT toward recycling room 1, i.e. to room 2.
     assert labeled.action[1] == _ENV.start_room - 1
     assert labeled.label.startswith("MoveRoom(")
@@ -102,7 +98,7 @@ def test_recycling_oracle_steps_left_toward_the_bin_room_while_holding() -> None
 def test_recycling_oracle_throws_with_the_exact_required_force_once_in_the_bin_room() -> None:
     """The oracle no longer copies a `target_force` feature out of the state -- there is
     none. It reads the two CAUSES (the bin's throw_distance, the item's weight) and
-    applies `TossingRoomSplitPickupWeightEnvironment.required_force`, whose coefficients are
+    applies `TossingRoomEnvironment.required_force`, whose coefficients are
     privileged knowledge neither throw sampler has. The distance is fixed at the
     reference, so weight 1.25 makes the required force 0.5 + 0.8 * 0.25 = 0.70 -- a value
     equal to neither the weight nor anything else in the row, so a passthrough bug could
@@ -110,20 +106,20 @@ def test_recycling_oracle_throws_with_the_exact_required_force_once_in_the_bin_r
     rather than passed to build_initial_state, which no longer takes one."""
     state = _ENV.build_initial_state(weight_seed=0)
     state.set(
-        obj=TossingRoomSplitPickupWeightEnvironment.recycling,
+        obj=TossingRoomEnvironment.recycling,
         feature_name="weight",
         feature_val=1.25,
     )
     state.set(
         obj=_ROBOT,
         feature_name="holding",
-        feature_val=float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+        feature_val=float(TossingRoomEnvironment.RECYCLING_KIND),
     )
     state.set(obj=_ROBOT, feature_name="room", feature_val=float(_ENV.recycling_bin_room))
     labeled = SkillOraclePolicy.get_labeled_action(
         state=state, env=_ENV, goal=_recycling_goal(state=state)
     )
-    assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_THROW
+    assert labeled.action[0] == TossingRoomEnvironment.SKILL_THROW
     # Exactly the required force -> always within tolerance, on any task.
     assert labeled.action[2] == pytest.approx(0.70)
     assert labeled.label.startswith("ThrowRecycling(")
@@ -135,19 +131,17 @@ def test_trash_oracle_throws_with_the_trash_specific_skill_and_its_own_required_
     different forces in the same state -- which is what the split samplers have to learn
     separately. Trash: weight 0.75 -> 0.5 + 0.8 * (-0.25) = 0.30."""
     state = _ENV.build_initial_state(weight_seed=0)
-    state.set(
-        obj=TossingRoomSplitPickupWeightEnvironment.trash, feature_name="weight", feature_val=0.75
-    )
+    state.set(obj=TossingRoomEnvironment.trash, feature_name="weight", feature_val=0.75)
     state.set(
         obj=_ROBOT,
         feature_name="holding",
-        feature_val=float(TossingRoomSplitPickupWeightEnvironment.TRASH_KIND),
+        feature_val=float(TossingRoomEnvironment.TRASH_KIND),
     )
     state.set(obj=_ROBOT, feature_name="room", feature_val=float(_ENV.trash_bin_room))
     labeled = SkillOraclePolicy.get_labeled_action(
         state=state, env=_ENV, goal=_trash_goal(state=state)
     )
-    assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_THROW
+    assert labeled.action[0] == TossingRoomEnvironment.SKILL_THROW
     assert labeled.action[2] == pytest.approx(0.30)
     assert labeled.label.startswith("ThrowTrash(")
 
@@ -177,7 +171,7 @@ class TestEmptyIsAnOrderingTask:
         labeled = SkillOraclePolicy.get_labeled_action(
             state=state, env=_ENV, goal=_empty_goal(state=state)
         )
-        assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_MOVE_ROOM
+        assert labeled.action[0] == TossingRoomEnvironment.SKILL_MOVE_ROOM
         # start_room 3 -> steps RIGHT toward the trash button in room 6.
         assert labeled.action[1] == _ENV.start_room + 1
 
@@ -188,8 +182,8 @@ class TestEmptyIsAnOrderingTask:
         labeled = SkillOraclePolicy.get_labeled_action(
             state=state, env=_ENV, goal=_empty_goal(state=state)
         )
-        assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_PRESS
-        assert labeled.action[1] == TossingRoomSplitPickupWeightEnvironment.TRASH_KIND
+        assert labeled.action[0] == TossingRoomEnvironment.SKILL_PRESS
+        assert labeled.action[1] == TossingRoomEnvironment.TRASH_KIND
         assert labeled.label.startswith("PressTrash(")
 
     @staticmethod
@@ -197,14 +191,14 @@ class TestEmptyIsAnOrderingTask:
         state = _both_bins_full()
         state.set(obj=_ROBOT, feature_name="room", feature_val=float(_ENV.trash_bin_room))
         state.set(
-            obj=TossingRoomSplitPickupWeightEnvironment.trash_bin,
+            obj=TossingRoomEnvironment.trash_bin,
             feature_name="count",
             feature_val=0.0,
         )
         labeled = SkillOraclePolicy.get_labeled_action(
             state=state, env=_ENV, goal=_empty_goal(state=state)
         )
-        assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_MOVE_ROOM
+        assert labeled.action[0] == TossingRoomEnvironment.SKILL_MOVE_ROOM
         assert labeled.action[1] == _ENV.trash_bin_room - 1
 
     @staticmethod
@@ -212,13 +206,13 @@ class TestEmptyIsAnOrderingTask:
         state = _both_bins_full()
         state.set(obj=_ROBOT, feature_name="room", feature_val=float(_ENV.recycling_bin_room))
         state.set(
-            obj=TossingRoomSplitPickupWeightEnvironment.trash_bin,
+            obj=TossingRoomEnvironment.trash_bin,
             feature_name="count",
             feature_val=0.0,
         )
         labeled = SkillOraclePolicy.get_labeled_action(
             state=state, env=_ENV, goal=_empty_goal(state=state)
         )
-        assert labeled.action[0] == TossingRoomSplitPickupWeightEnvironment.SKILL_PRESS
-        assert labeled.action[1] == TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND
+        assert labeled.action[0] == TossingRoomEnvironment.SKILL_PRESS
+        assert labeled.action[1] == TossingRoomEnvironment.RECYCLING_KIND
         assert labeled.label.startswith("PressRecycling(")

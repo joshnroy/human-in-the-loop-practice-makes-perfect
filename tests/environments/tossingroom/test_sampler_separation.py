@@ -9,12 +9,13 @@ names -- but "should follow from" is exactly the kind of assumption an experimen
 not rest on, so it is asserted here directly, through the real `EesMethod`.
 
 **The control is currently missing, and that is a known gap.** This file used to run the
-identical body against `environments/tossingroom`, whose single `Throw` name made both
-kinds land in one sampler with pooled data -- a negative control that fails if the
-separation assertions were vacuously true of any domain. That domain has been retired,
-so the control went with it. It is restorable, and should be restored, once a shared
-lifted `Throw` is expressible on this domain again; until then the assertions below are
-weaker than they read.
+identical body against the *original* Tossing Room fork -- a different domain that
+happened to share this one's present name -- whose single `Throw` name made both kinds
+land in one sampler with pooled data. That was a negative control: it fails if the
+separation assertions were vacuously true of any domain. The fork has been retired, so
+the control went with it. It is restorable, and should be restored, once a shared lifted
+`Throw` is expressible on this domain again; until then the assertions below are weaker
+than they read.
 
 Nothing here runs Fast Downward: `execute_ground_skill` + `observe_sampler_outcome` is
 the whole path from "a skill was practiced" to "a sampler was trained", so driving those
@@ -24,36 +25,32 @@ two directly exercises the real mechanism without a planner in the loop.
 import numpy as np
 
 from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
-    TossingRoomSplitPickupWeightEnvironment,
+from hitl_pmp.environments.tossingroom.environment import (
+    TossingRoomEnvironment,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.skill_provider import (
-    TossingRoomSplitPickupWeightSkillProvider,
+from hitl_pmp.environments.tossingroom.skill_provider import (
+    TossingRoomSkillProvider,
 )
-from hitl_pmp.environments.tossingroomsplitpickupweight.skills import (
-    TossingRoomSplitPickupWeightSkills,
+from hitl_pmp.environments.tossingroom.skills import (
+    TossingRoomSkills,
 )
 from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
 
-def _split_method() -> tuple[EesMethod, TossingRoomSplitPickupWeightEnvironment]:
-    env = TossingRoomSplitPickupWeightEnvironment()
-    method = EesMethod(
-        env=env, skill_provider=TossingRoomSplitPickupWeightSkillProvider(env=env), seed=0
-    )
+def _split_method() -> tuple[EesMethod, TossingRoomEnvironment]:
+    env = TossingRoomEnvironment()
+    method = EesMethod(env=env, skill_provider=TossingRoomSkillProvider(env=env), seed=0)
     return method, env
 
 
-def _split_throws(
-    *, env: TossingRoomSplitPickupWeightEnvironment
-) -> tuple[GroundSkill, GroundSkill]:
+def _split_throws(*, env: TossingRoomEnvironment) -> tuple[GroundSkill, GroundSkill]:
     rooms = env.get_rooms()
     trash = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.THROW_TRASH,
+        skill=TossingRoomSkills.THROW_TRASH,
         objects=(env.robot, env.trash, env.trash_bin, rooms[env.trash_bin_room]),
     )
     recycling = GroundSkill(
-        skill=TossingRoomSplitPickupWeightSkills.THROW_RECYCLING,
+        skill=TossingRoomSkills.THROW_RECYCLING,
         objects=(env.robot, env.recycling, env.recycling_bin, rooms[env.recycling_bin_room]),
     )
     return trash, recycling

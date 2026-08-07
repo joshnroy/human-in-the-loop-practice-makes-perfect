@@ -2,32 +2,32 @@ import numpy as np
 import pytest
 from gymnasium.spaces import Box
 
-from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
-    TossingRoomSplitPickupWeightEnvironment,
+from hitl_pmp.environments.tossingroom.environment import (
+    TossingRoomEnvironment,
 )
 
-_ROBOT = TossingRoomSplitPickupWeightEnvironment.robot
-_RECYCLING_BIN = TossingRoomSplitPickupWeightEnvironment.recycling_bin
-_TRASH_BIN = TossingRoomSplitPickupWeightEnvironment.trash_bin
+_ROBOT = TossingRoomEnvironment.robot
+_RECYCLING_BIN = TossingRoomEnvironment.recycling_bin
+_TRASH_BIN = TossingRoomEnvironment.trash_bin
 
 
-def _env() -> TossingRoomSplitPickupWeightEnvironment:
-    return TossingRoomSplitPickupWeightEnvironment()
+def _env() -> TossingRoomEnvironment:
+    return TossingRoomEnvironment()
 
 
-def _fresh_state(*, env: TossingRoomSplitPickupWeightEnvironment):
+def _fresh_state(*, env: TossingRoomEnvironment):
     state = env.build_initial_state(weight_seed=0)
     env.set_state(state=state)
     return state
 
 
 def _pickup(*, kind: int) -> np.ndarray:
-    return np.array([float(TossingRoomSplitPickupWeightEnvironment.SKILL_PICKUP), float(kind), 0.0])
+    return np.array([float(TossingRoomEnvironment.SKILL_PICKUP), float(kind), 0.0])
 
 
 def _move(*, to_room: int) -> np.ndarray:
     return np.array([
-        float(TossingRoomSplitPickupWeightEnvironment.SKILL_MOVE_ROOM),
+        float(TossingRoomEnvironment.SKILL_MOVE_ROOM),
         float(to_room),
         0.0,
     ])
@@ -35,7 +35,7 @@ def _move(*, to_room: int) -> np.ndarray:
 
 def _throw(*, kind: int, force: float) -> np.ndarray:
     return np.array([
-        float(TossingRoomSplitPickupWeightEnvironment.SKILL_THROW),
+        float(TossingRoomEnvironment.SKILL_THROW),
         float(kind),
         force,
     ])
@@ -44,7 +44,7 @@ def _throw(*, kind: int, force: float) -> np.ndarray:
 def _press(*, kind: int) -> np.ndarray:
     """`kind` names WHICH button is pressed -- each bin has its own, beside it. Press's
     `arg` used to be unused, back when one button emptied both bins."""
-    return np.array([float(TossingRoomSplitPickupWeightEnvironment.SKILL_PRESS), float(kind), 0.0])
+    return np.array([float(TossingRoomEnvironment.SKILL_PRESS), float(kind), 0.0])
 
 
 def test_hard_reset_sets_canonical_starting_state() -> None:
@@ -68,28 +68,22 @@ def test_build_initial_state_places_bins_and_buttons_in_their_rooms() -> None:
     # pickup it is the placeholder, not a draw. The bin's distance is the environment's
     # fixed one. Neither is the force.
     assert (
-        state.get(obj=TossingRoomSplitPickupWeightEnvironment.trash, feature_name="weight")
+        state.get(obj=TossingRoomEnvironment.trash, feature_name="weight")
         == env.canonical_item_weight
     )
     assert (
-        state.get(obj=TossingRoomSplitPickupWeightEnvironment.recycling, feature_name="weight")
+        state.get(obj=TossingRoomEnvironment.recycling, feature_name="weight")
         == env.canonical_item_weight
     )
     assert state.get(obj=_TRASH_BIN, feature_name="throw_distance") == env.throw_distance
     assert state.get(obj=_RECYCLING_BIN, feature_name="throw_distance") == env.throw_distance
     # The task's whole continuous content, and the cursor into it.
-    assert (
-        state.get(obj=TossingRoomSplitPickupWeightEnvironment.pile, feature_name="weight_seed")
-        == 0.0
-    )
-    assert (
-        state.get(obj=TossingRoomSplitPickupWeightEnvironment.pile, feature_name="num_pickups")
-        == 0.0
-    )
+    assert state.get(obj=TossingRoomEnvironment.pile, feature_name="weight_seed") == 0.0
+    assert state.get(obj=TossingRoomEnvironment.pile, feature_name="num_pickups") == 0.0
 
 
 def test_build_initial_state_lays_out_room_indices() -> None:
-    env = TossingRoomSplitPickupWeightEnvironment(num_rooms=5)
+    env = TossingRoomEnvironment(num_rooms=5)
     state = env.build_initial_state(weight_seed=0)
     rooms = env.get_rooms()
     assert len(rooms) == 5
@@ -100,12 +94,9 @@ def test_build_initial_state_lays_out_room_indices() -> None:
 def test_pickup_at_start_room_fills_the_hand() -> None:
     env = _env()
     _fresh_state(env=env)
-    next_state = env.take_action(
-        action=_pickup(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND)
-    )
+    next_state = env.take_action(action=_pickup(kind=TossingRoomEnvironment.RECYCLING_KIND))
     assert (
-        next_state.get(obj=_ROBOT, feature_name="holding")
-        == TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND
+        next_state.get(obj=_ROBOT, feature_name="holding") == TossingRoomEnvironment.RECYCLING_KIND
     )
 
 
@@ -114,9 +105,7 @@ def test_pickup_is_a_no_op_when_not_in_the_start_room() -> None:
     state = _fresh_state(env=env)
     state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.start_room - 1))
     env.set_state(state=state)
-    next_state = env.take_action(
-        action=_pickup(kind=TossingRoomSplitPickupWeightEnvironment.TRASH_KIND)
-    )
+    next_state = env.take_action(action=_pickup(kind=TossingRoomEnvironment.TRASH_KIND))
     assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
 
 
@@ -126,17 +115,12 @@ def test_pickup_is_a_no_op_when_the_hand_is_already_full() -> None:
     state.set(
         obj=_ROBOT,
         feature_name="holding",
-        feature_val=float(TossingRoomSplitPickupWeightEnvironment.TRASH_KIND),
+        feature_val=float(TossingRoomEnvironment.TRASH_KIND),
     )
     env.set_state(state=state)
-    next_state = env.take_action(
-        action=_pickup(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND)
-    )
+    next_state = env.take_action(action=_pickup(kind=TossingRoomEnvironment.RECYCLING_KIND))
     # Still holding the original item, not overwritten.
-    assert (
-        next_state.get(obj=_ROBOT, feature_name="holding")
-        == TossingRoomSplitPickupWeightEnvironment.TRASH_KIND
-    )
+    assert next_state.get(obj=_ROBOT, feature_name="holding") == TossingRoomEnvironment.TRASH_KIND
 
 
 def test_move_to_an_adjacent_room_succeeds() -> None:
@@ -173,13 +157,13 @@ def test_ledge_allows_stepping_left_across_it() -> None:
     assert next_state.get(obj=_ROBOT, feature_name="room") == env.blocked_right_from
 
 
-def _carry_to_recycling_room(*, env: TossingRoomSplitPickupWeightEnvironment):
+def _carry_to_recycling_room(*, env: TossingRoomEnvironment):
     state = env.build_initial_state(weight_seed=0)
     state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.recycling_bin_room))
     state.set(
         obj=_ROBOT,
         feature_name="holding",
-        feature_val=float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+        feature_val=float(TossingRoomEnvironment.RECYCLING_KIND),
     )
     env.set_state(state=state)
     return state
@@ -189,7 +173,7 @@ def test_throw_within_tolerance_lands_in_the_bin_and_empties_the_hand() -> None:
     env = _env()
     _carry_to_recycling_room(env=env)
     next_state = env.take_action(
-        action=_throw(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND, force=0.5)
+        action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5)
     )
     assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
     assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
@@ -215,7 +199,7 @@ def test_throw_outside_tolerance_consumes_the_item_without_binning_it() -> None:
     _carry_to_recycling_room(env=env)
     # target is 0.5, tolerance 0.1 -> a force of 0.9 misses.
     next_state = env.take_action(
-        action=_throw(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND, force=0.9)
+        action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.9)
     )
     assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
     assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
@@ -227,14 +211,12 @@ def test_a_missed_throw_can_be_retried_only_by_fetching_a_fresh_item() -> None:
     room), so a retry costs the walk back."""
     env = _env()
     _carry_to_recycling_room(env=env)
-    env.take_action(
-        action=_throw(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND, force=0.9)
-    )
+    env.take_action(action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.9))
     # Picking up in the bin room does nothing: the pile is in the start room.
     after_pickup = env.take_action(
         action=np.array([
-            float(TossingRoomSplitPickupWeightEnvironment.SKILL_PICKUP),
-            float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+            float(TossingRoomEnvironment.SKILL_PICKUP),
+            float(TossingRoomEnvironment.RECYCLING_KIND),
             0.0,
         ])
     )
@@ -250,12 +232,12 @@ def test_throw_in_the_wrong_room_still_releases_the_item() -> None:
     state.set(
         obj=_ROBOT,
         feature_name="holding",
-        feature_val=float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+        feature_val=float(TossingRoomEnvironment.RECYCLING_KIND),
     )
     # Robot is at start_room, not the recycling bin room.
     env.set_state(state=state)
     next_state = env.take_action(
-        action=_throw(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND, force=0.5)
+        action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5)
     )
     assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
     assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
@@ -265,7 +247,7 @@ def test_throw_with_an_empty_hand_is_a_no_op() -> None:
     env = _env()
     _fresh_state(env=env)
     next_state = env.take_action(
-        action=_throw(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND, force=0.5)
+        action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5)
     )
     assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
 
@@ -279,9 +261,7 @@ def test_press_outside_a_button_room_is_a_no_op() -> None:
     )
     # Robot at start_room, which holds neither bin's button.
     env.set_state(state=state)
-    next_state = env.take_action(
-        action=_press(kind=TossingRoomSplitPickupWeightEnvironment.TRASH_KIND)
-    )
+    next_state = env.take_action(action=_press(kind=TossingRoomEnvironment.TRASH_KIND))
     assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
     assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 1.0
 
@@ -297,7 +277,7 @@ class TestBinsHoldAtMostOneItem:
     each symbolic model stays exactly as strong as this guard."""
 
     @staticmethod
-    def _at_the_full_recycling_bin(*, env: TossingRoomSplitPickupWeightEnvironment):
+    def _at_the_full_recycling_bin(*, env: TossingRoomEnvironment):
         state = env.build_initial_state(
             weight_seed=0,
             recycling_count=1,
@@ -306,7 +286,7 @@ class TestBinsHoldAtMostOneItem:
         state.set(
             obj=_ROBOT,
             feature_name="holding",
-            feature_val=float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+            feature_val=float(TossingRoomEnvironment.RECYCLING_KIND),
         )
         env.set_state(state=state)
         return state
@@ -317,12 +297,12 @@ class TestBinsHoldAtMostOneItem:
         TestBinsHoldAtMostOneItem._at_the_full_recycling_bin(env=env)
         # Force is exactly the target, so only the capacity guard can refuse this.
         next_state = env.take_action(
-            action=_throw(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND, force=0.5)
+            action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5)
         )
         assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
         assert (
             next_state.get(obj=_ROBOT, feature_name="holding")
-            == TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND
+            == TossingRoomEnvironment.RECYCLING_KIND
         )
 
     @staticmethod
@@ -330,9 +310,9 @@ class TestBinsHoldAtMostOneItem:
         """The complement, so the guard cannot be 'a throw never lands'."""
         env = _env()
         TestBinsHoldAtMostOneItem._at_the_full_recycling_bin(env=env)
-        env.take_action(action=_press(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND))
+        env.take_action(action=_press(kind=TossingRoomEnvironment.RECYCLING_KIND))
         next_state = env.take_action(
-            action=_throw(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND, force=0.5)
+            action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5)
         )
         assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
         assert next_state.get(obj=_ROBOT, feature_name="holding") == 0.0
@@ -341,9 +321,7 @@ class TestBinsHoldAtMostOneItem:
     def test_a_landed_throw_never_pushes_a_bin_past_one() -> None:
         env = _env()
         _carry_to_recycling_room(env=env)
-        env.take_action(
-            action=_throw(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND, force=0.5)
-        )
+        env.take_action(action=_throw(kind=TossingRoomEnvironment.RECYCLING_KIND, force=0.5))
         assert env.get_current_state().get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
 
     @staticmethod
@@ -363,7 +341,7 @@ class TestEachBinHasItsOwnButtonBesideIt:
     `PressRecycling`."""
 
     @staticmethod
-    def _both_bins_full(*, env: TossingRoomSplitPickupWeightEnvironment):
+    def _both_bins_full(*, env: TossingRoomEnvironment):
         state = env.build_initial_state(
             weight_seed=0,
             recycling_count=1,
@@ -377,13 +355,11 @@ class TestEachBinHasItsOwnButtonBesideIt:
         env = _env()
         state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
         assert (
-            state.get(obj=TossingRoomSplitPickupWeightEnvironment.trash_button, feature_name="room")
+            state.get(obj=TossingRoomEnvironment.trash_button, feature_name="room")
             == env.trash_bin_room
         )
         assert (
-            state.get(
-                obj=TossingRoomSplitPickupWeightEnvironment.recycling_button, feature_name="room"
-            )
+            state.get(obj=TossingRoomEnvironment.recycling_button, feature_name="room")
             == env.recycling_bin_room
         )
 
@@ -393,9 +369,7 @@ class TestEachBinHasItsOwnButtonBesideIt:
         state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
         state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.trash_bin_room))
         env.set_state(state=state)
-        next_state = env.take_action(
-            action=_press(kind=TossingRoomSplitPickupWeightEnvironment.TRASH_KIND)
-        )
+        next_state = env.take_action(action=_press(kind=TossingRoomEnvironment.TRASH_KIND))
         assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 0.0
         assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
 
@@ -405,9 +379,7 @@ class TestEachBinHasItsOwnButtonBesideIt:
         state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
         state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.recycling_bin_room))
         env.set_state(state=state)
-        next_state = env.take_action(
-            action=_press(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND)
-        )
+        next_state = env.take_action(action=_press(kind=TossingRoomEnvironment.RECYCLING_KIND))
         assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 0.0
         assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 1.0
 
@@ -419,9 +391,7 @@ class TestEachBinHasItsOwnButtonBesideIt:
         state = TestEachBinHasItsOwnButtonBesideIt._both_bins_full(env=env)
         state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.trash_bin_room))
         env.set_state(state=state)
-        next_state = env.take_action(
-            action=_press(kind=TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND)
-        )
+        next_state = env.take_action(action=_press(kind=TossingRoomEnvironment.RECYCLING_KIND))
         assert next_state.get(obj=_RECYCLING_BIN, feature_name="count") == 1.0
         assert next_state.get(obj=_TRASH_BIN, feature_name="count") == 1.0
 
@@ -465,23 +435,23 @@ def test_get_valid_actions_is_empty_for_the_continuous_space() -> None:
 
 
 def test_action_space_is_three_dimensional_unbounded_box() -> None:
-    assert isinstance(TossingRoomSplitPickupWeightEnvironment.action_space, Box)
-    assert TossingRoomSplitPickupWeightEnvironment.action_space.shape == (3,)
-    assert np.all(np.isinf(TossingRoomSplitPickupWeightEnvironment.action_space.low))
-    assert np.all(np.isinf(TossingRoomSplitPickupWeightEnvironment.action_space.high))
+    assert isinstance(TossingRoomEnvironment.action_space, Box)
+    assert TossingRoomEnvironment.action_space.shape == (3,)
+    assert np.all(np.isinf(TossingRoomEnvironment.action_space.low))
+    assert np.all(np.isinf(TossingRoomEnvironment.action_space.high))
 
 
 def test_two_way_ledge_is_off_by_default() -> None:
     """The positive control is opt-in. PR #122's ten banked seeds were run without it,
     so the default must reproduce the one-way world exactly."""
-    assert TossingRoomSplitPickupWeightEnvironment.model_fields["two_way_ledge"].default is False
+    assert TossingRoomEnvironment.model_fields["two_way_ledge"].default is False
     assert _env().two_way_ledge is False
 
 
 def test_two_way_ledge_permits_stepping_right_across_the_ledge() -> None:
     """The whole point of the flag: the domain's single irreversible-blocked action
     becomes an ordinary move, so rooms {0..blocked_right_from} stop being absorbing."""
-    env = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    env = TossingRoomEnvironment(two_way_ledge=True)
     state = _fresh_state(env=env)
     state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.blocked_right_from))
     env.set_state(state=state)
@@ -490,7 +460,7 @@ def test_two_way_ledge_permits_stepping_right_across_the_ledge() -> None:
 
 
 def test_two_way_ledge_still_allows_stepping_left_across_the_ledge() -> None:
-    env = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    env = TossingRoomEnvironment(two_way_ledge=True)
     state = _fresh_state(env=env)
     state.set(obj=_ROBOT, feature_name="room", feature_val=float(env.blocked_right_from + 1))
     env.set_state(state=state)
@@ -504,7 +474,7 @@ def test_two_way_ledge_clears_the_blocks_right_state_feature() -> None:
     as unblocking `_apply_move`; a flag that changed only one of the two would let the
     planner and the world disagree about the same edge."""
     blocked = _env().build_initial_state(weight_seed=0)
-    two_way_env = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    two_way_env = TossingRoomEnvironment(two_way_ledge=True)
     two_way = two_way_env.build_initial_state(weight_seed=0)
     assert [blocked.get(obj=room, feature_name="blocks_right") for room in _env().get_rooms()] == [
         0.0,
@@ -523,7 +493,7 @@ def test_two_way_ledge_clears_the_blocks_right_state_feature() -> None:
 
 def test_two_way_ledge_leaves_non_adjacent_moves_no_ops() -> None:
     """The flag removes ONE edge's direction, not the adjacency rule itself."""
-    env = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    env = TossingRoomEnvironment(two_way_ledge=True)
     _fresh_state(env=env)
     next_state = env.take_action(action=_move(to_room=env.start_room + 2))
     assert next_state.get(obj=_ROBOT, feature_name="room") == env.start_room
@@ -535,7 +505,7 @@ def test_two_way_ledge_leaves_the_weight_schedule_untouched() -> None:
     score difference between the two ledge worlds is the ledge, not a different weight
     stream."""
     one_way = _env()
-    two_way = TossingRoomSplitPickupWeightEnvironment(two_way_ledge=True)
+    two_way = TossingRoomEnvironment(two_way_ledge=True)
     assert np.array_equal(
         one_way.weight_schedule(weight_seed=7), two_way.weight_schedule(weight_seed=7)
     )
