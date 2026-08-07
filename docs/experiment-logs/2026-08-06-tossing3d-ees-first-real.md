@@ -463,3 +463,81 @@ Three further limits worth stating:
 - **`--num-cycles 20` was not varied.** Whether the curve has plateaued or would keep
   climbing is not answered; the middle panel suggests it flattens after roughly 40
   transitions, but that is a reading of a figure, not a measurement.
+
+## Example episodes: seed 0 at both ends of training
+
+**These clips are a replay for illustration, not a measurement.** `--seed 0` fully
+determines a run, so nothing here is new evidence and **no number in this section comes
+from the replay** — every count below is read from the committed
+`...-data/sweep/ees/0/stats.json`. The replay exists only because the original sweep ran
+with `--num-render-checkpoints 1` (which records the final sweep alone) and the
+pre-practice clip needs index 0.
+
+**Seed 0 was chosen by rule, not by outcome**: seed 0 is the default, picked before any
+episode was watched. Both clips show **test task 0**, because the first test task of a
+rendered sweep is the one the renderer records — again a rule, not a selection.
+
+Before any practice:
+
+![Tossing3D seed 0, pre-practice: the robot repeatedly attempts Pick, never lifts the cube, and the episode ends on a no-op](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/bcbd3bbd3e0037295dbbf44a051b4e4c66eae81a/docs/experiment-logs/2026-08-06-tossing3d-ees-pre-practice-episode.gif)
+
+After 20 practice cycles:
+
+![Tossing3D seed 0, end-trained: the robot picks the cube, drives to the learned throw standoff, tosses, and the cube lands in the bin](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/bcbd3bbd3e0037295dbbf44a051b4e4c66eae81a/docs/experiment-logs/2026-08-06-tossing3d-ees-end-trained-episode.gif)
+
+**The end-trained clip shows the learned quantity directly.** Its status bar steps through
+`Pick(...)`, then `MoveToThrowPose(robot, cube_0, bin_0, blocks_goal_region), params=[1.2]`
+— that single parameter *is* the throw standoff this experiment measures EES learning —
+then `Toss(...)`, ending at `InGoalRegion = True`. `1.2` sits in the neighbourhood of the
+"about 1.275 m" constant the section above argues the sampler has memorised, and below the
+`1.35` oracle default.
+
+**The pre-practice clip is not a throw that misses, and must not be read as one.** The cube
+never leaves the floor — its `z` stays at `0.0249` for the whole episode — because `Pick` is
+attempted repeatedly, fails, and the episode ends on `no-op (no plan)`. So the pair
+contrasts **whole-episode competence** at the two ends of training; it does **not** isolate
+the standoff, and only the end-trained clip shows the standoff being used at all.
+
+**How representative the shown episode is**, all from the committed `stats.json`:
+
+| | seed 0 | across the 10 seeds |
+| --- | --- | --- |
+| task success, pre-practice | `1/10` | `37/100` |
+| task success, end-trained | `9/10` | `80/100` |
+| **the rendered task (index 0)**, pre-practice | failed | solved in `4/10` seeds |
+| **the rendered task (index 0)**, end-trained | solved | solved in `7/10` seeds |
+
+So the end-trained clip shows the majority behaviour (`7/10` seeds solve this task), but a
+reader should hold the headline number beside it: EES ends at `80/100`, so roughly one
+evaluation task in five still fails, and `3/10` seeds fail this very task.
+
+### Replay fidelity
+
+The replay was run twice against the committed run: once with the original arguments
+exactly, and once with `--num-render-checkpoints 2` (the clips). Both were compared to
+`...-data/sweep/ees/0/` field by field.
+
+- **`stats.json`: all `7/7` shared fields identical**, including `evaluations` and
+  `breakdowns` — so `1/10` pre-practice and `9/10` end-trained both reproduced, as did the
+  `78` end-of-training transitions. One field, `practice_target_outcomes_per_cycle`, exists
+  only in the replay: it is a counter added to `Metrics` after this sweep ran (#136), not a
+  changed result.
+- **`config_snapshot.json` args: `24/25` identical** for the exact-argument replay, the one
+  difference being `output_dir`. `practice_reset_policy` is likewise new since the sweep and
+  defaults to the long-standing behaviour. The clip replay differs additionally and
+  deliberately in `num_render_checkpoints` (`1` → `2`).
+- **Provenance: `11/12` identical**, including `kindergarden_commit`, `kinder_models_commit`
+  and `kinder_models_dirty` — the KINDER trees have not moved. Only `git_commit` differs
+  (`473f5e6` → `c590fd1`), this branch having been rebased since.
+- **Rendering is a pure observer**, confirmed rather than assumed: the two replays produced
+  identical `evaluations` and `breakdowns` despite one rendering an extra checkpoint.
+
+**This is one seed, so it does not settle the "not reproducible from `--seed`" contradiction
+registered under "Noise floor" above** — it is one more observation on the reproducing side,
+against the earlier `3/10` vs `2/10` same-seed swing. It is recorded as such, not as a
+resolution.
+
+> **The two clip pins above are to `bcbd3bb`, an unmerged commit on this branch** — the
+> commit that carries the GIFs, taken from `git rev-parse`. Like the figure pin further up,
+> they must be **re-pinned after merge**: a squash-merge mints a new SHA and these commits
+> stop being reachable once the branch is deleted.
