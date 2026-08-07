@@ -437,6 +437,18 @@ per-seed finals reproduce every number already published on this stack.
 
 ![Training curves for all three Tossing Room variants](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/d2fb061738045562ffbe13592afa10134031b8ba/docs/experiment-logs/2026-08-06-reset-free-two-way-ledge-curves.png)
 
+> **Note added by a later PR on this stack — nothing above or below is edited.** The image
+> above is pinned to `d2fb061` and still renders exactly the three-panel figure this
+> section describes. But `reset_free_training_curves.py` itself has since been **extended
+> to four panels**: a fourth cell was run (`tossingroomsplitpickupweight` *with*
+> `--two-way-ledge`, both mechanisms removed at once), which completes the 2x2 these three
+> panels are three corners of. So **regenerating the script today produces a four-panel
+> square, not the three-panel row shown here.** Every number in this section is unchanged
+> and still reproduces. See
+> `docs/experiment-logs/2026-08-07-pickup-weight-two-way-ledge.md` for the fourth cell,
+> which finds the reset-free gap closing (287/300 against 300/300) and the two mechanisms
+> interacting rather than adding.
+
 Two things are visible there that no table in this log states.
 
 **The two-way ledge lifted the `scheduled` arm too, and that is the honest frame for the

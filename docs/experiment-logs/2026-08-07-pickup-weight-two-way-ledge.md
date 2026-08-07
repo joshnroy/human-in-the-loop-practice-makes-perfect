@@ -298,16 +298,56 @@ had room to move.
 A cross-world comparison of raw counts is never made here. The two-way world is an easier
 domain, so only the within-world gaps are compared across worlds.
 
-## Reproducing
+## The figure
+
+The fourth panel is added to the **existing** cross-variant figure
+(`analysis/practice_makes_perfect/reset_free_training_curves.py`, introduced on this stack
+by #125) rather than to a second script of its own, so there is one cross-variant figure
+rather than two near-identical ones. The layout becomes a 2x2 square, which is what the
+four cells are: reading down a column holds the ledge fixed, across a row holds the
+variant fixed.
 
 ```text
-analysis/practice_makes_perfect/cross_variant_reset_policy_curves.py \
-  --arms-json docs/experiment-logs/2026-08-07-pickup-weight-two-way-ledge.json \
-  --output docs/experiment-logs/2026-08-07-cross-variant-reset-policy-curves.png
+python analysis/practice_makes_perfect/reset_free_training_curves.py \
+  --output docs/experiment-logs/2026-08-07-reset-free-four-variant-curves.png
 ```
 
+It needs no aggregate: all 80 runs' `stats.json` are committed, so it regenerates from the
+repository alone.
+
+## Reproducing, and a rebase note
+
 All 20 runs' `stats.json`, `config_snapshot.json` and `timing.json` are committed under
-`docs/experiment-logs/2026-08-07-pickup-weight-two-way-ledge-runs/` (1,284,762 bytes, 60
+`docs/experiment-logs/2026-08-07-pickup-weight-two-way-ledge-runs/` (1,409,633 bytes, 60
 files). Settings are asserted equal to PR #122's banked cells key-by-key, with
 `two_way_ledge` and `output_dir` the only permitted differences, by
-`tests/analysis/practice_makes_perfect/test_cross_variant_reset_policy_curves.py`.
+`tests/analysis/practice_makes_perfect/test_pickup_weight_two_way_ledge_runs.py`, which
+also asserts the manipulation check on the committed data.
+
+**These runs were re-run after this branch was rebased onto `main` @ `ebf3d92`, and the
+reason is worth recording.** The sweep was first executed on the pre-rebase tree. `main`
+had since gained #119, which changed `ees_method.py` and `wrapped_sampler.py`. That is
+exactly the case CLAUDE.md says to check rather than assume, so it was checked by re-running
+one seed on the post-rebase tree and comparing byte-for-byte:
+
+* `evaluations` and `breakdowns` — **byte-identical**. Every number reported above is
+  unaffected, and #119's claim that EES's behaviour is untouched holds here.
+* `practice_outcomes_per_cycle` — **differs**, which is #119 doing exactly what it said it
+  did: it reshaped that diagnostic to split the fallback pool.
+
+So the results were never stale, but the committed artifacts would not have reproduced
+byte-for-byte on the branch they sit on. The full 20 runs were therefore re-run on the
+post-rebase tree and those are what is committed, so a reader re-running gets no diff.
+
+**Unrelated pre-existing breakage on the base — observed here, fixed elsewhere.** While
+this experiment was running, `tests/analysis/practice_makes_perfect/test_tossing3d_practice_diagnosis.py`
+had 2 failing tests **on `main` @ `ebf3d92` itself**, verified by checking `main` out
+directly with this branch's changes stashed: #119 tightened `SkillPracticeTally`'s
+validator and #127 added fixtures that violate it, and the two were merged separately so
+neither PR's own CI saw the combination.
+
+**This is now resolved and the note is kept only for the record.** It was independently
+found and fixed in **PR #128** (`7a8daa1`, "Fix two #127 test fixtures that #119's tally
+validator rejects"), which `main` picked up; this branch was subsequently rebased onto it
+and the full suite is green here. Nothing on this branch ever touched either file, and no
+result above depends on it.

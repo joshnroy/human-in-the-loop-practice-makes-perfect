@@ -1,5 +1,17 @@
 """Post-run analysis: the training curve of `--practice-reset-policy scheduled` against
-`never`, in each of the three Tossing Room variants this stack measured, on one figure.
+`never`, in each of the four Tossing Room variants this stack measured, on one figure.
+
+**The fourth panel completes a 2x2** (variant x ledge) whose other three corners were run
+first, so the figure is laid out as a square: reading down a column holds the ledge fixed,
+reading across a row holds the variant fixed. It is the pickup-weight fork *with* the
+two-way ledge -- both proposed mechanisms of the reset-free penalty removed at once -- and
+it is the cell that decides between them. **It shows the gap closing**: `never` 287/300
+against `scheduled` 300/300, where every other panel has the two arms visibly apart. It
+also shows the effects are not additive, and that the interaction runs in *opposite*
+directions in the two variants: the two-way ledge widens the gap on `tossingroomsplit`
+(66/300 -> 132/300) and collapses it on the pickup-weight fork (71/300 -> 13/300). See
+`docs/experiment-logs/2026-08-07-pickup-weight-two-way-ledge.md`, including its ceiling
+caveat -- `scheduled` is at 300/300, so this world cannot resolve a small residual.
 
 **Background.** PR #115 measured the reset-free A/B on `tossingroomsplit`, #122 repeated
 it on `tossingroomsplitpickupweight` (weight drawn at pickup rather than at task build),
@@ -62,12 +74,21 @@ _NUM_TEST_TASKS = 30
 _ONE_WAY = "one-way"
 _TWO_WAY = "two-way"
 _PICKUP_WEIGHT = "pickup-weight"
-_PANELS = (_ONE_WAY, _TWO_WAY, _PICKUP_WEIGHT)
+# The fourth cell, added once it was run: the pickup-weight fork *with* the two-way
+# ledge, i.e. both proposed mechanisms of the reset-free penalty removed at once. It
+# completes the 2x2 the three panels above are three corners of, which is why the layout
+# below is a square rather than a row -- reading down a column now holds the ledge fixed
+# and reading across a row holds the variant fixed.
+_PICKUP_WEIGHT_TWO_WAY = "pickup-weight-two-way"
+_PANELS = (_ONE_WAY, _TWO_WAY, _PICKUP_WEIGHT, _PICKUP_WEIGHT_TWO_WAY)
 
 _PANEL_TITLES = {
     _ONE_WAY: "tossingroomsplit -- one-way ledge\n(the pile is unreachable once crossed)",
     _TWO_WAY: "tossingroomsplit -- two-way ledge\n(no irreversible action at all)",
     _PICKUP_WEIGHT: "tossingroomsplitpickupweight\n(weight drawn at pickup, one-way ledge)",
+    _PICKUP_WEIGHT_TWO_WAY: (
+        "tossingroomsplitpickupweight -- two-way ledge\n(both mechanisms removed)"
+    ),
 }
 
 # The two arms compared inside every panel. `scheduled` is the incumbent -- the only
@@ -152,6 +173,18 @@ _ARMS = (
         policy=_NEVER,
         directory="2026-08-07-pickup-weight-reset-free-runs/never",
     ),
+    # The fourth cell's own sweep, which has the `ees/` level back -- it was driven by
+    # `scripts/run_sweep.py` in the same layout as the two-way-ledge runs.
+    ArmSpec(
+        panel=_PICKUP_WEIGHT_TWO_WAY,
+        policy=_SCHEDULED,
+        directory="2026-08-07-pickup-weight-two-way-ledge-runs/scheduled/ees",
+    ),
+    ArmSpec(
+        panel=_PICKUP_WEIGHT_TWO_WAY,
+        policy=_NEVER,
+        directory="2026-08-07-pickup-weight-two-way-ledge-runs/never/ees",
+    ),
 )
 
 
@@ -235,9 +268,14 @@ class ResetFreeTrainingCurves(BaseModel):
     def render(*, logs_root: Path, output: Path) -> Figure:
         """Draw all three panels and write the PNG. Returns the figure so a test can
         assert on its structure without reopening the file."""
-        figure, axes = plt.subplots(
-            1, len(_PANELS), figsize=(16.5, 5.4), dpi=150, sharey=True, facecolor=_CANVAS
+        # 2x2 rather than a row of four: the panels are a 2x2 design (variant x ledge),
+        # so a square lets a reader hold one factor fixed by reading down a column or
+        # across a row. A 1x4 row would be ~22 inches wide and would put the two cells
+        # that differ only in ledge at opposite ends of the figure.
+        figure, axes_grid = plt.subplots(
+            2, 2, figsize=(13.5, 9.6), dpi=150, sharey=True, facecolor=_CANVAS
         )
+        axes = list(axes_grid.flat)
         for axis, panel in zip(axes, _PANELS, strict=True):
             for policy in _POLICIES:
                 arm = ResetFreeTrainingCurves.arm(panel=panel, policy=policy)
@@ -266,9 +304,12 @@ class ResetFreeTrainingCurves(BaseModel):
             for side in ("top", "right"):
                 axis.spines[side].set_visible(False)
 
-        axes[0].set_ylabel(f"tasks solved per evaluation (x/{_NUM_TEST_TASKS})")
+        # Both left-hand panels, since `sharey` hides the tick labels on the right column
+        # but not the axis label.
+        for axis in (axes[0], axes[2]):
+            axis.set_ylabel(f"tasks solved per evaluation (x/{_NUM_TEST_TASKS})")
         figure.suptitle(
-            "Reset-free practice across all three Tossing Room variants "
+            "Reset-free practice across all four Tossing Room variants "
             f"(bold = mean of {_NUM_SEEDS} seeds, faint = individual seeds)",
             fontsize=12.5,
         )
