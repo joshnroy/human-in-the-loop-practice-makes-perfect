@@ -50,8 +50,9 @@ a percentage-point gap only ever alongside the counts it came from.
 from collections.abc import Sequence
 
 #: `z(0.975) + z(0.20)` = 1.959964 + 0.841621. The standard-error multiple for 80% power
-#: at a two-sided 5% level -- this project's MDE convention, shared with
-#: `tossingroom_goal_family_curves.py` and `tossingroomsplit_throw_rates.py`.
+#: at a two-sided 5% level -- this project's MDE convention. It was first written out in
+#: two of the per-experiment Tossing Room reports #141 deleted; the live consumers are
+#: now `paired_tests.py` and `tossing3d_ees_arms.py`, which import it from here.
 MDE_MULTIPLE = 2.801585
 
 

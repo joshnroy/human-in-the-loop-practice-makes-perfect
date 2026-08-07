@@ -1,19 +1,19 @@
 """Exact paired tests over shared seeds, and the power question a null result owes.
 
-**Why this is its own module.** `PairedTests` was defined twice -- once in
-`tossingroom_reset_frequency.py` and once, later and better, in
-`tossingroom_reset_interval.py` -- and imported out of the latter by four other analysis
-modules. Two copies of a statistics helper is a defect on its own: the copies had already
-diverged, and only one of them scaled past ten seeds. It also tied every consumer to a
-*domain* module, so a reader of `reset_free_ledge_curves.py` had to know that a file named
-for one experiment's reset interval was where the Wilcoxon test lived.
+**Why this is its own module.** `PairedTests` was defined twice, in two per-experiment
+Tossing Room reset-policy reports (both since deleted by #141), and imported out of the
+later one by four other analysis modules. Two copies of a statistics helper is a defect on
+its own: the copies had already diverged, and only one of them scaled past ten seeds. It
+also tied every consumer to a *domain* module, so a reader of `reset_free_ledge_curves.py`
+had to know that a file named for one experiment's reset interval was where the Wilcoxon
+test lived.
 
-**Which copy this is.** The `tossingroom_reset_interval.py` one, which is a strict superset
-of the other: it adds `minimum_detectable_effect`, and it enumerates the sign-flip null
-meet-in-the-middle (`_subset_sums`) instead of iterating `itertools.product` directly. The
-enumeration is exhaustive either way, so the two agree exactly; the difference is that the
-direct form costs `2**n * n` Python operations and takes minutes at n = 20, where twenty
-paired seeds is a size this project actually runs.
+**Which copy this is.** The later one, which is a strict superset of the other: it adds
+`minimum_detectable_effect`, and it enumerates the sign-flip null meet-in-the-middle
+(`_subset_sums`) instead of iterating `itertools.product` directly. The enumeration is
+exhaustive either way, so the two agree exactly; the difference is that the direct form
+costs `2**n * n` Python operations and takes minutes at n = 20, where twenty paired seeds
+is a size this project actually runs.
 
 Nothing here is domain-specific: every method takes a list of per-seed differences.
 """

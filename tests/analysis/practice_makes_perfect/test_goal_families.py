@@ -1,8 +1,9 @@
 """Tests for the Tossing Room goal-family classification rule.
 
-These moved here with the rule itself, from `test_tossingroomsplit_two_way_ledge.py`.
-The rule was duplicated character-identically in two analysis modules and tested twice,
-once against each copy; deduplicating it leaves one rule and one set of tests.
+These moved here with the rule itself, from the tests of the Tossing Room Split
+two-way-ledge report (deleted by #141). The rule was duplicated character-identically in
+two analysis modules and tested twice, once against each copy; deduplicating it leaves one
+rule and one set of tests.
 
 The ordering case is the one that matters: the EMPTY goal string names both bins, so a
 rule list that tested either throw family first would silently fold EMPTY's tasks into a

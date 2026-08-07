@@ -12,10 +12,10 @@ case where the answer does not follow from that shortcut, and
 `test_subset_sums_agrees_with_naive_enumeration` pins the meet-in-the-middle
 enumeration against the brute-force one it replaced.
 
-These moved here with `PairedTests` itself, from `test_tossingroom_reset_interval.py`.
-They are unchanged: the helper is domain-agnostic and so are its tests, and leaving them
-in a file named for one experiment is what let a second, weaker copy of the class survive
-in `tossingroom_reset_frequency.py` unnoticed.
+These moved here with `PairedTests` itself, from the tests of the Tossing Room
+reset-interval report (deleted by #141). They are unchanged: the helper is domain-agnostic
+and so are its tests, and leaving them in a file named for one experiment is what let a
+second, weaker copy of the class survive unnoticed in a sibling report.
 """
 
 import itertools

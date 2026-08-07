@@ -26,10 +26,11 @@ standoff its sampler could draw) rendered identically. A panel that is entirely 
 grey needs a different person to look at it than one that is entirely dotted purple.
 
 Domain- and method-agnostic: it keys on nothing but the lifted skill names a run
-happens to record, so the same script serves Light Switch, both Tossing Rooms, Ball-Ring
-and Tossing3D. That is the whole point -- the previous route to these numbers was
-`scripts/tossingroomsplit_skill_traces.py`, which imports one domain's `Environment`
-directly and could not be pointed at another.
+happens to record, so the same script serves Light Switch, Tossing Room, Ball-Ring
+and Tossing3D. That is the whole point -- the previous route to these numbers was a
+per-domain collector script that imported one domain's `Environment` directly and could
+not be pointed at another. #141 deleted it along with the fork it was written for, and
+nothing replaced it: this module already answered the same question on every domain.
 
 Never runs a simulation or drives a `Problem`/`Method` itself (CLAUDE.md's `analysis/`
 convention): it reads back what `hitl_pmp.method_runner.MethodRunner.run` already wrote
