@@ -449,7 +449,7 @@ and they were drawn from the same 60 committed `stats.json` files by
 `analysis/practice_makes_perfect/reset_free_training_curves.py` — no new run, and the
 per-seed finals reproduce every number already published on this stack.
 
-![Training curves for all three Tossing Room variants](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/209c3c7dd4e21793edeb8758b95343073ed3e6f3/docs/experiment-logs/2026-08-06-reset-free-two-way-ledge-curves.png)
+![Training curves for all three Tossing Room variants](2026-08-06-reset-free-two-way-ledge-curves.png)
 
 > **Note added by a later PR on this stack — nothing above or below is edited.** The image
 > above is pinned to `d2fb061` and still renders exactly the three-panel figure this

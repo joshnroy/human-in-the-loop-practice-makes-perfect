@@ -341,16 +341,16 @@ both halves: the sampler can now learn, and EES now chooses to teach it.
 **Learning curves against practice cycles** — the controlled variable, so the arms align and
 are compared like with like:
 
-![Tossing3D learning curves against practice cycles, per seed, with the skill-oracle ceiling](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/68eaf0ad2b329db4eb11d9d736bcbd7b34d2d8e7/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.png)
+![Tossing3D learning curves against practice cycles, per seed, with the skill-oracle ceiling](2026-08-06-tossing3d-ees-first-real.png)
 
 **Learning curves against online transitions** — an outcome, so the EES line ends earlier,
 having reached the same `21/21` checkpoints for fewer steps:
 
-![Tossing3D learning curves against online transitions, per seed, with the skill-oracle ceiling](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/68eaf0ad2b329db4eb11d9d736bcbd7b34d2d8e7/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real-transitions.png)
+![Tossing3D learning curves against online transitions, per seed, with the skill-oracle ceiling](2026-08-06-tossing3d-ees-first-real-transitions.png)
 
 **End-of-training task success** — context only, never an input to the verdict:
 
-![Tossing3D end-of-training task success by arm, with every seed drawn over the pooled bars](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/68eaf0ad2b329db4eb11d9d736bcbd7b34d2d8e7/docs/experiment-logs/2026-08-06-tossing3d-ees-first-real-task-success.png)
+![Tossing3D end-of-training task success by arm, with every seed drawn over the pooled bars](2026-08-06-tossing3d-ees-first-real-task-success.png)
 
 > **The three pins above are to `68eaf0a`, an unmerged commit on this branch.** It is
 > the commit that carries the figures, taken from `git rev-parse` rather than hand-expanded.
@@ -556,11 +556,11 @@ rendered sweep is the one the renderer records — again a rule, not a selection
 
 Before any practice:
 
-![Tossing3D seed 0, pre-practice: the robot repeatedly attempts Pick, never lifts the cube, and the episode ends on a no-op](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/68eaf0ad2b329db4eb11d9d736bcbd7b34d2d8e7/docs/experiment-logs/2026-08-06-tossing3d-ees-pre-practice-episode.gif)
+![Tossing3D seed 0, pre-practice: the robot repeatedly attempts Pick, never lifts the cube, and the episode ends on a no-op](2026-08-06-tossing3d-ees-pre-practice-episode.gif)
 
 After 20 practice cycles:
 
-![Tossing3D seed 0, end-trained: the robot picks the cube, drives to the learned throw standoff, tosses, and the cube lands in the bin](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/68eaf0ad2b329db4eb11d9d736bcbd7b34d2d8e7/docs/experiment-logs/2026-08-06-tossing3d-ees-end-trained-episode.gif)
+![Tossing3D seed 0, end-trained: the robot picks the cube, drives to the learned throw standoff, tosses, and the cube lands in the bin](2026-08-06-tossing3d-ees-end-trained-episode.gif)
 
 **The end-trained clip shows the learned quantity directly.** Its status bar steps through
 `Pick(...)`, then `MoveToThrowPose(robot, cube_0, bin_0, blocks_goal_region), params=[1.2]`

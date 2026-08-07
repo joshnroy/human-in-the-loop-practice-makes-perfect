@@ -268,9 +268,11 @@ experiment reads, the numbers are stale and the rebase means a **re-run**, not a
 tooling and unrelated domains are the safe cases. State which it was in the PR.
 
 Two things that go stale under any rebase and are easy to miss: `raw.githubusercontent.com`
-figure URLs pinned to a **full SHA** (the old SHA no longer holds the figures — re-pin and `curl`
-each for `200`), and `file:line` citations in prose. Cite a **symbol** with the line as a
-convenience, so a shifted line does not make the text false.
+figure URLs **in a PR body** pinned to a **full SHA** (the old SHA no longer holds the figures —
+re-pin as the last step after the final force-push, and verify all three ways described under
+"Where a figure or video lives" below), and `file:line` citations in prose. Cite a **symbol**
+with the line as a convenience, so a shifted line does not make the text false. Figures
+referenced from *committed* files are repo-relative links and are immune to both.
 
 **Run the gate locally; do not block on GitHub CI.** The local gate is the real check — it is the
 same five commands, and it runs in ~1 minute against CI's ~10. Once it passes, open the PR, report
@@ -432,8 +434,27 @@ effect. Keep the table too; the figure shows the shape, the table carries the nu
 **Where a figure or video lives depends on the kind of PR:**
 
 - **Experiment-log PRs commit them**, alongside the `docs/experiment-logs/` entry, and
-  reference them from the body by `raw.githubusercontent.com` URL **pinned to the commit
-  SHA, not the branch**. `curl` each and confirm `200` with the right content-type.
+  reference them **from the log itself by repo-relative link** — `![alt](2026-08-07-foo.png)`,
+  the bare filename, since the figure sits in the same directory as the entry. **Never a URL
+  in a committed file.** `main` allows squash-merge only, so merging mints a new commit and
+  **orphans every SHA that branch pinned**; a relative link resolves against whatever ref the
+  reader is viewing, so it cannot orphan and cannot go stale. The failure is silent — GitHub
+  keeps orphaned commits reachable until it garbage-collects, so a dead pin still returns
+  `200` with byte-correct content and looks fine for months. A SHA in a durable artifact is a
+  time bomb.
+  **Videos follow the same rule, with link syntax** (`[seed 3, stranded in cycle 1](foo.mp4)`):
+  a relative link resolves to the file's blob page, which GitHub renders with a video player,
+  whereas a raw `.mp4` URL serves `application/octet-stream` and merely downloads. No syntax
+  embeds an inline player from a committed relative path — that is `user-attachments` only —
+  so one click is the real and unavoidable cost.
+  **The PR body is the exception**, because it cannot resolve repo-relative paths and is read
+  during review, before any squash commit exists. Bodies therefore use
+  `raw.githubusercontent.com` **pinned to a full SHA, not a branch**, re-pinned as the very
+  last step after the final force-push and verified three ways:
+  `curl` for `200` with the right content-type; `sha256` of the *fetched bytes* against the
+  **working-tree** file (never `git cat-file`, which hashes what a commit holds rather than
+  what the URL actually serves); and `git merge-base --is-ancestor <sha> <branch>`, since
+  `200` and `sha256` both pass on an already-orphaned commit.
 - **Every other PR leaves a drag-drop `TODO` block** where the image belongs, and serves
   the file on the scratch web server (`127.0.0.1:8765`) for Josh to drop in. Dragging a
   file into the GitHub editor uploads it to `user-attachments`, which is permanent and
