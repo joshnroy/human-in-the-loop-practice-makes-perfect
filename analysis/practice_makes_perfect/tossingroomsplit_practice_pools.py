@@ -19,7 +19,9 @@ the audit's conclusions turn on:
    asks only that the informed *share* be large, with no power requirement and no check
    that the informed-success curve has plateaued. On this domain
    `ThrowRecycling`'s informed successes are still rising in the final bucket, which is
-   the starvation signature, while the rule's cell fires for inability.
+   the starvation signature, while the rule's cell fires for inability. **That rule is now
+   amended** -- `practice_verdict.py` adds both gates -- and this module calls it, so the
+   verdict is produced by the instrument rather than reconstructed by hand in the log.
 
 **Why the uninformative pool decaying to zero is the clean reading.** A permissive success
 predicate -- Tossing3D's defect in #127 -- holds `UNINFORMATIVE` flat and high forever,
@@ -41,6 +43,7 @@ from pathlib import Path
 from hitl_pmp.core.metrics.metrics import Metrics
 
 from .practice_diagnostics import PracticeDiagnostics
+from .practice_verdict import PracticeVerdict
 from .tossingroom_comparison import TossingRoomComparison
 
 
@@ -118,6 +121,38 @@ class TossingRoomSplitPracticePools:
         return [sum(per_window[index : index + size]) for index in range(0, num_windows, size)]
 
     @staticmethod
+    def verdict(*, runs: Sequence[Metrics], skill_name: str, num_buckets: int) -> tuple[str, str]:
+        """The amended starvation-versus-inability rule applied to one throw.
+
+        **This is the call #127's rule could not make.** That rule was welded to Tossing3D
+        -- hardcoded skill names, one hardcoded uniform-draw reference -- so the domain
+        whose data refutes it could not be run through it, and the false `inability`
+        verdict on `ThrowRecycling` had to be reconstructed by hand in this experiment's
+        log rather than produced by the instrument. `PracticeVerdict` takes counts, so it
+        runs here.
+
+        The control is that same skill's own epsilon-random pool, for the reason
+        `informed_vs_random` gives: it is the uniform-draw baseline under the identical
+        task distribution, so it absorbs "these tasks were easy" in a way an analytic prior
+        does not.
+
+        The plateau check reads **informed successes**, bucketed exactly as the log's
+        by-fifths table is -- the same series, not a re-derivation of it."""
+        pooled = PracticeDiagnostics.totals(runs=runs)[skill_name]
+        return PracticeVerdict.classify(
+            informed_successes=pooled.num_informed_successes,
+            informed_attempts=pooled.num_informed_attempts,
+            control_successes=pooled.num_random_successes,
+            control_attempts=pooled.num_random_attempts,
+            informed_success_trajectory=TossingRoomSplitPracticePools.pool_trajectory(
+                runs=runs,
+                skill_name=skill_name,
+                field="num_informed_successes",
+                num_buckets=num_buckets,
+            ),
+        )
+
+    @staticmethod
     def print_report(*, results_root: Path, num_buckets: int) -> None:
         """Both derived tables, for every method directory under `results_root`."""
         summary = PracticeDiagnostics.summarize(results_root=results_root)
@@ -154,6 +189,12 @@ class TossingRoomSplitPracticePools:
                         num_buckets=num_buckets,
                     )
                     print(f"  {skill_name:<16}{field:<28}{trajectory}")
+            print("\nstarvation-versus-inability verdict:")
+            for skill_name in TossingRoomSplitPracticePools.THROWS:
+                cell, reasoning = TossingRoomSplitPracticePools.verdict(
+                    runs=runs, skill_name=skill_name, num_buckets=num_buckets
+                )
+                print(f"  {skill_name:<16}{cell}\n    {reasoning}")
 
 
 def _parse_args() -> argparse.Namespace:

@@ -128,31 +128,35 @@ def test_the_starvation_cell_fires_when_informed_draws_rise_as_labels_accumulate
 
 def test_the_inability_cell_fires_when_informed_draws_land_at_the_uniform_rate() -> None:
     """Consulted in quantity, states a belief, and the belief is worth nothing:
-    20/100 informed successes against the 543/2700 uniform-draw rate."""
-    runs = [
-        _metrics(
-            windows=[
-                {
-                    _TARGET: SkillPracticeTally(
-                        num_attempts=100,
-                        num_successes=20,
-                        num_informed_attempts=100,
-                        num_informed_successes=20,
-                    ),
-                    _CONTROL: _informed_control(),
-                },
-                {},
-            ]
-        )
-    ]
+    100/500 informed successes against the 543/2700 uniform-draw rate, on a flat curve.
+
+    **500 draws rather than the 100 this fixture carried before #131.** The cell now
+    requires enough of them to resolve the 10-point margin it asserts, and 100 against
+    2700 has an MDE of 11.43 points -- wider than the margin, so the old fixture was
+    asserting equivalence from a design that could not have seen a difference. Two equal
+    windows so the plateau check has a trajectory to read and finds it flat."""
+    window = {
+        _TARGET: SkillPracticeTally(
+            num_attempts=250,
+            num_successes=50,
+            num_informed_attempts=250,
+            num_informed_successes=50,
+        ),
+        _CONTROL: _informed_control(),
+    }
+    runs = [_metrics(windows=[dict(window), dict(window), {}])]
     cell, reasoning = Tossing3DPracticeDiagnosis.verdict(runs=runs)
     assert cell == "inability"
     assert "543/2700" in reasoning
 
 
-def test_informed_draws_well_above_the_uniform_rate_are_not_called_inability() -> None:
-    """A classifier that is consulted and *is* better than its prior is neither starved
-    nor unable, and must fall through to undecided rather than be labelled a failure."""
+def test_informed_draws_well_above_the_uniform_rate_are_called_learned() -> None:
+    """A classifier that is consulted and *is* better than its prior has a name now.
+
+    Before #131's amendment this fell through to `undecided`, because the rule had only
+    `starvation` and `inability` to offer and neither fits. A gap that exceeds the
+    design's own MDE -- 59.89 points against 11.87 -- is the plainest possible positive
+    result, and needs no separate power gate: the design detected it."""
     runs = [
         _metrics(
             windows=[
@@ -169,7 +173,7 @@ def test_informed_draws_well_above_the_uniform_rate_are_not_called_inability() -
             ]
         )
     ]
-    assert Tossing3DPracticeDiagnosis.verdict(runs=runs)[0] == "undecided"
+    assert Tossing3DPracticeDiagnosis.verdict(runs=runs)[0] == "learned"
 
 
 def test_undecided_is_reachable_from_the_gap_between_the_cells() -> None:
