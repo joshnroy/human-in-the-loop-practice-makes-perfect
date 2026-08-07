@@ -28,6 +28,9 @@ from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.environments.tossingroomsplit.cli import TossingRoomSplitCli
 from hitl_pmp.environments.tossingroomsplitidentity.cli import TossingRoomSplitIdentityCli
+from hitl_pmp.environments.tossingroomsplitpickupweight.cli import (
+    TossingRoomSplitPickupWeightCli,
+)
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
@@ -53,6 +56,15 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     # protocol. tests/environments/tossingroomsplitidentity/test_fork_equivalence.py
     # pins that the throw representation is the ONLY difference.
     "tossingroomsplitidentity": TossingRoomSplitIdentityCli,
+    # The SAME world and the same split throws again, with the item WEIGHT drawn at
+    # pickup off a per-task pre-sampled array instead of frozen into the task's initial
+    # state, and the bin throw distance fixed. A separate domain rather than a flag
+    # because the task distribution genuinely differs, so its results cannot be pooled
+    # with tossingroomsplit's. It exists because --practice-reset-policy never freezes
+    # every state feature no action writes -- including the sampler's own input row --
+    # at its hard_reset value, so a reset-free arm practised at ONE point of the task
+    # distribution. Drawing at pickup puts the variation on an action the robot takes.
+    "tossingroomsplitpickupweight": TossingRoomSplitPickupWeightCli,
 }
 
 
@@ -130,7 +142,8 @@ class Cli:
             "per-period reset off entirely, so practice state runs continuously across "
             "period boundaries -- the reset-free condition. 'never' is incompatible "
             "with --practice-reset-interval, and is only meaningful on an environment "
-            "whose evaluation runs on its own instance (tossingroomsplit today).",
+            "whose evaluation runs on its own instance (tossingroomsplit and "
+            "tossingroomsplitpickupweight today).",
         )
         parser.add_argument(
             "--practice-reset-interval",

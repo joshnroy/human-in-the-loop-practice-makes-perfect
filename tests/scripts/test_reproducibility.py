@@ -38,6 +38,18 @@ LIGHTSWITCH_ARGS = ("--grid-size", "1", "--num-test-tasks", "8")
 # gated off CI rather than folded into the default gate.
 TOSSING3D_ARGS = ("--num-test-tasks", "2", "--num-cycles", "0")
 
+# This baseline solves 0/8 here at every seed, so the different-seeds assertion rests on
+# the rest of stats.json -- the per-skill practice outcomes and the per-window planning
+# counts, which do vary. Two short cycles are enough to produce them.
+TOSSINGROOMSPLITPICKUPWEIGHT_ARGS = (
+    "--num-test-tasks",
+    "8",
+    "--num-cycles",
+    "2",
+    "--max-steps-per-interaction",
+    "20",
+)
+
 
 class ReproducibilityHarness:
     """A static-method container, never instantiated, same as every other
@@ -86,6 +98,16 @@ class ReproducibilityHarness:
             threads=threads,
             env_name="tossing3d",
             env_args=TOSSING3D_ARGS,
+        )
+
+    @staticmethod
+    def run_pickup_weight(*, output_dir: Path, seed: int, threads: int) -> dict[str, object]:
+        return ReproducibilityHarness.run(
+            output_dir=output_dir,
+            seed=seed,
+            threads=threads,
+            env_name="tossingroomsplitpickupweight",
+            env_args=TOSSINGROOMSPLITPICKUPWEIGHT_ARGS,
         )
 
 
@@ -141,3 +163,39 @@ def test_tossing3d_results_do_not_depend_on_the_math_thread_count(*, tmp_path: P
     single = ReproducibilityHarness.run_tossing3d(output_dir=tmp_path / "t1", seed=0, threads=1)
     multi = ReproducibilityHarness.run_tossing3d(output_dir=tmp_path / "t4", seed=0, threads=4)
     assert single == multi
+
+
+# --- Tossing Room (split throws, weight drawn at pickup) --------------------------
+#
+# The third domain pinned here, and the only one whose ENVIRONMENT itself pre-samples
+# anything: `tossingroomsplitpickupweight` draws each task's pickup weights up front from
+# a seed that task carries in its own State. Nothing Light Switch exercises would notice
+# if that seed stopped depending on `--seed`, and the failure mode -- every seed of a
+# sweep practising on an identical weight sequence -- is invisible in a run's own output,
+# so a sweep would look fine and measure one condition ten times. `BallRingEnvironment`'s
+# `--noise-seed`, which defaults to 0, is exactly that shape.
+#
+# Unlike Tossing3D this needs no gate: it is pure numpy and torch, runs on CI, and costs
+# about 5 s per invocation. Its two Tossing Room siblings draw only inside `Tasks`, which
+# is the same machinery Light Switch already covers, so they are deliberately left out
+# rather than tripling this file's runtime to re-assert it.
+
+
+def test_pickup_weight_the_same_seed_produces_identical_results(*, tmp_path: Path) -> None:
+    first = ReproducibilityHarness.run_pickup_weight(output_dir=tmp_path / "a", seed=7, threads=1)
+    second = ReproducibilityHarness.run_pickup_weight(output_dir=tmp_path / "b", seed=7, threads=1)
+    assert first == second
+
+
+def test_pickup_weight_results_do_not_depend_on_the_math_thread_count(*, tmp_path: Path) -> None:
+    single = ReproducibilityHarness.run_pickup_weight(output_dir=tmp_path / "t1", seed=7, threads=1)
+    multi = ReproducibilityHarness.run_pickup_weight(output_dir=tmp_path / "t4", seed=7, threads=4)
+    assert single == multi
+
+
+def test_pickup_weight_different_seeds_produce_different_results(*, tmp_path: Path) -> None:
+    """The one that would catch a pre-sampled weight schedule wired to a constant rather
+    than to `--seed`."""
+    first = ReproducibilityHarness.run_pickup_weight(output_dir=tmp_path / "s1", seed=1, threads=1)
+    second = ReproducibilityHarness.run_pickup_weight(output_dir=tmp_path / "s2", seed=2, threads=1)
+    assert first != second

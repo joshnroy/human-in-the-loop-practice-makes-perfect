@@ -1,0 +1,109 @@
+import numpy as np
+
+from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
+    TossingRoomSplitPickupWeightEnvironment,
+)
+from hitl_pmp.environments.tossingroomsplitpickupweight.renderer import (
+    TossingRoomSplitPickupWeightRenderer,
+)
+
+
+def _state(*, env: TossingRoomSplitPickupWeightEnvironment):
+    return env.build_initial_state(weight_seed=0)
+
+
+def test_render_frame_returns_an_rgb_uint8_array() -> None:
+    env = TossingRoomSplitPickupWeightEnvironment()
+    frame = TossingRoomSplitPickupWeightRenderer.render_frame(state=_state(env=env), env=env)
+    assert frame.ndim == 3
+    assert frame.shape[2] == 3
+    assert frame.dtype == np.uint8
+
+
+def test_render_frame_dimensions_are_divisible_by_sixteen() -> None:
+    """ffmpeg's default macro_block_size is 16; non-divisible dims trigger a resize
+    warning when writing mp4 (same reasoning as Light Switch's renderer)."""
+    env = TossingRoomSplitPickupWeightEnvironment()
+    frame = TossingRoomSplitPickupWeightRenderer.render_frame(state=_state(env=env), env=env)
+    assert frame.shape[0] % 16 == 0
+    assert frame.shape[1] % 16 == 0
+
+
+def test_render_frame_differs_between_robot_positions() -> None:
+    env = TossingRoomSplitPickupWeightEnvironment()
+    state_a = _state(env=env)
+    state_b = state_a.model_copy(deep=True)
+    state_b.set(
+        obj=TossingRoomSplitPickupWeightEnvironment.robot, feature_name="room", feature_val=0.0
+    )
+    frame_a = TossingRoomSplitPickupWeightRenderer.render_frame(state=state_a, env=env)
+    frame_b = TossingRoomSplitPickupWeightRenderer.render_frame(state=state_b, env=env)
+    assert frame_a.shape == frame_b.shape
+    assert not np.array_equal(frame_a, frame_b)
+
+
+def test_render_frame_differs_when_holding_an_item() -> None:
+    env = TossingRoomSplitPickupWeightEnvironment()
+    empty = _state(env=env)
+    holding = empty.model_copy(deep=True)
+    holding.set(
+        obj=TossingRoomSplitPickupWeightEnvironment.robot,
+        feature_name="holding",
+        feature_val=float(TossingRoomSplitPickupWeightEnvironment.RECYCLING_KIND),
+    )
+    assert not np.array_equal(
+        TossingRoomSplitPickupWeightRenderer.render_frame(state=empty, env=env),
+        TossingRoomSplitPickupWeightRenderer.render_frame(state=holding, env=env),
+    )
+
+
+def test_render_frame_shows_a_bins_single_item() -> None:
+    """A bin holds 0 or 1 items, and the drawing has to distinguish those two -- the
+    only two states there are."""
+    env = TossingRoomSplitPickupWeightEnvironment()
+    empty = _state(env=env)
+    full = env.build_initial_state(
+        weight_seed=0,
+        trash_count=1,
+    )
+    assert not np.array_equal(
+        TossingRoomSplitPickupWeightRenderer.render_frame(state=empty, env=env),
+        TossingRoomSplitPickupWeightRenderer.render_frame(state=full, env=env),
+    )
+
+
+def test_render_frame_distinguishes_the_two_bins_buttons() -> None:
+    """Each bin has its own button beside it, so emptying the trash bin and emptying the
+    recycling bin must not look the same -- a viewer has to be able to tell which button
+    was pressed by what changed."""
+    env = TossingRoomSplitPickupWeightEnvironment()
+    both_full = env.build_initial_state(
+        weight_seed=0,
+        trash_count=1,
+        recycling_count=1,
+    )
+    trash_emptied = both_full.model_copy(deep=True)
+    trash_emptied.set(
+        obj=TossingRoomSplitPickupWeightEnvironment.trash_bin, feature_name="count", feature_val=0.0
+    )
+    recycling_emptied = both_full.model_copy(deep=True)
+    recycling_emptied.set(
+        obj=TossingRoomSplitPickupWeightEnvironment.recycling_bin,
+        feature_name="count",
+        feature_val=0.0,
+    )
+    assert not np.array_equal(
+        TossingRoomSplitPickupWeightRenderer.render_frame(state=trash_emptied, env=env),
+        TossingRoomSplitPickupWeightRenderer.render_frame(state=recycling_emptied, env=env),
+    )
+
+
+def test_render_frame_differs_with_a_label() -> None:
+    env = TossingRoomSplitPickupWeightEnvironment()
+    state = _state(env=env)
+    assert not np.array_equal(
+        TossingRoomSplitPickupWeightRenderer.render_frame(state=state, env=env),
+        TossingRoomSplitPickupWeightRenderer.render_frame(
+            state=state, env=env, label="Throw(robot, recycling)"
+        ),
+    )
