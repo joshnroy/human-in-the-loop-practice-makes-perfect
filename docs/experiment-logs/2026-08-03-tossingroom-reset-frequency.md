@@ -1,5 +1,18 @@
 # Trading cycles against steps cannot isolate reset frequency (Tossing Room)
 
+> **Environment retired (2026-08-07).** The `--env tossingroom` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Re-runnable as a new measurement, not as a reproduction.** The design
+> ports, and its methodological conclusion (cycles confound resets with
+> sampler refits) is domain-general, but the competence gap it reports is
+> this domain's and would move.
+
 > ## Re-run 2026-08-04 on the fixed 14/14/2 evaluation set
 >
 > Every number originally in this file was measured on the **sampled** test-set

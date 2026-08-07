@@ -1,5 +1,18 @@
 # The task-level crossover, at a budget whose raw data is committed: Tossing Room split throws at 60 cycles
 
+> **Environment retired (2026-08-07).** The `--env tossingroomsplit` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Re-runnable as a new measurement, not as a reproduction.** This page's own
+> claim -- that its ten published numbers reproduced exactly at the time --
+> remains true of the commit it was measured at, and is not withdrawn. It is
+> simply no longer reproducible from HEAD, because the domain is gone.
+
 **TL;DR.** Vanilla EES on `tossingroomsplit`, 10 fixed seeds, **60 cycles x 100 steps =
 6,000 online transitions**, run to make PR #103's crossover region **re-analysable** — that
 PR committed seven files and zero data, and the results root has since been cleaned up.

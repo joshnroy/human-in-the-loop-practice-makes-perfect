@@ -1,182 +1,22 @@
-"""The amended starvation-versus-inability rule.
+"""The two gates the amended starvation-versus-inability rule adds, each in isolation.
 
-The load-bearing cases are pinned against the **committed** sweeps under
-`docs/experiment-logs/`, not against invented fixtures, because the defect this module
-fixes is a false verdict on real data: PR #127's rule assigns `ThrowRecycling` to
-`inability` at the standard budget, and PR #131's 10x arm refutes that directly -- the
-same sampler, same seeds, same code, goes from 11/56 informed draws (p = 1.0000) to
-901/982 (+69.73pp, p < 0.0001) when only the budget changes.
+`PracticeVerdict.classify` is exercised end-to-end, on committed sweeps, through
+`tossing3d_practice_diagnosis.py` and `test_tossing3d_practice_diagnosis.py`. What is
+pinned *here* is the arithmetic of each new gate on its own: the power threshold, the
+plateau test stated so a reader can apply it by eye, and the empty-arm guard.
 
-A fixture could have been written to pass either way. These two tallies could not.
-
-The constructed fixtures below exist for the cases the committed data does not contain:
-that `inability` still fires when inability is genuinely demonstrated, and that each of
-the two new gates blocks it *on its own* with the other satisfied. A rule that never
-concludes anything would pass a test suite made only of the first two cases.
+The cases that drove the amendment ran through `tossingroomsplit_practice_pools.py`,
+which retired with the Tossing Room Split environment (PR #141). Their tallies survive
+below as the literal numbers the gates are checked against -- `ThrowRecycling` at the
+standard budget (11/56 informed, MDE 20.87 points) against its own 10x arm (901/982,
+MDE 6.34 points), and that skill's informed successes by fifths in both arms.
 """
 
-import functools
 from collections.abc import Sequence
-from pathlib import Path
 
 import pytest
 
-from analysis.practice_makes_perfect.practice_diagnostics import PracticeDiagnostics
 from analysis.practice_makes_perfect.practice_verdict import PracticeVerdict
-from analysis.practice_makes_perfect.tossingroomsplit_practice_pools import (
-    TossingRoomSplitPracticePools,
-)
-from hitl_pmp.core.method.types import SkillPracticeTally
-from hitl_pmp.core.metrics.metrics import Metrics
-
-_LOGS = Path(__file__).resolve().parents[3] / "docs" / "experiment-logs"
-_STANDARD = _LOGS / "2026-08-06-tossingroomsplit-practice-pools-data" / "ees"
-_TEN_TIMES = _LOGS / "2026-08-06-tossingroomsplit-practice-pools-10x-data" / "ees"
-_RECYCLING = "ThrowRecycling"
-_TRASH = "ThrowTrash"
-
-
-@functools.cache
-def _runs(*, method_dir: str) -> tuple[Metrics, ...]:
-    """Ten seeds of committed `stats.json`, loaded once for the whole module. Cached
-    because every case below reads the same two sweeps and the 10x arm is ~590k lines."""
-    return tuple(PracticeDiagnostics.load_runs(method_dir=Path(method_dir)))
-
-
-def _committed_verdict(*, method_dir: Path, skill_name: str) -> tuple[str, str]:
-    """The amended rule applied to one committed sweep, **through the domain entrypoint**
-    rather than by calling `classify` with counts assembled here.
-
-    Going through `TossingRoomSplitPracticePools.verdict` is deliberate: it pins the
-    wiring as well as the rule, and the wiring is where the control gets chosen. That
-    module passes the skill's *own* epsilon-random pool, which is the uniform-draw
-    baseline under the identical task distribution -- a test that assembled the control
-    itself could pass while the shipped caller used a different one."""
-    return TossingRoomSplitPracticePools.verdict(
-        runs=list(_runs(method_dir=str(method_dir))), skill_name=skill_name, num_buckets=5
-    )
-
-
-def _flat_windows(
-    *, num_windows: int, informed_per_window: int, successes_per_window: int
-) -> list[dict[str, SkillPracticeTally]]:
-    """`num_windows` identical practice windows plus the trailing evaluation-only one.
-
-    Every window carries an epsilon-random arm of the same size and the same success
-    count, so the control rate equals the informed rate exactly and the only thing the
-    caller varies is how much data there is. Written to satisfy #119's tally validator
-    rather than around it: the three stored pools stay disjoint subsets of the attempts,
-    and the stored successes stay a subset of the successes."""
-    window = {
-        _RECYCLING: SkillPracticeTally(
-            num_attempts=2 * informed_per_window,
-            num_successes=2 * successes_per_window,
-            num_informed_attempts=informed_per_window,
-            num_informed_successes=successes_per_window,
-            num_random_attempts=informed_per_window,
-            num_random_successes=successes_per_window,
-        )
-    }
-    return [*[dict(window) for _ in range(num_windows)], {}]
-
-
-def _fixture_verdict(*, windows: list[dict[str, SkillPracticeTally]]) -> tuple[str, str]:
-    runs = [
-        Metrics(
-            evaluations=[(100 * index, 0, 0) for index in range(len(windows))],
-            practice_outcomes_per_cycle=windows,
-        )
-    ]
-    return TossingRoomSplitPracticePools.verdict(
-        runs=runs, skill_name=_RECYCLING, num_buckets=len(windows)
-    )
-
-
-# ----------------------------------------------------------------- the refuted verdict
-
-
-def test_the_standard_budget_recycling_tally_is_not_called_inability() -> None:
-    """**The case that is wrong on `main`.** `ThrowRecycling` at 2,500 transitions is
-    11/56 informed against 11/57 epsilon-random, with informed successes still climbing
-    (0, 0, 2, 3, 6 by fifths). PR #131's 10x arm shows this same sampler reaching 901/982,
-    so `inability` is refuted by measurement, not merely argued against."""
-    cell, reasoning = _committed_verdict(method_dir=_STANDARD, skill_name=_RECYCLING)
-    assert cell != "inability"
-    assert cell == "indeterminate"
-    # Both new gates fail here, and the reasoning has to say which -- "indeterminate"
-    # with no reason is the same unhelpful answer as a wrong verdict.
-    assert "11/56" in reasoning
-    assert "11/57" in reasoning
-
-
-def test_the_ten_times_budget_recycling_tally_is_called_learned() -> None:
-    """The same skill, same seeds, same code, ten times the budget: 901/982 informed
-    against 203/922 epsilon-random. A rule that cannot name this outcome would have to
-    call the plainest learning on this project `indeterminate`."""
-    cell, reasoning = _committed_verdict(method_dir=_TEN_TIMES, skill_name=_RECYCLING)
-    assert cell == "learned"
-    assert "901/982" in reasoning
-    assert "203/922" in reasoning
-
-
-def test_the_standard_budget_trash_tally_is_called_learned() -> None:
-    """`ThrowTrash` is the within-sweep contrast that makes the recycling verdict a
-    statement about *that skill's* budget rather than about the standard budget as such:
-    208/301 against 61/310 in the very same runs is resolved at 2,500 transitions."""
-    cell, _reasoning = _committed_verdict(method_dir=_STANDARD, skill_name=_TRASH)
-    assert cell == "learned"
-
-
-# ------------------------------------------------------- the rule still concludes things
-
-
-def test_inability_fires_when_a_powered_plateaued_sampler_sits_at_its_control() -> None:
-    """The cell must remain reachable, or the amendment has replaced a false verdict with
-    no verdict at all.
-
-    500 informed draws against 500 epsilon-random, both at 200 successes, on a flat
-    trajectory. 500 is not a hypothetical number on this project: `ThrowRecycling`'s own
-    10x arm makes 982 informed draws."""
-    cell, reasoning = _fixture_verdict(
-        windows=_flat_windows(num_windows=5, informed_per_window=100, successes_per_window=40)
-    )
-    assert cell == "inability"
-    assert "200/500" in reasoning
-
-
-def test_a_still_rising_final_bucket_blocks_inability_on_its_own() -> None:
-    """Power held satisfied, plateau alone withheld. The final bucket carries more
-    informed successes than any bucket before it -- the shape `ThrowRecycling` has at the
-    standard budget -- and that is the starvation signature, so the cell must not fire."""
-    windows = _flat_windows(num_windows=5, informed_per_window=100, successes_per_window=40)
-    windows[4] = {
-        _RECYCLING: SkillPracticeTally(
-            num_attempts=200,
-            num_successes=124,
-            num_informed_attempts=100,
-            num_informed_successes=62,
-            num_random_attempts=100,
-            num_random_successes=62,
-        )
-    }
-    cell, reasoning = _fixture_verdict(windows=windows)
-    assert cell == "indeterminate"
-    assert "still rising" in reasoning
-
-
-def test_too_few_informed_draws_blocks_inability_on_its_own() -> None:
-    """Plateau held satisfied, power alone withheld. Exactly the same rates and exactly
-    the same flat shape as the firing case above, with a twentieth of the data: 25 draws
-    against 25 cannot resolve the 10-point margin the cell asserts, so "the informed draws
-    land at the control rate" is a statement about the sample size, not the sampler."""
-    cell, reasoning = _fixture_verdict(
-        windows=_flat_windows(num_windows=5, informed_per_window=5, successes_per_window=2)
-    )
-    assert cell == "indeterminate"
-    assert "underpowered" in reasoning
-
-
-# ------------------------------------------------------------------- the two gates alone
 
 
 def test_the_power_gate_is_the_equivalence_margin_the_cell_asserts() -> None:

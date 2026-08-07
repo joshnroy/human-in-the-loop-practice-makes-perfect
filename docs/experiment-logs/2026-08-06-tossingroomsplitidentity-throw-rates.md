@@ -1,5 +1,18 @@
 # The same fifty-six recycling draws: 36/56 when the answer is a column, 11/56 when it has to be inferred
 
+> **Environment retired (2026-08-07).** The `--env tossingroomsplitidentity` domain this page was
+> measured on has been deleted from the tree. It existed solely to restore the degenerate **identity** throw
+> representation as the counterpart arm of a representation A/B, and it
+> shared the frozen-weight defect described in the sibling logs. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Not re-runnable, permanently, from HEAD.** The question this page asks --
+> does the throw *representation* explain `ThrowRecycling`'s failure to
+> learn? -- requires the identity representation as a condition, and no
+> surviving domain provides one. Reproducing it would mean re-adding an
+> identity representation (e.g. as a flag on the canonical domain), which is
+> a deliberate decision, not a re-run.
+
 **TL;DR.** A new domain, `tossingroomsplitidentity`, restores the degenerate **identity**
 throw representation that PRs #80/#81 removed, as a counterpart arm to
 `tossingroomsplit` rather than a replacement for it. The answer sits in each throw's own

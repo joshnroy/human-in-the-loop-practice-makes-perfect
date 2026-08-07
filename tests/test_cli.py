@@ -6,7 +6,6 @@ import pytest
 import hitl_pmp.cli as cli_module
 from hitl_pmp.cli import ENVIRONMENTS, METHODS, Cli, MethodCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
-from hitl_pmp.environments.tossingroomsplit.cli import TossingRoomSplitCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
@@ -41,11 +40,42 @@ def test_environments_registry_contains_lightswitch() -> None:
     assert ENVIRONMENTS["lightswitch"] is LightSwitchCli
 
 
+# The three superseded Tossing Room forks. Weight-drawn-at-pickup was a bug fix rather
+# than a variant, so every domain that froze the weight into the task's initial state
+# carried that defect; `tossingroomsplitidentity` additionally existed only as the
+# counterpart arm of a representation A/B that is now closed. Their published results
+# stay in docs/experiment-logs/ behind staleness notes -- what is retired is the ability
+# to run them again, which is why this asserts on the registry rather than on a file.
+RETIRED_ENVIRONMENT_NAMES = (
+    "tossingroom",
+    "tossingroomsplit",
+    "tossingroomsplitidentity",
+)
+
+
+@pytest.mark.parametrize("retired_name", RETIRED_ENVIRONMENT_NAMES)
+def test_retired_tossingroom_forks_are_not_registered(*, retired_name: str) -> None:
+    assert retired_name not in ENVIRONMENTS
+
+
+def test_environments_registry_is_exactly_the_surviving_domains() -> None:
+    """Pins the whole registry, not just the retired names: a fork re-added under a new
+    name would slip past the per-name assertions above."""
+    assert set(ENVIRONMENTS) == {
+        "ballring",
+        "lightswitch",
+        "tossing3d",
+        "tossingroomsplitpickupweight",
+    }
+
+
 def test_main_runs_tossingroom_skill_oracle_end_to_end() -> None:
+    """The Tossing Room domain is reachable by name from the global CLI, which is what
+    lets one `scripts/run_sweep.py` command target it."""
     Cli.main(
         argv=[
             "--env",
-            "tossingroom",
+            "tossingroomsplitpickupweight",
             "--method",
             "skill-oracle",
             "--num-test-tasks",
@@ -54,29 +84,6 @@ def test_main_runs_tossingroom_skill_oracle_end_to_end() -> None:
             "recycling",
         ]
     )
-
-
-def test_main_runs_tossingroomsplit_skill_oracle_end_to_end() -> None:
-    """The split-throw domain is reachable by name from the global CLI, on the same flag
-    set as `tossingroom` -- which is what lets one `scripts/run_sweep.py` command target
-    either domain."""
-    Cli.main(
-        argv=[
-            "--env",
-            "tossingroomsplit",
-            "--method",
-            "skill-oracle",
-            "--num-test-tasks",
-            "4",
-            "--goal-type",
-            "recycling",
-        ]
-    )
-
-
-def test_tossingroomsplit_registered_under_its_own_name() -> None:
-    assert ENVIRONMENTS["tossingroomsplit"] is TossingRoomSplitCli
-    assert ENVIRONMENTS["tossingroomsplit"] is not ENVIRONMENTS["tossingroom"]
 
 
 def test_methods_registry_contains_skill_oracle() -> None:
@@ -173,13 +180,20 @@ def test_main_dispatches_to_the_selected_methods_own_run() -> None:
 def test_parse_args_defaults_practice_reset_interval_to_none() -> None:
     """None is "reset only at the cycle boundary", i.e. exactly the behaviour that
     predates the flag -- every run that does not ask for it is unchanged."""
-    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
+    args = Cli.parse_args(argv=["--env", "tossingroomsplitpickupweight", "--method", "ees"])
     assert args.practice_reset_interval is None
 
 
 def test_parse_args_accepts_a_practice_reset_interval() -> None:
     args = Cli.parse_args(
-        argv=["--env", "tossingroom", "--method", "ees", "--practice-reset-interval", "10"]
+        argv=[
+            "--env",
+            "tossingroomsplitpickupweight",
+            "--method",
+            "ees",
+            "--practice-reset-interval",
+            "10",
+        ]
     )
     assert args.practice_reset_interval == 10
 
@@ -187,20 +201,34 @@ def test_parse_args_accepts_a_practice_reset_interval() -> None:
 def test_parse_args_rejects_a_non_positive_practice_reset_interval() -> None:
     with pytest.raises(SystemExit):
         Cli.parse_args(
-            argv=["--env", "tossingroom", "--method", "ees", "--practice-reset-interval", "0"]
+            argv=[
+                "--env",
+                "tossingroomsplitpickupweight",
+                "--method",
+                "ees",
+                "--practice-reset-interval",
+                "0",
+            ]
         )
 
 
 def test_parse_args_defaults_practice_reset_policy_to_scheduled() -> None:
     """'scheduled' is the behaviour that predates the flag -- one reset at the top
     of every period -- so every run that does not ask for it is unchanged."""
-    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
+    args = Cli.parse_args(argv=["--env", "tossingroomsplitpickupweight", "--method", "ees"])
     assert args.practice_reset_policy is PracticeResetPolicy.SCHEDULED
 
 
 def test_parse_args_accepts_never_as_a_practice_reset_policy() -> None:
     args = Cli.parse_args(
-        argv=["--env", "tossingroomsplit", "--method", "ees", "--practice-reset-policy", "never"]
+        argv=[
+            "--env",
+            "tossingroomsplitpickupweight",
+            "--method",
+            "ees",
+            "--practice-reset-policy",
+            "never",
+        ]
     )
     assert args.practice_reset_policy is PracticeResetPolicy.NEVER
 
@@ -210,14 +238,21 @@ def test_parse_args_rejects_an_unknown_practice_reset_policy() -> None:
     rather than fall back to the default and quietly run the wrong arm."""
     with pytest.raises(SystemExit):
         Cli.parse_args(
-            argv=["--env", "tossingroom", "--method", "ees", "--practice-reset-policy", "sometimes"]
+            argv=[
+                "--env",
+                "tossingroomsplitpickupweight",
+                "--method",
+                "ees",
+                "--practice-reset-policy",
+                "sometimes",
+            ]
         )
 
 
 def test_parse_args_defaults_record_full_loop_to_none() -> None:
     """Off unless asked for: a run that does not pass it is unchanged, right down
     to taking no rendering path at all."""
-    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
+    args = Cli.parse_args(argv=["--env", "tossingroomsplitpickupweight", "--method", "ees"])
     assert args.record_full_loop is None
 
 
@@ -225,7 +260,7 @@ def test_parse_args_accepts_a_record_full_loop_path() -> None:
     args = Cli.parse_args(
         argv=[
             "--env",
-            "tossingroom",
+            "tossingroomsplitpickupweight",
             "--method",
             "ees",
             "--record-full-loop",

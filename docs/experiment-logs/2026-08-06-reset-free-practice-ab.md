@@ -1,5 +1,19 @@
 # Reset-free practice on Tossing Room (split throws): `scheduled` vs `never`
 
+> **Environment retired (2026-08-07).** The `--env tossingroomsplit` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Already superseded by a run on the canonical domain** --
+> `2026-08-07-pickup-weight-reset-free-ab.md` repeats this exact protocol on
+> `tossingroomsplitpickupweight`. Read that page for the current answer. This
+> one is retained as the record of the entangled measurement that motivated
+> the fix; no further re-run is needed.
+
 Domain `tossingroomsplit`, method `ees`, 10 fixed seeds (0-9), 30 test tasks
 (14 TRASH / 14 RECYCLING / 2 EMPTY), 10 cycles x 150 steps per interaction period.
 The two arms are invoked with different `--practice-reset-policy` values and no other

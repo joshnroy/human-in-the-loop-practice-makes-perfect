@@ -430,8 +430,8 @@ class EesMethod(Method):
         every attempt those two see is an attempt this counts, exactly once.
 
         Kept off `observe_outcome`'s own signature deliberately. That method is a
-        documented extension point (`scripts/tossingroomsplit_skill_traces.py`
-        overrides it), and a subclass's override would silently drop a new keyword,
+        documented extension point (a skill-trace script overrides it), and a
+        subclass's override would silently drop a new keyword,
         leaving every traced run misreported. The classification also is not
         `observe_outcome`'s business: competence keys on `was_random` alone.
 

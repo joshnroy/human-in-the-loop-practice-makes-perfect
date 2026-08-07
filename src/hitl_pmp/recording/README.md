@@ -5,7 +5,7 @@ single seekable `.mp4`: every practice period, every evaluation episode of every
 and every environment reset, in the order they happened.
 
 ```bash
-python -m hitl_pmp.cli --env tossingroom --method ees --seed 0 \
+python -m hitl_pmp.cli --env tossingroomsplitpickupweight --method ees --seed 0 \
     --num-cycles 3 --max-steps-per-interaction 30 --num-test-tasks 3 \
     --record-full-loop /tmp/full_loop.mp4
 ```

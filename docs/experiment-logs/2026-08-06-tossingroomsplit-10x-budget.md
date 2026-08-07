@@ -1,5 +1,19 @@
 # Ten times the practice budget: `ThrowRecycling`'s sampler was starved, not broken — the null breaks between 2,500 and 5,000 transitions
 
+> **Environment retired (2026-08-07).** The `--env tossingroomsplit` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Re-runnable as a new measurement, not as a reproduction.** The budget-
+> scaling question (is `ThrowRecycling` starved rather than broken?) ports
+> directly, and is worth repeating, since the attempt rationing it blames is
+> a property of the layout the canonical domain keeps. The curve itself will
+> differ, and the analysis module was retired with the domain.
+
 **TL;DR.** Vanilla EES on `tossingroomsplit`, 10 fixed seeds, **250 cycles x 100 steps =
 25,000 online transitions**, against the standard run's 2,500. The published null — recycling's
 informed draws landing **11/56** against its own epsilon-random control's **11/57** — is
