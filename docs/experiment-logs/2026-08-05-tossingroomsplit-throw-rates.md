@@ -1,5 +1,19 @@
 # Two throws, two samplers: once the greedy pool is honest, recycling's learned sampler cannot be told apart from its own coin flip — 11/56 against 11/57
 
+> **Environment retired (2026-08-07).** The `--env tossingroomsplit` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Re-runnable as a new measurement, not as a reproduction.** The canonical
+> domain carries the same split `ThrowTrash`/`ThrowRecycling` skills, so the
+> per-skill informed-versus-uniform question is intact. Two caveats: the
+> numbers will differ, and the analysis module that produced this page was
+> retired with the domain, so it would need reviving first.
+
 **TL;DR.** Re-run of the split-throw experiment against a fixed `LearnedSkillSampler.sample`.
 The previous version of this page flagged results (4) and (6) **provisional**, because
 `sample` returned `candidates[0]` on a degenerate score vector while reporting a

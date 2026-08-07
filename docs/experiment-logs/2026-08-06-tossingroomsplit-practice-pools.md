@@ -1,5 +1,22 @@
 # Tossing Room's practice pools are clean: every unlearnable execution is a skill that never fails
 
+> **Environment retired (2026-08-07).** The `--env tossingroomsplit` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's
+> initial state, which `--practice-reset-policy never` then never re-drew -- so a
+> reset-free arm practised at a single point of the task distribution. That is a defect,
+> not a variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands exactly as it was published and none has
+> been edited, restated or recomputed; what has changed is only that the domain can no
+> longer be instantiated from HEAD.
+>
+> **The instrument this page documents is also deleted.**
+> `analysis/practice_makes_perfect/tossingroomsplit_practice_pools.py`, whose invocation
+> is quoted below, went with the domain -- it read its statistics helper from
+> `tossingroom_comparison.py`, which is one of the retired modules. The committed
+> `stats.json` sweeps it read are **not** deleted and still sit under
+> `docs/experiment-logs/`, so the tallies below remain checkable by hand; what is gone is
+> the one-command path to reproducing them.
+
 **TL;DR.** The per-skill practice-pool breakdown (`SamplerConsultation`, PR #119) had never
 been run on `tossingroomsplit` — the domain the reset-free result rests on. It is now, on
 both published arms (10 fixed seeds each: 2,500 and 25,000 online transitions).

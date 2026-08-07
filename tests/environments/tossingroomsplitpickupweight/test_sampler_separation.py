@@ -8,12 +8,13 @@ different weights, no shared training data. `EesMethod.sampler` keys `_samplers`
 names -- but "should follow from" is exactly the kind of assumption an experiment must
 not rest on, so it is asserted here directly, through the real `EesMethod`.
 
-**The control is the point.** `test_the_unsplit_tossing_room_shares_one_sampler` runs the
-identical body against `environments/tossingroom`, whose single `Throw` name makes both
-kinds land in one sampler with pooled data. It fails if the separation assertions were
-vacuously true of any domain, and it also documents the transfer channel this domain
-removes: in Tossing Room a trash throw's row trains the very classifier a recycling throw
-is later scored by.
+**The control is currently missing, and that is a known gap.** This file used to run the
+identical body against `environments/tossingroom`, whose single `Throw` name made both
+kinds land in one sampler with pooled data -- a negative control that fails if the
+separation assertions were vacuously true of any domain. That domain has been retired,
+so the control went with it. It is restorable, and should be restored, once a shared
+lifted `Throw` is expressible on this domain again; until then the assertions below are
+weaker than they read.
 
 Nothing here runs Fast Downward: `execute_ground_skill` + `observe_sampler_outcome` is
 the whole path from "a skill was practiced" to "a sampler was trained", so driving those
@@ -23,9 +24,6 @@ two directly exercises the real mechanism without a planner in the loop.
 import numpy as np
 
 from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
-from hitl_pmp.environments.tossingroom.skill_provider import TossingRoomSkillProvider
-from hitl_pmp.environments.tossingroom.skills import TossingRoomSkills
 from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
     TossingRoomSplitPickupWeightEnvironment,
 )
@@ -149,44 +147,3 @@ class TestTheTwoThrowSamplersAreSeparate:
 
         assert method.sampler(skill_name="ThrowTrash", param_dim=1).is_fitted
         assert not method.sampler(skill_name="ThrowRecycling", param_dim=1).is_fitted
-
-
-class TestTheControl:
-    """Run the same body on the *unsplit* domain. If these pass, the assertions above are
-    measuring something real rather than restating a truth about `EesMethod`."""
-
-    @staticmethod
-    def test_the_unsplit_tossing_room_shares_one_sampler() -> None:
-        env = TossingRoomEnvironment()
-        method = EesMethod(env=env, skill_provider=TossingRoomSkillProvider(env=env), seed=0)
-        rooms = env.get_rooms()
-        # The two kinds differ only in item weight here, so a pooled row is identifiable
-        # by content rather than only by count. (`weight` is one of the two observable
-        # CAUSES of the required throw force; it replaced the `target_force` feature that
-        # used to *be* that force.)
-        state = env.build_initial_state(
-            trash_weight=0.7,
-            recycling_weight=0.3,
-            trash_bin_distance=2.0,
-            recycling_bin_distance=2.0,
-        )
-        trash_throw = GroundSkill(
-            skill=TossingRoomSkills.THROW,
-            objects=(env.robot, env.trash, env.trash_bin, rooms[env.trash_bin_room]),
-        )
-        recycling_throw = GroundSkill(
-            skill=TossingRoomSkills.THROW,
-            objects=(env.robot, env.recycling, env.recycling_bin, rooms[env.recycling_bin_room]),
-        )
-        for _ in range(8):
-            _practice(method=method, ground_skill=trash_throw, state=state, success=True)
-        for _ in range(3):
-            _practice(method=method, ground_skill=recycling_throw, state=state, success=False)
-
-        # One sampler, both kinds' rows pooled into it -- the transfer channel the split
-        # domain removes.
-        sampler = method.sampler(skill_name="Throw", param_dim=1)
-        assert sampler.num_observations == 11
-        rows = sampler.observed_inputs()
-        assert [row for row in rows if 0.7 in row]
-        assert [row for row in rows if 0.3 in row]

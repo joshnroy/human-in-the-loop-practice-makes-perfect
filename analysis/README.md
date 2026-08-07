@@ -50,8 +50,9 @@ exactly one place those are computed, not a second copy living in `analysis/`.
   `planning_attempts_per_cycle`, which nothing plotted before). Same
   `DIR/<method>/<seed>/stats.json` layout, `--output PATH.png` for the figure. Reads
   a run's own record and keys on nothing domain-specific, so it serves every `--env`
-  — which is what distinguishes it from `scripts/tossingroomsplit_skill_traces.py`,
-  whose overlapping tallies are Tossing-Room-only by construction.
+  — which is what distinguished it from the Tossing Room skill-trace script, whose
+  overlapping tallies were Tossing-Room-only by construction (retired with the three
+  superseded Tossing Room domains).
 - `practice_makes_perfect/tossing3d_practice_diagnosis.py` — applies the decision rule
   pre-registered in `docs/experiment-logs/2026-08-06-tossing3d-practice-diagnosis.md`
   to a Tossing3D sweep and renders that log's figure. Domain-specific where the script

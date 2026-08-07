@@ -151,79 +151,54 @@ predicate definitions play in `predicators/envs/`.
   `../../methods/oracle/cli.py`'s `SkillOracleCli`), runnable via
   `python -m hitl_pmp.cli --env lightswitch --method skill-oracle
   [--output-dir DIR]`.
-- `tossingroomsplit/` — **Tossing Room with the two throws as separate lifted
-  skills.** The world is byte-for-byte the same as `tossingroom/`'s (7 rooms, pile and
-  start in room 3, recycling bin + its own emptying button in room 1, trash bin + its
-  own button in room 6, one-way ledge out of room 2, a bin holding at most **one** item
-  and refusing a throw when full) and the raw action space is unchanged; the entire
-  difference is in the symbolic layer. `Throw` becomes `ThrowTrash` and `ThrowRecycling`,
-  each binding its own item and bin *type*, which splits `Pickup` and `Press` too and
-  drops both `BinAcceptsItem` and `ButtonForBin` (the types make them tautologies). Why
-  the split matters: `EesMethod.sampler` keys its
-  `LearnedSkillSampler` dict by skill **name**, so one name is one classifier — Tossing
-  Room's single `Throw` pools both kinds' training rows and can transfer trash
-  experience to recycling, and two names remove that channel while keeping the same
-  architecture. The domain exists to measure what the removal costs each kind, given
-  that the layout buys roughly a dozen trash attempts per practice period and at most
-  one recycling attempt (the ledge closes behind the robot, and a missed throw spends
-  the item). Runnable as `python -m hitl_pmp.cli --env tossingroomsplit --method ees`,
-  on the identical flag set as `--env tossingroom` **plus one**: `--two-way-ledge`,
-  which makes the ledge traversable rightward as well and so leaves the domain with no
-  irreversible action at all. It is off by default, and a default run is byte-identical
-  to one from before the flag existed. It is the positive control for the reset-free
-  experiment: reset-free practice is worse than scheduled-reset practice here, and the
-  attributed mechanism is that rooms 0–2 are absorbing while the pile — the only item
-  source — sits in room 3, so a robot that walks left once can never practice again.
-  Turning it on removes exactly that. **It also makes the domain easier**, in three ways
+- `tossingroomsplitpickupweight/` — **Tossing Room: the canonical domain, and the only
+  one.** 7 rooms, pile and start in room 3, recycling bin + its own emptying button in
+  room 1, trash bin + its own button in room 6, one-way ledge out of room 2, a bin
+  holding at most **one** item and refusing a throw when full. `Throw` is split into
+  `ThrowTrash` and `ThrowRecycling`, each binding its own item and bin *type*, which
+  splits `Pickup` and `Press` too and drops both `BinAcceptsItem` and `ButtonForBin`
+  (the types make them tautologies). Why the split matters: `EesMethod.sampler` keys its
+  `LearnedSkillSampler` dict by skill **name**, so one name is one classifier — a single
+  shared `Throw` pools both kinds' training rows and can transfer trash experience to
+  recycling, and two names remove that channel while keeping the same architecture.
+  The layout buys roughly a dozen trash attempts per practice period and at most one
+  recycling attempt (the ledge closes behind the robot, and a missed throw spends the
+  item), which is what makes the two kinds' learning rates worth measuring apart.
+
+  **The item's `weight` is drawn at pickup**, off a per-task pre-sampled array, rather
+  than frozen into the task's initial state; the bin `throw_distance` is fixed. This is
+  a **bug fix, not a variant**. `--practice-reset-policy never` never installs a task's
+  `initial_state`, so every state feature no action writes stays at its `hard_reset`
+  value for the whole run — including the learned sampler's own input row. Under the
+  retired frozen-weight domains a reset-free arm therefore practised at ONE point of the
+  task distribution, entangling "no rescue from a dead end" with "collapsed training
+  distribution" in a single flag. Drawing the weight at pickup puts the variation on an
+  action the robot takes, so the two mechanisms separate.
+
+  Runnable as `python -m hitl_pmp.cli --env tossingroomsplitpickupweight --method ees`.
+  `--two-way-ledge` makes the ledge traversable rightward as well, leaving the domain
+  with no irreversible action at all. It is off by default, and a default run is
+  byte-identical to one from before the flag existed. It is the positive control for the
+  reset-free experiment: rooms 0–2 are absorbing while the pile — the only item source —
+  sits in room 3, so a robot that walks left once can never practice again, and turning
+  the flag on removes exactly that. **It also makes the domain easier**, in three ways
   that are not method effects: EMPTY stops being an ordering task and its shortest solve
   drops 10 → 9 (so the evaluation horizon drops 12 → 11), RECYCLING stops being
   one-attempt-per-period, and rooms 0–2 stop being absorbing. Never put a two-way number
   beside a one-way one without saying so. See its `skills.py` docstring for the full
   rationale and `environment.py`'s `two_way_ledge` field for this flag's.
-- `tossingroomsplitidentity/` — **the same domain again under the degenerate identity
-  throw representation**, and the counterpart arm to `tossingroomsplit/` above rather
-  than a replacement for it. There, the required force is an unobserved affine function
-  of two observable causes (a bin's per-task `throw_distance` and an item's per-task
-  `weight`), so a sampler must learn a *relation*. Here the item carries `target_force`
-  and a throw lands iff `|force - item.target_force| < throw_tolerance` — so the answer
-  sits in each throw's own classifier row
-  (`[1.0] + concat(state[obj] for obj in ground_skill.objects) + [force]`) at **index
-  4**, and the optimal policy is the literal transformation `force* = x₄`: copy input
-  index 4. That is what PRs #80/#81 removed, restored deliberately so the two
-  representations can be compared at a matched protocol.
 
-  **Exactly one delta, and it is enforced.** Layout, one-way ledge, capacity-1 bins,
-  button wiring, the seven lifted skills and their arities, the 14 TRASH / 14 RECYCLING
-  / 2 EMPTY test composition and the horizon of 12 are all identical, and
-  `tests/environments/tossingroomsplitidentity/test_fork_equivalence.py` asserts each of
-  them rather than leaving it to a reviewer's diff — the permitted differences are
-  enumerated in one place there.
+  **Three retired forks.** `tossingroom/` (one shared `Throw`), `tossingroomsplit/`
+  (split throws) and `tossingroomsplitidentity/` (split throws under a degenerate
+  identity throw representation, where the item carried `target_force` and the optimal
+  policy was the literal `force* = x₄`) all froze the weight into the task's initial
+  state, and so all carried the defect above. They are deleted rather than kept as
+  variants. Their published results stay in `docs/experiment-logs/` behind staleness
+  notes — nothing measured is being restated or recomputed — but they cannot be re-run
+  from HEAD. The representation A/B in particular (causal versus identity) is not
+  reproducible without re-adding an identity representation.
 
-  **Difficulty is matched by construction, because the two arms draw the same tasks.**
-  `Tasks` here draws the causal arm's two causes — from the same ranges, in the same
-  order, with the same number of draws — and resolves them with the same five constants,
-  then puts the *result* in the State as `target_force` and discards the causes. So the
-  arms consume their RNG in lockstep: at a given seed they present the identical practice
-  and test tasks with the identical required force for every throw, which makes them
-  **paired** rather than merely comparable. A uniformly random force lands with
-  probability exactly 0.20 on every task in both, and the best single *fixed* force scores
-  the same in both (185/400 at seed 0).
-
-  Two simpler draw ranges were rejected, both of which would have been a second delta: the
-  pre-#80 `U[0.5, 1.0)`, whose top decile has its winning window clipped by the U(0, 1)
-  force band (0.20 on only 8/10 of its range); and `U[0.1, 0.9)`, which fixes that but not
-  the *marginal* — the causal arm's required force is a sum of two uniforms and so is
-  triangular, and a flat target scores 120/400 for the best fixed force against 185/400.
-
-  Runnable as `python -m hitl_pmp.cli --env tossingroomsplitidentity --method ees`, on the
-  causal arm's flag set minus the five relation flags (`--reference-force`,
-  `--reference-distance`, `--reference-weight`, `--distance-coefficient`,
-  `--weight-coefficient`) and minus `--canonical-throw-distance`/`--canonical-item-weight`,
-  plus `--canonical-target-force`. `--distance-low/high` and `--weight-low/high` are
-  retained and mean exactly what they do in the causal arm. The five relation constants
-  live on `Tasks` here and are deliberately **not** flags: they are what keeps the two
-  arms paired, so changing one would silently unpair them.
-- The remaining domain subfolders (`ballring/`, `tossingroom/`) are implemented but not
+- The remaining domain subfolder (`ballring/`) is implemented but not
   written up in this Status section; their own module docstrings and the experiment
   logs under `docs/experiment-logs/` are the current record. The convention above
   describes the shape every one of them follows.

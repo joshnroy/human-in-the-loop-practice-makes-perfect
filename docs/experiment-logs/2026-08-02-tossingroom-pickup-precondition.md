@@ -1,5 +1,19 @@
 # Tossing Room: three operators permitted what the dynamics deny
 
+> **Environment retired (2026-08-07).** The `--env tossingroom` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Not re-runnable**, for a reason that predates the retirement and is
+> already stated below: the three over-permissive operators it measures were
+> fixed in #28 and no longer exist, so the pre-fix column could only be
+> recovered by rebuilding them. The claim rests on the structural property,
+> not on the numbers.
+
 EES scored **1/10** on Tossing Room. Not because it failed to learn — because Fast
 Downward was emitting plans that could not execute. The `Pickup` operator claimed to
 work in any room while the environment only picks up in the pile room.

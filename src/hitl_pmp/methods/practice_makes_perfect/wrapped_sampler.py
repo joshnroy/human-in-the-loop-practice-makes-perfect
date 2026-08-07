@@ -468,7 +468,7 @@ class LearnedSkillSampler(BaseModel):
         Exists because "this sampler saw only its own skill's data" is a claim an
         experiment can rest on and a count alone cannot settle: two samplers can hold
         the same number of rows and still have been fed each other's. See
-        `tests/environments/tossingroomsplit/test_sampler_separation.py`."""
+        `tests/environments/tossingroomsplitpickupweight/test_sampler_separation.py`."""
         return [list(row) for row in self._inputs]
 
     def observe(self, *, sampler_input: list[float], success: bool) -> None:
@@ -616,8 +616,8 @@ class SamplerChoice(BaseModel):
       *analysis* signal: without it, a greedy draw made on a degenerate score vector
       is indistinguishable in the record from one a trained classifier chose, and any
       greedy-versus-random statistic silently pools the two. It is recorded through
-      `EesMethod._SkillAttempt.was_informed_choice` into
-      `scripts/tossingroomsplit_skill_traces.py`'s `informed_*` tallies. Pooling the
+      `EesMethod._SkillAttempt.was_informed_choice` into a skill-trace script's
+      `informed_*` tallies (the Tossing Room one was retired with its domain). Pooling the
       two inverted a published conclusion once already: recycling's greedy draws
       landed 22/103 while the informed subset landed 11/56, which is its own
       epsilon-random rate.

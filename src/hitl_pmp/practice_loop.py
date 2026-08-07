@@ -25,7 +25,8 @@ class PracticeResetPolicy(str, enum.Enum):
     `def` is evaluated.
 
     A `(str, Enum)` -- matching this project's other domain enums, e.g.
-    `environments/tossingroomsplit/tasks.py`'s `TossingRoomSplitGoalType` -- so
+    `environments/tossingroomsplitpickupweight/tasks.py`'s
+    `TossingRoomSplitPickupWeightGoalType` -- so
     argparse can offer the members directly as `choices`, so a member compares equal
     to its own wire string, and so the chosen value lands in `config_snapshot.json`
     as a readable word rather than an integer nobody can interpret later."""
@@ -83,12 +84,17 @@ class PracticeLoop:
     `initial_state`, and `reset_to_task` is the only thing that installs one. Under
     `NEVER` the environment therefore keeps whatever `hard_reset()` put there for the
     whole run, so any state feature no action writes is **frozen at its canonical
-    value**. On `tossingroomsplit` those features are a bin's `throw_distance` and an
-    item's `weight` -- which are exactly the learned sampler's input row -- so a
-    `NEVER` run practices every throw at a single point of the task distribution
-    while a `SCHEDULED` run sees a fresh draw per period. Measured on the 2026-08-06
-    A/B: 194 greedy throws at **1** distinct required-force target under `NEVER`,
-    against 86 distinct targets over 440 throws under `SCHEDULED`.
+    value**. On the retired frozen-weight Tossing Room forks those features were a bin's
+    `throw_distance` and an item's `weight` -- exactly the learned sampler's input row
+    -- so a `NEVER` run practiced every throw at a single point of the task
+    distribution while a `SCHEDULED` run saw a fresh draw per period. Measured on the
+    2026-08-06 A/B: 194 greedy throws at **1** distinct required-force target under
+    `NEVER`, against 86 distinct targets over 440 throws under `SCHEDULED`.
+
+    `tossingroomsplitpickupweight` exists to break that entanglement: it draws the
+    weight at pickup, on an action the robot takes, so `NEVER` no longer collapses the
+    sampler's training distribution. The general hazard below still applies to any
+    domain whose sampler inputs no action writes.
 
     That is a second, entangled difference, not a side note: it collapses the
     sampler's training distribution at the same time as it removes the rescue. The
@@ -175,17 +181,17 @@ class PracticeLoop:
 
     Passing one is safe only where the split is genuinely byte-identical -- the
     environment must consume no randomness of its own, or a second instance changes
-    which draws practice sees. Exactly one domain is wired today, `tossingroomsplit`
-    (no environment RNG, pure `take_action`), because that is where the reset-free
-    measurement is being made. Two domains are *excluded on the merits* and should not
-    simply be wired by the next reader: `ballring`, whose `_noise_rng` is consumed by
-    evaluation today and therefore shifts the practice stream, so a split needs a
-    re-baseline rather than an identity check; and `tossing3d`, where a second instance
-    is a second live simulator backend. The rest -- `lightswitch`, `tossingroom`,
-    `tossingroomsplitidentity` -- are simply **not migrated yet**, not assessed and
-    rejected; each is RNG-free in the same way and could be wired when something needs
-    it. Every unmigrated domain omits the argument and keeps exactly its old behaviour,
-    one Problem for both roles.
+    which draws practice sees. Exactly one domain is wired today,
+    `tossingroomsplitpickupweight` (no environment RNG, pure `take_action`), because
+    that is where the reset-free measurement is being made. Two domains are *excluded
+    on the merits* and should not simply be wired by the next reader: `ballring`, whose
+    `_noise_rng` is consumed by evaluation today and therefore shifts the practice
+    stream, so a split needs a re-baseline rather than an identity check; and
+    `tossing3d`, where a second instance is a second live simulator backend.
+    `lightswitch` is simply **not migrated yet**, not assessed and rejected; it is
+    RNG-free in the same way and could be wired when something needs it. Every
+    unmigrated domain omits the argument and keeps exactly its old behaviour, one
+    Problem for both roles.
 
     **Fixed test set.** The evaluation set is drawn once, before the first sweep, and
     reused for the whole run -- matching predicators, whose `BaseEnv.get_test_tasks`

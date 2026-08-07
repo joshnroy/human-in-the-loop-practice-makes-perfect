@@ -1,5 +1,20 @@
 # Tossing Room once the sampler has to learn a function: EES still learns, RECYCLING is still the hard half, and one seed still fails it
 
+> **Environment retired (2026-08-07).** The `--env tossingroom` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Partially re-runnable.** The post-change cell (EES under the causal throw
+> representation) ports to the canonical domain as a new measurement. The
+> contrast this page draws against the earlier identity-representation
+> numbers does **not**: that representation was removed with
+> `tossingroomsplitidentity`, so the comparison cannot be reconstructed from
+> HEAD.
+
 **Result.** Re-run against the domain in which `Throw`'s required force is an unobserved
 function of a bin's `throw_distance` and an item's `weight` rather than a `target_force`
 feature the classifier could read, EES goes from **71/300** evaluation episodes solved

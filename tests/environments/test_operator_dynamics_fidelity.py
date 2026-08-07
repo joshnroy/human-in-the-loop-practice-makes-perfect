@@ -9,11 +9,11 @@ WHY this exists (two bugs of exactly this shape have shipped already):
    `NavigateToTable(A) -> NavigateToTable(B) -> ...(A)`, a plan the environment cannot
    execute (`BallRingEnvironment._handle_placing` early-returns unless the robot is
    `euclidean_reachable` to the table). Evaluation success went 67% -> 98% once fixed.
-2. **Tossing Room, still open.** `TossingRoomSkills.PICKUP`'s preconditions are
-   `{RobotInRoom(robot, ?room), HandEmpty(robot)}` -- *any* room -- but
-   `TossingRoomEnvironment._apply_pickup` only acts when `robot_room == start_room`.
-   A pickup planned anywhere else is a silent no-op. (The walk below finds two more
-   Tossing Room instances of the same shape; see `_TOSSINGROOM_DEFECTS`.)
+2. **Tossing Room, fixed in #28.** The `Pickup` skill's preconditions were
+   `{RobotInRoom(robot, ?room), HandEmpty(robot)}` -- *any* room -- but the
+   environment's `_apply_pickup` only acts when `robot_room == start_room`.
+   A pickup planned anywhere else was a silent no-op. (The walk below found two more
+   Tossing Room instances of the same shape; see the defect block further down.)
 
 A manual operator-by-operator audit *passed* on Ball-Ring before #27: a field-by-field
 diff of preconditions/add/delete effects cannot see an entire effect class missing from
@@ -71,20 +71,16 @@ from hitl_pmp.environments.lightswitch.skill_provider import (
     LightSwitchSkillProvider,
 )
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
-from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
-from hitl_pmp.environments.tossingroom.skill_provider import (
-    TossingRoomOracle,
-    TossingRoomSkillProvider,
+from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
+    TossingRoomSplitPickupWeightEnvironment,
 )
-from hitl_pmp.environments.tossingroom.tasks import TossingRoomGoalType, TossingRoomTasks
-from hitl_pmp.environments.tossingroomsplit.environment import TossingRoomSplitEnvironment
-from hitl_pmp.environments.tossingroomsplit.skill_provider import (
-    TossingRoomSplitOracle,
-    TossingRoomSplitSkillProvider,
+from hitl_pmp.environments.tossingroomsplitpickupweight.skill_provider import (
+    TossingRoomSplitPickupWeightOracle,
+    TossingRoomSplitPickupWeightSkillProvider,
 )
-from hitl_pmp.environments.tossingroomsplit.tasks import (
-    TossingRoomSplitGoalType,
-    TossingRoomSplitTasks,
+from hitl_pmp.environments.tossingroomsplitpickupweight.tasks import (
+    TossingRoomSplitPickupWeightGoalType,
+    TossingRoomSplitPickupWeightTasks,
 )
 from hitl_pmp.planning.grounding import SkillGrounder
 
@@ -305,50 +301,34 @@ class DomainCases:
         )
 
     @staticmethod
-    def tossingroom() -> DomainCase:
-        env = TossingRoomEnvironment()
-        tasks = TossingRoomTasks(env=env, seed=0)
-        # One oracle task per goal family: the EMPTY family is what walks the oracle
-        # into BOTH bins' button rooms (each bin has its own button beside it), and it
-        # is only ~20% of the default goal_weights.
-        oracle_tasks = tuple(
-            TossingRoomTasks(env=env, seed=0, forced_goal_type=goal_type).sample_test_task()
-            for goal_type in TossingRoomGoalType
-        )
-        return DomainCase(
-            name="tossingroom",
-            env=env,
-            provider=TossingRoomSkillProvider(env=env),
-            tasks=tasks,
-            oracle=TossingRoomOracle(env=env),
-            oracle_tasks=oracle_tasks,
-            # No exemptions ON PURPOSE. Everything this domain reports is a real defect
-            # (see _TOSSINGROOM_DEFECTS); exempting any of it would be the failure mode
-            # this whole file exists to prevent.
-        )
-
-    @staticmethod
-    def tossingroomsplit() -> DomainCase:
-        """Same walk on the split-throw domain. Seven lifted skills instead of four
+    def tossingroomsplitpickupweight() -> DomainCase:
+        """The walk on the surviving Tossing Room. Seven lifted skills rather than four
         (`Pickup`, `Throw` and `Press` each split per kind), so the coverage floor below
         is strictly harder to clear -- and it is what would catch a `ThrowTrash`/
         `ThrowRecycling` (or `PressTrash`/`PressRecycling`) whose preconditions drifted
         apart from the dynamics independently of each other, which a single shared
         `Throw`/`Press` could not express."""
-        env = TossingRoomSplitEnvironment()
-        tasks = TossingRoomSplitTasks(env=env, seed=0)
+        env = TossingRoomSplitPickupWeightEnvironment()
+        tasks = TossingRoomSplitPickupWeightTasks(env=env, seed=0)
+        # One oracle task per goal family: the EMPTY family is what walks the oracle
+        # into BOTH bins' button rooms (each bin has its own button beside it), and it
+        # is only ~20% of the default goal_weights.
         oracle_tasks = tuple(
-            TossingRoomSplitTasks(env=env, seed=0, forced_goal_type=goal_type).sample_test_task()
-            for goal_type in TossingRoomSplitGoalType
+            TossingRoomSplitPickupWeightTasks(
+                env=env, seed=0, forced_goal_type=goal_type
+            ).sample_test_task()
+            for goal_type in TossingRoomSplitPickupWeightGoalType
         )
         return DomainCase(
-            name="tossingroomsplit",
+            name="tossingroomsplitpickupweight",
             env=env,
-            provider=TossingRoomSplitSkillProvider(env=env),
+            provider=TossingRoomSplitPickupWeightSkillProvider(env=env),
             tasks=tasks,
-            oracle=TossingRoomSplitOracle(env=env),
+            oracle=TossingRoomSplitPickupWeightOracle(env=env),
             oracle_tasks=oracle_tasks,
-            # No exemptions, for the same reason Tossing Room has none.
+            # No exemptions ON PURPOSE. Everything this domain reports is a real defect
+            # (see the defect block above); exempting any of it would be the failure
+            # mode this whole file exists to prevent.
         )
 
     @staticmethod
@@ -356,8 +336,7 @@ class DomainCases:
         builders = {
             "lightswitch": DomainCases.lightswitch,
             "ballring": DomainCases.ballring,
-            "tossingroom": DomainCases.tossingroom,
-            "tossingroomsplit": DomainCases.tossingroomsplit,
+            "tossingroomsplitpickupweight": DomainCases.tossingroomsplitpickupweight,
         }
         return builders[domain]()
 
@@ -679,18 +658,10 @@ def _report(*, domain: str) -> WalkReport:
 # `Tossing3DEnvironment.snapshot`/`.restore` (KINDER's own `set_state`) rather than
 # through `Environment.set_state`. That file states its own narrowing: it walks one
 # trajectory rather than searching.
-_DOMAINS = ["lightswitch", "ballring", "tossingroom", "tossingroomsplit"]
+_DOMAINS = ["lightswitch", "ballring", "tossingroomsplitpickupweight"]
 
 
-@pytest.mark.parametrize(
-    "domain",
-    [
-        "lightswitch",
-        "ballring",
-        "tossingroom",
-        "tossingroomsplit",
-    ],
-)
+@pytest.mark.parametrize("domain", _DOMAINS)
 def test_applicable_ground_skills_are_never_silently_ignored(*, domain: str) -> None:
     """THE property. See this module's docstring for the two shipped bugs it guards."""
     report = _report(domain=domain)
@@ -706,7 +677,7 @@ def test_the_walk_exercises_every_declared_skill(*, domain: str) -> None:
     """A coverage floor, so the property test above cannot pass vacuously. Without it,
     shortening the walk (or a change that strands it in a corner of the state space)
     would quietly reduce the test to "nothing was enumerated, nothing was violated".
-    Deliberately NOT xfailed for tossingroom: coverage must stay enforced there even
+    Deliberately NOT xfailed for Tossing Room: coverage must stay enforced there even
     while the defects above are outstanding."""
     report = _report(domain=domain)
     declared = {skill.name for skill in DomainCases.build(domain=domain).provider.skills()}

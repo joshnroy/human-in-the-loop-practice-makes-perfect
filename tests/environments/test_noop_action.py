@@ -17,10 +17,8 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.ballring.environment import BallRingEnvironment
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.environments.tossingroom.environment import TossingRoomEnvironment
-from hitl_pmp.environments.tossingroomsplit.environment import TossingRoomSplitEnvironment
-from hitl_pmp.environments.tossingroomsplitidentity.environment import (
-    TossingRoomSplitIdentityEnvironment,
+from hitl_pmp.environments.tossingroomsplitpickupweight.environment import (
+    TossingRoomSplitPickupWeightEnvironment,
 )
 
 # Classes, not instances: each test builds its own and resets it, so no test can
@@ -30,15 +28,14 @@ from hitl_pmp.environments.tossingroomsplitidentity.environment import (
 _ENVIRONMENT_TYPES: list[type[Environment]] = [
     LightSwitchEnvironment,
     BallRingEnvironment,
-    TossingRoomEnvironment,
-    TossingRoomSplitEnvironment,
-    TossingRoomSplitIdentityEnvironment,
+    TossingRoomSplitPickupWeightEnvironment,
 ]
 
+# One entry since the three frozen-weight forks were retired. Kept as a list, and kept
+# parametrized, because the property is a claim about the Tossing Room *shape* rather
+# than about one class -- a second Tossing Room domain joins here, not by copying tests.
 _TOSSING_ROOM_TYPES = [
-    TossingRoomEnvironment,
-    TossingRoomSplitEnvironment,
-    TossingRoomSplitIdentityEnvironment,
+    TossingRoomSplitPickupWeightEnvironment,
 ]
 
 
@@ -81,7 +78,7 @@ def test_noop_action_is_inside_the_domains_own_action_space(*, env_type: type[En
 
 @pytest.mark.parametrize("env_type", _TOSSING_ROOM_TYPES, ids=lambda t: t.__name__)
 def test_the_tossing_rooms_noop_id_is_not_a_real_skill_id(
-    *, env_type: type[TossingRoomEnvironment]
+    *, env_type: type[TossingRoomSplitPickupWeightEnvironment]
 ) -> None:
     """State-invariance alone does not discriminate `noop_action()` from
     `np.zeros(3)` on these domains -- both are inert today (see the next test) --
@@ -109,7 +106,7 @@ def test_a_zero_vector_is_not_a_no_op_on_ball_ring() -> None:
 
 @pytest.mark.parametrize("env_type", _TOSSING_ROOM_TYPES, ids=lambda t: t.__name__)
 def test_a_zero_vector_is_inert_on_the_tossing_rooms_only_by_coincidence(
-    *, env_type: type[TossingRoomEnvironment]
+    *, env_type: type[TossingRoomSplitPickupWeightEnvironment]
 ) -> None:
     """Recorded so the claim is measured rather than assumed, because the natural
     reading of `SKILL_PICKUP == 0` is that zeros was broken here too -- and it was

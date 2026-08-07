@@ -1,5 +1,20 @@
 # The causal arm: what `tossingroomsplit`'s sampler is actually asked to learn, and how far it gets — 208/301 for trash, 11/56 against 11/57 for recycling
 
+> **Environment retired (2026-08-07).** The `--env tossingroomsplit` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **This arm alone is re-runnable as a new measurement; the comparison it
+> belongs to is not.** This page is the causal half of a representation A/B
+> whose identity half ran on `tossingroomsplitidentity`. That domain is also
+> deleted, so the A/B is **permanently unreproducible from HEAD** unless an
+> identity throw representation is deliberately re-added. The MDE correction
+> this page carries is unaffected and still stands.
+
 **TL;DR.** The causal-representation arm of a two-domain comparison, run on the existing
 `tossingroomsplit` at `main` (`db2589f`). Vanilla EES, 10 fixed seeds (0–9), 2500 online
 transitions each, 30 test tasks at 14 TRASH / 14 RECYCLING / 2 EMPTY, horizon 12,

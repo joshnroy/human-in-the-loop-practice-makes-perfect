@@ -1,5 +1,18 @@
 # Tossing Room: EES learns the throw force, and the evaluation horizon was hiding it
 
+> **Environment retired (2026-08-07).** The `--env tossingroom` domain this page was
+> measured on has been deleted from the tree. It froze the item `weight` into the task's initial state, which
+> `--practice-reset-policy never` then never re-drew -- so a reset-free arm
+> practised at a single point of the task distribution. That is a defect, not a
+> variant, and `tossingroomsplitpickupweight` (which draws the weight at pickup) is
+> the corrected domain. Every number below stands
+> exactly as it was published and none has been edited, restated or recomputed;
+> what has changed is only that the domain can no longer be instantiated from
+> HEAD. **Re-runnable as a new measurement, not as a reproduction.** The protocol
+> (evaluation horizon against sampler-iteration grid) ports to the canonical
+> domain unchanged, but that domain has split throws and a weight drawn at
+> pickup, so it would produce different numbers answering the same question.
+
 > ## Regenerated 2026-08-04 under the fixed 14/14/2 evaluation set
 >
 > The test set's goal-family composition used to be **sampled per seed** — seed 0 drew
