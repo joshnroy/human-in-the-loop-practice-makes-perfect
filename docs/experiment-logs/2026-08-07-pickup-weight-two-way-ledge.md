@@ -339,6 +339,52 @@ So the results were never stale, but the committed artifacts would not have repr
 byte-for-byte on the branch they sit on. The full 20 runs were therefore re-run on the
 post-rebase tree and those are what is committed, so a reader re-running gets no diff.
 
+### The default-off equivalence claim, stated precisely
+
+The wiring commit (`--two-way-ledge` ported to this fork) claims a **byte-identical**
+default (one-way) run against PR #122's banked `never/0/stats.json`, sha256
+`bd8a632a2d97207eeded37b97339a7ccd40455b25cba018314dae03cf5f847b9`. **That was measured on
+the pre-rebase tree and is true there, but it does not reproduce verbatim on this branch's
+current tree, and the difference is not the wiring.** Re-measured on the post-rebase tree:
+
+| field | fresh default-off run vs #122's banked `never/0` |
+|---|---|
+| `evaluations` | **identical** |
+| `breakdowns` | **identical** |
+| `num_practice_resets` | identical |
+| `planning_attempts_per_cycle`, `planning_failures_per_cycle` | identical |
+| `practice_outcomes_per_cycle` | **differs** — #119 reshaped this diagnostic |
+
+So the claim that matters — **the flag changes nothing when it is off** — holds on both
+trees and is what a reader should check. The literal whole-file sha256 holds only against a
+pre-#119 tree, because #122's banked file predates #119. Quoting the sha256 without the
+tree it was taken on would send a reader to a failing `cmp` and a false alarm.
+
+### Shared-scratchpad collision: audited, committed data unaffected
+
+While this experiment ran, another agent's `sweep.sh` and this one's collided in a shared
+session scratchpad; that agent's copy was overwritten by this one's and **this experiment's
+script was then executed a second time by that agent**, writing into
+`pw2way/repro-oneway-never/` and `pw2way/scheduled/`. Two managers writing one results root
+is the #123 collision, so it was audited rather than assumed harmless. Recorded because the
+audit is evidence, not because the outcome was in doubt:
+
+* **The committed runs come from a different tree entirely.** They were re-run after the
+  rebase into `pw2way-v2/`, which the collision never touched. Byte-comparison:
+  **20/20 committed `stats.json` identical to `pw2way-v2`, 0/20 identical to the collided
+  `pw2way`.** The collided tree contributed nothing to anything committed.
+* **Both collided directories audit clean anyway** — every `config_snapshot.json` under
+  them carries this experiment's own `--env tossingroomsplitpickupweight`, `ees`, 10 cycles,
+  150 steps, 30 test tasks, `--exploration-epsilon 0.5`; no foreign `--env`, no duplicated
+  seed directory, no non-zero exit, and every file parses.
+* **The duplicate execution was harmless by construction**: it ran *this* script, so it
+  re-ran the same seeds under the same flags, and a fixed seed fully determines a run. The
+  collided repro artifact still hashes to exactly the published
+  `bd8a632a2d97207eeded37b97339a7ccd40455b25cba018314dae03cf5f847b9`.
+* **The published numbers were re-derived from the committed files after the audit** and
+  reproduce exactly: `scheduled` 300/300, `never` 287/300, per-seed
+  `[30, 30, 17, 30, 30, 30, 30, 30, 30, 30]`, resets 10 and 0.
+
 **Unrelated pre-existing breakage on the base — observed here, fixed elsewhere.** While
 this experiment was running, `tests/analysis/practice_makes_perfect/test_tossing3d_practice_diagnosis.py`
 had 2 failing tests **on `main` @ `ebf3d92` itself**, verified by checking `main` out
