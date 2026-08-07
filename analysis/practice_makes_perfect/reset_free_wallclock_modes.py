@@ -55,7 +55,9 @@ import statistics
 from pathlib import Path
 from typing import ClassVar
 
+import imageio.v3 as iio
 import matplotlib
+import numpy as np
 from pydantic import BaseModel, ConfigDict
 
 matplotlib.use("Agg")
@@ -362,6 +364,23 @@ class ResetFreeWallclockModes:
         for run in runs:
             grouped[ResetFreeWallclockModes.mode_of(run=run)].append(run)
         return grouped
+
+    @staticmethod
+    def representative_seed(*, runs: list[SeedRun], mode: str) -> int:
+        """The seed to record a video of for one mode, by an explicit rule.
+
+        The rule: **the seed whose final solved count is closest to its group's median
+        final solved count, ties broken by the lowest seed number.** Stated and
+        implemented rather than chosen by eye, because "representative" picked by hand is
+        indistinguishable from "the one that looked best", and both groups here have an
+        even number of seeds, so the median usually falls between two runs and needs a
+        tie-break that does not depend on who is reading.
+        """
+        members = ResetFreeWallclockModes.curves_by_mode(runs=runs)[mode]
+        if not members:
+            raise ValueError(f"no runs in mode {mode!r}")
+        target = statistics.median([run.final_solved for run in members])
+        return min(members, key=lambda run: (abs(run.final_solved - target), run.seed)).seed
 
     @staticmethod
     def transition_step(*, runs: list[SeedRun]) -> int | None:
@@ -805,6 +824,48 @@ class ResetFreeWallclockModes:
         )
         axes.grid(alpha=0.25)
         axes.legend(fontsize=8, loc="upper left", framealpha=0.85)
+
+    @staticmethod
+    def render_recording_contrast(
+        *,
+        videos: dict[str, Path],
+        frames: list[int],
+        output: Path,
+    ) -> None:
+        """A still montage from two `--record-full-loop` recordings, one column each.
+
+        The recordings are the artifact; this is the version a reader sees without
+        downloading 7 MB. It exists because the contrast is only convincing when the two
+        runs are compared at the **same cycle and the same step** -- the status bar the
+        recorder draws carries both, so the montage is self-labelling and a reader can
+        check the alignment rather than taking the caption's word for it.
+
+        Frames are pulled by index with `imiter`, which streams, so neither video is ever
+        held in memory whole.
+        """
+        columns = []
+        for path in videos.values():
+            wanted = sorted(frames)
+            picked: dict[int, np.ndarray] = {}
+            for index, frame in enumerate(iio.imiter(path)):
+                if index in set(wanted):
+                    picked[index] = frame
+                if index >= wanted[-1]:
+                    break
+            missing = [index for index in wanted if index not in picked]
+            if missing:
+                raise ValueError(f"{path}: no frame at index {missing} -- video too short")
+            columns.append(np.concatenate([picked[index] for index in wanted], axis=0))
+        height = min(column.shape[0] for column in columns)
+        figure, axes = plt.subplots(1, len(columns), figsize=(7.4 * len(columns), 0.006 * height))
+        for axis, label, column in zip(axes, videos, columns, strict=True):
+            axis.imshow(column[:height])
+            axis.set_title(label, fontsize=11)
+            axis.axis("off")
+        figure.tight_layout()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(output, dpi=150, bbox_inches="tight")
+        plt.close(figure)
 
     @staticmethod
     def main() -> None:

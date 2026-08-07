@@ -305,6 +305,64 @@ def test_render_curves_writes_a_figure(*, tmp_path: Path) -> None:
     assert output.stat().st_size > 0
 
 
+def test_the_representative_seed_is_the_one_nearest_its_group_median(*, tmp_path: Path) -> None:
+    """Which run gets filmed has to follow from a stated rule. Picked by eye,
+    "representative" is indistinguishable from "the one that looked best"."""
+    for seed, solved in ((2, 3), (3, 6), (4, 9), (5, 6), (8, 12), (9, 6)):
+        _write_run(
+            root=tmp_path,
+            seed=seed,
+            periods=[{"PickupTrash": 1, "ThrowTrash": 1}, {"MoveRoom": 12}],
+            elapsed=254.0 + seed,
+            solved=[1, 2, solved],
+        )
+    for seed, solved in ((0, 18), (1, 16), (6, 21), (7, 20)):
+        _write_run(
+            root=tmp_path,
+            seed=seed,
+            periods=[{"PickupTrash": 19, "ThrowTrash": 18}, {"PickupTrash": 3}],
+            elapsed=595.0 + seed,
+            solved=[1, 18, solved],
+        )
+    runs = ResetFreeWallclockModes.read_budget(directory=tmp_path)
+    # early finals are 3, 6, 9, 6, 12, 6 -> median 6, and seeds 3, 5 and 9 all sit on it,
+    # so the lowest-seed tie-break decides.
+    assert ResetFreeWallclockModes.representative_seed(runs=runs, mode="early") == 3
+    # late finals are 18, 16, 21, 20 -> median 19, which no run attains; seeds 0 and 7 are
+    # both 1 away, so again the tie-break decides.
+    assert ResetFreeWallclockModes.representative_seed(runs=runs, mode="late") == 0
+
+
+def test_the_recording_contrast_refuses_a_video_that_is_too_short(*, tmp_path: Path) -> None:
+    """Asking for frame 900 of an 8-frame video must raise, not silently produce a
+    montage of whatever frames happened to exist -- the whole point of the montage is
+    that the two columns sit at the same cycle and step."""
+    import imageio.v3 as iio
+    import numpy as np
+
+    path = tmp_path / "short.mp4"
+    iio.imwrite(path, np.zeros((8, 64, 64, 3), dtype=np.uint8), fps=4)
+    with pytest.raises(ValueError, match="video too short"):
+        ResetFreeWallclockModes.render_recording_contrast(
+            videos={"a": path, "b": path}, frames=[0, 900], output=tmp_path / "out.png"
+        )
+
+
+def test_the_recording_contrast_writes_a_montage(*, tmp_path: Path) -> None:
+    import imageio.v3 as iio
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    paths = {}
+    for name in ("left", "right"):
+        path = tmp_path / f"{name}.mp4"
+        iio.imwrite(path, rng.integers(0, 255, (12, 64, 64, 3), dtype=np.uint8), fps=4)
+        paths[name] = path
+    output = tmp_path / "contrast.png"
+    ResetFreeWallclockModes.render_recording_contrast(videos=paths, frames=[1, 5, 9], output=output)
+    assert output.stat().st_size > 0
+
+
 def test_seed_run_is_frozen() -> None:
     run = SeedRun(
         seed=0,
