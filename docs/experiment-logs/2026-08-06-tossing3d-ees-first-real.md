@@ -228,3 +228,47 @@ costs wall clock only.
 All three arms' raw data — `stats.json`, `config_snapshot.json` and `timing.json` for
 every run — is committed. #103 committed none of its own and is now unre-analysable, which
 cost a 20-minute re-run.
+
+---
+
+# Results
+
+Everything below was produced after the pre-registration and Amendment 1 above were
+committed (`15ef33f` and `2bfca24`).
+
+## The pre-flight gate: passed
+
+3 seeds, 20 cycles, `--max-steps-per-interaction 20`, `--num-test-tasks 10`. Raw data in
+`2026-08-06-tossing3d-ees-first-real-data/preflight-probe/`.
+
+| lifted skill | `param_dim` | attempts | succeeded | informed draws | informed succeeded | epsilon-random |
+| --- | --- | --- | --- | --- | --- | --- |
+| **`MoveToThrowPose`** (the standoff) | 1 | **142** | 49/142 | **65/142** | **32/65** | 57/142 |
+| `Toss` (adds `InGoalRegion`) | 0 | 47 | 47/47 | 0/47 | — | 0/47 |
+| `Pick` | 2 | 60 | 54/60 | 19/60 | 18/19 | 13/60 |
+
+**The gate required `num_informed_attempts > 0` and got `65/142`.** The non-gating check
+also reproduced: `MoveToThrowPose` was practised **142 times against `Pick`'s 60**, i.e.
+it is the most-practised skill in the domain, exactly as #123's own probe found (`121`
+against `60`). Both the counts and the ratio line up with that probe, at a different
+number of evaluation episodes.
+
+**One correction to the brief this experiment was commissioned under.** It stated that
+`Pick` is no longer usable as a control because it "ties at `57/60` and falls back,
+showing `0/0` informed". In these runs `Pick` scores `54/60` and makes **`19/60` informed
+draws, of which `18/19` succeeded** — so it has *not* tied here, and a within-run positive
+control does exist after all. That is reported as a departure from what was expected
+rather than quietly relied upon; the verdict below still does not need it, because
+Amendment 1's reference is internal to `MoveToThrowPose` itself. It does, however, mean
+"the instrument cannot see informed draws" is independently excluded: two different
+skills' samplers report them in the same `stats.json`.
+
+Applying the decision rule to the probe alone — 3 seeds, so this is a preview and not the
+result — gives **learns the constant**: informed draws landed `32/65` against the same
+arm's uniform draws at `17/77`, a gap of `+27.2` pp against an MDE of `22.4` pp on those
+denominators, Fisher exact `p = 0.0008057`.
+
+Task success over the 3 probe seeds moved `10/30` pre-practice to `24/30` at end of
+training (per seed `9/10`, `8/10`, `7/10`). Reported as context only; the 10-seed arm
+below is what the pre-registration commits to, and the task-success axis is provisional
+for the two reasons registered above.
