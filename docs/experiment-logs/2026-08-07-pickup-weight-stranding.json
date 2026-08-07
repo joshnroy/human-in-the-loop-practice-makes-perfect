@@ -1,0 +1,436 @@
+{
+  "scheduled": [
+    {
+      "seed": 0,
+      "pile_access": [
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
+        false,
+        true,
+        false,
+        true
+      ],
+      "stranding_onset": null,
+      "num_trash_pickups": 52,
+      "num_recycling_pickups": 6,
+      "post_onset_skills": []
+    },
+    {
+      "seed": 1,
+      "pile_access": [
+        true,
+        true,
+        false,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "stranding_onset": null,
+      "num_trash_pickups": 60,
+      "num_recycling_pickups": 5,
+      "post_onset_skills": []
+    },
+    {
+      "seed": 2,
+      "pile_access": [
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "stranding_onset": null,
+      "num_trash_pickups": 28,
+      "num_recycling_pickups": 8,
+      "post_onset_skills": []
+    },
+    {
+      "seed": 3,
+      "pile_access": [
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "stranding_onset": null,
+      "num_trash_pickups": 94,
+      "num_recycling_pickups": 4,
+      "post_onset_skills": []
+    },
+    {
+      "seed": 4,
+      "pile_access": [
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        true,
+        true,
+        false
+      ],
+      "stranding_onset": 9,
+      "num_trash_pickups": 34,
+      "num_recycling_pickups": 4,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling",
+        "PressTrash"
+      ]
+    },
+    {
+      "seed": 5,
+      "pile_access": [
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
+        false
+      ],
+      "stranding_onset": 9,
+      "num_trash_pickups": 41,
+      "num_recycling_pickups": 6,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling",
+        "PressTrash"
+      ]
+    },
+    {
+      "seed": 6,
+      "pile_access": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        true,
+        false
+      ],
+      "stranding_onset": 9,
+      "num_trash_pickups": 73,
+      "num_recycling_pickups": 4,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling",
+        "PressTrash"
+      ]
+    },
+    {
+      "seed": 7,
+      "pile_access": [
+        true,
+        true,
+        true,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "stranding_onset": null,
+      "num_trash_pickups": 91,
+      "num_recycling_pickups": 4,
+      "post_onset_skills": []
+    },
+    {
+      "seed": 8,
+      "pile_access": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "stranding_onset": 9,
+      "num_trash_pickups": 39,
+      "num_recycling_pickups": 7,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling",
+        "PressTrash"
+      ]
+    },
+    {
+      "seed": 9,
+      "pile_access": [
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "stranding_onset": 9,
+      "num_trash_pickups": 39,
+      "num_recycling_pickups": 4,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling",
+        "PressTrash"
+      ]
+    }
+  ],
+  "never": [
+    {
+      "seed": 0,
+      "pile_access": [
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 2,
+      "num_trash_pickups": 19,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 1,
+      "pile_access": [
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 2,
+      "num_trash_pickups": 19,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 2,
+      "pile_access": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 1,
+      "num_trash_pickups": 0,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 3,
+      "pile_access": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 1,
+      "num_trash_pickups": 0,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 4,
+      "pile_access": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 1,
+      "num_trash_pickups": 0,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 5,
+      "pile_access": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 1,
+      "num_trash_pickups": 0,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 6,
+      "pile_access": [
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 2,
+      "num_trash_pickups": 19,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 7,
+      "pile_access": [
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 3,
+      "num_trash_pickups": 36,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 8,
+      "pile_access": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 1,
+      "num_trash_pickups": 0,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    },
+    {
+      "seed": 9,
+      "pile_access": [
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "stranding_onset": 1,
+      "num_trash_pickups": 0,
+      "num_recycling_pickups": 1,
+      "post_onset_skills": [
+        "MoveRoom",
+        "PressRecycling"
+      ]
+    }
+  ]
+}

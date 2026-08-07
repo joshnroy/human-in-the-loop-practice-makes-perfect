@@ -233,6 +233,29 @@ seed across both arms, 0 violations.
 
 `scheduled` **151/300**, `never` **85/300** at the final sweep, pooled over 10 seeds.
 
+> **Status note, added on a later branch: a follow-up has since separated the two
+> mechanisms this log's own correction says it cannot separate. Nothing below is
+> recomputed, restated or withdrawn.**
+>
+> `docs/experiment-logs/2026-08-07-pickup-weight-reset-free-ab.md` re-runs this exact
+> protocol on a **new domain**, `tossingroomsplitpickupweight`, where the item weight is
+> drawn at pickup off a per-task pre-sampled array and the bin distance is fixed — so
+> mechanism 2 below ("the collapsed training distribution") is absent by construction and
+> cannot be frozen by the missing reset. `scheduled` **183/300** against `never`
+> **112/300** there, −23.7pp against its own 11.1pp MDE, paired p = 0.0117.
+>
+> Two consequences for reading this log, neither of which touches a number in it. First,
+> **stranding alone reproduces a gap of similar size**, so the post-hoc correction's
+> mechanism 1 is sufficient on its own; that follow-up does **not**, however, decompose
+> *this* experiment's 22.0pp, and the two domains' numbers are not comparable
+> run-for-run. Second, the stranding account below is now measured directly rather than
+> inferred from skill composition: 10/10 `never` seeds there stop reaching the pile, and
+> across 85 pooled post-onset periods the only skills that execute are `MoveRoom` and
+> `PressRecycling` — 0 pickups, 0 throws, 0 `PressTrash`. The same measurement on **this**
+> experiment's own runs is the figure below, added here rather than recomputed:
+>
+> ![Per-seed, per-period pile access](./2026-08-06-reset-free-stranding-per-seed.png)
+
 | comparison | `scheduled` | `never` | diff | MDE (own denominators) |
 | --- | --- | --- | --- | --- |
 | OVERALL | 151/300 (50.3%) | 85/300 (28.3%) | −22.0pp | 10.9pp |
