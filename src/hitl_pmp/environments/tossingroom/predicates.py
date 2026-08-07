@@ -35,6 +35,17 @@ than dropping it: it reads as a live constraint while constraining nothing.
 
 `tests/environments/tossingroom/test_skills.py` asserts a cross-kind grounding is
 rejected, which is the property both dropped predicates used to buy.
+
+**Under `--unsplit-skills` (`TossingRoomEnvironment.unsplit_skills`) the split above is
+reversed**, and the second block of `Predicate` declarations at the bottom of this file is
+what that arm grounds over: `Holding`, `ItemInBin`, `BinEmpty`, `BinInRoom` and
+`ButtonInRoom` over the shared item/bin/button types, plus `BinAcceptsItem` and
+`ButtonForBin` -- which are not tautologies there, because with one item type and one bin
+type a `Throw(trash -> recycling_bin)` grounding is well-typed and has to be ruled out by
+an asserted constraint instead. Every *classifier* is shared between the two blocks; only
+the `Predicate`s' declared `types` differ, which is the whole of what the flag changes
+here. `ROBOT_IN_ROOM`, `HAND_EMPTY`, `ADJACENT`, `CAN_MOVE_ROOM` and `PILE_IN_ROOM` are
+shared outright: their types carry no kind to split on.
 """
 
 from hitl_pmp.core.problem.environment.types import Object, State
@@ -151,6 +162,33 @@ class PileInRoomClassifier:
         pile_room = int(round(state.get(obj=pile, feature_name="room")))
         room_index = int(round(state.get(obj=room, feature_name="index")))
         return pile_room == room_index
+
+
+class BinAcceptsItemClassifier:
+    """Whether this bin is the one that takes items of this kind. A tautology under the
+    split types (one object per type, matched by the grounder), which is why no split
+    predicate uses it -- but a live constraint under `--unsplit-skills`, where a single
+    `Throw` can bind any bin to any item and `_apply_throw` routes purely by the HELD
+    item's kind, so a mismatched pairing could never succeed at any force."""
+
+    @staticmethod
+    def holds(*, state: State, item: Object, bin_obj: Object) -> bool:
+        item_kind = int(round(state.get(obj=item, feature_name="kind")))
+        bin_kind = int(round(state.get(obj=bin_obj, feature_name="kind")))
+        return item_kind == bin_kind
+
+
+class ButtonForBinClassifier:
+    """Which single bin a button empties -- each bin has its own button, beside it, and
+    `_apply_press` empties only that one. The same story as `BinAcceptsItemClassifier`:
+    the split button/bin types make this a tautology, the shared ones make it the thing
+    that keeps `Press`'s effects expressible per bin."""
+
+    @staticmethod
+    def holds(*, state: State, button: Object, bin_obj: Object) -> bool:
+        button_kind = int(round(state.get(obj=button, feature_name="kind")))
+        bin_kind = int(round(state.get(obj=bin_obj, feature_name="kind")))
+        return button_kind == bin_kind
 
 
 class ButtonInRoomClassifier:
@@ -314,5 +352,84 @@ RECYCLING_BUTTON_IN_ROOM = Predicate(
     ),
     holds=lambda state, objects: ButtonInRoomClassifier.holds(
         state=state, button=objects[0], room=objects[1]
+    ),
+)
+
+# --------------------------------------------------------------------------------------
+# The UNSPLIT symbolic layer, live only under `TossingRoomEnvironment.unsplit_skills`.
+# Same classifiers as above, declared over the shared item/bin/button types -- so these
+# are the predicates a single lifted `Throw` can be written in terms of. Restored from the
+# retired original Tossing Room rather than reinvented; see this module's docstring.
+# --------------------------------------------------------------------------------------
+
+HOLDING = Predicate(
+    name="Holding",
+    types=(
+        TossingRoomEnvironment.robot_type,
+        TossingRoomEnvironment.item_type,
+    ),
+    holds=lambda state, objects: HoldingClassifier.holds(
+        state=state, robot=objects[0], item=objects[1]
+    ),
+)
+
+ITEM_IN_BIN = Predicate(
+    name="ItemInBin",
+    types=(
+        TossingRoomEnvironment.item_type,
+        TossingRoomEnvironment.bin_type,
+    ),
+    holds=lambda state, objects: ItemInBinClassifier.holds(
+        state=state, item=objects[0], bin_obj=objects[1]
+    ),
+)
+
+BIN_EMPTY = Predicate(
+    name="BinEmpty",
+    types=(TossingRoomEnvironment.bin_type,),
+    holds=lambda state, objects: BinEmptyClassifier.holds(state=state, bin_obj=objects[0]),
+)
+
+BIN_IN_ROOM = Predicate(
+    name="BinInRoom",
+    types=(
+        TossingRoomEnvironment.bin_type,
+        TossingRoomEnvironment.room_type,
+    ),
+    holds=lambda state, objects: BinInRoomClassifier.holds(
+        state=state, bin_obj=objects[0], room=objects[1]
+    ),
+)
+
+BUTTON_IN_ROOM = Predicate(
+    name="ButtonInRoom",
+    types=(
+        TossingRoomEnvironment.button_type,
+        TossingRoomEnvironment.room_type,
+    ),
+    holds=lambda state, objects: ButtonInRoomClassifier.holds(
+        state=state, button=objects[0], room=objects[1]
+    ),
+)
+
+BIN_ACCEPTS_ITEM = Predicate(
+    name="BinAcceptsItem",
+    types=(
+        TossingRoomEnvironment.item_type,
+        TossingRoomEnvironment.bin_type,
+    ),
+    holds=lambda state, objects: BinAcceptsItemClassifier.holds(
+        state=state, item=objects[0], bin_obj=objects[1]
+    ),
+)
+
+BUTTON_FOR_BIN = Predicate(
+    name="ButtonForBin",
+    types=(
+        TossingRoomEnvironment.button_type,
+        TossingRoomEnvironment.bin_type,
+    ),
+    holds=lambda state, objects: ButtonForBinClassifier.holds(
+        state=state, button=objects[0], bin_obj=objects[1]
     ),
 )

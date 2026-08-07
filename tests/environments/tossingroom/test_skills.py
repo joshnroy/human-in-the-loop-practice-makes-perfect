@@ -74,8 +74,11 @@ class TestThrowIsTwoSkills:
 
     @staticmethod
     def test_no_shared_throw_skill_survives() -> None:
-        """A single `Throw` is exactly what this domain exists not to have: one name is
-        one sampler, so a shared name would restore the transfer being removed."""
+        """A single `Throw` is exactly what the DEFAULT arm exists not to have: one name
+        is one sampler, so a shared name would restore the transfer being removed. It is
+        available deliberately, and only deliberately, behind `--unsplit-skills` -- see
+        `test_unsplit_skills.py`; what this asserts is that it cannot arrive by accident.
+        """
         names = {skill.name for skill in TossingRoomSkillProvider(env=_ENV).skills()}
         assert "Throw" not in names
         assert not hasattr(TossingRoomSkills, "THROW")
@@ -189,7 +192,11 @@ class TestThrowIsTwoSkills:
 
         `ButtonForBin`, which that same redesign added to tie each button to the one bin
         it empties, is dropped for exactly the same reason: the button types are split,
-        so `PressTrash` can only bind `trash_button`."""
+        so `PressTrash` can only bind `trash_button`.
+
+        Both come back under `--unsplit-skills`, where the shared types stop separating
+        the kinds and they are live constraints again -- asserted in
+        `test_unsplit_skills.py`. This test is about the DEFAULT arm's predicate set."""
         predicate_names = {
             predicate.name for predicate in TossingRoomSkillProvider(env=_ENV).predicates()
         }

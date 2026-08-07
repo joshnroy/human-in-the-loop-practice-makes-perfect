@@ -66,7 +66,15 @@ class TossingRoomEnvironment(Environment):
     Everything below this point is `TossingRoomSplitEnvironment` verbatim.
 
     Throwing trash and throwing recycling are two separate lifted skills rather than one
-    `Throw` whose `item` variable ranges over both kinds.
+    `Throw` whose `item` variable ranges over both kinds -- **by default**.
+    `--unsplit-skills` (`unsplit_skills` below) selects the other arm: one shared `Throw`,
+    which is what pools both kinds' rows into a single sampler. It is a flag on this
+    environment rather than a fourth fork of it because it changes only the symbolic
+    layer; the world, the task distribution and the raw action space are bit-for-bit the
+    same on both arms, so results from the two ARE comparable — which is exactly what
+    distinguishes it from the `tossingroomsplit` fork, whose task distribution genuinely
+    differed. See `unsplit_skills`' own field comment for why the flag necessarily reaches
+    `Pickup` and `Press` as well.
 
     **The layout is deliberately identical**, room for room: 7 rooms, the pile and the
     robot start in room 3, the recycling bin (and its own empty/incinerate button) in
@@ -218,6 +226,27 @@ class TossingRoomEnvironment(Environment):
     # direction. See TossingRoomSplitEnvironment's own field comment for why a
     # bounds-check-based fully-connected hallway would be indistinguishable from a typo.
     two_way_ledge: bool = False
+    # THE SKILL-SPLIT SWITCH. False (default) is everything described above: `ThrowTrash`
+    # and `ThrowRecycling` binding their own item and bin *types*. True selects the other
+    # arm -- ONE lifted `Throw` whose `?item` ranges over both kinds, which is what pools
+    # both kinds' rows into one `LearnedSkillSampler` (`EesMethod.sampler` keys by skill
+    # NAME) and so restores the trash -> recycling transfer channel the split removes.
+    #
+    # **It necessarily collapses `Pickup` and `Press` too**, which is why it is not named
+    # after the throw alone. `Type` has no hierarchy, and both
+    # `SkillGrounder._applicable_groundings` and `GroundSkill`'s validator match on exact
+    # type equality, so an `?item` that ranges over both kinds requires both item objects
+    # to carry ONE type -- and the single `?bin` of a single lifted throw forces the same
+    # on the bins. Once those types are shared, a `PickupTrash` typed over the shared item
+    # would ground with recycling as well, so the per-kind pickups and presses stop being
+    # expressible; `BinAcceptsItem`/`ButtonForBin` come back in their place, no longer
+    # tautologies. See `skills.py`'s `TossingRoomUnsplitSkills`.
+    #
+    # It changes NOTHING about the world: `take_action` routes on the `kind` FEATURE, not
+    # on a type, and `build_initial_state` writes the same features under the same object
+    # names either way. Default False, so a default run reproduces every banked result
+    # byte for byte.
+    unsplit_skills: bool = False
     throw_tolerance: float = (
         0.1  # max |force - required| for a Throw to land, like Light Switch's 0.1
     )
@@ -331,6 +360,18 @@ class TossingRoomEnvironment(Environment):
     trash_type: ClassVar[Type] = Type(name="trash", feature_names=("kind", "weight"))
     recycling_type: ClassVar[Type] = Type(name="recycling", feature_names=("kind", "weight"))
 
+    # THE UNSPLIT TYPES, used only under `unsplit_skills` -- one type per role instead of
+    # one per (role, kind). Each has the same feature schema as the split pair it stands
+    # in for, so the two arms' States hold identical features under identical object
+    # names and every sampler input row keeps its width. These are the types the retired
+    # original Tossing Room declared, restored verbatim rather than reinvented, so a
+    # reader can diff the two symbolic layers rather than trust that they correspond.
+    item_type: ClassVar[Type] = Type(name="item", feature_names=("kind", "weight"))
+    bin_type: ClassVar[Type] = Type(
+        name="bin", feature_names=("count", "room", "kind", "throw_distance")
+    )
+    button_type: ClassVar[Type] = Type(name="button", feature_names=("room", "kind"))
+
     robot: ClassVar[Object] = Object(name="robot", type=robot_type)
     recycling_bin: ClassVar[Object] = Object(name="recycling_bin", type=recycling_bin_type)
     trash_bin: ClassVar[Object] = Object(name="trash_bin", type=trash_bin_type)
@@ -342,6 +383,20 @@ class TossingRoomEnvironment(Environment):
     # unchanged; at the symbolic layer the type now does that job.
     trash: ClassVar[Object] = Object(name="trash", type=trash_type)
     recycling: ClassVar[Object] = Object(name="recycling", type=recycling_type)
+
+    # The same six entities under the unsplit types. The `name` strings are deliberately
+    # IDENTICAL to their split counterparts' -- an object's name is what a PDDL problem
+    # file, a plan trace and a rendered label all show, so the two arms stay readable
+    # against each other and only the type differs. `Object` is frozen and value-equal, so
+    # `unsplit_trash != trash`: they are different keys of a `State`, which is exactly why
+    # `bin_for_kind`/`item_for_kind`/`button_for_kind` below are the only way anything
+    # should reach for one.
+    unsplit_trash: ClassVar[Object] = Object(name="trash", type=item_type)
+    unsplit_recycling: ClassVar[Object] = Object(name="recycling", type=item_type)
+    unsplit_trash_bin: ClassVar[Object] = Object(name="trash_bin", type=bin_type)
+    unsplit_recycling_bin: ClassVar[Object] = Object(name="recycling_bin", type=bin_type)
+    unsplit_trash_button: ClassVar[Object] = Object(name="trash_button", type=button_type)
+    unsplit_recycling_button: ClassVar[Object] = Object(name="recycling_button", type=button_type)
 
     action_space: ClassVar[Box] = Box(-np.inf, np.inf, (3,))
 
@@ -368,16 +423,37 @@ class TossingRoomEnvironment(Environment):
         return not self.two_way_ledge and from_room == self.blocked_right_from
 
     def bin_for_kind(self, *, kind: int) -> Object:
-        return self.recycling_bin if kind == self.RECYCLING_KIND else self.trash_bin
+        """**The one place a bin object is chosen**, and the same for the item and button
+        resolvers below. Which of the two typings is live is a per-instance question
+        (`unsplit_skills`), so nothing outside this class should name `self.trash_bin` or
+        `self.unsplit_trash_bin` directly -- a reference to the wrong one is a `State` key
+        that is simply absent, i.e. a `KeyError` rather than a wrong answer, but only if
+        it is reached at all."""
+        if self.unsplit_skills:
+            recycling_bin, trash_bin = self.unsplit_recycling_bin, self.unsplit_trash_bin
+        else:
+            recycling_bin, trash_bin = self.recycling_bin, self.trash_bin
+        return recycling_bin if kind == self.RECYCLING_KIND else trash_bin
 
     def item_for_kind(self, *, kind: int) -> Object:
-        return self.recycling if kind == self.RECYCLING_KIND else self.trash
+        if self.unsplit_skills:
+            recycling, trash = self.unsplit_recycling, self.unsplit_trash
+        else:
+            recycling, trash = self.recycling, self.trash
+        return recycling if kind == self.RECYCLING_KIND else trash
 
     def bin_room_for_kind(self, *, kind: int) -> int:
         return self.recycling_bin_room if kind == self.RECYCLING_KIND else self.trash_bin_room
 
     def button_for_kind(self, *, kind: int) -> Object:
-        return self.recycling_button if kind == self.RECYCLING_KIND else self.trash_button
+        if self.unsplit_skills:
+            recycling_button, trash_button = (
+                self.unsplit_recycling_button,
+                self.unsplit_trash_button,
+            )
+        else:
+            recycling_button, trash_button = self.recycling_button, self.trash_button
+        return recycling_button if kind == self.RECYCLING_KIND else trash_button
 
     def button_room_for_kind(self, *, kind: int) -> int:
         """A button sits beside the bin it empties, so its room IS that bin's room."""
@@ -455,31 +531,37 @@ class TossingRoomEnvironment(Environment):
         # call inside take_action, which is exactly what the two-Environment split
         # forbids.
         self.weight_schedule(weight_seed=weight_seed)
+        # Every keyed object goes through a *_for_kind resolver, so the same features are
+        # written under whichever typing `unsplit_skills` selects. The robot and the pile
+        # have one type either way (no kind to split on), so they are named directly.
         data: dict[Object, np.ndarray] = {
             self.robot: np.array([float(self.start_room), 0.0]),
-            self.recycling_bin: np.array([
+            self.bin_for_kind(kind=self.RECYCLING_KIND): np.array([
                 float(recycling_count),
                 float(self.recycling_bin_room),
                 float(self.RECYCLING_KIND),
                 float(self.throw_distance),
             ]),
-            self.trash_bin: np.array([
+            self.bin_for_kind(kind=self.TRASH_KIND): np.array([
                 float(trash_count),
                 float(self.trash_bin_room),
                 float(self.TRASH_KIND),
                 float(self.throw_distance),
             ]),
-            self.trash_button: np.array([
+            self.button_for_kind(kind=self.TRASH_KIND): np.array([
                 float(self.button_room_for_kind(kind=self.TRASH_KIND)),
                 float(self.TRASH_KIND),
             ]),
-            self.recycling_button: np.array([
+            self.button_for_kind(kind=self.RECYCLING_KIND): np.array([
                 float(self.button_room_for_kind(kind=self.RECYCLING_KIND)),
                 float(self.RECYCLING_KIND),
             ]),
             self.pile: np.array([float(self.start_room), float(weight_seed), 0.0]),
-            self.trash: np.array([float(self.TRASH_KIND), float(self.canonical_item_weight)]),
-            self.recycling: np.array([
+            self.item_for_kind(kind=self.TRASH_KIND): np.array([
+                float(self.TRASH_KIND),
+                float(self.canonical_item_weight),
+            ]),
+            self.item_for_kind(kind=self.RECYCLING_KIND): np.array([
                 float(self.RECYCLING_KIND),
                 float(self.canonical_item_weight),
             ]),

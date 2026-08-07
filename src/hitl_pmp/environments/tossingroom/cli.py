@@ -74,6 +74,17 @@ class TossingRoomCli:
             "one. Default off.",
         )
         parser.add_argument(
+            "--unsplit-skills",
+            action="store_true",
+            help="Replace the split ThrowTrash/ThrowRecycling with ONE lifted Throw whose "
+            "?item ranges over both kinds, so EES trains a single pooled sampler instead "
+            "of two -- the transfer channel the split removes. It also collapses Pickup "
+            "and Press (Type has no hierarchy, so a shared ?item forces shared item/bin/"
+            "button types) and brings BinAcceptsItem/ButtonForBin back as live "
+            "constraints. Both are param_dim=0, so only the throw affects learning. The "
+            "world is untouched. Default off.",
+        )
+        parser.add_argument(
             "--throw-tolerance",
             type=float,
             default=fields["throw_tolerance"].default,
@@ -256,6 +267,7 @@ class TossingRoomCli:
             trash_bin_room=args.trash_bin_room,
             blocked_right_from=args.blocked_right_from,
             two_way_ledge=args.two_way_ledge,
+            unsplit_skills=args.unsplit_skills,
             throw_tolerance=args.throw_tolerance,
             reference_force=args.reference_force,
             reference_distance=args.reference_distance,

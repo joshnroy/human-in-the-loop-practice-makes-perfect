@@ -157,8 +157,14 @@ class TossingRoomRenderer(Renderer):
         r = TossingRoomRenderer
         robot_room = int(round(state.get(obj=env.robot, feature_name="room")))
         holding = int(round(state.get(obj=env.robot, feature_name="holding")))
-        recycling_count = int(round(state.get(obj=env.recycling_bin, feature_name="count")))
-        trash_count = int(round(state.get(obj=env.trash_bin, feature_name="count")))
+        # Through the resolvers, not `env.recycling_bin`: `--unsplit-skills` keys the
+        # State by differently-typed bin objects, which are a different dict key.
+        recycling_count = int(
+            round(state.get(obj=env.bin_for_kind(kind=env.RECYCLING_KIND), feature_name="count"))
+        )
+        trash_count = int(
+            round(state.get(obj=env.bin_for_kind(kind=env.TRASH_KIND), feature_name="count"))
+        )
         n = env.num_rooms
 
         fig, ax = plt.subplots(figsize=r.figure_size)
