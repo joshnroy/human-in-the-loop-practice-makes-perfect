@@ -273,7 +273,10 @@ class FeedbackArm2x2:
             axis.grid(alpha=0.25, linewidth=0.6)
             axis.set_ylim(-total * 0.06, total * 1.12)
             axis.yaxis.set_major_locator(MaxNLocator(integer=True))
-            axis.legend(fontsize=8, loc="upper left", framealpha=0.95)
+            # Guarded: a panel whose model has no runs has nothing labelled, and matplotlib
+            # warns rather than drawing an empty legend box.
+            if axis.get_legend_handles_labels()[0]:
+                axis.legend(fontsize=8, loc="upper left", framealpha=0.95)
 
         axis = axes[2]
         positions, labels = [], []
