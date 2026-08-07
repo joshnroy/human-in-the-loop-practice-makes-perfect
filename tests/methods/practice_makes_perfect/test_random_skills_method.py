@@ -166,3 +166,169 @@ def test_the_two_phases_agree_wherever_a_skill_is_applicable() -> None:
         from_practice, from_evaluation = practice(state), evaluation(state)
         assert from_practice.label == from_evaluation.label
         assert from_practice.action.tolist() == from_evaluation.action.tolist()
+
+
+def _light_switch_practice_setup() -> tuple[LightSwitchEnvironment, RandomSkillsMethod, State]:
+    """A Light Switch state with the robot already on the light's cell, so
+    `TurnOnLight` (param_dim=1) and `MoveRobot` (param_dim=0) are both applicable --
+    the two consultation pools this baseline can produce."""
+    env = LightSwitchEnvironment(grid_size=3)
+    method = _method(env=env, seed=0)
+    state = env.build_initial_state(light_level=0.0, light_target=0.7)
+    state.set(
+        obj=LightSwitchEnvironment.robot,
+        feature_name="x",
+        feature_val=float(env.grid_size - 0.5),
+    )
+    env.set_state(state=state)
+    return env, method, state
+
+
+def test_practice_outcomes_start_empty() -> None:
+    """Empty, not one zeroed entry per skill: "never asked" is exactly what a missing
+    key means, and it is half the discrimination this instrument exists for. Matches
+    EesMethod.practice_outcomes."""
+    env = LightSwitchEnvironment()
+    assert _method(env=env).practice_outcomes() == {}
+
+
+def test_a_practice_attempt_is_tallied_against_its_lifted_skill() -> None:
+    """The defect this fixes: this baseline *does* execute skills -- it draws
+    parameters uniformly and runs them -- and recorded nothing, so `--method
+    random-skills` wrote a stats.json with empty practice tallies on every domain.
+    That made the uniform reference arm uninstrumentable; an experiment had
+    pre-registered its practice success rate and found the number did not exist.
+
+    Keyed by the *lifted* skill name, exactly as EesMethod keys it: one sampler is
+    fitted per skill name, so "was this starved?" is a question about the lifted
+    skill."""
+    _env, method, state = _light_switch_practice_setup()
+    policy = method.get_practice_policy(task=None)  # type: ignore[arg-type]
+
+    labeled = policy(state)
+    # Score the in-flight skill on the next step, the way EesMethod does.
+    policy(method.env.take_action(action=labeled.action))
+
+    tallies = method.practice_outcomes()
+    assert tallies, "a skill was executed during practice and nothing was tallied"
+    assert sum(t.num_attempts for t in tallies.values()) == 1
+    assert set(tallies) <= {"MoveRobot", "TurnOnLight", "TurnOffLight", "JumpToLight"}
+
+
+def test_an_evaluation_episode_tallies_nothing() -> None:
+    """Evaluation runs on held-out test tasks. A practice counter that ticked there
+    would be counting the test set -- the same reason EesMethod gates on
+    `practicing`."""
+    _env, method, state = _light_switch_practice_setup()
+    policy = method.get_task_policy(task=None)  # type: ignore[arg-type]
+
+    for _ in range(5):
+        state = method.env.take_action(action=policy(state).action)
+
+    assert method.practice_outcomes() == {}
+
+
+def test_a_failed_attempt_counts_toward_attempts_but_not_successes() -> None:
+    """`0/17` and `0/0` are the two readings this instrument exists to tell apart, so
+    a failure has to be recorded rather than dropped. JumpToLight is the domain's
+    deliberate "impossible skill": it symbolically claims an add effect its option
+    never achieves, so every attempt is a genuine failure."""
+    env = LightSwitchEnvironment(grid_size=3)
+    method = _method(env=env, seed=0)
+    state = env.build_initial_state(light_level=0.0, light_target=0.7)
+    jump = next(
+        skill
+        for skill in method.applicable_ground_skills(state=state)
+        if skill.skill.name == "JumpToLight"
+    )
+    method.observe_practice_attempt(ground_skill=jump, true_atoms=frozenset())
+
+    tally = method.practice_outcomes()["JumpToLight"]
+    assert (tally.num_successes, tally.num_attempts) == (0, 1)
+
+
+def test_every_attempt_lands_in_a_pool_that_reflects_a_uniform_draw() -> None:
+    """This baseline never consults a sampler: a parameterized skill's params are a
+    uniform draw (EPSILON_RANDOM -- a coin flip carrying no belief), and an
+    unparameterized skill has no sampler that could ever exist (NO_SAMPLER). Neither
+    INFORMED nor UNINFORMATIVE is reachable here, and recording one would make this
+    arm look like it had learned something."""
+    _env, method, state = _light_switch_practice_setup()
+    applicable = method.applicable_ground_skills(state=state)
+    parameterized = next(s for s in applicable if s.skill.param_dim > 0)
+    unparameterized = next(s for s in applicable if s.skill.param_dim == 0)
+
+    method.observe_practice_attempt(ground_skill=parameterized, true_atoms=frozenset())
+    method.observe_practice_attempt(ground_skill=unparameterized, true_atoms=frozenset())
+
+    from_parameterized = method.practice_outcomes()[parameterized.skill.name]
+    from_unparameterized = method.practice_outcomes()[unparameterized.skill.name]
+    assert from_parameterized.num_random_attempts == 1
+    assert from_parameterized.num_unparameterized_attempts == 0
+    assert from_unparameterized.num_unparameterized_attempts == 1
+    assert from_unparameterized.num_random_attempts == 0
+    assert from_parameterized.num_informed_attempts == 0
+    assert from_unparameterized.num_informed_attempts == 0
+
+
+def test_an_environment_reset_settles_the_in_flight_skill_first() -> None:
+    """practice_loop.py hands back the state it is about to discard. Without this
+    override the pending skill would be scored against the freshly-reset initial
+    state, where its add effects essentially never hold -- recording a spurious
+    failure once per reset, mislabelling that scales exactly with
+    `practice_reset_interval`. That is the confound Method.observe_environment_reset
+    exists to prevent, and it applies to this baseline for the same reason."""
+    _env, method, state = _light_switch_practice_setup()
+    policy = method.get_practice_policy(task=None)  # type: ignore[arg-type]
+    labeled = policy(state)
+    after = method.env.take_action(action=labeled.action)
+
+    method.observe_environment_reset(state=after)
+
+    assert sum(t.num_attempts for t in method.practice_outcomes().values()) == 1
+
+
+def test_a_practice_period_does_not_score_the_previous_periods_last_skill() -> None:
+    """Each period starts with nothing in flight. Carrying a pending skill across the
+    boundary would score it against the next period's initial state -- a different
+    task's state entirely. The last skill of a period going unobserved matches
+    EesMethod, whose fresh per-period episode drops it the same way, and keeping the
+    two arms identical here is what makes them comparable."""
+    _env, method, state = _light_switch_practice_setup()
+    method.get_practice_policy(task=None)(state)  # type: ignore[arg-type]
+
+    # A second period begins: nothing from the first should ever be scored.
+    method.get_practice_policy(task=None)(state)  # type: ignore[arg-type]
+
+    assert method.practice_outcomes() == {}
+
+
+def test_practice_outcomes_returns_a_copy() -> None:
+    """method_runner.py holds last cycle's reading to difference against. Handing out
+    the live dict would let the next practice step mutate it underneath, silently
+    zeroing the per-window delta."""
+    _env, method, state = _light_switch_practice_setup()
+    applicable = method.applicable_ground_skills(state=state)
+    method.observe_practice_attempt(ground_skill=applicable[0], true_atoms=frozenset())
+
+    banked = method.practice_outcomes()
+    method.observe_practice_attempt(ground_skill=applicable[0], true_atoms=frozenset())
+
+    assert banked[applicable[0].skill.name].num_attempts == 1
+
+
+def test_tallying_does_not_perturb_the_action_sequence() -> None:
+    """stats.json byte-stability: the instrument is an observer. If recording drew so
+    much as one number from this Method's RNG stream, every banked random-skills run
+    would stop reproducing -- and the tally would be measuring a different run than
+    the one it is attached to."""
+    env = LightSwitchEnvironment(grid_size=3)
+    state = env.build_initial_state(light_level=0.0, light_target=0.7)
+
+    evaluation = _method(env=env, seed=7).get_task_policy(task=None)  # type: ignore[arg-type]
+    practice = _method(env=env, seed=7).get_practice_policy(task=None)  # type: ignore[arg-type]
+
+    for _ in range(20):
+        from_practice, from_evaluation = practice(state), evaluation(state)
+        assert from_practice.label == from_evaluation.label
+        assert from_practice.action.tolist() == from_evaluation.action.tolist()
