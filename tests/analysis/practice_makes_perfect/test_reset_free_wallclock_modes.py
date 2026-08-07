@@ -246,6 +246,65 @@ def test_report_carries_counts_with_their_denominators(*, tmp_path: Path) -> Non
     assert "%" not in text
 
 
+def test_curves_are_grouped_by_the_partition_the_rest_of_the_module_uses(*, tmp_path: Path) -> None:
+    """The figure's grouping must come from the same code path as the analysis, or the
+    two can drift and the picture stops illustrating the claim underneath it."""
+    _two_mode_budget(root=tmp_path, elapsed_fast=254.0, elapsed_slow=595.0)
+    runs = ResetFreeWallclockModes.read_budget(directory=tmp_path)
+    grouped = ResetFreeWallclockModes.curves_by_mode(runs=runs)
+    assert {run.seed for run in grouped["late"]} == ResetFreeWallclockModes.late_stranded_seeds(
+        runs=runs
+    )
+    assert {run.seed for run in grouped["early"]} | {run.seed for run in grouped["late"]} == {
+        run.seed for run in runs
+    }
+
+
+def test_the_solved_curve_has_one_point_per_checkpoint(*, tmp_path: Path) -> None:
+    _write_run(
+        root=tmp_path,
+        seed=0,
+        periods=[{"PickupTrash": 2}, {"MoveRoom": 12}],
+        elapsed=250.0,
+        solved=[1, 4, 9],
+    )
+    (run,) = ResetFreeWallclockModes.read_budget(directory=tmp_path)
+    assert run.solved_per_checkpoint == [1, 4, 9]
+    assert run.transitions_per_checkpoint == [0, 100, 200]
+    assert run.final_solved == 9
+
+
+def test_a_constant_transition_step_is_measured_not_assumed(*, tmp_path: Path) -> None:
+    """Whether the transitions axis is merely the cycle axis rescaled is a property of
+    the data, not of the domain -- an episode that ended early would break it. The
+    figure's caption depends on the answer, so it is computed rather than asserted."""
+    _two_mode_budget(root=tmp_path, elapsed_fast=254.0, elapsed_slow=595.0)
+    runs = ResetFreeWallclockModes.read_budget(directory=tmp_path)
+    assert ResetFreeWallclockModes.transition_step(runs=runs) == 100
+
+
+def test_a_ragged_transition_step_reports_none_rather_than_a_wrong_constant(
+    *, tmp_path: Path
+) -> None:
+    _write_run(root=tmp_path, seed=0, periods=[{"PickupTrash": 2}], elapsed=250.0)
+    path = tmp_path / "0" / "stats.json"
+    stats = json.loads(path.read_text())
+    stats["evaluations"] = [[0, 1, 30], [100, 2, 30], [275, 3, 30]]
+    path.write_text(json.dumps(stats))
+    runs = ResetFreeWallclockModes.read_budget(directory=tmp_path)
+    assert ResetFreeWallclockModes.transition_step(runs=runs) is None
+
+
+def test_render_curves_writes_a_figure(*, tmp_path: Path) -> None:
+    one, ten = tmp_path / "1x", tmp_path / "10x"
+    _two_mode_budget(root=one, elapsed_fast=25.0, elapsed_slow=57.0)
+    _two_mode_budget(root=ten, elapsed_fast=254.0, elapsed_slow=595.0)
+    budgets = ResetFreeWallclockModes.load_budgets(directories={"1x": one, "10x": ten})
+    output = tmp_path / "curves.png"
+    ResetFreeWallclockModes.render_curves(budgets=budgets, output=output)
+    assert output.stat().st_size > 0
+
+
 def test_seed_run_is_frozen() -> None:
     run = SeedRun(
         seed=0,
@@ -254,6 +313,8 @@ def test_seed_run_is_frozen() -> None:
         stranding_onset=1,
         final_solved=7,
         num_test_tasks=30,
+        solved_per_checkpoint=[0, 7],
+        transitions_per_checkpoint=[0, 150],
         runs_in_flight_at_start=3,
         runs_in_flight_at_end=3,
         cli_processes_at_start=4,

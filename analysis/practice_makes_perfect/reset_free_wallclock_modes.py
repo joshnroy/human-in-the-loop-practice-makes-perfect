@@ -113,6 +113,11 @@ class SeedRun(BaseModel):
     stranding_onset: int | None
     final_solved: int
     num_test_tasks: int
+    # The learning curve, one entry per evaluation checkpoint (checkpoint 0 is taken
+    # before any practice). Kept as two parallel lists rather than one list of pairs so
+    # that either can serve as an x axis without unzipping at every call site.
+    solved_per_checkpoint: list[int]
+    transitions_per_checkpoint: list[int]
     # From timing.json -- the confound side.
     runs_in_flight_at_start: int
     runs_in_flight_at_end: int
@@ -192,7 +197,8 @@ class ResetFreeWallclockModes:
         stats = json.loads((directory / "stats.json").read_text())
         stranding = PickupWeightStranding.read_run(path=directory / "stats.json", seed=seed)
         periods = PickupWeightStranding.practice_periods(stats=stats)
-        final = stats["evaluations"][-1]
+        evaluations = stats["evaluations"]
+        final = evaluations[-1]
         return SeedRun(
             seed=seed,
             elapsed_seconds=float(timing["elapsed_seconds"]),
@@ -205,6 +211,8 @@ class ResetFreeWallclockModes:
             stranding_onset=stranding.stranding_onset,
             final_solved=int(final[1]),
             num_test_tasks=int(final[2]),
+            solved_per_checkpoint=[int(entry[1]) for entry in evaluations],
+            transitions_per_checkpoint=[int(entry[0]) for entry in evaluations],
             runs_in_flight_at_start=int(timing["sweep_runs_in_flight_at_start"]),
             runs_in_flight_at_end=int(timing["sweep_runs_in_flight_at_end"]),
             cli_processes_at_start=int(timing["machine_at_start"]["cli_processes"]),
@@ -341,6 +349,39 @@ class ResetFreeWallclockModes:
     def format_count(*, numerator: int, denominator: int) -> str:
         """`x/y`, never a bare percentage: the denominators here are small and uneven."""
         return f"{numerator}/{denominator}"
+
+    @staticmethod
+    def curves_by_mode(*, runs: list[SeedRun]) -> dict[str, list[SeedRun]]:
+        """The runs split into the two modes, keyed `"early"` / `"late"`.
+
+        Deliberately routed through `mode_of` rather than through a hardcoded seed list:
+        the figure and the statistics must not be able to drift apart, and a seed list
+        copied into a plotting function is exactly how they would.
+        """
+        grouped: dict[str, list[SeedRun]] = {"early": [], "late": []}
+        for run in runs:
+            grouped[ResetFreeWallclockModes.mode_of(run=run)].append(run)
+        return grouped
+
+    @staticmethod
+    def transition_step(*, runs: list[SeedRun]) -> int | None:
+        """The constant online-transition step between checkpoints, or `None` when it is
+        not constant across every checkpoint of every run.
+
+        Whether "by transitions" is merely "by cycle" rescaled is a property of the
+        measured data, not of the domain -- an episode ending early would break it. The
+        figure's caption turns on the answer, so it is computed rather than assumed.
+        """
+        steps = {
+            later - earlier
+            for run in runs
+            for earlier, later in zip(
+                run.transitions_per_checkpoint,
+                run.transitions_per_checkpoint[1:],
+                strict=False,
+            )
+        }
+        return steps.pop() if len(steps) == 1 else None
 
     # ------------------------------------------------------------------ the figure
 
@@ -655,6 +696,117 @@ class ResetFreeWallclockModes:
         return "\n".join(lines)
 
     @staticmethod
+    def render_curves(*, budgets: dict[str, list[SeedRun]], output: Path) -> None:
+        """The learning curve itself, grouped by stranding mode: one row per budget, and
+        the two x axes the house style pairs -- practice cycle and online transitions.
+
+        **The two columns are affine on this data** (`transition_step` returns a constant
+        across every run), so the right column is the left one rescaled rather than a
+        second measurement. It is drawn on a symlog axis for exactly that reason: the
+        divergence between the modes is complete within three cycles of a hundred, which
+        a linear axis compresses into the leftmost few percent of the panel and hides.
+
+        Per-seed traces are drawn faint underneath a bold group mean. With a 6/4 split a
+        mean-only plot would hide the finding, which is that there are two groups at all.
+        """
+        labels = list(budgets)
+        figure, axes = plt.subplots(
+            len(labels), 2, figsize=(13.0, 4.6 * len(labels)), squeeze=False
+        )
+        for row, label in enumerate(labels):
+            runs = budgets[label]
+            step = ResetFreeWallclockModes.transition_step(runs=runs)
+            for column, by_transitions in ((0, False), (1, True)):
+                ResetFreeWallclockModes._curve_panel(
+                    axes=axes[row][column],
+                    runs=runs,
+                    label=label,
+                    by_transitions=by_transitions,
+                )
+            axes[row][1].annotate(
+                f"{step} transitions per cycle on "
+                + ResetFreeWallclockModes.format_count(numerator=len(runs), denominator=len(runs))
+                + " runs, so this column is\nthe left one rescaled"
+                if step is not None
+                else "transitions per cycle are not constant here",
+                (0.98, 0.06),
+                xycoords="axes fraction",
+                ha="right",
+                fontsize=8,
+                color="#555555",
+            )
+        handles = [
+            Line2D([], [], color=_MODE_COLORS[mode], linewidth=2.4, label=f"{text} (group mean)")
+            for mode, text in _MODE_LABELS.items()
+        ] + [Line2D([], [], color="#777777", linewidth=1.0, alpha=0.5, label="individual seeds")]
+        figure.legend(handles=handles, loc="lower center", ncol=3, frameon=False)
+        figure.suptitle(
+            "The learning curve splits by stranding cycle, and neither group moves with the budget",
+            fontsize=13,
+        )
+        figure.tight_layout(rect=(0.0, 0.05, 1.0, 0.96))
+        output.parent.mkdir(parents=True, exist_ok=True)
+        figure.savefig(output, dpi=160)
+        plt.close(figure)
+
+    @staticmethod
+    def _curve_panel(*, axes, runs: list[SeedRun], label: str, by_transitions: bool) -> None:
+        """One panel: faint per-seed traces under a bold per-mode mean."""
+        grouped = ResetFreeWallclockModes.curves_by_mode(runs=runs)
+        total = runs[0].num_test_tasks
+        for mode, members in grouped.items():
+            if not members:
+                continue
+            colour = _MODE_COLORS[mode]
+            for run in members:
+                axes.plot(
+                    run.transitions_per_checkpoint
+                    if by_transitions
+                    else list(range(len(run.solved_per_checkpoint))),
+                    run.solved_per_checkpoint,
+                    color=colour,
+                    alpha=0.32,
+                    linewidth=1.0,
+                )
+            length = min(len(run.solved_per_checkpoint) for run in members)
+            mean = [
+                statistics.fmean([run.solved_per_checkpoint[i] for run in members])
+                for i in range(length)
+            ]
+            axes.plot(
+                members[0].transitions_per_checkpoint[:length]
+                if by_transitions
+                else list(range(length)),
+                mean,
+                color=colour,
+                linewidth=2.6,
+                label=(
+                    _MODE_LABELS[mode]
+                    + ": "
+                    + ResetFreeWallclockModes.format_count(
+                        numerator=len(members), denominator=len(runs)
+                    )
+                    + " seeds, ending "
+                    + ResetFreeWallclockModes.format_count(
+                        numerator=sum(run.final_solved for run in members),
+                        denominator=total * len(members),
+                    )
+                ),
+            )
+        if by_transitions:
+            axes.set_xscale("symlog", linthresh=runs[0].transitions_per_checkpoint[1] or 1)
+            axes.set_xlabel("online transitions (symlog -- the split happens at the far left)")
+        else:
+            axes.set_xlabel("practice cycle")
+        axes.set_ylim(0, total)
+        axes.set_ylabel(f"tasks solved (x/{total})")
+        axes.set_title(
+            f"{label} budget, {'by online transitions' if by_transitions else 'by practice cycle'}"
+        )
+        axes.grid(alpha=0.25)
+        axes.legend(fontsize=8, loc="upper left", framealpha=0.85)
+
+    @staticmethod
     def main() -> None:
         parser = argparse.ArgumentParser(description=__doc__)
         parser.add_argument(
@@ -664,7 +816,10 @@ class ResetFreeWallclockModes:
             metavar="LABEL=DIR",
             help="a budget's label and the directory holding its <seed>/stats.json",
         )
-        parser.add_argument("--output", type=Path, required=True, help="figure path (.png)")
+        parser.add_argument("--output", type=Path, required=True, help="modes figure path (.png)")
+        parser.add_argument(
+            "--curves-output", type=Path, help="learning-curve-by-mode figure path (.png)"
+        )
         args = parser.parse_args()
         directories: dict[str, Path] = {}
         for entry in args.budget:
@@ -676,6 +831,9 @@ class ResetFreeWallclockModes:
         print(ResetFreeWallclockModes.report(budgets=budgets))
         ResetFreeWallclockModes.render(budgets=budgets, output=args.output)
         print(f"wrote {args.output}")
+        if args.curves_output is not None:
+            ResetFreeWallclockModes.render_curves(budgets=budgets, output=args.curves_output)
+            print(f"wrote {args.curves_output}")
 
 
 if __name__ == "__main__":
