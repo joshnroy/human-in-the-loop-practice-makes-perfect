@@ -88,8 +88,8 @@ matplotlib.use("Agg")  # headless rendering -- no GUI backend needed/available i
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
+from analysis.practice_makes_perfect.paired_tests import PairedTests  # noqa: E402
 from analysis.practice_makes_perfect.practice_diagnostics import PracticeDiagnostics  # noqa: E402
-from analysis.practice_makes_perfect.tossingroom_reset_interval import PairedTests  # noqa: E402
 from hitl_pmp.core.method.types import SkillPracticeTally  # noqa: E402
 from hitl_pmp.core.metrics.metrics import Metrics  # noqa: E402
 
@@ -116,8 +116,8 @@ SIGNIFICANCE = 0.05
 _ARM_ORDER = ("ees", "random-skills", "skill-oracle")
 
 # Okabe-Ito, the same palette every sibling report in this folder declares for itself
-# (`reset_free_training_curves`, `tossingroom_reset_interval`, `tossingroom_reset_
-# frequency`, `tossingroomsplit_reset_policy`, `tossingroomsplit_two_way_ledge`). It
+# (`reset_free_training_curves`; the Tossing Room reports that also declared it were
+# retired with their domains in #141). It
 # replaces matplotlib's default blue/grey/green, which is not colourblind-safe and did
 # not match the sibling figures. Blue is the arm under test, vermillion the uniform
 # baseline, bluish-green the ceiling -- and the three are also distinguished by role in
