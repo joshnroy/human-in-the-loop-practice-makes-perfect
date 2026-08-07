@@ -572,6 +572,25 @@ and is responsible for mutating it (e.g. `env.set_state(...)`) to reflect whatev
 actually happened — it returns nothing; querying cost beforehand is
 `calculate_cost_for_human_command`'s separate, side-effect-free job.
 
+### Naming: "robot"/"actor" is ours, "agent"/"agentic" means an LLM
+
+**If we implement it, it is a robot or an actor. If it is LLM-driven, it is an agent.**
+
+- **robot / actor** — a `Method`, a policy, EES, random-skills, the oracle: anything acting
+  in the environment under our own code.
+- **agent / agentic** — Claude, Claude Code, `prpl-agent-utils`, the pure-agent baseline,
+  and the subagents that do this project's work.
+
+Not a style preference — the collision is real and has already happened. The
+human-in-the-loop ladder shipped an arm named `agent-signal` meaning *the robot raises
+`InteractionComplete`*, nothing to do with an LLM, while a sibling task was building a
+genuine LLM **pure agent** baseline. From the word alone a reader cannot tell which is
+which, and both appear in the same PR stack.
+
+Applies to arm names, CLI flags, class names, PR titles and prose alike. `methods/
+pure_agent/` keeps its name: that one really is an LLM agent, and "the pure agent" is Tom
+Silver's own term for Step 2.5 of the recipe it implements.
+
 ### Conventions (enforced by lint, not just documented)
 
 - **Pydantic only** — `dataclasses`/`attrs` are banned via ruff `TID251`.
