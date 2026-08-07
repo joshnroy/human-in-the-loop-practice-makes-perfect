@@ -92,6 +92,40 @@ pins it. Only the 10000 arm has no seed below 90%.
 `main` at the new default. The aggregate lists both, but 99.0 appears there once, not
 twice.
 
+> **STALENESS NOTE (2026-08-06): the `iters10k` arm's 99.0 does not reproduce at current
+> `main`, and the arm above should be read as pinned to the code of 2026-08-03.** A re-run
+> at the same protocol and the same fixed seeds 0–9 (PR #126) scored **91/100** against
+> this arm's **99/100**. The original numbers above are correct as published and are left
+> untouched; what follows is why they are now provisional.
+>
+> - **The two arms are not the same computation — this part is certain.** A `--seed` fully
+>   determines a run, so identical code at the same seed must give an identical curve.
+>   Per-seed, per-checkpoint comparison against `2026-08-03-ballring-arms.json` shows they
+>   diverge at the **first** post-practice checkpoint (100 transitions) in 7/10 seeds and
+>   by the second (200 transitions) in the remaining 3/10. Something in the code or config
+>   differs, from the start of training.
+> - **That the difference is a *regression* is NOT established.** The endpoint comparison's
+>   p = 0.0625 sits exactly at its own floor (5/10 pairs tied), so it describes the design
+>   rather than the world. Summing solved tasks over all 26 checkpoints gives an untied,
+>   better-powered paired statistic — floor 2 × 2⁻¹⁰ = 0.00195, so it genuinely could have
+>   resolved a consistent shift. It does not: the re-run is lower in **6/10** seeds,
+>   1947/2600 against 2037/2600 overall, exact paired permutation **p = 0.109**. The
+>   honest reading is "the two arms differ as computations; the evidence that one is
+>   *worse* is weak."
+> - **This arm predates `config_snapshot.json`** (added 2026-08-05), and its raw run
+>   directories did not survive a move between machines, so its provenance is documentary
+>   only. From `git log`, the tree it ran at is equivalent to **`9f62b58`** for every path
+>   Ball-Ring reads. That is inferred, **not verified**.
+> - **Leading candidate, not established: PR #85 (`3eb32c5`)**, "Fall back to a uniform
+>   draw when the sampler cannot discriminate". It is *after* `9f62b58` and *before* the
+>   re-run's tree, and it changes both the number of `Generator` draws inside
+>   `LearnedSkillSampler.sample` and the returned candidate's distribution. No Ball-Ring
+>   config default changed in between (verified by `git log -S` over
+>   `environments/ballring/`); PR #112/`OMP_NUM_THREADS` is excluded, as is PR #119.
+> - **Not yet run, and it is what would settle this:** re-run this exact sweep at
+>   `9f62b58` and at `3eb32c5^`/`3eb32c5`. See
+>   `2026-08-06-ballring-placeballontable.md` for the full argument and the exact commands.
+
 ### Reproducing the statistics
 
 scipy is not a project dependency, so the p-values are quoted as constants in
