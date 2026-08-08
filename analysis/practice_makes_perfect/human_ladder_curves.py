@@ -159,6 +159,10 @@ _EXPECTED_PRACTICE_RESETS = 0
 # different oracle was wired and every cost number below means something else.
 _V0_INTERVENTION_COST = 1.0
 
+# Read ONLY by `line_style` and `faint_line_style`. Every artist drawn for an arm comes
+# from one of those two, so an arm's bold curve, its faint per-seed traces and its legend
+# entry cannot carry different dash patterns -- see `line_style` for the defect that
+# rule exists to prevent.
 # Colourblind-safe and distinguishable in greyscale; linestyle carries the trigger too,
 # so an arm's identity never rests on hue alone.
 _COLORS = {
@@ -201,6 +205,47 @@ _LABELS = {
 
 class HumanLadderCurves:
     """A static-method container, never instantiated."""
+
+    # ------------------------------------------------------------------ one style per arm
+
+    @staticmethod
+    def arms() -> tuple[str, ...]:
+        """The arm names, in report order. Exposed so a caller -- a test especially --
+        can iterate them without reaching for the module-private tuple."""
+        return _ARMS
+
+    @staticmethod
+    def line_style(*, arm_name: str, linewidth: float) -> dict:
+        """The style for an arm's BOLD line: its pooled curve, or its reference line.
+
+        **This and `faint_line_style` are the only two places a line's colour or dash
+        pattern is chosen, and both read the same two dictionaries.** That is the point.
+        The legend is built by matplotlib from the labelled artist itself, so an entry
+        cannot disagree with the bold line it describes -- but the faint per-seed traces
+        used to be drawn by a separate call that passed no `linestyle` at all, defaulting
+        them to solid while the key showed the arm's dashes. Ten faint solid lines per arm
+        against one bold dashed line is most of that arm's ink contradicting its key, which
+        is what Josh saw as "the dottedness looks a bit off".
+
+        Funnelling both roles through one pair of functions is what stops that recurring:
+        a role may vary width, alpha and z-order, and nothing else."""
+        return {
+            "color": _COLORS[arm_name],
+            "linestyle": _LINESTYLES[arm_name],
+            "linewidth": linewidth,
+        }
+
+    @staticmethod
+    def faint_line_style(*, arm_name: str, linewidth: float, alpha: float = 0.22) -> dict:
+        """The style for one of an arm's per-seed traces.
+
+        Identical to `line_style` except for alpha and width -- deliberately built by
+        delegating to it rather than by repeating the two lookups, so the dash pattern is
+        physically the same object and cannot drift."""
+        return {
+            **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=linewidth),
+            "alpha": alpha,
+        }
 
     # ------------------------------------------------------------------ reading back
 
@@ -602,12 +647,15 @@ class HumanLadderCurves:
             # there is no learning for a curve to show -- see _REFERENCE_ARMS.
             for seed in seeds:
                 entry = HumanLadderCurves.entry(arm=arm, seed=seed, family=None)
-                ax_curve.axhline(entry[-1][0], color=color, alpha=0.22, linewidth=0.9)
+                ax_curve.axhline(
+                    entry[-1][0],
+                    **HumanLadderCurves.faint_line_style(
+                        arm_name=arm_name, linewidth=0.9, alpha=0.22
+                    ),
+                )
             ax_curve.axhline(
                 pooled[-1][0] * scale,
-                color=color,
-                linestyle=_LINESTYLES[arm_name],
-                linewidth=2.6,
+                **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.6),
                 label=label,
             )
         else:
@@ -619,16 +667,14 @@ class HumanLadderCurves:
                 ax_curve.plot(
                     arm[seed]["transitions"],
                     [s for s, _ in entry],
-                    color=color,
-                    alpha=0.25,
-                    linewidth=0.9,
+                    **HumanLadderCurves.faint_line_style(
+                        arm_name=arm_name, linewidth=0.9, alpha=0.25
+                    ),
                 )
             ax_curve.plot(
                 xs,
                 [solved * scale for solved, _ in pooled],
-                color=color,
-                linestyle=_LINESTYLES[arm_name],
-                linewidth=2.6,
+                **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.6),
                 label=label,
             )
         ax_curve.set_xlabel("online transitions")
@@ -716,7 +762,6 @@ class HumanLadderCurves:
         )[-1][1]
         for arm_name in _ARMS:
             arm = arms[arm_name]
-            color = _COLORS[arm_name]
             xs = HumanLadderCurves.transitions(arm=arm)
             pooled = HumanLadderCurves.pooled_curve(arm=arm, family=family)
             scale = seed_total / pooled[-1][1]
@@ -729,9 +774,7 @@ class HumanLadderCurves:
             if arm_name in _REFERENCE_ARMS:
                 ax_curve.axhline(
                     pooled[-1][0] * scale,
-                    color=color,
-                    linestyle=_LINESTYLES[arm_name],
-                    linewidth=2.4,
+                    **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.4),
                     label=label,
                 )
                 continue
@@ -741,16 +784,14 @@ class HumanLadderCurves:
                 ax_curve.plot(
                     arm[seed]["transitions"],
                     [s for s, _ in entry],
-                    color=color,
-                    alpha=0.16,
-                    linewidth=0.8,
+                    **HumanLadderCurves.faint_line_style(
+                        arm_name=arm_name, linewidth=0.8, alpha=0.16
+                    ),
                 )
             ax_curve.plot(
                 xs,
                 [solved * scale for solved, _ in pooled],
-                color=color,
-                linestyle=_LINESTYLES[arm_name],
-                linewidth=2.4,
+                **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.4),
                 label=label,
             )
         # An asking arm's x-axis ends short of num_cycles * max_steps_per_interaction by
