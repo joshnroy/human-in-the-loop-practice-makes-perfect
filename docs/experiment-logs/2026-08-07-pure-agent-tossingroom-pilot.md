@@ -8,6 +8,10 @@ established, no significance test is computed, and none is supported: with n=1 t
 no paired structure and no variance estimate. Everything below is a single run's count.
 This was a debugging pilot, and it found bugs.
 
+**And a second caveat added after the fact:** the headline `0/30` is substantially an
+artifact of the authoring budget rather than a measurement of what the agent can do. See
+the marked note beside the results table before quoting anything from this entry.
+
 ## Question / goal
 
 Does a coding agent that **writes** the policy — rather than being it — solve Tossing
@@ -92,13 +96,39 @@ The described arm was run twice. The first attempt is preserved as
 | `ees` | 6/30 | 20/30 | 14/14 | 4/14 | 2/2 |
 | `skill-oracle` | 30/30 | 30/30 | 14/14 | 14/14 | 2/2 |
 
-![learning curves](https://raw.githubusercontent.com/joshnroy/human-in-the-loop-practice-makes-perfect/ba15bd7164e5725e7f52d31ec76aa55a254ff5a1/docs/experiment-logs/2026-08-07-pure-agent-tossingroom-pilot.png)
+![learning curves](2026-08-07-pure-agent-tossingroom-pilot.png)
 
 Every arm ran the full 300 online transitions; `skill-oracle` is a single point because it
 never practises (`--num-cycles 0`). The described arm is deliberately **absent from the
 figure**: its `stats.json` reads 0/30 at every sweep, but that is the harness emitting
 no-ops because no policy was ever authored, not a policy that scored nothing. Plotting it
 beside the minimal arm would invite exactly the wrong reading.
+
+> **⚠ 2026-08-08 — the `0/30` above is substantially a BUDGET artifact, not a capability
+> result. Read the hypothesis verdict below as provisional.**
+>
+> Every number in this entry stands as measured, under the conditions stated: 3 authoring
+> rounds at a `--pure-agent-max-budget-usd 1.0` cap, of which only 2 were productive. None
+> of them is edited or recomputed here.
+>
+> What changed is the interpretation. A later run of **the same minimal arm at 6 rounds
+> and a $4 cap reaches `7/30`** — so the `0/30` is measuring the authoring budget at least
+> as much as it measures what the agent can do, and the recommendation below ("give it
+> more throws", "raise the cap") turns out to have been the whole story rather than a
+> caveat. **That 7/30 is reported to me by the agent that ran it; I did not run or verify
+> it**, and it is recorded here as a pointer, not as a result of this pilot.
+>
+> Two specific claims below are therefore weaker than they read:
+>
+> - *"The hypothesis is not supported"* — not supported **at this budget**. Whether the
+>   agent can recover the force law given enough rounds is not settled by this entry.
+> - *"the pure agent … indistinguishable from the random baseline"* — true of this run's
+>   numbers, and not a statement about the method.
+>
+> The second defect below ("a round that writes nothing is indistinguishable from one that
+> rewrites identically") is the mechanism: minimal round 1 was a **failed query re-reading
+> round 0's file from the persistent sandbox**, which this entry originally read as the
+> agent declining to revise. It was not. Josh has removed the cap for a clean re-run.
 
 **The hypothesis is not supported.** On the minimal arm the pure agent solved 0/30 at
 every one of the three sweeps — indistinguishable from the random baseline, and well below
