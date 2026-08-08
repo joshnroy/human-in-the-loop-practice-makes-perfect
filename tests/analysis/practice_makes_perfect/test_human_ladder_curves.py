@@ -40,6 +40,7 @@ Expected values are derived on paper, not recorded from a run of the code.
 import json
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pytest
 
 from analysis.practice_makes_perfect.human_ladder_curves import HumanLadderCurves
@@ -432,6 +433,59 @@ def test_final_per_seed_is_in_seed_order(*, tmp_path: Path) -> None:
 
 def test_format_count_is_x_over_y() -> None:
     assert HumanLadderCurves.format_count(solved=17, total=20) == "17/20"
+
+
+def test_an_arms_faint_seed_traces_share_its_pooled_dash_pattern() -> None:
+    """The key has to describe the ink. Every line drawn for an arm -- the bold pooled
+    curve, each faint per-seed trace, a reference line -- must carry that arm's ONE dash
+    pattern, differing only in alpha and width.
+
+    This is the styling defect Josh reported as "the dottedness looks a bit off": the
+    per-seed traces used to be drawn with no `linestyle` at all, so matplotlib defaulted
+    them to solid while the legend entry (built from the bold artist) showed the arm's
+    dashes. Ten faint solid lines per arm against one bold dashed line means most of an
+    arm's ink contradicted its key entry."""
+    for arm_name in HumanLadderCurves.arms():
+        pooled = HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.4)
+        per_seed = HumanLadderCurves.faint_line_style(arm_name=arm_name, linewidth=0.8)
+        assert pooled["linestyle"] == per_seed["linestyle"], arm_name
+        assert pooled["color"] == per_seed["color"], arm_name
+
+
+def test_every_drawn_line_matches_its_legend_entry(*, tmp_path: Path, monkeypatch) -> None:
+    """Rendered end to end and read back off the axes, because the two previous style
+    dictionaries agreeing does not prove the renderer used them.
+
+    For each legend handle, every line on the axes sharing that handle's colour must also
+    share its dash pattern. Colour identifies the arm; the assertion is that the arm's ink
+    is stylistically one thing.
+
+    `plt.close` is stubbed out so the figure survives the call and can be inspected --
+    the renderer closes its own figure, which is correct behaviour for a script that
+    draws twelve of them and must not leak."""
+    captured: list = []
+    real_close = plt.close
+    monkeypatch.setattr(plt, "close", lambda figure: captured.append(figure))
+    arms = HumanLadderCurves.load_arms(directories=_write_all(root=tmp_path))
+    output = tmp_path / "family.png"
+    HumanLadderCurves.render_family(
+        arms=arms, family=None, output=output, title="t", legend_loc="upper left"
+    )
+    assert captured, "renderer did not close a figure, so none was captured"
+    figure = captured[0]
+    axes = figure.axes[0]
+    legend = axes.get_legend()
+    handles = legend.legend_handles if hasattr(legend, "legend_handles") else legend.legendHandles
+    assert handles, "no legend handles to check against"
+    for handle in handles:
+        expected = handle.get_linestyle()
+        matching = [line for line in axes.get_lines() if line.get_color() == handle.get_color()]
+        assert matching, f"legend entry {handle.get_color()} draws nothing"
+        for line in matching:
+            assert line.get_linestyle() == expected, (
+                f"{handle.get_color()}: drew {line.get_linestyle()}, key says {expected}"
+            )
+    real_close(figure)
 
 
 def test_each_family_figure_uses_its_own_denominator(*, tmp_path: Path) -> None:
