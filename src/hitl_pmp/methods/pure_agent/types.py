@@ -50,8 +50,12 @@ class AgentCallRecord(BaseModel):
     # The practice cycle this call belongs to. 0 during the evaluation sweep that runs
     # before any practice, so a sweep and the cycle it follows share an index.
     cycle_index: int
-    # Which test task within the sweep, for an evaluation call; `None` during practice,
-    # where there is no episode structure inside a period.
+    # A **run-level** counter of evaluation episodes, incremented once per
+    # `get_task_policy` call and never reset; `None` during practice, where there is no
+    # episode structure inside a period. So at the EES-matching defaults it runs 1..330
+    # across a run, NOT 1..30 within each sweep. Slicing per-test-task cost off it needs
+    # `num_test_tasks`, which this Method is never told -- read it off the run's
+    # `config_snapshot.json`, or off `cycle_index`, which does identify the sweep.
     episode_index: int | None = None
     # Step within the episode (evaluation) or within the practice period (practice).
     step_index: int
