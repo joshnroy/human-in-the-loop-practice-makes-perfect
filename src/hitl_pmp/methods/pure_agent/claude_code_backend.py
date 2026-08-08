@@ -59,13 +59,18 @@ class ClaudeCodeAgentBackend(AgentBackend):
     # the agent's last assistant text from the stream log, so a capped call that had
     # already answered still yields its answer.
     #
-    # 0.50 rather than a tighter number: a healthy decision here costs a few cents
-    # (measured median $0.023 on Tossing Room), so this is ~20x the normal call and only
-    # fires on a genuine long tail. It is the per-call guard; `PureAgentMethod`'s
-    # `max_total_cost_usd` is the run-level one, and the run-level one is the one that
-    # matters when a run makes thousands of calls against a weekly allowance that cannot
-    # be topped up.
-    max_budget_usd_per_query: float = 0.50
+    # **2.00, set from measurement rather than from taste, and 0.50 was measurably wrong.**
+    # A decision's cost is dominated by the conversation it resumes into, so it climbs
+    # with the period: over one 50-step practice period the baseline went $0.017 -> $0.075
+    # and the tail reached **$0.597** -- already past 0.50, on a period a third of the
+    # default length. A cap that fires routinely is not a guard, it is a source of no-ops
+    # dressed up as one.
+    #
+    # This is the per-call guard and it is deliberately loose: its only job is to stop one
+    # pathological call, not to shape normal cost. `PureAgentMethod.max_total_cost_usd` is
+    # the run-level ceiling and the one that actually protects the allowance, which is why
+    # that one is required on the CLI and this one is merely defaulted.
+    max_budget_usd_per_query: float = 2.00
     system_prompt: str = ""
 
     # Built on first use, not at construction: constructing a backend must not create a

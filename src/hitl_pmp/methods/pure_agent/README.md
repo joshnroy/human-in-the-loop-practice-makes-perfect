@@ -89,8 +89,14 @@ Both caps are on by default, and the run-level one is **required** on the CLI:
 
 | cap | flag | what it bounds |
 | --- | --- | --- |
-| per call | `--pure-agent-max-cost-usd-per-query` (default 0.50) | one long-tailed call |
+| per call | `--pure-agent-max-cost-usd-per-query` (default 2.00) | one pathological call |
 | per run | `--pure-agent-max-total-cost-usd` (**required**) | the whole run |
+
+The per-call default is set from measurement, and 0.50 was measurably wrong. A decision's
+cost is dominated by the conversation it resumes into, so it climbs with the period: over
+one 50-step practice period the baseline went $0.017 → $0.075 and the tail reached
+**$0.597** — already past 0.50, on a period a third of the default length. A cap that
+fires routinely is not a guard, it is a source of no-ops dressed up as one.
 
 The run-level one is the one that matters. A run makes one call per environment step —
 thousands of them — against a weekly allowance that has **no overflow**
@@ -120,9 +126,16 @@ defaults on Tossing Room (`--num-cycles 10 --max-steps-per-interaction 150
 --num-test-tasks 30`, horizon 12) that is `10*150 + 11*30*12 = 5,460` decisions. **Every
 one is a network call**, and within a run they are strictly sequential.
 
-**Measured cost per call, Opus, Tossing Room evaluation episodes** (92 calls, first
-sweep of the pilot run): mean **$0.030**, median $0.023, max $0.204, `0/92` malformed,
-`0/92` with any tool call, mean 3.7 s.
+**Measured cost per call, Opus, Tossing Room.** Evaluation decisions (~12-turn
+conversations): mean **$0.032**, median $0.024. Practice decisions over one **50**-step
+period: mean $0.065, and **rising with the period** — $0.017 at step 0 against ~$0.075 at
+step 49, with a tail to $0.597. `0/…` malformed and `0/…` with any tool call throughout.
+
+**Cost per decision is not a constant, it is a function of how far into the conversation
+the decision is.** An evaluation episode resets every ~12 turns so its cost is flat; a
+practice period runs to `--max-steps-per-interaction` and its cost is not. Any projection
+from a short period to a long one is therefore a **floor**, and the default period is 150
+steps — three times the longest one measured here.
 
 That is **not** the figure to extrapolate from the authoring arm, which measured
 $1.64–$3.24 per call. The difference is what an agentic *round* is versus what a decision
