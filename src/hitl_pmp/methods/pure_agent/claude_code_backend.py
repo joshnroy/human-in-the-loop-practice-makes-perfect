@@ -52,11 +52,21 @@ class ClaudeCodeAgentBackend(AgentBackend):
     use_docker: bool = False
     tools: str = ""
     # 0 disables the CLI's own budget stop. Deliberate: the stop emits a `result` message
-    # with no `result` field, which `prpl_agent_utils._parse_stream` treats as fatal, so a
-    # per-step policy would lose the very decision it just paid for. A per-step query is
-    # one short turn, so the cap protects against nothing here and costs a decision when
-    # it fires.
-    max_budget_usd_per_query: float = 0.0
+    # The CLI's own per-query stop. **On rather than off, and the known defect is handled
+    # rather than avoided.** The stop emits a `result` message with
+    # `subtype: "error_max_budget_usd"` and no `result` field, which
+    # `prpl_agent_utils._parse_stream` treats as fatal -- so naively enabling it discards
+    # the very decision the query just paid for. `query` below recovers both the cost and
+    # the agent's last assistant text from the stream log, so a capped call that had
+    # already answered still yields its answer.
+    #
+    # 0.50 rather than a tighter number: a healthy decision here costs a few cents
+    # (measured median $0.023 on Tossing Room), so this is ~20x the normal call and only
+    # fires on a genuine long tail. It is the per-call guard; `PureAgentMethod`'s
+    # `max_total_cost_usd` is the run-level one, and the run-level one is the one that
+    # matters when a run makes thousands of calls against a weekly allowance that cannot
+    # be topped up.
+    max_budget_usd_per_query: float = 0.50
     system_prompt: str = ""
 
     # Built on first use, not at construction: constructing a backend must not create a
@@ -91,21 +101,25 @@ class ClaudeCodeAgentBackend(AgentBackend):
         return self._agent
 
     def query(self, *, prompt: str) -> AgentReply:
-        """One paid call. A query that RAISES still counts as a call.
+        """One paid call. A query that RAISES still counts as a call, and is salvaged.
 
         `prpl_agent_utils` raises `RuntimeError("Agent CLI produced no result")` whenever
-        the CLI exits without a parseable final `result` -- a transport failure, a budget
-        stop, a killed process. Letting that propagate would abort a run several hours and
-        several thousand calls in, and would lose the cost of the call that failed. So it
-        is caught, the cost is recovered from the stream log the package itself wrote, and
-        an empty reply is returned: the caller then records a malformed decision and takes
-        a no-op step, which is a visible, counted outcome rather than a crash."""
+        the CLI exits without a parseable final `result` -- a transport failure, a killed
+        process, and **every `--max-budget-usd` stop**, which reports its own cost and then
+        exits in a shape the package treats as fatal.
+
+        Letting that propagate would be wrong three times over: it aborts a run thousands of
+        calls in, it discards a decision already paid for, and it makes the spend this
+        baseline exists to report unknowable. So it is caught and the stream log the package
+        itself already wrote is read back for both halves -- the cost from the `result`
+        message, the answer from the last assistant text. `query_error` in the metadata is
+        how a call that took this path stays visible rather than passing for a clean one."""
         try:
             response = self.get_agent().query(prompt)
         except RuntimeError as exc:
-            metadata = self.recover_metadata()
+            text, metadata = self.recover_from_stream_log()
             metadata["query_error"] = f"{type(exc).__name__}: {exc}"
-            return AgentReply(text="", metadata=metadata)
+            return AgentReply(text=text, metadata=metadata)
         # Converted at this boundary rather than passed through: `AgentResponse` is a
         # `dataclass`, which ruff TID251 bans in this project, and nothing above this file
         # should have a type from an optional dependency in its signature.
@@ -120,32 +134,60 @@ class ClaudeCodeAgentBackend(AgentBackend):
         if self._agent is not None:
             self._agent.reset()
 
-    def recover_metadata(self) -> dict[str, Any]:
-        """The last `result` message in the sandbox's stream log, as metadata.
+    def recover_from_stream_log(self) -> tuple[str, dict[str, Any]]:
+        """`(the agent's last assistant text, metadata)` from the sandbox's stream log.
 
         Reading the artifact the package already writes, rather than reimplementing its
-        parser: the log is appended per query, so the last `result` line is this query's.
-        Returns `{}` if there is no log or nothing parseable in it, which leaves the
+        parser: the log is appended per query, so the last `result` line and the last
+        assistant text after it are this query's.
+
+        **Recovering the text is what makes a budget cap usable.** A capped query that
+        already emitted its one line of JSON has done everything it was asked to do; the
+        CLI merely exits in a shape the package cannot parse. Reading it back turns what
+        would be a discarded, paid-for decision into the decision it actually was. When the
+        cap fires before any answer, the text is empty and the caller counts a malformed
+        decision -- honest, and visible in the ledger.
+
+        Returns `("", {})` if there is no log or nothing parseable in it, which leaves the
         call's cost `None` -- honestly unknown, and counted by
         `PureAgentLedger.num_calls_missing_cost` rather than silently read as free."""
         path = self.sandbox_dir / STREAM_LOG
         if not path.is_file():
-            return {}
-        latest: dict[str, Any] = {}
+            return "", {}
+        # A `result` line CLOSES a call, so the assistant text belonging to it is whatever
+        # was seen since the previous one. Both are tracked, and the closed pair is kept
+        # together: reading the last text and the last result independently would pair this
+        # call's answer with the previous call's cost the moment a stream ends without a
+        # result, which is exactly the case this function exists for.
+        text_since_last_result = ""
+        closed_text = ""
+        closed_result: dict[str, Any] = {}
         for line in path.read_text().splitlines():
             try:
                 message = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if isinstance(message, dict) and message.get("type") == "result":
-                latest = message
-        if not latest:
-            return {}
-        return {
-            "is_error": latest.get("is_error", True),
-            "num_turns": latest.get("num_turns"),
-            "total_cost_usd": latest.get("total_cost_usd"),
-            "stop_reason": latest.get("subtype"),
+            if not isinstance(message, dict):
+                continue
+            if message.get("type") == "result":
+                closed_text, closed_result = text_since_last_result, message
+                text_since_last_result = ""
+            elif message.get("type") == "assistant":
+                for block in message.get("message", {}).get("content", []):
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        text_since_last_result = str(block.get("text", ""))
+        if text_since_last_result:
+            # Text with no result after it: the CLI died mid-stream. The answer is real,
+            # the cost is genuinely unknown, and saying so is better than attributing the
+            # previous call's cost to this one.
+            return text_since_last_result, {}
+        if not closed_result:
+            return "", {}
+        return closed_text, {
+            "is_error": closed_result.get("is_error", True),
+            "num_turns": closed_result.get("num_turns"),
+            "total_cost_usd": closed_result.get("total_cost_usd"),
+            "stop_reason": closed_result.get("subtype"),
         }
 
     def describe(self) -> str:

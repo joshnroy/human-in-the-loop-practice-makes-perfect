@@ -76,6 +76,10 @@ class ScriptedAgentBackend(AgentBackend):
     # substring of the prompt; the first matching entry wins, and a match does not
     # advance `replies`.
     replies_by_marker: dict[str, str] = {}
+    # What each scripted call "cost". 0.0 so a test that is not about spending never trips
+    # a ceiling by accident; a test that IS about the ceiling sets it, which is the only
+    # way to exercise the guard without a network call.
+    cost_usd_per_query: float = 0.0
 
     _index: int = PrivateAttr(default=0)
     _prompts: list[str] = PrivateAttr(default_factory=list)
@@ -88,7 +92,9 @@ class ScriptedAgentBackend(AgentBackend):
                 return AgentReply(text=reply, metadata={"total_cost_usd": 0.0, "num_turns": 1})
         reply = self.replies[self._index % len(self.replies)]
         self._index += 1
-        return AgentReply(text=reply, metadata={"total_cost_usd": 0.0, "num_turns": 1})
+        return AgentReply(
+            text=reply, metadata={"total_cost_usd": self.cost_usd_per_query, "num_turns": 1}
+        )
 
     def reset(self) -> None:
         self._reset_count += 1
@@ -134,7 +140,7 @@ class FirstApplicableAgentBackend(ScriptedAgentBackend):
         params = [self.param_value] * int(skills[0].get("param_dim", 0))
         return AgentReply(
             text=json.dumps({"skill_index": 0, "params": params}),
-            metadata={"total_cost_usd": 0.0, "num_turns": 1},
+            metadata={"total_cost_usd": self.cost_usd_per_query, "num_turns": 1},
         )
 
     @staticmethod

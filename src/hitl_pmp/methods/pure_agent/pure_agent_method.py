@@ -1,3 +1,4 @@
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -83,11 +84,20 @@ class PureAgentMethod(Method):
     asserts the practice backend's call count exactly, so routing evaluation through it
     fails by the evaluation step count rather than by a judgement call.
 
-    **3. A run is reproducible only as a replay of itself, and that is stated rather than
-    engineered around.** See `ReplayAgentBackend`: replaying the recorded decisions
-    reproduces this run exactly as long as the state sequence is unchanged, and says so
-    loudly when it is not. It does not reproduce the *method* -- a second live run makes
-    different decisions -- so a replay is a re-scoring of one run, never a second sample.
+    **3. This arm is not reproducible, and no replay is shipped to disguise that.**
+    The authoring stack this replaces used record-then-replay: author once, then re-run the
+    committed artifact under a fixed seed. That works because the artifact is a *function*,
+    which reproduces on any state. An acting agent's artifact is an ordered list of
+    decisions, and replaying it reproduces the run only while the state sequence is
+    byte-identical -- so a replay is a re-scoring of one run, never a second sample, and it
+    silently becomes wrong the moment anything upstream of the state changes.
+
+    Every call is journalled with `observation_digest`, a SHA-256 of the exact observation
+    it decided against, which is what a replay would check itself against and what makes
+    one implementable later without re-running anything. It is deliberately not built now:
+    the only thing it would buy is re-deriving a `stats.json` this run already wrote, and
+    shipping it would invite a set of replays to be read as a set of seeds. **Per-seed
+    spread on this arm comes from running more seeds live, and from nothing else.**
 
     Fully domain-agnostic: everything domain-specific (the lifted skills, the predicates
     and objects to ground over, and how a chosen ground skill becomes a raw `Action`) comes
@@ -109,8 +119,21 @@ class PureAgentMethod(Method):
     # How much of each reply to keep in the ledger. Replies are one line of JSON when the
     # agent behaves; the cap only bites on the ones worth reading.
     max_reply_chars: int = 2000
+    # **The run-level spend ceiling, and the guard that actually matters.** A per-query cap
+    # bounds one call; this bounds the run, and a run here is thousands of calls against a
+    # weekly allowance with no overflow -- `extra_usage.is_enabled: false`,
+    # `can_purchase_credits: false` -- so at 100% every agent on this machine stops until
+    # the window resets. A ceiling that ends one experiment is strictly better than one
+    # long-tailed rollout ending the week.
+    #
+    # `None` disables it, which is what the tests use (a scripted backend reports 0.0) and
+    # what an operator who has done the arithmetic may choose. Nothing else defaults it to
+    # None: the CLI requires a value.
+    max_total_cost_usd: float | None = None
 
     _digest: str = PrivateAttr(default="")
+    _spend_usd: float = PrivateAttr(default=0.0)
+    _budget_exhausted: bool = PrivateAttr(default=False)
     _cycle_index: int = PrivateAttr(default=0)
     _step_index: int = PrivateAttr(default=0)
     _episode_index: int = PrivateAttr(default=0)
@@ -171,6 +194,8 @@ class PureAgentMethod(Method):
         self.evaluation_backend.reset()
         self._episode_index += 1
         self._step_index = 0
+        if self.budget_exhausted():
+            return lambda state: self.evaluation_step(state=state, task=task)
         self.call(
             backend=self.evaluation_backend,
             prompt=PromptBuilder.evaluation_opening(
@@ -189,6 +214,10 @@ class PureAgentMethod(Method):
 
         A named method rather than a closure, since every parameter in this project is
         keyword-only (ruff PLR0917) and a `Policy` takes its state positionally."""
+        if self.budget_exhausted():
+            return LabeledAction(
+                action=self.env.noop_action(), label="no-op (spend ceiling reached)"
+            )
         ground_skills = self.applicable_ground_skills(state=state)
         if not ground_skills:
             # The evaluation answer to a dead end, matching `EesMethod` and
@@ -228,6 +257,8 @@ class PureAgentMethod(Method):
         self._previous_outcome = None
         self._step_index = 0
         self.practice_backend.reset()
+        if self.budget_exhausted():
+            return lambda state: self.practice_step(state=state, task=task)
         self.call(
             backend=self.practice_backend,
             prompt=PromptBuilder.practice_opening(
@@ -248,6 +279,11 @@ class PureAgentMethod(Method):
         Settles **before** the dead-end check, so a period that ends here still records
         what it last did -- the order `EesMethod` and `RandomSkillsMethod` both use."""
         self.settle_pending_practice_skill(state=state)
+        if self.budget_exhausted():
+            # The same signal a dead end raises, and for the same reason: there is nothing
+            # further worth doing, and `practice_loop.py` should stop charging transitions
+            # rather than spin out the rest of the period.
+            raise InteractionComplete
         ground_skills = self.applicable_ground_skills(state=state)
         if not ground_skills:
             raise InteractionComplete
@@ -333,24 +369,68 @@ class PureAgentMethod(Method):
 
         The in-flight skill is deliberately left unsettled at the period boundary, so this
         arm drops exactly one observation per period -- the same one `EesMethod` and
-        `RandomSkillsMethod` drop, which is what keeps the three comparable."""
-        _record, reply_text = self.call(
-            backend=self.practice_backend,
-            prompt=DIGEST_REQUEST,
-            phase=AgentPhase.PRACTICE,
-            kind=AgentCallKind.DIGEST,
-        )
-        note = reply_text.strip()
-        if len(note) > self.max_digest_chars:
-            # Announced rather than silently cut: an agent reading its own truncated note
-            # would otherwise treat a severed sentence as something it had decided.
-            note = note[: self.max_digest_chars] + "\n[note truncated here by the harness]"
-        # An empty reply leaves the previous note in place rather than erasing it. A failed
-        # digest query costs the agent this cycle's update; it must not cost every earlier
-        # cycle's as well.
-        if note:
-            self._digest = note
+        `RandomSkillsMethod` drop, which is what keeps the three comparable.
+
+        The counter advances either way, including when the spend ceiling has stopped this
+        run querying: the cycle happened, and a ledger whose `cycle_index` stalled would
+        misattribute every later call to the cycle before it."""
+        if not self.budget_exhausted():
+            # The digest is recorded against the cycle it summarises, so the counter moves
+            # after the call rather than before it.
+            _record, reply_text = self.call(
+                backend=self.practice_backend,
+                prompt=DIGEST_REQUEST,
+                phase=AgentPhase.PRACTICE,
+                kind=AgentCallKind.DIGEST,
+            )
+            note = reply_text.strip()
+            if len(note) > self.max_digest_chars:
+                # Announced rather than silently cut: an agent reading its own truncated
+                # note would otherwise treat a severed sentence as something it decided.
+                note = note[: self.max_digest_chars] + "\n[note truncated here by the harness]"
+            # An empty reply leaves the previous note in place rather than erasing it. A
+            # failed digest query costs the agent this cycle's update; it must not cost
+            # every earlier cycle's as well.
+            if note:
+                self._digest = note
         self._cycle_index += 1
+
+    # ---- spending ----------------------------------------------------------------
+
+    def spend_usd(self) -> float:
+        """Subscription allowance consumed by this run so far, summed over calls that
+        reported a cost. A LOWER BOUND: a call whose cost the CLI did not report
+        contributes nothing, so the ceiling below is conservative in the wrong direction
+        and that has to be said rather than assumed away."""
+        return self._spend_usd
+
+    def budget_exhausted(self) -> bool:
+        """Whether this run has stopped spending, checked before every decision.
+
+        Announced to stderr exactly once, the moment it trips, and then silent -- a line
+        per remaining step would bury it. stderr rather than stdout because
+        `scripts/run_sweep.py` prints progress on stdout and surfaces stderr immediately,
+        which is what lets a watcher cancel rather than find out at the end.
+
+        Once tripped it stays tripped, deliberately: an unreported cost could otherwise let
+        the running total sit just under the ceiling and resume spending."""
+        if self.max_total_cost_usd is None:
+            return False
+        if self._budget_exhausted:
+            return True
+        if self._spend_usd < self.max_total_cost_usd:
+            return False
+        self._budget_exhausted = True
+        print(
+            f"pure-agent: spend ceiling reached after {len(self._records)} calls "
+            f"(${self._spend_usd:.2f} of ${self.max_total_cost_usd:.2f} subscription "
+            "allowance, a lower bound). No further agent calls will be made; the run will "
+            "finish on no-ops and its results from here are NOT a measurement of the "
+            "method.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return True
 
     # ---- the agent call itself --------------------------------------------------
 
@@ -462,6 +542,7 @@ class PureAgentMethod(Method):
             query_error=metadata.get("query_error"),
         )
         self._records.append(record)
+        self._spend_usd += record.total_cost_usd or 0.0
         self.journal(record=record)
         return record, reply.text
 
