@@ -30,6 +30,7 @@ from hitl_pmp.environments.tossingroom.cli import (
 )
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
+from hitl_pmp.methods.pure_agent.cli import PureAgentCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
 # Registering tossing3d here costs nothing on a machine without KINDER: importing
@@ -58,6 +59,12 @@ METHODS: dict[str, type[MethodCli]] = {
     "skill-oracle": SkillOracleCli,
     "random-skills": RandomSkillsCli,
     "ees": EesCli,
+    # Registering pure-agent here costs nothing on a machine without prpl-agent-utils:
+    # importing PureAgentCli imports no agent SDK (see pure_agent/claude_code_backend.py,
+    # whose third-party import is lazy), so --help still lists every flag and only
+    # actually *running* it needs the optional dependency. Same arrangement as
+    # --env tossing3d above.
+    "pure-agent": PureAgentCli,
 }
 
 
