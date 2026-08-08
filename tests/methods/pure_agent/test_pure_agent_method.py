@@ -45,7 +45,12 @@ def build_args(**overrides):
 
 
 def build_method(
-    *, practice_replies=None, evaluation_replies=None, digest_reply=None, **method_overrides
+    *,
+    practice_replies=None,
+    evaluation_replies=None,
+    digest_reply=None,
+    cost_per_call=0.0,
+    **method_overrides,
 ):
     """A PureAgentMethod on Tossing Room, with a scripted transport on each side."""
     args = build_args()
@@ -59,14 +64,18 @@ def build_method(
     # `None` means "act legally at every decision point", which is what most of these
     # tests want; a fixed reply tuple is for the tests that are *about* a bad reply.
     practice_backend = (
-        FirstApplicableAgentBackend(replies_by_marker=markers)
+        FirstApplicableAgentBackend(replies_by_marker=markers, cost_usd_per_query=cost_per_call)
         if practice_replies is None
-        else ScriptedAgentBackend(replies=practice_replies, replies_by_marker=markers)
+        else ScriptedAgentBackend(
+            replies=practice_replies,
+            replies_by_marker=markers,
+            cost_usd_per_query=cost_per_call,
+        )
     )
     evaluation_backend = (
-        FirstApplicableAgentBackend()
+        FirstApplicableAgentBackend(cost_usd_per_query=cost_per_call)
         if evaluation_replies is None
-        else ScriptedAgentBackend(replies=evaluation_replies)
+        else ScriptedAgentBackend(replies=evaluation_replies, cost_usd_per_query=cost_per_call)
     )
     method = PureAgentMethod(
         env=problem.env,
@@ -171,6 +180,43 @@ def test_the_digest_carries_practice_knowledge_forward_and_only_after_practice()
     before_any_practice, after_one_period = openings[:NUM_TEST_TASKS], openings[NUM_TEST_TASKS:]
     assert all(note not in prompt for prompt in before_any_practice)
     assert all(note in prompt for prompt in after_one_period)
+
+
+def test_the_spend_ceiling_stops_the_run_querying_and_says_so():
+    """The guard that matters. A run makes one call per environment step against a weekly
+    allowance with no overflow, so it must be able to stop itself -- and a run that stops
+    must finish and write its results rather than crash, with the stop visible."""
+    method, problem, evaluation_problem, practice, evaluation = build_method(
+        max_total_cost_usd=1.0, cost_per_call=1.0
+    )
+    run_loop(method=method, problem=problem, evaluation_problem=evaluation_problem)
+    # One call spends the whole ceiling, so exactly one is made and then nothing -- over a
+    # run that would otherwise have made dozens.
+    assert len(method.call_records()) == 1
+    assert method.spend_usd() == 1.0
+    assert method.budget_exhausted()
+    assert len(practice.prompts_seen()) + len(evaluation.prompts_seen()) == 1
+
+
+def test_a_zero_ceiling_is_a_dry_run_that_makes_no_calls_at_all():
+    """Distinct from a small one: `--pure-agent-max-total-cost-usd 0` is how an operator
+    checks the whole wiring, on the real CLI, without spending anything."""
+    method, problem, evaluation_problem, _practice, _evaluation = build_method(
+        max_total_cost_usd=0.0, cost_per_call=1.0
+    )
+    run_loop(method=method, problem=problem, evaluation_problem=evaluation_problem)
+    assert method.call_records() == []
+    assert method.spend_usd() == 0.0
+
+
+def test_no_ceiling_means_no_ceiling():
+    """The tests above all run uncapped, so the disabled path is the one every other
+    assertion in this file depends on."""
+    method, problem, evaluation_problem, _practice, _evaluation = build_method()
+    assert method.max_total_cost_usd is None
+    run_loop(method=method, problem=problem, evaluation_problem=evaluation_problem)
+    assert not method.budget_exhausted()
+    assert len(method.call_records()) > 1
 
 
 def test_a_malformed_reply_becomes_a_counted_no_op_rather_than_a_crash():

@@ -21,7 +21,13 @@ from hitl_pmp.methods.pure_agent.prompts import PromptArm
 def build_args(*, argv=(), root):
     parser = argparse.ArgumentParser()
     PureAgentCli.add_arguments(parser=parser)
-    args = parser.parse_args(["--pure-agent-sandbox-dir", str(root / "sandbox"), *argv])
+    args = parser.parse_args([
+        "--pure-agent-sandbox-dir",
+        str(root / "sandbox"),
+        "--pure-agent-max-total-cost-usd",
+        "5.0",
+        *argv,
+    ])
     args.output_dir = root / "out"
     return args
 
@@ -76,6 +82,35 @@ def test_the_default_arm_is_the_one_with_no_hint_in_it():
     with tempfile.TemporaryDirectory() as root:
         args = build_args(root=Path(root))
     assert args.pure_agent_prompt_arm is PromptArm.MINIMAL
+
+
+def test_the_run_level_spend_ceiling_is_required_rather_than_defaulted():
+    """A run makes one call per environment step against a weekly allowance with no
+    overflow. Forgetting a ceiling must not be possible by omission."""
+    parser = argparse.ArgumentParser()
+    PureAgentCli.add_arguments(parser=parser)
+    with tempfile.TemporaryDirectory() as root, pytest.raises(SystemExit):
+        parser.parse_args(["--pure-agent-sandbox-dir", str(Path(root) / "sandbox")])
+
+
+def test_a_per_query_cap_is_on_by_default():
+    """It is off in `prpl-agent-utils` and was off on the previous arm. That arm made 6
+    calls per trial; this one makes thousands, so an uncapped long tail here can consume
+    the remaining week with nothing to stop it."""
+    with tempfile.TemporaryDirectory() as root:
+        args = build_args(root=Path(root))
+        backend = PureAgentCli.backend(args=args, sandbox=args.pure_agent_sandbox_dir / "practice")
+    assert backend.max_budget_usd_per_query > 0
+
+
+def test_a_negative_ceiling_means_no_ceiling_and_zero_means_spend_nothing():
+    """Zero is a legitimate request -- a dry run that makes no calls -- so it must not be
+    conflated with "unlimited"."""
+    with tempfile.TemporaryDirectory() as root:
+        disabled = build_args(argv=("--pure-agent-max-total-cost-usd", "-1"), root=Path(root))
+        dry = build_args(argv=("--pure-agent-max-total-cost-usd", "0"), root=Path(root))
+    assert disabled.pure_agent_max_total_cost_usd < 0
+    assert dry.pure_agent_max_total_cost_usd == 0
 
 
 def test_docker_is_off_by_default_and_says_so_in_the_backend_id():

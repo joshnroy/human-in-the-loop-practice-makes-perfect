@@ -63,6 +63,49 @@ What a replay does **not** do is reproduce the *method*. A second live run makes
 decisions, because the agent is not deterministic. So a replay is a re-scoring of one run,
 never a second sample, and a set of replays is not a set of seeds.
 
+## Isolation: what actually runs, and how it differs from the package default
+
+`prpl_agent_utils.agents.ClaudeCodeAgent` defaults to `use_docker=True`. This backend
+defaults to **False**, deliberately, and the deviation is worth stating precisely because
+it changes the isolation properties:
+
+- Docker **cannot** run on this machine at all: `docker images` returns
+  `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`.
+  So `True` is not a choice that is available here, it is a choice that fails.
+- In host mode the CLI runs with `--dangerously-skip-permissions` and a `CLAUDE_CONFIG_DIR`
+  pointed at `<sandbox>/.agent_home`, so the operator's live `~/.claude` is neither read
+  nor written. With `CLAUDE_CODE_OAUTH_TOKEN` set, no credential is copied into the sandbox
+  at all.
+- The container's job is to contain an agent that writes files and runs commands. **This
+  agent is given no tools** (`tools=""`), so the only thing it can emit is text. Measured:
+  `num_tool_calls == 0` on every call of every probe and pilot run to date.
+
+Turn Docker back on wherever it is available; the argument above is about what is
+proportionate here, not about containers being unnecessary in general.
+
+## Spending, and the two caps
+
+Both caps are on by default, and the run-level one is **required** on the CLI:
+
+| cap | flag | what it bounds |
+| --- | --- | --- |
+| per call | `--pure-agent-max-cost-usd-per-query` (default 0.50) | one long-tailed call |
+| per run | `--pure-agent-max-total-cost-usd` (**required**) | the whole run |
+
+The run-level one is the one that matters. A run makes one call per environment step —
+thousands of them — against a weekly allowance that has **no overflow**
+(`extra_usage.is_enabled: false`, `can_purchase_credits: false`): at 100% every agent on
+the machine stops until the window resets, and there is no way to buy through it. When the
+ceiling is reached the run makes no further calls, finishes on no-ops, and says so on
+stderr; its results from that point are not a measurement of the method.
+
+The per-call cap needs *handling*, not merely enabling: the CLI's budget stop emits a
+`result` with `subtype: "error_max_budget_usd"` and **no `result` field**, which
+`prpl_agent_utils._parse_stream` treats as fatal, discarding a decision already paid for.
+`ClaudeCodeAgentBackend.recover_from_stream_log` reads both the cost and the agent's last
+assistant text back out of the stream log the package already wrote, so a capped call that
+had already answered still yields its answer.
+
 ## What a run costs
 
 Decisions per run:
@@ -76,6 +119,19 @@ plus one opening call per episode and one digest call per cycle. At the EES-matc
 defaults on Tossing Room (`--num-cycles 10 --max-steps-per-interaction 150
 --num-test-tasks 30`, horizon 12) that is `10*150 + 11*30*12 = 5,460` decisions. **Every
 one is a network call**, and within a run they are strictly sequential.
+
+**Measured cost per call, Opus, Tossing Room evaluation episodes** (92 calls, first
+sweep of the pilot run): mean **$0.030**, median $0.023, max $0.204, `0/92` malformed,
+`0/92` with any tool call, mean 3.7 s.
+
+That is **not** the figure to extrapolate from the authoring arm, which measured
+$1.64–$3.24 per call. The difference is what an agentic *round* is versus what a decision
+is: the authoring arm spent a round reading, writing and revising a file over many turns,
+while a decision here is one assistant turn with no tools against a short conversation.
+Anything sized off the authoring number over-estimates this arm by roughly two orders of
+magnitude, and anything sized off the number above must still account for practice
+periods separately — those conversations run to 150 turns and their per-call cost climbs
+with the context, where an evaluation episode's ~12 turns do not.
 
 Across seeds they are independent and genuinely parallel: `prpl_agent_utils`'
 `claude_auth.py` serialises only its file-copy credential fallback, and a stable

@@ -50,6 +50,29 @@ class PureAgentCli:
             "a per-step call is one short turn, so the model is not where the cost is.",
         )
         parser.add_argument(
+            "--pure-agent-max-total-cost-usd",
+            type=float,
+            required=True,
+            help="Hard ceiling on this run's subscription allowance, in API-equivalent "
+            "USD. REQUIRED, and required rather than defaulted on purpose: a run makes "
+            "one agent call per environment step (thousands of them), the weekly "
+            "allowance it draws on has no overflow and cannot be topped up, and at 100%% "
+            "every agent on this machine stops until the window resets. Once the ceiling "
+            "is reached the run makes no further calls and finishes on no-ops -- its "
+            "results from that point are not a measurement of the method, and it says so "
+            "on stderr. Pass a negative number to disable it, which you should not do "
+            "without having done the arithmetic.",
+        )
+        parser.add_argument(
+            "--pure-agent-max-cost-usd-per-query",
+            type=float,
+            default=ClaudeCodeAgentBackend.model_fields["max_budget_usd_per_query"].default,
+            help="Per-call cap handed to the Claude Code CLI. Bounds one long-tailed "
+            "call; --pure-agent-max-total-cost-usd is what bounds the run. A capped call "
+            "that had already answered still yields its answer (the CLI's stop discards "
+            "the result, so it is recovered from the stream log).",
+        )
+        parser.add_argument(
             "--pure-agent-prompt-arm",
             type=PromptArm,
             choices=list(PromptArm),
@@ -105,6 +128,14 @@ class PureAgentCli:
                 ledger_path=(
                     args.output_dir / "agent_calls.jsonl" if args.output_dir is not None else None
                 ),
+                # A negative value is how the flag says "no ceiling", so it maps to the
+                # field's own `None`. Zero is NOT that: it means "spend nothing", which is
+                # a legitimate thing to ask for and a useful dry run.
+                max_total_cost_usd=(
+                    None
+                    if args.pure_agent_max_total_cost_usd < 0
+                    else args.pure_agent_max_total_cost_usd
+                ),
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
@@ -120,4 +151,5 @@ class PureAgentCli:
             sandbox_dir=sandbox,
             model=args.pure_agent_model,
             use_docker=args.pure_agent_use_docker,
+            max_budget_usd_per_query=args.pure_agent_max_cost_usd_per_query,
         )
