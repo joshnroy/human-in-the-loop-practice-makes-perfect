@@ -264,3 +264,47 @@ Three things follow for the next experiment:
    (135/140) while TRASH sits at 72/140 and is untouched by every human arm — the remaining
    +73/300 to the oracle is mostly there, and a human rescue is demonstrably not the tool
    that moves it.
+
+## Addendum (2026-08-08): verifying the `--human-reset-target` null result, and a decision for Josh
+
+This section is a **later addition, appended without touching anything above.** See
+[The paired tests](#the-paired-tests) and [Recommendation](#recommendation) item 2 for the
+original `stuck-random` − `stuck-initial` row and its numbers, which are not restated here.
+
+**What was verified, and from what.** This run's raw per-seed `stats.json` files were never
+committed — `results/` is `.gitignore`d, per this repo's convention that only figures and
+the log itself are durable — so `PairedTests.sign_flip`'s exact p-value for that comparison
+cannot be re-run bit-for-bit from what is in git. What the committed table does support:
+
+- The gap, the `better`/`worse`/`tied` counts, and the two arms' pooled OVERALL scores are
+  internally consistent with each other (checked by hand: the counts sum to ten seeds, and
+  the gap equals the difference of the two pooled scores).
+- Dividing the reported gap by the ten seeds gives a mean per-seed difference that comes out
+  to roughly **one-fifth of that comparison's own reported MDE** — the smallest true effect
+  this design had 80% power to detect. That is what separates "no effect" from "no power":
+  the design was not too underpowered to see an effect of the size actually observed, so its
+  absence is informative rather than a sign the test couldn't have found one.
+- A plain two-sided exact binomial sign test on the non-tied seeds — which uses only the
+  count of seeds that went each way and ignores the magnitude of every difference — lands
+  at p ≈ 0.73. That is a different, cruder test landing in the same "nowhere near
+  significant" range as the reported p, which is consistent with the reported result without
+  being independent proof of its exact value.
+
+Both checks are consistent with the log's own conclusion: **`--human-reset-target` is a
+null result** on this domain at n = 10 paired seeds, and the design had the power to have
+seen an effect this size had one been there.
+
+**Recommendation: drop `--human-reset-target` as an axis in future ladder work.** Restated
+here as an explicit decision for Josh, not folded back into the numbered list above, because
+dropping a measured axis changes what a future ladder run measures — that is not an
+execution detail for an agent to decide unilaterally.
+
+- **Arm-count saving.** The axis only applies to the four human-treated arms — the 2×2 of
+  `--ask-for-help` × `--human-reset-target` (`stuck-initial`, `stuck-random`,
+  `at-random-initial`, `at-random-random`). Dropping the axis and fixing the human to one
+  target collapses those four to two (`stuck`, `at-random`): N = 4 becomes N/2 = 2 within
+  that subgrid. The other four arms (`no-human`, `two-way-ledge`, `skill-oracle`,
+  `random-skills`) never carried this axis, so the ladder's total arm count would go from 8
+  to 6, not to 4.
+- **Nothing here changes the CLI, re-runs anything, or edits the existing eight-arm data.**
+  This is a recommendation for the *next* ladder run, not a retroactive change to this one.
