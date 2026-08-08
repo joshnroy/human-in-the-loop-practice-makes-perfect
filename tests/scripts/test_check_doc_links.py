@@ -109,7 +109,10 @@ def test_clean_tree_passes(*, tmp_path: Path) -> None:
             f"{LOG_DIR}/2026-08-07-log.md": (
                 "# A log\n\n![a figure](2026-08-07-fig.png)\n\n"
                 "[seed 3, stranded](2026-08-07-seed3.mp4)\n"
-            )
+            ),
+            # The relative targets have to exist: a link is only clean if it resolves.
+            f"{LOG_DIR}/2026-08-07-fig.png": "",
+            f"{LOG_DIR}/2026-08-07-seed3.mp4": "",
         },
     )
     result = _run(repo_root=root)
@@ -231,6 +234,112 @@ def test_no_annotation_outside_github_actions(*, tmp_path: Path) -> None:
     )
     result = _run(repo_root=root)
     assert "::error" not in result.stdout
+
+
+# --- the second check: a relative link whose target does not exist ---------------
+#
+# The other half of the same rule. Making every figure reference relative moved the
+# failure mode rather than removing it: a relative link cannot orphan, but it can point
+# at a filename that was never committed or was renamed, and GitHub renders that as a
+# dead link with no warning anywhere. ~22 links were converted by hand in PR #173, which
+# is exactly the situation where a typo survives review.
+
+
+def test_existing_relative_target_passes(*, tmp_path: Path) -> None:
+    root = _make_tree(
+        tmp_path=tmp_path,
+        files={
+            f"{LOG_DIR}/log.md": "![fig](fig.png)\n[clip](sub/clip.mp4)\n",
+            f"{LOG_DIR}/fig.png": "",
+            f"{LOG_DIR}/sub/clip.mp4": "",
+        },
+    )
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
+
+
+def test_missing_relative_target_fails(*, tmp_path: Path) -> None:
+    root = _make_tree(tmp_path=tmp_path, files={f"{LOG_DIR}/log.md": "![fig](missing.png)\n"})
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_VIOLATION, result.stdout + result.stderr
+    assert f"{LOG_DIR}/log.md:1" in result.stdout
+    assert "missing.png" in result.stdout
+
+
+def test_missing_relative_target_emits_an_annotation(*, tmp_path: Path) -> None:
+    root = _make_tree(tmp_path=tmp_path, files={f"{LOG_DIR}/log.md": "![fig](missing.png)\n"})
+    result = _run(repo_root=root, github_actions=True)
+    assert f"::error file={LOG_DIR}/log.md,line=1::" in result.stdout
+
+
+def test_fragment_resolves_against_the_file_part(*, tmp_path: Path) -> None:
+    """`other.md#section` is a link to `other.md`; the anchor is not a path."""
+    root = _make_tree(
+        tmp_path=tmp_path,
+        files={f"{LOG_DIR}/log.md": "[there](other.md#results)\n", f"{LOG_DIR}/other.md": "# x\n"},
+    )
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
+
+
+def test_bare_anchor_and_mailto_are_not_paths(*, tmp_path: Path) -> None:
+    root = _make_tree(
+        tmp_path=tmp_path,
+        files={f"{LOG_DIR}/log.md": "[jump](#results)\n[mail](mailto:a@b.c)\n"},
+    )
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
+
+
+def test_urls_are_not_checked_for_existence(*, tmp_path: Path) -> None:
+    """A URL has no local target. The first check owns URLs; this one must ignore them."""
+    root = _make_tree(
+        tmp_path=tmp_path, files={f"{LOG_DIR}/log.md": f"[kinder]({RAW_OTHER_REPO})\n"}
+    )
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
+
+
+def test_links_inside_a_fenced_code_block_are_ignored(*, tmp_path: Path) -> None:
+    """A log showing Markdown syntax in a fence is documenting, not linking."""
+    root = _make_tree(
+        tmp_path=tmp_path,
+        files={f"{LOG_DIR}/log.md": "```text\n![alt](2026-08-07-foo.png)\n```\n"},
+    )
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
+
+
+def test_links_inside_an_inline_code_span_are_ignored(*, tmp_path: Path) -> None:
+    """`CLAUDE.md` writes the rule this way, so a log quoting it must not trip."""
+    root = _make_tree(
+        tmp_path=tmp_path,
+        files={f"{LOG_DIR}/log.md": "Reference it as `![alt](2026-08-07-foo.png)`, relative.\n"},
+    )
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
+
+
+def test_a_link_title_is_not_part_of_the_path(*, tmp_path: Path) -> None:
+    root = _make_tree(
+        tmp_path=tmp_path,
+        files={f"{LOG_DIR}/log.md": '![fig](fig.png "a caption")\n', f"{LOG_DIR}/fig.png": ""},
+    )
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_OK, result.stdout + result.stderr
+
+
+def test_both_checks_report_in_one_run(*, tmp_path: Path) -> None:
+    """A guard that stops after the first check makes fixing this two CI rounds."""
+    root = _make_tree(
+        tmp_path=tmp_path,
+        files={f"{LOG_DIR}/log.md": f"![a]({RAW_SELF})\n![b](missing.png)\n"},
+    )
+    result = _run(repo_root=root)
+    assert result.returncode == EXIT_VIOLATION, result.stdout + result.stderr
+    assert f"{LOG_DIR}/log.md:1" in result.stdout
+    assert f"{LOG_DIR}/log.md:2" in result.stdout
+    assert "missing.png" in result.stdout
 
 
 def test_committed_tree_is_clean() -> None:

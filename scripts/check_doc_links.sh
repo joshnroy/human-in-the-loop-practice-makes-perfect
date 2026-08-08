@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 #
-# Fail if a committed experiment log links back at *this* repository by URL.
+# Fail if a link in a committed experiment log is one that will silently die.
 #
 #     scripts/check_doc_links.sh
 #     scripts/check_doc_links.sh --repo-root /somewhere/else   # for the tests
 #
-# Runs as a step of CI's `lint` job, and takes about 50 ms.
+# Runs as a step of CI's `lint` job, and takes about 50 ms. Two checks, both reported in
+# one run so that fixing a log is one pass rather than two CI rounds:
+#
+#   1. a link back at *this* repository by URL -- see WHY below
+#   2. a relative link whose target does not exist -- see check 2's own comment
 #
 # WHY. `main` allows squash-merge only, so merging a PR mints a new commit and
 # **orphans every SHA that PR pinned**. A `raw.githubusercontent.com` URL sitting in a
@@ -42,9 +46,9 @@
 # below, and `tests/scripts/test_check_doc_links.py` asserts the failing direction.
 #
 # Exit codes:
-#   0  no banned URL found
-#   1  at least one banned URL found
-#   2  the check could not run (missing scan directory, grep error) -- deliberately not
+#   0  both checks clean
+#   1  at least one banned URL, or at least one dangling relative target
+#   2  a check could not run (missing scan directory, grep error) -- deliberately not
 #      0, because a guard with nothing to scan reporting success is the failure mode
 #      this whole script exists to prevent
 
@@ -82,8 +86,9 @@ REPO_ROOT="$(cd -P "$(dirname "$script_source")/.." && pwd)"
 usage() {
     echo "usage: $(basename "$0") [--repo-root PATH]"
     echo
-    echo "Fail if a committed experiment log links back at this repository by URL."
-    echo "Exit 0 clean, 1 violation found, 2 the check could not run."
+    echo "Fail if a committed experiment log links back at this repository by URL, or"
+    echo "carries a relative link whose target does not exist."
+    echo "Exit 0 clean, 1 violation found, 2 a check could not run."
 }
 
 while [ $# -gt 0 ]; do
@@ -120,10 +125,21 @@ if [ ! -d "$SCAN_DIR" ]; then
     exit "$EXIT_ERROR"
 fi
 
-# --- the check -------------------------------------------------------------
+annotate() {
+    # A GitHub annotation, so a red CI log links straight to the offending line and
+    # names the rule. Suppressed locally, where it is noise duplicating the human line.
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        echo "::error file=$1,line=$2::$3"
+    fi
+}
+
+total_files="$(find "$SCAN_DIR" -type f -name '*.md' | wc -l | tr -d ' ')"
+violations=0
+
+# --- check 1: a URL pointing back at this repository -----------------------
 # Paths are printed relative to the repo root, which is what a GitHub annotation needs
 # (it resolves `file=` against the workspace) and what a human can paste into an editor.
-matches="$(grep -rEn --include='*.md' -e "$PATTERN_RAW" -e "$PATTERN_BLOB" -- "$SCAN_DIR")"
+url_matches="$(grep -rEn --include='*.md' -e "$PATTERN_RAW" -e "$PATTERN_BLOB" -- "$SCAN_DIR")"
 grep_status=$?
 
 if [ "$grep_status" -gt 1 ]; then
@@ -131,34 +147,112 @@ if [ "$grep_status" -gt 1 ]; then
     exit "$EXIT_ERROR"
 fi
 
-total_files="$(find "$SCAN_DIR" -type f -name '*.md' | wc -l | tr -d ' ')"
-
 if [ "$grep_status" -eq 1 ]; then
     echo "check_doc_links: 0/$total_files file(s) under $SCAN_DIR/ contain a URL into this repo."
-    exit "$EXIT_OK"
-fi
+else
+    # Report every offending line, so fixing this is one pass rather than an iterative
+    # game against CI.
+    offending_lines="$(printf '%s\n' "$url_matches" | wc -l | tr -d ' ')"
+    offending_files="$(printf '%s\n' "$url_matches" | cut -d: -f1 | sort -u | wc -l | tr -d ' ')"
+    violations=$((violations + offending_lines))
 
-# grep_status == 0: at least one banned URL. Report every offending line, so fixing
-# this is one pass rather than an iterative game against CI.
-offending_lines="$(printf '%s\n' "$matches" | wc -l | tr -d ' ')"
-offending_files="$(printf '%s\n' "$matches" | cut -d: -f1 | sort -u | wc -l | tr -d ' ')"
+    echo "check_doc_links: $offending_files/$total_files file(s) under $SCAN_DIR/ contain a URL into this repo ($offending_lines offending line(s))."
+    echo
+    printf '%s\n' "$url_matches"
+    echo
+    echo "A committed file must link to this repo's own content by *repo-relative* path, not"
+    echo "by URL: squash-merge orphans every pinned SHA, and the dead URL still returns 200"
+    echo "for months, so the breakage is silent. Write ![alt](2026-08-07-foo.png) instead."
+    echo "The full rule, including why a PR *body* is the exception: $RULE_REFERENCE."
+    echo
 
-echo "check_doc_links: $offending_files/$total_files file(s) under $SCAN_DIR/ contain a URL into this repo ($offending_lines offending line(s))."
-echo
-printf '%s\n' "$matches"
-echo
-echo "A committed file must link to this repo's own content by *repo-relative* path, not"
-echo "by URL: squash-merge orphans every pinned SHA, and the dead URL still returns 200"
-echo "for months, so the breakage is silent. Write ![alt](2026-08-07-foo.png) instead."
-echo "The full rule, including why a PR *body* is the exception: $RULE_REFERENCE."
-
-if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
     while IFS= read -r match; do
         file="${match%%:*}"
         rest="${match#*:}"
-        line="${rest%%:*}"
-        echo "::error file=$file,line=$line::URL into this repository in a committed file. Use a repo-relative link -- squash-merge orphans every pinned SHA, silently. See $RULE_REFERENCE."
-    done <<< "$matches"
+        annotate "$file" "${rest%%:*}" "URL into this repository in a committed file. Use a repo-relative link -- squash-merge orphans every pinned SHA, silently. See $RULE_REFERENCE."
+    done <<< "$url_matches"
 fi
 
-exit "$EXIT_VIOLATION"
+# --- check 2: a relative link whose target does not exist ------------------
+# The other half of the same rule. Making every figure reference relative moved the
+# failure mode rather than removing it: a relative link cannot orphan, but it can point
+# at a filename that was never committed or was later renamed, and GitHub renders that
+# as a dead link with no warning anywhere.
+#
+# Deliberately not a Markdown parser. The awk pass below drops fenced code blocks and
+# inline code spans first -- `CLAUDE.md` writes the rule as `![alt](2026-08-07-foo.png)`
+# inside backticks, so a log quoting it would otherwise be flagged for a figure it never
+# claimed to have. Measured on the tree at the time of writing: 97 relative targets, 0
+# of them inside a fence or a span, so this is prevention rather than a fix. Known
+# limits, all currently unused here: reference-style (`[x]: path`) links, angle-bracket
+# targets (`](<a b.png>)`), and percent-encoded paths are not resolved.
+extract_targets() {
+    awk '
+        /^[[:space:]]*```/ { fence = !fence; next }
+        fence { next }
+        {
+            line = $0
+            gsub(/`[^`]*`/, "", line)
+            while (match(line, /\]\([^()]*\)/)) {
+                print NR "\t" substr(line, RSTART + 2, RLENGTH - 3)
+                line = substr(line, RSTART + RLENGTH)
+            }
+        }
+    ' "$1"
+}
+
+dangling=""
+targets_checked=0
+
+while IFS= read -r file; do
+    while IFS=$'\t' read -r line_number target; do
+        # A title (`](fig.png "caption")`) is not part of the path, and neither is a
+        # fragment (`](other.md#results)`) -- which also makes a bare `#anchor` empty.
+        target="${target%% *}"
+        target="${target%%#*}"
+        case "$target" in
+            "") continue ;;
+            # A scheme-qualified or protocol-relative URL has no local target. Check 1
+            # owns URLs; this one must not try to resolve them on disk.
+            *://*|mailto:*|//*) continue ;;
+        esac
+        targets_checked=$((targets_checked + 1))
+        # GitHub resolves a leading `/` against the repo root, everything else against
+        # the linking file's own directory.
+        case "$target" in
+            /*) resolved="${target#/}" ;;
+            *) resolved="$(dirname "$file")/$target" ;;
+        esac
+        if [ ! -e "$resolved" ]; then
+            dangling+="$file:$line_number: $target"$'\n'
+        fi
+    done < <(extract_targets "$file")
+done < <(find "$SCAN_DIR" -type f -name '*.md')
+
+if [ -z "$dangling" ]; then
+    echo "check_doc_links: 0/$targets_checked relative link target(s) under $SCAN_DIR/ are missing."
+else
+    dangling_lines="$(printf '%s' "$dangling" | wc -l | tr -d ' ')"
+    violations=$((violations + dangling_lines))
+
+    echo "check_doc_links: $dangling_lines/$targets_checked relative link target(s) under $SCAN_DIR/ are missing."
+    echo
+    printf '%s' "$dangling"
+    echo
+    echo "A relative link is only correct if it resolves. Check the filename against what"
+    echo "is actually committed beside the log -- a renamed or never-committed figure"
+    echo "renders as a dead link on GitHub with no warning anywhere."
+    echo
+
+    while IFS= read -r entry; do
+        [ -n "$entry" ] || continue
+        file="${entry%%:*}"
+        rest="${entry#*:}"
+        annotate "$file" "${rest%%:*}" "Relative link target does not exist: ${rest#*: }. Check it against what is committed beside the log. See $RULE_REFERENCE."
+    done <<< "$dangling"
+fi
+
+if [ "$violations" -gt 0 ]; then
+    exit "$EXIT_VIOLATION"
+fi
+exit "$EXIT_OK"
