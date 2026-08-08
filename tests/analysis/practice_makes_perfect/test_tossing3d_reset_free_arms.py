@@ -15,6 +15,8 @@ import json
 import statistics
 from pathlib import Path
 
+import pytest
+
 from analysis.practice_makes_perfect.paired_tests import PairedTests
 from analysis.practice_makes_perfect.tossing3d_reset_free_arms import (
     NEVER,
@@ -32,16 +34,35 @@ def _write_run(
     run_dir: Path,
     solved_per_sweep: list[int],
     transitions_per_cycle: list[int] | None = None,
+    practice_outcomes_per_cycle: list[dict[str, dict[str, int]]] | None = None,
 ) -> None:
     """One run's `stats.json`. `transitions_per_cycle` defaults to a steady 4 per cycle,
-    i.e. a robot that never strands; pass zeros to model one that does."""
+    i.e. a robot that never strands; pass zeros to model one that does.
+    `practice_outcomes_per_cycle` defaults to empty per-cycle dicts -- fine for tests that
+    never call `toss_transition_index`, which is the only reader of this field."""
     run_dir.mkdir(parents=True, exist_ok=True)
     steps = transitions_per_cycle or [4] * (len(solved_per_sweep) - 1)
     cumulative = [0]
     for step in steps:
         cumulative.append(cumulative[-1] + step)
     evaluations = [[cumulative[i], solved, NUM_TASKS] for i, solved in enumerate(solved_per_sweep)]
-    (run_dir / "stats.json").write_text(json.dumps({"evaluations": evaluations}))
+    outcomes = practice_outcomes_per_cycle or [{} for _ in steps]
+    (run_dir / "stats.json").write_text(
+        json.dumps({"evaluations": evaluations, "practice_outcomes_per_cycle": outcomes})
+    )
+
+
+def _outcomes_cycle(
+    *, pick_attempts: int = 0, move_attempts: int = 0, toss_attempts: int = 0
+) -> dict[str, dict[str, int]]:
+    """One cycle's `practice_outcomes_per_cycle` entry, real `stats.json` shape, with only
+    the fields `toss_transition_index` reads (`num_attempts`) populated for real -- the
+    rest of the real schema (`num_random_attempts` etc.) is irrelevant to that derivation."""
+    return {
+        "Pick": {"num_attempts": pick_attempts, "num_successes": min(pick_attempts, 1)},
+        "MoveToThrowPose": {"num_attempts": move_attempts, "num_successes": min(move_attempts, 1)},
+        "Toss": {"num_attempts": toss_attempts, "num_successes": min(toss_attempts, 1)},
+    }
 
 
 def _settled(*, level: int, jitter: list[int] | None = None) -> list[int]:
@@ -215,3 +236,131 @@ def test_a_single_idle_cycle_is_not_stranding() -> None:
     ordinary exploration noise into the effect being claimed."""
     assert Tossing3DResetFree.stranding_onset(transitions=[4, 0, 4, 4]) is None
     assert Tossing3DResetFree.stranding_onset(transitions=[4, 0, 0, 4]) is None
+
+
+# --- toss_transition_index: the figure annotation's whole load-bearing claim ---
+#
+# Josh's constraint: derive the toss and the stranding point from the per-cycle
+# transition/skill-attempt record, never from where the score curve visually goes flat.
+# These tests exercise exactly that derivation against a fabricated run whose "real"
+# answer is known by construction (7 -- one Pick, five MoveToThrowPose attempts, one
+# Toss, matching what seed 0 of the real never-arm sweep actually recorded).
+
+
+def test_toss_transition_index_reads_the_last_active_cycles_attempt_counts(
+    *, tmp_path: Path
+) -> None:
+    """The number the whole annotation rests on. `stats.json` here is built to mirror
+    seed 0 of the real never-arm sweep exactly: Pick (1 attempt) + MoveToThrowPose
+    (5 attempts) + Toss (1 attempt) = 7 transitions in cycle 0, then silence."""
+    run_dir = tmp_path / NEVER / "ees" / "0"
+    _write_run(
+        run_dir=run_dir,
+        solved_per_sweep=[0, 0, 0],
+        transitions_per_cycle=[7, 0],
+        practice_outcomes_per_cycle=[
+            _outcomes_cycle(pick_attempts=1, move_attempts=5, toss_attempts=1),
+            _outcomes_cycle(),
+        ],
+    )
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+
+    index = Tossing3DResetFree.toss_transition_index(
+        evaluations=arms[NEVER][0], outcomes=outcomes[NEVER][0]
+    )
+
+    assert index == 7
+
+
+def test_toss_transition_index_raises_if_the_run_never_stranded(*, tmp_path: Path) -> None:
+    """A run that kept practising has no terminal toss to locate -- annotating one would
+    invent a stranding event that the record does not contain."""
+    run_dir = tmp_path / NEVER / "ees" / "0"
+    _write_run(
+        run_dir=run_dir,
+        solved_per_sweep=[0, 0, 0, 0],
+        transitions_per_cycle=[7, 5, 3],
+        practice_outcomes_per_cycle=[_outcomes_cycle(toss_attempts=1)] * 3,
+    )
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+
+    with pytest.raises(ValueError, match="never stranded"):
+        Tossing3DResetFree.toss_transition_index(
+            evaluations=arms[NEVER][0], outcomes=outcomes[NEVER][0]
+        )
+
+
+def test_toss_transition_index_raises_if_the_last_active_cycle_never_attempted_a_toss(
+    *, tmp_path: Path
+) -> None:
+    """Guards against misattributing a different kind of stall -- e.g. MoveToThrowPose
+    exhausting its budget without ever succeeding -- to a toss that never happened."""
+    run_dir = tmp_path / NEVER / "ees" / "0"
+    _write_run(
+        run_dir=run_dir,
+        solved_per_sweep=[0, 0, 0],
+        transitions_per_cycle=[5, 0],
+        practice_outcomes_per_cycle=[
+            _outcomes_cycle(pick_attempts=1, move_attempts=4, toss_attempts=0),
+            _outcomes_cycle(),
+        ],
+    )
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+
+    with pytest.raises(ValueError, match="no Toss attempt"):
+        Tossing3DResetFree.toss_transition_index(
+            evaluations=arms[NEVER][0], outcomes=outcomes[NEVER][0]
+        )
+
+
+def test_load_practice_outcomes_reads_both_directory_layouts(*, tmp_path: Path) -> None:
+    """Same two-layout hazard as `load_arms` -- a loader fixed to one depth would find
+    nothing under the committed `docs/experiment-logs/` tree."""
+    _write_run(
+        run_dir=tmp_path / NEVER / "0",
+        solved_per_sweep=[0, 0],
+        transitions_per_cycle=[3],
+        practice_outcomes_per_cycle=[_outcomes_cycle(toss_attempts=1)],
+    )
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+    assert outcomes[NEVER][0][0]["Toss"]["num_attempts"] == 1
+
+
+def test_render_practice_with_outcomes_annotates_without_raising(*, tmp_path: Path) -> None:
+    """The figure Josh asked for: an annotated `render_practice` must still just work,
+    given real-shaped `outcomes`, and still write a figure."""
+    for seed, (transitions, _toss_index) in enumerate([([7, 0, 0], 7), ([3, 0, 0], 3)]):
+        move_attempts = transitions[0] - 2  # 1 pick + 1 toss + the rest MoveToThrowPose
+        _write_run(
+            run_dir=tmp_path / NEVER / "ees" / str(seed),
+            solved_per_sweep=[0] * len(transitions) + [0],
+            transitions_per_cycle=transitions,
+            practice_outcomes_per_cycle=[
+                _outcomes_cycle(pick_attempts=1, move_attempts=move_attempts, toss_attempts=1),
+                *[_outcomes_cycle() for _ in transitions[1:]],
+            ],
+        )
+        _write_run(
+            run_dir=tmp_path / SCHEDULED / "ees" / str(seed),
+            solved_per_sweep=[0] * len(transitions) + [0],
+            transitions_per_cycle=[4] * len(transitions),
+        )
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+    output = tmp_path / "practice.png"
+
+    Tossing3DResetFree.render_practice(arms=arms, output=output, outcomes=outcomes, annotate_seed=0)
+
+    assert output.stat().st_size > 0
+    # The figure's annotation must match what the fixture actually encodes, not merely
+    # fail to raise.
+    for seed, (_transitions, expected_index) in enumerate([([7, 0, 0], 7), ([3, 0, 0], 3)]):
+        assert (
+            Tossing3DResetFree.toss_transition_index(
+                evaluations=arms[NEVER][seed], outcomes=outcomes[NEVER][seed]
+            )
+            == expected_index
+        )

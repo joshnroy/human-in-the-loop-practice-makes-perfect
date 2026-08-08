@@ -235,11 +235,25 @@ is the mildest and seed 0 (`9.0 → 0.0`) the most complete.
 | stranding onset | — | **cycle `1` on every seed** |
 | practice cycles taking zero steps | `0/1000` | **`990/1000`** |
 
-![Cumulative practice transitions against practice cycle, one line per seed. The ten scheduled lines rise steadily and linearly to between 316 and 354 by cycle 100. The ten reset-free lines rise only in the first cycle, to between 3 and 13, and are then perfectly flat for the remaining ninety-nine cycles.](2026-08-08-tossing3d-reset-free-remeasured-practice.png)
+![Cumulative practice transitions against practice cycle, one line per seed, left panel. The ten scheduled lines rise steadily and linearly to between 316 and 354 by cycle 100. The ten reset-free lines rise only in the first cycle, to between 3 and 13, and are then perfectly flat for the remaining ninety-nine cycles. A shaded region and dashed vertical line mark cycle 1 onward as stranded (0 transitions/cycle, 10/10 never-arm seeds), and a marker on seed 0's curve is labelled "seed 0: last action (Toss) at transition 7". A small right panel plots the toss transition index for all ten never-arm seeds as a dot strip -- 3, 3, 5, 5, 5, 7, 12, 12, 12, 13 -- with seed 0's value of 7 marked in a darker colour near the median of 6.0.](2026-08-08-tossing3d-reset-free-remeasured-practice.png)
 
-**Figure 3. Ten flat lines.** A robot that keeps practising is a line that keeps rising;
-a stranded one is a line that goes flat and stays flat, and the cycle it flattens at is
-its stranding onset read straight off the axis. Every reset-free seed flattens at cycle 1.
+**Figure 3. Ten flat lines, and where each one stops.** A robot that keeps practising is
+a line that keeps rising; a stranded one is a line that goes flat and stays flat. The
+annotation is derived from the per-cycle transition and skill-attempt record
+(`practice_outcomes_per_cycle` and `evaluations`), never from where a line visually goes
+flat: `toss_transition_index` locates the last cycle with any activity, confirms from
+that cycle's own attempt counts that `Toss` was among the skills attempted there, and
+reports the cumulative transition count as of its end.
+
+**Two different claims sit on this figure, and they should not be conflated.** *Every*
+never-arm seed strands at **cycle 1** — that is the shaded region and dashed line, uniform
+across all ten seeds, matching the `10/10` in the table above. The **transition index** at
+which the toss happens is not uniform: it ranges `3`–`13` across seeds (the right panel),
+because it depends on how many failed `MoveToThrowPose` draws the sampler needed before
+succeeding. Seed 0's marked value, `7`, is one seed's particular number, not a claim about
+every seed — it was chosen because its toss-transition index sits closest to the ten-seed
+median (`6.0`), and because it is the seed already used as the worked example throughout
+this write-up.
 
 **Read at the skill level, from the runs' own `practice_outcomes_per_cycle`,** the picture
 is unambiguous. Cycle 0 is *identical* between the arms — `Pick` `1/1`,

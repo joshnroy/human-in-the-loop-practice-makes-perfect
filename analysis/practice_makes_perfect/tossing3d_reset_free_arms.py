@@ -129,6 +129,60 @@ class Tossing3DResetFree:
         return [evaluations[i + 1][0] - evaluations[i][0] for i in range(len(evaluations) - 1)]
 
     @staticmethod
+    def load_practice_outcomes(
+        *, results_root: Path
+    ) -> dict[str, dict[int, list[dict[str, dict[str, int]]]]]:
+        """`{arm: {seed: practice_outcomes_per_cycle}}` -- per cycle, per skill, the exact
+        attempt/success counts `stats.json` already records. This, together with
+        `evaluations` (via `transitions_per_cycle`), is the transition-level ground truth
+        `toss_transition_index` is derived from -- never the score curve, which can
+        plateau or stay flat for reasons unrelated to stranding. Same two-layout handling
+        as `load_arms`, for the same reason."""
+        outcomes: dict[str, dict[int, list[dict[str, dict[str, int]]]]] = {}
+        for arm in (SCHEDULED, NEVER):
+            per_seed: dict[int, list[dict[str, dict[str, int]]]] = {}
+            for path in sorted((results_root / arm).rglob("stats.json")):
+                if not path.parent.name.isdigit():
+                    continue
+                stats = json.loads(path.read_text())
+                per_seed[int(path.parent.name)] = stats["practice_outcomes_per_cycle"]
+            if per_seed:
+                outcomes[arm] = per_seed
+        return outcomes
+
+    @staticmethod
+    def toss_transition_index(
+        *,
+        evaluations: list[tuple[int, int, int]],
+        outcomes: list[dict[str, dict[str, int]]],
+    ) -> int:
+        """The transition index of the run's last real action -- a `Toss` attempt --
+        read from the per-cycle transition and skill-attempt record, never from where the
+        score curve visually goes flat.
+
+        `Toss` unconditionally deletes both `Holding` and `Reachable`
+        (`Tossing3DSkills.TOSS`), so nothing in this domain is applicable in the state it
+        leaves behind -- see `stranding_onset`, which this reuses to find the last cycle
+        with any activity. That cycle's own `Toss` attempt count is checked, not assumed,
+        so a stall with a different cause (e.g. `MoveToThrowPose` never succeeding) raises
+        instead of being mislabelled as a toss. The returned index is the cumulative
+        transition count as of the end of that cycle -- exactly where a `render_practice`
+        curve elbows from rising to flat.
+        """
+        transitions = Tossing3DResetFree.transitions_per_cycle(evaluations=evaluations)
+        onset = Tossing3DResetFree.stranding_onset(transitions=transitions)
+        if onset is None:
+            raise ValueError("run never stranded -- no terminal toss to locate")
+        last_active_cycle = onset - 1
+        if outcomes[last_active_cycle].get("Toss", {}).get("num_attempts", 0) < 1:
+            raise ValueError(
+                f"cycle {last_active_cycle} (the last active cycle before stranding) "
+                "recorded no Toss attempt -- the stranding is not attributable to a toss "
+                "on this run, so annotating it as one would misdescribe the mechanism"
+            )
+        return sum(transitions[: last_active_cycle + 1])
+
+    @staticmethod
     def stranding_onset(*, transitions: list[int]) -> int | None:
         """The first cycle of the **terminal** run of zero-transition cycles, or `None`.
 
@@ -385,7 +439,11 @@ class Tossing3DResetFree:
 
     @staticmethod
     def render_practice(
-        *, arms: dict[str, dict[int, list[tuple[int, int, int]]]], output: Path
+        *,
+        arms: dict[str, dict[int, list[tuple[int, int, int]]]],
+        output: Path,
+        outcomes: dict[str, dict[int, list[dict[str, dict[str, int]]]]] | None = None,
+        annotate_seed: int = 0,
     ) -> None:
         """Cumulative practice transitions against cycle, per seed, for both arms.
 
@@ -394,8 +452,26 @@ class Tossing3DResetFree:
         flat and stays flat, and the cycle it flattens at is its stranding onset read
         straight off the axis. Per seed rather than pooled, because a mean over ten seeds
         with different onsets describes no seed.
+
+        **Annotated when `outcomes` is given** (the CLI always supplies it): a marker on
+        `annotate_seed`'s `never`-arm curve at its one real action -- a `Toss` attempt, its
+        transition index from `toss_transition_index`, i.e. from the per-cycle transition
+        and skill-attempt record, never from where this curve visually goes flat -- plus a
+        shaded region for every cycle after it, during which every `never`-arm seed sharing
+        that onset recorded zero skill attempts. A second, small panel plots every
+        `never`-arm seed's own toss-transition index, so the one seed singled out on the
+        left is not mistaken for a universal number: it varies (3-13 across the ten real
+        seeds), because it depends on how many `MoveToThrowPose` draws the sampler needed
+        before succeeding -- unlike the *cycle* of stranding, which is uniform across seeds
+        and is what the shaded region's count reports.
         """
-        fig, axes = plt.subplots(1, 1, figsize=(9.0, 6.0))
+        if outcomes is None:
+            fig, axes = plt.subplots(1, 1, figsize=(9.0, 6.0))
+            dist_axes = None
+        else:
+            fig, (axes, dist_axes) = plt.subplots(
+                1, 2, figsize=(12.8, 6.0), gridspec_kw={"width_ratios": [3, 1.1]}
+            )
         for arm in (SCHEDULED, NEVER):
             curves = arms[arm]
             colour = _ARM_COLOURS[arm]
@@ -409,6 +485,82 @@ class Tossing3DResetFree:
                     linewidth=1.2,
                     label=arm if index == 0 else None,
                 )
+
+        if outcomes is not None:
+            never_curves = arms[NEVER]
+            toss_indices = {
+                seed: Tossing3DResetFree.toss_transition_index(
+                    evaluations=never_curves[seed], outcomes=outcomes[NEVER][seed]
+                )
+                for seed in sorted(never_curves)
+            }
+            onsets = {
+                seed: Tossing3DResetFree.stranding_onset(
+                    transitions=Tossing3DResetFree.transitions_per_cycle(
+                        evaluations=never_curves[seed]
+                    )
+                )
+                for seed in sorted(never_curves)
+            }
+            marked_onset = onsets[annotate_seed]
+            marked_index = toss_indices[annotate_seed]
+            same_onset = sum(1 for o in onsets.values() if o == marked_onset)
+            total_seeds = len(onsets)
+
+            axes.axvspan(
+                marked_onset,
+                len(next(iter(never_curves.values()))) - 1,
+                color="#762a83",
+                alpha=0.08,
+                zorder=0,
+                label=(
+                    f"stranded from cycle {marked_onset}: 0 transitions/cycle onward "
+                    f"({same_onset}/{total_seeds} never-arm seeds)"
+                ),
+            )
+            axes.axvline(marked_onset, color="#762a83", linestyle="--", linewidth=1.3, zorder=1)
+            axes.plot(
+                [marked_onset],
+                [marked_index],
+                marker="o",
+                markersize=9,
+                markerfacecolor="#762a83",
+                markeredgecolor="white",
+                markeredgewidth=1.2,
+                linestyle="none",
+                zorder=5,
+                label=f"seed {annotate_seed}: last action (Toss) at transition {marked_index}",
+            )
+            axes.annotate(
+                f"seed {annotate_seed}: Toss,\ntransition {marked_index}",
+                xy=(marked_onset, marked_index),
+                xytext=(marked_onset + 7, marked_index + 30),
+                fontsize=8,
+                color="#762a83",
+                arrowprops={"arrowstyle": "->", "color": "#762a83", "linewidth": 1.0},
+            )
+
+            ordered_seeds = sorted(toss_indices)
+            ys = list(range(len(ordered_seeds)))
+            xs = [toss_indices[seed] for seed in ordered_seeds]
+            dot_colours = [
+                "#762a83" if seed == annotate_seed else "#c2a5cf" for seed in ordered_seeds
+            ]
+            median_index = statistics.median(toss_indices.values())
+            assert dist_axes is not None  # narrows for mypy: only None branch skips this block
+            dist_axes.scatter(xs, ys, c=dot_colours, s=42, zorder=3, edgecolors="none")
+            dist_axes.axvline(median_index, color="#666666", linestyle=":", linewidth=1.0)
+            dist_axes.set_yticks(ys)
+            dist_axes.set_yticklabels([f"seed {seed}" for seed in ordered_seeds], fontsize=7.5)
+            dist_axes.set_xlabel("toss transition index", fontsize=8.5)
+            dist_axes.set_title(
+                f"toss transition index, every\nnever-arm seed (min {min(xs)}, "
+                f"max {max(xs)},\nmedian {median_index:.1f}; seed {annotate_seed} marked)",
+                fontsize=8.2,
+            )
+            dist_axes.grid(alpha=0.2, linewidth=0.5, axis="x")
+            dist_axes.tick_params(axis="both", labelsize=7.5)
+
         axes.grid(alpha=0.25, linewidth=0.6)
         axes.set_xlabel("practice cycle")
         axes.set_ylabel("cumulative practice transitions")
@@ -417,7 +569,7 @@ class Tossing3DResetFree:
             "one line per seed; a flat line is a robot that has stopped acting",
             fontsize=10.5,
         )
-        axes.legend(fontsize=9, loc="upper left", framealpha=0.95)
+        axes.legend(fontsize=8, loc="upper left", framealpha=0.95)
         fig.tight_layout()
         fig.savefig(output, dpi=150)
         plt.close(fig)
@@ -430,6 +582,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--curves-output", type=Path, default=None)
     parser.add_argument("--paired-output", type=Path, default=None)
     parser.add_argument("--practice-output", type=Path, default=None)
+    parser.add_argument(
+        "--annotate-seed",
+        type=int,
+        default=0,
+        help=(
+            "Which never-arm seed's toss/stranding point --practice-output annotates "
+            "with actual transition numbers. Default 0: its toss-transition index (7) "
+            "is tied for closest to the median across all ten never-arm seeds (6.0), "
+            "and it is the seed already used as the worked example in this experiment's "
+            "log, so annotating it keeps one seed consistent throughout rather than "
+            "introducing a second arbitrary pick."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -444,7 +609,13 @@ def main() -> None:
         if args.paired_output is not None:
             Tossing3DResetFree.render_paired(arms=arms, output=args.paired_output)
         if args.practice_output is not None:
-            Tossing3DResetFree.render_practice(arms=arms, output=args.practice_output)
+            outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=args.results_root)
+            Tossing3DResetFree.render_practice(
+                arms=arms,
+                output=args.practice_output,
+                outcomes=outcomes,
+                annotate_seed=args.annotate_seed,
+            )
 
 
 if __name__ == "__main__":
