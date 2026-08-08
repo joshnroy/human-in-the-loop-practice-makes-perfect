@@ -18,7 +18,14 @@ Two consequences worth stating plainly, because neither is true of the other dom
 - **Sampling a task is expensive and has side effects.** It rebuilds the scene, so it
   leaves the live simulator sitting at the sampled task. Callers that sample several
   tasks up front get the last one's scene, and must `reset_to_task` before running any of
-  them -- which `PracticeLoop` and `Problem.run_task_episode` both already do.
+  them -- which `Problem.run_task_episode` and `PracticeLoop`'s scheduled arm both do.
+
+  **A caller that does *not* reset afterwards must not call it at all.** That was never
+  a property of `sample_train_task`; it held only because every caller happened to reset
+  next, until `practice_reset_policy=never` stopped doing so and got a reset-free arm
+  that rebuilt the scene every cycle while reporting `num_practice_resets == 0`.
+  `sample_train_task_in_place` below is the path for those callers, and
+  `PracticeLoop._sample_practice_task` checks the guarantee rather than trusting it.
 - **The train/test split is a split of scene seeds**, drawn from two RNG streams derived
   from `seed` exactly as Light Switch and Tossing Room derive theirs. A test task is a
   scene the method never practiced on, not a different goal.
@@ -74,6 +81,42 @@ class Tossing3DTasks(Tasks):
     def sample_test_task(self) -> Task:
         """A held-out scene the method never practiced on."""
         return self.build_task(scene_seed=self.draw_scene_seed(rng=self._test_rng))
+
+    def sample_train_task_in_place(self) -> Task:
+        """The training task for the scene the robot is already standing in.
+
+        No simulator operation at all, which is the entire point: this is what
+        `PracticeLoop` calls under `practice_reset_policy=never`, where nothing is
+        allowed to move the practice environment. `sample_train_task` cannot serve
+        there, because on this domain the only way to obtain an initial `State` is to
+        rebuild the scene -- so it re-seeded the live simulator every cycle while the
+        loop, having declined to install the resulting state, recorded zero resets. See
+        `Tasks.sample_train_task_in_place` for the measurement that exposed it.
+
+        Two facts make the substitution sound rather than a convenient approximation.
+        `Predicate.__call__` (`core/problem/tasks/types.py`) discards the `state` it is
+        handed and returns a `GroundAtom` over the objects alone, and this domain has a
+        single goal family over `ClassVar` objects -- so the goal below is exactly the
+        goal `build_task` would have produced for any scene, and a `Task` needs a
+        `State` only to satisfy the type.
+
+        The consequence is real and intended: a reset-free run practices in **one
+        scene** for its whole length, whatever `hard_reset` left behind
+        (`canonical_seed`). On this domain handing the robot a new scene and resetting
+        it are the same physical act, so a reset-free arm cannot have scene variety --
+        which mirrors a real robot, standing in one room, rather than a limitation to
+        engineer around. The train seed stream is therefore not drawn from at all under
+        this policy.
+        """
+        state = self.env.get_current_state()
+        return Task(
+            initial_state=state,
+            goal=Goal(
+                atoms=frozenset({
+                    IN_GOAL_REGION(state=state, objects=(self.env.cube, self.env.goal_region))
+                })
+            ),
+        )
 
     def build_task(self, *, scene_seed: int) -> Task:
         """The task for one specific scene seed.

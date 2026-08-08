@@ -100,6 +100,35 @@ class _FakeTasks(Tasks):
         return Task(initial_state=_state(x=0.0), goal=Goal(atoms=frozenset()))
 
 
+class _SamplingMovesTheWorldTasks(_FakeTasks):
+    """Tossing3D's shape: the only way to obtain an initial `State` is to build it in
+    the world, so *sampling* a task is a simulator operation with a side effect.
+
+    Not a hypothetical. `Tossing3DTasks.build_task` calls `env.reset_to_seed`, which
+    rebuilds the live MuJoCo scene, and that is what made `practice_reset_policy=never`
+    a no-op there: the loop declined to *install* the sampled task's initial state and
+    recorded zero resets while the scene had already been rebuilt underneath it. This
+    fake reproduces that side effect and nothing else."""
+
+    def sample_train_task(self) -> Task:
+        task = super().sample_train_task()
+        self.env.set_state(state=_state(x=float(task.initial_state[_OBJ][0])))
+        return task
+
+
+class _SamplingMovesTheWorldInPlaceTasks(_SamplingMovesTheWorldTasks):
+    """The migrated form: same side effect on `sample_train_task`, plus the in-place
+    path a reset-free arm actually takes. Mirrors `Tossing3DTasks` after the fix --
+    the task is addressed to the world the environment is already in, so no simulator
+    operation happens at all."""
+
+    in_place_task_count: int = 0
+
+    def sample_train_task_in_place(self) -> Task:
+        self.in_place_task_count += 1
+        return Task(initial_state=self.env.get_current_state(), goal=Goal(atoms=frozenset()))
+
+
 class _FakeRenderer(Renderer):
     @staticmethod
     def render_frame(*, state: State, env: Environment, label: str | None = None) -> np.ndarray:
@@ -220,6 +249,25 @@ def _build_split() -> tuple[_FakeProblem, _FakeProblem, _FakeMethod, Metrics]:
     event_log = _EventLog()
     practice = _FakeProblem(
         env=practice_env, tasks=_FakeTasks(env=practice_env), event_log=event_log
+    )
+    evaluation = _FakeProblem(
+        env=evaluation_env, tasks=_FakeTasks(env=evaluation_env), event_log=event_log
+    )
+    method = _FakeMethod(env=practice_env, event_log=event_log)
+    return practice, evaluation, method, Metrics()
+
+
+def _build_split_with(
+    *, tasks_type: type[_FakeTasks]
+) -> tuple[_FakeProblem, _FakeProblem, _FakeMethod, Metrics]:
+    """`_build_split`, but with the practice side's `Tasks` swapped for a domain whose
+    task sampling moves the environment. Evaluation keeps the plain fake: the defect
+    being pinned lives entirely on the practice side."""
+    practice_env = _FakeEnv()
+    evaluation_env = _FakeEnv()
+    event_log = _EventLog()
+    practice = _FakeProblem(
+        env=practice_env, tasks=tasks_type(env=practice_env), event_log=event_log
     )
     evaluation = _FakeProblem(
         env=evaluation_env, tasks=_FakeTasks(env=evaluation_env), event_log=event_log
@@ -1371,3 +1419,120 @@ def test_practice_reset_policy_never_tells_the_recorder_of_no_period_reset() -> 
         recorder=recorder,
     )
     assert "period_reset" not in recorder.calls
+
+
+def test_the_two_reset_policies_must_not_run_identically_when_sampling_moves_the_world() -> None:
+    """The test whose absence let a no-op arm ship.
+
+    On Tossing3D the `never` and `scheduled` arms came back byte-identical on 10/10
+    seeds in every `stats.json` field except `num_practice_resets` (100 against 0),
+    because `sample_train_task` rebuilt the simulator before the loop got as far as
+    deciding not to reset. Nothing asserted the manipulation had an effect, so twenty
+    committed runs measured one condition twice.
+
+    In the fake, `pre_action_xs` -- the state each practice period actually starts
+    from -- is what `stats.json` is downstream of. Identical traces here are the
+    identical stats.json there, so this fails if the arms are the same run twice."""
+    scheduled, evaluation, method, metrics = _build_split_with(
+        tasks_type=_SamplingMovesTheWorldInPlaceTasks
+    )
+    PracticeLoop.run(
+        problem=scheduled,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.SCHEDULED,
+    )
+    never, evaluation, method, metrics = _build_split_with(
+        tasks_type=_SamplingMovesTheWorldInPlaceTasks
+    )
+    PracticeLoop.run(
+        problem=never,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.NEVER,
+    )
+    assert never.env.pre_action_xs != scheduled.env.pre_action_xs, (
+        "the two policies practiced from exactly the same states, so `never` is a "
+        "label rather than a condition"
+    )
+    # Spelled out rather than left to the inequality, so a future change that breaks
+    # both arms the same way cannot satisfy this test by accident.
+    assert scheduled.env.pre_action_xs == [100.0, 101.0, 100.0, 101.0, 100.0, 101.0]
+    assert never.env.pre_action_xs == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+
+def test_practice_reset_policy_never_samples_the_train_task_in_place() -> None:
+    """Which of the two sampling paths the loop takes is the whole fix, so it is
+    pinned directly rather than inferred from the trace above."""
+    practice, evaluation, method, metrics = _build_split_with(
+        tasks_type=_SamplingMovesTheWorldInPlaceTasks
+    )
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.NEVER,
+    )
+    assert isinstance(practice.tasks, _SamplingMovesTheWorldInPlaceTasks)
+    assert practice.tasks.in_place_task_count == 3
+    assert practice.tasks.train_task_count == 0
+
+
+def test_practice_reset_policy_scheduled_samples_the_train_task_the_ordinary_way() -> None:
+    """The incumbent arm must be untouched by the fix: it is about to be reset into
+    the task anyway, so any side effect sampling has is overwritten."""
+    practice, evaluation, method, metrics = _build_split_with(
+        tasks_type=_SamplingMovesTheWorldInPlaceTasks
+    )
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=1,
+        practice_reset_policy=PracticeResetPolicy.SCHEDULED,
+    )
+    assert isinstance(practice.tasks, _SamplingMovesTheWorldInPlaceTasks)
+    assert practice.tasks.train_task_count == 3
+    assert practice.tasks.in_place_task_count == 0
+
+
+def test_practice_reset_policy_never_refuses_a_domain_whose_in_place_sampling_still_resets() -> (
+    None
+):
+    """The guard that turns this class of defect from silent into loud.
+
+    `Tasks.sample_train_task_in_place` defaults to `sample_train_task`, which is right
+    for every domain that builds a task arithmetically and wrong for every domain that
+    builds one in the world. A domain of the second kind that has not overridden it
+    would otherwise get exactly the original defect back -- a reset-free arm reporting
+    zero resets while the scene is rebuilt every cycle -- so the loop checks rather
+    than trusts, and refuses mid-run instead of producing a run to publish."""
+    practice, evaluation, method, metrics = _build_split_with(
+        tasks_type=_SamplingMovesTheWorldTasks
+    )
+    with pytest.raises(RuntimeError, match="sample_train_task_in_place"):
+        PracticeLoop.run(
+            problem=practice,
+            evaluation_problem=evaluation,
+            method=method,
+            metrics=metrics,
+            num_cycles=1,
+            max_steps_per_interaction=2,
+            num_test_tasks=1,
+            practice_reset_policy=PracticeResetPolicy.NEVER,
+        )
