@@ -10,7 +10,7 @@ from hitl_pmp.methods.pure_agent.agent_backend import AgentBackend
 from hitl_pmp.methods.pure_agent.types import AgentReply
 
 # Where `prpl-agent-utils` streams the CLI's own JSON messages, one per line. Read only
-# when a query raised -- see `recover_metadata`.
+# when a query raised -- see `recover_from_stream_log`.
 STREAM_LOG = Path(".agent_logs") / "stream.jsonl"
 
 
@@ -51,7 +51,6 @@ class ClaudeCodeAgentBackend(AgentBackend):
     model: str = "opus"
     use_docker: bool = False
     tools: str = ""
-    # 0 disables the CLI's own budget stop. Deliberate: the stop emits a `result` message
     # The CLI's own per-query stop. **On rather than off, and the known defect is handled
     # rather than avoided.** The stop emits a `result` message with
     # `subtype: "error_max_budget_usd"` and no `result` field, which
