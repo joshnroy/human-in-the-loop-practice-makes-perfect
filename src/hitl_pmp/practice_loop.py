@@ -75,9 +75,19 @@ class PracticeLoop:
     default, i.e. exactly the behaviour described above) turns that reset off
     entirely at `NEVER`: the environment carries whatever the previous period left
     behind, across the period boundary and across the train task changing underneath
-    it. A train task is still sampled per period and still handed to
-    `get_practice_policy`, so the *sequence of `Task` objects* is identical between
-    the two policies.
+    it. A train task is still produced per period and still handed to
+    `get_practice_policy`, so the cycle structure is identical between the two
+    policies.
+
+    **The two policies draw that task differently, and must.** `NEVER` goes through
+    `Tasks.sample_train_task_in_place` (`_sample_practice_task` below), because on a
+    domain that builds its tasks *in the world* -- Tossing3D, whose only way to obtain
+    an initial `State` is to rebuild the MuJoCo scene -- an ordinary `sample_train_task`
+    is itself a reset, and one this loop then reported as zero. So on such a domain the
+    *sequence of `Task` objects* is NOT identical between the arms: the reset-free arm
+    practices in the one scene `hard_reset` left it, because there handing the robot a
+    new scene and resetting it are the same physical act. On every arithmetic domain
+    the default keeps the sequences identical, as before.
 
     **But the two policies are NOT "the same run minus one reset", and an experiment
     comparing them must say so.** A `Task`'s continuous parameters live in its
@@ -380,7 +390,9 @@ class PracticeLoop:
         if on_sweep_end is not None:
             on_sweep_end()
         for cycle in range(num_cycles):
-            task = problem.sample_train_task()
+            task = PracticeLoop._sample_practice_task(
+                problem=problem, practice_reset_policy=practice_reset_policy
+            )
             # get_practice_policy, not get_task_policy: a learning Method explores
             # (and records training data) during the interaction period, but must
             # not do either during the evaluation sweep below, which runs on
@@ -488,6 +500,44 @@ class PracticeLoop:
             return frozenset({num_cycles})
         step = num_cycles / (checkpoints - 1)
         return frozenset(round(index * step) for index in range(checkpoints))
+
+    @staticmethod
+    def _sample_practice_task(
+        *, problem: Problem, practice_reset_policy: PracticeResetPolicy
+    ) -> Task:
+        """The train task this period practices, drawn the way the policy allows.
+
+        Under SCHEDULED the period is reset into the task immediately afterwards, so
+        whatever sampling did to the environment is overwritten and the ordinary draw
+        is the right one. This is the incumbent path and is deliberately untouched.
+
+        Under NEVER there is no such reset, so sampling itself must not move the world
+        -- see `Tasks.sample_train_task_in_place`. The check below is not defensive
+        tidiness: on a domain that builds its tasks in the world, the failure mode is a
+        *silent* one. The arm reports `num_practice_resets == 0`, because that counter
+        records the branch this method's caller takes and that branch really was not
+        taken, while the simulator has been rebuilt every cycle regardless. Tossing3D
+        shipped 20 committed runs that way, two arms that were one condition measured
+        twice. Identity rather than equality because `State` wraps numpy arrays and has
+        no usable `__eq__`; every `Environment` here installs a new `State` object when
+        it moves, so a replaced object is the signal that something happened.
+        """
+        if practice_reset_policy is not PracticeResetPolicy.NEVER:
+            return problem.sample_train_task()
+        before = problem.get_current_state()
+        task = problem.sample_train_task_in_place()
+        if problem.get_current_state() is not before:
+            raise RuntimeError(
+                "practice_reset_policy=never sampled a train task and the environment "
+                f"moved: {type(problem.tasks).__name__}.sample_train_task_in_place "
+                "replaced the current state. On this policy nothing may reset the "
+                "practice environment, and a domain that builds its tasks in the world "
+                "(as Tossing3D does, via env.reset_to_seed) must override "
+                "Tasks.sample_train_task_in_place to address the world it is already "
+                "in. Left unchecked this is invisible: num_practice_resets would still "
+                "report 0 while the scene was rebuilt every cycle."
+            )
+        return task
 
     @staticmethod
     def _reset_is_due(

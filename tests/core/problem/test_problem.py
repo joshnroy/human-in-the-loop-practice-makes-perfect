@@ -125,6 +125,13 @@ def test_sample_train_and_test_task_delegate_to_tasks() -> None:
     assert problem.sample_test_task().initial_state[_OBJ].tolist() == [1.0]
 
 
+def test_sample_train_task_in_place_delegates_to_tasks() -> None:
+    """Defaults to the ordinary draw, which is right wherever building a task is
+    arithmetic. Only a domain that builds one in the world overrides it."""
+    problem = _build_problem()
+    assert problem.sample_train_task_in_place().initial_state[_OBJ].tolist() == [0.0]
+
+
 def test_calculate_cost_for_human_command_delegates_to_human() -> None:
     problem = _build_problem()
     problem.env.set_state(state=_state(x=0.0))
