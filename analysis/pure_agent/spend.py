@@ -138,35 +138,63 @@ class SpendAnalysis:
     def print_projection(*, ledger: PureAgentLedger) -> None:
         """What a full-size run would cost, projected from THIS run's own per-call costs.
 
-        Projected separately for practice and evaluation decisions, because an evaluation
-        episode is ~12 turns and a practice period is 150: their per-call costs are not
-        interchangeable and a single pooled mean would understate the larger one. Printed
-        as a range built from each phase's own mean, and labelled a projection, because a
-        50-step practice period does not measure the tail of a 150-step one -- the context
-        keeps growing, so this is a floor, not an estimate."""
+        **Three pools, not two, and the third is the one that surprises.** Practice and
+        evaluation obviously differ -- an evaluation episode is ~12 turns and a practice
+        period is up to 150. But evaluation *before any practice* and evaluation *after*
+        also differ, by a lot: from cycle 1 onward every opening prompt carries the agent's
+        practice digest, which sits in the conversation for the whole episode. Measured on
+        the 50-step Tossing Room pilot, that took an evaluation decision from ~$0.032 to
+        ~$0.12. Since a `--num-cycles 10` run has ten post-practice sweeps and exactly one
+        pre-practice sweep, projecting off a pooled evaluation mean understates the bill by
+        roughly 4x. So the post-practice mean is used wherever the run has one.
+
+        Every projection is a **FLOOR**, and the label is not hedging. A short practice
+        period does not measure the tail of a long one, because the context keeps growing
+        within the period; and the digest itself grows over cycles, so late sweeps cost
+        more than the first post-practice sweep this is projected from."""
         practice = [
             r.total_cost_usd
             for r in ledger.records
             if r.phase is AgentPhase.PRACTICE and r.kind is AgentCallKind.DECISION
             if r.total_cost_usd
         ]
-        evaluation = [
-            r.total_cost_usd
+        evaluation_all = [
+            r
             for r in ledger.records
             if r.phase is AgentPhase.EVALUATION and r.kind is AgentCallKind.DECISION
             if r.total_cost_usd
         ]
-        if not (practice and evaluation):
+        # `cycle_index > 0` is exactly "a digest existed when this call was made": the
+        # counter advances in `end_cycle`, which is where the digest is written.
+        post_practice = [r.total_cost_usd for r in evaluation_all if r.cycle_index > 0]
+        untrained = [r.total_cost_usd for r in evaluation_all if r.cycle_index == 0]
+        if not (practice and evaluation_all):
             print(
                 "projection: not printed -- this run has no priced calls on one of the "
                 "two phases, and pooling them would understate the more expensive one."
             )
             return
-        practice_mean, evaluation_mean = statistics.mean(practice), statistics.mean(evaluation)
+        practice_mean = statistics.mean(practice)
+        evaluation_mean = statistics.mean(post_practice or untrained)
         print(
             f"per-decision means: practice ${practice_mean:.4f} over {len(practice)} calls, "
-            f"evaluation ${evaluation_mean:.4f} over {len(evaluation)} calls"
+            f"evaluation ${evaluation_mean:.4f} over "
+            f"{len(post_practice or untrained)} calls"
         )
+        if post_practice and untrained:
+            print(
+                f"  evaluation splits: ${statistics.mean(untrained):.4f} over "
+                f"{len(untrained)} untrained calls vs "
+                f"${statistics.mean(post_practice):.4f} over {len(post_practice)} "
+                "post-practice calls -- the digest rides in every conversation from cycle "
+                "1 on, and the projection below uses the POST-PRACTICE figure"
+            )
+        elif not post_practice:
+            print(
+                f"  WARNING: no post-practice evaluation calls in this run, so the "
+                f"projection uses the {len(untrained)} untrained ones and UNDERSTATES "
+                "every cycle after the first -- measured at ~4x on the Tossing Room pilot."
+            )
         for cycles, steps, tasks, horizon in ((2, 150, 30, 12), (10, 150, 30, 12)):
             practice_calls = cycles * steps
             evaluation_calls = (cycles + 1) * tasks * horizon
