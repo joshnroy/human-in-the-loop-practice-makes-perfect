@@ -25,6 +25,12 @@ the problem.
 > `57/60` and falls back to `0/0` informed, so it is no longer a usable control.
 >
 > Re-measured post-fix in `2026-08-06-tossing3d-ees-first-real.md`.
+>
+> **Second staleness layer (added 2026-08-10).** That re-measurement is itself now
+> provisional: `THROW_STANDOFF_BOUNDS`'s lower bound has since moved from `0.45` to
+> `1.10` to fix a `cuboid_barrier`-collision defect unrelated to the `NearBin` defect this
+> log diagnosed. See the staleness note at the top of
+> `2026-08-06-tossing3d-ees-first-real.md` for what changed and why.
 
 **Everything through the `Method (to be run, not yet run)` section below is the
 pre-registration, committed verbatim in `97ec173` before any `stats.json` carrying

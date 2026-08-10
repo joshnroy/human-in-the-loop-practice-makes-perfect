@@ -85,7 +85,9 @@ PICK_ROTATION_BOUNDS = (-np.pi / 4, np.pi / 4)
 # `THROW_STANDOFF_BOUNDS` is the *feasible* range of throw standoffs and is what the
 # sampler below draws from. It is emphatically **not** the range
 # `RobotAtSuccessfulThrowPose` accepts: that band is derived per-call from the live goal
-# region and `THROW_RANGE`, and covers 3/13 of this interval. Those two used to be one
+# region and `THROW_RANGE`, and covers 6/13 of this interval (the untrimmed geometric
+# band, 0.300/0.65 -- see `predicates.RobotAtSuccessfulThrowPoseClassifier`'s docstring
+# for the smaller, margin-trimmed band actually accepted). Those two used to be one
 # symbol, which
 # made `MoveToThrowPose`'s add effect constant-true and its sampler unlearnable -- see
 # `predicates.THROW_STANDOFF_BOUNDS`. It still lives in `predicates.py` rather than here

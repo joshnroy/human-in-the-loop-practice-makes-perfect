@@ -1,5 +1,22 @@
 # Tossing3D, EES vs uniform vs oracle: the first run where the sampler is consulted
 
+> **STALENESS NOTE (added 2026-08-10, after the barrier-collision fix to
+> `THROW_STANDOFF_BOUNDS`).** Every count and ratio below — `65/142`, `32/65`, `19/60`,
+> `18/19`, `48/275`, both task-success rows, and everything else that traces back to
+> `MoveToThrowPose`'s practice — was measured with `THROW_STANDOFF_BOUNDS = (0.45, 1.75)`,
+> a 1.30 m-wide sampler range. That lower bound turned out to be unsafe: `move_to_target`'s
+> base motion planner has collision-checking hardcoded off upstream, and a standoff up to
+> 1.00 m (measured, three ways) drives the base through `cuboid_barrier` — a real dynamic
+> MuJoCo body — and knocks it over. The bound is now `1.10`, `BARRIER_COLLISION_MARGIN`
+> (0.10 m) above that worst measured collision, so the sampler's range is `0.65` m wide,
+> roughly half of what it was here, and the derived acceptance band's own share of that
+> range roughly doubled (~17% → ~35%). A narrower range with a proportionally larger
+> solving band is a different, likely *easier*, sampling problem than the one this file
+> measured, so none of the counts below are directly comparable to a future re-run.
+>
+> **Nothing above or below is edited or recomputed.** This is a correct description of the
+> range that was actually in effect when these runs happened.
+
 **Everything in this file up to and including `Method (to be run, not yet run)` was
 committed before any run of this experiment existed**, in the manner of the
 pre-registrations for PR #103, PR #108 and PR #127. Results are appended below it, and

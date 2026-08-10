@@ -22,6 +22,18 @@ must not be cited as one.
 > and that arm's `stats.json` came back **byte-identical on `10/10` seeds** when the whole
 > sweep was re-run against the fix. Nothing here has been recomputed or edited.
 
+> **Staleness note (2026-08-10).** Every `MoveToThrowPose`/standoff count above and below —
+> `117/206`, the uniform `48/275`, and the rest of this page's sampler-consultation
+> figures — was measured with `THROW_STANDOFF_BOUNDS = (0.45, 1.75)`. That lower bound has
+> since moved to `1.10` to fix a `cuboid_barrier`-collision defect (a short-enough
+> `MoveToThrowPose` drove the base through a real dynamic MuJoCo body upstream's motion
+> planner does not collision-check against). The sampler's range is now half as wide, and
+> the derived acceptance band's share of it roughly doubled — see the staleness note atop
+> `2026-08-06-tossing3d-ees-first-real.md` for the full accounting. The **task-success**
+> plateau finding this page's TL;DR reports (`80.8/100` vs `78.5/100`) is a different
+> quantity and is not directly affected by this note, but any reader using the
+> sampler-consultation numbers as a baseline for a future run should not.
+
 ## Question / goal
 
 PR #133 measured `80/100` task success for `ees` on Tossing3D after **20** cycles, and

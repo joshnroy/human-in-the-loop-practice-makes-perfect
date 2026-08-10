@@ -9,6 +9,15 @@ where the standoff sampler was never consulted, so all three arms here are re-me
 rather than quoted: `ees`, a fresh uniform `random-skills`, and `skill-oracle` as the
 ceiling.
 
+**Staleness note (2026-08-10).** This module reads back and reports on data collected
+while `THROW_STANDOFF_BOUNDS` was `(0.45, 1.75)`, a range since tightened to
+`(1.10, 1.75)` to fix a `cuboid_barrier`-collision defect -- see the staleness note at the
+top of `docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.md`. Re-running this
+module against the same committed `stats.json`/`config_snapshot.json` still reproduces the
+identical numbers (nothing here recomputes against live bounds), but those numbers
+describe a sampler drawing from a wider, less-solving-dense range than the current one,
+so they are not a baseline for a future run under the tightened bounds.
+
 **Why the primary endpoint is a practice count and not an episode count.** Tossing3D's
 task-success axis is provisional twice over: it has a measured same-seed swing of at
 least 10 pp, and at 10 seeds x 10 test tasks the MDE on a two-arm comparison is about
