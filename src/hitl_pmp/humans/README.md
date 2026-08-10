@@ -33,14 +33,27 @@ All versions implement two methods:
   instance it needs as this explicit per-call argument.
 
 `CommandStartStateDescription` currently just wraps a raw `State` (see the `TODO` in
-`core/problem/human/types.py`); `CommandGoalDescription` already wraps the same
-symbolic `Goal` that `Task.goal` uses, not a raw state — the human is being asked to
-bring about a goal, not teleport to one exact numeric state. The versions differ in how
-much of the above they actually implement:
+`core/problem/human/types.py`); `CommandGoalDescription` wraps the same symbolic `Goal`
+that `Task.goal` uses **plus an optional `target_state`**. The `Goal` is the human being
+asked to bring something about; the `target_state` is the human being asked for a
+**reset** — "put the world back into exactly this configuration".
 
-- **v0 — `oracle.py`**: unconditional. The human can always do anything the robot asks;
-  no cost model, no feasibility check — `execute_human_command` just calls
-  `env.set_state(...)` directly to satisfy the goal. The trivial baseline.
+Those are two different commands, and the second is not a weakening of the first. A
+physical human reset — picking the robot up and carrying it back — *is* a state teleport;
+no goal is being achieved. And nothing domain-agnostic can turn a `Goal` into a `State`:
+its truth is an opaque `holds` callable, so there is no way to synthesise a state that
+satisfies it. That is why v0 below, as this README originally sketched it ("just calls
+`env.set_state(...)` to satisfy the goal"), was not implementable until the field existed.
+
+The versions differ in how much of the above they actually implement:
+
+- **v0 — `oracle.py`** (`UnconditionalHumanOracle`, **implemented**): unconditional. The
+  human always complies, immediately, at a flat `intervention_cost` of 1.0 — no
+  feasibility check, no capability model, no dependence on how far the robot has drifted.
+  `execute_human_command` deep-copies the command's `target_state` into `env.set_state`;
+  `calculate_cost_for_human_command` returns `inf` for a command carrying no target
+  state, since a v0 human genuinely cannot reason toward a symbolic goal. The trivial
+  baseline.
 - **v1 — `cost_model.py`**: `calculate_cost_for_human_command` reads the raw `state`
   off `command_start_state_description` and the `goal` atoms off
   `command_goal_description` and returns a cost; infinite if infeasible for the human,
@@ -56,9 +69,15 @@ much of the above they actually implement:
 
 ## Status
 
-**Nothing in this folder is implemented yet.** This README describes the intended
-structure so future files land in the right place; the files listed above do not exist
-yet.
+**v0 (`oracle.py`) is implemented; v1-v3 are not.** This README describes the intended
+structure so future files land in the right place; `cost_model.py`,
+`uncertain_cost_model.py` and `nl_cost_model.py` do not exist yet.
+
+Because v0 exists, human intervention is now *representable*, which is what
+`Metrics.num_human_interventions()` needed in order to report anything but a hardcoded
+zero. What drives it — when a human is asked, and what configuration they are asked to
+restore — lives in the harness (`practice_loop.py`), not here: a `HumanOracle` models
+what the human can do and what it costs, never when to call one.
 
 ## Relationship to `core`
 
