@@ -14,6 +14,14 @@ never a budget-limited number.
 seeds. See §6.4. The reset-free arm reported here is **not** a reset-free condition and
 must not be cited as one.
 
+> **Note added later, in #184.** That defect was fixed in #179, and the reset-free arm was
+> measured for the first time in
+> [`2026-08-08-tossing3d-reset-free-remeasured.md`](2026-08-08-tossing3d-reset-free-remeasured.md):
+> it collapses to `24.9/100`, stranding on `10/10` seeds after a single cycle. **The
+> plateau result on this page is unaffected** — it is a claim about the `scheduled` arm,
+> and that arm's `stats.json` came back **byte-identical on `10/10` seeds** when the whole
+> sweep was re-run against the fix. Nothing here has been recomputed or edited.
+
 ## Question / goal
 
 PR #133 measured `80/100` task success for `ees` on Tossing3D after **20** cycles, and
@@ -172,6 +180,16 @@ number:**
 MuJoCo). Quoting the two side by side would be wrong.
 
 ### The reset-free arm is a no-op on this domain, and that is a defect
+
+> **Note added later, in #184.** Fixed in #179: `Tasks` gained
+> `sample_train_task_in_place`, and Tossing3D now builds a reset-free training task from
+> the environment's current state instead of rebuilding the scene. The last bullet of this
+> section — "until then `--practice-reset-policy never` should be rejected for
+> `tossing3d`" — is therefore **superseded**: the flag works, and `PracticeLoop` now
+> refuses any domain that has not migrated rather than silently no-op'ing. What the arm
+> actually costs, once real, is in
+> [`2026-08-08-tossing3d-reset-free-remeasured.md`](2026-08-08-tossing3d-reset-free-remeasured.md).
+> Everything below is left exactly as published.
 
 The `never` arm was intended as a true reset-free condition. **It is not one.** Comparing
 the two arms' `stats.json` field by field:
