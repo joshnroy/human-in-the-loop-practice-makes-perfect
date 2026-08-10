@@ -1,108 +1,84 @@
-"""Post-run analysis for the human-in-the-loop baseline ladder on Tossing Room: **does
-being rescued by a human make reset-free practice work?**
+"""Post-run analysis for a scoped human-in-the-loop measurement on Tossing Room: three
+fixed arms (a no-human control and two ceilings) plus a rescue-rate dose-response sweep.
 
 **Background.** `--practice-reset-policy never` is the real-robot condition -- a robot
-practising in a lab is not teleported to a fresh start every few minutes. Measured on
-this domain, it is also badly damaged: Tossing Room's one-way ledge severs rooms 0-2
-from the item pile in room 3, so a practice period that steps left once can never pick
-anything up again, and under `never` that damage carries into every later period. The
-reset-free A/B found the one-way reset-free arm spending its full 150 transitions per
-cycle walking, managing 207 effective practice attempts pooled against the
-scheduled-reset arm's 1191, with 85/100 cycles attempting not one.
+practising in a lab is not teleported to a fresh start every few minutes. Measured on this
+domain, it is also badly damaged: Tossing Room's one-way ledge severs rooms 0-2 from the
+item pile in room 3, so a practice period that steps left once can never pick anything up
+again, and under `never` that damage carries into every later period.
 
-A human is the sanctioned way out: `Problem.execute_human_command` is the only reset a
-robot with irreversible actions is entitled to, and it is *charged*. This reads back
-eight arms, all `--practice-reset-policy never`, that differ in whether and how one is
-called.
+**This supersedes PR #151, which is closed, not merged.** #151 measured an eight-arm ladder
+including `on-stuck` (novelty-triggered rescue) and a single `at-random` point at
+`--mean-steps-between-help-requests 150`. Neither is here: `on-stuck` is out of scope for
+this comparison by deliberate choice, and the raw per-seed data behind #151's numbers was
+never committed (`results/` is gitignored) and could not be found intact anywhere on the
+machine that built it -- what was found on disk carried a deleted CLI flag
+(`--human-intervention-trigger`) from before the help-seeking interface was reshaped onto
+`--ask-for-help`/`--human-reset-target`, which is exactly the condition #151's own
+"Superseded numbers" precedent says must not be quoted or plotted alongside a current run.
+So this is a **fresh measurement**, not a re-plot: every number below comes from a run
+against the CURRENT interface, verified by exactly reproducing the one number that could
+be checked against a known-good source (`no-human` at 112/300 pooled, matching #151's
+control to the task).
 
-**The eight arms, and which comparisons are clean.**
+**The four components.**
 
-The help-seeking interface is a product of two orthogonal flags -- `--ask-for-help`
-(*when* the robot asks; a method flag on `--method ees`) and `--human-reset-target`
-(*what* the human does on arrival; a global flag, because it is a property of the human).
-The four treated arms are the full 2x2 of that product, which is what makes the timing
-axis and the target axis separately identifiable:
+| component | `--method` | `--ask-for-help` | `--human-reset-target` | world | seeds |
+| --- | --- | --- | --- | --- | --- |
+| `no-human` | `ees` | `never` | -- | one-way | 10 |
+| `two-way-ledge` | `ees` | `never` | -- | two-way | 10 |
+| `skill-oracle` | `skill-oracle` | -- | -- | one-way | 10 |
+| rate sweep | `ees` | `at-random` | `task-initial` | one-way | 10 per N |
 
-| arm                 | `--method`      | `--ask-for-help` | `--human-reset-target` | world   |
-| ------------------- | --------------- | ---------------- | ---------------------- | ------- |
-| `no-human`          | `ees`           | `never`          | --                     | one-way |
-| `stuck-initial`     | `ees`           | `on-stuck`       | `task-initial`         | one-way |
-| `stuck-random`      | `ees`           | `on-stuck`       | `random`               | one-way |
-| `at-random-initial` | `ees`           | `at-random`      | `task-initial`         | one-way |
-| `at-random-random`  | `ees`           | `at-random`      | `random`               | one-way |
-| `two-way-ledge`     | `ees`           | `never`          | --                     | two-way |
-| `skill-oracle`      | `skill-oracle`  | --               | --                     | one-way |
-| `random-skills`     | `random-skills` | --               | --                     | one-way |
+The rate sweep varies `--mean-steps-between-help-requests` (N; each policy call asks with
+probability 1/N) over a deliberately non-uniform grid from N=1 (asks almost every call) to
+N=20 (asks roughly once every twenty calls) -- denser at low N, where the response is
+expected to move fastest, sparser toward N=20 where it is expected to have mostly flattened.
+This is new territory, not a re-run of #151's `at-random` point: N=150 there is a much
+lower-intervention-rate regime than anything in this sweep.
 
-**Five arms are paired against each other and nothing else is.** `no-human` and the four
-treated arms share `--method ees`, the same one-way world and every seed, so differences
-between them isolate *the human* and `PairedTests.sign_flip` applies. The other three each
-change a second thing:
+**Which comparisons are clean.** `no-human` and every rate-sweep point share `--method ees`,
+the one-way world and all ten seeds, so `PairedTests.sign_flip` applies to each N against the
+control. `two-way-ledge` changes the world and `skill-oracle` changes the Method, so neither
+is sign-flipped against anything -- each is reported as a ceiling level only, the same
+precedent #151's module used.
 
-* `two-way-ledge` changes the **world**, not the human -- it is the ceiling with
-  irreversibility removed, so a gap against it prices what the one-way ledge costs, not
-  what a human buys. Reported as a ceiling level, never sign-flipped against a human arm.
-* `skill-oracle` changes the **Method** -- the privileged hand-authored solver, the
-  ceiling on skill quality. It never practises at all (no `--num-cycles` flag exists for
-  it), so it has a single evaluation checkpoint.
-* `random-skills` changes the **Method**, so a gap between it and any EES arm is a gap in
-  two things at once. Reported as a floor and differenced against nothing.
+**Non-learners are drawn flat, not as curves.** `skill-oracle` never practises (no
+`--num-cycles` flag exists for it) and has a single evaluation checkpoint, so it is a
+horizontal reference line. `no-human` and `two-way-ledge` both learn and get real curves;
+`two-way-ledge` gets its own colour rather than the blue/orange assistance-axis pair, because
+it is a ceiling on the WORLD (irreversibility removed), not a "does an assistance mechanism
+exist" arm -- the same reasoning CLAUDE.md's colour rule already carves out for
+`skill-oracle`/`random-skills`.
 
-**`at-random` is the control for `on-stuck`, and it is EES-based on purpose.** It asks on
-a schedule of the method's own -- Bernoulli(1/`--mean-steps-between-help-requests`) per
-policy call, defaulting to one request per 150-step period -- with the timing carrying no
-information about the robot's situation. Because it shares `--method ees` and its seeds
-with the control, it is a legitimately paired comparison, which an earlier layout of this
-ladder could not offer: it put random-timing rescue on `--method random-skills`, which
-confounded it with the method and left it in no comparison at all.
+**Colour.** `no-human` is orange (`#D55E00`): the standing "nothing helps" colour, reused
+across every figure in this report. The rate sweep is blue (`#0072B2`): an assistance
+mechanism (`at-random`) is available and firing at every N in the grid, which is what the
+blue/orange rule tracks -- not the actual rate. `skill-oracle` is grey and dotted (reference
+line); `two-way-ledge` gets a third, unreserved colour since it sits on neither axis.
 
-**But the two triggers do NOT fire at the same rate, so the contrast is not "timing at
-matched cost".** The `--mean-steps-between-help-requests 150` default was chosen to make
-them comparable and does not: measured here, `on-stuck` spends about 3.4x the rescues
-`at-random` does, because a stranded robot is stuck on many consecutive steps while the
-Bernoulli schedule fires about once a period. So `on-stuck` minus `at-random` is a gap in
-**timing and rate together**, and a reader who wants the timing effect alone should read
-the per-rescue view in `render_interventions`' right panel instead, where the two arms'
-cost-effectiveness can be compared directly. `print_report` prints both the gap and the
-solves-per-rescue for exactly this reason. Equalising the rate would need
-`--mean-steps-between-help-requests` retuned per arm and is not what was run.
+**The dose-response figure is not a training curve.** Arms 1-3 get the standing
+OVERALL/TRASH/RECYCLING training-curve treatment (per-seed faint traces under a bold pooled
+mean, across evaluation checkpoints). The rate sweep answers a different question -- what
+does final performance do as the rescue rate varies -- so its x axis is N, not online
+transitions, and it draws one point per seed at each of the eight sampled N values, plus the
+pooled mean, with the `no-human` and `skill-oracle` levels as reference lines for context.
 
-**Non-learners are drawn as reference lines, not curves.** `skill-oracle` and
-`random-skills` do not improve with practice -- the first never practises, the second acts
-at random forever -- so a "curve" for either would invite a reader to see learning in
-noise. They get a horizontal reference line at their pooled level, matching how
-`tossing3d_ees_arms.py` and `ees.py` already draw the privileged oracle. Only the six EES
-arms get curves. `two-way-ledge` is **not** in that list and is deliberately drawn as a
-curve: it is EES and it genuinely learns, so flattening it would misreport it.
+**The manipulation checks are not optional here.** `num_practice_resets` must be 0
+everywhere, or an arm labelled reset-free was quietly reset for free.
+`num_human_interventions_recorded` must be exactly 0 for the three arms with no reachable
+human (`no-human`, `two-way-ledge`, `skill-oracle`) and strictly positive for every
+rate-sweep point -- a zero there at N <= 20 over 1500 policy calls would mean the trigger
+never wired rather than a legitimate null.
 
-**The manipulation checks are not optional here.** `num_practice_resets` must be 0 in
-every arm, or an arm labelled reset-free was quietly reset for free.
-`num_human_interventions_recorded` must be 0 in the arms that wire **no reachable human at
-all** (`no-human`, `two-way-ledge`, `skill-oracle`, `random-skills`) and is *measured*,
-never assumed, in the four that ask -- because "the human did not help" and "the human was
-never called" are completely different findings and only this number tells them apart.
-
-A rescue **consumes its loop iteration**: `PracticeLoop`'s `except HumanHelpRequested`
-branch `continue`s, which is what stops a method that asks on every call from spinning. So
-an asking arm takes exactly one fewer online transition per rescue, and its final
-checkpoint sits at `num_cycles * max_steps_per_interaction - interventions` rather than at
-the round number. That is checked below rather than assumed, and it is the reason the
-arms' x-axes do not all end on the same value.
-
-**Statistics.** All arms ran the same fixed seeds, so every EES-to-EES comparison is
-paired and the test is `PairedTests.sign_flip`, exact by enumerating its null in full --
-no normal approximation, no continuity or tie correction, no scipy. Imported from
+**Statistics.** Every `no-human`-paired comparison is `PairedTests.sign_flip`, exact by
+enumerating its null in full -- no normal approximation, no scipy. Imported from
 `paired_tests` rather than reimplemented; goal classification comes from
 `goal_families.GoalFamilies` for the same reason.
 
-**Per-seed spread is plotted, not only a mean.** At ten seeds a mean can describe none
-of them -- the one-way reset-free arm is bimodal on this domain -- so every figure draws
-one faint line per seed under the bold pooled curve, and the cross-arm figures carry a
-per-seed strip so a single seed driving an arm is visible rather than averaged away.
-
-Reads only already-produced output (CLAUDE.md's `analysis/` convention -- this never
-runs a simulation or drives a `Method`). Each `--arm` points at the directory holding
-that arm's `<seed>/stats.json`.
+Reads only already-produced output (CLAUDE.md's `analysis/` convention -- this never runs a
+simulation or drives a `Method`). Each `--arm` points at the directory holding that arm's
+`<seed>/stats.json`; each `--rate-point` does the same for one N in the sweep.
 """
 
 import argparse
@@ -119,133 +95,59 @@ import matplotlib.pyplot as plt  # noqa: E402
 from analysis.practice_makes_perfect.goal_families import GoalFamilies  # noqa: E402
 from analysis.practice_makes_perfect.paired_tests import PairedTests  # noqa: E402
 
-# The eight arms, in the order every table, legend and report below uses: the incumbent
-# first, then the 2x2 of (when to ask) x (what the human does), then the two ceilings,
-# then the floor. `no-human` is the arm every banked reset-free number was measured under.
-_ARMS = (
-    "no-human",
-    "stuck-initial",
-    "stuck-random",
-    "at-random-initial",
-    "at-random-random",
-    "two-way-ledge",
-    "skill-oracle",
-    "random-skills",
-)
+# The three fixed arms, in report order: the control, then the two ceilings.
+_FIXED_ARMS = ("no-human", "two-way-ledge", "skill-oracle")
 
-# The arms that do not learn, and are therefore drawn as a horizontal reference line at
-# their pooled level rather than as a curve. `skill-oracle` never practises at all;
-# `random-skills` acts at random forever. Plotting either as a curve would invite a reader
-# to read learning into noise. `two-way-ledge` is deliberately NOT here: it is EES and it
-# does learn, so drawing it flat would misreport it -- checked, not assumed.
-_REFERENCE_ARMS = ("skill-oracle", "random-skills")
+# Non-learners, drawn as a horizontal reference line at their pooled level rather than a
+# curve. `skill-oracle` never practises at all. `two-way-ledge` is deliberately NOT here --
+# it is EES and it genuinely learns, so flattening it would misreport it (checked in #151's
+# module, unaffected by anything this file changes).
+_REFERENCE_ARMS = ("skill-oracle",)
 
-# The arms with no reachable human at all, which must therefore record zero interventions.
-# `no-human` and `two-way-ledge` pass `--ask-for-help never`, so EesMethod builds no
-# help-seeking policy; `skill-oracle` and `random-skills` do not register the flag at all.
-_ARMS_WITHOUT_A_HUMAN = ("no-human", "two-way-ledge", "skill-oracle", "random-skills")
+# Arms with no reachable human at all, which must therefore record zero interventions.
+_ARMS_WITHOUT_A_HUMAN = ("no-human", "two-way-ledge", "skill-oracle")
 
-# The composition the domain allocates for --num-test-tasks 30. Asserted per sweep,
-# because a goal misfiled between families moves tasks between denominators invisibly.
+# The composition the domain allocates for --num-test-tasks 30. Asserted per sweep, because
+# a goal misfiled between families moves tasks between denominators invisibly.
 _COMPOSITION = {"TRASH": 14, "RECYCLING": 14, "EMPTY": 2}
 _NUM_TEST_TASKS = sum(_COMPOSITION.values())
 
-# Every arm is `--practice-reset-policy never`, so a free harness reset anywhere means
-# the arm is not what its name says.
+# Every arm is --practice-reset-policy never, so a free harness reset anywhere means the
+# arm is not what its name says.
 _EXPECTED_PRACTICE_RESETS = 0
 
 # humans/oracle.py's UnconditionalHumanOracle charges a flat 1.0 per rescue, so cost and
-# count are proportional at v0. Checked rather than assumed: if they ever come apart, a
-# different oracle was wired and every cost number below means something else.
+# count are proportional at v0. Checked rather than assumed.
 _V0_INTERVENTION_COST = 1.0
 
-# Read ONLY by `line_style` and `faint_line_style`. Every artist drawn for an arm comes
-# from one of those two, so an arm's bold curve, its faint per-seed traces and its legend
-# entry cannot carry different dash patterns -- see `line_style` for the defect that
-# rule exists to prevent.
-# Colourblind-safe and distinguishable in greyscale; linestyle carries the trigger too,
-# so an arm's identity never rests on hue alone.
+# Colour carries role, per CLAUDE.md's training-curve-style convention: orange is the arm
+# nothing helps, and it is reused here from every other figure in the project rather than
+# picked fresh. `two-way-ledge` sits on neither the assistance axis nor the non-learner
+# reference set, so it gets its own colour, matching #151's module's precedent.
 _COLORS = {
-    "no-human": "#0072B2",
-    "stuck-initial": "#D55E00",
-    "stuck-random": "#009E73",
-    "at-random-initial": "#E69F00",
-    "at-random-random": "#56B4E9",
+    "no-human": "#D55E00",
     "two-way-ledge": "#CC79A7",
-    "skill-oracle": "#000000",
-    "random-skills": "#785EF0",
+    "skill-oracle": "#7F7F7F",
 }
-# Linestyle carries the TRIGGER axis so an arm's identity never rests on hue alone:
-# `on-stuck` arms are dashed, `at-random` arms are dash-dotted, the control is solid.
 _LINESTYLES = {
     "no-human": "-",
-    "stuck-initial": "--",
-    "stuck-random": (0, (5, 1)),
-    "at-random-initial": "-.",
-    "at-random-random": (0, (6, 2, 1, 2)),
     "two-way-ledge": (0, (3, 1)),
-    "skill-oracle": "--",
-    "random-skills": ":",
+    "skill-oracle": ":",
 }
-
-# Display names. DISPLAY ONLY: the keys, directory names and flag values stay as they
-# are, because those are what the CLI accepts and what every config_snapshot.json
-# records.
 _LABELS = {
     "no-human": "EES, no human (control)",
-    "stuck-initial": "EES, asks on stuck → task initial state",
-    "stuck-random": "EES, asks on stuck → random state",
-    "at-random-initial": "EES, asks at random → task initial state",
-    "at-random-random": "EES, asks at random → random state",
     "two-way-ledge": "EES, two-way ledge (ceiling: no irreversibility)",
     "skill-oracle": "skill oracle (ceiling: skills)",
-    "random-skills": "random skills (floor)",
 }
+
+# Blue: the rate sweep has an assistance mechanism (--ask-for-help at-random) available and
+# firing at every sampled N -- the blue/orange rule tracks whether the mechanism exists, not
+# how often it fires.
+_RATE_SWEEP_COLOR = "#0072B2"
 
 
 class HumanLadderCurves:
     """A static-method container, never instantiated."""
-
-    # ------------------------------------------------------------------ one style per arm
-
-    @staticmethod
-    def arms() -> tuple[str, ...]:
-        """The arm names, in report order. Exposed so a caller -- a test especially --
-        can iterate them without reaching for the module-private tuple."""
-        return _ARMS
-
-    @staticmethod
-    def line_style(*, arm_name: str, linewidth: float) -> dict:
-        """The style for an arm's BOLD line: its pooled curve, or its reference line.
-
-        **This and `faint_line_style` are the only two places a line's colour or dash
-        pattern is chosen, and both read the same two dictionaries.** That is the point.
-        The legend is built by matplotlib from the labelled artist itself, so an entry
-        cannot disagree with the bold line it describes -- but the faint per-seed traces
-        used to be drawn by a separate call that passed no `linestyle` at all, defaulting
-        them to solid while the key showed the arm's dashes. Ten faint solid lines per arm
-        against one bold dashed line is most of that arm's ink contradicting its key, which
-        is what Josh saw as "the dottedness looks a bit off".
-
-        Funnelling both roles through one pair of functions is what stops that recurring:
-        a role may vary width, alpha and z-order, and nothing else."""
-        return {
-            "color": _COLORS[arm_name],
-            "linestyle": _LINESTYLES[arm_name],
-            "linewidth": linewidth,
-        }
-
-    @staticmethod
-    def faint_line_style(*, arm_name: str, linewidth: float, alpha: float = 0.22) -> dict:
-        """The style for one of an arm's per-seed traces.
-
-        Identical to `line_style` except for alpha and width -- deliberately built by
-        delegating to it rather than by repeating the two lookups, so the dash pattern is
-        physically the same object and cannot drift."""
-        return {
-            **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=linewidth),
-            "alpha": alpha,
-        }
 
     # ------------------------------------------------------------------ reading back
 
@@ -256,35 +158,61 @@ class HumanLadderCurves:
 
     @staticmethod
     def load_arms(*, directories: dict[str, Path]) -> dict[str, dict]:
-        """Every arm's per-seed data, with the checks first.
+        """The three fixed arms' per-seed data, with the checks first.
 
-        All eight arms are required. A missing one is refused rather than worked around:
-        with `no-human` absent there is no control to difference against, with a `stuck`
-        arm absent the target comparison does not exist, and with a ceiling absent the
-        remaining-gap arithmetic has no ceiling -- and a report that silently printed
-        whatever comparison it could still make would read as a result."""
-        missing = [arm for arm in _ARMS if arm not in directories]
+        All three are required. Without `no-human` there is no control to difference
+        against; without a ceiling the remaining-gap arithmetic has no ceiling. A report
+        that silently printed whatever it could still make would read as a result."""
+        missing = [arm for arm in _FIXED_ARMS if arm not in directories]
         if missing:
             raise ValueError(
-                f"missing arm(s): {', '.join(missing)}. This experiment is eight arms "
-                "sharing one seed set; with one absent the paired comparisons it exists "
-                "to make are not defined."
+                f"missing arm(s): {', '.join(missing)}. This comparison is three fixed arms "
+                "sharing one seed set; with one absent the comparisons it exists to make "
+                "are not defined."
             )
         return {
-            arm: HumanLadderCurves.load_arm(directory=directories[arm], arm=arm) for arm in _ARMS
+            arm: HumanLadderCurves.load_run(
+                directory=directories[arm],
+                label=arm,
+                expect_no_human=arm in _ARMS_WITHOUT_A_HUMAN,
+            )
+            for arm in _FIXED_ARMS
         }
 
     @staticmethod
-    def load_arm(*, directory: Path, arm: str) -> dict:
-        """One arm: `{seed: {"transitions", "families", "overall", "interventions",
-        "human_cost"}}`."""
+    def load_rate_sweep(*, directories: dict[int, Path]) -> dict[int, dict]:
+        """The rate sweep's per-seed data, keyed by N (`--mean-steps-between-help-requests`).
+
+        At least two points are required for a "sweep" to mean anything -- one point is a
+        single arm, not a dose-response."""
+        if len(directories) < 2:
+            raise ValueError(
+                f"rate sweep needs at least two N values to show a dose-response, got "
+                f"{sorted(directories)}."
+            )
+        return {
+            n: HumanLadderCurves.load_run(
+                directory=directories[n], label=f"N={n}", expect_no_human=False
+            )
+            for n in sorted(directories)
+        }
+
+    @staticmethod
+    def load_run(*, directory: Path, label: str, expect_no_human: bool) -> dict:
+        """One arm/N-point: `{seed: {"transitions", "families", "overall",
+        "interventions", "human_cost"}}`."""
         seeds = sorted(int(path.parent.name) for path in directory.glob("*/stats.json"))
         if not seeds:
             raise ValueError(f"no <seed>/stats.json under {directory}")
         loaded: dict[int, dict] = {}
         for seed in seeds:
             stats = json.loads((directory / str(seed) / "stats.json").read_text())
-            HumanLadderCurves.check_manipulation(stats=stats, arm=arm, where=f"{directory}/{seed}")
+            HumanLadderCurves.check_manipulation(
+                stats=stats,
+                label=label,
+                where=f"{directory}/{seed}",
+                expect_no_human=expect_no_human,
+            )
             transitions = []
             families: dict[str, list[tuple[int, int]]] = {family: [] for family in _COMPOSITION}
             overall: list[tuple[int, int]] = []
@@ -311,34 +239,44 @@ class HumanLadderCurves:
         return loaded
 
     @staticmethod
-    def check_manipulation(*, stats: dict, arm: str, where: str) -> None:
-        """The three things that make an arm's name true, checked before any number off
-        it is used.
+    def check_manipulation(*, stats: dict, label: str, where: str, expect_no_human: bool) -> None:
+        """The things that make a run's label true, checked before any number off it is
+        used.
 
-        Only the first two are hard requirements. Whether a `stuck` arm was ever
-        rescued is deliberately NOT one: zero interventions there is a finding about the
-        trigger, and rejecting the run would hide exactly the result worth reporting."""
+        `expect_no_human` is a hard requirement in BOTH directions here, unlike #151's
+        module: a fixed arm recording an intervention is a wiring error, but so is a
+        rate-sweep point recording ZERO -- at N <= 20 over 1500 policy calls the expected
+        intervention count is in the dozens, so a true zero means the trigger never fired
+        rather than a legitimate null (contrast `on-stuck`, which #151's module correctly
+        let report zero as a finding -- that trigger is condition-dependent, `at-random`
+        is not)."""
         resets = stats.get("num_practice_resets")
         if resets != _EXPECTED_PRACTICE_RESETS:
             raise ValueError(
                 f"{where}: num_practice_resets is {resets}, expected "
-                f"{_EXPECTED_PRACTICE_RESETS}. Every arm here is "
-                "--practice-reset-policy never, so this arm was quietly reset for free "
-                "and its practice is not reset-free."
+                f"{_EXPECTED_PRACTICE_RESETS}. Every run here is --practice-reset-policy "
+                "never, so this run was quietly reset for free and its practice is not "
+                "reset-free."
             )
         interventions = stats.get("num_human_interventions_recorded", 0)
         cost = stats.get("summed_human_cost_recorded", 0.0)
-        if arm in _ARMS_WITHOUT_A_HUMAN and interventions:
+        if expect_no_human and interventions:
             raise ValueError(
-                f"{where}: the {arm} arm recorded {interventions} human interventions. "
-                "It is the control and must never call one."
+                f"{where}: the {label} run recorded {interventions} human interventions. "
+                "It has no reachable human and must never call one."
+            )
+        if not expect_no_human and not interventions:
+            raise ValueError(
+                f"{where}: the {label} run recorded zero human interventions. At this "
+                "rate over 1500 policy calls that means --ask-for-help never wired, not a "
+                "legitimate null."
             )
         if abs(cost - interventions * _V0_INTERVENTION_COST) > 1e-9:
             raise ValueError(
                 f"{where}: summed_human_cost_recorded is {cost} against {interventions} "
                 f"interventions, which is not the flat {_V0_INTERVENTION_COST} the v0 "
-                "oracle charges. A different HumanOracle was wired, so every cost "
-                "number here means something else."
+                "oracle charges. A different HumanOracle was wired, so every cost number "
+                "here means something else."
             )
 
     @staticmethod
@@ -347,8 +285,8 @@ class HumanLadderCurves:
 
         Classification is `GoalFamilies.classify`, reused rather than recopied: it tests
         the `BinEmpty` predicate before the item names, because `Goal.describe()` renders
-        EMPTY naming BOTH bins, so a naive "does it mention recycling?" test swallows it
-        and silently reports 16 RECYCLING / 0 EMPTY."""
+        EMPTY naming BOTH bins, so a naive "does it mention recycling?" test swallows it and
+        silently reports 16 RECYCLING / 0 EMPTY."""
         solved: Counter[str] = Counter()
         total: Counter[str] = Counter()
         for outcome in outcomes:
@@ -360,139 +298,90 @@ class HumanLadderCurves:
     # ------------------------------------------------------------------ arithmetic
 
     @staticmethod
-    def entry(*, arm: dict, seed: int, family: str | None) -> list[tuple[int, int]]:
+    def entry(*, run: dict, seed: int, family: str | None) -> list[tuple[int, int]]:
         """One seed's `(solved, total)` per checkpoint, overall or for one family."""
-        return arm[seed]["overall"] if family is None else arm[seed]["families"][family]
+        return run[seed]["overall"] if family is None else run[seed]["families"][family]
 
     @staticmethod
-    def pooled_curve(*, arm: dict, family: str | None) -> list[tuple[int, int]]:
-        """The arm's curve pooled over seeds: solved and total both SUMMED, per
-        checkpoint.
+    def pooled_curve(*, run: dict, family: str | None) -> list[tuple[int, int]]:
+        """The run's curve pooled over seeds: solved and total both SUMMED, per checkpoint.
 
-        Summed rather than averaged, so `x/300` at ten seeds means what it says. A mean
-        of per-seed rates would silently reweight a seed that ran a different number of
+        Summed rather than averaged, so `x/300` at ten seeds means what it says. A mean of
+        per-seed rates would silently reweight a seed that ran a different number of
         tasks."""
-        seeds = sorted(arm)
-        num_checkpoints = len(arm[seeds[0]]["transitions"])
+        seeds = sorted(run)
+        num_checkpoints = len(run[seeds[0]]["transitions"])
         pooled = []
         for index in range(num_checkpoints):
             solved = 0
             total = 0
             for seed in seeds:
-                entry = HumanLadderCurves.entry(arm=arm, seed=seed, family=family)
+                entry = HumanLadderCurves.entry(run=run, seed=seed, family=family)
                 solved += entry[index][0]
                 total += entry[index][1]
             pooled.append((solved, total))
         return pooled
 
     @staticmethod
-    def transitions(*, arm: dict) -> list[int]:
+    def transitions(*, run: dict) -> list[int]:
         """The pooled x axis: each checkpoint's MEAN transition count over the seeds.
 
-        Seeds do not share a grid on any arm that asks for help, and that is correct
-        behaviour rather than a defect. `PracticeLoop`'s `except HumanHelpRequested` branch
-        `continue`s, so a granted rescue consumes its loop iteration and a rescued seed
-        reaches every later checkpoint one transition earlier per rescue. Ten seeds rescued
-        25-43 times therefore end 25-43 transitions short of the nominal
-        `num_cycles * max_steps_per_interaction`, all differently.
-
-        An earlier version of this function *raised* on exactly that, on the premise --
-        stated in its own docstring -- that "a rescue is not charged as a transition". The
-        reshape that moved the trigger method-side made that premise false, so the check
-        now rejects only what is still a real error: a differing NUMBER of checkpoints,
-        which means a seed ran a different number of cycles and no amount of averaging
-        makes those curves commensurable.
-
-        The mean is used for the pooled curve only. Per-seed lines are drawn at each
-        seed's own transition counts, so the spread on the x axis stays visible rather
-        than being averaged into the summary."""
-        lengths = {len(arm[seed]["transitions"]) for seed in sorted(arm)}
+        A rescue consumes its loop iteration (`PracticeLoop`'s `except
+        HumanHelpRequested` branch `continue`s), so a rescued seed reaches every later
+        checkpoint one transition earlier per rescue and seeds do not share a grid on any
+        run that asks for help. Only a differing NUMBER of checkpoints is rejected -- that
+        means a seed ran a different number of cycles, which makes the curves
+        incommensurable outright."""
+        lengths = {len(run[seed]["transitions"]) for seed in sorted(run)}
         if len(lengths) != 1:
             raise ValueError(
-                f"seeds disagree on the number of evaluation checkpoints ({sorted(lengths)}). "
-                "That is a differing cycle count, not the one-transition-per-rescue "
-                "shortfall, so these curves are not commensurable."
+                f"seeds disagree on the number of evaluation checkpoints ({sorted(lengths)})."
             )
-        seeds = sorted(arm)
+        seeds = sorted(run)
         return [
-            round(sum(arm[seed]["transitions"][index] for seed in seeds) / len(seeds))
+            round(sum(run[seed]["transitions"][index] for seed in seeds) / len(seeds))
             for index in range(next(iter(lengths)))
         ]
 
     @staticmethod
-    def final_per_seed(*, arm: dict, family: str | None) -> list[int]:
+    def final_per_seed(*, run: dict, family: str | None) -> list[int]:
         """Each seed's final-checkpoint solved count, in seed order."""
         return [
-            HumanLadderCurves.entry(arm=arm, seed=seed, family=family)[-1][0]
-            for seed in sorted(arm)
+            HumanLadderCurves.entry(run=run, seed=seed, family=family)[-1][0]
+            for seed in sorted(run)
         ]
 
     @staticmethod
     def paired_final_differences(
-        *, arms: dict, treatment: str, control: str, family: str | None
+        *, treatment: dict, control: dict, family: str | None
     ) -> list[float]:
         """`treatment` minus `control` at the final checkpoint, **within a seed**.
 
-        The arms share seeds, so this is paired data and an unpaired test would throw
-        that structure away. Zero differences are KEPT rather than dropped: "9/10 seeds
-        differ by exactly zero" is itself a headline and is invisible if ties are
-        discarded."""
-        left, right = arms[treatment], arms[control]
-        seeds = sorted(set(left) & set(right))
+        The runs share seeds, so this is paired data and an unpaired test would throw that
+        structure away. Zero differences are KEPT rather than dropped."""
+        seeds = sorted(set(treatment) & set(control))
         return [
             float(
-                HumanLadderCurves.entry(arm=left, seed=seed, family=family)[-1][0]
-                - HumanLadderCurves.entry(arm=right, seed=seed, family=family)[-1][0]
+                HumanLadderCurves.entry(run=treatment, seed=seed, family=family)[-1][0]
+                - HumanLadderCurves.entry(run=control, seed=seed, family=family)[-1][0]
             )
             for seed in seeds
         ]
 
     @staticmethod
-    def comparisons() -> tuple[tuple[str, str], ...]:
-        """The (treatment, control) pairs that are legitimately paired: EES against EES,
-        in the SAME one-way world, on shared seeds -- so the only thing that differs is
-        the human.
-
-        Three arms appear in none of them, each because it moves a second variable:
-        `two-way-ledge` changes the world, and `skill-oracle` and `random-skills` each
-        change the Method.
-
-        The seven pairs are three groups. **Four against the control** ask "does being
-        rescued at all help?", one per cell of the 2x2. **Two `on-stuck` minus
-        `at-random` at a matched target** ask the sharper question -- does the *timing*
-        of a rescue carry information, holding the rescue rate and what the human does
-        fixed? **One `random` minus `task-initial` at a matched trigger** isolates the
-        target axis. Every pair shares `--method ees`, the one-way world and all ten
-        seeds, so the only thing that differs is the named factor."""
-        return (
-            ("stuck-initial", "no-human"),
-            ("stuck-random", "no-human"),
-            ("at-random-initial", "no-human"),
-            ("at-random-random", "no-human"),
-            ("stuck-initial", "at-random-initial"),
-            ("stuck-random", "at-random-random"),
-            ("stuck-random", "stuck-initial"),
-        )
-
-    @staticmethod
-    def solves_per_rescue(*, arms: dict, treatment: str, control: str) -> float | None:
+    def solves_per_rescue(*, treatment: dict, control: dict) -> float | None:
         """Extra tasks solved per human rescue spent: the gap divided by what it cost.
 
-        The headline gap is not comparable across arms that rescue at different rates, and
-        `on-stuck` and `at-random` measurably do -- about 3.4x apart on this domain. An arm
-        can therefore post the larger gap while being the *worse* use of a human, and only
-        this ratio makes that visible. Pooled over seeds rather than averaged per seed: a
-        per-seed ratio is undefined for any seed that was never rescued, and dropping those
-        seeds would quietly change the denominator.
-
         `None`, never a number, when the treatment spent nothing -- that is a division by
-        zero, and reporting it as `inf` or `0` would both read as findings."""
-        rescues = sum(arms[treatment][seed]["interventions"] for seed in sorted(arms[treatment]))
+        zero, and reporting it as `inf` or `0` would both read as findings. Every
+        rate-sweep point spends something by construction (checked on load), so this is
+        only ever `None` if called on a fixed arm."""
+        rescues = sum(treatment[seed]["interventions"] for seed in sorted(treatment))
         if not rescues:
             return None
         gap = sum(
             HumanLadderCurves.paired_final_differences(
-                arms=arms, treatment=treatment, control=control, family=None
+                treatment=treatment, control=control, family=None
             )
         )
         return gap / rescues
@@ -500,29 +389,15 @@ class HumanLadderCurves:
     # ------------------------------------------------------------------ the report
 
     @staticmethod
-    def print_report(*, arms: dict) -> None:
+    def print_report(*, arms: dict, rate_sweep: dict) -> None:
         """Every number the write-up quotes, as `x/y`, re-derived here."""
-        print("manipulation checks and how much human help each arm actually bought\n")
-        for arm_name in _ARMS:
-            arm = arms[arm_name]
-            seeds = sorted(arm)
-            interventions = [arm[seed]["interventions"] for seed in seeds]
-            rescued_seeds = sum(1 for count in interventions if count)
-            print(
-                f"  {arm_name:>14}   {sum(interventions):>5} interventions pooled"
-                f"   cost {sum(arm[seed]['human_cost'] for seed in seeds):>7.1f}"
-                f"   {rescued_seeds}/{len(seeds)} seeds rescued at all"
-                f"   per-seed {min(interventions)}-{max(interventions)}"
-            )
-        print("\n  Every arm reports num_practice_resets == 0 (checked on load).\n")
-
-        print("final-checkpoint scores, pooled over seeds\n")
+        print("fixed arms: final-checkpoint scores, pooled over seeds\n")
         for family in (None, "TRASH", "RECYCLING", "EMPTY"):
             name = "OVERALL" if family is None else family
             print(f"  {name}")
-            for arm_name in _ARMS:
-                final = HumanLadderCurves.pooled_curve(arm=arms[arm_name], family=family)[-1]
-                per_seed = HumanLadderCurves.final_per_seed(arm=arms[arm_name], family=family)
+            for arm_name in _FIXED_ARMS:
+                final = HumanLadderCurves.pooled_curve(run=arms[arm_name], family=family)[-1]
+                per_seed = HumanLadderCurves.final_per_seed(run=arms[arm_name], family=family)
                 print(
                     f"    {arm_name:>14}  "
                     f"{HumanLadderCurves.format_count(solved=final[0], total=final[1]):>8}"
@@ -530,312 +405,104 @@ class HumanLadderCurves:
                 )
             print()
 
-        print("paired exact sign-flip tests, EES arms only (shared seeds)\n")
-        for family in (None, "TRASH", "RECYCLING", "EMPTY"):
-            name = "OVERALL" if family is None else family
-            print(f"  {name}")
-            for treatment, control in HumanLadderCurves.comparisons():
-                differences = HumanLadderCurves.paired_final_differences(
-                    arms=arms, treatment=treatment, control=control, family=family
-                )
-                test = PairedTests.sign_flip(differences=differences)
-                better = sum(1 for d in differences if d > 0)
-                worse = sum(1 for d in differences if d < 0)
-                mde = PairedTests.minimum_detectable_effect(differences=differences)
-                print(
-                    f"    {treatment:>17} - {control:<17}"
-                    f" gap {int(sum(differences)):>+5}"
-                    f"   better {better}/{len(differences)}"
-                    f"   worse {worse}/{len(differences)}"
-                    f"   tied {test.num_zero_differences}/{len(differences)}"
-                    f"   p = {test.p_value:.4g}   MDE {mde:.2f}"
-                )
-            print()
-
-        HumanLadderCurves.print_cost_effectiveness(arms=arms)
-        HumanLadderCurves.print_ceiling_gaps(arms=arms)
-
-    @staticmethod
-    def print_cost_effectiveness(*, arms: dict) -> None:
-        """Each treated arm's gap over the control, priced by the rescues it spent.
-
-        Printed next to the sign-flip table because the two answer different questions and
-        the first is routinely misread as the second: a larger gap is not a better use of a
-        human if it was bought with several times the help. This is the column that says
-        so."""
-        print("what each arm's gap over the control cost in human help\n")
-        for arm_name in _ARMS:
-            if arm_name in _REFERENCE_ARMS or arm_name in ("no-human", "two-way-ledge"):
-                continue
-            rescues = sum(arms[arm_name][seed]["interventions"] for seed in sorted(arms[arm_name]))
-            gap = int(
-                sum(
-                    HumanLadderCurves.paired_final_differences(
-                        arms=arms, treatment=arm_name, control="no-human", family=None
-                    )
-                )
+        print("rate sweep: interventions spent and final OVERALL score, per N\n")
+        for n in sorted(rate_sweep):
+            run = rate_sweep[n]
+            seeds = sorted(run)
+            interventions = [run[seed]["interventions"] for seed in seeds]
+            final = HumanLadderCurves.pooled_curve(run=run, family=None)[-1]
+            per_seed = HumanLadderCurves.final_per_seed(run=run, family=None)
+            differences = HumanLadderCurves.paired_final_differences(
+                treatment=run, control=arms["no-human"], family=None
             )
-            ratio = HumanLadderCurves.solves_per_rescue(
-                arms=arms, treatment=arm_name, control="no-human"
-            )
-            shown = "n/a (never rescued)" if ratio is None else f"{ratio:.3f}"
+            test = PairedTests.sign_flip(differences=differences)
+            better = sum(1 for d in differences if d > 0)
+            worse = sum(1 for d in differences if d < 0)
+            mde = PairedTests.minimum_detectable_effect(differences=differences)
+            ratio = HumanLadderCurves.solves_per_rescue(treatment=run, control=arms["no-human"])
+            # Every rate-sweep point spends at least one rescue by construction (checked
+            # on load), so `ratio` is never `None` here -- the `n/a` guard exists anyway
+            # so a future caller of this same print loop cannot crash on a fixed arm.
+            shown_ratio = "n/a (never rescued)" if ratio is None else f"{ratio:.3f}"
             print(
-                f"  {arm_name:>17}   gap {gap:>+5} tasks   {rescues:>4} rescues"
-                f"   {shown} extra solves per rescue"
+                f"  N={n:<3}  {sum(interventions):>5} interventions pooled"
+                f"   (per-seed {min(interventions)}-{max(interventions)})"
+                f"   OVERALL {HumanLadderCurves.format_count(solved=final[0], total=final[1]):>8}"
+                f"   per-seed {min(per_seed)}-{max(per_seed)}"
             )
-        print()
-
-    @staticmethod
-    def print_ceiling_gaps(*, arms: dict) -> None:
-        """What is still missing between the best human arm and each ceiling.
-
-        Descriptive arithmetic on pooled counts, NOT a test: the two ceilings each move a
-        second variable (`two-way-ledge` the world, `skill-oracle` the Method), so a
-        sign-flip against them would be answering a question this design cannot ask. It
-        is printed because the size of the remaining gap is what the next experiment has
-        to aim at, and because a reader who sees 220/300 next to 300/300 will do this
-        subtraction anyway -- better it is done once, correctly, with its denominators
-        visible."""
-        print("remaining gap to each ceiling (descriptive, not a test)\n")
-        best = max(
-            (arm for arm in _ARMS if arm not in _REFERENCE_ARMS and arm != "two-way-ledge"),
-            key=lambda name: HumanLadderCurves.pooled_curve(arm=arms[name], family=None)[-1][0],
-        )
-        best_solved, best_total = HumanLadderCurves.pooled_curve(arm=arms[best], family=None)[-1]
-        print(
-            f"  best human arm: {best} at "
-            f"{HumanLadderCurves.format_count(solved=best_solved, total=best_total)}"
-        )
-        for ceiling in ("two-way-ledge", "skill-oracle"):
-            solved, total = HumanLadderCurves.pooled_curve(arm=arms[ceiling], family=None)[-1]
             print(
-                f"    vs {ceiling:>14} "
-                f"{HumanLadderCurves.format_count(solved=solved, total=total):>8}"
-                f"   gap {solved - best_solved:>+5}/{total}"
+                f"        vs no-human: gap {int(sum(differences)):>+4}"
+                f"   better {better}/{len(differences)}  worse {worse}/{len(differences)}"
+                f"   tied {test.num_zero_differences}/{len(differences)}"
+                f"   p = {test.p_value:.4g}   MDE {mde:.2f}"
+                f"   {shown_ratio} extra solves per rescue"
             )
         print()
 
     # ------------------------------------------------------------------ the figures
 
     @staticmethod
-    def render_arm(*, arms: dict, arm_name: str, output: Path, title: str) -> None:
-        """One arm's own figure: its learning curve, and what its rescues bought it.
-
-        **Left** is the curve, one faint line per seed under the bold pooled mean --
-        because a mean over ten seeds can describe none of them when an arm is bimodal,
-        which this domain's reset-free arm is.
-
-        **Right** plots each seed's final score against how many times that seed was
-        rescued. It is the panel that separates "the human did not help" from "the human
-        was never called": for `no-human` it collapses to a column at zero, which is the
-        honest picture of that arm's spread, and for a `stuck` arm a flat scatter says
-        rescues bought nothing while a sloped one says they did."""
-        arm = arms[arm_name]
-        color = _COLORS[arm_name]
-        fig, (ax_curve, ax_rescue) = plt.subplots(1, 2, figsize=(12.6, 5.0))
-        xs = HumanLadderCurves.transitions(arm=arm)
-        seeds = sorted(arm)
-        pooled = HumanLadderCurves.pooled_curve(arm=arm, family=None)
-        scale = _NUM_TEST_TASKS / pooled[-1][1]
-        label = (
-            f"{_LABELS[arm_name]} — "
-            f"{HumanLadderCurves.format_count(solved=pooled[-1][0], total=pooled[-1][1])}"
-        )
-        if arm_name in _REFERENCE_ARMS:
-            # A non-learner: one horizontal line at its pooled level, plus each seed as a
-            # faint line of its own so the spread is still visible. No curve, because
-            # there is no learning for a curve to show -- see _REFERENCE_ARMS.
-            for seed in seeds:
-                entry = HumanLadderCurves.entry(arm=arm, seed=seed, family=None)
-                ax_curve.axhline(
-                    entry[-1][0],
-                    **HumanLadderCurves.faint_line_style(
-                        arm_name=arm_name, linewidth=0.9, alpha=0.22
-                    ),
-                )
-            ax_curve.axhline(
-                pooled[-1][0] * scale,
-                **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.6),
-                label=label,
-            )
-        else:
-            for seed in seeds:
-                entry = HumanLadderCurves.entry(arm=arm, seed=seed, family=None)
-                # That seed's OWN transition counts, not the pooled mean: a rescued seed
-                # ends short by its own rescue count, and drawing it on the mean grid
-                # would misplace it by up to ~20 transitions.
-                ax_curve.plot(
-                    arm[seed]["transitions"],
-                    [s for s, _ in entry],
-                    **HumanLadderCurves.faint_line_style(
-                        arm_name=arm_name, linewidth=0.9, alpha=0.25
-                    ),
-                )
-            ax_curve.plot(
-                xs,
-                [solved * scale for solved, _ in pooled],
-                **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.6),
-                label=label,
-            )
-        ax_curve.set_xlabel("online transitions")
-        ax_curve.set_ylabel(
-            f"test tasks solved per seed (x/{_NUM_TEST_TASKS});  legend gives the pooled count",
-            fontsize=9,
-        )
-        ax_curve.set_ylim(-_NUM_TEST_TASKS * 0.04, _NUM_TEST_TASKS * 1.06)
-        ax_curve.grid(alpha=0.25, linewidth=0.6)
-        ax_curve.legend(fontsize=8.5, loc="upper left", framealpha=0.95)
-        if len(xs) == 1:
-            # `skill-oracle` never practises, so its x axis spans nothing and matplotlib
-            # invents a 0-1 range. Saying so beats letting a reader read the invented
-            # axis as real practice.
-            ax_curve.annotate(
-                "this arm never practises: one evaluation, at 0 online transitions",
-                (0.5, 0.06),
-                xycoords="axes fraction",
-                ha="center",
-                fontsize=8.5,
-            )
-
-        rescues = [arm[seed]["interventions"] for seed in seeds]
-        finals = HumanLadderCurves.final_per_seed(arm=arm, family=None)
-        ax_rescue.scatter(rescues, finals, color=color, s=46, alpha=0.85, zorder=3)
-        for seed, x, y in zip(seeds, rescues, finals, strict=True):
-            ax_rescue.annotate(
-                f"s{seed}", (x, y), textcoords="offset points", xytext=(5, 4), fontsize=7.5
-            )
-        ax_rescue.set_xlabel("human interventions this seed was charged")
-        ax_rescue.set_ylabel(f"final test tasks solved (x/{_NUM_TEST_TASKS})", fontsize=9)
-        ax_rescue.set_ylim(-_NUM_TEST_TASKS * 0.04, _NUM_TEST_TASKS * 1.06)
-        ax_rescue.grid(alpha=0.25, linewidth=0.6)
-        if max(rescues) == 0:
-            # A degenerate axis reads as a bug otherwise; saying it is the arm's defining
-            # property costs one annotation.
-            ax_rescue.set_xlim(-1, 1)
-            ax_rescue.annotate(
-                "no human was ever called in this arm",
-                (0.5, 0.06),
-                xycoords="axes fraction",
-                ha="center",
-                fontsize=8.5,
-            )
-        fig.suptitle(title, fontsize=10.5)
-        fig.tight_layout()
-        fig.savefig(output, dpi=160)
-        print(f"wrote {output}")
-        plt.close(fig)
-
-    @staticmethod
     def render_family(
         *, arms: dict, family: str | None, output: Path, title: str, legend_loc: str = "upper left"
     ) -> None:
-        """All eight arms on ONE goal family: the curves, and the per-seed final spread
-        beside them.
+        """The three fixed arms on ONE goal family: the training curves.
 
-        **One figure per family, not one pooled figure**, matching
-        `reset_free_ledge_curves.py` (PR #138), which draws the same three-way split for
-        the reset-free ledge A/B. The reason is the same one it had there, and here it is
-        the headline: the entire effect of a human rescue is RECYCLING (22/140 → 132/140)
-        while TRASH is a null result (70/140 vs 68/140). A pooled curve averages a large
-        effect against a flat one and shows a muted version of neither.
-
-        **EMPTY gets no figure.** It is 20/20 in every one of the eight arms — 2 tasks per
-        seed, at ceiling before any manipulation — so there is nothing for a curve to show.
-        It stays in the printed report, where its denominator is visible.
-
-        **Every level here is the FAMILY's own**, never the overall figure's carried
-        across: `skill-oracle` is 140/140 on both throw families but 300/300 overall, and
-        `two-way-ledge` is 127/140 on TRASH against 140/140 on RECYCLING. `pooled_curve`
-        is asked for `family` and the per-seed denominator is read back off the data, so a
-        family panel cannot silently inherit the wrong denominator.
-
-        The strip on the right is there because a bar chart of eight means would hide one
-        seed driving an arm, which is exactly the failure mode this domain produces. Each
-        seed is one dot; the bold tick is the pooled count rescaled onto the same axis."""
-        fig, (ax_curve, ax_spread) = plt.subplots(
-            1, 2, figsize=(13.6, 5.4), sharey=True, width_ratios=(2.1, 1.0)
-        )
-        # This family's per-seed denominator (30 overall, 14 per throw family), read off
-        # the data rather than hardcoded, so it cannot disagree with _COMPOSITION.
+        One figure per family (overall / TRASH / RECYCLING), matching the standing
+        convention -- a pooled curve would average a large per-family effect against a
+        flat one and show a muted version of neither. EMPTY gets no figure: 20/20 in every
+        arm, nothing for a curve to show."""
+        fig, ax = plt.subplots(figsize=(8.4, 5.4))
         seed_total = HumanLadderCurves.entry(
-            arm=arms[_ARMS[0]], seed=sorted(arms[_ARMS[0]])[0], family=family
+            run=arms[_FIXED_ARMS[0]], seed=sorted(arms[_FIXED_ARMS[0]])[0], family=family
         )[-1][1]
-        for arm_name in _ARMS:
-            arm = arms[arm_name]
-            xs = HumanLadderCurves.transitions(arm=arm)
-            pooled = HumanLadderCurves.pooled_curve(arm=arm, family=family)
+        for arm_name in _FIXED_ARMS:
+            run = arms[arm_name]
+            color = _COLORS[arm_name]
+            linestyle = _LINESTYLES[arm_name]
+            xs = HumanLadderCurves.transitions(run=run)
+            pooled = HumanLadderCurves.pooled_curve(run=run, family=family)
             scale = seed_total / pooled[-1][1]
-            rescues = sum(arm[seed]["interventions"] for seed in sorted(arm))
             label = (
                 f"{_LABELS[arm_name]} — "
                 f"{HumanLadderCurves.format_count(solved=pooled[-1][0], total=pooled[-1][1])}"
-                f"  ({rescues} rescues)"
             )
             if arm_name in _REFERENCE_ARMS:
-                ax_curve.axhline(
+                for seed in sorted(run):
+                    entry = HumanLadderCurves.entry(run=run, seed=seed, family=family)
+                    ax.axhline(
+                        entry[-1][0], color=color, linestyle=linestyle, alpha=0.22, linewidth=0.9
+                    )
+                ax.axhline(
                     pooled[-1][0] * scale,
-                    **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.4),
+                    color=color,
+                    linestyle=linestyle,
+                    linewidth=2.6,
                     label=label,
                 )
                 continue
-            for seed in sorted(arm):
-                entry = HumanLadderCurves.entry(arm=arm, seed=seed, family=family)
-                # Each seed at its own transition counts -- see `transitions`.
-                ax_curve.plot(
-                    arm[seed]["transitions"],
+            for seed in sorted(run):
+                entry = HumanLadderCurves.entry(run=run, seed=seed, family=family)
+                ax.plot(
+                    run[seed]["transitions"],
                     [s for s, _ in entry],
-                    **HumanLadderCurves.faint_line_style(
-                        arm_name=arm_name, linewidth=0.8, alpha=0.16
-                    ),
+                    color=color,
+                    linestyle=linestyle,
+                    alpha=0.16,
+                    linewidth=0.8,
                 )
-            ax_curve.plot(
+            ax.plot(
                 xs,
                 [solved * scale for solved, _ in pooled],
-                **HumanLadderCurves.line_style(arm_name=arm_name, linewidth=2.4),
+                color=color,
+                linestyle=linestyle,
+                linewidth=2.3,
                 label=label,
             )
-        # An asking arm's x-axis ends short of num_cycles * max_steps_per_interaction by
-        # exactly its rescue count, because a granted rescue consumes its loop iteration.
-        # Named in the xlabel rather than left for a reader to notice, since otherwise the
-        # arms' curves ending at different x looks like a bug.
-        ax_curve.set_xlabel(
-            "online transitions\n"
-            "an asking arm ends one transition short per rescue — a granted rescue "
-            "consumes its loop iteration",
-            fontsize=9,
-        )
-        ax_curve.set_ylabel(
-            f"test tasks solved per seed (x/{seed_total});  legend gives the pooled count",
-            fontsize=9,
-        )
-        ax_curve.grid(alpha=0.25, linewidth=0.6)
-        ax_curve.legend(fontsize=8, loc=legend_loc, framealpha=0.95)
-
-        for index, arm_name in enumerate(_ARMS):
-            finals = HumanLadderCurves.final_per_seed(arm=arms[arm_name], family=family)
-            # A tiny deterministic horizontal spread so coincident seeds stay countable;
-            # index-derived rather than random, so the figure is reproducible.
-            offsets = [(i % 5 - 2) * 0.055 for i in range(len(finals))]
-            ax_spread.scatter(
-                [index + offset for offset in offsets],
-                finals,
-                color=_COLORS[arm_name],
-                s=42,
-                alpha=0.85,
-                zorder=3,
-            )
-            pooled = HumanLadderCurves.pooled_curve(arm=arms[arm_name], family=family)[-1]
-            ax_spread.plot(
-                [index - 0.26, index + 0.26],
-                [pooled[0] / len(finals)] * 2,
-                color=_COLORS[arm_name],
-                linewidth=2.6,
-            )
-        ax_spread.set_xticks(range(len(_ARMS)))
-        ax_spread.set_xticklabels(_ARMS, rotation=20, ha="right", fontsize=8)
-        ax_spread.set_xlabel("one dot per seed; bar is the pooled mean")
-        ax_spread.set_ylim(-seed_total * 0.04, seed_total * 1.06)
-        ax_spread.grid(alpha=0.25, linewidth=0.6, axis="y")
+        ax.set_xlabel("online transitions")
+        ax.set_ylabel("test tasks solved per seed", fontsize=9)
+        ax.set_ylim(-seed_total * 0.04, seed_total * 1.06)
+        ax.grid(alpha=0.25, linewidth=0.6)
+        ax.legend(fontsize=8.5, loc=legend_loc, framealpha=0.95)
         fig.suptitle(title, fontsize=10.5)
         fig.tight_layout()
         fig.savefig(output, dpi=160)
@@ -843,117 +510,65 @@ class HumanLadderCurves:
         plt.close(fig)
 
     @staticmethod
-    def render_interventions(*, arms: dict, output: Path, title: str) -> None:
-        """What each arm actually cost in human help, **per seed**.
+    def render_rate_sweep(*, arms: dict, rate_sweep: dict, output: Path, title: str) -> None:
+        """The dose-response figure: final OVERALL score against the rescue-rate knob N.
 
-        This is the cost side of the experiment, and it existed only as two pooled totals
-        in prose before this figure. Pooled totals are exactly what hides the thing worth
-        seeing: `359` and `348` are sums over ten seeds, and a sum cannot distinguish ten
-        seeds charged ~35 each from one seed charged 300 and nine charged 6. The left
-        panel therefore plots one dot per seed.
-
-        **Left**: per-seed intervention counts, one dot per seed, with the pooled total
-        written under each arm as `x` over its ten seeds. The four arms with no reachable
-        human sit on the zero line.
-
-        **Right**: what each intervention bought, as final score against interventions,
-        pooled per arm -- the cost-effectiveness view. An arm high and left did well
-        cheaply; an arm high and right did well expensively. The `on-stuck` and
-        `at-random` arms are the pair to read against each other here: they are configured
-        to spend at comparable rates, so a vertical gap between them at similar x is the
-        timing effect priced per rescue."""
-        fig, (ax_counts, ax_value) = plt.subplots(1, 2, figsize=(13.6, 5.2))
-        for index, arm_name in enumerate(_ARMS):
-            arm = arms[arm_name]
-            seeds = sorted(arm)
-            counts = [arm[seed]["interventions"] for seed in seeds]
-            # Deterministic jitter so coincident seeds stay countable and the figure is
-            # reproducible -- index-derived, never drawn from an RNG.
-            offsets = [(i % 5 - 2) * 0.06 for i in range(len(counts))]
-            ax_counts.scatter(
-                [index + offset for offset in offsets],
-                counts,
-                color=_COLORS[arm_name],
-                s=44,
-                alpha=0.85,
-                zorder=3,
+        Not a training curve -- there is no online-transitions axis here, since each point
+        is a wholly separate arm at a different N, not one arm's progress over time. One
+        faint dot per seed at each sampled N (jittered so ties stay countable), a bold mean
+        line connecting the pooled-per-seed average at each N, and the `no-human` /
+        `skill-oracle` levels as reference lines so the sweep reads against the same
+        ceilings the fixed-arm figures use."""
+        fig, ax = plt.subplots(figsize=(8.8, 5.6))
+        ns = sorted(rate_sweep)
+        means = []
+        for n in ns:
+            run = rate_sweep[n]
+            finals = HumanLadderCurves.final_per_seed(run=run, family=None)
+            offsets = [(i % 5 - 2) * 0.12 for i in range(len(finals))]
+            ax.scatter(
+                [n + offset for offset in offsets],
+                finals,
+                color=_RATE_SWEEP_COLOR,
+                s=34,
+                alpha=0.35,
+                zorder=2,
             )
-            ax_counts.plot(
-                [index - 0.26, index + 0.26],
-                [sum(counts) / len(counts)] * 2,
-                color=_COLORS[arm_name],
-                linewidth=2.6,
-            )
-            # Above the column, not below the axis: below collides with the rotated tick
-            # labels, and a pooled total half-hidden behind an arm name is worse than none.
-            # "N in 10 seeds", not "N/10": an intervention count is a total, not a
-            # proportion, and `x/y` here would read as a success rate out of ten.
-            ax_counts.annotate(
-                f"{sum(counts)} in {len(counts)} seeds",
-                (index, 0.97),
-                xycoords=("data", "axes fraction"),
-                ha="center",
-                va="top",
-                fontsize=7.5,
-                fontweight="bold",
-                color=_COLORS[arm_name],
-            )
-        ax_counts.set_xticks(range(len(_ARMS)))
-        ax_counts.set_xticklabels(_ARMS, rotation=20, ha="right", fontsize=8)
-        ax_counts.set_ylabel("human interventions charged to this seed", fontsize=9)
-        ax_counts.set_xlabel(
-            "one dot per seed; bar is the per-seed mean, bold figure is the pooled total",
-            fontsize=8.5,
+            means.append(sum(finals) / len(finals))
+        ax.plot(
+            ns,
+            means,
+            color=_RATE_SWEEP_COLOR,
+            linewidth=2.3,
+            marker="o",
+            markersize=5,
+            zorder=3,
+            label="--ask-for-help at-random, task-initial — per-seed mean, n=10 per N",
         )
-        ax_counts.grid(alpha=0.25, linewidth=0.6, axis="y")
-        # Headroom for the pooled totals written along the top, so they never sit on top
-        # of the highest seed's dot.
-        busiest = max(
-            arms[arm_name][seed]["interventions"] for arm_name in _ARMS for seed in arms[arm_name]
-        )
-        ax_counts.set_ylim(-2, max(busiest * 1.22, 1.0))
 
-        # Sizes descend with arm order so that two arms landing on the same point stay
-        # individually visible as nested rings rather than one hiding the other. The four
-        # zero-rescue arms all sit at x=0 and can collide there, and a figure in which one
-        # silently covers another would erase it.
-        placed: dict[tuple[int, int], list[str]] = {}
-        for index, arm_name in enumerate(_ARMS):
-            arm = arms[arm_name]
-            seeds = sorted(arm)
-            pooled_solved, pooled_total = HumanLadderCurves.pooled_curve(arm=arm, family=None)[-1]
-            rescues = sum(arm[seed]["interventions"] for seed in seeds)
-            placed.setdefault((rescues, pooled_solved), []).append(arm_name)
-            ax_value.scatter(
-                [rescues],
-                [pooled_solved],
-                color=_COLORS[arm_name],
-                s=200 - index * 22,
-                alpha=0.9,
-                zorder=3 + index,
-                edgecolors="white",
-                linewidths=0.8,
+        for reference_arm in ("no-human", "skill-oracle"):
+            run = arms[reference_arm]
+            finals = HumanLadderCurves.final_per_seed(run=run, family=None)
+            pooled_solved, pooled_total = HumanLadderCurves.pooled_curve(run=run, family=None)[-1]
+            ax.axhline(
+                sum(finals) / len(finals),
+                color=_COLORS[reference_arm],
+                linestyle=_LINESTYLES[reference_arm],
+                linewidth=2.0,
                 label=(
-                    f"{_LABELS[arm_name]} — "
+                    f"{_LABELS[reference_arm]} — "
                     f"{HumanLadderCurves.format_count(solved=pooled_solved, total=pooled_total)}"
                 ),
             )
-        for (rescues, solved), names in placed.items():
-            if len(names) > 1:
-                ax_value.annotate(
-                    " = ".join(names),
-                    (rescues, solved),
-                    textcoords="offset points",
-                    xytext=(11, -3),
-                    fontsize=7.5,
-                    style="italic",
-                )
-        ax_value.set_xlabel("human interventions charged, pooled over 10 seeds", fontsize=9)
-        ax_value.set_ylabel(
-            f"final test tasks solved, pooled (x/{_NUM_TEST_TASKS * 10})", fontsize=9
+
+        ax.set_xticks(ns)
+        ax.set_xlabel(
+            "--mean-steps-between-help-requests (N); each policy call asks with probability 1/N"
         )
-        ax_value.grid(alpha=0.25, linewidth=0.6)
-        ax_value.legend(fontsize=7.5, loc="lower right", framealpha=0.95)
+        ax.set_ylabel("final test tasks solved per seed", fontsize=9)
+        ax.set_ylim(-_NUM_TEST_TASKS * 0.04, _NUM_TEST_TASKS * 1.06)
+        ax.grid(alpha=0.25, linewidth=0.6)
+        ax.legend(fontsize=8, loc="lower right", framealpha=0.95)
         fig.suptitle(title, fontsize=10.5)
         fig.tight_layout()
         fig.savefig(output, dpi=160)
@@ -970,39 +585,41 @@ class HumanLadderCurves:
             action="append",
             required=True,
             metavar="NAME=DIR",
-            help="e.g. stuck-initial=results/human-ladder/stuck-initial/ees . DIR holds "
-            f"<seed>/stats.json. All eight of {', '.join(_ARMS)} are required.",
+            help="e.g. no-human=results/human-ladder-v2/no-human/ees . DIR holds "
+            f"<seed>/stats.json. All three of {', '.join(_FIXED_ARMS)} are required.",
+        )
+        parser.add_argument(
+            "--rate-point",
+            action="append",
+            required=True,
+            metavar="N=DIR",
+            help="e.g. 5=results/human-ladder-v2/rate-sweep/N5/ees . At least two points "
+            "are required.",
         )
         parser.add_argument(
             "--output-dir",
             type=Path,
             required=True,
-            help="Where the twelve figures are written: one per arm, three cross-arm "
-            "figures split by goal family (overall / TRASH / RECYCLING), and the per-seed "
-            "intervention-count figure. EMPTY gets no figure: it is 20/20 in every arm.",
+            help="Where the four figures are written: overall/TRASH/RECYCLING training "
+            "curves for the fixed arms, plus the rate-sweep dose-response figure.",
         )
         args = parser.parse_args()
 
-        directories = {}
+        arm_directories = {}
         for spec in args.arm:
             name, _, path = spec.partition("=")
-            directories[name] = Path(path)
-        arms = HumanLadderCurves.load_arms(directories=directories)
-        HumanLadderCurves.print_report(arms=arms)
+            arm_directories[name] = Path(path)
+        rate_directories = {}
+        for spec in args.rate_point:
+            name, _, path = spec.partition("=")
+            rate_directories[int(name)] = Path(path)
+
+        arms = HumanLadderCurves.load_arms(directories=arm_directories)
+        rate_sweep = HumanLadderCurves.load_rate_sweep(directories=rate_directories)
+        HumanLadderCurves.print_report(arms=arms, rate_sweep=rate_sweep)
 
         args.output_dir.mkdir(parents=True, exist_ok=True)
         domain = "Tossing Room (split throws, weight drawn at pickup), reset-free practice"
-        for arm_name in _ARMS:
-            HumanLadderCurves.render_arm(
-                arms=arms,
-                arm_name=arm_name,
-                output=args.output_dir / f"human-ladder-{arm_name}.png",
-                title=f"{domain}\n{_LABELS[arm_name]}: all test tasks, x/{_NUM_TEST_TASKS * 10}",
-            )
-        # Figure order follows the argument, not the data model: the two throw families
-        # carry the mechanism (the whole effect is RECYCLING, TRASH is a null result) and
-        # the pooled curve is the summary of them. Matches reset_free_ledge_curves.py.
-        # EMPTY is deliberately absent -- 20/20 in every arm, nothing to show.
         for family, name, legend_loc in (
             ("TRASH", f"TRASH tasks, x/{_COMPOSITION['TRASH'] * 10}", "lower right"),
             ("RECYCLING", f"RECYCLING tasks, x/{_COMPOSITION['RECYCLING'] * 10}", "upper left"),
@@ -1013,13 +630,18 @@ class HumanLadderCurves:
                 family=family,
                 output=args.output_dir
                 / f"human-ladder-{'overall' if family is None else family.lower()}.png",
-                title=f"{domain}\neight arms of the human-in-the-loop ladder — {name}",
+                title=f"{domain}\nfixed arms — {name}",
                 legend_loc=legend_loc,
             )
-        HumanLadderCurves.render_interventions(
+        HumanLadderCurves.render_rate_sweep(
             arms=arms,
-            output=args.output_dir / "human-ladder-interventions.png",
-            title=f"{domain}\nwhat each arm cost in human help, per seed",
+            rate_sweep=rate_sweep,
+            output=args.output_dir / "human-ladder-rate-sweep.png",
+            title=(
+                f"{domain}\n"
+                f"rescue-rate dose-response, --ask-for-help at-random "
+                f"(overall test tasks, of {_NUM_TEST_TASKS})"
+            ),
         )
 
 
