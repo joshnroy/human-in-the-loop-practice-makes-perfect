@@ -52,17 +52,28 @@ exist" arm -- the same reasoning CLAUDE.md's colour rule already carves out for
 `skill-oracle`/`random-skills`.
 
 **Colour.** `no-human` is orange (`#D55E00`): the standing "nothing helps" colour, reused
-across every figure in this report. The rate sweep is blue (`#0072B2`): an assistance
-mechanism (`at-random`) is available and firing at every N in the grid, which is what the
-blue/orange rule tracks -- not the actual rate. `skill-oracle` is grey and dotted (reference
-line); `two-way-ledge` gets a third, unreserved colour since it sits on neither axis.
+across every figure in this report. The rate sweep is blue-family (`Blues`, a sequential
+colourmap from light N=1 to dark N=20): every rate-sweep arm has an assistance mechanism
+available (`--ask-for-help at-random`, always firing at a strictly positive rate here), which
+is what the blue/orange rule tracks -- not the specific rate, which the colourmap's lightness
+carries instead. `skill-oracle` is grey and dotted (reference line); `two-way-ledge` gets a
+third, unreserved colour since it sits on neither axis.
 
-**The dose-response figure is not a training curve.** Arms 1-3 get the standing
-OVERALL/TRASH/RECYCLING training-curve treatment (per-seed faint traces under a bold pooled
-mean, across evaluation checkpoints). The rate sweep answers a different question -- what
-does final performance do as the rescue rate varies -- so its x axis is N, not online
-transitions, and it draws one point per seed at each of the eight sampled N values, plus the
-pooled mean, with the `no-human` and `skill-oracle` levels as reference lines for context.
+**The three training-curve figures (overall/TRASH/RECYCLING) carry all eleven arms on ONE
+panel each** -- the three fixed arms plus all eight rate-sweep points, so a reader sees the
+whole ladder's shape over practice, not just its final-checkpoint dose-response. The eight
+rate-sweep curves are thin, partly transparent and have no per-seed traces of their own (that
+would be 80 more lines); they are drawn first so the three fixed arms' bold, per-seed-backed
+curves stay visually on top. See `render_family` for why a colourbar replaces a named legend
+entry for the eight of them.
+
+**The separate dose-response figure is not a training curve, and stays alongside the merged
+panels rather than being replaced by them.** It answers a different question -- what does
+FINAL performance do as the rescue rate varies -- so its x axis is N, not online transitions,
+and it draws one point per seed at each of the eight sampled N values, plus the pooled mean,
+with the `no-human` and `skill-oracle` levels as reference lines for context. The merged
+training-curve panels show shape over practice; this figure is still the one to read for the
+exact per-N numbers the training curves intentionally omit from their (colourbar-only) legend.
 
 **The manipulation checks are not optional here.** `num_practice_resets` must be 0
 everywhere, or an arm labelled reset-free was quietly reset for free.
@@ -443,18 +454,74 @@ class HumanLadderCurves:
 
     @staticmethod
     def render_family(
-        *, arms: dict, family: str | None, output: Path, title: str, legend_loc: str = "upper left"
+        *,
+        arms: dict,
+        rate_sweep: dict,
+        family: str | None,
+        output: Path,
+        title: str,
+        legend_loc: str = "upper left",
     ) -> None:
-        """The three fixed arms on ONE goal family: the training curves.
+        """The three fixed arms AND all eight rate-sweep points on ONE goal family: the
+        training curves, all on the same panel.
 
         One figure per family (overall / TRASH / RECYCLING), matching the standing
         convention -- a pooled curve would average a large per-family effect against a
         flat one and show a muted version of neither. EMPTY gets no figure: 20/20 in every
-        arm, nothing for a curve to show."""
-        fig, ax = plt.subplots(figsize=(8.4, 5.4))
+        arm, nothing for a curve to show.
+
+        **Eleven lines on one panel needs a different legend strategy than three.** The
+        three fixed arms keep named legend entries with their exact pooled count, per the
+        standing convention. The eight rate-sweep arms do NOT get named entries -- eight
+        more `--mean-steps-between-help-requests=N -- x/300` strings would make the legend
+        itself the unreadable part of the figure. They get a sequential colourmap instead
+        (light N=1 to dark N=20) with a colourbar, which is the right encoding for an
+        ORDERED sweep of one parameter -- Josh's own suggestion, and the natural read for
+        "one arm per value of N" the way a discrete named legend is not. All eight are
+        blue-family (`Blues`), matching the project's role rule: every rate-sweep arm has
+        an assistance mechanism available (`--ask-for-help at-random`, always firing at a
+        strictly positive rate here -- see `check_manipulation`), which is what blue
+        encodes, not the specific rate. Orange stays reserved for `no-human`, the one arm
+        with no mechanism at all.
+
+        **The rate-sweep curves have no per-seed faint traces here, unlike the fixed
+        arms.** Eight arms x ten seeds is 80 more lines, which would bury the panel; their
+        per-seed spread already has its own figure (`render_rate_sweep`). They are drawn
+        first, thin and partly transparent, so the three fixed arms' bold lines stay on
+        top and visually dominant -- the same "faint underneath, bold on top" layering the
+        project's per-seed traces use, applied here to a whole population of secondary
+        arms instead of one arm's seeds."""
+        fig, ax = plt.subplots(figsize=(9.8, 5.8))
         seed_total = HumanLadderCurves.entry(
             run=arms[_FIXED_ARMS[0]], seed=sorted(arms[_FIXED_ARMS[0]])[0], family=family
         )[-1][1]
+
+        ns = sorted(rate_sweep)
+        cmap = matplotlib.colormaps["Blues"]
+        norm = matplotlib.colors.Normalize(vmin=min(ns), vmax=max(ns))
+        for n in ns:
+            run = rate_sweep[n]
+            # 0.30 floor keeps even N=1 (the lightest) visible against a white panel.
+            color = cmap(0.30 + 0.65 * norm(n))
+            xs = HumanLadderCurves.transitions(run=run)
+            pooled = HumanLadderCurves.pooled_curve(run=run, family=family)
+            scale = seed_total / pooled[-1][1]
+            ax.plot(
+                xs,
+                [solved * scale for solved, _ in pooled],
+                color=color,
+                linewidth=1.5,
+                alpha=0.85,
+                zorder=2,
+            )
+        scalar_mappable = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        scalar_mappable.set_array([])
+        colorbar = fig.colorbar(scalar_mappable, ax=ax, pad=0.015, fraction=0.045)
+        colorbar.set_label(
+            "--ask-for-help at-random, N (--mean-steps-between-help-requests)", fontsize=8
+        )
+        colorbar.set_ticks(ns)
+
         for arm_name in _FIXED_ARMS:
             run = arms[arm_name]
             color = _COLORS[arm_name]
@@ -478,6 +545,7 @@ class HumanLadderCurves:
                     linestyle=linestyle,
                     linewidth=2.6,
                     label=label,
+                    zorder=4,
                 )
                 continue
             for seed in sorted(run):
@@ -489,6 +557,7 @@ class HumanLadderCurves:
                     linestyle=linestyle,
                     alpha=0.16,
                     linewidth=0.8,
+                    zorder=3,
                 )
             ax.plot(
                 xs,
@@ -497,6 +566,7 @@ class HumanLadderCurves:
                 linestyle=linestyle,
                 linewidth=2.3,
                 label=label,
+                zorder=4,
             )
         ax.set_xlabel("online transitions")
         ax.set_ylabel("test tasks solved per seed", fontsize=9)
@@ -601,7 +671,8 @@ class HumanLadderCurves:
             type=Path,
             required=True,
             help="Where the four figures are written: overall/TRASH/RECYCLING training "
-            "curves for the fixed arms, plus the rate-sweep dose-response figure.",
+            "curves (fixed arms plus all eight rate-sweep points, same panels), plus the "
+            "rate-sweep dose-response figure.",
         )
         args = parser.parse_args()
 
@@ -627,10 +698,11 @@ class HumanLadderCurves:
         ):
             HumanLadderCurves.render_family(
                 arms=arms,
+                rate_sweep=rate_sweep,
                 family=family,
                 output=args.output_dir
                 / f"human-ladder-{'overall' if family is None else family.lower()}.png",
-                title=f"{domain}\nfixed arms — {name}",
+                title=f"{domain}\nfixed arms + at-random rate sweep — {name}",
                 legend_loc=legend_loc,
             )
         HumanLadderCurves.render_rate_sweep(

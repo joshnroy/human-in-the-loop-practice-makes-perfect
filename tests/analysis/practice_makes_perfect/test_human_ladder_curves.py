@@ -281,7 +281,9 @@ def test_render_family_and_rate_sweep_write_files(*, tmp_path: Path) -> None:
     output_dir.mkdir()
     for family, name in ((None, "overall"), ("TRASH", "trash"), ("RECYCLING", "recycling")):
         output = output_dir / f"human-ladder-{name}.png"
-        HumanLadderCurves.render_family(arms=arms, family=family, output=output, title="test")
+        HumanLadderCurves.render_family(
+            arms=arms, rate_sweep=rate_sweep, family=family, output=output, title="test"
+        )
         assert output.exists()
     rate_output = output_dir / "human-ladder-rate-sweep.png"
     HumanLadderCurves.render_rate_sweep(

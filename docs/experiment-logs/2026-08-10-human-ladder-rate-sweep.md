@@ -64,6 +64,14 @@ dose-response over a swept parameter rather than a reset-policy comparison, so i
 is final performance against N with per-seed spread shown, not a redundant bar chart
 alongside it.
 
+**Follow-up guidance, after the first version of this PR shipped only the dose-response
+summary**: Josh wanted all eight rate-sweep arms plotted as training curves too, on the same
+OVERALL/TRASH/RECYCLING panels the three fixed arms already have — not a separate figure.
+Use judgement on keeping eleven lines per panel readable (a sequential colourmap, reduced
+line weight/alpha, or a grid split were all offered as options); keep the dose-response
+figure too, since training curves and the end-state summary answer different questions and
+neither replaces the other.
+
 ## Methods
 
 Four components, driven by `scripts/run_sweep.py` (one invocation per component; the N axis
@@ -108,13 +116,28 @@ the way #151's was.
 
 ## Results
 
-### Fixed arms
+### Fixed arms, and all eight rate-sweep points, as training curves on the same panels
 
-![all test tasks, x/300, three fixed arms as training curves](2026-08-10-human-ladder-overall.png)
+Each panel below carries all eleven arms: the three fixed arms (named legend entries, exact
+pooled count) plus all eight rate-sweep points (a sequential `Blues` colourmap from light
+N=1 to dark N=20, with a colourbar rather than eight more legend entries — the natural
+encoding for one arm per value of an ordered sweep). The rate-sweep curves are thin and
+partly transparent with no per-seed traces of their own, drawn first so the three fixed
+arms' bold, per-seed-backed curves stay visually on top. Shape over practice is what these
+panels are for; exact per-N numbers are the table and the dose-response figure below.
+
+![all test tasks, x/300, three fixed arms plus the eight-point at-random rate sweep as training curves, rate-sweep colour encodes N light-to-dark](2026-08-10-human-ladder-overall.png)
 
 ![TRASH tasks, x/140](2026-08-10-human-ladder-trash.png)
 
 ![RECYCLING tasks, x/140](2026-08-10-human-ladder-recycling.png)
+
+**Reading the merged panel against the dose-response table below**: the lightest
+(low-N) rate-sweep curves visibly track close to, and at times below, the orange `no-human`
+line on OVERALL — the N=1/N=2 underperformance is visible as shape, not just as the two
+numbers in the table. The darker (high-N) curves climb well above the control without
+reaching `two-way-ledge`, consistent with the table's best point landing at N=14, short of
+either ceiling.
 
 Final checkpoint, pooled over 10 seeds:
 
