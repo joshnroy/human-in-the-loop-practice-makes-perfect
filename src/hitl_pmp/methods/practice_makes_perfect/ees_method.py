@@ -23,6 +23,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.planning.types import TranslationCache
+from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .competence_models import OptimisticSkillCompetenceModel
 from .wrapped_sampler import LearnedSkillSampler
@@ -173,6 +174,11 @@ class EesMethod(Method):
     # the paper's own config for that domain.
     goal_pursuit_horizon: int | None = None
     planning_timeout: float = 10.0
+    # --record-sampler-draws' recorder, or None (the default, and what keeps every
+    # unrecorded run byte-identical). A pure observer: it is written to and never read
+    # from, so no branch, no RNG draw and no planner call depends on it. See
+    # hitl_pmp/sampler_draws.py.
+    draw_recorder: SamplerDrawRecorder | None = None
     # Two reasons for 10000 over the old default of 1000, neither of which is a score
     # comparison:
     #
@@ -648,6 +654,10 @@ class EesMethod(Method):
         self.advance_competence_cycle()
         # Competence has changed, so every cached plan's price is stale.
         self.refresh_planning_progress_plans()
+        # Last, and purely a stamp: every draw recorded from here on belongs to the
+        # next cycle. Nothing above depends on it -- see the field's own comment.
+        if self.draw_recorder is not None:
+            self.draw_recorder.end_cycle()
 
     # ------------------------------------------------------------------ policy
 
@@ -686,7 +696,9 @@ class EesMethod(Method):
         the harness resets inside it."""
         if self._practice_episode is None:
             return
-        self._practice_episode.observe_pending(true_atoms=self.abstract_state(state=state))
+        self._practice_episode.observe_pending(
+            true_atoms=self.abstract_state(state=state), state=state
+        )
 
     def execute_ground_skill(
         self, *, ground_skill: GroundSkill, state: State, explore: bool
@@ -731,6 +743,7 @@ class EesMethod(Method):
                 sampler_input=self.sampler_input_row(
                     ground_skill=ground_skill, state=state, params=params
                 ),
+                params=[float(p) for p in params],
                 was_random_exploration=choice.was_random,
                 was_informed_choice=choice.was_informed,
                 consultation=choice.consultation,
@@ -807,6 +820,12 @@ class _SkillAttempt(BaseModel):
     # domain's oracle row). Stored rather than rederived so the observed training row
     # is exactly the row that was scored -- see EesMethod.sampler_input_row.
     sampler_input: list[float]
+    # The chosen parameters themselves, kept alongside `sampler_input` rather than
+    # sliced back out of its tail. Those two are NOT interchangeable: a domain doing
+    # oracle feature selection supplies a curated row whose layout this class does not
+    # know, so the tail of `sampler_input` is only the parameters under the default
+    # layout. Only --record-sampler-draws reads this.
+    params: list[float]
     was_random_exploration: bool
     # `SamplerChoice.was_informed`: the classifier's scores actually ranked the
     # candidates, so these parameters reflect something it learned. Orthogonal to
@@ -869,7 +888,7 @@ class _EesEpisode:
     def step(self, *, state: State) -> LabeledAction:
         method = self._method
         true_atoms = method.abstract_state(state=state)
-        self.observe_pending(true_atoms=true_atoms)
+        self.observe_pending(true_atoms=true_atoms, state=state)
         self._tick_goal_pursuit_horizon()
 
         # Closed-loop execution: if the next queued skill's preconditions no longer
@@ -944,7 +963,11 @@ class _EesEpisode:
         else:
             self._goal_pursuit_remaining -= 1
 
-    def observe_pending(self, *, true_atoms: frozenset[GroundAtom]) -> None:
+    def observe_pending(self, *, true_atoms: frozenset[GroundAtom], state: State) -> None:
+        """`state` is the state the pending skill produced -- the same state
+        `true_atoms` was abstracted from. Taken as well as the atoms because
+        --record-sampler-draws reports raw post-action features, which the abstraction
+        has by definition thrown away."""
         if self._pending is None:
             return
         if self._practicing:
@@ -981,6 +1004,21 @@ class _EesEpisode:
                     param_dim=attempt.param_dim,
                     sampler_input=attempt.sampler_input,
                     success=success,
+                )
+            # Last of the four, and the only one that changes nothing: the record is
+            # written after every consumer above has already seen this outcome, so an
+            # exception from the file system cannot leave the learning path
+            # half-updated. `attempt is not None` is exactly "a sampler was consulted",
+            # which is the population this file is defined over.
+            recorder = self._method.draw_recorder
+            if recorder is not None and attempt is not None:
+                recorder.record(
+                    skill_name=attempt.skill_name,
+                    consultation=attempt.consultation,
+                    success=success,
+                    params=attempt.params,
+                    state=state,
+                    objects=self._pending.objects,
                 )
         self._pending = None
         self._pending_sampler_record = None

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
-from hitl_pmp.core.problem.environment.types import Object
+from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.ballring.environment import BallRingEnvironment
 from hitl_pmp.environments.ballring.predicates import (
@@ -31,6 +31,13 @@ from hitl_pmp.planning.fast_downward import PlanningFailure
 def _build(*, grid_size: int = 4, seed: int = 0) -> tuple[EesMethod, LightSwitchEnvironment]:
     env = LightSwitchEnvironment(grid_size=grid_size)
     return EesMethod(env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=seed), env
+
+
+def _a_state(*, env: LightSwitchEnvironment) -> State:
+    """Any concrete state to hand `observe_pending`, which now takes the post-action
+    state as well as its abstraction -- see that method. These tests drive the tally,
+    not the state, so the initial one is as good as any."""
+    return env.hard_reset()
 
 
 def _turn_on_light(*, env: LightSwitchEnvironment) -> GroundSkill:
@@ -951,7 +958,7 @@ def test_a_practice_attempt_is_tallied_against_its_lifted_skill() -> None:
     episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
     episode._pending = turn_on
 
-    episode.observe_pending(true_atoms=turn_on.add_effects)
+    episode.observe_pending(true_atoms=turn_on.add_effects, state=_a_state(env=env))
 
     tally = method.practice_outcomes()["TurnOnLight"]
     assert (tally.num_successes, tally.num_attempts) == (1, 1)
@@ -965,7 +972,7 @@ def test_an_evaluation_episode_tallies_nothing() -> None:
     episode = _EesEpisode(method=method, goal=frozenset(), practicing=False)
     episode._pending = turn_on
 
-    episode.observe_pending(true_atoms=turn_on.add_effects)
+    episode.observe_pending(true_atoms=turn_on.add_effects, state=_a_state(env=env))
 
     assert method.practice_outcomes() == {}
 
@@ -977,7 +984,7 @@ def test_a_failed_attempt_counts_toward_attempts_but_not_successes() -> None:
     episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
     episode._pending = turn_on
 
-    episode.observe_pending(true_atoms=frozenset())
+    episode.observe_pending(true_atoms=frozenset(), state=_a_state(env=env))
 
     tally = method.practice_outcomes()["TurnOnLight"]
     assert (tally.num_successes, tally.num_attempts) == (0, 1)
@@ -994,6 +1001,7 @@ def test_an_epsilon_random_attempt_is_recorded_in_its_own_pool() -> None:
     episode._pending_sampler_record = _SkillAttempt(
         skill_name="TurnOnLight",
         param_dim=1,
+        params=[0.0],
         sampler_input=[1.0, 0.0],
         was_random_exploration=True,
         was_informed_choice=False,
@@ -1001,7 +1009,7 @@ def test_an_epsilon_random_attempt_is_recorded_in_its_own_pool() -> None:
         records_training_row=True,
     )
 
-    episode.observe_pending(true_atoms=turn_on.add_effects)
+    episode.observe_pending(true_atoms=turn_on.add_effects, state=_a_state(env=env))
 
     tally = method.practice_outcomes()["TurnOnLight"]
     assert (tally.num_successes, tally.num_attempts) == (1, 1)
@@ -1020,6 +1028,7 @@ def test_an_informed_attempt_is_recorded_in_its_own_pool() -> None:
     episode._pending_sampler_record = _SkillAttempt(
         skill_name="TurnOnLight",
         param_dim=1,
+        params=[0.0],
         sampler_input=[1.0, 0.0],
         was_random_exploration=False,
         was_informed_choice=True,
@@ -1027,7 +1036,7 @@ def test_an_informed_attempt_is_recorded_in_its_own_pool() -> None:
         records_training_row=True,
     )
 
-    episode.observe_pending(true_atoms=frozenset())
+    episode.observe_pending(true_atoms=frozenset(), state=_a_state(env=env))
 
     tally = method.practice_outcomes()["TurnOnLight"]
     assert (tally.num_informed_successes, tally.num_informed_attempts) == (0, 1)
@@ -1046,6 +1055,7 @@ def test_a_uniform_fallback_draw_is_neither_random_nor_informed() -> None:
     episode._pending_sampler_record = _SkillAttempt(
         skill_name="TurnOnLight",
         param_dim=1,
+        params=[0.0],
         sampler_input=[1.0, 0.0],
         was_random_exploration=False,
         was_informed_choice=False,
@@ -1053,7 +1063,7 @@ def test_a_uniform_fallback_draw_is_neither_random_nor_informed() -> None:
         records_training_row=True,
     )
 
-    episode.observe_pending(true_atoms=turn_on.add_effects)
+    episode.observe_pending(true_atoms=turn_on.add_effects, state=_a_state(env=env))
 
     tally = method.practice_outcomes()["TurnOnLight"]
     assert (tally.num_successes, tally.num_attempts) == (1, 1)
@@ -1104,7 +1114,7 @@ def test_a_parameter_free_skill_tallies_apart_from_an_uninformative_sampler() ->
         )
         episode._pending = ground_skill
         episode._pending_sampler_record = record
-        episode.observe_pending(true_atoms=ground_skill.add_effects)
+        episode.observe_pending(true_atoms=ground_skill.add_effects, state=state)
 
     unparameterized = method.practice_outcomes()["MoveRobot"]
     uninformative = method.practice_outcomes()["TurnOnLight"]
@@ -1130,7 +1140,9 @@ def test_practice_outcomes_accumulate_across_a_whole_run() -> None:
 
     for hit in (True, False, True):
         episode._pending = turn_on
-        episode.observe_pending(true_atoms=turn_on.add_effects if hit else frozenset())
+        episode.observe_pending(
+            true_atoms=turn_on.add_effects if hit else frozenset(), state=_a_state(env=env)
+        )
 
     tally = method.practice_outcomes()["TurnOnLight"]
     assert (tally.num_successes, tally.num_attempts) == (2, 3)

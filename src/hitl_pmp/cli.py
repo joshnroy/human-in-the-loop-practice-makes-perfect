@@ -156,6 +156,19 @@ class Cli:
             "(a few cycles) if the point is to see the structure.",
         )
         parser.add_argument(
+            "--record-sampler-draws",
+            action="store_true",
+            help="Additionally write <output-dir>/sampler_draws.jsonl: one line per "
+            "sampler-backed practice execution, carrying the parameters the learned "
+            "sampler chose, which pool chose them, whether the skill's add effects "
+            "held, and the post-action features of the objects it bound. A sibling of "
+            "stats.json rather than a field in it -- stats.json's byte-stability is "
+            "what verifies a change did not alter results. Off by default and a pure "
+            "observer: a recorded run takes the same actions and writes a "
+            "byte-identical stats.json. Only a Method that consults a sampler (--method "
+            "ees) writes anything.",
+        )
+        parser.add_argument(
             "--num-render-checkpoints",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1,
