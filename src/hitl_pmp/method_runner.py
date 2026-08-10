@@ -14,6 +14,7 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
+from hitl_pmp.run_progress import RunProgressWriter
 
 
 class MethodRunner:
@@ -159,6 +160,17 @@ class MethodRunner:
             record_practice_outcomes()
             record_practice_target_outcomes()
 
+        # Built before the loop starts, so elapsed_seconds measures the run rather
+        # than the time since the first sweep finished. None without --output-dir,
+        # which is what keeps the "nothing is written" tests honest.
+        progress = RunProgressWriter.for_run(
+            output_dir=getattr(args, "output_dir", None), num_cycles=num_cycles
+        )
+
+        def record_sweep_end() -> None:
+            if progress is not None:
+                progress.record(metrics=metrics)
+
         recorder = MethodRunner._build_recorder(
             args=args,
             problem=problem,
@@ -194,6 +206,7 @@ class MethodRunner:
                 num_render_checkpoints=num_render_checkpoints,
                 on_checkpoint_frames=write_clip,
                 on_cycle_end=record_cycle_end,
+                on_sweep_end=record_sweep_end,
                 recorder=recorder,
             )
             # Once more after the loop, so the final evaluation sweep is covered and
