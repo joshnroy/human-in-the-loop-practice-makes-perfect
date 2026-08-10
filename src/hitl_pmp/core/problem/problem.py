@@ -93,6 +93,9 @@ class Problem(BaseModel, abc.ABC):
     def sample_test_task(self) -> Task:
         return self.tasks.sample_test_task()
 
+    def sample_train_task_in_place(self) -> Task:
+        return self.tasks.sample_train_task_in_place()
+
     @abc.abstractmethod
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None

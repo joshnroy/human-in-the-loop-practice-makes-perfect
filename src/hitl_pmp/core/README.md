@@ -181,7 +181,13 @@ environment back to a usable state.
 - **`Tasks`** is the task/goal distribution — `sample_train_task()`/`sample_test_task()`
   — also independently swappable from whichever `Environment`/`HumanOracle` it's paired
   with (a curriculum-learning `Tasks` and a random-sampling `Tasks` could sit on top of
-  the same domain).
+  the same domain). It carries one concrete third method,
+  `sample_train_task_in_place()`, defaulting to `sample_train_task()`: the task for the
+  world the environment is **already in**, for the caller that will not reset
+  afterwards. Only a domain that builds tasks *in the world* rather than
+  arithmetically needs to override it — Tossing3D, whose `build_task` rebuilds the
+  MuJoCo scene to obtain an initial `State`, is the one that does, and the silent
+  reset-free arm that produced is why the method exists rather than a comment.
 - **`Problem`** is the composition root/facade that binds one `Environment` + one
   `HumanOracle` + one `Tasks`. "No auto-reset" and "human-mediated reset has a cost"
   live here, via `execute_human_command`. Unlike `Environment`, a `Problem` is specific
