@@ -94,3 +94,57 @@ def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator
         Tossing3DCli.unrendered_render_fps
     )
     assert "mujoco" not in sys.modules
+
+
+# --- the separate evaluation Problem, and the reset-free arm it unlocks -----------
+#
+# Every evaluation episode opens with `reset_to_task`, a privileged state-write, so a
+# shared Problem hands the practice environment `--num-test-tasks` free resets per
+# sweep. That is invisible under the per-period reset and fatal to a reset-free arm:
+# `--practice-reset-policy never` would be a label rather than a condition. These pin
+# the split that makes it real.
+#
+# All three run on CI. Constructing a `Tossing3DEnvironment` builds no simulator (the
+# backend is lazy -- see `Tossing3DEnvironment.backend`), and `draw_scene_seed` is a
+# pure function of an RNG, so the strongest assertion here needs no KINDER at all.
+
+
+def test_build_problem_returns_wholly_independent_objects() -> None:
+    """Two calls must share nothing. A shared Environment is the exact defect this
+    split exists to remove; a shared Tasks would re-use one test-task stream and make
+    the second sweep's task set depend on the first's."""
+    args = _build_parser().parse_args([])
+    first = Tossing3DCli.build_problem(args=args)
+    second = Tossing3DCli.build_problem(args=args)
+
+    assert first is not second
+    assert first.env is not second.env
+    assert first.tasks is not second.tasks
+
+
+def test_the_two_problems_are_configured_identically() -> None:
+    """Independent but not different: the evaluation environment must be the same
+    world, or the test set measures a different domain than practice trains on."""
+    args = _build_parser().parse_args([])
+    first = Tossing3DCli.build_problem(args=args)
+    second = Tossing3DCli.build_problem(args=args)
+
+    assert first.env.model_dump() == second.env.model_dump()
+    assert first.tasks.seed == second.tasks.seed
+    assert first.tasks.test_env_seed_offset == second.tasks.test_env_seed_offset
+
+
+def test_both_problems_draw_the_same_test_scene_seeds() -> None:
+    """The load-bearing one, and it needs no simulator: a task here is fully
+    determined by its scene seed, so equal seed streams mean equal test sets. If these
+    diverged, the split would silently change which tasks a run is scored on and every
+    number would stop being comparable to one taken before it."""
+    args = _build_parser().parse_args([])
+    first = Tossing3DCli.build_problem(args=args)
+    second = Tossing3DCli.build_problem(args=args)
+
+    drawn = [Tossing3DTasks.draw_scene_seed(rng=first.tasks.test_rng) for _ in range(8)]
+    redrawn = [Tossing3DTasks.draw_scene_seed(rng=second.tasks.test_rng) for _ in range(8)]
+    assert drawn == redrawn
+    # Not a constant stream -- otherwise the equality above would hold vacuously.
+    assert len(set(drawn)) > 1
