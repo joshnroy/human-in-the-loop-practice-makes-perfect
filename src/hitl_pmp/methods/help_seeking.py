@@ -4,8 +4,10 @@ import numpy as np
 from pydantic import BaseModel, Field, PrivateAttr, model_validator
 
 from hitl_pmp.core.method.method import HumanHelpRequested
+from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.method.types import LabeledAction, Policy
 from hitl_pmp.core.problem.environment.types import State
+from hitl_pmp.planning.grounding import SkillGrounder
 
 from .stuck_detector import StuckDetector
 
@@ -36,6 +38,23 @@ class HelpSeekingTrigger(str, enum.Enum):
     # for ON_STUCK -- it pays the same intervention cost at the same rate without the
     # timing carrying any information about the robot's situation.
     AT_RANDOM = "at-random"
+    # The naive baseline this project's `agent-signal` arm was meant to be and wasn't:
+    # ask exactly when EES's own `InteractionComplete` condition holds -- zero ground
+    # skills applicable in the current state -- but checked BEFORE the inner policy is
+    # consulted, as a real HelpSeekingPolicy trigger, rather than by hooking
+    # InteractionComplete after the fact. That earlier arm hooked the exception
+    # directly, which only fires once the period is already ending, so it measured 0
+    # interventions on 0/10 seeds on Tossing Room -- byte-identical to no-human,
+    # because `MoveRoom` is legal in essentially every room there (see
+    # `HumanHelpRequested`'s docstring). Deliberately named for the condition it
+    # checks ("no ground skill/action is applicable"), never for the earlier arm's own
+    # name: CLAUDE.md's robot/agent naming rule exists specifically because that name
+    # was ambiguous between "the robot's own signal" and "an LLM agent". No RNG draw,
+    # no state history, no patience counter -- a direct boolean check every call,
+    # matching Josh's instruction not to make this baseline smart. Only read
+    # `skill_provider` under this trigger, same pattern as `stuck_patience`/
+    # `mean_steps_between_requests` under theirs.
+    ON_NO_APPLICABLE_SKILL = "on-no-applicable-skill"
 
     def __str__(self) -> str:
         return self.value
@@ -69,9 +88,10 @@ class HelpSeekingPolicy(BaseModel):
     call cannot spin.
 
     **Randomness is consumed by exactly one mode.** `AT_RANDOM` draws exactly once per
-    policy call; `ON_STUCK` and `NEVER` draw nothing at all. Keeping that separation is
-    what makes an on-stuck arm bit-identical whatever `--seed` it is handed, and what
-    stops `--stuck-patience` shifting a random arm's stream.
+    policy call; `ON_STUCK`, `ON_NO_APPLICABLE_SKILL` and `NEVER` draw nothing at all.
+    Keeping that separation is what makes an on-stuck arm bit-identical whatever
+    `--seed` it is handed, and what stops `--stuck-patience` shifting a random arm's
+    stream.
 
     **Genuinely per-run state**, hence a real pydantic instance rather than a
     static-method container (CLAUDE.md's dividing line): it carries an RNG stream and a
@@ -88,6 +108,11 @@ class HelpSeekingPolicy(BaseModel):
     # equal values the arm gets about one rescue per practice period, which is the rate
     # a scheduled per-period reset would have given it for free.
     mean_steps_between_requests: int = Field(default=150, ge=1)
+    # Only read under ON_NO_APPLICABLE_SKILL: the same per-domain object EesMethod
+    # itself uses to compute InteractionComplete's condition (skills/predicates/types/
+    # objects), so this trigger checks exactly the state EES already checks rather than
+    # a slightly different one. `None` under every other trigger.
+    skill_provider: SkillProvider | None = None
     seed: int = 0
 
     _rng: np.random.Generator = PrivateAttr()
@@ -99,6 +124,17 @@ class HelpSeekingPolicy(BaseModel):
         another field (`seed`, `stuck_patience`), which a factory cannot see."""
         self._rng = np.random.default_rng(self.seed)
         self._detector = StuckDetector(patience=self.stuck_patience)
+        return self
+
+    @model_validator(mode="after")
+    def _check_skill_provider_present_when_needed(self) -> "HelpSeekingPolicy":
+        if (
+            self.trigger is HelpSeekingTrigger.ON_NO_APPLICABLE_SKILL
+            and self.skill_provider is None
+        ):
+            raise ValueError(
+                "HelpSeekingPolicy(trigger=ON_NO_APPLICABLE_SKILL) requires a skill_provider"
+            )
         return self
 
     def wrap(self, *, inner_policy: Policy) -> Policy:
@@ -117,24 +153,48 @@ class HelpSeekingPolicy(BaseModel):
         because a sentinel would have to be a real action the environment would then
         execute, and a rescue is deliberately not an online transition."""
         self._detector.observe(state=state)
-        if self._should_ask():
+        if self._should_ask(state=state):
             raise HumanHelpRequested
         return inner_policy(state)
 
-    def _should_ask(self) -> bool:
+    def _should_ask(self, *, state: State) -> bool:
         """Whether to ask right now. Consumes exactly one random draw under AT_RANDOM
-        and none under ON_STUCK or NEVER -- see the class docstring for why that
-        separation is load-bearing.
+        and none under ON_STUCK, ON_NO_APPLICABLE_SKILL or NEVER -- see the class
+        docstring for why that separation is load-bearing.
 
-        Tested against AT_RANDOM/NEVER rather than for ON_STUCK so that anything
-        unexpected -- a hand-built Namespace carrying a bare string, say -- degrades to
-        the stuck rule rather than silently consuming randomness that another arm's
-        stream is aligned against."""
+        Tested against AT_RANDOM/NEVER/ON_NO_APPLICABLE_SKILL rather than for ON_STUCK
+        so that anything unexpected -- a hand-built Namespace carrying a bare string,
+        say -- degrades to the stuck rule rather than silently consuming randomness
+        that another arm's stream is aligned against, or raising for want of a
+        skill_provider it was never given."""
         if self.trigger is HelpSeekingTrigger.AT_RANDOM:
             return bool(self._rng.random() < 1.0 / self.mean_steps_between_requests)
         if self.trigger is HelpSeekingTrigger.NEVER:
             return False
+        if self.trigger is HelpSeekingTrigger.ON_NO_APPLICABLE_SKILL:
+            return self._no_ground_skill_applicable(state=state)
         return self._detector.is_stuck()
+
+    def _no_ground_skill_applicable(self, *, state: State) -> bool:
+        """True exactly when EES's own `InteractionComplete` condition holds in
+        `state`: zero ground skills are applicable. Recomputed from `skill_provider`
+        on every call -- no memory of past states, no counter, nothing beyond this one
+        check, matching Josh's instruction not to make this baseline smart.
+
+        `self.skill_provider` is asserted non-`None` rather than checked with an
+        `if`/raise: `_check_skill_provider_present_when_needed` already guarantees it
+        for this trigger at construction time, so a `None` here would be that
+        invariant broken, not a normal runtime condition -- the assert is for mypy's
+        narrowing, not for catching a case that can actually happen."""
+        provider = self.skill_provider
+        assert provider is not None, "ON_NO_APPLICABLE_SKILL requires a skill_provider"
+        true_atoms = SkillGrounder.abstract_state(
+            state=state, objects=provider.objects(), predicates=provider.predicates()
+        )
+        applicable = SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(), objects=provider.objects(), true_atoms=true_atoms
+        )
+        return not applicable
 
     def begin_period(self) -> None:
         """A new interaction period is starting. Starts a fresh stretch for the stuck

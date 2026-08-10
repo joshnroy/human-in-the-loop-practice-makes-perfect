@@ -2,8 +2,17 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.method import HumanHelpRequested, InteractionComplete
-from hitl_pmp.core.method.types import LabeledAction, Policy
-from hitl_pmp.core.problem.environment.types import Object, State, Type
+from hitl_pmp.core.method.skill_provider import SkillProvider
+from hitl_pmp.core.method.types import (
+    GroundSkill,
+    LabeledAction,
+    LiftedAtom,
+    Policy,
+    Skill,
+    Variable,
+)
+from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
+from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.methods.help_seeking import HelpSeekingPolicy, HelpSeekingTrigger
 
 _BLOCK = Type(name="block", feature_names=("x",))
@@ -30,6 +39,57 @@ def _at_random(*, mean_steps: int = 4, seed: int = 0) -> HelpSeekingPolicy:
     )
 
 
+# --- A minimal SkillProvider double for ON_NO_APPLICABLE_SKILL, independent of any
+# real domain: one skill, gated on one feature of one object, so a test can flip
+# "applicable" on and off just by choosing x. `Flagged` holds iff x >= 1.0.
+_FLAG_VAR = Variable(name="obj", type=_BLOCK)
+_FLAGGED = Predicate(
+    name="Flagged",
+    types=(_BLOCK,),
+    holds=lambda state, objects: bool(state.get(obj=objects[0], feature_name="x") >= 1.0),
+)
+_TOGGLE = Skill(
+    name="Toggle",
+    parameters=(_FLAG_VAR,),
+    preconditions=frozenset({LiftedAtom(predicate=_FLAGGED, variables=(_FLAG_VAR,))}),
+    add_effects=frozenset(),
+    delete_effects=frozenset(),
+    param_dim=0,
+)
+
+
+class _FakeSkillProvider(SkillProvider):
+    def skills(self) -> tuple[Skill, ...]:
+        return (_TOGGLE,)
+
+    def predicates(self) -> tuple[Predicate, ...]:
+        return (_FLAGGED,)
+
+    def types(self) -> tuple[Type, ...]:
+        return (_BLOCK,)
+
+    def objects(self) -> tuple[Object, ...]:
+        return (_OBJ,)
+
+    def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
+        del ground_skill, rng
+        return np.zeros(0)
+
+    def compute_action(
+        self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
+    ) -> Action:
+        del ground_skill, params, state
+        return np.zeros(1)
+
+
+def _on_no_applicable_skill(*, seed: int = 0) -> HelpSeekingPolicy:
+    return HelpSeekingPolicy(
+        trigger=HelpSeekingTrigger.ON_NO_APPLICABLE_SKILL,
+        skill_provider=_FakeSkillProvider(),
+        seed=seed,
+    )
+
+
 def test_the_trigger_enum_renders_as_its_wire_words() -> None:
     """So argparse prints `on-stuck` in --help and in its error message for a bad
     value, and so the chosen value lands in config_snapshot.json as a readable word --
@@ -37,6 +97,7 @@ def test_the_trigger_enum_renders_as_its_wire_words() -> None:
     assert str(HelpSeekingTrigger.NEVER) == "never"
     assert str(HelpSeekingTrigger.ON_STUCK) == "on-stuck"
     assert str(HelpSeekingTrigger.AT_RANDOM) == "at-random"
+    assert str(HelpSeekingTrigger.ON_NO_APPLICABLE_SKILL) == "on-no-applicable-skill"
 
 
 def test_a_wrapped_policy_delegates_while_the_robot_is_getting_somewhere() -> None:
@@ -221,3 +282,52 @@ def test_two_policies_do_not_share_a_detector() -> None:
     with pytest.raises(HumanHelpRequested):
         first(_state(x=1.0))
     assert second(_state(x=2.0)).label == "acted"
+
+
+# --- ON_NO_APPLICABLE_SKILL: fires exactly when zero ground skills are applicable,
+# checked fresh every call, no memory, no randomness.
+
+
+def test_on_no_applicable_skill_requires_a_skill_provider() -> None:
+    """Every other per-trigger field (stuck_patience, mean_steps_between_requests) has
+    a default that makes it harmless when unused; skill_provider cannot, since there is
+    no default SkillProvider to fall back to. Constructing this trigger without one is
+    a misconfiguration worth refusing up front, the same way practice_loop.py refuses a
+    Method that may ask paired with a Problem that has no HumanOracle."""
+    with pytest.raises(ValueError, match="skill_provider"):
+        HelpSeekingPolicy(trigger=HelpSeekingTrigger.ON_NO_APPLICABLE_SKILL)
+
+
+def test_a_wrapped_policy_asks_when_no_ground_skill_is_applicable() -> None:
+    policy = _on_no_applicable_skill().wrap(inner_policy=_acting_policy())
+    with pytest.raises(HumanHelpRequested):
+        policy(_state(x=0.0))  # Flagged is false, so Toggle has no applicable grounding
+
+
+def test_a_wrapped_policy_delegates_when_a_ground_skill_is_applicable() -> None:
+    policy = _on_no_applicable_skill().wrap(inner_policy=_acting_policy())
+    assert policy(_state(x=1.0)).label == "acted"  # Flagged holds, so Toggle applies
+
+
+def test_on_no_applicable_skill_reacts_to_the_state_it_is_given_each_call() -> None:
+    """No memory beyond the current call -- a direct boolean check, not a detector.
+    Toggling applicability back and forth toggles the ask/delegate outcome right back,
+    which a stateful (patience-counter or visited-set) implementation would not do."""
+    seeking = _on_no_applicable_skill()
+    policy = seeking.wrap(inner_policy=_acting_policy())
+    assert policy(_state(x=1.0)).label == "acted"
+    with pytest.raises(HumanHelpRequested):
+        policy(_state(x=0.0))
+    assert policy(_state(x=1.0)).label == "acted"
+
+
+def test_on_no_applicable_skill_consumes_no_randomness() -> None:
+    """So that this trigger is bit-identical whatever --seed it is handed, matching the
+    same guarantee ON_STUCK gives -- see test_an_on_stuck_arm_consumes_no_randomness."""
+    first = _on_no_applicable_skill(seed=0).wrap(inner_policy=_acting_policy())
+    second = _on_no_applicable_skill(seed=999).wrap(inner_policy=_acting_policy())
+    for policy in (first, second):
+        assert policy(_state(x=1.0)).label == "acted"
+    for policy in (first, second):
+        with pytest.raises(HumanHelpRequested):
+            policy(_state(x=0.0))

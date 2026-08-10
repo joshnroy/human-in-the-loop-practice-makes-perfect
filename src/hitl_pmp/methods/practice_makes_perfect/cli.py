@@ -1,6 +1,7 @@
 import argparse
 
 from hitl_pmp.cli_protocols import EnvironmentCli
+from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.methods.help_seeking import HelpSeekingPolicy, HelpSeekingTrigger
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
@@ -40,7 +41,13 @@ class HelpSeekingCli:
             "schedule of its own instead, at --mean-steps-between-help-requests, "
             "whether or not the robot was getting anywhere; it is the control for "
             "'on-stuck', paying the same cost at the same rate with the timing carrying "
-            "no information. The period CONTINUES after a rescue rather than ending -- "
+            "no information. 'on-no-applicable-skill' asks exactly when zero ground "
+            "skills are applicable in the current state -- the method's own "
+            "InteractionComplete condition, checked before it fires rather than after. "
+            "Deliberately naive (no novelty tracking, no schedule): on a domain where "
+            "some skill is nearly always applicable (Tossing Room's MoveRoom) it asks "
+            "almost never, which is the point -- it is the baseline 'on-stuck' is "
+            "motivated by. The period CONTINUES after a rescue rather than ending -- "
             "that is the difference from the method's own InteractionComplete, which is "
             "untouched by this flag. What the human does on arrival is "
             "--human-reset-target.",
@@ -80,7 +87,9 @@ class HelpSeekingCli:
         return parsed
 
     @staticmethod
-    def build_policy(*, args: argparse.Namespace) -> HelpSeekingPolicy | None:
+    def build_policy(
+        *, args: argparse.Namespace, skill_provider: SkillProvider | None = None
+    ) -> HelpSeekingPolicy | None:
         """This run's help-seeking policy, or None when the method should never ask.
 
         `None` for `--ask-for-help never`, which is the default and is what keeps every
@@ -93,6 +102,14 @@ class HelpSeekingCli:
         which is the BallRing `--noise-seed` trap. It costs nothing under 'on-stuck',
         which consumes no randomness at all.
 
+        `skill_provider` is only read by the resulting policy under
+        'on-no-applicable-skill'; passed through unconditionally (like
+        `stuck_patience`/`mean_steps_between_requests`) rather than only when that
+        trigger is selected, so a caller that switches `--ask-for-help` at the command
+        line needs no code change here. `None` by default because most callers
+        (`NEVER`/`ON_STUCK`/`AT_RANDOM` arms, and every existing test) have no provider
+        to hand it and do not need one.
+
         `getattr` throughout because a hand-built Namespace -- a test, a one-off script
         -- predates every one of these flags."""
         trigger = getattr(args, "ask_for_help", HelpSeekingTrigger.NEVER)
@@ -102,6 +119,7 @@ class HelpSeekingCli:
             trigger=trigger,
             stuck_patience=getattr(args, "stuck_patience", 20),
             mean_steps_between_requests=getattr(args, "mean_steps_between_help_requests", 150),
+            skill_provider=skill_provider,
             seed=getattr(args, "seed", 0),
         )
 
@@ -229,7 +247,9 @@ class EesCli:
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 draw_recorder=draw_recorder,
-                help_seeking=HelpSeekingCli.build_policy(args=args),
+                help_seeking=HelpSeekingCli.build_policy(
+                    args=args, skill_provider=ctx.skill_provider
+                ),
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
