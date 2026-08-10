@@ -251,7 +251,10 @@ def test_the_accepted_band_is_narrower_than_the_goal_regions_x_extent() -> None:
 def test_the_oracle_standoff_is_inside_the_accepted_band() -> None:
     """`SkillOraclePolicy` throws from 1.35 and scores 99/100. If tightening the predicate
     ever excluded that standoff the oracle would stop planning a throw at all, and every
-    EES number on this domain is measured against that ceiling."""
+    EES number on this domain is measured against that ceiling. This is one of the two
+    reasons a further tightening to `[1.150, 1.325]` (proposed by PR #196, investigated and
+    rejected in `docs/experiment-logs/2026-08-10-tossing3d-throw-band-retightening-sweep.md`)
+    was not landed: 1.35 would fail this assertion."""
     assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF)
 
 

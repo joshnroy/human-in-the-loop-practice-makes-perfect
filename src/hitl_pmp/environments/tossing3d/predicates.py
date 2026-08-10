@@ -187,6 +187,21 @@ THROW_POSE_LATERAL_TOLERANCE = 4 * 1e-2
 # edge they touch, is deliberate -- the box-edge framing is exactly what inverts under the
 # sign flip. `test_the_accepted_band_matches_the_measured_five_of_five_core` pins the
 # resulting band directly so a reintroduced inversion fails loudly.
+#
+# **A further tightening to roughly `[1.150, 1.325]` was investigated and rejected.** A
+# later, wider grid over `MoveToThrowPose`'s standoff (PR #196) labelled by this classifier
+# alone -- `Toss` never executed -- found only 8/12 solving at 1.350 and 2/12 at 1.375,
+# suggesting the band above 1.325 was over-permissive. A fresh oracle-driven sweep that
+# *does* execute `Toss` and reads the real episode outcome (`docs/experiment-logs/
+# 2026-08-10-tossing3d-throw-band-retightening-sweep.md`, same methodology as the sweep
+# above) found 10/10 at every standoff up to and including 1.375 on an independent seed
+# set -- no real degradation. The two disagree because PR #196's grid measured whether the
+# achieved `landing_x` clears this classifier's own fixed threshold, and at 1.350/1.375 that
+# threshold sits inside `move_to_target`'s own several-millimetre stopping noise (closest
+# miss at 1.375: 0.1 mm), so ordinary seed-to-seed pose variance flips the *label* without
+# the *throw* ever becoming less reliable. Tightening to 1.325 would also have pushed
+# `ORACLE_THROW_STANDOFF` (1.35, below) outside the accepted band, rejecting a pose the
+# committed oracle arm throws from on every episode. The margins below are unchanged.
 THROW_OVERSHOOT_MARGIN = 0.025
 THROW_SHORTFALL_MARGIN = 0.05
 
