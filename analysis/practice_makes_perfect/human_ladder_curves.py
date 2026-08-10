@@ -94,6 +94,7 @@ simulation or drives a `Method`). Each `--arm` points at the directory holding t
 
 import argparse
 import json
+import statistics
 from collections import Counter
 from pathlib import Path
 
@@ -581,17 +582,30 @@ class HumanLadderCurves:
 
     @staticmethod
     def render_rate_sweep(*, arms: dict, rate_sweep: dict, output: Path, title: str) -> None:
-        """The dose-response figure: final OVERALL score against the rescue-rate knob N.
+        """The dose-response figure: mean + variance of final OVERALL score against the
+        rescue-rate knob N.
 
         Not a training curve -- there is no online-transitions axis here, since each point
         is a wholly separate arm at a different N, not one arm's progress over time. One
         faint dot per seed at each sampled N (jittered so ties stay countable), a bold mean
         line connecting the pooled-per-seed average at each N, and the `no-human` /
         `skill-oracle` levels as reference lines so the sweep reads against the same
-        ceilings the fixed-arm figures use."""
+        ceilings the fixed-arm figures use.
+
+        **The shaded band is the 25th-75th percentile (IQR) across the 10 seeds at each N,
+        not a symmetric +-1 std band.** This data is genuinely bimodal at some N (N=14's
+        final checkpoint splits 7 seeds around 28-30 against 3 around 17-19, not a noisy
+        unimodal spread), and a symmetric std band centred on the mean would visually assert
+        a single-peaked distribution that isn't there, while also having no reason to
+        respect the [0, 30] physical range. The IQR is a plain robust spread statistic that
+        does neither. It does NOT by itself reveal the bimodal clustering -- that needs the
+        individual seed trajectories, which is exactly what `render_rate_sweep_trajectories`
+        draws instead of summarising."""
         fig, ax = plt.subplots(figsize=(8.8, 5.6))
         ns = sorted(rate_sweep)
         means = []
+        q1s = []
+        q3s = []
         for n in ns:
             run = rate_sweep[n]
             finals = HumanLadderCurves.final_per_seed(run=run, family=None)
@@ -605,6 +619,18 @@ class HumanLadderCurves:
                 zorder=2,
             )
             means.append(sum(finals) / len(finals))
+            quartiles = statistics.quantiles(finals, n=4, method="inclusive")
+            q1s.append(quartiles[0])
+            q3s.append(quartiles[2])
+        ax.fill_between(
+            ns,
+            q1s,
+            q3s,
+            color=_RATE_SWEEP_COLOR,
+            alpha=0.16,
+            zorder=1,
+            label="IQR (25th-75th pctile) across 10 seeds per N",
+        )
         ax.plot(
             ns,
             means,
@@ -645,6 +671,121 @@ class HumanLadderCurves:
         print(f"wrote {output}")
         plt.close(fig)
 
+    @staticmethod
+    def render_rate_sweep_trajectories(
+        *, arms: dict, rate_sweep: dict, output: Path, title: str
+    ) -> None:
+        """Eight small multiples, one per N, showing what the IQR band in
+        `render_rate_sweep` cannot: the actual per-seed clustering.
+
+        **This is the honest version of "spread".** A shaded band around a mean asserts a
+        single distribution; a reader cannot tell a wide-but-unimodal N from a genuinely
+        bimodal one by looking at a band alone. Here all ten of that N's individual seed
+        trajectories are drawn (this repo's standard faint/thin per-seed convention), so a
+        split into a high cluster and a low cluster -- which is real at some N -- is
+        directly visible as two groups of lines rather than inferred from a summary
+        statistic.
+
+        Each panel also carries the `no-human` control's own mean training curve (bold,
+        orange, the standing "nothing helps" colour) and the `skill-oracle` ceiling (flat,
+        dotted, grey) for the same reason the merged fixed-arm panels do: the rate-sweep
+        arm's practice is only interpretable next to what zero help and privileged skills
+        achieve on the same axis.
+
+        2 rows, one column per two N values (4 columns at the real 8-point grid), ordered
+        by N (row-major, so the sampled points read left-to-right top-to-bottom in
+        ascending N) -- a single row of 8 was tried first and judged too compressed to show
+        individual seed lines. Column count is derived from how many N points were passed
+        rather than hardcoded to 4, so a smaller sweep (as in this module's own tests)
+        still lays out cleanly instead of leaving `zip`-mismatched axes; any axis beyond
+        the number of N points supplied is hidden rather than left showing empty grid
+        lines with no data on them, which would read as a rendering bug."""
+        ns = sorted(rate_sweep)
+        num_cols = max(1, -(-len(ns) // 2))  # ceil(len(ns) / 2), at least one column
+        fig, axes = plt.subplots(
+            2,
+            num_cols,
+            figsize=(4.6 * num_cols, 8.8),
+            sharex=True,
+            sharey=True,
+            squeeze=False,
+            constrained_layout=True,
+        )
+
+        no_human = arms["no-human"]
+        no_human_xs = HumanLadderCurves.transitions(run=no_human)
+        no_human_pooled = HumanLadderCurves.pooled_curve(run=no_human, family=None)
+        no_human_scale = _NUM_TEST_TASKS / no_human_pooled[-1][1]
+
+        oracle = arms["skill-oracle"]
+        oracle_solved, oracle_total = HumanLadderCurves.pooled_curve(run=oracle, family=None)[-1]
+        oracle_level = oracle_solved * (_NUM_TEST_TASKS / oracle_total)
+
+        axes_flat = list(axes.flat)
+        for ax in axes_flat[len(ns) :]:
+            ax.set_visible(False)
+        for panel_index, (ax, n) in enumerate(zip(axes_flat, ns, strict=False)):
+            run = rate_sweep[n]
+            # Only the very first seed line of the very first panel is labelled -- one
+            # legend entry for "individual seeds", not one per line. Labelling every seed
+            # in just the first panel (a bug caught by inspecting the rendered figure) gave
+            # ten identical "individual seeds, this N" legend rows instead of one.
+            for seed_index, seed in enumerate(sorted(run)):
+                entry = HumanLadderCurves.entry(run=run, seed=seed, family=None)
+                ax.plot(
+                    run[seed]["transitions"],
+                    [s for s, _ in entry],
+                    color=_RATE_SWEEP_COLOR,
+                    alpha=0.55,
+                    linewidth=1.0,
+                    zorder=2,
+                    label=(
+                        "individual seeds, this N" if panel_index == 0 and seed_index == 0 else None
+                    ),
+                )
+            ax.plot(
+                no_human_xs,
+                [solved * no_human_scale for solved, _ in no_human_pooled],
+                color=_COLORS["no-human"],
+                linestyle=_LINESTYLES["no-human"],
+                linewidth=2.0,
+                zorder=4,
+                label=(_LABELS["no-human"] + " (mean)") if panel_index == 0 else None,
+            )
+            ax.axhline(
+                oracle_level,
+                color=_COLORS["skill-oracle"],
+                linestyle=_LINESTYLES["skill-oracle"],
+                linewidth=1.6,
+                zorder=3,
+                label=_LABELS["skill-oracle"] if panel_index == 0 else None,
+            )
+            final_solved, final_total = HumanLadderCurves.pooled_curve(run=run, family=None)[-1]
+            ax.set_title(
+                f"N={n} — {HumanLadderCurves.format_count(solved=final_solved, total=final_total)}",
+                fontsize=10,
+            )
+            ax.set_ylim(-_NUM_TEST_TASKS * 0.04, _NUM_TEST_TASKS * 1.06)
+            ax.grid(alpha=0.2, linewidth=0.5)
+
+        for ax in axes[:, 0]:
+            ax.set_ylabel("test tasks solved per seed", fontsize=9)
+        for ax in axes[-1, :]:
+            ax.set_xlabel("online transitions", fontsize=9)
+
+        # An axes-level legend, not a figure-level one: a figure-level "outside upper
+        # center" legend collided with fig.suptitle regardless of call order (both are
+        # constrained_layout "outside" artists competing for the same top margin). The N=1
+        # panel's curves all stay under y=13 (see check_manipulation: N=1 spends every
+        # policy call on a rescue, so there is barely any practice to plot), which leaves
+        # its own upper-right corner empty and a natural place for the legend to sit
+        # in-panel instead of fighting the title for figure-level space.
+        axes_flat[0].legend(loc="upper right", fontsize=7.5, framealpha=0.95)
+        fig.suptitle(title, fontsize=10.5)
+        fig.savefig(output, dpi=150)
+        print(f"wrote {output}")
+        plt.close(fig)
+
     # ------------------------------------------------------------------ entry point
 
     @staticmethod
@@ -670,9 +811,10 @@ class HumanLadderCurves:
             "--output-dir",
             type=Path,
             required=True,
-            help="Where the four figures are written: overall/TRASH/RECYCLING training "
-            "curves (fixed arms plus all eight rate-sweep points, same panels), plus the "
-            "rate-sweep dose-response figure.",
+            help="Where the five figures are written: overall/TRASH/RECYCLING training "
+            "curves (fixed arms plus all eight rate-sweep points, same panels), the "
+            "rate-sweep dose-response figure (mean + IQR band), and the eight-panel "
+            "per-N seed-trajectory small-multiples figure.",
         )
         args = parser.parse_args()
 
@@ -712,6 +854,16 @@ class HumanLadderCurves:
             title=(
                 f"{domain}\n"
                 f"rescue-rate dose-response, --ask-for-help at-random "
+                f"(overall test tasks, of {_NUM_TEST_TASKS})"
+            ),
+        )
+        HumanLadderCurves.render_rate_sweep_trajectories(
+            arms=arms,
+            rate_sweep=rate_sweep,
+            output=args.output_dir / "human-ladder-rate-sweep-trajectories.png",
+            title=(
+                f"{domain}\n"
+                f"rescue-rate sweep, per-N individual seed trajectories "
                 f"(overall test tasks, of {_NUM_TEST_TASKS})"
             ),
         )

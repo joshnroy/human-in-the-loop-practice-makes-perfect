@@ -72,6 +72,15 @@ line weight/alpha, or a grid split were all offered as options); keep the dose-r
 figure too, since training curves and the end-state summary answer different questions and
 neither replaces the other.
 
+**Second follow-up guidance**: the dose-response figure needed its spread shown, not just a
+bare mean line — a shaded band (std or IQR, reader's call) across the 10 seeds per N. Given
+this data is known to be genuinely bimodal at some N (not just noisy-unimodal), a plain
+symmetric band risked implying a single-peaked distribution that isn't there; plot 1 didn't
+need to fully resolve that, since a second figure — one small multiple per N, all 10 seed
+trajectories plus the `no-human` mean curve and `skill-oracle` reference line overlaid — was
+asked for specifically to show the real clustering directly rather than have a reader infer
+it from a summary statistic. Both figures are additive to what was already in the PR.
+
 ## Methods
 
 Four components, driven by `scripts/run_sweep.py` (one invocation per component; the N axis
@@ -152,7 +161,13 @@ never practises — one evaluation, at 0 online transitions).
 
 ### The rate sweep: non-monotonic, and the low end is the headline
 
-![final OVERALL solved vs N, per-seed spread, reference lines for no-human and skill-oracle](2026-08-10-human-ladder-rate-sweep.png)
+![final OVERALL solved vs N, per-seed mean with an IQR band, reference lines for no-human and skill-oracle](2026-08-10-human-ladder-rate-sweep.png)
+
+The shaded band is the 25th-75th percentile (IQR) across the 10 seeds at each N, not a
+symmetric +-1 std band — this data is genuinely bimodal at several N (next section), and a
+std band centred on the mean would visually assert a single-peaked distribution that isn't
+there, while also having no reason to respect the [0, 30] physical range an IQR naturally
+does.
 
 | N | interventions (pooled) | interventions (per-seed) | OVERALL | gap vs no-human | better/worse/tied | p | MDE | extra solves/rescue |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -182,6 +197,33 @@ peaks at N=14 (259/300, the best point in the sweep, p=0.00195), then falls at N
 The dip at N=10 sits within the noise both neighbors show (per-seed range 18-30, same as
 N=3 and N=14) — nothing in this sweep supports treating it as a real local minimum rather
 than seed variance at n=10.
+
+### Several N are genuinely bimodal, not noisy-unimodal — the IQR band alone can't show this
+
+![per-N individual seed trajectories, no-human control mean and skill-oracle ceiling overlaid on each panel](2026-08-10-human-ladder-rate-sweep-trajectories.png)
+
+Sorted final-checkpoint scores make the split explicit at three N:
+
+| N | sorted final OVERALL (of 30), 10 seeds |
+| --- | --- |
+| 10 | 18, 18, 18, 20, 20, 23, 29, 29, 30, 30 |
+| 14 | 17, 18, 19, 28, 29, 29, 29, 30, 30, 30 |
+| 20 | 14, 16, 17, 18, 18, 19, 19, 30, 30, 30 |
+
+**N=14 is the clearest case: 7 seeds land at 28-30 and 3 land at 17-19, with a real 9-point
+gap between the clusters and nothing in between.** That is not what a wide-but-unimodal
+distribution looks like, and it is exactly what the IQR band above cannot distinguish from
+one — N=14's actual band (Q1=21.25, Q3=29.75) sits almost entirely inside the high cluster
+and is silent on whether the three low seeds are a separate group or just its lower tail.
+Reading the band alone would suggest a single spread-out distribution; the individual
+trajectories show two distinct ones. The eight
+per-N panels answer that directly: each of the ten seed lines is drawn individually, so the
+28-30 cluster and the 17-19 cluster at N=14 are two visibly separate bundles of lines, not
+an inference from a summary statistic. N=10 and N=20 show the same two-cluster shape, less
+starkly separated. This is consistent with, though not proof of, an underlying discrete
+"the rescue schedule did or didn't line up with the ledge" mechanism rather than continuous
+per-seed variation in how well the policy learns — that mechanism is not established by
+this sweep and would need its own follow-up.
 
 **Cost-effectiveness rises monotonically with N even where absolute score does not.** Extra
 solves per rescue goes from negative at N=1-2 to 0.143 at N=14 and N=20 — the same ratio at

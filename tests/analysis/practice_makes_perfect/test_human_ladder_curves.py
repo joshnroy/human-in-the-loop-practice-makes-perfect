@@ -290,4 +290,9 @@ def test_render_family_and_rate_sweep_write_files(*, tmp_path: Path) -> None:
         arms=arms, rate_sweep=rate_sweep, output=rate_output, title="test"
     )
     assert rate_output.exists()
+    trajectories_output = output_dir / "human-ladder-rate-sweep-trajectories.png"
+    HumanLadderCurves.render_rate_sweep_trajectories(
+        arms=arms, rate_sweep=rate_sweep, output=trajectories_output, title="test"
+    )
+    assert trajectories_output.exists()
     plt.close("all")
