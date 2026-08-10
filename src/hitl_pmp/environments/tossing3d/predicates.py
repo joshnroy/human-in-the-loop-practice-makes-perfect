@@ -127,6 +127,32 @@ THROW_RANGE = 1.275
 # that controller is willing to stop at, rather than a tolerance invented here.
 THROW_POSE_LATERAL_TOLERANCE = 4 * 1e-2
 
+# The two margins that tighten `RobotAtSuccessfulThrowPoseClassifier`'s standoff band from
+# the full geometric prediction to the band PR #105's finer sweep (5 scene seeds, 0.025 m
+# resolution, coincident config) actually found reliable. Its per-point solving table:
+#
+#     standoff   <=1.100   1.125   1.150-1.375   1.400   1.425   >=1.450
+#     solved       0/5      2/5     5/5 (every)    3/5     2/5      0/5
+#
+# The 5/5 core is `[1.150, 1.375]` -- narrower than the geometric band `[1.125, 1.425]` on
+# *both* ends, and not symmetrically: "short standoffs overshoot [the goal box] ... long
+# ones fall short" (PR #105's own wording). Overshoot happens at the box's far edge
+# (`x_max`), so the margin that excludes it trims `x_max`; falling short happens at the
+# near edge (`x_min`), so the margin that excludes it enlarges `x_min`.
+#
+# **The two spaces run in opposite directions, and that is the trap.** `landing_x =
+# base_x + THROW_RANGE` and `base_x = bin_x - standoff`, so a *larger* standoff produces a
+# *smaller* `landing_x`. Recovering the standoff band `[1.150, 1.375]` from the box
+# therefore means: `x_max` shrinks by `1.150 - 1.125 = 0.025` (this is the short-standoff/
+# overshoot margin, even though it is the *upper* box edge), and `x_min` grows by
+# `1.425 - 1.375 = 0.050` (the long-standoff/shortfall margin, on the *lower* box edge).
+# Naming the margins by which standoff failure mode they exclude, rather than by which box
+# edge they touch, is deliberate -- the box-edge framing is exactly what inverts under the
+# sign flip. `test_the_accepted_band_matches_the_measured_five_of_five_core` pins the
+# resulting band directly so a reintroduced inversion fails loudly.
+THROW_OVERSHOOT_MARGIN = 0.025
+THROW_SHORTFALL_MARGIN = 0.05
+
 
 class InGoalRegionClassifier:
     """The cube's centre lies inside the goal region's box.
@@ -257,22 +283,31 @@ class RobotAtSuccessfulThrowPoseClassifier:
     pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base satisfying the lateral
     conjunct faces `+x` and the cube's predicted resting place is `base_x + THROW_RANGE`.
     `InGoalRegion` tests the cube's centre against the goal region's box, which the `State`
-    already carries as the live `Region.bbox`. So the test below is *that same box* applied
-    to the predicted landing point, and the accepted band of standoffs
+    already carries as the live `Region.bbox`. So the test below is *that same box*, trimmed
+    by the two margins above, applied to the predicted landing point, and the accepted band
+    of standoffs
 
-        [bin_x + THROW_RANGE - x_max,  bin_x + THROW_RANGE - x_min]
+        [bin_x + THROW_RANGE - (x_max - THROW_OVERSHOOT_MARGIN),
+         bin_x + THROW_RANGE - (x_min + THROW_SHORTFALL_MARGIN)]
 
     falls out rather than being written down. Move the bin, resize the goal region, or
     change `ground_placement_threshold`, and the band follows on its own -- which matters,
     because kindergarden#126 moves the bin. A hard-coded band would be silently wrong the
-    moment that lands.
+    moment that lands. The two margins are fixed metres, not a fraction of the box, so they
+    do not move with it.
 
-    On the coincident config the band works out to `[1.125, 1.425]`: **0.300 m wide, which
-    is exactly the goal region's own x-extent**, as it must be for a constant-displacement
-    throw. The band over which the throw solves on *every* seed is narrower -- 0.225 m,
-    measured in PR #105 -- and that 0.075 m gap is the throw's own scatter rather than an
-    error in the derivation. It is why the derived band's edges sit where solving goes
-    partial (2/5, 3/5) rather than where it stops.
+    On the coincident config the *geometric* band -- before the two margins below -- works
+    out to `[1.125, 1.425]`: **0.300 m wide, which is exactly the goal region's own
+    x-extent**, as it must be for a constant-displacement throw. That geometric band is
+    over-permissive: PR #105's finer sweep (5 scene seeds, 0.025 m resolution) found the
+    band solving on *every* seed is `[1.150, 1.375]`, 0.225 m wide, with the geometric
+    band's own edges only partially solving (2/5 at 1.125, 3/5 at 1.400, 2/5 at 1.425).
+    `THROW_OVERSHOOT_MARGIN`/`THROW_SHORTFALL_MARGIN` trim the box used below by exactly
+    that 0.025 m / 0.050 m so the accepted standoff band matches the measured 5/5 core
+    instead of the wider, partially-reliable geometric prediction. Training `MoveToThrowPose`'s
+    sampler against the untrimmed band taught it that the outer ~0.075 m sliver on each
+    side was as good as the centre, when empirically it is not -- a plausible mechanistic
+    account of `Toss`'s own residual failures at the trained EES plateau (`#178`).
 
     **The lateral conjunct is unchanged, and was measured.** An earlier version tested only
     `1.0 <= hypot(dx, dy) <= 1.8`. After `Pick` -- which drives the base to the *cube*, off
@@ -300,11 +335,9 @@ class RobotAtSuccessfulThrowPoseClassifier:
         if lateral_offset > THROW_POSE_LATERAL_TOLERANCE:
             return False
         landing_x = state.get(obj=robot, feature_name="pos_base_x") + THROW_RANGE
-        return bool(
-            state.get(obj=goal_region, feature_name="x_min")
-            <= landing_x
-            <= state.get(obj=goal_region, feature_name="x_max")
-        )
+        x_min = state.get(obj=goal_region, feature_name="x_min") + THROW_SHORTFALL_MARGIN
+        x_max = state.get(obj=goal_region, feature_name="x_max") - THROW_OVERSHOOT_MARGIN
+        return bool(x_min <= landing_x <= x_max)
 
 
 # `Predicate.holds` is a positional `(state, objects)` callable per its interface contract

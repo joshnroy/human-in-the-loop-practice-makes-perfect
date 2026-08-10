@@ -19,7 +19,9 @@ from hitl_pmp.environments.tossing3d.predicates import (
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
+    THROW_OVERSHOOT_MARGIN,
     THROW_POSE_LATERAL_TOLERANCE,
+    THROW_SHORTFALL_MARGIN,
     THROW_STANDOFF_BOUNDS,
     HandEmptyClassifier,
     HoldingClassifier,
@@ -194,9 +196,11 @@ def test_the_accepted_band_is_strictly_narrower_than_the_range_the_sampler_draws
 def test_the_accepted_band_moves_when_the_bin_moves() -> None:
     """**The test that catches someone reintroducing a measured literal.**
 
-    The band is derived from live scene geometry, so shifting the bin shifts it by exactly
-    the same amount. A hard-coded `[1.15, 1.375]` would hold the band still and be
-    silently wrong the moment kindergarden#126 lands."""
+    The band is derived from live scene geometry plus two fixed margins, so shifting the
+    bin shifts the whole band by exactly the same amount. A predicate that instead
+    hard-coded `[1.15, 1.375]` -- the *value* the derivation happens to produce on the
+    coincident config -- would hold the band still and be silently wrong the moment
+    kindergarden#126 lands."""
     shift = 0.25
     here = _accepted_band()
     there = _accepted_band(bin_x=COINCIDENT_BIN_X + shift)
@@ -215,12 +219,33 @@ def test_the_accepted_band_moves_when_the_goal_region_moves() -> None:
     assert there[1] == pytest.approx(here[1] + 0.30, abs=2e-3)
 
 
-def test_the_accepted_band_is_exactly_as_wide_as_the_goal_regions_x_extent() -> None:
-    """A throw is a constant displacement, so the set of standoffs landing inside the box
-    is the box's own width -- 0.300 m here. This is the arithmetic check that the
-    derivation is a derivation and not a fit: it holds for any box at any bin position."""
+def test_the_accepted_band_matches_the_measured_five_of_five_core() -> None:
+    """**The discriminating test.** PR #105's finer sweep (5 scene seeds, 0.025 m
+    resolution, coincident config) found a 5/5 core of `[1.150, 1.375]`, narrower than the
+    geometric band `[1.125, 1.425]` on both ends -- 2/5 and 3/5 partial-solving at the old
+    edges, not the 3/3-or-nothing the coarser 48-episode grid implied. The predicate now
+    trims the goal box by `THROW_OVERSHOOT_MARGIN`/`THROW_SHORTFALL_MARGIN` to land exactly
+    on that measured core.
+
+    Landing-space and standoff-space run in *opposite* directions
+    (`landing_x = base_x + THROW_RANGE`, `base_x = bin_x - standoff`, so a larger standoff
+    gives a *smaller* landing_x), so it is easy to trim the wrong edge of the box and get a
+    band that is still 0.225 m wide but shifted the wrong way -- e.g. `[1.175, 1.400]`,
+    which would reject the reliable 1.150 endpoint and accept the partial-solving 1.400
+    one. This test catches that inversion; the width-only check below does not."""
+    assert _accepted_band() == pytest.approx((1.15, 1.375), abs=2e-3)
+
+
+def test_the_accepted_band_is_narrower_than_the_goal_regions_x_extent() -> None:
+    """The tightened band is the box's own width (0.300 m) minus both margins -- 0.225 m --
+    not the full extent any more. This is the arithmetic check that the derivation is
+    still a derivation and not a fit: it holds for any box at any bin position, unlike the
+    test above, which pins the one measured core."""
     low, high = _accepted_band()
-    assert high - low == pytest.approx(GOAL_REGION_BBOX[3] - GOAL_REGION_BBOX[0], abs=2e-3)
+    full_extent = GOAL_REGION_BBOX[3] - GOAL_REGION_BBOX[0]
+    assert high - low == pytest.approx(
+        full_extent - (THROW_OVERSHOOT_MARGIN + THROW_SHORTFALL_MARGIN), abs=2e-3
+    )
 
 
 def test_the_oracle_standoff_is_inside_the_accepted_band() -> None:
@@ -230,19 +255,28 @@ def test_the_oracle_standoff_is_inside_the_accepted_band() -> None:
     assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF)
 
 
-@pytest.mark.parametrize("standoff", [1.15, 1.25, 1.35, 1.40])
+@pytest.mark.parametrize("standoff", [1.16, 1.25, 1.35, 1.37])
 def test_the_band_accepts_every_standoff_measured_to_solve(*, standoff: float) -> None:
-    """The 48-episode grid behind `THROW_RANGE` solved at these standoffs (3/3 at 1.15,
-    1.25 and 1.35; 2/3 at 1.40). A predicate rejecting one of them would be calling a
-    pose a failure that demonstrably scores."""
+    """PR #105's finer sweep (5 scene seeds, 0.025 m resolution) solved 5/5 at every point
+    from 1.150 through 1.375. These four sit safely inside that 5/5 core -- a millimetre or
+    more clear of both edges, so this test is not sensitive to `COINCIDENT_BIN_X`'s own
+    0.1 mm offset from a round 2.0 -- while `test_the_accepted_band_matches_the_measured_
+    five_of_five_core` pins the edges themselves via a fine scan. A predicate rejecting one
+    of these four would be calling a pose a failure that demonstrably scores on every seed
+    tested, not just most of them."""
     assert _at_throw_pose(standoff=standoff)
 
 
-@pytest.mark.parametrize("standoff", [0.45, 0.80, 1.00, 1.10, 1.45, 1.55, 1.65, 1.75])
+@pytest.mark.parametrize(
+    "standoff", [0.45, 0.80, 1.00, 1.10, 1.125, 1.40, 1.425, 1.45, 1.55, 1.65, 1.75]
+)
 def test_the_band_rejects_every_standoff_measured_not_to_solve(*, standoff: float) -> None:
-    """The other half of the same grid: 0/3 solved at each. **Both endpoints of
-    `THROW_STANDOFF_BOUNDS` are in this list**, which is the point -- the sampler can draw
-    them and they are honest failures. Under the old predicate both were accepted."""
+    """`1.10`/`1.45` and beyond are the coarse 48-episode grid's 0/3 points. `1.125` and
+    `1.425` -- the old geometric band's own edges -- and `1.40` are PR #105's finer-grained
+    2/5, 2/5 and 3/5: not zero, but not the 5/5 this predicate now requires either. **Both
+    endpoints of `THROW_STANDOFF_BOUNDS` are in this list**, which is the point -- the
+    sampler can draw them and they are honest failures. Under the pre-#105-derived
+    predicate the two old edges were accepted outright."""
     assert not _at_throw_pose(standoff=standoff)
 
 
