@@ -2,7 +2,7 @@ from typing import Any
 
 import numpy as np
 
-from hitl_pmp.core.method.method import Method
+from hitl_pmp.core.method.method import HumanHelpRequested, InteractionComplete, Method
 from hitl_pmp.core.method.types import (
     GroundSkill,
     LabeledAction,
@@ -121,3 +121,30 @@ def test_practice_outcomes_default_to_nothing_recorded() -> None:
     "this Method does not measure that"; a present entry says "it did, and this is
     what happened"."""
     assert _MinimalMethod(env=_Env()).practice_outcomes() == {}
+
+
+def test_human_help_requested_is_not_an_interaction_complete() -> None:
+    """The two signals must stay tellable apart by `except`, in both directions.
+
+    `InteractionComplete` means "no ground skill is applicable, so the period ends";
+    `HumanHelpRequested` means "I am still able to act and getting nowhere, so please
+    reposition me, and the period carries on". Making either a subclass of the other --
+    or reusing one for both -- would silently give every arm that catches one the
+    behaviour of the other, and `InteractionComplete`'s meaning is EES-wide with
+    already-merged results resting on it."""
+    assert not issubclass(HumanHelpRequested, InteractionComplete)
+    assert not issubclass(InteractionComplete, HumanHelpRequested)
+    assert issubclass(HumanHelpRequested, Exception)
+
+
+def test_a_method_declares_it_cannot_ask_for_human_help_by_default() -> None:
+    """The harness reads this exactly once, up front, to decide whether a missing
+    `Problem.human` is a fatal misconfiguration. Defaulting to False is what keeps every
+    existing Method needing no boilerplate."""
+    assert _MinimalMethod(env=_Env()).may_request_human_help() is False
+
+
+def test_observe_help_granted_defaults_to_a_no_op() -> None:
+    """A Method that never asks is never told, but the hook has to be safe to call
+    unconditionally from the loop -- the same contract `end_cycle` has."""
+    _MinimalMethod(env=_Env()).observe_help_granted(state=_task().initial_state)

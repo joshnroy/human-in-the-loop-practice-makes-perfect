@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pytest
 
+from hitl_pmp.core.method.method import HumanHelpRequested
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
@@ -20,6 +21,7 @@ from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
+from hitl_pmp.methods.help_seeking import HelpSeekingPolicy, HelpSeekingTrigger
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
     EesMethod,
     _EesEpisode,
@@ -1275,3 +1277,99 @@ def test_the_committed_practice_target_is_recorded_as_selected() -> None:
     assert plan, "expected _practice_plan to commit to some candidate"
     selected = plan[-1].skill.name
     assert method.practice_target_outcomes()[selected].num_selected == 1
+
+
+def _help_seeking_build(
+    *, trigger: HelpSeekingTrigger, patience: int = 1, grid_size: int = 4, seed: int = 0
+) -> tuple[EesMethod, LightSwitchEnvironment]:
+    env = LightSwitchEnvironment(grid_size=grid_size)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=seed,
+        help_seeking=HelpSeekingPolicy(trigger=trigger, stuck_patience=patience, seed=seed),
+    )
+    return method, env
+
+
+def test_ees_declares_it_cannot_ask_for_help_unless_it_was_configured_to() -> None:
+    """The predicate practice_loop.py validates against, so it has to be False for the
+    incumbent construction -- otherwise every existing EES run would start demanding a
+    HumanOracle it never had."""
+    method, _env = _build()
+    assert method.may_request_human_help() is False
+    asking, _env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK)
+    assert asking.may_request_human_help() is True
+
+
+def test_an_unconfigured_ees_practice_policy_is_completely_unwrapped() -> None:
+    """Not merely "a wrapper that never fires": there is no wrapper. This is the
+    structural claim behind --ask-for-help never being byte-identical."""
+    method, env = _build()
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    policy = method.get_practice_policy(task=task)
+    assert policy.__qualname__.startswith("EesMethod.get_practice_policy")
+
+
+def test_a_configured_ees_asks_for_help_from_inside_its_practice_policy() -> None:
+    """The whole point: the request comes out of the Method's own policy, so nothing
+    outside it has to watch the state stream to notice."""
+    method, env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK, patience=1)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    policy = method.get_practice_policy(task=task)
+    state = task.initial_state
+    policy(state)
+    with pytest.raises(HumanHelpRequested):
+        policy(state)
+
+
+def test_being_told_help_was_granted_lets_ees_act_again() -> None:
+    """Without this the very next call asks again, forever -- the human puts the robot
+    back somewhere it has by construction already been."""
+    method, env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK, patience=1)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    policy = method.get_practice_policy(task=task)
+    state = task.initial_state
+    policy(state)
+    with pytest.raises(HumanHelpRequested):
+        policy(state)
+    method.observe_help_granted(state=state)
+    policy(state)
+
+
+def test_each_practice_period_starts_a_fresh_stretch() -> None:
+    """get_practice_policy is called once per interaction period, so it is the period
+    boundary as the Method sees it: a period must not inherit the previous one's
+    visited set."""
+    method, env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK, patience=1)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    state = task.initial_state
+    first = method.get_practice_policy(task=task)
+    first(state)
+    with pytest.raises(HumanHelpRequested):
+        first(state)
+    second = method.get_practice_policy(task=task)
+    second(state)
+
+
+def test_ees_evaluation_policy_never_asks_for_help() -> None:
+    """No evaluation episode is ever rescued -- measurement would be measuring the
+    human. The Method itself must not even be able to ask there."""
+    method, env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK, patience=1)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    policy = method.get_task_policy(task=task)
+    state = task.initial_state
+    for _ in range(5):
+        policy(state)
+
+
+def test_help_seeking_does_not_consume_ees_own_rng_stream() -> None:
+    """The two streams are separate objects seeded from the same --seed, so an
+    on-stuck arm plans and samples exactly as an unconfigured one does. If they shared
+    a generator, turning the flag on would silently change EES's own behaviour."""
+    plain, env = _build(seed=5)
+    asking, asking_env = _help_seeking_build(trigger=HelpSeekingTrigger.AT_RANDOM, seed=5)
+    del env, asking_env
+    assert plain._rng.bit_generator.state == asking._rng.bit_generator.state
+    asking.help_seeking._rng.random(100)
+    assert plain._rng.bit_generator.state == asking._rng.bit_generator.state

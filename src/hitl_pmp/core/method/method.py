@@ -32,7 +32,47 @@ class InteractionComplete(Exception):  # noqa: N818
     Not an error: ending early is a normal end to a period. The cycle still
     retrains (`end_cycle`) and is still evaluated. Named without the `Error`
     suffix (hence the ruff N818 waiver) precisely because it is control flow, not
-    a failure."""
+    a failure.
+
+    **Distinct from `HumanHelpRequested` below**, and deliberately never widened to
+    cover it -- see that exception's own docstring for the two differences."""
+
+
+class HumanHelpRequested(Exception):  # noqa: N818
+    """Raised by a practice policy that cannot get anywhere from where it is and is
+    asking a human to reposition it. Control flow, not an error, exactly like
+    `InteractionComplete` above (hence the same ruff N818 waiver).
+
+    **This is the robot asking, not a monitor noticing.** ("Robot", not "agent", per
+    CLAUDE.md's naming rule -- this is our own `Method` acting, and nothing here
+    involves an LLM. The rule exists partly because the arm this exception replaces was
+    called `agent-signal`.) Deciding when to ask is
+    *policy*, and policy belongs to the `Method`: the harness's whole job here is
+    mechanism -- invoke the `HumanOracle`, price the command, bank the cost, and carry
+    on. An external watcher of the state stream that summoned a human on the `Method`'s
+    behalf would be measuring the watcher.
+
+    **Two differences from `InteractionComplete`, both load-bearing.**
+
+      * *What it claims.* `InteractionComplete` means "no ground skill is applicable at
+        all", which on Tossing Room essentially never happens because `MoveRoom` always
+        is. This means "I am still perfectly able to act, and acting is getting me
+        nowhere" -- the absorbing region behind the one-way ledge, where a robot paces
+        between rooms forever.
+      * *What happens next.* `InteractionComplete` **ends** the interaction period.
+        This does not: the human answers and the period **continues**, bounded by the
+        step budget like everything else. The rescue does consume the loop iteration it
+        was raised on, so a `Method` that asks every step cannot spin.
+
+    Kept a separate exception rather than a widened `InteractionComplete` because that
+    exception's meaning is EES-wide and already-merged results depend on it. Reusing it
+    would silently give every arm that catches one the behaviour of the other, and the
+    two could then not be compared.
+
+    Carries no payload: what the human is asked *for* is the harness's own
+    `--human-reset-target` (a property of the human, not of the request), and what the
+    robot was pursuing is the task the loop already holds. A `Method` that later needs
+    to ask for something specific adds a field here rather than a second exception."""
 
 
 class Method(BaseModel, abc.ABC):
@@ -108,6 +148,40 @@ class Method(BaseModel, abc.ABC):
         keeping it uncalled there is what makes every arm of a reset-interval
         sweep drop exactly one observation per period rather than a number that
         varies with the interval."""
+
+    def may_request_human_help(self) -> bool:
+        """Whether this Method's *practice* policy can raise `HumanHelpRequested`.
+
+        Its one and only consumer is practice_loop.py's up-front validation: a Method
+        that can ask, paired with a `Problem` that has no `HumanOracle`, is a
+        misconfiguration worth refusing before `hard_reset()` rather than three cycles
+        in. The loop must never poll this per step -- whether a rescue happens on a
+        given step is the Method's business, and it says so by raising.
+
+        Concrete `False` by default, for the same reason as `end_cycle`: no baseline
+        built so far asks for anything, and none of them should need boilerplate to say
+        so. A Method that composes `methods/help_seeking.py`'s policy overrides it."""
+        return False
+
+    def observe_help_granted(self, *, state: State) -> None:
+        """Called by practice_loop.py immediately *after* a rescue has been executed,
+        handing over the state the human actually left behind.
+
+        This is what lets a Method restart whatever detector made it ask. Without it a
+        rescued robot is instantly re-rescued forever: a human by construction puts it
+        back somewhere it has already been, so under any novelty-based rule every state
+        is non-novel the moment it arrives. See `StuckDetector.restart`.
+
+        The *readback* state, not the state that was commanded -- a capability-aware
+        human (v1+) that only partially succeeds leaves the environment somewhere other
+        than what was asked for, and a Method restarting on the commanded state would
+        be restarting on a place the robot is not.
+
+        Distinct from `observe_environment_reset`, which fires *before* the write and
+        exists to settle an in-flight skill against what really happened. Both fire on
+        a rescue, in that order, and they answer different questions: one is "score
+        this against the state you are about to lose", the other is "here is where you
+        now are". Concrete no-op by default, like `end_cycle`."""
 
     def planning_outcomes(self) -> tuple[int, int]:
         """(failures, attempts) for this Method's own planning so far, cumulative over
