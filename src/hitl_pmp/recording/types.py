@@ -64,7 +64,7 @@ class LoopPhase(str, Enum):
 
 
 class ResetKind(str, Enum):
-    """The four distinct ways the environment's state jumps in a run, which a
+    """The five distinct ways the environment's state jumps in a run, which a
     viewer otherwise cannot tell apart from each other or from a skill's effect.
 
     Keeping them distinct is the point of the recording: HARD happens once, per
@@ -73,9 +73,17 @@ class ResetKind(str, Enum):
     INTERVAL only exists when `--practice-reset-interval` is set, and is the knob
     that decouples reset frequency from refit frequency; EVALUATION_TASK is the
     reset inside `Problem.run_task_episode`, once per test task, and is not part of
-    the practice protocol at all."""
+    the practice protocol at all.
+
+    HUMAN is the odd one out and the reason it is labelled apart rather than folded
+    into INTERVAL: every other kind here is free, and this one is **charged**. It is
+    the only jump that costs the run something (`Metrics.summed_human_cost`), and on
+    a reset-free arm it is the only jump that happens during practice at all -- so a
+    viewer counting them is reading the arm's whole intervention budget off the
+    video."""
 
     HARD = "hard"
     PERIOD = "period"
     INTERVAL = "interval"
+    HUMAN = "human"
     EVALUATION_TASK = "evaluation_task"

@@ -204,6 +204,23 @@ class LoopRecorder(BaseModel):
             repeat=self.reset_hold_frames,
         )
 
+    def record_human_reset(self, *, state: State, step_index: int, transitions: int) -> None:
+        """A human was asked to reposition the robot mid-period, attributed to the step
+        it fired after.
+
+        Labelled apart from INTERVAL despite looking identical in the pixels, because it
+        is the one state jump that costs the run something -- see ResetKind.HUMAN."""
+        self.transitions = transitions
+        self._write(
+            state=state,
+            status=self._status(
+                step_index=step_index,
+                num_steps=self.max_steps_per_interaction,
+                reset=ResetKind.HUMAN,
+            ),
+            repeat=self.reset_hold_frames,
+        )
+
     def record_interaction_complete(
         self, *, state: State, step_index: int, transitions: int
     ) -> None:
