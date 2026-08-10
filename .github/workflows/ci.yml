@@ -17,6 +17,15 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: lint-imports
+      # A committed experiment log must link to this repo's own content by relative
+      # path, never by URL: `main` is squash-merge only, so merging orphans every SHA
+      # a PR pinned, and an orphaned raw URL still returns 200 for months. The same
+      # script also checks that each relative link actually resolves, since making a
+      # link relative moves that failure mode rather than removing it. A step of
+      # `lint` rather than a fourth job -- the check is ~50 ms against ~30 s of runner
+      # startup. Logic lives in the script so `tests/scripts/test_check_doc_links.py`
+      # can exercise it without GitHub Actions.
+      - run: scripts/check_doc_links.sh
 
   typecheck:
     runs-on: ubuntu-latest

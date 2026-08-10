@@ -38,6 +38,51 @@ install's `.pth` file holds an absolute path — and nothing errors, so the run 
 measures the wrong thing. `tests/scripts/test_with_env.py` pins it (skipped where
 there is no conda, e.g. CI).
 
+## `check_doc_links.sh`
+
+A CI guard, run as a step of the `lint` job. It runs two checks over the Markdown
+under `docs/experiment-logs/` — **a link into this repository by URL**, and **a
+relative link whose target does not exist** — and reports both in one run, so
+fixing a log is one pass rather than two CI rounds:
+
+```bash
+scripts/check_doc_links.sh                      # exit 0 clean, 1 violation, 2 cannot run
+scripts/check_doc_links.sh --repo-root PATH     # what the tests point at
+```
+
+`main` allows squash-merge only, so merging a PR mints a new commit and **orphans
+every SHA that PR pinned**. A `raw.githubusercontent.com` URL in a *committed* file
+therefore dies at merge, and dies silently — GitHub keeps orphaned commits reachable
+until it garbage-collects, so a dead pin still returns `200` with byte-correct
+content for months. Measured 2026-08-07: 3/5 distinct pinned SHAs in merged
+`docs/experiment-logs/` were already orphaned. PR #173 converted them to relative
+links and wrote the rule into `CLAUDE.md`; this is what enforces it.
+
+Both halves of the scope are deliberate. Only **self**-referencing URLs are banned —
+a URL into `kindergarden` or `predicators` has no relative equivalent, so banning it
+would push people toward workarounds — and only `docs/experiment-logs/*.md` is
+scanned, because `CLAUDE.md` has to keep saying `raw.githubusercontent.com` in prose
+and a repo-wide guard would fail on the file that documents the rule. A
+`blob/<sha>/` or `tree/<sha>/` link is banned alongside the raw one, since it orphans
+identically; a `/pull/<n>` link is not, since it pins no commit.
+
+The second check exists because making every figure reference relative **moved** that
+failure mode rather than removing it: a relative link cannot orphan, but it can name a
+file that was never committed or was later renamed, and GitHub renders that as a dead
+link with no warning anywhere. It is deliberately not a Markdown parser — fenced code
+blocks and inline code spans are dropped first, since `CLAUDE.md` writes the rule as
+`![alt](2026-08-07-foo.png)` inside backticks and a log quoting it must not be flagged
+for a figure it never claimed to have. Reference-style links, angle-bracket targets and
+percent-encoded paths are not resolved; none are in use here.
+
+It is a script rather than a few lines of YAML so that
+`tests/scripts/test_check_doc_links.py` can exercise it directly. Those tests are
+mostly about the *failing* direction, which is where this class of guard goes wrong:
+`grep` exits `1` on **no** match, so the success path is the `else` branch, and an
+inverted test — or a `grep` error, exit `2`, mistaken for "clean" — yields a check
+that passes unconditionally. A missing scan directory is exit `2`, not `0`, for the
+same reason: a guard with nothing to scan must say so rather than report success.
+
 ## `run_sweep.py`
 
 Runs a (method × seed) grid in parallel and writes each run to
