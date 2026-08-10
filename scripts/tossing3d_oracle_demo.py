@@ -128,6 +128,7 @@ cannot drift apart.
 
 import argparse
 import functools
+import json
 import os
 import sys
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
@@ -334,6 +335,84 @@ class ClipResult(BaseModel):
     steps: dict[str, int]
     goal_region: GoalRegion | None
     coincidence: Coincidence | None
+
+
+class StandoffSeedResult(BaseModel):
+    """One `(standoff, seed)` cell of a `--seeds` grid. The unit `--results-json` writes,
+    and what a solved-fraction-per-standoff figure reads back."""
+
+    standoff: float
+    seed: int
+    solved: bool
+    rest: tuple[float, float, float]
+    steps: dict[str, int]
+
+
+def run_standoff_seed_grid(
+    *,
+    api: KinderApi,
+    standoffs: Sequence[float],
+    seeds: Sequence[int],
+    env_id: str,
+    task_config: str,
+) -> list[StandoffSeedResult]:
+    """`Pick -> MoveToThrowPose(standoff) -> Toss`, oracle-style, once per `(standoff,
+    seed)` pair -- the same methodology PR #105 and the 48-episode grid behind
+    `THROW_RANGE` used, just parameterised over an arbitrary standoff/seed list instead of
+    a fixed one. Always `sweep=True`: a grid search throws every frame away regardless, and
+    rendering dominates the per-rollout cost (see `render_clip`'s own docstring).
+    """
+    results = []
+    for standoff in standoffs:
+        for seed in seeds:
+            clip = render_clip(
+                api=api,
+                standoff=standoff,
+                env_id=env_id,
+                seed=seed,
+                camera=DEFAULT_CAMERA,
+                scene_bg=False,
+                every=DEFAULT_EVERY,
+                colors=DEFAULT_COLORS,
+                lossy=DEFAULT_LOSSY,
+                goal_region=False,
+                output_dir=DEFAULT_OUTPUT_DIR,
+                task_config=task_config,
+                sweep=True,
+            )
+            results.append(
+                StandoffSeedResult(
+                    standoff=standoff,
+                    seed=seed,
+                    solved=clip.solved,
+                    rest=clip.rest,
+                    steps=clip.steps,
+                )
+            )
+    return results
+
+
+def print_and_write_grid(
+    *, results: Sequence[StandoffSeedResult], results_json: Path | None
+) -> None:
+    """The `x/y` summary per standoff -- never a bare percentage, since the denominator
+    (how many seeds a standoff was actually tested on) is exactly what says how much a
+    5/5 or a 2/5 is worth -- plus, if asked, the full per-cell grid as JSON."""
+    by_standoff: dict[float, list[StandoffSeedResult]] = {}
+    for result in results:
+        by_standoff.setdefault(result.standoff, []).append(result)
+    print("\nstandoff  solved")
+    for standoff in sorted(by_standoff):
+        cell = by_standoff[standoff]
+        solved = sum(1 for result in cell if result.solved)
+        print(f"{standoff:<9.3f} {solved}/{len(cell)}")
+    total_solved = sum(1 for result in results if result.solved)
+    print(f"\n{total_solved}/{len(results)} (standoff, seed) cells scored _check_goals() = True")
+    if results_json is not None:
+        results_json.write_text(
+            json.dumps([result.model_dump() for result in results], indent=2) + "\n"
+        )
+        print(f"\nwrote {results_json}")
 
 
 def configure_headless_rendering(
@@ -971,6 +1050,28 @@ def parse_args(*, argv: Sequence[str]) -> argparse.Namespace:
         help="fixed, never drawn -- the same convention as scripts/run_sweep.py",
     )
     parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=None,
+        help="fixed scene seeds to cross with --standoffs (a full standoff x seed grid, "
+        "each combination run once), rather than the single --seed every standoff "
+        "otherwise shares. Fixed, never drawn -- the same convention as scripts/"
+        "run_sweep.py. Always runs as a --sweep internally (no frames, no clip) "
+        "regardless of --sweep itself, since a grid search throws every frame away "
+        "regardless -- see render_clip's own docstring. This is how the throw-pose "
+        "band's reliable core was measured (PR #105, and the confirming sweep in the PR "
+        "that added this flag): one physics-only run per (standoff, seed) pair, "
+        "aggregated into a solved x/y per standoff.",
+    )
+    parser.add_argument(
+        "--results-json",
+        type=Path,
+        default=None,
+        help="with --seeds, write the full per-(standoff, seed) grid -- standoff, seed, "
+        "solved, rest position -- to this path as JSON, for analysis/ to read back.",
+    )
+    parser.add_argument(
         "--camera",
         default=DEFAULT_CAMERA,
         help="scene camera to render from; see the module docstring for why this is "
@@ -1017,6 +1118,16 @@ def parse_args(*, argv: Sequence[str]) -> argparse.Namespace:
 def main(*, argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv=sys.argv[1:] if argv is None else argv)
     api = import_kinder()
+    if args.seeds is not None:
+        grid = run_standoff_seed_grid(
+            api=api,
+            standoffs=args.standoffs,
+            seeds=args.seeds,
+            env_id=args.env_id,
+            task_config=args.task_config,
+        )
+        print_and_write_grid(results=grid, results_json=args.results_json)
+        return
     results = [
         render_clip(
             api=api,

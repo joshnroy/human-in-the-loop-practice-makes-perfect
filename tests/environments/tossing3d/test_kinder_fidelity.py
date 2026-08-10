@@ -191,8 +191,13 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
     displacement, 1.3499 m, which is 0.075 m longer because it includes post-impact roll;
     the cube only rolls when it misses, since on this config the bin sits on the goal
     region and catches anything that lands inside. Under that wrong value the band shifts
-    from `[1.125, 1.425]` to `[1.200, 1.500]`, and **both** of these standoffs flip: 1.15
-    would be predicted a miss and 1.45 a hit. Measured over three scene seeds, 1.15 solves
+    from `[1.150, 1.375]` -- the tightened band `THROW_OVERSHOOT_MARGIN`/
+    `THROW_SHORTFALL_MARGIN` derive (see `predicates.py`) -- to `[1.225, 1.450]`, and
+    **both** of these standoffs still flip: 1.15 would be predicted a miss under the wrong
+    constant, and 1.45 a hit. Re-run live against a real KINDER install as part of the
+    band-tightening change (both parametrised cases still pass: `predicted == expected`
+    at both 1.15 and 1.45), so this is confirmed against the simulator, not only argued
+    from the derivation above. Measured over three scene seeds, 1.15 solves
     3/3 and 1.45 solves 0/3, so the predicate must say exactly the opposite of the wrong
     value at both points.
 

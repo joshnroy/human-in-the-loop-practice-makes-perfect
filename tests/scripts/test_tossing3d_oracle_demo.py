@@ -36,6 +36,7 @@ from scripts.tossing3d_oracle_demo import (
     Footprint,
     GoalRegion,
     RestingPlace,
+    StandoffSeedResult,
     annotate,
     bin_footprint,
     caption_lines,
@@ -48,6 +49,7 @@ from scripts.tossing3d_oracle_demo import (
     goal_region_footprint,
     import_kinder,
     parse_args,
+    print_and_write_grid,
     require_task_config_applies,
     resolve_task_config,
     reveal_goal_region,
@@ -313,6 +315,66 @@ def test_the_seed_is_fixed_rather_than_drawn() -> None:
     """Same convention as scripts/run_sweep.py: a demo has to regenerate the same
     clip months later."""
     assert parse_args(argv=[]).seed == 125
+
+
+# --- the standoff x seed grid (--seeds / --results-json) --------------------------
+#
+# `run_standoff_seed_grid` itself needs KINDER (it calls `render_clip`), so it is not
+# tested here -- same reasoning as the rest of this file. `print_and_write_grid` is
+# pure aggregation over already-computed results and needs no simulator, so it is.
+
+
+def test_seeds_defaults_to_none_so_the_single_seed_path_is_unchanged() -> None:
+    assert parse_args(argv=[]).seeds is None
+    assert parse_args(argv=[]).results_json is None
+
+
+def test_seeds_and_results_json_are_parsed() -> None:
+    args = parse_args(argv=["--seeds", "0", "1", "2", "--results-json", "/tmp/grid.json"])
+    assert args.seeds == [0, 1, 2]
+    assert args.results_json == Path("/tmp/grid.json")
+
+
+def test_print_and_write_grid_reports_solved_counts_per_standoff(
+    *, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`x/y`, never a bare percentage: the fraction alone would hide that 1.125 was
+    tested on the same 5 seeds as 1.15, which is the only thing that says a 2/5 and a
+    5/5 are comparable."""
+    results = [
+        StandoffSeedResult(standoff=1.15, seed=seed, solved=solved, rest=(0.0, 0.0, 0.0), steps={})
+        for seed, solved in ((0, True), (1, True), (2, False))
+    ] + [
+        StandoffSeedResult(standoff=1.40, seed=seed, solved=False, rest=(0.0, 0.0, 0.0), steps={})
+        for seed in (0, 1, 2)
+    ]
+    print_and_write_grid(results=results, results_json=None)
+    out = capsys.readouterr().out
+    assert "1.150" in out
+    assert "2/3" in out
+    assert "1.400" in out
+    assert "0/3" in out
+    assert "2/6" in out  # the total line
+
+
+def test_print_and_write_grid_writes_the_full_grid_as_json(*, tmp_path: Path) -> None:
+    results = [
+        StandoffSeedResult(
+            standoff=1.15, seed=0, solved=True, rest=(2.0, 0.0, 0.05), steps={"toss": 12}
+        )
+    ]
+    out_path = tmp_path / "grid.json"
+    print_and_write_grid(results=results, results_json=out_path)
+    written = json.loads(out_path.read_text())
+    assert written == [
+        {
+            "standoff": 1.15,
+            "seed": 0,
+            "solved": True,
+            "rest": [2.0, 0.0, 0.05],
+            "steps": {"toss": 12},
+        }
+    ]
 
 
 # --- the goal-region overlay ------------------------------------------------------
