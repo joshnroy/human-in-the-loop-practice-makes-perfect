@@ -308,3 +308,154 @@ execution detail for an agent to decide unilaterally.
   to 6, not to 4.
 - **Nothing here changes the CLI, re-runs anything, or edits the existing eight-arm data.**
   This is a recommendation for the *next* ladder run, not a retroactive change to this one.
+
+## Addendum (2026-08-08): rescue timing at a matched rescue rate
+
+This section is a **later addition, appended without touching anything above.** See
+[What the rescues cost](#what-the-rescues-cost) for the original, unmatched numbers, which
+are referenced but not restated or recomputed here.
+
+### Question / goal
+
+[What the rescues cost](#what-the-rescues-cost) found `on-stuck` spending 3.4× the rescues
+`at-random` did (347/337 vs 101/101 over ten seeds) at the shared
+`--mean-steps-between-help-requests 150` default, and — correctly, in its own prose —
+flagged that the resulting contrast is timing *and* rate together, and that priced per
+rescue the ranking **inverts**: `at-random-initial` bought 0.446 extra solves per rescue
+against `stuck-initial`'s 0.331. That inversion is real in the data as run. What that
+paragraph's own docstring separately and uncaveated-ly claimed elsewhere — that
+stuck-detection is a more *efficient* use of a human — contradicted it. This addendum
+retunes the rate and checks which statement the matched data backs.
+
+### Hypothesis
+
+Stated before running anything past a one-seed pilot and the two reproducibility spot
+checks below: with the rescue rate equalised, `stuck-initial`/`stuck-random` still beat
+the matched `at-random` arms on absolute solves (rescuing on stuck still recovers more
+practice), but `solves_per_rescue` moves toward parity or favours `at-random` less
+decisively than the unmatched 0.446-vs-0.331 gap suggested, because most of that unmatched
+gap was rate, not timing.
+
+### Guidance given
+
+Equalise rescue rates via `--mean-steps-between-help-requests`, reading its exact
+semantics from `methods/help_seeking.py` rather than assuming them. Read this log's own
+committed config for what each arm ran under, so the re-run is comparable to everything
+else in it. 10 seeds, same config as the original ladder otherwise. State the hypothesis
+before looking. Report `x/y`, never a bare percentage; paired tests on shared seeds; a
+new figure with per-seed spread, not only a mean; state plainly whether the ranking
+inversion persists or resolves, and do not soften the answer either direction.
+
+### Methods
+
+Same domain, same ten fixed seeds, same shared config as the rest of this log
+(`--num-test-tasks 30 --practice-reset-policy never --num-cycles 10
+--max-steps-per-interaction 150`).
+
+**`no-human`, `stuck-initial`, `stuck-random` and `at-random-initial`/`at-random-random`
+(the unmatched pair) are reused unchanged** from this log's own run rather than re-run —
+their config never reads `--mean-steps-between-help-requests`, so a re-run would only
+reproduce them. That was checked directly rather than assumed: one seed of each of
+`no-human`, `stuck-initial`, `stuck-random` and `at-random-initial` was re-run against the
+current branch tip and its `stats.json` compared byte-for-byte against the banked run —
+all four matched exactly.
+
+Two new arms retune `--mean-steps-between-help-requests`. `on-stuck` and `at-random` both
+draw from a fixed budget of `num_cycles * max_steps_per_interaction` = 1500 policy calls
+per seed, always — a granted rescue consumes a call without producing a transition, so a
+rescued seed's final transition count plus its rescue count sums to exactly 1500 in every
+one of this log's own runs (checked directly against every seed of `stuck-initial` and
+`stuck-random`, not assumed). `on-stuck`'s realised rate is therefore
+`total_rescues / 15000`, and `--mean-steps-between-help-requests` is the reciprocal of a
+per-call probability:
+
+| stuck arm | rescues (10 seeds) | rate | matched value |
+|---|---|---|---|
+| `stuck-initial` | 347 | 347/15000 = 0.02313 | round(15000/347) = **43** |
+| `stuck-random` | 337 | 337/15000 = 0.02247 | round(15000/337) = **45** |
+
+`at-random-initial-matched` runs `--ask-for-help at-random --mean-steps-between-help-requests
+43 --human-reset-target task-initial`, paired against `stuck-initial`.
+`at-random-random-matched` runs the same with `45` and `--human-reset-target random`,
+paired against `stuck-random`. Everything else is identical to the original
+`at-random-initial`/`at-random-random` arms (same seeds, same one-way world) — only the
+rate moved.
+
+Read back with `analysis/practice_makes_perfect/human_ladder_rate_equalized.py`, a
+companion module rather than an edit to `human_ladder_curves.py` — that module's `_ARMS`
+registry is the reference report for the original eight-arm ladder and is unchanged by
+this addendum. The new module reuses `HumanLadderCurves.load_arm`, `entry`,
+`paired_final_differences` and `solves_per_rescue`, and `PairedTests.sign_flip`, rather
+than reimplementing any of them.
+
+### Results
+
+**The manipulation check passes: the matched arms actually moved.** `at-random-initial-matched`
+spent 345 rescues (target 347, from `stuck-initial`) and `at-random-random-matched` spent
+334 (target 337, from `stuck-random`) — both within a handful of rescues of their stuck
+pair's own total, against the unmatched arms' 101.
+
+![rescue counts and per-seed solves-per-rescue, matched vs unmatched](2026-08-08-human-ladder-rate-equalized.png)
+
+| arm | OVERALL | rescues (per-seed range) | extra solves per rescue (pooled) |
+|---|---|---|---|
+| `stuck-initial` | 227/300 | 347 (25–43) | 0.331 |
+| `at-random-initial` (unmatched, rate 150) | 157/300 | 101 (5–15) | 0.446 |
+| `at-random-initial-matched` (rate 43) | **185/300** | 345 (25–47) | **0.212** |
+| `stuck-random` | 223/300 | 337 (21–41) | 0.329 |
+| `at-random-random` (unmatched, rate 150) | 148/300 | 101 (5–15) | 0.356 |
+| `at-random-random-matched` (rate 45) | **214/300** | 334 (25–44) | **0.305** |
+
+Per-seed OVERALL ranges (of 30): `at-random-initial-matched` 7–27, `at-random-random-matched`
+14–30.
+
+Paired exact sign-flip tests, OVERALL at the final checkpoint:
+
+| comparison | gap | better | worse | tied | p | MDE |
+|---|---|---|---|---|---|---|
+| `at-random-initial-matched` − `stuck-initial` | −42 | 3/10 | 7/10 | 0/10 | 0.0488 | 4.99 |
+| `at-random-initial-matched` − `no-human` | +73 | 9/10 | 1/10 | 0/10 | 0.00977 | 5.06 |
+| `at-random-random-matched` − `stuck-random` | −9 | 4/10 | 5/10 | 1/10 | 0.406 | 2.45 |
+| `at-random-random-matched` − `no-human` | +102 | 9/10 | 0/10 | 1/10 | 0.00391 | 3.85 |
+
+**The ranking inversion in [What the rescues cost](#what-the-rescues-cost) does not
+survive rate matching — it reverses.** At matched cost, `stuck-initial` buys 0.331 extra
+solves per rescue against `at-random-initial-matched`'s 0.212, and `stuck-random` buys
+0.329 against `at-random-random-matched`'s 0.305. `on-stuck` is now the more (or, for the
+`random` target, about equally) efficient use of a human in both pairings — the opposite
+of the unmatched 0.446-vs-0.331 and 0.356-vs-0.329 comparisons. **A claim that
+stuck-detection is a more efficient use of a human, unsupported by the unmatched data, is
+supported by the matched data.**
+
+**Whether `stuck` still beats `at-random` on absolute solves is target-dependent, and the
+hypothesis was only half right.** For `task-initial`: `stuck-initial` (227/300) still
+beats `at-random-initial-matched` (185/300), and the gap is still significant, but only
+barely — p = 0.0488, against the unmatched comparison's p = 0.0156 for a gap nearly twice
+as large (+70 unmatched vs +42 matched). For `random`: `stuck-random` (223/300) and
+`at-random-random-matched` (214/300) are **statistically indistinguishable** — gap −9,
+p = 0.406, a null result at MDE 2.45 — against the unmatched comparison's p = 0.00195 for
+a +75 gap. Rate accounted for nearly the entire unmatched gap on the `random` target and
+most but not all of it on `task-initial`. The hypothesis predicted the direction correctly
+(the absolute gap narrows) but not the size of the effect on the `random` target, where it
+does not merely narrow but disappears.
+
+### Recommendation
+
+**Quote both findings together, not the headline alone.** "`on-stuck` beats `at-random`"
+is true unmatched and only conditionally true matched (significant for `task-initial` at
+p = 0.0488, a null result for `random` at p = 0.406). "`on-stuck` is a more efficient use
+of a human than `at-random`" is **false** at the unmatched default and **true** at the
+matched rate. A reader who wants one clean sentence should use: *stuck-detection recovers
+more absolute practice for the same or less human cost, and once cost is held fixed it is
+never the less efficient trigger, though on the `random` target the two triggers become
+statistically indistinguishable.*
+
+Two things follow for the next experiment:
+
+1. **The `task-initial` vs `random` divergence itself is worth a dedicated comparison.**
+   This addendum was not designed to test *why* matching the rate closes the gap
+   completely on one target and only partially on the other, and the answer is not
+   obvious from data already collected here.
+2. **`--mean-steps-between-help-requests` 150 should not be the default for a head-to-head
+   `on-stuck` vs `at-random` comparison on this domain again.** 43–45 is close to the
+   domain's actual `on-stuck` rate; 150 understates `at-random`'s cost by roughly 3.4×.
