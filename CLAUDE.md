@@ -439,6 +439,16 @@ report, not a new palette per PR:**
   reset-free/never side. A third neutral (grey, dotted) is reserved for reference/ceiling
   arms that aren't the manipulation under test (`skill-oracle`, `random-skills`) — see
   below. Do not introduce a fourth hue; encode a second axis with linestyle instead.
+- **The blue/orange role generalises to any "something could intervene" vs "nothing
+  intervenes" comparison, not only reset policy.** Orange is always the arm nothing helps
+  — `never`, `no-human`, or any control with no assistance mechanism at all. Blue is
+  always the arm that *has* an assistance mechanism available, whether or not it actually
+  fires in a given run — `scheduled`, `on-stuck`, `at-random`, `on-no-applicable-skill`.
+  This is deliberately about whether the mechanism *exists*, not whether it *fired*: an
+  arm whose trigger never once activates (e.g. `on-no-applicable-skill`, which measured
+  `0/10` seeds ever asking) is still blue, because the finding is exactly that the
+  mechanism existed and did nothing — colouring it orange would visually erase that
+  distinction from a reader skimming the legend.
 - **Linestyle carries the subgroup within a colour**, not the budget, not the seed count —
   whatever the *within-arm* split is that the figure exists to show. Solid is the main
   population (or the larger/non-anomalous subgroup where a population splits); a dashed
