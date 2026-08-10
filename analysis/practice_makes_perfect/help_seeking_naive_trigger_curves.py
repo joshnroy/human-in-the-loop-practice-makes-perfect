@@ -97,9 +97,18 @@ _ARM_COLOR = {_NO_HUMAN: "#D55E00", _ON_NO_APPLICABLE_SKILL: "#0072B2"}
 # both are actually present at every point rather than one occluding the other.
 _ARM_LINESTYLE = {_NO_HUMAN: "-", _ON_NO_APPLICABLE_SKILL: "--"}
 
-_SEED_ALPHA = 0.18
 _SEED_WIDTH = 1.0
+_SEED_WIDTH_CONTROL = 3.0  # thicker so the never-fired overlap peeks out from behind
+# the treated arm's dashes -- same trick as the bold means below.
+# Faint per-seed traces are drawn fully opaque in a pre-mixed pale tint of the arm's own
+# colour, not translucent: alpha-compositing two near-identical, complementary-hued
+# translucent lines on the same pixels blends toward grey regardless of width or alpha
+# value. An opaque pale tint keeps the hue intact, so solid-vs-dashed alone reveals that
+# both arms are present rather than the colour doing (and failing at) that job too.
+_SEED_TINT_WHITE_FRACTION = 0.55
+
 _MEAN_WIDTH = 2.6
+_MEAN_WIDTH_CONTROL = 4.4  # thicker so the never-fired overlap peeks out around the dashes
 
 _CANVAS = "white"
 
@@ -199,6 +208,21 @@ class HelpSeekingNaiveTriggerCurves(BaseModel):
         return sum(curve[-1] for curve in curves)
 
     @staticmethod
+    def pale(*, hexcolor: str) -> str:
+        """A pre-mixed, fully-opaque tint of `hexcolor`, `_SEED_TINT_WHITE_FRACTION`
+        of the way to white.
+
+        Faint per-seed traces use this instead of `alpha`: two near-identical,
+        complementary-hued translucent lines drawn on the same pixels blend toward grey
+        regardless of the alpha value or linewidth, since alpha-compositing averages
+        colour. An opaque pale tint keeps each arm's hue intact, so the dashed-vs-solid
+        linestyle -- not colour blending -- is what reveals that both arms are present.
+        """
+        r, g, b = (int(hexcolor[i : i + 2], 16) for i in (1, 3, 5))
+        frac = _SEED_TINT_WHITE_FRACTION
+        return "#" + "".join(f"{int(c + (255 - c) * frac):02X}" for c in (r, g, b))
+
+    @staticmethod
     def render(*, logs_root: Path, output: Path) -> Figure:
         """Draw the three-panel figure and write the PNG. Returns the figure so a test
         can assert on its structure without reopening the file."""
@@ -231,21 +255,23 @@ class HelpSeekingNaiveTriggerCurves(BaseModel):
                 total = HelpSeekingNaiveTriggerCurves.arm_total(runs=runs, family=family)
                 color = _ARM_COLOR[arm]
                 style = _ARM_LINESTYLE[arm]
+                seed_color = HelpSeekingNaiveTriggerCurves.pale(hexcolor=color)
+                seed_width = _SEED_WIDTH_CONTROL if arm == _NO_HUMAN else _SEED_WIDTH
                 for row in curves:
                     axis.plot(
                         grid,
                         row,
-                        color=color,
-                        alpha=_SEED_ALPHA,
-                        linewidth=_SEED_WIDTH,
+                        color=seed_color,
+                        linewidth=seed_width,
                         linestyle=style,
                     )
                 mean = [sum(column) / len(column) for column in zip(*curves, strict=True)]
+                width = _MEAN_WIDTH_CONTROL if arm == _NO_HUMAN else _MEAN_WIDTH
                 axis.plot(
                     grid,
                     mean,
                     color=color,
-                    linewidth=_MEAN_WIDTH,
+                    linewidth=width,
                     linestyle=style,
                     label=f"{_ARM_LABELS[arm]} -- mean, n={_NUM_SEEDS}, final {total}/{denom}",
                 )
