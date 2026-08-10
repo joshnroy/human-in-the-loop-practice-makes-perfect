@@ -1,0 +1,166 @@
+{
+  "evaluations": [
+    [
+      0,
+      0,
+      4
+    ],
+    [
+      150,
+      0,
+      4
+    ]
+  ],
+  "breakdowns": [
+    {
+      "num_online_transitions": 0,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 150,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 1,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 2,
+          "goal": "RecyclingInBin(recycling, recycling_bin)",
+          "solved": false
+        },
+        {
+          "task_index": 3,
+          "goal": "TrashInBin(trash, trash_bin)",
+          "solved": false
+        }
+      ]
+    }
+  ],
+  "num_practice_resets": 1,
+  "planning_failures_per_cycle": [
+    0,
+    0
+  ],
+  "planning_attempts_per_cycle": [
+    0,
+    0
+  ],
+  "practice_outcomes_per_cycle": [
+    {
+      "MoveRoom": {
+        "num_attempts": 113,
+        "num_successes": 113,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 113,
+        "num_unparameterized_successes": 113
+      },
+      "PickupTrash": {
+        "num_attempts": 15,
+        "num_successes": 15,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 15,
+        "num_unparameterized_successes": 15
+      },
+      "PressTrash": {
+        "num_attempts": 1,
+        "num_successes": 1,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 1,
+        "num_unparameterized_successes": 1
+      },
+      "ThrowTrash": {
+        "num_attempts": 15,
+        "num_successes": 2,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 15,
+        "num_informed_successes": 2,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    },
+    {
+      "MoveRoom": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PickupTrash": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PressTrash": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "ThrowTrash": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    }
+  ],
+  "practice_target_outcomes_per_cycle": [
+    {},
+    {}
+  ],
+  "task_name": "default"
+}

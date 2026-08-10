@@ -1,0 +1,6 @@
+pure-agent: spend ceiling reached after 212 calls ($25.11 of $25.00 subscription allowance, a lower bound). No further agent calls will be made; the run will finish on no-ops and its results from here are NOT a measurement of the method.
+success rate: 0/4 (0%)
+practice MoveRoom: 113/113 succeeded (0/0 informed, 0/0 epsilon-random, 113/113 no sampler, 0/0 uninformative)
+practice PickupTrash: 15/15 succeeded (0/0 informed, 0/0 epsilon-random, 15/15 no sampler, 0/0 uninformative)
+practice PressTrash: 1/1 succeeded (0/0 informed, 0/0 epsilon-random, 1/1 no sampler, 0/0 uninformative)
+practice ThrowTrash: 2/15 succeeded (2/15 informed, 0/0 epsilon-random, 0/0 no sampler, 0/0 uninformative)
