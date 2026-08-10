@@ -451,6 +451,68 @@ class HumanLadderCurves:
             )
         print()
 
+    @staticmethod
+    def print_two_classifier_report(
+        *,
+        rate_sweep_1: dict[int, dict],
+        no_human_1: dict,
+        rate_sweep_2: dict[int, dict],
+        no_human_2: dict,
+        label_1: str = "sampler_classifier=mlp (original, #195)",
+        label_2: str = "sampler_classifier=linear (this ablation)",
+    ) -> None:
+        """Both classifiers' per-N dose-response numbers side by side: `x/y` OVERALL
+        counts, the gap against EACH series' OWN `no-human` control (never the other
+        series' control -- the two `no-human` runs are different measurements, one
+        per `sampler_classifier`, so a linear-era N is judged against the linear-era
+        control), and paired significance (`PairedTests.sign_flip`) within each
+        series, since each series shares its own fixed seeds (0-9) with its own
+        `no-human` run.
+
+        Requires both series to share the same N grid: without that, "side by side"
+        has no shared rows to align on."""
+        ns_1 = sorted(rate_sweep_1)
+        ns_2 = sorted(rate_sweep_2)
+        if ns_1 != ns_2:
+            raise ValueError(
+                "the two rate-sweep series must share the same N grid to be reported "
+                f"side by side; got {ns_1} vs {ns_2}."
+            )
+        print(f"two-classifier rate-sweep comparison: {label_1} vs {label_2}\n")
+        for n in ns_1:
+            summary_1 = HumanLadderCurves._rate_point_summary(
+                run=rate_sweep_1[n], control=no_human_1
+            )
+            summary_2 = HumanLadderCurves._rate_point_summary(
+                run=rate_sweep_2[n], control=no_human_2
+            )
+            print(
+                f"  N={n:<3}  "
+                f"{label_1}: {summary_1['formatted']:>8}  gap {summary_1['gap']:>+4}"
+                f"  p = {summary_1['p']:.4g}"
+                "   |   "
+                f"{label_2}: {summary_2['formatted']:>8}  gap {summary_2['gap']:>+4}"
+                f"  p = {summary_2['p']:.4g}"
+            )
+        print()
+
+    @staticmethod
+    def _rate_point_summary(*, run: dict, control: dict) -> dict:
+        """One rate-sweep point's OVERALL final score, gap against `control`, and
+        paired-significance p-value -- the three numbers `print_two_classifier_report`
+        needs per (series, N) cell. Factored out so that table and `print_report`'s
+        existing per-series loop compute the gap/p-value identically."""
+        final = HumanLadderCurves.pooled_curve(run=run, family=None)[-1]
+        differences = HumanLadderCurves.paired_final_differences(
+            treatment=run, control=control, family=None
+        )
+        test = PairedTests.sign_flip(differences=differences)
+        return {
+            "formatted": HumanLadderCurves.format_count(solved=final[0], total=final[1]),
+            "gap": int(sum(differences)),
+            "p": test.p_value,
+        }
+
     # ------------------------------------------------------------------ the figures
 
     @staticmethod
@@ -581,27 +643,39 @@ class HumanLadderCurves:
         plt.close(fig)
 
     @staticmethod
-    def render_rate_sweep(*, arms: dict, rate_sweep: dict, output: Path, title: str) -> None:
-        """The dose-response figure: mean + variance of final OVERALL score against the
-        rescue-rate knob N.
-
-        Not a training curve -- there is no online-transitions axis here, since each point
-        is a wholly separate arm at a different N, not one arm's progress over time. One
-        faint dot per seed at each sampled N (jittered so ties stay countable), a bold mean
-        line connecting the pooled-per-seed average at each N, and the `no-human` /
-        `skill-oracle` levels as reference lines so the sweep reads against the same
-        ceilings the fixed-arm figures use.
+    def _plot_rate_sweep_series(
+        *,
+        ax,
+        rate_sweep: dict,
+        linestyle,
+        x_offset: float,
+        alpha: float,
+        label: str,
+        iqr_label: str | None,
+    ) -> None:
+        """One rate-sweep series' scatter + IQR band + mean line, factored out so a second
+        (sampler_classifier) series can be overlaid without duplicating the jitter/
+        IQR-band/mean-line logic. Always `_RATE_SWEEP_COLOR` -- classifier type is not the
+        project's blue/orange assistance axis, so colour stays fixed and `linestyle`
+        carries the classifier split instead, per CLAUDE.md's training-curve-style
+        convention ("linestyle carries the subgroup within a colour"). `x_offset` nudges a
+        second series' per-seed dots sideways so they do not sit exactly on top of the
+        first series' dots at the same N.
 
         **The shaded band is the 25th-75th percentile (IQR) across the 10 seeds at each N,
-        not a symmetric +-1 std band.** This data is genuinely bimodal at some N (N=14's
-        final checkpoint splits 7 seeds around 28-30 against 3 around 17-19, not a noisy
-        unimodal spread), and a symmetric std band centred on the mean would visually assert
-        a single-peaked distribution that isn't there, while also having no reason to
-        respect the [0, 30] physical range. The IQR is a plain robust spread statistic that
-        does neither. It does NOT by itself reveal the bimodal clustering -- that needs the
-        individual seed trajectories, which is exactly what `render_rate_sweep_trajectories`
-        draws instead of summarising."""
-        fig, ax = plt.subplots(figsize=(8.8, 5.6))
+        not a symmetric +-1 std band.** This data is genuinely bimodal at some N for the
+        `mlp` series (N=14's final checkpoint splits 7 seeds around 28-30 against 3 around
+        17-19, not a noisy unimodal spread), and a symmetric std band centred on the mean
+        would visually assert a single-peaked distribution that isn't there, while also
+        having no reason to respect the [0, 30] physical range. It does NOT by itself reveal
+        bimodal clustering -- that needs the individual seed trajectories, which is exactly
+        what `render_rate_sweep_trajectories` draws instead of summarising (single-series
+        only; it is not extended for a second classifier here).
+
+        `iqr_label` is `None` for a second overlaid series so the legend gets one IQR
+        explanation rather than two visually-identical (same colour, same alpha) swatches
+        that would only differ by which series they described -- caller passes the label
+        only on the series that should own that legend row."""
         ns = sorted(rate_sweep)
         means = []
         q1s = []
@@ -609,13 +683,13 @@ class HumanLadderCurves:
         for n in ns:
             run = rate_sweep[n]
             finals = HumanLadderCurves.final_per_seed(run=run, family=None)
-            offsets = [(i % 5 - 2) * 0.12 for i in range(len(finals))]
+            offsets = [(i % 5 - 2) * 0.12 + x_offset for i in range(len(finals))]
             ax.scatter(
                 [n + offset for offset in offsets],
                 finals,
                 color=_RATE_SWEEP_COLOR,
                 s=34,
-                alpha=0.35,
+                alpha=alpha,
                 zorder=2,
             )
             means.append(sum(finals) / len(finals))
@@ -629,34 +703,114 @@ class HumanLadderCurves:
             color=_RATE_SWEEP_COLOR,
             alpha=0.16,
             zorder=1,
-            label="IQR (25th-75th pctile) across 10 seeds per N",
+            label=iqr_label,
         )
         ax.plot(
             ns,
             means,
             color=_RATE_SWEEP_COLOR,
+            linestyle=linestyle,
             linewidth=2.3,
             marker="o",
             markersize=5,
             zorder=3,
-            label="--ask-for-help at-random, task-initial — per-seed mean, n=10 per N",
+            label=label,
         )
 
-        for reference_arm in ("no-human", "skill-oracle"):
+    @staticmethod
+    def render_rate_sweep(
+        *,
+        arms: dict,
+        rate_sweep: dict,
+        output: Path,
+        title: str,
+        rate_sweep_2: dict[int, dict] | None = None,
+        no_human_2: dict | None = None,
+        series_1_label: str = "sampler_classifier=mlp (original, #195)",
+        series_2_label: str = "sampler_classifier=linear (this ablation)",
+    ) -> None:
+        """The dose-response figure: final OVERALL score against the rescue-rate knob N.
+
+        Not a training curve -- there is no online-transitions axis here, since each point
+        is a wholly separate arm at a different N, not one arm's progress over time. One
+        faint dot per seed at each sampled N (jittered so ties stay countable), a bold mean
+        line connecting the pooled-per-seed average at each N, and the `no-human` /
+        `skill-oracle` levels as reference lines so the sweep reads against the same
+        ceilings the fixed-arm figures use.
+
+        `rate_sweep_2`/`no_human_2` are the optional second (`sampler_classifier=linear`)
+        series -- the EES sampler-linear-ablation PR overlaying its own rate sweep and its
+        own paired `no-human` control on top of `rate_sweep`/`arms["no-human"]`, which stay
+        the original `sampler_classifier=mlp` measurement from #195. **Colour does not
+        change between the two series**: classifier type is not this project's blue/orange
+        "something could intervene" axis (that is reset policy / help-seeking mechanism),
+        so both series stay the standing rate-sweep blue (`_RATE_SWEEP_COLOR`); the second
+        series is distinguished by linestyle only (`(0, (4, 2))` dashed vs the first
+        series' solid), per CLAUDE.md's "linestyle carries the subgroup within a colour"
+        rule. `no_human_2` gets the same treatment against `arms["no-human"]`: same colour
+        (orange, `_COLORS["no-human"]`), dashed instead of solid. `two-way-ledge` and
+        `skill-oracle` are NOT duplicated for the second series -- they were not rerun
+        under the linear classifier, and their legend labels say so explicitly whenever a
+        second series is present, so a reader cannot mistake them for a linear-era
+        measurement."""
+        fig, ax = plt.subplots(figsize=(8.8, 5.6))
+        HumanLadderCurves._plot_rate_sweep_series(
+            ax=ax,
+            rate_sweep=rate_sweep,
+            linestyle="-",
+            x_offset=0.0,
+            alpha=0.35,
+            label=f"{series_1_label} — per-seed mean, n=10 per N",
+            iqr_label="IQR (25th-75th pctile) across 10 seeds per N",
+        )
+        if rate_sweep_2 is not None:
+            HumanLadderCurves._plot_rate_sweep_series(
+                ax=ax,
+                rate_sweep=rate_sweep_2,
+                linestyle=(0, (4, 2)),
+                x_offset=0.22,
+                alpha=0.35,
+                label=f"{series_2_label} — per-seed mean, n=10 per N",
+                # No separate legend row: same colour/alpha as the first series' band, so
+                # a second row would only say "this is the other series' IQR" without being
+                # visually distinguishable from the first -- one explanation covers both.
+                iqr_label=None,
+            )
+
+        reference_arms = ("no-human", "skill-oracle")
+        not_rerun_suffix = " [mlp-era, not rerun]" if rate_sweep_2 is not None else ""
+        for reference_arm in reference_arms:
             run = arms[reference_arm]
             finals = HumanLadderCurves.final_per_seed(run=run, family=None)
             pooled_solved, pooled_total = HumanLadderCurves.pooled_curve(run=run, family=None)[-1]
+            suffix = not_rerun_suffix if reference_arm == "skill-oracle" else ""
             ax.axhline(
                 sum(finals) / len(finals),
                 color=_COLORS[reference_arm],
                 linestyle=_LINESTYLES[reference_arm],
                 linewidth=2.0,
                 label=(
-                    f"{_LABELS[reference_arm]} — "
+                    f"{_LABELS[reference_arm]}{suffix} — "
+                    f"{HumanLadderCurves.format_count(solved=pooled_solved, total=pooled_total)}"
+                ),
+            )
+        if no_human_2 is not None:
+            finals = HumanLadderCurves.final_per_seed(run=no_human_2, family=None)
+            pooled_solved, pooled_total = HumanLadderCurves.pooled_curve(
+                run=no_human_2, family=None
+            )[-1]
+            ax.axhline(
+                sum(finals) / len(finals),
+                color=_COLORS["no-human"],
+                linestyle=(0, (4, 2)),
+                linewidth=2.0,
+                label=(
+                    f"EES, no human, sampler_classifier=linear (control, this ablation) — "
                     f"{HumanLadderCurves.format_count(solved=pooled_solved, total=pooled_total)}"
                 ),
             )
 
+        ns = sorted(set(rate_sweep) | set(rate_sweep_2 or {}))
         ax.set_xticks(ns)
         ax.set_xlabel(
             "--mean-steps-between-help-requests (N); each policy call asks with probability 1/N"
@@ -816,7 +970,28 @@ class HumanLadderCurves:
             "rate-sweep dose-response figure (mean + IQR band), and the eight-panel "
             "per-N seed-trajectory small-multiples figure.",
         )
+        parser.add_argument(
+            "--rate-point-2",
+            action="append",
+            default=[],
+            metavar="N=DIR",
+            help="Optional second rate-sweep series over the SAME N grid as --rate-point "
+            "-- e.g. the EES sampler-linear-ablation PR's --sampler-classifier linear "
+            "rate sweep, overlaid on this PR's --sampler-classifier mlp series on the "
+            "dose-response figure. Requires --no-human-2.",
+        )
+        parser.add_argument(
+            "--no-human-2",
+            type=Path,
+            default=None,
+            help="DIR holding <seed>/stats.json for the second series' OWN no-human "
+            "control (same sampler_classifier as --rate-point-2). Required iff "
+            "--rate-point-2 is given -- a second series is judged against its own "
+            "control, never the first series' one.",
+        )
         args = parser.parse_args()
+        if args.rate_point_2 and args.no_human_2 is None:
+            parser.error("--rate-point-2 requires --no-human-2 (its own no-human control).")
 
         arm_directories = {}
         for spec in args.arm:
@@ -831,22 +1006,53 @@ class HumanLadderCurves:
         rate_sweep = HumanLadderCurves.load_rate_sweep(directories=rate_directories)
         HumanLadderCurves.print_report(arms=arms, rate_sweep=rate_sweep)
 
+        rate_sweep_2 = None
+        no_human_2 = None
+        if args.rate_point_2:
+            rate_2_directories = {}
+            for spec in args.rate_point_2:
+                name, _, path = spec.partition("=")
+                rate_2_directories[int(name)] = Path(path)
+            rate_sweep_2 = HumanLadderCurves.load_rate_sweep(directories=rate_2_directories)
+            no_human_2 = HumanLadderCurves.load_run(
+                directory=args.no_human_2,
+                label="no-human (sampler_classifier=linear)",
+                expect_no_human=True,
+            )
+            HumanLadderCurves.print_two_classifier_report(
+                rate_sweep_1=rate_sweep,
+                no_human_1=arms["no-human"],
+                rate_sweep_2=rate_sweep_2,
+                no_human_2=no_human_2,
+            )
+
         args.output_dir.mkdir(parents=True, exist_ok=True)
         domain = "Tossing Room (split throws, weight drawn at pickup), reset-free practice"
-        for family, name, legend_loc in (
-            ("TRASH", f"TRASH tasks, x/{_COMPOSITION['TRASH'] * 10}", "lower right"),
-            ("RECYCLING", f"RECYCLING tasks, x/{_COMPOSITION['RECYCLING'] * 10}", "upper left"),
-            (None, f"all test tasks, x/{_NUM_TEST_TASKS * 10}", "upper left"),
-        ):
-            HumanLadderCurves.render_family(
-                arms=arms,
-                rate_sweep=rate_sweep,
-                family=family,
-                output=args.output_dir
-                / f"human-ladder-{'overall' if family is None else family.lower()}.png",
-                title=f"{domain}\nfixed arms + at-random rate sweep — {name}",
-                legend_loc=legend_loc,
-            )
+        # The merged OVERALL/TRASH/RECYCLING training-curve panels are the three fixed
+        # arms plus ONE rate sweep's shape over practice -- they do not have a defined
+        # meaning for two classifiers at once (which rate-sweep points would occupy the
+        # colourbar?), so they are skipped whenever a second series is requested. The
+        # dose-response figure below is the one this second-series comparison actually
+        # needs.
+        if rate_sweep_2 is None:
+            for family, name, legend_loc in (
+                ("TRASH", f"TRASH tasks, x/{_COMPOSITION['TRASH'] * 10}", "lower right"),
+                (
+                    "RECYCLING",
+                    f"RECYCLING tasks, x/{_COMPOSITION['RECYCLING'] * 10}",
+                    "upper left",
+                ),
+                (None, f"all test tasks, x/{_NUM_TEST_TASKS * 10}", "upper left"),
+            ):
+                HumanLadderCurves.render_family(
+                    arms=arms,
+                    rate_sweep=rate_sweep,
+                    family=family,
+                    output=args.output_dir
+                    / f"human-ladder-{'overall' if family is None else family.lower()}.png",
+                    title=f"{domain}\nfixed arms + at-random rate sweep — {name}",
+                    legend_loc=legend_loc,
+                )
         HumanLadderCurves.render_rate_sweep(
             arms=arms,
             rate_sweep=rate_sweep,
@@ -855,7 +1061,10 @@ class HumanLadderCurves:
                 f"{domain}\n"
                 f"rescue-rate dose-response, --ask-for-help at-random "
                 f"(overall test tasks, of {_NUM_TEST_TASKS})"
+                + ("\nmlp (#195) vs linear (this ablation)" if rate_sweep_2 is not None else "")
             ),
+            rate_sweep_2=rate_sweep_2,
+            no_human_2=no_human_2,
         )
         HumanLadderCurves.render_rate_sweep_trajectories(
             arms=arms,

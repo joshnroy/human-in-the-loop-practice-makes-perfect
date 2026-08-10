@@ -1,0 +1,25 @@
+{
+  "sweep_id": "20260810T170930-0400-3231251-9a432cfa",
+  "method": "ees",
+  "seed": 9,
+  "start_time": "2026-08-10T17:09:30.541426-04:00",
+  "end_time": "2026-08-10T17:09:56.648659-04:00",
+  "start_epoch_seconds": 1786396170.541426,
+  "end_epoch_seconds": 1786396196.648659,
+  "elapsed_seconds": 26.10722101299325,
+  "returncode": 0,
+  "succeeded": true,
+  "spawn_attempts": 1,
+  "max_workers": 10,
+  "cpu_count": 24,
+  "sweep_runs_in_flight_at_start": 10,
+  "sweep_runs_in_flight_at_end": 5,
+  "machine_at_start": {
+    "cli_processes": 0,
+    "load_average_1min": 0.43115234375
+  },
+  "machine_at_end": {
+    "cli_processes": 4,
+    "load_average_1min": 3.75927734375
+  }
+}

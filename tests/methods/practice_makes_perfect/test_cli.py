@@ -11,6 +11,7 @@ from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.methods.help_seeking import HelpSeekingTrigger
 from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, HelpSeekingCli, RandomSkillsCli
+from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
 
 @pytest.fixture(autouse=True)
@@ -109,6 +110,64 @@ def test_ees_defaults_match_the_papers_light_switch_protocol() -> None:
     assert args.num_cycles == 10
     assert args.max_steps_per_interaction == 150
     assert args.exploration_epsilon == 0.5
+
+
+def test_ees_sampler_classifier_defaults_to_mlp() -> None:
+    args = _build_ees_parser().parse_args([])
+    assert args.sampler_classifier == "mlp"
+
+
+def _capture_ees_method(*, args: argparse.Namespace, monkeypatch: pytest.MonkeyPatch) -> EesMethod:
+    """Runs EesCli.run() far enough to build the real EesMethod through
+    LightSwitchCli's composition root, then intercepts MethodRunner.run (called
+    immediately after method_factory(context)) to capture it before any practice
+    cycle actually executes -- cheaper and more direct than asserting through
+    stdout, and it is the one place a fully-wired EesMethod instance is reachable
+    from a CLI-level test."""
+    from hitl_pmp.method_runner import MethodRunner
+
+    captured: dict[str, EesMethod] = {}
+
+    def _fake_run(*, method: EesMethod, **_kwargs: object) -> None:
+        captured["method"] = method
+
+    monkeypatch.setattr(MethodRunner, "run", staticmethod(_fake_run))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    return captured["method"]
+
+
+def test_ees_sampler_classifier_flag_reaches_the_built_method(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--sampler-classifier linear must reach EesMethod.sampler_classifier on the
+    Method the CLI actually constructs, not just get parsed and dropped."""
+    args = _build_ees_parser().parse_args([
+        "--num-test-tasks",
+        "5",
+        "--grid-size",
+        "5",
+        "--seed",
+        "0",
+        "--sampler-classifier",
+        "linear",
+    ])
+    method = _capture_ees_method(args=args, monkeypatch=monkeypatch)
+    assert method.sampler_classifier == "linear"
+
+
+def test_ees_sampler_classifier_omitted_flag_defaults_to_mlp_on_the_built_method(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _build_ees_parser().parse_args([
+        "--num-test-tasks",
+        "5",
+        "--grid-size",
+        "5",
+        "--seed",
+        "0",
+    ])
+    method = _capture_ees_method(args=args, monkeypatch=monkeypatch)
+    assert method.sampler_classifier == "mlp"
 
 
 def test_ees_run_completes_end_to_end_through_the_cli(

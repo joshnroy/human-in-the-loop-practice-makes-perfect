@@ -179,6 +179,17 @@ class EesCli:
             "predicators' settings.py default; the paper's launch configs override it "
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
+        parser.add_argument(
+            "--sampler-classifier",
+            choices=["mlp", "linear"],
+            default=EesMethod.model_fields["sampler_classifier"].default,
+            help="Which classifier the per-skill parameter sampler uses to score/rank "
+            "candidate parameter draws: 'mlp' (default) is the paper's nonlinear ReLU "
+            "net (hid_sizes=(32, 32)); 'linear' collapses it to logistic regression "
+            "(hid_sizes=()), an ablation testing whether the MLP's nonlinearity "
+            "matters for this sampler's job, with everything else -- normalization, "
+            "optimizer, early stopping -- unchanged.",
+        )
         # These three default TRUE to match predicators (which reproduces the paper);
         # pass --no-... to ablate a single deviation.
         parser.add_argument(
@@ -252,6 +263,7 @@ class EesCli:
                 ),
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
+                sampler_classifier=args.sampler_classifier,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 planning_timeout=args.planning_timeout,
                 competence_window_size=args.competence_window_size,

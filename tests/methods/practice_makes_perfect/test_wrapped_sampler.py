@@ -439,3 +439,119 @@ def test_training_does_not_depend_on_the_ambient_torch_thread_count():
     multi = _fit_probe_classifier(x_data=x_data, y_data=y_data)
 
     assert np.array_equal(single, multi)
+
+
+# ------------------------------------------------------------- linear ablation
+#
+# EesMethod's sampler_classifier="linear" ablation (see ees_method.py) works by
+# passing hid_sizes=() into MlpBinaryClassifier, which _build_net turns into
+# logistic regression -- see that method's docstring. These tests exercise that
+# claim directly: the hid_sizes=() net really is affine in logit space, and the
+# default hid_sizes=(32, 32) net really is not.
+
+
+def _logit(*, p: np.ndarray) -> np.ndarray:
+    """log(p / (1 - p)) -- the inverse of the sigmoid MlpBinaryClassifier's output
+    layer applies. `predict_proba` is sigmoid(affine(x)), not affine(x) itself, so
+    testing the affine identity has to happen in logit space, not probability
+    space."""
+    return np.log(p / (1.0 - p))
+
+
+def _nonlinear_classification_data() -> tuple[np.ndarray, np.ndarray]:
+    """A 2D XOR-like pattern: not linearly separable, so a fitted logistic-regression
+    classifier cannot interpolate it (giving the linear test real, non-degenerate
+    weights to check) and a fitted MLP has to lean on its hidden layer's nonlinearity
+    to do better than chance (giving the negative test something to detect). 10%
+    label noise keeps probabilities away from the 0.0/1.0 float32 saturation trap."""
+    rng = np.random.default_rng(0)
+    x_data = rng.uniform(-1.0, 1.0, size=(200, 2))
+    clean_label = (x_data[:, 0] * x_data[:, 1] > 0).astype(float)
+    flip = rng.uniform(size=200) < 0.1
+    y_data = np.where(flip, 1.0 - clean_label, clean_label)
+    return x_data, y_data
+
+
+def _affine_probe_pairs() -> list[tuple[np.ndarray, np.ndarray]]:
+    """Several (x0, x1) pairs spanning a wide range of the input space. A single
+    random pair risks landing inside one ReLU activation region, where a piecewise-
+    affine net is locally exactly affine -- probing several pairs is what keeps the
+    negative test (MLP is NOT affine) from passing by accident."""
+    return [
+        (np.array([-0.9, -0.9]), np.array([0.9, 0.9])),
+        (np.array([-0.9, 0.9]), np.array([0.9, -0.9])),
+        (np.array([-0.5, 0.2]), np.array([0.6, -0.3])),
+        (np.array([0.1, 0.1]), np.array([-0.7, 0.8])),
+        (np.array([-0.2, -0.6]), np.array([0.4, 0.5])),
+        (np.array([0.8, -0.1]), np.array([-0.6, -0.8])),
+    ]
+
+
+def test_hid_sizes_empty_is_affine_in_logit_space():
+    """`hid_sizes=()` (the linear ablation) must be exactly logistic regression:
+    predict_proba is sigmoid(affine(x)), which is affine when read back through
+    logit. Few training iterations plus mildly-noisy, non-separable-to-perfection
+    data keep probabilities interior -- a probability saturated to exactly 0.0/1.0 in
+    float32 would make logit +/-inf and the identity vacuous."""
+    x_data, y_data = _nonlinear_classification_data()
+    classifier = MlpBinaryClassifier(seed=0, hid_sizes=(), max_train_iters=20)
+    classifier.fit(x_data=x_data, y_data=y_data)
+    for x0, x1 in _affine_probe_pairs():
+        xm = (x0 + x1) / 2.0
+        p0, p1, pm = classifier.predict_proba(x_data=np.stack([x0, x1, xm]))
+        assert 0.0 < p0 < 1.0
+        assert 0.0 < p1 < 1.0
+        assert 0.0 < pm < 1.0, "probabilities saturated to 0/1; logit is +/-inf and vacuous"
+        logit0, logit1, logitm = _logit(p=np.array([p0, p1, pm]))
+        assert logitm == pytest.approx((logit0 + logit1) / 2.0, abs=1e-3)
+
+
+def test_hid_sizes_32_32_is_not_affine_in_logit_space():
+    """The default MLP (hid_sizes=(32, 32)) must measurably fail the same identity
+    on at least one of several probe pairs -- a same-shaped test that never fails
+    would not be evidence the ablation changes anything. Multiple pairs guard against
+    the single-region trap described in `_affine_probe_pairs`."""
+    x_data, y_data = _nonlinear_classification_data()
+    classifier = MlpBinaryClassifier(seed=0, hid_sizes=(32, 32), max_train_iters=300)
+    classifier.fit(x_data=x_data, y_data=y_data)
+    deviations = []
+    for x0, x1 in _affine_probe_pairs():
+        xm = (x0 + x1) / 2.0
+        p0, p1, pm = classifier.predict_proba(x_data=np.stack([x0, x1, xm]))
+        if not (0.0 < p0 < 1.0 and 0.0 < p1 < 1.0 and 0.0 < pm < 1.0):
+            continue  # saturated at this probe pair; skip rather than divide by zero
+        logit0, logit1, logitm = _logit(p=np.array([p0, p1, pm]))
+        deviations.append(abs(logitm - (logit0 + logit1) / 2.0))
+    assert deviations, "every probe pair saturated; cannot test nonlinearity here"
+    assert max(deviations) > 1e-2, (
+        f"max deviation {max(deviations):.6f} across {len(deviations)} probes is too "
+        "small to trust as evidence of nonlinearity, not noise"
+    )
+
+
+def test_linear_sampler_plugs_into_sample_unchanged():
+    """A LearnedSkillSampler built with hid_sizes=() -- the linear ablation -- goes
+    through the exact same sample() call as the default MLP configuration and
+    returns a SamplerChoice of the same shape, with the same was_random/was_informed
+    semantics; no other code path is taken. Mirrors
+    test_learns_a_separable_task_and_greedily_picks_the_good_side, the MLP version of
+    this same check."""
+    # A purely linear model converges more slowly than the 32x32 MLP does on this
+    # task at TEST_MAX_TRAIN_ITERS=300 (measured: still the wrong sign at 300-2000
+    # full-batch Adam steps, correct by 5000), so this arm gets its own, larger
+    # budget rather than sharing the MLP tests' cheap default.
+    sampler = _fit_separable_sampler(hid_sizes=(), max_train_iters=5000)
+    rng = np.random.default_rng(7)
+    num_trials = 20
+    num_good = 0
+    for _ in range(num_trials):
+        candidates = [np.array([v]) for v in rng.uniform(0.0, 1.0, size=10)]
+        choice = sampler.sample(
+            sampler_inputs=_rows(candidates=candidates), candidates=candidates, explore=False
+        )
+        assert isinstance(choice, SamplerChoice)
+        assert isinstance(choice.was_random, bool)
+        assert isinstance(choice.was_informed, bool)
+        if choice.params[0] > 0.5:
+            num_good += 1
+    assert num_good >= 18, f"only {num_good}/{num_trials} greedy picks were on the good side"

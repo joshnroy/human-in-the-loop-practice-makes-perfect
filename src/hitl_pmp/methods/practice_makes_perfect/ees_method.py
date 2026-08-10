@@ -1,5 +1,5 @@
 import math
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
@@ -214,6 +214,23 @@ class EesMethod(HelpSeekingMixin, Method):
     # Running at the paper config's 100000 reproduces predicators' own score
     # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
     sampler_max_train_iters: int = 10000
+
+    # Genuine scientific ablation, not a refactor: does the per-skill sampler's job
+    # -- scoring/ranking `num_candidates` (100 in every real run) candidate parameter
+    # draws with `LearnedSkillSampler` -- actually need the MLP's ReLU nonlinearity,
+    # or would a linear decision boundary (logistic regression) score/rank the same
+    # candidates just as well? `"mlp"` keeps `hid_sizes=(32, 32)`, matching every run
+    # before this field existed; `"linear"` collapses it to `hid_sizes=()`, which
+    # `MlpBinaryClassifier._build_net` turns into logistic regression with zero
+    # hidden layers and zero ReLUs (see that method's docstring). Derived into
+    # `hid_sizes` only inside `sampler()` -- the one call site that constructs a
+    # `LearnedSkillSampler` -- rather than adding a second selector field on
+    # `LearnedSkillSampler` itself, which already has its own `hid_sizes` field: two
+    # knobs that could disagree would be a bug waiting to happen. Default `"mlp"` so
+    # every existing run/test/CLI invocation is byte-identical unless this flag is
+    # passed. `OptimisticSkillCompetenceModel` (`competence_models.py`) is a separate,
+    # already-linear component and is untouched by this field.
+    sampler_classifier: Literal["mlp", "linear"] = "mlp"
 
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
@@ -596,6 +613,9 @@ class EesMethod(HelpSeekingMixin, Method):
 
     def sampler(self, *, skill_name: str, param_dim: int) -> LearnedSkillSampler:
         if skill_name not in self._samplers:
+            # sampler_classifier -> hid_sizes, derived here and only here (see that
+            # field's docstring for why this is the one call site allowed to do so).
+            hid_sizes = (32, 32) if self.sampler_classifier == "mlp" else ()
             self._samplers[skill_name] = LearnedSkillSampler(
                 skill_name=skill_name,
                 param_dim=param_dim,
@@ -603,6 +623,7 @@ class EesMethod(HelpSeekingMixin, Method):
                 exploration_epsilon=self.exploration_epsilon,
                 seed=self.seed,
                 max_train_iters=self.sampler_max_train_iters,
+                hid_sizes=hid_sizes,
             )
         return self._samplers[skill_name]
 

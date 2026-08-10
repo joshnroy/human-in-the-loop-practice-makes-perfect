@@ -35,6 +35,31 @@ def _build(*, grid_size: int = 4, seed: int = 0) -> tuple[EesMethod, LightSwitch
     return EesMethod(env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=seed), env
 
 
+def test_sampler_classifier_defaults_to_mlp_and_builds_two_hidden_layers() -> None:
+    """`sampler_classifier` default must be `"mlp"` so every existing run/test/CLI
+    invocation is byte-identical unless the flag is passed -- and `sampler()` must
+    derive predicators' own `hid_sizes=(32, 32)` for it."""
+    method, _ = _build()
+    assert method.sampler_classifier == "mlp"
+    sampler = method.sampler(skill_name="TurnOnLight", param_dim=1)
+    assert sampler.hid_sizes == (32, 32)
+
+
+def test_sampler_classifier_linear_derives_empty_hid_sizes() -> None:
+    """The linear ablation: `sampler_classifier="linear"` must reach the constructed
+    `LearnedSkillSampler` as `hid_sizes=()`, which `MlpBinaryClassifier._build_net`
+    turns into logistic regression (see that method's docstring)."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        sampler_classifier="linear",
+    )
+    sampler = method.sampler(skill_name="TurnOnLight", param_dim=1)
+    assert sampler.hid_sizes == ()
+
+
 def _a_state(*, env: LightSwitchEnvironment) -> State:
     """Any concrete state to hand `observe_pending`, which now takes the post-action
     state as well as its abstraction -- see that method. These tests drive the tally,

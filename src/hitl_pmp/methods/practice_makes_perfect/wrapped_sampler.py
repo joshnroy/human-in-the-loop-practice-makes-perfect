@@ -343,7 +343,20 @@ class MlpBinaryClassifier(BaseModel):
         """Port of `MLPBinaryClassifier._initialize_net`/`forward`: ReLU between
         hidden layers, a single output unit, sigmoid on top. Expressed as an
         `nn.Sequential` rather than a hand-written `nn.Module` subclass -- identical
-        arithmetic, and it keeps this file free of a second stateful class."""
+        arithmetic, and it keeps this file free of a second stateful class.
+
+        `hid_sizes=()` is a supported, deliberate configuration, not an edge case to
+        "fix" by requiring at least one hidden layer: the loop below never executes,
+        so the built net is exactly `[nn.Linear(input_dim, 1), nn.Sigmoid()]` --
+        logistic regression, zero hidden layers, zero ReLUs. `EesMethod.sampler()`
+        relies on exactly this to implement its `sampler_classifier="linear"`
+        ablation (see that method's docstring): reusing this class rather than
+        hand-writing a second one is what guarantees the linear arm is byte-identical
+        to the MLP arm in everything except the net's shape -- normalization, Adam,
+        learning rate, `n_iter_no_change` early stopping, best-loss checkpointing,
+        the single-class shortcut, and deviations 6/7's tie-breaking in
+        `LearnedSkillSampler.sample` all stay shared code. Do not add a lower bound on
+        `len(hid_sizes)` here or in `LearnedSkillSampler.hid_sizes`."""
         layers: list[nn.Module] = []
         previous_dim = input_dim
         for hidden_dim in self.hid_sizes:

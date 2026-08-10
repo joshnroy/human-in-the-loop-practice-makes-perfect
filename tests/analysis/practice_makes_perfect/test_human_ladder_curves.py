@@ -296,3 +296,107 @@ def test_render_family_and_rate_sweep_write_files(*, tmp_path: Path) -> None:
     )
     assert trajectories_output.exists()
     plt.close("all")
+
+
+# ----------------------------------------------------------- the sampler-linear-ablation
+# overlay: a second (sampler_classifier=linear) rate-sweep series plus its own no-human
+# control, drawn on top of the first (sampler_classifier=mlp, #195) series.
+
+
+def _write_second_series(*, root: Path) -> tuple[dict, dict]:
+    """A second rate-sweep series over the SAME N grid as `_write_rate_sweep`, plus its
+    own paired no-human control -- distinct scores from the first series' fixtures so a
+    bug that accidentally reused the first series' numbers cannot hide behind a tie."""
+    no_human_2_dir = _write_arm(root=root, arm="no-human", sweeps=[(0, 0, 0), (6, 0, 0)])
+    no_human_2 = HumanLadderCurves.load_run(
+        directory=no_human_2_dir, label="no-human (linear)", expect_no_human=True
+    )
+    rate_2_dirs = {
+        1: _write_rate_point(root=root, n=1, sweeps=[(0, 0, 0), (3, 0, 0)], interventions=40),
+        20: _write_rate_point(root=root, n=20, sweeps=[(0, 0, 0), (9, 0, 0)], interventions=3),
+    }
+    rate_sweep_2 = HumanLadderCurves.load_rate_sweep(directories=rate_2_dirs)
+    return rate_sweep_2, no_human_2
+
+
+def test_print_two_classifier_report_rejects_mismatched_n_grids(*, tmp_path: Path) -> None:
+    """'Side by side' has no meaning if the two series were not swept over the same N
+    values -- there would be no shared row to align a comparison on."""
+    rate_sweep = HumanLadderCurves.load_rate_sweep(directories=_write_rate_sweep(root=tmp_path))
+    arms = HumanLadderCurves.load_arms(directories=_write_fixed_arms(root=tmp_path))
+    mismatched_root = tmp_path / "mismatched"
+    mismatched_dirs = {
+        1: _write_rate_point(
+            root=mismatched_root, n=1, sweeps=[(0, 0, 0), (3, 0, 0)], interventions=40
+        ),
+        # 7, not 20: a different N grid from the first series.
+        7: _write_rate_point(
+            root=mismatched_root, n=7, sweeps=[(0, 0, 0), (3, 0, 0)], interventions=40
+        ),
+    }
+    rate_sweep_2 = HumanLadderCurves.load_rate_sweep(directories=mismatched_dirs)
+    no_human_2_dir = _write_arm(root=mismatched_root, arm="no-human", sweeps=[(0, 0, 0), (3, 0, 0)])
+    no_human_2 = HumanLadderCurves.load_run(
+        directory=no_human_2_dir, label="no-human (linear)", expect_no_human=True
+    )
+    with pytest.raises(ValueError, match="same N grid"):
+        HumanLadderCurves.print_two_classifier_report(
+            rate_sweep_1=rate_sweep,
+            no_human_1=arms["no-human"],
+            rate_sweep_2=rate_sweep_2,
+            no_human_2=no_human_2,
+        )
+
+
+def test_rate_point_summary_matches_hand_computed_gap_and_significance(*, tmp_path: Path) -> None:
+    """Pins `_rate_point_summary`'s arithmetic on paper, the same way
+    `test_solves_per_rescue_prices_a_gap_by_what_it_cost` pins `solves_per_rescue`'s:
+    `no-human` ends at 4 TRASH (0 RECYCLING/EMPTY) on both seeds, so OVERALL is 4/30
+    per seed; the linear series' N=1 point ends at 3 TRASH on both seeds, OVERALL
+    3/30 per seed. Pooled OVERALL is (3+3)/(30+30) = 6/60. Per-seed differences are
+    [-1, -1] (both seeds move the same direction), so `PairedTests.sign_flip`'s exact
+    null over 2**2 = 4 sign patterns puts exactly 2 of them at |statistic| >= 2 (the
+    two patterns that flip both seeds together), giving p = 2/4 = 0.5."""
+    arms = HumanLadderCurves.load_arms(directories=_write_fixed_arms(root=tmp_path))
+    rate_sweep_2, _no_human_2 = _write_second_series(root=tmp_path / "linear")
+    summary = HumanLadderCurves._rate_point_summary(run=rate_sweep_2[1], control=arms["no-human"])
+    assert summary["formatted"] == "6/60"
+    assert summary["gap"] == -2
+    assert summary["p"] == pytest.approx(0.5)
+
+
+def test_render_rate_sweep_with_second_series_writes_one_file_and_both_no_human_lines(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The linear-ablation figure overlays a second (sampler_classifier=linear)
+    rate-sweep series plus its own no-human control on the SAME panel as the first
+    (sampler_classifier=mlp, #195) series -- rendering must not crash, must still
+    write exactly one file, and the legend must carry both no-human controls as
+    distinct entries so a reader can tell the two classifiers' controls apart.
+
+    `render_rate_sweep` closes its figure before returning (matplotlib figures are
+    not otherwise freed), so `plt.close` is patched to a no-op for the duration of
+    this call -- the only way to inspect the Axes it built afterward."""
+    arms = HumanLadderCurves.load_arms(directories=_write_fixed_arms(root=tmp_path))
+    rate_sweep = HumanLadderCurves.load_rate_sweep(directories=_write_rate_sweep(root=tmp_path))
+    rate_sweep_2, no_human_2 = _write_second_series(root=tmp_path / "linear")
+
+    output = tmp_path / "figures" / "human-ladder-rate-sweep-ablation.png"
+    output.parent.mkdir()
+    monkeypatch.setattr(plt, "close", lambda *args, **kwargs: None)
+    HumanLadderCurves.render_rate_sweep(
+        arms=arms,
+        rate_sweep=rate_sweep,
+        output=output,
+        title="test",
+        rate_sweep_2=rate_sweep_2,
+        no_human_2=no_human_2,
+    )
+    assert output.exists()
+    fig = plt.gcf()
+    labels = [line.get_label() for line in fig.axes[0].get_lines()]
+    no_human_labels = [label for label in labels if "no human" in label.lower()]
+    assert len(no_human_labels) == 2, f"expected two no-human legend entries, got {labels}"
+    assert any("linear" in label.lower() for label in no_human_labels)
+    monkeypatch.undo()
+    plt.close("all")
