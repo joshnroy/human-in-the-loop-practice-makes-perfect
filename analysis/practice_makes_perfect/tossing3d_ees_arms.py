@@ -115,15 +115,19 @@ SIGNIFICANCE = 0.05
 
 _ARM_ORDER = ("ees", "random-skills", "skill-oracle")
 
-# Okabe-Ito, the same palette every sibling report in this folder declares for itself
-# (`reset_free_training_curves`; the Tossing Room reports that also declared it were
-# retired with their domains in #141). It
-# replaces matplotlib's default blue/grey/green, which is not colourblind-safe and did
-# not match the sibling figures. Blue is the arm under test, vermillion the uniform
-# baseline, bluish-green the ceiling -- and the three are also distinguished by role in
-# the drawing (curve, curve, dashed horizontal line), so colour is never doing the work
-# alone.
-_ARM_COLOURS = {"ees": "#0072B2", "random-skills": "#D55E00", "skill-oracle": "#009E73"}
+# CLAUDE.md's "Training-curve style, fixed project-wide" (#188): colour carries the arm's
+# role. Unlike the reset/scheduled-vs-never comparisons elsewhere in this folder, this
+# experiment has no reset axis at all -- it is `ees` (the manipulation under test) against
+# `random-skills` (an uninformed policy that still practises across all 21 checkpoints and
+# has a real, divergent shape -- see the module docstring on why cycles and transitions get
+# two separate graphs) against `skill-oracle` (the one arm that never practises: a single
+# evaluation, drawn flat). So here colour-carries-role reads as "informed policy" (blue) vs
+# "uninformed-but-still-learning reference policy" (orange) -- not the reset/never role
+# those other figures use blue/orange for -- and grey/dotted is reserved for the one arm
+# that is genuinely static: `skill-oracle`. `random-skills` was already `#D55E00` and `ees`
+# already `#0072B2`, both already the exact spec hex; only `skill-oracle` moves, off its
+# old bluish-green `#009E73` and onto the spec neutral.
+_ARM_COLOURS = {"ees": "#0072B2", "random-skills": "#D55E00", "skill-oracle": "#666666"}
 
 # Per-seed lines are what the figure exists for, but ten of them at full strength hide
 # the mean. Matched to `reset_free_training_curves` so the two figures read as one system.
@@ -674,7 +678,7 @@ class Tossing3DEesArms:
                     axis.axhline(
                         solved / total * size if size else 0.0,
                         color=colour,
-                        linestyle="--",
+                        linestyle=":",
                         linewidth=2.0,
                         label=f"{arm} (ceiling) — {solved}/{total}",
                     )
@@ -712,13 +716,17 @@ class Tossing3DEesArms:
             axis.set_xticks(list(Tossing3DEesArms._cycle_ticks(axis=axis)))
         else:
             axis.set_xlabel("online transitions during practice (evaluation sweeps not charged)")
-        axis.set_ylabel(
-            f"test tasks solved per evaluation (x/{denominator})"
-            if denominator
-            else "test tasks solved per evaluation"
-        )
+        # No `(x/N)` suffix on the axis label (CLAUDE.md's training-curve-style section,
+        # #188) -- the denominator is stated once in the panel title instead of repeating
+        # on every tick.
+        axis.set_ylabel("test tasks solved per evaluation")
         axis.set_title(
-            "Learning curves, per seed — "
+            (
+                f"Learning curves, per seed (of {denominator})"
+                if denominator
+                else "Learning curves, per seed"
+            )
+            + " — "
             + ("cycles are the controlled variable" if by_cycles else "transitions are an outcome"),
             loc="left",
             fontsize=11,
@@ -793,13 +801,11 @@ class Tossing3DEesArms:
         size = Tossing3DEesArms.evaluation_size(runs=arms.get(present[0], [])) if present else 0
         axis.set_xticks(range(len(present)))
         axis.set_xticklabels(present)
-        axis.set_ylabel(
-            f"test tasks solved at end of training (x/{size})"
-            if size
-            else "test tasks solved at end of training"
-        )
+        # No `(x/N)` suffix on the axis label (#188) -- the denominator moves into the title.
+        axis.set_ylabel("test tasks solved at end of training")
+        title = "Task success" + (f" (of {size})" if size else "")
         axis.set_title(
-            "Task success (context only — not an input to the verdict)", loc="left", fontsize=11
+            f"{title} — context only, not an input to the verdict", loc="left", fontsize=11
         )
         axis.set_ylim(0, (size or 10) * 1.12)
         axis.grid(axis="y", alpha=0.25, linewidth=0.6)

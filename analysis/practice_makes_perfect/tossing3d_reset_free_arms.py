@@ -67,7 +67,15 @@ RANDOM_SKILLS_PER_SEED = 2.4
 ORACLE_LABEL = "skill-oracle ceiling — 100/100 (#133)"
 RANDOM_SKILLS_LABEL = "random-skills — 24/100 (#133)"
 
-_ARM_COLOURS = {SCHEDULED: "#2166ac", NEVER: "#d6604d"}
+# CLAUDE.md's training-curve-style section (#188): this figure has the genuine
+# reset/scheduled-vs-reset-free/never axis the convention is written for, so `SCHEDULED`
+# takes the exact spec blue and `NEVER` the exact spec orange (previously `#2166ac` /
+# `#d6604d`, close but not the literal spec hex).
+_ARM_COLOURS = {SCHEDULED: "#0072B2", NEVER: "#D55E00"}
+# The one neutral reserved for reference/ceiling arms (`skill-oracle`, `random-skills`),
+# distinguished from each other only by legend label/y-level, never by hue -- previously
+# green `#1a9850` dashed and purple `#762a83` dotted.
+_REFERENCE_COLOUR = "#666666"
 
 
 class Tossing3DResetFree:
@@ -349,11 +357,15 @@ class Tossing3DResetFree:
                 label=f"{arm} — last {WINDOW} sweeps {x:.1f}/{y}",
             )
         axes.axhline(
-            ORACLE_PER_SEED, color="#1a9850", linestyle="--", linewidth=1.8, label=ORACLE_LABEL
+            ORACLE_PER_SEED,
+            color=_REFERENCE_COLOUR,
+            linestyle=":",
+            linewidth=1.8,
+            label=ORACLE_LABEL,
         )
         axes.axhline(
             RANDOM_SKILLS_PER_SEED,
-            color="#762a83",
+            color=_REFERENCE_COLOUR,
             linestyle=":",
             linewidth=1.8,
             label=RANDOM_SKILLS_LABEL,
@@ -361,9 +373,10 @@ class Tossing3DResetFree:
         axes.grid(alpha=0.25, linewidth=0.6)
         axes.set_ylim(-num_total * 0.04, num_total * 1.08)
         axes.set_xlabel("practice cycle")
-        axes.set_ylabel(f"test tasks solved per seed (x/{num_total})")
+        # No `(x/N)` suffix on the axis label (#188) -- the denominator moves into the title.
+        axes.set_ylabel("test tasks solved per seed")
         axes.set_title(
-            "Reset-free against scheduled practice on Tossing3D — "
+            f"Reset-free against scheduled practice on Tossing3D (of {num_total} test tasks) — "
             "bold pooled mean over faint per-seed lines",
             fontsize=10.5,
         )
@@ -390,6 +403,12 @@ class Tossing3DResetFree:
         test = PairedTests.sign_flip(differences=differences)
         mde = PairedTests.minimum_detectable_effect(differences=differences)
 
+        # Per-seed lines are coloured by direction of change (fell vs held/rose), not by arm
+        # identity -- the same judgement as tossing3d_plateau.py's render_windows: a paired
+        # before/after diff is a different kind of chart from the learning curves the
+        # training-curve style section governs, so it keeps its pre-existing direction
+        # colours rather than being remapped onto the SCHEDULED/NEVER arm palette, which
+        # would misleadingly suggest this axis encodes an arm rather than a sign.
         fig, axes = plt.subplots(1, 1, figsize=(7.4, 6.2))
         for seed in seeds:
             fell = late[NEVER][seed] < late[SCHEDULED][seed]
@@ -403,11 +422,15 @@ class Tossing3DResetFree:
                 linewidth=1.4,
             )
         axes.axhline(
-            ORACLE_PER_SEED, color="#1a9850", linestyle="--", linewidth=1.6, label=ORACLE_LABEL
+            ORACLE_PER_SEED,
+            color=_REFERENCE_COLOUR,
+            linestyle=":",
+            linewidth=1.6,
+            label=ORACLE_LABEL,
         )
         axes.axhline(
             RANDOM_SKILLS_PER_SEED,
-            color="#762a83",
+            color=_REFERENCE_COLOUR,
             linestyle=":",
             linewidth=1.6,
             label=RANDOM_SKILLS_LABEL,
@@ -419,12 +442,11 @@ class Tossing3DResetFree:
         ])
         axes.set_xlim(-0.25, 1.25)
         axes.set_ylim(-num_total * 0.04, num_total * 1.08)
-        axes.set_ylabel(
-            f"mean test tasks solved per seed over last {WINDOW} sweeps (x/{num_total})"
-        )
+        # No `(x/N)` suffix on the axis label (#188) -- the denominator moves into the title.
+        axes.set_ylabel(f"mean test tasks solved per seed over last {WINDOW} sweeps")
         fell_count = sum(1 for d in differences if d < 0)
         axes.set_title(
-            f"What does a genuinely reset-free arm cost?\n"
+            f"What does a genuinely reset-free arm cost? (of {num_total} test tasks)\n"
             f"fell on {fell_count}/{len(differences)} seeds, "
             f"mean {statistics.fmean(differences):+.2f} tasks, "
             f"p = {test.p_value:.4g}, MDE {mde:.2f}",
@@ -507,6 +529,19 @@ class Tossing3DResetFree:
             same_onset = sum(1 for o in onsets.values() if o == marked_onset)
             total_seeds = len(onsets)
 
+            # This purple (`#762a83`) deliberately stays -- decided, not left by omission.
+            # Before this change it was a real instance of "one hue meaning two different
+            # things in one report": the same `#762a83` also coloured the NEVER-arm
+            # `random-skills` reference line just above. That collision is what #188's rule
+            # exists to cure, and it is gone now that the reference lines moved to
+            # `_REFERENCE_COLOUR`. What remains is a single, now-unique use marking a
+            # specific *event* (the stranding onset / last Toss), not an *arm* -- a
+            # different semantic the training-curve-style section does not govern. Recolouring
+            # it to the reference grey would blend a "look here, something happened" marker
+            # into the "this is a flat, uninteresting ceiling" role grey is reserved for, and
+            # `_REFERENCE_COLOUR` (`#666666`) is already doing a third, different job in this
+            # same figure (`dist_axes`'s median line, below) -- so a genuinely distinct
+            # highlight colour carries more information here than reuse would.
             axes.axvspan(
                 marked_onset,
                 len(next(iter(never_curves.values()))) - 1,

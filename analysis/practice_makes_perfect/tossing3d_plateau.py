@@ -67,6 +67,14 @@ RANDOM_SKILLS_PER_SEED = 2.4
 ORACLE_LABEL = "skill-oracle ceiling — 100/100 (#133)"
 RANDOM_SKILLS_LABEL = "random-skills — 24/100 (#133)"
 
+# CLAUDE.md's training-curve-style section (#188): reference/ceiling arms that are not the
+# manipulation under test share one neutral grey, dotted -- distinguished from each other
+# only by legend label/y-level, never by hue. `ees` (the one arm under test here) gets the
+# spec blue; there is no reset-free counterpart on this figure (single policy, no reset
+# axis), so orange is not used at all.
+_EES_COLOUR = "#0072B2"
+_REFERENCE_COLOUR = "#666666"
+
 
 class Tossing3DPlateau:
     """A static-method container, never instantiated, same as every other
@@ -186,7 +194,7 @@ class Tossing3DPlateau:
             axes.plot(
                 cycles,
                 [solved for _t, solved, _n in curves[seed]],
-                color="#2166ac",
+                color=_EES_COLOUR,
                 alpha=0.20,
                 linewidth=0.9,
             )
@@ -202,16 +210,20 @@ class Tossing3DPlateau:
         axes.plot(
             cycles,
             pooled,
-            color="#2166ac",
+            color=_EES_COLOUR,
             linewidth=2.4,
             label=f"ees — last {WINDOW} sweeps {late_x:.1f}/{late_y}",
         )
         axes.axhline(
-            ORACLE_PER_SEED, color="#1a9850", linestyle="--", linewidth=1.8, label=ORACLE_LABEL
+            ORACLE_PER_SEED,
+            color=_REFERENCE_COLOUR,
+            linestyle=":",
+            linewidth=1.8,
+            label=ORACLE_LABEL,
         )
         axes.axhline(
             RANDOM_SKILLS_PER_SEED,
-            color="#b2182b",
+            color=_REFERENCE_COLOUR,
             linestyle=":",
             linewidth=1.8,
             label=RANDOM_SKILLS_LABEL,
@@ -227,9 +239,10 @@ class Tossing3DPlateau:
         axes.grid(alpha=0.25, linewidth=0.6)
         axes.set_ylim(-num_total * 0.04, num_total * 1.08)
         axes.set_xlabel("practice cycle")
-        axes.set_ylabel(f"test tasks solved per seed (x/{num_total})")
+        # No `(x/N)` suffix on the axis label (#188) -- the denominator moves into the title.
+        axes.set_ylabel("test tasks solved per seed")
         axes.set_title(
-            f"EES on Tossing3D over 100 cycles — {len(curves)} seeds, "
+            f"EES on Tossing3D over 100 cycles (of {num_total} test tasks) — {len(curves)} seeds, "
             f"bold pooled mean over faint per-seed lines",
             fontsize=10.5,
         )
@@ -260,6 +273,12 @@ class Tossing3DPlateau:
         test = PairedTests.sign_flip(differences=differences)
         mde = PairedTests.minimum_detectable_effect(differences=differences)
 
+        # Per-seed lines are coloured by direction of change (rose vs fell), not by arm
+        # identity -- this is a paired before/after diff (like reset_free_cycle_budget.py's
+        # render_gap), a different kind of chart from the learning curves the training-curve
+        # style section governs, and there is only one arm (`ees`) here regardless. Left as
+        # its pre-existing direction colours rather than remapped onto the arm palette, which
+        # would misleadingly suggest this axis encodes an arm rather than a sign.
         fig, axes = plt.subplots(1, 1, figsize=(7.4, 6.2))
         for seed in sorted(curves):
             rose = late[seed] > reference[seed]
@@ -273,11 +292,15 @@ class Tossing3DPlateau:
                 linewidth=1.4,
             )
         axes.axhline(
-            ORACLE_PER_SEED, color="#1a9850", linestyle="--", linewidth=1.6, label=ORACLE_LABEL
+            ORACLE_PER_SEED,
+            color=_REFERENCE_COLOUR,
+            linestyle=":",
+            linewidth=1.6,
+            label=ORACLE_LABEL,
         )
         axes.axhline(
             RANDOM_SKILLS_PER_SEED,
-            color="#b2182b",
+            color=_REFERENCE_COLOUR,
             linestyle=":",
             linewidth=1.6,
             label=RANDOM_SKILLS_LABEL,
@@ -289,10 +312,11 @@ class Tossing3DPlateau:
         ])
         axes.set_xlim(-0.25, 1.25)
         axes.set_ylim(-num_total * 0.04, num_total * 1.08)
-        axes.set_ylabel(f"mean test tasks solved per seed (x/{num_total})")
+        # No `(x/N)` suffix on the axis label (#188) -- the denominator moves into the title.
+        axes.set_ylabel("mean test tasks solved per seed")
         rose_count = sum(1 for d in differences if d > 0)
         axes.set_title(
-            f"Does it still climb after #133's budget?\n"
+            f"Does it still climb after #133's budget? (of {num_total} test tasks)\n"
             f"rose on {rose_count}/{len(differences)} seeds, "
             f"mean {statistics.fmean(differences):+.2f} tasks, "
             f"p = {test.p_value:.4g}, MDE {mde:.2f}",
