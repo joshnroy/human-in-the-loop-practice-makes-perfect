@@ -8,10 +8,9 @@ never`, `--num-cycles 10 --max-steps-per-interaction 150 --num-test-tasks 30`.**
 
 `HelpSeekingTrigger` has two treated members already measured on Tossing Room:
 `ON_STUCK` (novelty-based) and `AT_RANDOM` (Bernoulli per call) -- see
-[`2026-08-07-human-ladder.md`](2026-08-07-human-ladder.md), which found both beat the
-`no-human` control (227/300 and 157/300 against 112/300). This adds a third,
-deliberately naive trigger and asks: does it ever fire on Tossing Room, and if so, does
-it recover any of what `on-stuck` recovers?
+`2026-08-07-human-ladder.md`, which found both beat the `no-human` control (227/300 and
+157/300 against 112/300). This adds a third, deliberately naive trigger and asks: does
+it ever fire on Tossing Room, and if so, does it recover any of what `on-stuck` recovers?
 
 ## Background
 
@@ -62,15 +61,20 @@ not after. State plainly what was found versus what was hoped for.
 Ten fixed seeds (0-9), one arm, driven by a `systemd-run --user --unit=` sweep (`ees`,
 `--ask-for-help on-no-applicable-skill --human-reset-target task-initial`), sharing
 every other flag with the `no-human` control already measured in
-[`2026-08-07-human-ladder.md`](2026-08-07-human-ladder.md) and, one commit further
-back, in `docs/experiment-logs/2026-08-07-pickup-weight-reset-free-runs/never/ees/`
+`2026-08-07-human-ladder.md` and, one commit further back, in
+`docs/experiment-logs/2026-08-07-pickup-weight-reset-free-runs/never/ees/`
 (`--env tossingroom`, `--num-test-tasks 30 --practice-reset-policy never --num-cycles
 10 --max-steps-per-interaction 150`, everything else default). That committed run's
 `config_snapshot.json` was read back as the ground truth for every shared flag rather
 than reconstructed from prose, and its `stats.json` is the paired control below --
 re-run nothing for it, since it is exactly the seed-matched `no-human` arm the
 human-ladder entry already established is reproduced byte-for-byte by `--ask-for-help
-never`.
+never`. The new arm's own ten runs are committed under
+`2026-08-10-help-seeking-naive-trigger-runs/on-no-applicable-skill/ees/<seed>/`; each
+run's own `config_snapshot.json` records `git_dirty: true` against the commit the
+implementation was built on, since it ran before that work was committed -- the
+committed `src/hitl_pmp/methods/help_seeking.py` on this branch is verified
+byte-for-byte identical to what actually ran.
 
 Test-set composition is 14 TRASH / 14 RECYCLING / **2** EMPTY, matching every other
 Tossing Room sweep in this project.
@@ -88,6 +92,14 @@ sweep is the first time the claim is checked at the scale of an actual 10-seed,
 ## Results
 
 ![per-seed final score, on-no-applicable-skill vs no-human](2026-08-10-help-seeking-naive-trigger-per-seed.png)
+
+The per-seed bars above are the final checkpoint only. The training curve underneath
+them, OVERALL/TRASH/RECYCLING across all 11 evaluation checkpoints
+(`analysis/practice_makes_perfect/help_seeking_naive_trigger_curves.py`), is where the
+flatness is actually visible rather than asserted: the two arms are not merely close at
+the end, they are the same curve at every checkpoint, on every seed.
+
+![on-no-applicable-skill vs no-human, OVERALL/TRASH/RECYCLING training curves across 11 evaluation checkpoints, ten faint per-seed traces under a bold mean, the dashed treated-arm mean fully overlapping the solid control mean at every point](2026-08-10-help-seeking-naive-trigger-curves.png)
 
 | arm | OVERALL | TRASH | RECYCLING | EMPTY | interventions |
 |---|---|---|---|---|---|
