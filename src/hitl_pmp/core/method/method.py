@@ -263,6 +263,31 @@ class Method(BaseModel, abc.ABC):
         and they mean opposite things."""
         return {}
 
+    def current_competences(self) -> dict[GroundSkill, float]:
+        """{ground skill: this Method's own currently tracked competence estimate for
+        it}, read at every evaluation checkpoint by method_runner.py's
+        --record-skill-competence sidecar (see hitl_pmp/competence_log.py). `{}` for a
+        Method that tracks no such thing.
+
+        Unlike practice_outcomes/planning_outcomes, this is NOT a cumulative counter
+        differenced into a per-window Metrics field -- it is a live read of whatever
+        value the Method's own planning currently uses, taken as-is at each checkpoint.
+        There is nothing to difference: competence is a belief, not a tally, and
+        recording it at every checkpoint is exactly what makes its trajectory
+        plottable, the same way SamplerDrawRecorder makes a sampler's chosen
+        parameters plottable rather than only inferrable from success-rate tallies.
+
+        **Keyed by ground skill, not lifted skill name** -- unlike practice_outcomes,
+        which is keyed by the lifted name because one sampler is fitted per lifted
+        skill. Competence is estimated per *grounding* (predicators' `_ground_op_hist`
+        keying, matched by EesMethod.competence_model), so two groundings of the same
+        lifted skill can have different competence and must stay distinguishable.
+
+        Concrete default, for the same reason as practice_outcomes: a Method that
+        tracks no competence model (every non-learning baseline) has nothing to report
+        and should need no boilerplate to say so."""
+        return {}
+
     def end_cycle(self) -> None:
         """Called by practice_loop.py once after each interaction period, before
         that cycle's evaluation sweep -- the hook where a learning Method
