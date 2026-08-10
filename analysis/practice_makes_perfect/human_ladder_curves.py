@@ -1066,16 +1066,20 @@ class HumanLadderCurves:
             rate_sweep_2=rate_sweep_2,
             no_human_2=no_human_2,
         )
-        HumanLadderCurves.render_rate_sweep_trajectories(
-            arms=arms,
-            rate_sweep=rate_sweep,
-            output=args.output_dir / "human-ladder-rate-sweep-trajectories.png",
-            title=(
-                f"{domain}\n"
-                f"rescue-rate sweep, per-N individual seed trajectories "
-                f"(overall test tasks, of {_NUM_TEST_TASKS})"
-            ),
-        )
+        # Single-series only (see its own docstring) -- skipped for the same reason
+        # render_family is above: it has no defined meaning for two classifiers at once,
+        # and would otherwise just re-render #195's own already-committed figure unchanged.
+        if rate_sweep_2 is None:
+            HumanLadderCurves.render_rate_sweep_trajectories(
+                arms=arms,
+                rate_sweep=rate_sweep,
+                output=args.output_dir / "human-ladder-rate-sweep-trajectories.png",
+                title=(
+                    f"{domain}\n"
+                    f"rescue-rate sweep, per-N individual seed trajectories "
+                    f"(overall test tasks, of {_NUM_TEST_TASKS})"
+                ),
+            )
 
 
 if __name__ == "__main__":
