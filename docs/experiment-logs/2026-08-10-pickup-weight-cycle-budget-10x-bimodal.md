@@ -48,10 +48,25 @@ visually obvious rather than only statistically established.
 ![One-way reset-free practice, stuck vs non-stuck](2026-08-10-pickup-weight-cycle-budget-10x-bimodal.png)
 
 Three rows (all test tasks, TRASH, RECYCLING) x two columns (one-way / two-way ledge).
-Faint per-seed traces under bold subgroup means throughout. The one-way panels show the
-non-stuck mean (solid orange) tracking well above the stuck mean (dashed orange) on every
-family; the two panels never converge because they are two different populations, not two
-draws from one.
+Faint per-seed traces under bold subgroup means throughout.
+
+**OVERALL and TRASH separate cleanly, RECYCLING does not.** On OVERALL the non-stuck
+subgroup mean finishes `71/120` (5.92/seed) against the stuck subgroup's `36/180`
+(2.00/seed); on TRASH `55/56` (13.75/14 per seed) against `15/84` (2.50/14). RECYCLING is
+the exception: non-stuck finishes `8/56` (2.00/14 per seed) and stuck `9/84` (1.50/14) —
+both at the floor, overlapping rather than separated, visibly interleaved in the
+bottom-left panel. This matches the original log's pooled one-way `never` RECYCLING
+figure, `17/140` at 10x: RECYCLING was already established there as a near-floor result
+for the reset-free arm as a whole, and the split does not carve a RECYCLING-specific
+subgroup effect out of it — the subgroups differ in TRASH capability, not RECYCLING
+capability. See
+[the addendum](2026-08-07-pickup-weight-cycle-budget.md#addendum-the-one-way-never-cell-is-a-mixture-of-two-populations)
+for the Fisher-exact confirmation of the split itself and the per-checkpoint score ranges
+that motivate it; nothing here recomputes that inference, only re-presents the same split
+per family. As a check that this module partitions rather than recomputes the published
+pooled figures: `36 + 71 = 107/300`, `15 + 55 = 70/140`, `9 + 8 = 17/140` — exactly the
+10x one-way `never` OVERALL/TRASH/RECYCLING numbers `2026-08-07-pickup-weight-cycle-budget.md`
+already publishes.
 
 ## Regenerate
 
