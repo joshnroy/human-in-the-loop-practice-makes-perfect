@@ -57,6 +57,12 @@ CONTROL_SKILL = "Pick"
 # The uniform-draw rate over THROW_STANDOFF_BOUNDS, measured through the CLI in PR #105
 # as 543/2700. Carried as its two counts rather than a float, so the denominator stays
 # visible wherever it is quoted.
+#
+# Staleness note (2026-08-10): measured under a THROW_STANDOFF_BOUNDS this repo has since
+# tightened twice over (pre-#105's (1.20, 1.65), then #105's (0.45, 1.75), now
+# (1.10, 1.75) to fix a cuboid_barrier-collision defect -- see the staleness note atop
+# docs/experiment-logs/2026-08-06-tossing3d-ees-first-real.md). Not a baseline for a
+# future run under the current bounds.
 UNIFORM_DRAW_SOLVED = 543
 UNIFORM_DRAW_TOTAL = 2700
 

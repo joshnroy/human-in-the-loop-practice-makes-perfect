@@ -41,12 +41,15 @@ Ours, and therefore ours to defend:
   symbolic models for `Shelf3D`, `Sweep3D` and base motion, but **none for Tossing3D**,
   so the operator layer is written here — following `tidybot3d_shelf3D.py`'s shape, where
   a `LiftedOperator` is paired to one of upstream's controllers.
-- **`THROW_STANDOFF_BOUNDS = (0.45, 1.75)`**, the one genuinely new continuous range.
+- **`THROW_STANDOFF_BOUNDS = (1.10, 1.75)`**, the one genuinely new continuous range.
   Upstream's own `MOVE_TO_TARGET_DISTANCE_BOUNDS` is `(0.5, 0.6)` — a *grasping* standoff
   — and upstream's tossing test simply hardcodes `1.35` with no range at all. This is the
-  measured **feasible** range `[0.40, 2.06]` inset at both ends: below 0.40 m the base
-  shoves the bin across the floor, above 2.06 m `Toss`'s windup fails to motion-plan. It
-  is what the sampler draws from and **not** what `RobotAtSuccessfulThrowPose` accepts —
+  measured **feasible** range `[0.40, 2.06]` inset at both ends: above 2.06 m `Toss`'s
+  windup fails to motion-plan, and below 1.10 m the base can drive through
+  `cuboid_barrier` — a real dynamic MuJoCo body upstream's base motion planner does not
+  collision-check against — and knock it over. The worst measured colliding standoff is
+  1.00 m; `BARRIER_COLLISION_MARGIN` (0.10 m) sets the floor 1.10 m above that. It is
+  what the sampler draws from and **not** what `RobotAtSuccessfulThrowPose` accepts —
   see below.
 - **`THROW_RANGE = 1.275`**, the distance a throw displaces the cube. `Toss` takes no
   parameters (fixed windup conf, fixed toss conf), so this is a property of upstream's

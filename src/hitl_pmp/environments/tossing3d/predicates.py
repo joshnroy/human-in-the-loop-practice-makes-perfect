@@ -56,14 +56,46 @@ ON_GROUND_TOL = 0.05  # `on_ground_tol`
 #   `Toss` executes zero steps and the cube never leaves the gripper: 2/5 seeds failed to
 #   plan at 2.08 m, against 0/5 at 2.06 m.
 #
-# The bounds inset that range at both ends. The bottom is belt-and-braces (nothing observed
-# stops that short; a 0.40 m command lands at 0.428 m). The top is set by a *hazard* rather
-# than by feasibility: the predicate must stay false at the pose `Pick` leaves the base in,
-# or the oracle -- and any planner reading it -- would believe it was already at a throw
-# pose and skip `MoveToThrowPose`. Over 30 scene seeds the post-`Pick` base sits 1.364-1.971
-# m from the bin, and seed 14 sits at 1.8592 m only 0.0074 m off-axis, i.e. inside the
-# lateral tolerance, so nothing but the standoff would exclude it. An upper bound of 1.90
-# admits it; 1.75 does not.
+# The bounds inset that range at both ends. **The bottom is not belt-and-braces -- it is
+# load-bearing, and used to be wrong.** An earlier version of this comment claimed
+# "nothing observed stops that short", which is false: `move_to_target`'s base motion
+# planner has collision-checking hardcoded off upstream, and `cuboid_barrier` -- a real
+# dynamic MuJoCo body the base must walk past to reach a short standoff -- is not a
+# static waypoint check, so a short-enough `MoveToThrowPose` drives straight through it
+# and knocks it over. `test_move_to_throw_pose_at_the_lower_standoff_bound_does_not_
+# disturb_the_barrier` would have caught this: at the old 0.45 m lower bound the barrier
+# visibly moves.
+#
+# Measured three independent ways, all using the real oracle Pick parameters
+# (`ORACLE_PICK_DISTANCE=0.5682351863248143`, `ORACLE_PICK_ROTATION=-0.7008563047585579`
+# -- a placeholder-param probe earlier gave a wrong, lower number and was caught and
+# corrected before landing here): the worst colliding standoff, `WORST_BARRIER_
+# COLLISION_STANDOFF` below, is **1.00 m**, never exceeded anywhere tested --
+#
+# - 10 scene seeds x 0.005 m resolution over [0.98, 1.03] (fine boundary pinpoint),
+# - 10 scene seeds x 0.02 m resolution over [0.90, 1.40] (dense sweep),
+# - all four corners of `Pick`'s own full sampling box (`skills.PICK_DISTANCE_BOUNDS`,
+#   `skills.PICK_ROTATION_BOUNDS`) plus the oracle point -- `Pick` also samples during
+#   practice, not just at its oracle default, so the base pose `MoveToThrowPose` starts
+#   from is not fixed to the oracle's own draw.
+#
+# The first fully-clear standoff at 0.005 m resolution is 1.005 m. `BARRIER_COLLISION_
+# MARGIN` (0.10 m) sits above the worst measured collision rather than that first clear
+# point, so the new bound is `1.00 + 0.10 = 1.10` -- a confirming sweep of exactly that
+# proposed range, [1.10, 1.75] at 0.05 m resolution across 10 scene seeds, scored
+# 140/140 clear with the barrier's pose bit-exact every time. Only this lower bound
+# moves; the top, below, is unrelated to this defect and stays as measured. It is
+# computed from the two constants below rather than written as the literal `1.10`, so a
+# future re-measurement of either the collision point or the margin cannot silently drift
+# out of sync with the bound it justifies -- the same discipline
+# `RobotAtSuccessfulThrowPoseClassifier`'s band is held to below.
+#
+# The top is set by a *hazard* rather than by feasibility: the predicate must stay false
+# at the pose `Pick` leaves the base in, or the oracle -- and any planner reading it --
+# would believe it was already at a throw pose and skip `MoveToThrowPose`. Over 30 scene
+# seeds the post-`Pick` base sits 1.364-1.971 m from the bin, and seed 14 sits at
+# 1.8592 m only 0.0074 m off-axis, i.e. inside the lateral tolerance, so nothing but the
+# standoff would exclude it. An upper bound of 1.90 admits it; 1.75 does not.
 #
 # **This is the sampler's range only. It is deliberately NOT what the predicate accepts.**
 # Those two used to be the same symbol -- this constant was imported into
@@ -81,10 +113,15 @@ ON_GROUND_TOL = 0.05  # `on_ground_tol`
 # The widening from `(1.20, 1.65)` to the feasible range is what makes the separation
 # *measurable* rather than merely correct. At the old bounds the derived band covered
 # 0.225 of a 0.45 m range, so a uniform draw was right about half the time and a learned
-# sampler had little headroom over its own prior. At 1.30 m wide the 0.300 m band is
-# 3/13 of the range: the prior is wrong often enough that finding the constant is worth
-# measuring.
-THROW_STANDOFF_BOUNDS = (0.45, 1.75)
+# sampler had little headroom over its own prior. After the barrier-collision tightening
+# the range is 0.65 m wide and the (untrimmed, geometric) 0.300 m band is 0.300/0.65 =
+# 6/13 of it: still a substantial fraction wrong more often than right, though a smaller
+# margin over the prior than the 3/13 the wider range had -- see this module's
+# `RobotAtSuccessfulThrowPoseClassifier` docstring for the actually-accepted (margin-
+# trimmed) 0.225 m band and its own share of the range.
+WORST_BARRIER_COLLISION_STANDOFF = 1.00
+BARRIER_COLLISION_MARGIN = 0.10
+THROW_STANDOFF_BOUNDS = (WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MARGIN, 1.75)
 
 # **The one calibrated constant in this module, and the only thing the success band is not
 # derived from.** `Toss` takes no parameters: `run_toss` executes

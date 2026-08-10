@@ -273,10 +273,17 @@ def test_the_band_accepts_every_standoff_measured_to_solve(*, standoff: float) -
 def test_the_band_rejects_every_standoff_measured_not_to_solve(*, standoff: float) -> None:
     """`1.10`/`1.45` and beyond are the coarse 48-episode grid's 0/3 points. `1.125` and
     `1.425` -- the old geometric band's own edges -- and `1.40` are PR #105's finer-grained
-    2/5, 2/5 and 3/5: not zero, but not the 5/5 this predicate now requires either. **Both
-    endpoints of `THROW_STANDOFF_BOUNDS` are in this list**, which is the point -- the
-    sampler can draw them and they are honest failures. Under the pre-#105-derived
-    predicate the two old edges were accepted outright."""
+    2/5, 2/5 and 3/5: not zero, but not the 5/5 this predicate now requires either.
+
+    **This predicate is independent of `THROW_STANDOFF_BOUNDS`** -- it takes a raw
+    standoff and says nothing about whether the sampler could ever draw it -- so every
+    value below still belongs here regardless of where the sampler's own range sits.
+    That said, the sampler's range moved: `0.45` and `0.80` predate the barrier-collision
+    tightening and are no longer standoffs `MoveToThrowPose` can draw at all (the
+    sampler's floor is now 1.10 m; see `predicates.THROW_STANDOFF_BOUNDS`). `1.10`
+    happens to equal the *new* lower bound and correctly still rejects here -- the
+    predicate's own accepted band starts at 1.15, not 1.10 -- so it needs no removal.
+    `1.75` remains the upper bound both before and after that change."""
     assert not _at_throw_pose(standoff=standoff)
 
 

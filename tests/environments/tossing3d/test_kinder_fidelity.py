@@ -32,6 +32,7 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment, To
 from hitl_pmp.environments.tossing3d.predicates import (
     IN_GOAL_REGION,
     THROW_RANGE,
+    THROW_STANDOFF_BOUNDS,
     InGoalRegionClassifier,
     RobotAtSuccessfulThrowPoseClassifier,
 )
@@ -226,6 +227,60 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
         assert env.is_solved() == expected, (
             f"at standoff {standoff} the episode scored {env.is_solved()}, not {expected} "
             "as measured -- the dynamics moved, so THROW_RANGE needs re-measuring."
+        )
+    finally:
+        env.close()
+
+
+def test_move_to_throw_pose_at_the_lower_standoff_bound_does_not_disturb_the_barrier() -> None:
+    """**The regression guard for the bug `THROW_STANDOFF_BOUNDS`'s lower end exists to
+    fix.** `move_to_target`'s base motion planner has collision-checking hardcoded off
+    upstream, and `cuboid_barrier` is a real dynamic MuJoCo body -- not a static
+    collision-free waypoint check -- so a `MoveToThrowPose` standoff that is too short
+    drives the base straight through it and knocks it over.
+
+    This would have caught the original defect: at the old lower bound (0.45 m) running
+    this exact sequence visibly displaces the barrier. Three independent sweeps using the
+    real oracle Pick parameters (`ORACLE_PICK_DISTANCE`, `ORACLE_PICK_ROTATION` -- a
+    placeholder-param probe earlier gave a wrong, lower number and was caught and
+    corrected) found the worst colliding standoff is 1.00 m and never exceeded it: 10
+    seeds x 0.005 m resolution over [0.98, 1.03], 10 seeds x 0.02 m resolution over
+    [0.90, 1.40], and all four corners of `Pick`'s own full sampling box
+    (`PICK_DISTANCE_BOUNDS`, `PICK_ROTATION_BOUNDS`) plus the oracle point, since `Pick`
+    also samples during practice, not just at its oracle default. The new lower bound,
+    1.10 m, is `BARRIER_COLLISION_MARGIN` (0.10 m) clear of that worst measured point, and
+    a confirming sweep of the new range at 0.05 m resolution over 10 seeds scored 140/140
+    clear with the barrier bit-exact every time.
+
+    Runs the oracle's own Pick, then `MoveToThrowPose` at exactly
+    `THROW_STANDOFF_BOUNDS[0]` -- so this is red against the old bounds and green against
+    the new ones without hardcoding either number."""
+    env = _env()
+    try:
+        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        barrier_before = tuple(
+            state.get(obj=env.barrier, feature_name=name) for name in ("x", "y", "z")
+        )
+
+        # Pick, at the oracle's own parameters.
+        action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
+        state = env.take_action(action=action.action)
+        assert env.last_skill_error() is None, env.last_skill_error()
+
+        # MoveToThrowPose at exactly the sampler's lower bound.
+        action = SkillOraclePolicy.get_labeled_action(
+            state=state, env=env, goal=goal, throw_standoff=THROW_STANDOFF_BOUNDS[0]
+        )
+        state = env.take_action(action=action.action)
+        assert env.last_skill_error() is None, env.last_skill_error()
+
+        barrier_after = tuple(
+            state.get(obj=env.barrier, feature_name=name) for name in ("x", "y", "z")
+        )
+        assert barrier_after == pytest.approx(barrier_before, abs=1e-4), (
+            f"MoveToThrowPose(standoff={THROW_STANDOFF_BOUNDS[0]}) moved cuboid_barrier "
+            f"from {barrier_before} to {barrier_after} -- the base drove through it"
         )
     finally:
         env.close()

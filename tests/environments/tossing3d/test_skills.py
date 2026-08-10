@@ -7,12 +7,14 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    BARRIER_COLLISION_MARGIN,
     HAND_EMPTY,
     HOLDING,
     IN_GOAL_REGION,
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
+    WORST_BARRIER_COLLISION_STANDOFF,
     RobotAtSuccessfulThrowPoseClassifier,
 )
 from hitl_pmp.environments.tossing3d.predicates import (
@@ -273,11 +275,35 @@ def test_the_sampler_range_is_the_measured_feasible_range() -> None:
     motion-plan, and above ~1.79 m the predicate would start accepting the pose `Pick`
     leaves the base in.
 
+    **The lower bound is no longer that 0.40 m inset.** A separate, tighter hazard sits
+    inside it: `cuboid_barrier` is a real dynamic MuJoCo body `move_to_target`'s base
+    motion planner does not collision-check against, so a standoff up to 1.00 m still
+    drives the base through it (see `predicates.THROW_STANDOFF_BOUNDS`'s docstring for
+    the three-ways-confirmed measurement). `BARRIER_COLLISION_MARGIN` moves the floor to
+    1.10 m, well above the bin-shove threshold this docstring's first paragraph
+    describes.
+
     `skills.py` imports the interval from `predicates.py` rather than declaring its own,
     so there is one place it is measured. That import is **not** the same thing as the
     predicate's acceptance band, which is derived per call -- see the test below."""
-    assert THROW_STANDOFF_BOUNDS == (0.45, 1.75)
+    assert THROW_STANDOFF_BOUNDS == (1.10, 1.75)
     assert THROW_STANDOFF_BOUNDS is PREDICATE_THROW_STANDOFF_BOUNDS
+
+
+def test_the_sampler_range_excludes_the_measured_barrier_collision_range() -> None:
+    """**The safety property, pinned so it survives a future retune.** Unlike the test
+    above -- which pins the current bound to a literal and fails on any change at all,
+    including a safe widening -- this one states *why* the lower bound has to be where
+    it is: clear of every standoff `test_move_to_throw_pose_at_the_lower_standoff_bound_
+    does_not_disturb_the_barrier` (in `test_kinder_fidelity.py`, which needs a live KINDER
+    install and so skips on CI) confirmed drives the base through `cuboid_barrier`.
+
+    This is the one offline check of that safety property CI can actually run. If someone
+    re-measures `WORST_BARRIER_COLLISION_STANDOFF` higher, or shrinks
+    `BARRIER_COLLISION_MARGIN`, without widening `THROW_STANDOFF_BOUNDS` to match, this
+    fails here rather than only in the live-KINDER test that skips everywhere but a
+    KINDER-installed machine."""
+    assert THROW_STANDOFF_BOUNDS[0] >= WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MARGIN
 
 
 def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:

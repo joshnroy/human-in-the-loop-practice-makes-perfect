@@ -1,5 +1,18 @@
 # A reset-free robot on Tossing3D does not practise less — it stops practising, on 10/10 seeds after one cycle
 
+> **Staleness note (2026-08-10).** This page's per-skill counts — `Pick 1/1`,
+> `MoveToThrowPose 1/5`, `Toss 1/1`, the `3`–`13` transition-index range where the toss
+> happens, and any other figure that traces back to how many `MoveToThrowPose` draws the
+> sampler needed before succeeding — were measured with `THROW_STANDOFF_BOUNDS =
+> (0.45, 1.75)`. That lower bound has since moved to `1.10` to fix a
+> `cuboid_barrier`-collision defect (see the staleness note atop
+> `2026-08-06-tossing3d-ees-first-real.md`), roughly halving the sampler's range and
+> doubling the derived acceptance band's share of it — a narrower, proportionally
+> easier-to-hit range plausibly changes how many draws it takes to land a throw. **The
+> stranding finding itself is unaffected**: it is about what happens once the cube is past
+> the barrier, after which no skill is applicable regardless of how the standoff was
+> sampled to get there. Nothing on this page is recomputed or edited.
+
 **Answer: reset-free practice collapses on this domain, and the score gap is a symptom
 rather than the finding.** Late window `24.9/100` against `scheduled`'s `80.8/100`, lower
 on **`10/10`** seeds, mean `-5.59` tasks per seed, exact paired sign-flip
