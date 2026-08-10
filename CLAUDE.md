@@ -431,6 +431,43 @@ flattening, two arms diverging — is the thing worth seeing. Plot per-seed spre
 than only a mean: with ten seeds a bar chart of two means hides one seed driving the whole
 effect. Keep the table too; the figure shows the shape, the table carries the numbers.
 
+**Training-curve style, fixed project-wide so every figure in a report reads as one
+report, not a new palette per PR:**
+
+- **Colour carries the arm's role, never anything else.** Blue (`#0072B2`) is the
+  reset/scheduled/env-resets side of a comparison; orange (`#D55E00`) is the
+  reset-free/never side. A third neutral (grey, dotted) is reserved for reference/ceiling
+  arms that aren't the manipulation under test (`skill-oracle`, `random-skills`) — see
+  below. Do not introduce a fourth hue; encode a second axis with linestyle instead.
+- **Linestyle carries the subgroup within a colour**, not the budget, not the seed count —
+  whatever the *within-arm* split is that the figure exists to show. Solid is the main
+  population (or the larger/non-anomalous subgroup where a population splits); a dashed
+  `(0, (4, 2))` is the secondary subgroup (e.g. a stuck/stranded split). If an arm has no
+  such split, it gets one solid bold line and says so in its own legend entry (e.g. "no
+  stranding here") rather than silently having one line where a sibling panel has two.
+- **Reference/ceiling arms (`skill-oracle`, `random-skills`, any arm that is not itself
+  being manipulated) are flat horizontal lines, never a curve** — plotting a non-learner as
+  a wandering line invites a reader to hunt for a trend that isn't there. This was a
+  standing rule before this section existed; it's restated here so it isn't lost among the
+  newer rules.
+- **Faint per-seed traces (`alpha≈0.16`, `linewidth≈0.8`) are drawn first, underneath the
+  bold subgroup means (`linewidth≈2.3`), on every training curve.** They are the point, not
+  decoration — a bold mean over a bimodal population describes none of its seeds, and the
+  faint lines are what make that visible instead of asserted in prose.
+- **No `(x/N)` suffix in the axis label.** The axis label is the bare quantity
+  (`solved per seed`); the denominator goes in the panel's own title
+  (`TRASH tasks (of 14) — one-way ledge`), because a title is read once per panel while an
+  axis label repeats the same string on every tick and reads as noise. This does **not**
+  relax the project's `x/y`-not-a-percentage rule anywhere else — legends, tables and prose
+  still always state the count as `x/y`.
+- **Legend entries carry the exact count**, e.g. `env resets — mean, n=10` or
+  `never reset — stuck mean, n=6`, so a reader can check `n` sums to the seed total without
+  re-deriving it from the plot.
+
+Any subagent building a training-curve figure should follow this section without being
+re-briefed on it — if a brief doesn't restate it, that is not license to invent a new
+palette.
+
 **Where a figure or video lives depends on the kind of PR:**
 
 - **Experiment-log PRs commit them**, alongside the `docs/experiment-logs/` entry, and
