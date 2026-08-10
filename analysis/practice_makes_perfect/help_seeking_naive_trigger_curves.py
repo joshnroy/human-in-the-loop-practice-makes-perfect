@@ -64,12 +64,12 @@ _ON_NO_APPLICABLE_SKILL = "on-no-applicable-skill"
 _NO_HUMAN = "no-human"
 # `no-human` first, `on-no-applicable-skill` second: the two curves are identical, so
 # whichever is drawn last sits on top. Drawing the dashed arm last is what makes the
-# overlap visible as a blue line with an orange dash pattern showing through it, rather
+# overlap visible as an orange line with a blue dash pattern showing through it, rather
 # than the dashed line being fully hidden under a later-drawn solid one.
 _ARMS = (_NO_HUMAN, _ON_NO_APPLICABLE_SKILL)
 
 _ARM_LABELS = {
-    _ON_NO_APPLICABLE_SKILL: "on-no-applicable-skill (never fired: 0/10 seeds)",
+    _ON_NO_APPLICABLE_SKILL: "on-no-applicable-skill (never fired)",
     _NO_HUMAN: "no-human (control, reused)",
 }
 
@@ -85,10 +85,14 @@ _ARM_DIRECTORIES = {
     _NO_HUMAN: "2026-08-07-pickup-weight-reset-free-runs/never/ees",
 }
 
-# Okabe-Ito blue/orange, the same pair `reset_free_training_curves.py` uses. The control
-# carries blue (the incumbent, drawn first); the treated arm carries orange -- even
-# though the two curves land on top of each other, which is the finding.
-_ARM_COLOR = {_NO_HUMAN: "#0072B2", _ON_NO_APPLICABLE_SKILL: "#D55E00"}
+# Okabe-Ito blue/orange, the same pair `reset_free_training_curves.py` uses -- but under
+# the intervention-availability rule CLAUDE.md's training-curve-style section (#190)
+# generalises beyond reset policy: orange is always the arm nothing helps (`no-human`,
+# no assistance mechanism at all); blue is always the arm with an assistance mechanism
+# available, whether or not it actually fires. `on-no-applicable-skill` measured 0/10
+# seeds ever asking, but it still carries blue -- the finding is that the mechanism
+# existed and did nothing, and colouring it orange would visually erase that.
+_ARM_COLOR = {_NO_HUMAN: "#D55E00", _ON_NO_APPLICABLE_SKILL: "#0072B2"}
 # The treated arm is drawn dashed on top of the control's solid line so a reader can see
 # both are actually present at every point rather than one occluding the other.
 _ARM_LINESTYLE = {_NO_HUMAN: "-", _ON_NO_APPLICABLE_SKILL: "--"}
@@ -243,9 +247,9 @@ class HelpSeekingNaiveTriggerCurves(BaseModel):
                     color=color,
                     linewidth=_MEAN_WIDTH,
                     linestyle=style,
-                    label=f"{_ARM_LABELS[arm]} -- final {total}/{denom}",
+                    label=f"{_ARM_LABELS[arm]} -- mean, n={_NUM_SEEDS}, final {total}/{denom}",
                 )
-            axis.set_title(f"{family} (x/{denom})", fontsize=11, loc="left")
+            axis.set_title(f"{family} (of {denom})", fontsize=11, loc="left")
             axis.set_xlabel("online transitions")
             axis.grid(alpha=0.25, linewidth=0.6)
             axis.legend(frameon=False, loc="upper left", fontsize=8)

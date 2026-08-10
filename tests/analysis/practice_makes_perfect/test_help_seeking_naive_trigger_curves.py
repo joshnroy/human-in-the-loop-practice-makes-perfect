@@ -19,8 +19,11 @@ from pathlib import Path
 import pytest
 
 from analysis.practice_makes_perfect.help_seeking_naive_trigger_curves import (
+    _ARM_COLOR,
+    _NO_HUMAN,
     _NUM_SEEDS,
     _NUM_TEST_TASKS,
+    _ON_NO_APPLICABLE_SKILL,
     HelpSeekingNaiveTriggerCurves,
 )
 
@@ -115,3 +118,44 @@ def test_render_writes_a_three_panel_figure(*, tmp_path: Path) -> None:
     assert len(figure.axes) == 3
     assert out.exists()
     assert out.stat().st_size > 10_000
+
+
+def test_colour_carries_the_intervention_availability_role() -> None:
+    """CLAUDE.md's training-curve-style section (#190): orange is always the arm
+    nothing helps (`no-human`); blue is always the arm with an assistance mechanism
+    available, whether or not it fires. `on-no-applicable-skill` measured 0/10 seeds
+    ever asking but still carries blue, since the finding is that the mechanism
+    existed and did nothing -- orange would visually erase that."""
+    assert _ARM_COLOR[_NO_HUMAN] == "#D55E00"
+    assert _ARM_COLOR[_ON_NO_APPLICABLE_SKILL] == "#0072B2"
+
+
+def test_every_legend_entry_carries_n_and_the_seed_count(*, tmp_path: Path) -> None:
+    """CLAUDE.md's training-curve-style section requires `n=` in every legend entry
+    (e.g. `env resets -- mean, n=10`), so a reader can check `n` sums to the seed
+    total without re-deriving it from the plot."""
+    out = tmp_path / "curves.png"
+    figure = HelpSeekingNaiveTriggerCurves.render(logs_root=_LOGS, output=out)
+    for axis in figure.axes:
+        handles, labels = axis.get_legend_handles_labels()
+        named = [label for label in labels if label]
+        assert named, "panel has no legend entries"
+        for label in named:
+            assert f"n={_NUM_SEEDS}" in label, f"legend entry missing seed count: {label!r}"
+
+
+def test_panel_titles_carry_the_denominator_as_of_n_not_x_over_n(*, tmp_path: Path) -> None:
+    """CLAUDE.md's training-curve-style section: the axis label stays bare and the
+    denominator goes in the panel's own title, phrased `(of N)` (e.g.
+    `TRASH tasks (of 14)`), not `(x/N)`."""
+    out = tmp_path / "curves.png"
+    figure = HelpSeekingNaiveTriggerCurves.render(logs_root=_LOGS, output=out)
+    # `figure.axes` also holds the per-panel `secondary_xaxis` (cycle) twins, which
+    # carry no title of their own -- only the three main panels do. `render` sets the
+    # title with `loc="left"`, so it must be read back the same way -- the default
+    # `loc="center"` is a different (empty) string.
+    titles = [axis.get_title(loc="left") for axis in figure.axes if axis.get_title(loc="left")]
+    assert len(titles) == 3
+    for title in titles:
+        assert "(of " in title, f"panel title missing '(of N)' denominator: {title!r}"
+        assert "/" not in title, f"panel title still uses x/N phrasing: {title!r}"
