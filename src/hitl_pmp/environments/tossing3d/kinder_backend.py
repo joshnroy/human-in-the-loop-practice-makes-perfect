@@ -590,6 +590,7 @@ class KinderBackend(BaseModel):
             object_names=(self.robot_name, self.bin_name),
             params=np.array([standoff, rotation]),
             limit=self.move_step_limit,
+            disable_collision_objects=[self.cube_name],
         )
 
     def run_toss(self) -> tuple[ControllerRun, ControllerRun]:
