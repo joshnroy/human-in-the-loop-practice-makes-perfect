@@ -1,6 +1,6 @@
 import numpy as np
 
-from hitl_pmp.core.method.types import Policy
+from hitl_pmp.core.method.types import EpisodeTrace, LabeledAction, Policy
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
@@ -29,16 +29,24 @@ class LightSwitchProblem(Problem):
 
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
-    ) -> tuple[bool, list[np.ndarray]]:
+    ) -> tuple[bool, list[np.ndarray], EpisodeTrace]:
         state = self.reset_to_task(task=task)
         frames = [renderer.render_frame(state=state, env=self.env)] if renderer is not None else []
+        states = [state]
+        actions: list[LabeledAction] = []
         for _ in range(self.max_episode_steps()):
             if task.goal.is_satisfied(state=state):
-                return True, frames
+                return True, frames, EpisodeTrace(states=states, actions=actions)
             labeled_action = policy(state)
             state = self.env.take_action(action=labeled_action.action)
+            actions.append(labeled_action)
+            states.append(state)
             if renderer is not None:
                 frames.append(
                     renderer.render_frame(state=state, env=self.env, label=labeled_action.label)
                 )
-        return task.goal.is_satisfied(state=state), frames
+        return (
+            task.goal.is_satisfied(state=state),
+            frames,
+            EpisodeTrace(states=states, actions=actions),
+        )

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import LabeledAction, Policy
+from hitl_pmp.core.method.types import EpisodeTrace, LabeledAction, Policy
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.human.human import HumanOracle
@@ -68,9 +68,9 @@ class _Tasks(Tasks):
 class _Problem(Problem):
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
-    ) -> tuple[bool, list[np.ndarray]]:
+    ) -> tuple[bool, list[np.ndarray], EpisodeTrace]:
         del renderer
-        return True, []
+        return True, [], EpisodeTrace(states=[task.initial_state], actions=[])
 
 
 def _build_problem() -> _Problem:
@@ -180,7 +180,7 @@ def test_concrete_subclass_implements_run_task_episode() -> None:
     policy: Policy = lambda state: LabeledAction(  # noqa: E731
         action=np.array([0.0]), label="test"
     )
-    solved, frames = problem.run_task_episode(task=task, policy=policy)
+    solved, frames, _ = problem.run_task_episode(task=task, policy=policy)
     assert solved is True
     assert frames == []
 

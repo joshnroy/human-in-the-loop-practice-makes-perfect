@@ -344,7 +344,7 @@ def test_a_full_episode_through_the_problem_solves_the_default_scene() -> None:
         def policy(state) -> LabeledAction:  # noqa: PLR0917
             return SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=task.goal)
 
-        solved, frames = problem.run_task_episode(task=task, policy=policy)
+        solved, frames, _ = problem.run_task_episode(task=task, policy=policy)
         assert solved
         assert frames == []
     finally:
@@ -442,7 +442,7 @@ def test_a_recorded_episode_is_physics_rate_rather_than_one_frame_per_skill() ->
         def policy(state) -> LabeledAction:  # noqa: PLR0917
             return SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=task.goal)
 
-        solved, frames = problem.run_task_episode(
+        solved, frames, _ = problem.run_task_episode(
             task=task, policy=policy, renderer=Tossing3DRenderer
         )
 

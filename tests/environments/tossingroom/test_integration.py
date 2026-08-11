@@ -32,7 +32,7 @@ def test_oracle_solves_every_goal_type_on_train_and_test_tasks(
     for sample in (tasks.sample_train_task, tasks.sample_test_task):
         for _ in range(10):
             task = sample()
-            solved, _ = problem.run_task_episode(
+            solved, _, _ = problem.run_task_episode(
                 task=task, policy=method.get_task_policy(task=task)
             )
             assert solved is True
@@ -46,7 +46,7 @@ def test_oracle_solves_the_default_mixed_distribution() -> None:
     solved = 0
     for _ in range(30):
         task = tasks.sample_test_task()
-        ok, _ = problem.run_task_episode(task=task, policy=method.get_task_policy(task=task))
+        ok, _, _ = problem.run_task_episode(task=task, policy=method.get_task_policy(task=task))
         solved += int(ok)
     assert solved == 30
 

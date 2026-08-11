@@ -342,7 +342,7 @@ def test_the_oracle_still_solves_every_goal_family_under_the_flag(
     for sample in (tasks.sample_train_task, tasks.sample_test_task):
         for _ in range(10):
             task = sample()
-            solved, _ = problem.run_task_episode(
+            solved, _, _ = problem.run_task_episode(
                 task=task, policy=method.get_task_policy(task=task)
             )
             assert solved is True

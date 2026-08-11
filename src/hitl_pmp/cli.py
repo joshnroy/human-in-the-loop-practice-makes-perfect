@@ -199,6 +199,18 @@ class Cli:
             "competence model (--method ees) writes anything.",
         )
         parser.add_argument(
+            "--record-episode-traces",
+            action="store_true",
+            help="Additionally write <output-dir>/episode_traces.jsonl: one line per "
+            "step of every evaluation episode of every sweep, carrying the action "
+            "taken, which skill produced it, and the resulting state -- the full "
+            "trajectory TaskOutcome's solved/unsolved bit cannot answer questions "
+            "like step-by-step trace length from. A sibling of stats.json rather "
+            "than a field in it, for the same byte-stability reason as "
+            "--record-sampler-draws. Off by default and a pure observer: a recorded "
+            "run takes the same actions and writes a byte-identical stats.json.",
+        )
+        parser.add_argument(
             "--num-render-checkpoints",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1,

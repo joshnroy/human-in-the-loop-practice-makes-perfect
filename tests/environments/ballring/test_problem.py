@@ -90,7 +90,7 @@ def test_max_episode_steps_matches_the_papers_horizon() -> None:
 
 def test_run_task_episode_succeeds_immediately_for_an_already_satisfied_task() -> None:
     problem = _build_problem()
-    solved, frames = problem.run_task_episode(
+    solved, frames, _ = problem.run_task_episode(
         task=_already_solved_task(), policy=_never_moves_policy
     )
     assert solved is True
@@ -99,7 +99,7 @@ def test_run_task_episode_succeeds_immediately_for_an_already_satisfied_task() -
 
 def test_run_task_episode_solves_within_the_loop() -> None:
     problem = _build_problem()
-    solved, frames = problem.run_task_episode(
+    solved, frames, _ = problem.run_task_episode(
         task=_one_step_solve_task(), policy=_solve_in_one_policy
     )
     assert solved is True
@@ -108,7 +108,7 @@ def test_run_task_episode_solves_within_the_loop() -> None:
 
 def test_run_task_episode_fails_when_policy_never_solves() -> None:
     problem = _build_problem()
-    solved, _ = problem.run_task_episode(task=_one_step_solve_task(), policy=_never_moves_policy)
+    solved, _, _ = problem.run_task_episode(task=_one_step_solve_task(), policy=_never_moves_policy)
     assert solved is False
 
 
@@ -122,13 +122,15 @@ def test_run_task_episode_sets_env_state_from_task_initial_state() -> None:
 
 def test_run_task_episode_captures_no_frames_without_a_renderer() -> None:
     problem = _build_problem()
-    _, frames = problem.run_task_episode(task=_one_step_solve_task(), policy=_solve_in_one_policy)
+    _, frames, _ = problem.run_task_episode(
+        task=_one_step_solve_task(), policy=_solve_in_one_policy
+    )
     assert frames == []
 
 
 def test_run_task_episode_captures_one_frame_per_step_with_a_renderer() -> None:
     problem = _build_problem()
-    solved, frames = problem.run_task_episode(
+    solved, frames, _ = problem.run_task_episode(
         task=_one_step_solve_task(), policy=_solve_in_one_policy, renderer=_LabelSpyRenderer
     )
     assert solved is True

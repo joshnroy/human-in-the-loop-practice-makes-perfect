@@ -13,6 +13,7 @@ from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
+from hitl_pmp.episode_traces import EpisodeTraceRecorder
 from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 
@@ -303,6 +304,7 @@ class PracticeLoop:
         num_render_checkpoints: int = 1,
         on_checkpoint_frames: CheckpointFramesSink | None = None,
         recorder: LoopRecorder | None = None,
+        trace_recorder: EpisodeTraceRecorder | None = None,
     ) -> None:
         # Up front, before hard_reset(), so a caller that forgot the sink finds out
         # before the run mutates the environment rather than one sweep in.
@@ -403,6 +405,7 @@ class PracticeLoop:
             renderer=renderer if 0 in rendered_sweeps else None,
             recorder=recorder,
             sweep_index=0,
+            trace_recorder=trace_recorder,
         )
         hand_over(transitions=num_online_transitions, sweep_frames=frames)
         if on_sweep_end is not None:
@@ -532,6 +535,7 @@ class PracticeLoop:
                 renderer=renderer if (cycle + 1) in rendered_sweeps else None,
                 recorder=recorder,
                 sweep_index=cycle + 1,
+                trace_recorder=trace_recorder,
             )
             hand_over(transitions=num_online_transitions, sweep_frames=frames)
             if on_sweep_end is not None:
@@ -682,6 +686,7 @@ class PracticeLoop:
         renderer: type[Renderer] | None = None,
         recorder: LoopRecorder | None = None,
         sweep_index: int = 0,
+        trace_recorder: EpisodeTraceRecorder | None = None,
     ) -> list[np.ndarray]:
         num_solved = 0
         frames: list[np.ndarray] = []
@@ -698,7 +703,7 @@ class PracticeLoop:
             if recorder is not None:
                 policy = recorder.watch_policy(policy=policy)
                 episode_renderer = recorder.renderer
-            solved, task_frames = problem.run_task_episode(
+            solved, task_frames, trace = problem.run_task_episode(
                 task=task, policy=policy, renderer=episode_renderer
             )
             if i == 0 and renderer is not None:
@@ -710,6 +715,15 @@ class PracticeLoop:
                     task=task.goal.describe(),
                     frames=task_frames,
                     solved=solved,
+                )
+            if trace_recorder is not None:
+                trace_recorder.record_episode(
+                    checkpoint=sweep_index,
+                    num_online_transitions=num_online_transitions,
+                    task_index=i,
+                    goal=task.goal.describe(),
+                    solved=solved,
+                    trace=trace,
                 )
             num_solved += int(solved)
             # test_tasks is drawn once for the whole run, so i identifies the
