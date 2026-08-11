@@ -8,8 +8,11 @@ frame per physics tick is a question only a simulator can answer, and lives in
 """
 
 import sys
+from typing import Any
 
-from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+import pytest
+
+from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
 
 
 def test_substep_recording_is_off_by_default() -> None:
@@ -47,3 +50,46 @@ def test_draining_while_recording_is_off_is_empty_even_with_a_scene() -> None:
 
     assert backend.record_substeps is False
     assert backend.drain_substep_frames() == []
+
+
+def test_move_to_throw_pose_disables_collision_against_the_held_cube(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`run_move_to_throw_pose`'s own docstring claims
+    `disable_collision_objects=["cube_0"]` is passed to upstream's `move_to_target` --
+    the robot is holding the cube at this point, so treating it as a base-motion obstacle
+    makes every plan fail. It wasn't actually threaded through: `run_controller` has a
+    real `disable_collision_objects` parameter, and `run_move_to_throw_pose` never
+    supplied it, leaving it `None`.
+
+    This is entirely offline: no simulator needed, since the bug is about which kwarg
+    reaches `run_controller`, not about simulator behaviour. `reference/kinder-baselines`
+    (pinned at `11eace5`) currently hardcodes collision-checking off
+    (Princeton-Robot-Planning-and-Learning/kinder-baselines#102), so today this has zero
+    observable effect -- but the moment that upstream fix lands and the pin bumps, the
+    robot's own held cube becomes an unexcluded obstacle to its own base-motion plan and
+    `move_to_target` fails universally.
+    """
+    calls: list[dict[str, Any]] = []
+
+    # `self` must stay positional -- `monkeypatch.setattr` installs this as an unbound
+    # class method, and Python's bound-method call convention always passes the instance
+    # positionally, the same reasoning `core/README.md` gives for `__getitem__`.
+    def spy_run_controller(  # noqa: PLR0917
+        self: KinderBackend, *, module: str, key: str, **kwargs: Any
+    ) -> ControllerRun:
+        calls.append({"module": module, "key": key, **kwargs})
+        return ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
+
+    backend = KinderBackend()
+    # `robot_name` is a property that reads a scene-derived private attribute and raises
+    # before any `reset()`; `run_move_to_throw_pose` only needs a name to pass through,
+    # not a real one, so a `PrivateAttr` write stands in for a scene without a simulator.
+    backend._robot_name = "robot_test"  # noqa: SLF001
+
+    backend.run_move_to_throw_pose(standoff=1.35, rotation=0.0)
+
+    assert len(calls) == 1
+    assert calls[0]["disable_collision_objects"] == [backend.cube_name]
