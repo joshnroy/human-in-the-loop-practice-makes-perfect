@@ -9,6 +9,13 @@ instrumentation trustworthy. Hence a sibling file, the same reasoning `timing.js
 and `config_snapshot.json` already follow, and hence a test that asserts the bytes
 rather than the parsed dict: a reordered key or a changed float repr is exactly the
 kind of drift a dict comparison hides.
+
+**Why the runs are module-scoped fixtures.** Every test here asserts a different
+property of the *same* two CLI runs, and `--seed` fully determines a run, so a
+per-test invocation re-derived byte-identical output four more times. Sharing them
+costs no assertion. The contract that makes it safe is that these directories are
+**read-only** to every test below -- anything needing a mutable directory must take
+`tmp_path` and run its own.
 """
 
 import json
@@ -16,6 +23,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 # Two cycles of real EES on Tossing Room: pure numpy + torch, ~5 s per invocation, and
 # it runs on CI. Its `ThrowTrash`/`ThrowRecycling` skills are `param_dim=1`, so a run
@@ -74,28 +83,39 @@ class DrawHarness:
         return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
-def test_recording_leaves_stats_json_byte_identical(*, tmp_path: Path) -> None:
+@pytest.fixture(scope="module")
+def recording_off(*, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """EES with --record-sampler-draws absent: the control arm."""
+    return DrawHarness.run(output_dir=tmp_path_factory.mktemp("off"), record=False)
+
+
+@pytest.fixture(scope="module")
+def recording_on(*, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """EES with the recorder on, same seed -- so the only difference from
+    `recording_off` is the flag."""
+    return DrawHarness.run(output_dir=tmp_path_factory.mktemp("on"), record=True)
+
+
+def test_recording_leaves_stats_json_byte_identical(
+    *, recording_off: Path, recording_on: Path
+) -> None:
     """The observer guarantee, asserted the same way the repo proves any change is
     behaviour-neutral. If this fails, the instrumentation is a confound and every
     number measured with it on is suspect."""
-    off = DrawHarness.run(output_dir=tmp_path / "off", record=False)
-    on = DrawHarness.run(output_dir=tmp_path / "on", record=True)
-    assert (off / "stats.json").read_bytes() == (on / "stats.json").read_bytes()
+    assert (recording_off / "stats.json").read_bytes() == (recording_on / "stats.json").read_bytes()
 
 
-def test_nothing_is_written_unless_asked(*, tmp_path: Path) -> None:
+def test_nothing_is_written_unless_asked(*, recording_off: Path) -> None:
     """Off by default, so every archived run and every open PR's results are
     untouched by this landing."""
-    off = DrawHarness.run(output_dir=tmp_path / "off", record=False)
-    assert not (off / "sampler_draws.jsonl").exists()
+    assert not (recording_off / "sampler_draws.jsonl").exists()
 
 
-def test_every_draw_is_one_json_object_per_line(*, tmp_path: Path) -> None:
+def test_every_draw_is_one_json_object_per_line(*, recording_on: Path) -> None:
     """JSONL rather than one JSON document, so a run killed mid-flight still leaves
     a readable file up to its last flushed draw -- a 100-cycle run is hours, and a
     record only readable after a clean exit would be useless exactly when it matters."""
-    on = DrawHarness.run(output_dir=tmp_path / "on", record=True)
-    draws = DrawHarness.draws(output_dir=on)
+    draws = DrawHarness.draws(output_dir=recording_on)
     assert draws, "a 2-cycle EES run consults a param_dim=1 sampler at least once"
     for draw in draws:
         assert set(draw) == {
@@ -108,11 +128,10 @@ def test_every_draw_is_one_json_object_per_line(*, tmp_path: Path) -> None:
         }
 
 
-def test_draws_carry_the_chosen_parameters_and_the_post_action_state(*, tmp_path: Path) -> None:
+def test_draws_carry_the_chosen_parameters_and_the_post_action_state(*, recording_on: Path) -> None:
     """The two things #133 could not answer from integer counters: which parameter
     the sampler actually chose, and what the environment did with it."""
-    on = DrawHarness.run(output_dir=tmp_path / "on", record=True)
-    draws = DrawHarness.draws(output_dir=on)
+    draws = DrawHarness.draws(output_dir=recording_on)
     throws = [d for d in draws if str(d["skill"]).startswith("Throw")]
     assert throws, "Tossing Room's throw skills are the param_dim=1 ones"
     for draw in throws:
@@ -126,14 +145,13 @@ def test_draws_carry_the_chosen_parameters_and_the_post_action_state(*, tmp_path
         assert all("." in key for key in achieved)
 
 
-def test_consultation_pools_match_the_stats_json_tally(*, tmp_path: Path) -> None:
+def test_consultation_pools_match_the_stats_json_tally(*, recording_on: Path) -> None:
     """The per-draw file and `stats.json`'s counters are two views of the same events,
     so they must agree. This is what stops the new file drifting into a parallel,
     silently-different account of the run -- the failure that would make a trajectory
     figure disagree with the success rates published beside it."""
-    on = DrawHarness.run(output_dir=tmp_path / "on", record=True)
-    draws = DrawHarness.draws(output_dir=on)
-    stats = json.loads((on / "stats.json").read_text())
+    draws = DrawHarness.draws(output_dir=recording_on)
+    stats = json.loads((recording_on / "stats.json").read_text())
 
     tallied: dict[str, int] = {}
     for window in stats["practice_outcomes_per_cycle"]:

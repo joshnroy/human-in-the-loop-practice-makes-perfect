@@ -7,6 +7,13 @@ uses to prove a change did not alter results, so instrumentation that wrote into
 would destroy the very check that makes instrumentation trustworthy. Hence a sibling
 file (`hitl_pmp/episode_traces.py`'s `EpisodeTraceRecorder`), the same shape as
 `SamplerDrawRecorder`/`CompetenceLogRecorder`.
+
+**Why the runs are module-scoped fixtures.** Every CLI-backed test here asserts a
+different property of the *same* two runs, and `--seed` fully determines a run, so a
+per-test invocation re-derived byte-identical output five more times. Sharing them
+costs no assertion. The contract that makes it safe is that these directories are
+**read-only** to the tests that take them -- which is why the recorder unit test below
+keeps its own function-scoped `tmp_path`: it writes.
 """
 
 import json
@@ -16,6 +23,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from hitl_pmp.core.method.types import EpisodeTrace
 from hitl_pmp.core.problem.environment.types import Object, State, Type
@@ -76,27 +84,38 @@ class TraceHarness:
         return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
-def test_recording_leaves_stats_json_byte_identical(*, tmp_path: Path) -> None:
+@pytest.fixture(scope="module")
+def recording_off(*, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """skill-oracle with --record-episode-traces absent: the control arm."""
+    return TraceHarness.run(output_dir=tmp_path_factory.mktemp("off"), record=False)
+
+
+@pytest.fixture(scope="module")
+def recording_on(*, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """skill-oracle with the recorder on, same seed -- so the only difference from
+    `recording_off` is the flag."""
+    return TraceHarness.run(output_dir=tmp_path_factory.mktemp("on"), record=True)
+
+
+def test_recording_leaves_stats_json_byte_identical(
+    *, recording_off: Path, recording_on: Path
+) -> None:
     """The observer guarantee, asserted the same way the repo proves any change is
     behaviour-neutral. If this fails, the instrumentation is a confound and every
     number measured with it on is suspect."""
-    off = TraceHarness.run(output_dir=tmp_path / "off", record=False)
-    on = TraceHarness.run(output_dir=tmp_path / "on", record=True)
-    assert (off / "stats.json").read_bytes() == (on / "stats.json").read_bytes()
+    assert (recording_off / "stats.json").read_bytes() == (recording_on / "stats.json").read_bytes()
 
 
-def test_nothing_is_written_unless_asked(*, tmp_path: Path) -> None:
+def test_nothing_is_written_unless_asked(*, recording_off: Path) -> None:
     """Off by default, so every archived run and every open PR's results are
     untouched by this landing."""
-    off = TraceHarness.run(output_dir=tmp_path / "off", record=False)
-    assert not (off / "episode_traces.jsonl").exists()
+    assert not (recording_off / "episode_traces.jsonl").exists()
 
 
-def test_every_step_is_one_json_object_per_line(*, tmp_path: Path) -> None:
+def test_every_step_is_one_json_object_per_line(*, recording_on: Path) -> None:
     """JSONL rather than one JSON document, so a run killed mid-flight still leaves
     a readable file up to its last flushed episode."""
-    on = TraceHarness.run(output_dir=tmp_path / "on", record=True)
-    steps = TraceHarness.steps(output_dir=on)
+    steps = TraceHarness.steps(output_dir=recording_on)
     assert steps, "skill-oracle on a grid_size=3 board takes at least one real step"
     for step in steps:
         assert set(step) == {
@@ -116,11 +135,10 @@ def test_every_step_is_one_json_object_per_line(*, tmp_path: Path) -> None:
         assert all(isinstance(value, float) for value in step["state"].values())
 
 
-def test_step_indices_are_zero_based_and_contiguous_per_episode(*, tmp_path: Path) -> None:
+def test_step_indices_are_zero_based_and_contiguous_per_episode(*, recording_on: Path) -> None:
     """Each (checkpoint, task_index) episode's steps must read 0, 1, 2, ... with no
     gaps -- a reader counts steps-to-goal by taking max(step_index) + 1."""
-    on = TraceHarness.run(output_dir=tmp_path / "on", record=True)
-    steps = TraceHarness.steps(output_dir=on)
+    steps = TraceHarness.steps(output_dir=recording_on)
     by_episode: dict[tuple[int, int], list[int]] = {}
     for step in steps:
         key = (int(step["checkpoint"]), int(step["task_index"]))
@@ -129,11 +147,10 @@ def test_step_indices_are_zero_based_and_contiguous_per_episode(*, tmp_path: Pat
         assert sorted(indices) == list(range(len(indices)))
 
 
-def test_solved_is_constant_across_every_step_of_one_episode(*, tmp_path: Path) -> None:
+def test_solved_is_constant_across_every_step_of_one_episode(*, recording_on: Path) -> None:
     """`solved` is the whole episode's outcome, not a per-step goal check -- every
     line of one episode must agree, matching TaskOutcome's own per-task granularity."""
-    on = TraceHarness.run(output_dir=tmp_path / "on", record=True)
-    steps = TraceHarness.steps(output_dir=on)
+    steps = TraceHarness.steps(output_dir=recording_on)
     by_episode: dict[tuple[int, int], set[bool]] = {}
     for step in steps:
         key = (int(step["checkpoint"]), int(step["task_index"]))
@@ -151,7 +168,8 @@ def test_a_zero_step_episode_contributes_no_rows(*, tmp_path: Path) -> None:
     A direct unit test against the recorder rather than a full CLI run: no
     Light Switch configuration reliably produces an already-satisfied test task
     (the oracle always takes at least one action), so this exercises the same
-    "empty actions" path record_episode itself branches on."""
+    "empty actions" path record_episode itself branches on. Its own `tmp_path`
+    rather than a shared fixture directory, because it writes."""
     block = Type(name="block", feature_names=("x",))
     obj = Object(name="block1", type=block)
     state = State(data={obj: np.array([0.0])})
@@ -169,12 +187,11 @@ def test_a_zero_step_episode_contributes_no_rows(*, tmp_path: Path) -> None:
     assert not (tmp_path / "episode_traces.jsonl").exists()
 
 
-def test_checkpoints_match_stats_json_evaluations(*, tmp_path: Path) -> None:
+def test_checkpoints_match_stats_json_evaluations(*, recording_on: Path) -> None:
     """The whole point: the sidecar's checkpoints line up with stats.json's own
     evaluation sweeps, so a reader can join the two without guessing an offset."""
-    on = TraceHarness.run(output_dir=tmp_path / "on", record=True)
-    steps = TraceHarness.steps(output_dir=on)
-    stats = json.loads((on / "stats.json").read_text())
+    steps = TraceHarness.steps(output_dir=recording_on)
+    stats = json.loads((recording_on / "stats.json").read_text())
     evaluations = stats["evaluations"]
 
     seen_checkpoints = {int(step["checkpoint"]) for step in steps}
@@ -186,14 +203,13 @@ def test_checkpoints_match_stats_json_evaluations(*, tmp_path: Path) -> None:
         assert step["num_online_transitions"] == transitions_by_checkpoint[checkpoint]
 
 
-def test_solved_episodes_agree_with_task_outcomes(*, tmp_path: Path) -> None:
+def test_solved_episodes_agree_with_task_outcomes(*, recording_on: Path) -> None:
     """A second, independent cross-check against stats.json (like
     test_sampler_draws.py's consultation-pool check): the sidecar's own `solved`
     per (checkpoint, task_index) must match TaskOutcome's, or a trace-length figure
     built from this file could disagree with the success rates published beside it."""
-    on = TraceHarness.run(output_dir=tmp_path / "on", record=True)
-    steps = TraceHarness.steps(output_dir=on)
-    stats = json.loads((on / "stats.json").read_text())
+    steps = TraceHarness.steps(output_dir=recording_on)
+    stats = json.loads((recording_on / "stats.json").read_text())
 
     solved_by_episode: dict[tuple[int, int], bool] = {}
     for step in steps:
