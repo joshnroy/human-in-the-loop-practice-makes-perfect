@@ -186,6 +186,19 @@ class Cli:
             "ees) writes anything.",
         )
         parser.add_argument(
+            "--record-skill-competence",
+            action="store_true",
+            help="Additionally write <output-dir>/competence_log.jsonl: one line per "
+            "(evaluation checkpoint, ground skill) pair, carrying that ground skill's "
+            "currently tracked competence -- the same posterior mean its plan costs "
+            "are computed from (sum(-log(competence))), which was previously never "
+            "persisted anywhere. A sibling of stats.json rather than a field in it, "
+            "for the same byte-stability reason as --record-sampler-draws. Off by "
+            "default and a pure observer: a recorded run takes the same actions and "
+            "writes a byte-identical stats.json. Only a Method that tracks a "
+            "competence model (--method ees) writes anything.",
+        )
+        parser.add_argument(
             "--num-render-checkpoints",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1,

@@ -6,6 +6,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from hitl_pmp.competence_log import CompetenceLogRecorder
 from hitl_pmp.config_snapshot import ConfigSnapshot
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
@@ -172,6 +173,34 @@ class MethodRunner:
             if progress is not None:
                 progress.record(metrics=metrics)
 
+        # --record-skill-competence's recorder, or None (the default, and what keeps
+        # every unrecorded run byte-identical). Built here rather than inside a
+        # method-CLI's own run(), unlike --record-sampler-draws' SamplerDrawRecorder:
+        # this reads Method.current_competences(), a generic Method-interface hook
+        # rather than an EesMethod-specific field, so the domain/method-agnostic tail
+        # of a run is exactly where it belongs -- method_runner.py never has to know
+        # which Method it was handed.
+        competence_recorder = CompetenceLogRecorder.open_if_requested(args=args)
+
+        def record_skill_competence() -> None:
+            """Reads the checkpoint metrics.evaluations just gained -- see
+            on_sweep_end's own docstring for why this fires exactly there: after
+            _evaluate has appended, so the checkpoint index and transition count
+            this call reads are the ones that sweep was actually recorded under."""
+            if competence_recorder is None:
+                return
+            checkpoint = len(metrics.evaluations) - 1
+            num_online_transitions = metrics.evaluations[-1][0]
+            competence_recorder.record_checkpoint(
+                checkpoint=checkpoint,
+                num_online_transitions=num_online_transitions,
+                competences=method.current_competences(),
+            )
+
+        def on_sweep_end() -> None:
+            record_sweep_end()
+            record_skill_competence()
+
         recorder = MethodRunner._build_recorder(
             args=args,
             problem=problem,
@@ -214,7 +243,7 @@ class MethodRunner:
                 num_render_checkpoints=num_render_checkpoints,
                 on_checkpoint_frames=write_clip,
                 on_cycle_end=record_cycle_end,
-                on_sweep_end=record_sweep_end,
+                on_sweep_end=on_sweep_end,
                 recorder=recorder,
             )
             # Once more after the loop, so the final evaluation sweep is covered and

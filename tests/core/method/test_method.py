@@ -123,6 +123,14 @@ def test_practice_outcomes_default_to_nothing_recorded() -> None:
     assert _MinimalMethod(env=_Env()).practice_outcomes() == {}
 
 
+def test_current_competences_default_to_nothing_tracked() -> None:
+    """`{}`, not an all-zero entry per ground skill it might one day see: a Method
+    that tracks no competence model (every non-learning baseline) has nothing to
+    report, and the default must need no boilerplate to say so -- the same contract
+    practice_outcomes/planning_outcomes already hold."""
+    assert _MinimalMethod(env=_Env()).current_competences() == {}
+
+
 def test_human_help_requested_is_not_an_interaction_complete() -> None:
     """The two signals must stay tellable apart by `except`, in both directions.
 

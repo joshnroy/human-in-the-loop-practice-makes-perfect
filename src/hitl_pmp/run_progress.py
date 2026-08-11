@@ -32,8 +32,8 @@ It carries timestamps and elapsed wall-clock, and `stats.json`'s **byte-stabilit
 load-bearing** -- it is how this repo verifies a change did not alter results (PR #146
 used exactly that property; `tests/scripts/test_reproducibility.py` rests on it for
 three domains). A timestamp inside `stats.json` would break that on every single run.
-`timing.json`, `config_snapshot.json` and `sampler_draws.jsonl` are all separate for
-this reason; this is the fourth.
+`timing.json`, `config_snapshot.json`, `sampler_draws.jsonl` and `competence_log.jsonl`
+are all separate for this reason; this is the fifth.
 
 Nothing here is ever an input to a reproducibility comparison, and a run's actions do
 not depend on it: the same seed still writes a byte-identical `stats.json` with this

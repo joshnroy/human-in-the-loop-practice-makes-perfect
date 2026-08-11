@@ -340,6 +340,24 @@ class EesMethod(HelpSeekingMixin, Method):
     def total_observations(self) -> int:
         return sum(model.num_observations for model in self._competence_models.values())
 
+    def current_competences(self) -> dict[GroundSkill, float]:
+        """Every already-instantiated ground skill's `get_current_competence()` --
+        the same posterior mean `skill_costs()` derives `-log(...)` from, and so
+        exactly what this Method's own planning currently believes. Read by
+        method_runner.py's --record-skill-competence sidecar at every evaluation
+        checkpoint; see Method.current_competences for why this is a live read
+        rather than a cumulative counter.
+
+        Only ground skills already in `self._competence_models` -- a ground skill
+        never executed has no model to report, mirroring `skill_costs()`'s own
+        iteration and `competence_model()`'s lazy creation (it makes one only when a
+        ground skill is actually consulted, never speculatively for every possible
+        grounding)."""
+        return {
+            ground_skill: model.get_current_competence()
+            for ground_skill, model in self._competence_models.items()
+        }
+
     def practice_target_num_tries(self, *, ground_skill: GroundSkill) -> int:
         """The per-skill trial count `skip_perfect`/UCB reason about. Reads the
         all-attempts (`_ground_op_hist`) history when
