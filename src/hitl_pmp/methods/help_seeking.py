@@ -55,6 +55,20 @@ class HelpSeekingTrigger(str, enum.Enum):
     # `skill_provider` under this trigger, same pattern as `stuck_patience`/
     # `mean_steps_between_requests` under theirs.
     ON_NO_APPLICABLE_SKILL = "on-no-applicable-skill"
+    # AT_RANDOM's deterministic sibling: ask exactly every mean_steps_between_requests-th
+    # policy call, consuming zero RNG draws. Exists to remove the RNG confound from a
+    # dose-response curve across the two -- AT_RANDOM's rate is only a mean, so two runs
+    # at the same configured rate can still land a different number of actual requests
+    # over a finite run, while this trigger's request count is exact and reproducible
+    # from N alone. The counter this trigger drives is NEVER reset -- not by
+    # begin_period(), not by note_help_granted() -- so the schedule is one continuous,
+    # absolute sequence of call indices over the whole run, the same "continuous across
+    # periods" choice AT_RANDOM's RNG makes and for the same reason (see begin_period's
+    # docstring). Resetting on rescue in particular would turn "ask every Nth call" into
+    # "wait N calls after each rescue", an irregular schedule that drifts every time a
+    # request is granted -- see note_help_granted's docstring for why that is the wrong
+    # default here even though it is the right one for the stuck detector.
+    AT_FIXED_INTERVAL = "at-fixed-interval"
 
     def __str__(self) -> str:
         return self.value
@@ -88,10 +102,13 @@ class HelpSeekingPolicy(BaseModel):
     call cannot spin.
 
     **Randomness is consumed by exactly one mode.** `AT_RANDOM` draws exactly once per
-    policy call; `ON_STUCK`, `ON_NO_APPLICABLE_SKILL` and `NEVER` draw nothing at all.
-    Keeping that separation is what makes an on-stuck arm bit-identical whatever
-    `--seed` it is handed, and what stops `--stuck-patience` shifting a random arm's
-    stream.
+    policy call; `ON_STUCK`, `ON_NO_APPLICABLE_SKILL`, `AT_FIXED_INTERVAL` and `NEVER`
+    draw nothing at all. Keeping that separation is what makes an on-stuck arm bit-
+    identical whatever `--seed` it is handed, and what stops `--stuck-patience` shifting
+    a random arm's stream -- `AT_FIXED_INTERVAL` is `AT_RANDOM`'s deterministic
+    counterpart precisely because it buys this same seed-independence for the rate
+    itself, letting a dose-response sweep across rates rule out "it was the RNG" as an
+    explanation for anything it finds.
 
     **Genuinely per-run state**, hence a real pydantic instance rather than a
     static-method container (CLAUDE.md's dividing line): it carries an RNG stream and a
@@ -102,11 +119,17 @@ class HelpSeekingPolicy(BaseModel):
     # ON_STUCK. The method-CLI's default is sized from the domain's own cycle length
     # rather than from this class, which has no domain to derive one from.
     stuck_patience: int = Field(default=20, ge=1)
-    # Only read under AT_RANDOM: the mean gap in policy calls between requests, i.e.
-    # each call asks with probability 1/this. Expressed as a period rather than a
-    # probability so it is directly comparable to --max-steps-per-interaction -- at
-    # equal values the arm gets about one rescue per practice period, which is the rate
-    # a scheduled per-period reset would have given it for free.
+    # Read under AT_RANDOM and AT_FIXED_INTERVAL, with two different meanings for the
+    # one field rather than a second one -- both triggers agree that this number is
+    # "the period between requests", they just differ on whether that period is the
+    # mean of a geometric distribution or an exact count. Under AT_RANDOM it is the mean
+    # gap in policy calls between requests, i.e. each call asks with probability
+    # 1/this. Under AT_FIXED_INTERVAL it is the *exact* gap: a request fires on every
+    # Nth call to _should_ask under this trigger, deterministically, no distribution
+    # involved. Expressed as a period rather than a probability/count-down so it is
+    # directly comparable to --max-steps-per-interaction -- at equal values either arm
+    # gets about one rescue per practice period, which is the rate a scheduled
+    # per-period reset would have given it for free.
     mean_steps_between_requests: int = Field(default=150, ge=1)
     # Only read under ON_NO_APPLICABLE_SKILL: the same per-domain object EesMethod
     # itself uses to compute InteractionComplete's condition (skills/predicates/types/
@@ -117,6 +140,13 @@ class HelpSeekingPolicy(BaseModel):
 
     _rng: np.random.Generator = PrivateAttr()
     _detector: StuckDetector = PrivateAttr()
+    # Only read/incremented under AT_FIXED_INTERVAL: the count of calls to _should_ask
+    # this trigger has seen, ever. Needs no model_validator (unlike _rng/_detector, it
+    # depends on no other field), so it is built the same way StuckDetector's own
+    # _steps_since_novel is: a bare PrivateAttr default. Deliberately never zeroed by
+    # begin_period() or note_help_granted() -- see HelpSeekingTrigger.AT_FIXED_INTERVAL's
+    # own comment for why a reset-on-rescue counter would produce the wrong schedule.
+    _fixed_interval_calls: int = PrivateAttr(default=0)
 
     @model_validator(mode="after")
     def _build_streams(self) -> "HelpSeekingPolicy":
@@ -159,8 +189,8 @@ class HelpSeekingPolicy(BaseModel):
 
     def _should_ask(self, *, state: State) -> bool:
         """Whether to ask right now. Consumes exactly one random draw under AT_RANDOM
-        and none under ON_STUCK, ON_NO_APPLICABLE_SKILL or NEVER -- see the class
-        docstring for why that separation is load-bearing.
+        and none under ON_STUCK, ON_NO_APPLICABLE_SKILL, AT_FIXED_INTERVAL or NEVER --
+        see the class docstring for why that separation is load-bearing.
 
         Tested against AT_RANDOM/NEVER/ON_NO_APPLICABLE_SKILL rather than for ON_STUCK
         so that anything unexpected -- a hand-built Namespace carrying a bare string,
@@ -169,11 +199,28 @@ class HelpSeekingPolicy(BaseModel):
         skill_provider it was never given."""
         if self.trigger is HelpSeekingTrigger.AT_RANDOM:
             return bool(self._rng.random() < 1.0 / self.mean_steps_between_requests)
+        if self.trigger is HelpSeekingTrigger.AT_FIXED_INTERVAL:
+            return self._fixed_interval_tick()
         if self.trigger is HelpSeekingTrigger.NEVER:
             return False
         if self.trigger is HelpSeekingTrigger.ON_NO_APPLICABLE_SKILL:
             return self._no_ground_skill_applicable(state=state)
         return self._detector.is_stuck()
+
+    def _fixed_interval_tick(self) -> bool:
+        """Advance the fixed-interval counter by one call and report whether this call
+        lands on the schedule.
+
+        **Convention: fires on the Nth call, the 2Nth, the 3Nth, ... (1-indexed)** --
+        `_fixed_interval_calls` is incremented before the test, so the very first call
+        under this trigger is call 1, and a request fires exactly when that running
+        count is a multiple of `mean_steps_between_requests`. The counter itself is
+        never reset (see the field's own comment), so the modulo -- not the counter --
+        is what makes the schedule regular: the raw count keeps climbing forever while
+        the fire condition cycles every N calls, which is what keeps a rescue from
+        perturbing where the next tick lands."""
+        self._fixed_interval_calls += 1
+        return self._fixed_interval_calls % self.mean_steps_between_requests == 0
 
     def _no_ground_skill_applicable(self, *, state: State) -> bool:
         """True exactly when EES's own `InteractionComplete` condition holds in
@@ -204,7 +251,9 @@ class HelpSeekingPolicy(BaseModel):
         Deliberately does NOT touch the RNG, so a random arm's schedule is one
         continuous stream over the whole run rather than restarting per period --
         restarting it would make the number of requests a function of `--num-cycles` in
-        a way the rate flag does not express."""
+        a way the rate flag does not express. For the same reason it also does NOT touch
+        `_fixed_interval_calls`: AT_FIXED_INTERVAL's schedule is likewise one continuous
+        sequence of absolute call indices, not one restarting per period."""
         self._detector.restart()
 
     def note_help_granted(self) -> None:
@@ -213,7 +262,17 @@ class HelpSeekingPolicy(BaseModel):
         Restarts the stuck detector, which is what stops a rescued robot asking again on
         the very next call forever: the human by construction puts it back somewhere it
         has already been, so every state is instantly non-novel until the visited set is
-        cleared. See `StuckDetector.restart`."""
+        cleared. See `StuckDetector.restart`.
+
+        **Deliberately leaves `_fixed_interval_calls` untouched.** That counter has no
+        analogous problem to solve: nothing about AT_FIXED_INTERVAL's decision depends on
+        where the robot is, only on how many calls have happened, so a rescue cannot make
+        it fire again immediately the way it could for the stuck detector. Restarting it
+        anyway would turn "ask every Nth call, absolutely" into "wait N calls after each
+        rescue" -- a schedule that drifts by however many calls into the current window
+        the rescue happened to land, every single time one is granted. A rescue is not
+        supposed to perturb where the fixed schedule's next tick lands, so this trigger's
+        counter simply keeps counting straight through it."""
         self._detector.restart()
 
 

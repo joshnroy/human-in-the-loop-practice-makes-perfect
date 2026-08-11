@@ -1,3 +1,5 @@
+import contextlib
+
 import numpy as np
 import pytest
 
@@ -82,6 +84,14 @@ class _FakeSkillProvider(SkillProvider):
         return np.zeros(1)
 
 
+def _at_fixed_interval(*, interval: int = 4, seed: int = 0) -> HelpSeekingPolicy:
+    return HelpSeekingPolicy(
+        trigger=HelpSeekingTrigger.AT_FIXED_INTERVAL,
+        mean_steps_between_requests=interval,
+        seed=seed,
+    )
+
+
 def _on_no_applicable_skill(*, seed: int = 0) -> HelpSeekingPolicy:
     return HelpSeekingPolicy(
         trigger=HelpSeekingTrigger.ON_NO_APPLICABLE_SKILL,
@@ -98,6 +108,7 @@ def test_the_trigger_enum_renders_as_its_wire_words() -> None:
     assert str(HelpSeekingTrigger.ON_STUCK) == "on-stuck"
     assert str(HelpSeekingTrigger.AT_RANDOM) == "at-random"
     assert str(HelpSeekingTrigger.ON_NO_APPLICABLE_SKILL) == "on-no-applicable-skill"
+    assert str(HelpSeekingTrigger.AT_FIXED_INTERVAL) == "at-fixed-interval"
 
 
 def test_a_wrapped_policy_delegates_while_the_robot_is_getting_somewhere() -> None:
@@ -282,6 +293,111 @@ def test_two_policies_do_not_share_a_detector() -> None:
     with pytest.raises(HumanHelpRequested):
         first(_state(x=1.0))
     assert second(_state(x=2.0)).label == "acted"
+
+
+# --- AT_FIXED_INTERVAL: AT_RANDOM's deterministic sibling. Fires on exactly every
+# Nth call to _should_ask under this trigger (1-indexed: call N, 2N, 3N, ...), consumes
+# no RNG draws, and its counter is never reset by begin_period() or
+# note_help_granted() -- the schedule is one continuous, absolute sequence over the
+# whole run.
+
+
+def test_a_fixed_interval_arm_asks_on_an_exactly_regular_schedule() -> None:
+    """Pins the 1-indexed convention directly: with interval N, calls 1..N-1 delegate
+    and call N asks, repeating every N calls thereafter."""
+    interval = 4
+    seeking = _at_fixed_interval(interval=interval)
+    policy = seeking.wrap(inner_policy=_acting_policy())
+    for call_index in range(1, 3 * interval + 1):
+        if call_index % interval == 0:
+            with pytest.raises(HumanHelpRequested):
+                policy(_state(x=float(call_index)))
+        else:
+            assert policy(_state(x=float(call_index))).label == "acted"
+
+
+def test_a_fixed_interval_arm_ignores_its_seed_entirely() -> None:
+    """The trigger consumes no randomness, so two instances differing only in seed must
+    produce byte-identical schedules -- the direct opposite of AT_RANDOM, where
+    different seeds are required to diverge (see
+    test_two_seeds_give_different_request_timing)."""
+
+    def _pattern(*, seed: int) -> tuple[bool, ...]:
+        policy = _at_fixed_interval(interval=5, seed=seed).wrap(inner_policy=_acting_policy())
+        pattern = []
+        for x in range(37):
+            try:
+                policy(_state(x=float(x)))
+                pattern.append(False)
+            except HumanHelpRequested:
+                pattern.append(True)
+        return tuple(pattern)
+
+    assert _pattern(seed=0) == _pattern(seed=12345)
+
+
+def test_a_fixed_interval_arm_consumes_zero_rng_draws() -> None:
+    """Stronger and more direct than the seed-agreement test above: the RNG's own
+    bit-generator state must be byte-identical before and after driving many calls,
+    not merely "the two seeds happen to agree on when to ask"."""
+    seeking = _at_fixed_interval(interval=4)
+    policy = seeking.wrap(inner_policy=_acting_policy())
+    before = seeking._rng.bit_generator.state
+    for x in range(37):
+        with contextlib.suppress(HumanHelpRequested):
+            policy(_state(x=float(x)))
+    after = seeking._rng.bit_generator.state
+    assert before == after
+
+
+def test_a_rescue_does_not_shift_the_fixed_interval_schedule() -> None:
+    """Design decision: the fixed-interval counter is untouched by
+    note_help_granted(), so a rescue mid-schedule does not shift where later requests
+    land relative to the absolute call count -- unlike the stuck detector, which is
+    deliberately restarted on rescue. A reset-on-rescue implementation would instead
+    make the next ask land at (rescue call index) + interval, which this test would
+    catch by asking too late relative to the fixed absolute schedule below."""
+    interval = 4
+    seeking = _at_fixed_interval(interval=interval)
+    policy = seeking.wrap(inner_policy=_acting_policy())
+    # Calls 1-3: delegate. Call 4: asks (first tick).
+    for call_index in range(1, interval):
+        assert policy(_state(x=float(call_index))).label == "acted"
+    with pytest.raises(HumanHelpRequested):
+        policy(_state(x=float(interval)))
+    seeking.note_help_granted()  # a rescue right after the first tick
+    # If the counter had been reset, the next ask would land 4 calls after the rescue
+    # (absolute call 8). Since it is untouched, the schedule stays anchored to the
+    # original absolute count: the next tick is still absolute call 8 = 2 * interval,
+    # so this also confirms no *extra* shift crept in -- but the point of this test is
+    # the call in between (5, 6, 7) must all delegate and only 8 must ask, exactly as
+    # they would have with no rescue at all.
+    for call_index in range(interval + 1, 2 * interval):
+        assert policy(_state(x=float(call_index))).label == "acted"
+    with pytest.raises(HumanHelpRequested):
+        policy(_state(x=float(2 * interval)))
+
+
+def test_beginning_a_period_does_not_disturb_the_fixed_interval_counter() -> None:
+    """Mirrors test_an_on_stuck_arm_consumes_no_randomness's sibling guarantee for
+    AT_RANDOM's RNG: begin_period() must be a no-op for this trigger's own state too,
+    so the schedule is one continuous stream across periods rather than one that
+    restarts every --num-cycles."""
+    interval = 4
+    seeking = _at_fixed_interval(interval=interval)
+    policy = seeking.wrap(inner_policy=_acting_policy())
+    for call_index in range(1, interval):
+        assert policy(_state(x=float(call_index))).label == "acted"
+    seeking.begin_period()  # a new practice period starts one call before the tick
+    with pytest.raises(HumanHelpRequested):
+        # If begin_period had reset the counter, this would be call 1 of a fresh
+        # stretch and would delegate instead of asking.
+        policy(_state(x=float(interval)))
+
+
+def test_the_fixed_interval_gap_must_be_at_least_one() -> None:
+    with pytest.raises(ValueError):
+        _at_fixed_interval(interval=0)
 
 
 # --- ON_NO_APPLICABLE_SKILL: fires exactly when zero ground skills are applicable,

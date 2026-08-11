@@ -49,8 +49,13 @@ class HelpSeekingCli:
             "almost never, which is the point -- it is the baseline 'on-stuck' is "
             "motivated by. The period CONTINUES after a rescue rather than ending -- "
             "that is the difference from the method's own InteractionComplete, which is "
-            "untouched by this flag. What the human does on arrival is "
-            "--human-reset-target.",
+            "untouched by this flag. 'at-fixed-interval' is 'at-random''s deterministic "
+            "counterpart: it asks on exactly every --mean-steps-between-help-requests-th "
+            "policy call rather than with probability 1/that number, consuming no "
+            "randomness at all, so it removes the RNG confound for anyone comparing a "
+            "dose-response curve across the two -- the request count is exact and "
+            "reproducible from the rate alone, not merely correct on average. What the "
+            "human does on arrival is --human-reset-target.",
         )
         parser.add_argument(
             "--stuck-patience",
