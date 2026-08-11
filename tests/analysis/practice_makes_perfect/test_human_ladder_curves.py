@@ -271,6 +271,46 @@ def test_solves_per_rescue_is_none_when_never_rescued(*, tmp_path: Path) -> None
     assert ratio is None
 
 
+def test_convergence_summary_needs_at_least_20_checkpoints(*, tmp_path: Path) -> None:
+    directory = tmp_path / "no-human" / "ees"
+    # 19 checkpoints: one short of the 10-vs-10 window the rule needs.
+    _write_run(directory=directory, seed=0, sweeps=[(0, 0, 0)] * 19)
+    run = HumanLadderCurves.load_run(directory=directory, label="no-human", expect_no_human=True)
+    with pytest.raises(ValueError, match=">= 20 checkpoints"):
+        HumanLadderCurves.convergence_summary(run=run)
+
+
+def test_convergence_summary_reports_zero_delta_on_a_flat_curve(*, tmp_path: Path) -> None:
+    directory = tmp_path / "no-human" / "ees"
+    # 20 identical checkpoints (7 TRASH each, both seeds): last 10 vs. previous 10 must
+    # agree exactly.
+    _write_run(directory=directory, seed=0, sweeps=[(7, 0, 0)] * 20)
+    _write_run(directory=directory, seed=1, sweeps=[(7, 0, 0)] * 20)
+    run = HumanLadderCurves.load_run(directory=directory, label="no-human", expect_no_human=True)
+    summary = HumanLadderCurves.convergence_summary(run=run)
+    assert summary["prev10_fraction"] == pytest.approx(7 / 30)
+    assert summary["last10_fraction"] == pytest.approx(7 / 30)
+    assert summary["delta"] == pytest.approx(0.0)
+    assert summary["final"] == (14, 60)
+
+
+def test_convergence_summary_reports_positive_delta_on_a_climbing_curve(*, tmp_path: Path) -> None:
+    directory = tmp_path / "no-human" / "ees"
+    # 20 checkpoints, TRASH solved = index capped at 14 (both seeds identical): prev10
+    # (indices 0-9) sums to 45 pooled-per-seed, last10 (indices 10-19, capped at 14 from
+    # index 14 on) sums to 130 -- derived on paper, not recorded from a run of the code.
+    trash_by_checkpoint = [min(index, 14) for index in range(20)]
+    sweeps = [(trash, 0, 0) for trash in trash_by_checkpoint]
+    _write_run(directory=directory, seed=0, sweeps=sweeps)
+    _write_run(directory=directory, seed=1, sweeps=sweeps)
+    run = HumanLadderCurves.load_run(directory=directory, label="no-human", expect_no_human=True)
+    summary = HumanLadderCurves.convergence_summary(run=run)
+    assert summary["prev10_fraction"] == pytest.approx(2 * 45 / 600)
+    assert summary["last10_fraction"] == pytest.approx(2 * 130 / 600)
+    assert summary["delta"] == pytest.approx(2 * 130 / 600 - 2 * 45 / 600)
+    assert summary["delta"] > 0
+
+
 def test_render_family_and_rate_sweep_write_files(*, tmp_path: Path) -> None:
     """Rendering just has to not crash and has to write a file -- the arithmetic feeding
     it is what the tests above pin."""

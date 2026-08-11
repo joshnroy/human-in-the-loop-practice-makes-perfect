@@ -7,19 +7,20 @@ domain, it is also badly damaged: Tossing Room's one-way ledge severs rooms 0-2 
 item pile in room 3, so a practice period that steps left once can never pick anything up
 again, and under `never` that damage carries into every later period.
 
-**This supersedes PR #151, which is closed, not merged.** #151 measured an eight-arm ladder
-including `on-stuck` (novelty-triggered rescue) and a single `at-random` point at
-`--mean-steps-between-help-requests 150`. Neither is here: `on-stuck` is out of scope for
-this comparison by deliberate choice, and the raw per-seed data behind #151's numbers was
-never committed (`results/` is gitignored) and could not be found intact anywhere on the
-machine that built it -- what was found on disk carried a deleted CLI flag
-(`--human-intervention-trigger`) from before the help-seeking interface was reshaped onto
-`--ask-for-help`/`--human-reset-target`, which is exactly the condition #151's own
-"Superseded numbers" precedent says must not be quoted or plotted alongside a current run.
-So this is a **fresh measurement**, not a re-plot: every number below comes from a run
-against the CURRENT interface, verified by exactly reproducing the one number that could
-be checked against a known-good source (`no-human` at 112/300 pooled, matching #151's
-control to the task).
+**This is a re-measurement of PR #195's own rate sweep** (still open, not merged, as of
+this writing -- https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/195),
+fixing two things Josh flagged in review there: (1) #195's `--num-cycles 10` budget had not
+converged -- N=14's pooled OVERALL climbed `77, 100, ..., 259` across its 11 checkpoints,
+still rising at the last one -- so this sweep runs **`--num-cycles 100`**, 10x longer; (2)
+#195's `--ask-for-help at-random` trigger draws one RNG sample per policy call
+(`Bernoulli(1/N)`), so two runs at the same N can still land a different number of actual
+requests, confounding "what does the rate do" with "what did the RNG happen to draw". This
+sweep instead uses `--ask-for-help at-fixed-interval`
+(https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/200), which fires
+on exactly every Nth policy call with zero RNG draws, so the request count is a deterministic
+function of N and the run length alone. Per Josh's explicit instruction, N < 5 is dropped
+(the old sweep's N=1,2,3 points) and the grid is extended up to N=30 (the old sweep's max
+was 20).
 
 **The four components.**
 
@@ -27,21 +28,31 @@ control to the task).
 | --- | --- | --- | --- | --- | --- |
 | `no-human` | `ees` | `never` | -- | one-way | 10 |
 | `two-way-ledge` | `ees` | `never` | -- | two-way | 10 |
-| `skill-oracle` | `skill-oracle` | -- | -- | one-way | 10 |
-| rate sweep | `ees` | `at-random` | `task-initial` | one-way | 10 per N |
+| `skill-oracle` | `skill-oracle` | -- | -- | one-way | 10 (reused from #195 -- see below) |
+| rate sweep | `ees` | `at-fixed-interval` | `task-initial` | one-way | 10 per N |
 
-The rate sweep varies `--mean-steps-between-help-requests` (N; each policy call asks with
-probability 1/N) over a deliberately non-uniform grid from N=1 (asks almost every call) to
-N=20 (asks roughly once every twenty calls) -- denser at low N, where the response is
-expected to move fastest, sparser toward N=20 where it is expected to have mostly flattened.
-This is new territory, not a re-run of #151's `at-random` point: N=150 there is a much
-lower-intervention-rate regime than anything in this sweep.
+The rate sweep varies `--mean-steps-between-help-requests` (N; a request fires on exactly
+every Nth policy call, deterministically) over N in {5, 7, 10, 14, 20, 25, 30} -- denser at
+low N, where the response is expected to move fastest, sparser toward N=30 where it is
+expected to have mostly flattened.
+
+**`skill-oracle` is reused unchanged from #195, not re-run.**
+`methods/oracle/cli.py`'s `SkillOracleCli.add_arguments` registers no flags at all, and its
+`run` hardcodes `num_cycles=0` regardless of what the global CLI parsed -- confirmed
+empirically: `--method skill-oracle --num-cycles 100` errors `unrecognized arguments:
+--num-cycles 100`. An oracle never practises/learns over cycles, so its result is
+cycle-count-invariant, and the code paths it depends on (`environments/tossingroom/`,
+`methods/oracle/`, `core/`, `practice_loop.py`) are unchanged between #195's fork point and
+this sweep's. Re-running it would reproduce #195's own 10 seeds byte-for-byte at real
+compute cost, so this analysis reads them from
+`docs/experiment-logs/2026-08-10-human-ladder-rate-sweep-runs/skill-oracle/` (committed on
+#195's branch) unchanged.
 
 **Which comparisons are clean.** `no-human` and every rate-sweep point share `--method ees`,
 the one-way world and all ten seeds, so `PairedTests.sign_flip` applies to each N against the
 control. `two-way-ledge` changes the world and `skill-oracle` changes the Method, so neither
 is sign-flipped against anything -- each is reported as a ceiling level only, the same
-precedent #151's module used.
+precedent #195's own module used.
 
 **Non-learners are drawn flat, not as curves.** `skill-oracle` never practises (no
 `--num-cycles` flag exists for it) and has a single evaluation checkpoint, so it is a
@@ -53,24 +64,24 @@ exist" arm -- the same reasoning CLAUDE.md's colour rule already carves out for
 
 **Colour.** `no-human` is orange (`#D55E00`): the standing "nothing helps" colour, reused
 across every figure in this report. The rate sweep is blue-family (`Blues`, a sequential
-colourmap from light N=1 to dark N=20): every rate-sweep arm has an assistance mechanism
-available (`--ask-for-help at-random`, always firing at a strictly positive rate here), which
-is what the blue/orange rule tracks -- not the specific rate, which the colourmap's lightness
-carries instead. `skill-oracle` is grey and dotted (reference line); `two-way-ledge` gets a
-third, unreserved colour since it sits on neither axis.
+colourmap from light N=5 to dark N=30): every rate-sweep arm has an assistance mechanism
+available (`--ask-for-help at-fixed-interval`, always firing at a strictly positive rate
+here), which is what the blue/orange rule tracks -- not the specific rate, which the
+colourmap's lightness carries instead. `skill-oracle` is grey and dotted (reference line);
+`two-way-ledge` gets a third, unreserved colour since it sits on neither axis.
 
-**The three training-curve figures (overall/TRASH/RECYCLING) carry all eleven arms on ONE
-panel each** -- the three fixed arms plus all eight rate-sweep points, so a reader sees the
-whole ladder's shape over practice, not just its final-checkpoint dose-response. The eight
+**The three training-curve figures (overall/TRASH/RECYCLING) carry all ten arms on ONE
+panel each** -- the three fixed arms plus all seven rate-sweep points, so a reader sees the
+whole ladder's shape over practice, not just its final-checkpoint dose-response. The seven
 rate-sweep curves are thin, partly transparent and have no per-seed traces of their own (that
-would be 80 more lines); they are drawn first so the three fixed arms' bold, per-seed-backed
+would be 70 more lines); they are drawn first so the three fixed arms' bold, per-seed-backed
 curves stay visually on top. See `render_family` for why a colourbar replaces a named legend
-entry for the eight of them.
+entry for the seven of them.
 
 **The separate dose-response figure is not a training curve, and stays alongside the merged
 panels rather than being replaced by them.** It answers a different question -- what does
 FINAL performance do as the rescue rate varies -- so its x axis is N, not online transitions,
-and it draws one point per seed at each of the eight sampled N values, plus the pooled mean,
+and it draws one point per seed at each of the seven sampled N values, plus the pooled mean,
 with the `no-human` and `skill-oracle` levels as reference lines for context. The merged
 training-curve panels show shape over practice; this figure is still the one to read for the
 exact per-N numbers the training curves intentionally omit from their (colourbar-only) legend.
@@ -79,8 +90,9 @@ exact per-N numbers the training curves intentionally omit from their (colourbar
 everywhere, or an arm labelled reset-free was quietly reset for free.
 `num_human_interventions_recorded` must be exactly 0 for the three arms with no reachable
 human (`no-human`, `two-way-ledge`, `skill-oracle`) and strictly positive for every
-rate-sweep point -- a zero there at N <= 20 over 1500 policy calls would mean the trigger
-never wired rather than a legitimate null.
+rate-sweep point -- at N <= 30 over 15000 policy calls (`--num-cycles 100 --max-steps-
+per-interaction 150`) the deterministic trigger fires at least 500 times, so a zero there
+would mean the trigger never wired rather than a legitimate null.
 
 **Statistics.** Every `no-human`-paired comparison is `PairedTests.sign_flip`, exact by
 enumerating its null in full -- no normal approximation, no scipy. Imported from
@@ -152,9 +164,9 @@ _LABELS = {
     "skill-oracle": "skill oracle (ceiling: skills)",
 }
 
-# Blue: the rate sweep has an assistance mechanism (--ask-for-help at-random) available and
-# firing at every sampled N -- the blue/orange rule tracks whether the mechanism exists, not
-# how often it fires.
+# Blue: the rate sweep has an assistance mechanism (--ask-for-help at-fixed-interval)
+# available and firing at every sampled N -- the blue/orange rule tracks whether the
+# mechanism exists, not how often it fires.
 _RATE_SWEEP_COLOR = "#0072B2"
 
 
@@ -255,13 +267,15 @@ class HumanLadderCurves:
         """The things that make a run's label true, checked before any number off it is
         used.
 
-        `expect_no_human` is a hard requirement in BOTH directions here, unlike #151's
-        module: a fixed arm recording an intervention is a wiring error, but so is a
-        rate-sweep point recording ZERO -- at N <= 20 over 1500 policy calls the expected
-        intervention count is in the dozens, so a true zero means the trigger never fired
-        rather than a legitimate null (contrast `on-stuck`, which #151's module correctly
-        let report zero as a finding -- that trigger is condition-dependent, `at-random`
-        is not)."""
+        `expect_no_human` is a hard requirement in BOTH directions here, matching #195's
+        own module: a fixed arm recording an intervention is a wiring error, but so is a
+        rate-sweep point recording ZERO -- at N <= 30 over 15000 policy calls
+        (`--num-cycles 100 --max-steps-per-interaction 150`) the deterministic
+        `at-fixed-interval` trigger fires at least 500 times by construction (it consumes
+        no RNG, so this is exact, not merely expected), so a true zero means the trigger
+        never fired rather than a legitimate null (contrast `on-stuck`, which #151's
+        module correctly let report zero as a finding -- that trigger is
+        condition-dependent, `at-fixed-interval` is not)."""
         resets = stats.get("num_practice_resets")
         if resets != _EXPECTED_PRACTICE_RESETS:
             raise ValueError(
@@ -280,8 +294,8 @@ class HumanLadderCurves:
         if not expect_no_human and not interventions:
             raise ValueError(
                 f"{where}: the {label} run recorded zero human interventions. At this "
-                "rate over 1500 policy calls that means --ask-for-help never wired, not a "
-                "legitimate null."
+                "rate over 15000 policy calls that means --ask-for-help never wired, not "
+                "a legitimate null."
             )
         if abs(cost - interventions * _V0_INTERVENTION_COST) > 1e-9:
             raise ValueError(
@@ -354,6 +368,48 @@ class HumanLadderCurves:
             round(sum(run[seed]["transitions"][index] for seed in seeds) / len(seeds))
             for index in range(next(iter(lengths)))
         ]
+
+    @staticmethod
+    def convergence_summary(*, run: dict, family: str | None = None) -> dict:
+        """Whether this run's pooled curve had flattened by its last checkpoint --
+        pre-registered here as a fixed rule (Methods, not Results) so the PR's answer to
+        "did it converge" is not an eyeballed call made after seeing the plot.
+
+        **The rule**: pool solved/total over the last 10 checkpoints and the 10 before
+        that, take each window's solved-over-total FRACTION (not a raw count -- windows
+        of counts are not comparable if a checkpoint's own total differs, which it does
+        not here but the fraction is the right invariant regardless), and report their
+        difference. No p-value is attached: this is a two-number descriptive comparison
+        of adjacent windows on one already-pooled curve, not a hypothesis test over
+        independent samples, and manufacturing a test statistic for it would claim a
+        kind of inference this comparison cannot support. Report the raw numbers and let
+        the reader judge "close to flat" against the run's own scale.
+
+        **Threshold, fixed here before any real number was seen**: `|delta| < 0.01`
+        (one percentage point of the pooled fraction, i.e. < 3/300 at this domain's
+        --num-test-tasks 30 x 10 seeds) is called FLAT; anything at or above it is
+        called STILL CLIMBING (or falling). Chosen as a round, small number relative to
+        the run's own scale, not tuned to whatever this PR's data turned out to show.
+
+        Raises rather than silently truncating a short run: below 20 checkpoints the two
+        windows would overlap or run off the front of the curve, which is not what
+        "last 10 vs. the 10 before" means."""
+        pooled = HumanLadderCurves.pooled_curve(run=run, family=family)
+        if len(pooled) < 20:
+            raise ValueError(
+                f"convergence_summary needs >= 20 checkpoints (last 10 vs. previous 10), "
+                f"got {len(pooled)}."
+            )
+        last10 = pooled[-10:]
+        prev10 = pooled[-20:-10]
+        last_fraction = sum(s for s, _ in last10) / sum(t for _, t in last10)
+        prev_fraction = sum(s for s, _ in prev10) / sum(t for _, t in prev10)
+        return {
+            "prev10_fraction": prev_fraction,
+            "last10_fraction": last_fraction,
+            "delta": last_fraction - prev_fraction,
+            "final": pooled[-1],
+        }
 
     @staticmethod
     def final_per_seed(*, run: dict, family: str | None) -> list[int]:
@@ -451,6 +507,32 @@ class HumanLadderCurves:
             )
         print()
 
+        print(
+            "convergence check (pre-registered): pooled OVERALL fraction, last 10 "
+            "checkpoints vs. the 10 before that\n"
+        )
+        for arm_name in ("no-human", "two-way-ledge"):
+            summary = HumanLadderCurves.convergence_summary(run=arms[arm_name])
+            final_solved, final_total = summary["final"]
+            print(
+                f"    {arm_name:>14}  prev10 {summary['prev10_fraction']:.4f}"
+                f"   last10 {summary['last10_fraction']:.4f}"
+                f"   delta {summary['delta']:+.4f}"
+                f"   final "
+                f"{HumanLadderCurves.format_count(solved=final_solved, total=final_total)}"
+            )
+        for n in sorted(rate_sweep):
+            summary = HumanLadderCurves.convergence_summary(run=rate_sweep[n])
+            final_solved, final_total = summary["final"]
+            print(
+                f"    N={n:<10}  prev10 {summary['prev10_fraction']:.4f}"
+                f"   last10 {summary['last10_fraction']:.4f}"
+                f"   delta {summary['delta']:+.4f}"
+                f"   final "
+                f"{HumanLadderCurves.format_count(solved=final_solved, total=final_total)}"
+            )
+        print()
+
     # ------------------------------------------------------------------ the figures
 
     @staticmethod
@@ -463,7 +545,7 @@ class HumanLadderCurves:
         title: str,
         legend_loc: str = "upper left",
     ) -> None:
-        """The three fixed arms AND all eight rate-sweep points on ONE goal family: the
+        """The three fixed arms AND all seven rate-sweep points on ONE goal family: the
         training curves, all on the same panel.
 
         One figure per family (overall / TRASH / RECYCLING), matching the standing
@@ -471,22 +553,22 @@ class HumanLadderCurves:
         flat one and show a muted version of neither. EMPTY gets no figure: 20/20 in every
         arm, nothing for a curve to show.
 
-        **Eleven lines on one panel needs a different legend strategy than three.** The
+        **Ten lines on one panel needs a different legend strategy than three.** The
         three fixed arms keep named legend entries with their exact pooled count, per the
-        standing convention. The eight rate-sweep arms do NOT get named entries -- eight
+        standing convention. The seven rate-sweep arms do NOT get named entries -- seven
         more `--mean-steps-between-help-requests=N -- x/300` strings would make the legend
         itself the unreadable part of the figure. They get a sequential colourmap instead
-        (light N=1 to dark N=20) with a colourbar, which is the right encoding for an
+        (light N=5 to dark N=30) with a colourbar, which is the right encoding for an
         ORDERED sweep of one parameter -- Josh's own suggestion, and the natural read for
-        "one arm per value of N" the way a discrete named legend is not. All eight are
+        "one arm per value of N" the way a discrete named legend is not. All seven are
         blue-family (`Blues`), matching the project's role rule: every rate-sweep arm has
-        an assistance mechanism available (`--ask-for-help at-random`, always firing at a
-        strictly positive rate here -- see `check_manipulation`), which is what blue
-        encodes, not the specific rate. Orange stays reserved for `no-human`, the one arm
-        with no mechanism at all.
+        an assistance mechanism available (`--ask-for-help at-fixed-interval`, always
+        firing at a strictly positive rate here -- see `check_manipulation`), which is
+        what blue encodes, not the specific rate. Orange stays reserved for `no-human`,
+        the one arm with no mechanism at all.
 
         **The rate-sweep curves have no per-seed faint traces here, unlike the fixed
-        arms.** Eight arms x ten seeds is 80 more lines, which would bury the panel; their
+        arms.** Seven arms x ten seeds is 70 more lines, which would bury the panel; their
         per-seed spread already has its own figure (`render_rate_sweep`). They are drawn
         first, thin and partly transparent, so the three fixed arms' bold lines stay on
         top and visually dominant -- the same "faint underneath, bold on top" layering the
@@ -502,7 +584,7 @@ class HumanLadderCurves:
         norm = matplotlib.colors.Normalize(vmin=min(ns), vmax=max(ns))
         for n in ns:
             run = rate_sweep[n]
-            # 0.30 floor keeps even N=1 (the lightest) visible against a white panel.
+            # 0.30 floor keeps even the lightest sampled N visible against a white panel.
             color = cmap(0.30 + 0.65 * norm(n))
             xs = HumanLadderCurves.transitions(run=run)
             pooled = HumanLadderCurves.pooled_curve(run=run, family=family)
@@ -519,7 +601,9 @@ class HumanLadderCurves:
         scalar_mappable.set_array([])
         colorbar = fig.colorbar(scalar_mappable, ax=ax, pad=0.015, fraction=0.045)
         colorbar.set_label(
-            "--ask-for-help at-random, N (--mean-steps-between-help-requests)", fontsize=8
+            "--ask-for-help at-fixed-interval, N (--mean-steps-between-help-requests) "
+            "-- exact period, no RNG",
+            fontsize=8,
         )
         colorbar.set_ticks(ns)
 
@@ -593,14 +677,15 @@ class HumanLadderCurves:
         ceilings the fixed-arm figures use.
 
         **The shaded band is the 25th-75th percentile (IQR) across the 10 seeds at each N,
-        not a symmetric +-1 std band.** This data is genuinely bimodal at some N (N=14's
-        final checkpoint splits 7 seeds around 28-30 against 3 around 17-19, not a noisy
-        unimodal spread), and a symmetric std band centred on the mean would visually assert
-        a single-peaked distribution that isn't there, while also having no reason to
-        respect the [0, 30] physical range. The IQR is a plain robust spread statistic that
-        does neither. It does NOT by itself reveal the bimodal clustering -- that needs the
-        individual seed trajectories, which is exactly what `render_rate_sweep_trajectories`
-        draws instead of summarising."""
+        not a symmetric +-1 std band.** #195's own (unconverged, `at-random`) sweep found
+        genuine bimodality at some N -- final checkpoint splitting into a high cluster and
+        a low cluster rather than a noisy unimodal spread -- and a symmetric std band
+        centred on the mean would visually assert a single-peaked distribution that isn't
+        there, while also having no reason to respect the [0, 30] physical range. The IQR
+        is a plain robust spread statistic that does neither, and whether this run's own
+        deterministic-trigger, 100-cycle data reproduces that bimodality is exactly one of
+        the questions this PR checks -- see `render_rate_sweep_trajectories`, which draws
+        the individual seed trajectories the IQR band alone cannot reveal."""
         fig, ax = plt.subplots(figsize=(8.8, 5.6))
         ns = sorted(rate_sweep)
         means = []
@@ -639,7 +724,7 @@ class HumanLadderCurves:
             marker="o",
             markersize=5,
             zorder=3,
-            label="--ask-for-help at-random, task-initial — per-seed mean, n=10 per N",
+            label="--ask-for-help at-fixed-interval, task-initial — per-seed mean, n=10 per N",
         )
 
         for reference_arm in ("no-human", "skill-oracle"):
@@ -659,7 +744,8 @@ class HumanLadderCurves:
 
         ax.set_xticks(ns)
         ax.set_xlabel(
-            "--mean-steps-between-help-requests (N); each policy call asks with probability 1/N"
+            "--mean-steps-between-help-requests (N); a request fires on exactly every "
+            "Nth policy call (deterministic, no RNG)"
         )
         ax.set_ylabel("final test tasks solved per seed", fontsize=9)
         ax.set_ylim(-_NUM_TEST_TASKS * 0.04, _NUM_TEST_TASKS * 1.06)
@@ -675,7 +761,7 @@ class HumanLadderCurves:
     def render_rate_sweep_trajectories(
         *, arms: dict, rate_sweep: dict, output: Path, title: str
     ) -> None:
-        """Eight small multiples, one per N, showing what the IQR band in
+        """One small multiple per N (seven here), showing what the IQR band in
         `render_rate_sweep` cannot: the actual per-seed clustering.
 
         **This is the honest version of "spread".** A shaded band around a mean asserts a
@@ -692,10 +778,11 @@ class HumanLadderCurves:
         arm's practice is only interpretable next to what zero help and privileged skills
         achieve on the same axis.
 
-        2 rows, one column per two N values (4 columns at the real 8-point grid), ordered
-        by N (row-major, so the sampled points read left-to-right top-to-bottom in
-        ascending N) -- a single row of 8 was tried first and judged too compressed to show
-        individual seed lines. Column count is derived from how many N points were passed
+        2 rows, one column per two N values (4 columns at this PR's 7-point grid, one panel
+        hidden), ordered by N (row-major, so the sampled points read left-to-right
+        top-to-bottom in ascending N) -- a single row was tried first and judged too
+        compressed to show individual seed lines. Column count is derived from how many N
+        points were passed
         rather than hardcoded to 4, so a smaller sweep (as in this module's own tests)
         still lays out cleanly instead of leaving `zip`-mismatched axes; any axis beyond
         the number of N points supplied is hidden rather than left showing empty grid
@@ -775,12 +862,15 @@ class HumanLadderCurves:
 
         # An axes-level legend, not a figure-level one: a figure-level "outside upper
         # center" legend collided with fig.suptitle regardless of call order (both are
-        # constrained_layout "outside" artists competing for the same top margin). The N=1
-        # panel's curves all stay under y=13 (see check_manipulation: N=1 spends every
-        # policy call on a rescue, so there is barely any practice to plot), which leaves
-        # its own upper-right corner empty and a natural place for the legend to sit
-        # in-panel instead of fighting the title for figure-level space.
-        axes_flat[0].legend(loc="upper right", fontsize=7.5, framealpha=0.95)
+        # constrained_layout "outside" artists competing for the same top margin).
+        # `loc="best"` rather than a hardcoded corner: #195's module fixed this at
+        # "upper right" because its smallest N (N=1) spent nearly every policy call on a
+        # rescue and left that corner empty by construction -- an assumption that does not
+        # carry to this PR's grid, whose smallest N is 5 and rescues far less densely, so
+        # letting matplotlib place it in whichever corner the first panel's own data
+        # leaves empty is the choice that does not silently break on the next grid change
+        # either.
+        axes_flat[0].legend(loc="best", fontsize=7.5, framealpha=0.95)
         fig.suptitle(title, fontsize=10.5)
         fig.savefig(output, dpi=150)
         print(f"wrote {output}")
@@ -796,25 +886,26 @@ class HumanLadderCurves:
             action="append",
             required=True,
             metavar="NAME=DIR",
-            help="e.g. no-human=results/human-ladder-v2/no-human/ees . DIR holds "
-            f"<seed>/stats.json. All three of {', '.join(_FIXED_ARMS)} are required.",
+            help="e.g. no-human=docs/experiment-logs/2026-08-11-human-ladder-fixed-"
+            f"interval-10x/no-human/ees . DIR holds <seed>/stats.json. All three of "
+            f"{', '.join(_FIXED_ARMS)} are required.",
         )
         parser.add_argument(
             "--rate-point",
             action="append",
             required=True,
             metavar="N=DIR",
-            help="e.g. 5=results/human-ladder-v2/rate-sweep/N5/ees . At least two points "
-            "are required.",
+            help="e.g. 5=docs/experiment-logs/2026-08-11-human-ladder-fixed-interval-10x/"
+            "rate-sweep/N5/ees . At least two points are required.",
         )
         parser.add_argument(
             "--output-dir",
             type=Path,
             required=True,
             help="Where the five figures are written: overall/TRASH/RECYCLING training "
-            "curves (fixed arms plus all eight rate-sweep points, same panels), the "
-            "rate-sweep dose-response figure (mean + IQR band), and the eight-panel "
-            "per-N seed-trajectory small-multiples figure.",
+            "curves (fixed arms plus every rate-sweep point, same panels), the "
+            "rate-sweep dose-response figure (mean + IQR band), and the per-N "
+            "seed-trajectory small-multiples figure.",
         )
         args = parser.parse_args()
 
@@ -844,7 +935,7 @@ class HumanLadderCurves:
                 family=family,
                 output=args.output_dir
                 / f"human-ladder-{'overall' if family is None else family.lower()}.png",
-                title=f"{domain}\nfixed arms + at-random rate sweep — {name}",
+                title=f"{domain}\nfixed arms + at-fixed-interval rate sweep — {name}",
                 legend_loc=legend_loc,
             )
         HumanLadderCurves.render_rate_sweep(
@@ -853,7 +944,7 @@ class HumanLadderCurves:
             output=args.output_dir / "human-ladder-rate-sweep.png",
             title=(
                 f"{domain}\n"
-                f"rescue-rate dose-response, --ask-for-help at-random "
+                f"rescue-rate dose-response, --ask-for-help at-fixed-interval "
                 f"(overall test tasks, of {_NUM_TEST_TASKS})"
             ),
         )
