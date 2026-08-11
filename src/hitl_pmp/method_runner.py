@@ -13,6 +13,7 @@ from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
+from hitl_pmp.episode_traces import EpisodeTraceRecorder
 from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
@@ -181,6 +182,11 @@ class MethodRunner:
         # of a run is exactly where it belongs -- method_runner.py never has to know
         # which Method it was handed.
         competence_recorder = CompetenceLogRecorder.open_if_requested(args=args)
+        # --record-episode-traces' recorder, built the same way and for the same
+        # reason: it reads run_task_episode's own returned EpisodeTrace (a
+        # domain/method-agnostic core.Problem return value), never anything
+        # Method-specific, so method_runner.py is where it belongs.
+        trace_recorder = EpisodeTraceRecorder.open_if_requested(args=args)
 
         def record_skill_competence() -> None:
             """Reads the checkpoint metrics.evaluations just gained -- see
@@ -245,6 +251,7 @@ class MethodRunner:
                 on_cycle_end=record_cycle_end,
                 on_sweep_end=on_sweep_end,
                 recorder=recorder,
+                trace_recorder=trace_recorder,
             )
             # Once more after the loop, so the final evaluation sweep is covered and
             # so a num_cycles=0 run (every non-learning baseline) still gets exactly

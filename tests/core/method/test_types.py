@@ -3,7 +3,9 @@ import pytest
 from pydantic import ValidationError
 
 from hitl_pmp.core.method.types import (
+    EpisodeTrace,
     GroundSkill,
+    LabeledAction,
     LiftedAtom,
     PracticeTargetTally,
     Rollout,
@@ -59,6 +61,28 @@ def test_rollout_accepts_single_state_and_no_actions() -> None:
 def test_rollout_rejects_mismatched_lengths() -> None:
     with pytest.raises(ValidationError):
         Rollout(states=[_state(x=0.0)], actions=[np.array([1.0])])
+
+
+def test_episode_trace_accepts_one_fewer_action_than_states() -> None:
+    trace = EpisodeTrace(
+        states=[_state(x=0.0), _state(x=1.0)],
+        actions=[LabeledAction(action=np.array([1.0]), label="MoveRobot")],
+    )
+    assert len(trace.actions) == len(trace.states) - 1
+    assert trace.actions[0].label == "MoveRobot"
+
+
+def test_episode_trace_accepts_single_state_and_no_actions() -> None:
+    trace = EpisodeTrace(states=[_state(x=0.0)], actions=[])
+    assert trace.actions == []
+
+
+def test_episode_trace_rejects_mismatched_lengths() -> None:
+    with pytest.raises(ValidationError):
+        EpisodeTrace(
+            states=[_state(x=0.0)],
+            actions=[LabeledAction(action=np.array([1.0]), label="MoveRobot")],
+        )
 
 
 def test_setup_command_for_robot_target() -> None:

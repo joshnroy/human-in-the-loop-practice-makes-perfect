@@ -6,7 +6,14 @@ import pytest
 from pydantic import ConfigDict, Field
 
 from hitl_pmp.core.method.method import HumanHelpRequested, InteractionComplete, Method
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy, Rollout, SetupCommand
+from hitl_pmp.core.method.types import (
+    EpisodeTrace,
+    GroundSkill,
+    LabeledAction,
+    Policy,
+    Rollout,
+    SetupCommand,
+)
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
@@ -159,7 +166,7 @@ class _FakeProblem(Problem):
 
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
-    ) -> tuple[bool, list[np.ndarray]]:
+    ) -> tuple[bool, list[np.ndarray], EpisodeTrace]:
         self.run_task_episode_calls += 1
         self.event_log.record(event="evaluate")
         self.renderer_calls.append(renderer is not None)
@@ -168,13 +175,14 @@ class _FakeProblem(Problem):
         # running -- this is exactly the behavior that makes PracticeLoop
         # NOT reset-free end to end, only within one interaction period.
         self.env.set_state(state=task.initial_state)
-        policy(self.get_current_state())  # exercised, but the fake doesn't need its result
-        frames = (
-            [renderer.render_frame(state=self.env.get_current_state(), env=self.env)]
-            if renderer
-            else []
-        )
-        return True, frames
+        # Exercised for its side effects (a real Policy is expected to be callable),
+        # and now also kept: this fake's EpisodeTrace needs one real (state, action)
+        # step to satisfy EpisodeTrace's own length invariant.
+        labeled_action = policy(self.get_current_state())
+        final_state = self.get_current_state()
+        frames = [renderer.render_frame(state=final_state, env=self.env)] if renderer else []
+        trace = EpisodeTrace(states=[task.initial_state, final_state], actions=[labeled_action])
+        return True, frames, trace
 
 
 class _FakeMethod(Method):

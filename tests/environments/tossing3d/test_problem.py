@@ -193,7 +193,7 @@ def test_a_rendered_episode_is_physics_rate_rather_than_one_frame_per_skill() ->
     decision, and a decision here is a whole controller execution, so the CLI's demo clip
     was four frames of a domain whose entire point is a throw. Every sub-step frame the
     backend collected has to reach the returned list."""
-    _, frames = _canned_episode(renderer=Tossing3DRenderer)
+    _, frames, _ = _canned_episode(renderer=Tossing3DRenderer)
 
     # One captioned initial frame, then five skills x three canned sub-step frames.
     assert len(frames) == 1 + 5 * _CannedBackend().frames_per_skill
@@ -209,7 +209,7 @@ def test_an_unrendered_episode_records_nothing_and_turns_recording_back_off() ->
     def policy(observed) -> LabeledAction:  # noqa: PLR0917
         return LabeledAction(action=np.zeros(3), label="Pick(robot, cube)")
 
-    solved, frames = problem.run_task_episode(task=task, policy=policy, renderer=None)
+    solved, frames, _ = problem.run_task_episode(task=task, policy=policy, renderer=None)
 
     assert frames == []
     assert env.backend().record_substeps is False
@@ -219,6 +219,6 @@ def test_every_frame_of_a_rendered_episode_is_the_same_size() -> None:
     """ffmpeg needs one frame size for the whole clip. The boundary frame comes from
     `render_frame` and the sub-step frames from the drain, so this is the join where a
     mismatch would appear."""
-    _, frames = _canned_episode(renderer=Tossing3DRenderer)
+    _, frames, _ = _canned_episode(renderer=Tossing3DRenderer)
 
     assert len({frame.shape for frame in frames}) == 1

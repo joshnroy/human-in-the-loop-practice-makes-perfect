@@ -105,7 +105,7 @@ def test_max_episode_steps_ignores_a_target_the_one_way_ledge_makes_unreachable(
 def test_run_task_episode_solves_a_recycling_task_with_the_oracle() -> None:
     problem = _build_problem(goal_type=TossingRoomGoalType.RECYCLING)
     task = problem.tasks.sample_test_task()
-    solved, frames = problem.run_task_episode(
+    solved, frames, _ = problem.run_task_episode(
         task=task, policy=_oracle_policy(problem=problem, task=task)
     )
     assert solved is True
@@ -115,14 +115,14 @@ def test_run_task_episode_solves_a_recycling_task_with_the_oracle() -> None:
 def test_run_task_episode_fails_when_the_policy_never_solves() -> None:
     problem = _build_problem(goal_type=TossingRoomGoalType.RECYCLING)
     task = problem.tasks.sample_test_task()
-    solved, _ = problem.run_task_episode(task=task, policy=_never_solves_policy)
+    solved, _, _ = problem.run_task_episode(task=task, policy=_never_solves_policy)
     assert solved is False
 
 
 def test_run_task_episode_records_a_frame_per_step_with_a_renderer() -> None:
     problem = _build_problem(goal_type=TossingRoomGoalType.RECYCLING)
     task = problem.tasks.sample_test_task()
-    solved, frames = problem.run_task_episode(
+    solved, frames, _ = problem.run_task_episode(
         task=task,
         policy=_oracle_policy(problem=problem, task=task),
         renderer=TossingRoomRenderer,

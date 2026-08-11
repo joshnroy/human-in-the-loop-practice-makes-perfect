@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from hitl_pmp.core.method.types import Policy
+from hitl_pmp.core.method.types import EpisodeTrace, LabeledAction, Policy
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
@@ -43,7 +43,7 @@ class Tossing3DProblem(Problem):
 
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
-    ) -> tuple[bool, list[np.ndarray]]:
+    ) -> tuple[bool, list[np.ndarray], EpisodeTrace]:
         """Run one episode, optionally recording it at physics rate rather than per skill.
 
         The loop is the standard one. What is domain-specific is *how many frames a
@@ -69,18 +69,26 @@ class Tossing3DProblem(Problem):
             # The reset collected the initial scene as well; the captioned frame above
             # already covers it, so start the first skill from an empty buffer.
             backend.drain_substep_frames()
+            states = [state]
+            actions: list[LabeledAction] = []
             for _ in range(self.max_episode_steps()):
                 if task.goal.is_satisfied(state=state):
-                    return True, frames
+                    return True, frames, EpisodeTrace(states=states, actions=actions)
                 labeled_action = policy(state)
                 state = self.env.take_action(action=labeled_action.action)
+                actions.append(labeled_action)
+                states.append(state)
                 if renderer is not None:
                     frames.extend(
                         self._skill_frames(
                             renderer=renderer, state=state, label=labeled_action.label
                         )
                     )
-            return task.goal.is_satisfied(state=state), frames
+            return (
+                task.goal.is_satisfied(state=state),
+                frames,
+                EpisodeTrace(states=states, actions=actions),
+            )
         finally:
             backend.set_substep_recording(enabled=False)
 

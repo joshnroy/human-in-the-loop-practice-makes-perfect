@@ -21,7 +21,7 @@ core/
 │       └── types.py             Task, Goal, Predicate, GroundAtom
 ├── method/
 │   ├── method.py               Method — the agent side
-│   └── types.py                 LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand
+│   └── types.py                 LabeledAction, Policy, Rollout, EpisodeTrace, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand
 ├── metrics/
 │   └── metrics.py               Metrics — the evaluation protocol (fully concrete)
 └── renderer/
@@ -65,9 +65,16 @@ abstract on `Problem` itself is `run_task_episode` — genuine orchestration log
 (loop calling the policy, taking actions, checking the goal) that no single part can
 supply on its own, and which every concrete `Problem` must implement. It also takes
 an optional `renderer: type[Renderer] | None = None` and returns `(succeeded,
-frames)` — every episode, in the normal sweep or otherwise, is optionally
+frames, trace)` — every episode, in the normal sweep or otherwise, is optionally
 recordable through this one call, rather than a second rendering-only codepath that
 would duplicate the same loop (see "`Renderer` is a pure function of `State`" below).
+`trace` is an `EpisodeTrace` (`method/types.py`) — the full (state, labeled action)
+history of the episode, returned unconditionally regardless of whether a renderer was
+given. Persisting it (`--record-episode-traces`, a sidecar JSONL kept out of
+`stats.json` for the same byte-stability reason `sampler_draws.py` is a sibling file)
+is `hitl_pmp.episode_traces.EpisodeTraceRecorder`'s job, one layer up — not threaded
+into this call, since a recorder carries real per-run state and this layer never
+takes one (see the `LoopRecorder` discussion below).
 `Method` and
 `Metrics` stay true top-level siblings of `problem/`, matching the doc's
 `run(problem: Problem, method: Method) -> Metrics` treating them as independent peers.
@@ -403,7 +410,7 @@ graph TD
     ho["problem/human/<br/>HumanOracle, Cost"]
     tasktypes["problem/tasks/types.py<br/>Task, Goal, Predicate, GroundAtom"]
     tasks["problem/tasks/tasks.py<br/>Tasks"]
-    mtypes["method/types.py<br/>LabeledAction, Policy, Rollout, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand"]
+    mtypes["method/types.py<br/>LabeledAction, Policy, Rollout, EpisodeTrace, Skill, GroundSkill, Variable, LiftedAtom, SetupCommand"]
     renderer["renderer/<br/>Renderer, VideoWriter"]
     problem["problem/problem.py<br/>Problem"]
     method["method/method.py<br/>Method"]

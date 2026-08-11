@@ -66,7 +66,7 @@ def test_run_task_episode_succeeds_immediately_for_an_already_satisfied_task() -
     light_on = LIGHT_ON(state=initial_state, objects=(LightSwitchEnvironment.light,))
     task = Task(initial_state=initial_state, goal=Goal(atoms=frozenset({light_on})))
 
-    solved, frames = problem.run_task_episode(task=task, policy=_never_moves_policy)
+    solved, frames, _ = problem.run_task_episode(task=task, policy=_never_moves_policy)
     assert solved is True
     assert frames == []
 
@@ -74,7 +74,7 @@ def test_run_task_episode_succeeds_immediately_for_an_already_satisfied_task() -
 def test_run_task_episode_succeeds_with_the_oracle_policy() -> None:
     problem = _build_problem()
     task = problem.tasks.sample_train_task()
-    solved, frames = problem.run_task_episode(task=task, policy=ACTION_ORACLE_POLICY)
+    solved, frames, _ = problem.run_task_episode(task=task, policy=ACTION_ORACLE_POLICY)
     assert solved is True
     assert frames == []
 
@@ -82,7 +82,7 @@ def test_run_task_episode_succeeds_with_the_oracle_policy() -> None:
 def test_run_task_episode_fails_when_policy_never_solves_it() -> None:
     problem = _build_problem()
     task = problem.tasks.sample_train_task()
-    solved, frames = problem.run_task_episode(task=task, policy=_never_moves_policy)
+    solved, frames, _ = problem.run_task_episode(task=task, policy=_never_moves_policy)
     assert solved is False
     assert frames == []
 
@@ -102,21 +102,36 @@ def test_run_task_episode_sets_env_state_from_task_initial_state() -> None:
 def test_run_task_episode_respects_grid_size_from_construction() -> None:
     problem = _build_problem(grid_size=3)
     task = problem.tasks.sample_train_task()
-    solved, _ = problem.run_task_episode(task=task, policy=ACTION_ORACLE_POLICY)
+    solved, _, _ = problem.run_task_episode(task=task, policy=ACTION_ORACLE_POLICY)
     assert solved is True
+
+
+def test_run_task_episode_returns_a_trace_matching_the_returned_frame_count() -> None:
+    """EpisodeTrace is returned unconditionally (no renderer needed): one action per
+    step taken, one more state than actions (the initial state plus one per step),
+    and the trace's own solved-episode length matches how many actions the oracle
+    actually needed on a board this size."""
+    problem = _build_problem(grid_size=3)
+    task = problem.tasks.sample_train_task()
+    solved, _, trace = problem.run_task_episode(task=task, policy=ACTION_ORACLE_POLICY)
+    assert solved is True
+    assert len(trace.states) == len(trace.actions) + 1
+    assert trace.states[0] is task.initial_state
+    assert len(trace.actions) > 0, "grid_size=3 puts the robot at least one move away"
+    assert all(isinstance(action.label, str) and action.label for action in trace.actions)
 
 
 def test_run_task_episode_captures_no_frames_without_a_renderer() -> None:
     problem = _build_problem()
     task = problem.tasks.sample_train_task()
-    _, frames = problem.run_task_episode(task=task, policy=ACTION_ORACLE_POLICY)
+    _, frames, _ = problem.run_task_episode(task=task, policy=ACTION_ORACLE_POLICY)
     assert frames == []
 
 
 def test_run_task_episode_captures_one_frame_per_step_with_a_renderer() -> None:
     problem = _build_problem()
     task = problem.tasks.sample_train_task()
-    solved, frames = problem.run_task_episode(
+    solved, frames, _ = problem.run_task_episode(
         task=task, policy=ACTION_ORACLE_POLICY, renderer=LightSwitchRenderer
     )
     assert solved is True
@@ -145,7 +160,7 @@ def test_run_task_episode_renderer_frames_stop_once_goal_is_satisfied() -> None:
     light_on = LIGHT_ON(state=initial_state, objects=(LightSwitchEnvironment.light,))
     task = Task(initial_state=initial_state, goal=Goal(atoms=frozenset({light_on})))
 
-    solved, frames = problem.run_task_episode(
+    solved, frames, _ = problem.run_task_episode(
         task=task, policy=_never_moves_policy, renderer=LightSwitchRenderer
     )
     assert solved is True

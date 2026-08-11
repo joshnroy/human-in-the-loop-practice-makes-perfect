@@ -3,7 +3,7 @@ import abc
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from hitl_pmp.core.method.types import Policy
+from hitl_pmp.core.method.types import EpisodeTrace, Policy
 from hitl_pmp.core.renderer.renderer import Renderer
 
 from .environment.environment import Environment
@@ -110,10 +110,19 @@ class Problem(BaseModel, abc.ABC):
     @abc.abstractmethod
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
-    ) -> tuple[bool, list[np.ndarray]]:
-        """Run policy on task until goal reached or timeout; returns (succeeded, frames).
+    ) -> tuple[bool, list[np.ndarray], EpisodeTrace]:
+        """Run policy on task until goal reached or timeout; returns
+        (succeeded, frames, trace).
+
         frames is empty unless renderer is given, in which case every run is
         optionally recordable through this one path -- one frame per step (including
         the initial state) via renderer.render_frame, no separate rendering-only
-        codepath needed."""
+        codepath needed.
+
+        trace is the full (state, labeled action) history of the episode, returned
+        unconditionally (it costs one list append per step, not a rendered frame) --
+        see EpisodeTrace's own docstring for why it is plain data rather than a
+        recorder threaded through this call. A caller that wants it persisted (e.g.
+        --record-episode-traces) reads it back and hands it to
+        hitl_pmp.episode_traces.EpisodeTraceRecorder itself."""
         raise NotImplementedError

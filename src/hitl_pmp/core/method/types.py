@@ -42,6 +42,47 @@ class Rollout(BaseModel):
         return self
 
 
+class EpisodeTrace(BaseModel):
+    """The full (state, labeled action) history of one `Problem.run_task_episode`
+    call, start to finish: `states[0]` is the task's initial state, `actions[i]` is
+    the step taken from `states[i]`, and `states[i + 1]` is what it produced.
+
+    Same shape and length invariant as `Rollout` (`len(actions) == len(states) - 1`),
+    and deliberately a *different* type rather than a reuse of it: `Rollout` carries
+    a bare `Action` per step (predicators-style, consumed internally by a `Method`'s
+    own practice bookkeeping), while this carries the `LabeledAction` a `Policy`
+    actually returns -- the `.label` is what lets a downstream trace reader (or a
+    rendered overlay) say *which skill* produced a step, not just its raw numbers.
+
+    Plain data, nothing else: no file handle, no recorder, no opt-in flag. It is
+    what every domain's `run_task_episode` returns unconditionally (accumulating it
+    costs one list append per step, not a rendered frame), so this type lives in
+    `core` alongside `Rollout`. Turning it into a persisted trace -- gated behind
+    `--record-episode-traces`, written as a sidecar JSONL, kept out of `stats.json`
+    for the same byte-stability reason `sampler_draws.py`'s own docstring gives --
+    is `hitl_pmp.episode_traces.EpisodeTraceRecorder`'s job, one layer up: it reads
+    an `EpisodeTrace` handed back by `run_task_episode`'s caller
+    (`practice_loop.py`'s `_evaluate`) rather than being threaded into
+    `run_task_episode` itself, because a recorder carries real per-run state (an
+    open file handle) and `core/README.md`'s own precedent (`LoopRecorder`, for the
+    identical reason) is that a stateful recorder never enters this layer -- only
+    plain data crosses the boundary."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    states: list[State]
+    actions: list[LabeledAction]
+
+    @model_validator(mode="after")
+    def _check_lengths(self) -> EpisodeTrace:
+        if len(self.actions) != len(self.states) - 1:
+            raise ValueError(
+                f"EpisodeTrace has {len(self.states)} states but {len(self.actions)} "
+                "actions; expected len(actions) == len(states) - 1."
+            )
+        return self
+
+
 class SkillPracticeTally(BaseModel):
     """One lifted skill's practice record: how often it was executed during practice,
     how often that worked, and -- split four ways -- what chose its parameters.
