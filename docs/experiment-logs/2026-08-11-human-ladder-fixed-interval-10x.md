@@ -65,6 +65,21 @@ bare percentage; use `PairedTests.sign_flip` for seed-paired comparisons; never 
 effect without a p-value; plot per-seed spread, not just a mean; distinguish what the
 experiment showed from what it was hoped to show.
 
+**Follow-up guidance, after the first version of this PR's figures shipped**: Josh audited
+the three training-curve panels against CLAUDE.md's training-curve-style section and found
+two deviations, both inherited unchanged from #195's own `human_ladder_curves.py` rather
+than introduced here. (1) `two-way-ledge` used a fourth hue (magenta) not licensed by
+CLAUDE.md's "do not introduce a fourth hue; encode a second axis with linestyle instead" --
+fixed by making it grey, matching `skill-oracle`, distinguished by linestyle (its own dash
+pattern vs. `skill-oracle`'s dotted) rather than colour, while keeping it as a real curve
+(not flattened, since it genuinely learns). (2) the fixed-arm legend entries showed the
+final pooled score (`107/300`) where CLAUDE.md's own example format asks for the seed count
+(`mean, n=10`) -- fixed to `mean, n=10 (107/300)`, keeping the score but no longer letting
+it stand in for `n`. Scoped to this PR's own figures only, per Josh's explicit instruction
+-- #195's already-published figures are untouched. The dose-response and per-N-trajectory
+figures needed no change: neither carries `two-way-ledge` or the score-only legend pattern,
+confirmed by the regenerated files being byte-identical to the pre-fix ones.
+
 ## Methods
 
 Four components, driven by `scripts/run_sweep.py` (one invocation per component; the N axis

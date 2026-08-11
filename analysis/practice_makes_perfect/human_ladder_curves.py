@@ -57,10 +57,15 @@ precedent #195's own module used.
 **Non-learners are drawn flat, not as curves.** `skill-oracle` never practises (no
 `--num-cycles` flag exists for it) and has a single evaluation checkpoint, so it is a
 horizontal reference line. `no-human` and `two-way-ledge` both learn and get real curves;
-`two-way-ledge` gets its own colour rather than the blue/orange assistance-axis pair, because
-it is a ceiling on the WORLD (irreversibility removed), not a "does an assistance mechanism
-exist" arm -- the same reasoning CLAUDE.md's colour rule already carves out for
-`skill-oracle`/`random-skills`.
+`two-way-ledge` is grey, matching `skill-oracle`, because it IS a ceiling arm in CLAUDE.md's
+sense (not the manipulation under test -- it removes irreversibility from the world, not
+"does an assistance mechanism exist"), distinguished from `skill-oracle` by linestyle rather
+than a fourth hue (CLAUDE.md: "do not introduce a fourth hue; encode a second axis with
+linestyle instead" -- no stated exception for a ceiling arm that still learns). It keeps its
+own curve rather than being flattened, since flattening it would misreport a real learner as
+a constant (see `_REFERENCE_ARMS`'s own comment) -- grey colour and a real curve are
+independent choices, and this module makes both explicitly rather than letting the second
+follow from the first.
 
 **Colour.** `no-human` is orange (`#D55E00`): the standing "nothing helps" colour, reused
 across every figure in this report. The rate sweep is blue-family (`Blues`, a sequential
@@ -68,7 +73,9 @@ colourmap from light N=5 to dark N=30): every rate-sweep arm has an assistance m
 available (`--ask-for-help at-fixed-interval`, always firing at a strictly positive rate
 here), which is what the blue/orange rule tracks -- not the specific rate, which the
 colourmap's lightness carries instead. `skill-oracle` is grey and dotted (reference line);
-`two-way-ledge` gets a third, unreserved colour since it sits on neither axis.
+`two-way-ledge` is ALSO grey (a deliberate fix over #195's module, which gave it a fourth,
+unreserved hue -- magenta), distinguished from `skill-oracle` by its own dash pattern
+rather than a colour CLAUDE.md's rule does not grant it.
 
 **The three training-curve figures (overall/TRASH/RECYCLING) carry all ten arms on ONE
 panel each** -- the three fixed arms plus all seven rate-sweep points, so a reader sees the
@@ -146,11 +153,20 @@ _V0_INTERVENTION_COST = 1.0
 
 # Colour carries role, per CLAUDE.md's training-curve-style convention: orange is the arm
 # nothing helps, and it is reused here from every other figure in the project rather than
-# picked fresh. `two-way-ledge` sits on neither the assistance axis nor the non-learner
-# reference set, so it gets its own colour, matching #151's module's precedent.
+# picked fresh. `two-way-ledge` is grey too -- CLAUDE.md reserves grey for "reference/
+# ceiling arms that aren't the manipulation under test" and separately says "do not
+# introduce a fourth hue; encode a second axis with linestyle instead", with no stated
+# carve-out for a ceiling that happens to still learn. #195's module gave it a fourth hue
+# (magenta) on the reasoning that it is "a ceiling on the world, not a non-learning
+# oracle" -- a real distinction, but the literal rule doesn't grant it a new colour for
+# that, only a linestyle: `two-way-ledge` keeps its own dash pattern
+# (distinct from `skill-oracle`'s dotted), which is exactly the "second axis via
+# linestyle" the rule asks for. It is still NOT in `_REFERENCE_ARMS` and still drawn as a
+# real curve, not flattened -- only its hue changed, not its rendering treatment (see
+# `_REFERENCE_ARMS`'s own comment for why flattening it would misreport it).
 _COLORS = {
     "no-human": "#D55E00",
-    "two-way-ledge": "#CC79A7",
+    "two-way-ledge": "#7F7F7F",
     "skill-oracle": "#7F7F7F",
 }
 _LINESTYLES = {
@@ -614,9 +630,13 @@ class HumanLadderCurves:
             xs = HumanLadderCurves.transitions(run=run)
             pooled = HumanLadderCurves.pooled_curve(run=run, family=family)
             scale = seed_total / pooled[-1][1]
+            # CLAUDE.md's own legend-entry example is "env resets -- mean, n=10": the
+            # seed count, not a score, is what lets a reader check n sums to the seed
+            # total without re-deriving it from the plot. The final pooled score is
+            # still useful, so it stays too -- just after the n=, never replacing it.
             label = (
-                f"{_LABELS[arm_name]} — "
-                f"{HumanLadderCurves.format_count(solved=pooled[-1][0], total=pooled[-1][1])}"
+                f"{_LABELS[arm_name]} — mean, n={len(run)} "
+                f"({HumanLadderCurves.format_count(solved=pooled[-1][0], total=pooled[-1][1])})"
             )
             if arm_name in _REFERENCE_ARMS:
                 for seed in sorted(run):
