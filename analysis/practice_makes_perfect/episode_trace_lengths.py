@@ -259,11 +259,18 @@ class TraceLengths:
                 denominators.append((solved, total))
 
             positions = list(range(1, len(present_arms) + 1))
+            # whis=(0, 100): whiskers span the TRUE min-max of the data, not the
+            # conventional 1.5*IQR rule -- this domain's solved-episode lengths turn out
+            # to be almost a point mass at the optimal floor (see the module docstring),
+            # so the default rule would classify every genuine long solve as a "flier"
+            # and showfliers=False would then hide it entirely. The whole point of this
+            # figure is the real shortest/longest, so there must be no hidden-outlier
+            # concept at all.
             bp = ax.boxplot(
                 box_data,
                 positions=positions,
                 widths=0.55,
-                showfliers=False,
+                whis=(0, 100),
                 patch_artist=True,
                 medianprops={"color": "black", "linewidth": 1.6},
                 whiskerprops={"linewidth": 1.1},

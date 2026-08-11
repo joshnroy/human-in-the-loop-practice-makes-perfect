@@ -144,6 +144,18 @@ are committed under `2026-08-11-human-ladder-fixed-interval-10x/`.
 
 ## Results
 
+**Regeneration note (added when #201 was rebased onto #203).** Every run below was
+re-executed with `--record-episode-traces` on (#203's new instrumentation), so that a real
+per-episode steps-to-goal question — see "Real per-episode steps-to-goal" below — could
+finally be answered instead of guessed at from a single rendered `episode.mp4`'s frame
+count. **This did not change any number already published here.** `--record-episode-traces`
+is a verified pure observer, and the re-run used the same fixed seeds as before, so every
+one of the 90 committed `stats.json` files was diffed byte-for-byte against the pre-rerun
+originals: **0/90 differ.** Only `config_snapshot.json`/`timing.json` (provenance, never an
+input to any result) changed, as expected from a new run at a new commit. Every table and
+figure below this note describes the same run it always did; only the new subsection is new
+content.
+
 ### Question 1: did the pooled score actually converge by cycle 100 this time? Yes, everywhere, by a pre-registered rule
 
 **Pre-registered before any number was seen** (in `HumanLadderCurves.convergence_summary`'s
@@ -293,7 +305,76 @@ the plateau is far more generous than the task difficulty alone would require, w
 consistent with the plateau being wide (N=7 through N=25 all reach the same ceiling) rather
 than a knife-edge.
 
-## Recommendation
+### Real per-episode steps-to-goal (added, #203)
+
+**Why this exists.** Josh asked for trace-length analysis on this sweep — shortest/longest
+steps-to-goal per N. The data model could not answer it: `TaskOutcome` (what every table
+above is built from) records only solved/unsolved, never a step count. The only per-episode
+step data that existed anywhere was an uncommitted `episode.mp4`'s frame count for a single
+task (task-index-0, final checkpoint only, no EMPTY family at all) — one narrow,
+non-representative data point per run. #203 fixed the underlying gap
+(`core.Problem.run_task_episode` now returns a full `EpisodeTrace`;
+`--record-episode-traces` persists it as a sidecar JSONL, deliberately kept out of
+`stats.json` for the same byte-stability reason `sampler_draws.jsonl` is a sibling file).
+This section is the first real use of it: every solved evaluation episode across all 101
+checkpoints × 10 seeds × 9 arms, not one task at one checkpoint.
+
+**Raw per-step trace data is NOT committed.** One arm/seed at this sweep's size
+(`--num-cycles 100 --num-test-tasks 30`) produced 25.4MB / 24,162 lines of
+`episode_traces.jsonl`; the full 90-run sweep is ~2.3GB (measured, not estimated — every
+`stats.json`-analogous sidecar this project has shipped so far, `sampler_draws.jsonl` and
+`competence_log.jsonl`, has likewise never been committed to `docs/experiment-logs/` despite
+being available for over a month of prior PRs). The raw traces are exactly reproducible from
+the fixed seeds above plus `--record-episode-traces`, so they stay local/scratch-only; what's
+committed is the derived figure and the numbers below, via
+`analysis/practice_makes_perfect/episode_trace_lengths.py`.
+
+**Optimal-step floors are the same ones already published above**
+(TRASH=5, RECYCLING=4, EMPTY=10 one-way), plus one more this analysis needed:
+**EMPTY=9 under `--two-way-ledge`**, verified directly against
+`TossingRoomProblem.empty_both_bins_solve()` for this sweep's exact layout (the cheaper
+recycling-first order becomes feasible once the ledge is two-way). Every floor was
+cross-checked against this run's own observed minimum solved-episode length rather than
+trusted blindly (`episode_trace_lengths.py`'s `check_floors_against_data`) — **every floor
+is `<=` the observed minimum, everywhere, with no exceptions.**
+
+![real steps-to-goal per N, solved episodes only, pooled across every checkpoint and seed, three family panels with optimal-floor reference lines](2026-08-11-human-ladder-fixed-interval-10x-trace-lengths.png)
+
+| arm | TRASH (of 14140 possible) | RECYCLING (of 14140 possible) | EMPTY (of 2020 possible) |
+| --- | --- | --- | --- |
+| `no-human` | 7053 solved, min=med=max=5 | 2905 solved, min=med=max=4 | 2020 solved, min=med=max=10 |
+| N=5 | 2825 solved, min=med=max=5 | 13586 solved, min=med=max=4 | 2020 solved, min=med=max=10 |
+| N=7 | 13383 solved, min=med=max=5 | 13526 solved, min=med=max=4 | 2020 solved, min=med=max=10 |
+| N=10 | 13267 solved, min=med=max=5 | 13512 solved, min=med=max=4 | 2020 solved, min=med=max=10 |
+| N=14 | 12581 solved, min=med=max=5 | 13421 solved, min=med=max=4 | 2020 solved, min=med=max=10 |
+| N=20 | 13359 solved, min=med=max=5 | 13402 solved, min=med=max=4 | 2020 solved, min=med=max=10 |
+| N=25 | 13530 solved, min=med=max=5 | 13381 solved, min=med=max=4 | 2020 solved, min=med=max=10 |
+| N=30 | 13711 solved, min=med=max=5 | 13283 solved, min=med=max=4 | 2020 solved, min=med=max=10 |
+| `two-way-ledge` | 13616 solved, min=med=max=5 | 13757 solved, min=4 med=4 **max=10** | 2020 solved, min=med=9 **max=10** |
+
+**The headline finding is a null result for "N affects trace length", and it is worth
+stating plainly rather than dressed up.** Every solved episode of every one-way arm — the
+`no-human` control and all seven rate-sweep points alike — takes *exactly* the optimal
+number of skill executions, every single time: `min == median == max ==` the published
+floor, for every family, at every N. There is **no spread at all** to relate to N. Whatever
+`--mean-steps-between-help-requests` does to the *solve rate* (the whole subject of Question
+2 above), it has **zero measurable effect on how efficiently a solved episode is executed** —
+once EES solves a task, it always solves it via the shortest possible route, regardless of
+how much or little practice-time rescue it received to get there. This is a genuine answer to
+Josh's question, not an absence of one: the real distribution is a point mass at the floor,
+which the old single-task proxy could never have shown either way.
+
+**The one real exception is `two-way-ledge`, not any point on the rate sweep.** 141/13757
+solved RECYCLING episodes (1.0%) took 10 steps instead of the optimal 4, and 196/2020 solved
+EMPTY episodes (9.7%) took 10 instead of the optimal 9 — both real long-detour solves, not
+noise (verified against the raw distribution: RECYCLING is bimodal `{4: 13616, 10: 141}`,
+EMPTY is bimodal `{9: 1824, 10: 196}`, nothing in between). Both are specific to
+`two-way-ledge`'s own world (the extra traversable edge gives the policy an inefficient-but-
+still-optimal-eventually route the one-way layout simply does not admit), not to any
+rate-sweep N, and not a `no-human`-vs-rescued effect — `no-human` shares the one-way world
+with the rate sweep and shows the same zero-spread pattern they do.
+
+
 
 **Use the deterministic `--ask-for-help at-fixed-interval` trigger, not `at-random`, for any
 future rescue-rate sweep on this domain.** Removing the RNG confound did not merely tighten
