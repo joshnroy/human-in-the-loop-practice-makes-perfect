@@ -324,6 +324,45 @@ issue. Ask again.
 To ask: name the exact object, the exact repo, and what it would say, then wait. This
 applies to subagents too — put it in every brief that can reach a public repo.
 
+## Stop and ask when the premise changes
+
+**If something is ambiguous, or a fact the task rests on turns out to be false, stop and
+find a human.** Do not pick the likeliest reading and carry on, do not work around the
+blocker, and do not quietly widen or narrow scope to fit what you found. Report the
+partial work and what you would need to know to continue.
+
+This is not a licence to escalate ordinary judgement calls — routine decisions inside a
+clearly-scoped task are still yours to make. It names five specific cases:
+
+- **The brief conflicts with the code**, the docs, or the live system.
+- **A fact the task depends on is false** — the thing you were told to build on does not
+  behave the way the brief said.
+- **Two readings would produce materially different work**, and nothing available
+  distinguishes them.
+- **Something changed underneath you** — an upstream merge, another agent's push, a moved
+  constant — so the thing you are doing is no longer the thing that was asked for.
+- **You are about to do something the brief does not clearly imply**, in order to make
+  progress.
+
+**The asymmetry is the whole argument.** Stopping costs one message. Continuing on a wrong
+premise costs the entire run, and — worse — can produce a confident, well-formatted result
+that is silently wrong, which is more expensive than no result because someone has to
+discover it later. Agent wall-clock is roughly the number of tool calls times ~15s; a
+question is cheap against that, and it is cheaper still than a number nobody can trust.
+
+Two live examples from this repo, both of which happened rather than being hypothetical.
+A design doc was mid-write asserting `THROW_STANDOFF_BOUNDS` would survive a change, when
+the upstream PR that invalidated its lower bound merged underneath it — the reasoning was
+right and the conclusion went stale in the same hour. Separately, `gh pr list` reported
+`CLEAN` on four PRs that `git merge-base --is-ancestor` showed were genuinely behind;
+taking `mergeStateStatus` at face value would have meant four PRs presented as tested
+against a base they had never been tested against.
+
+**A discrepancy is a finding, not a thing to reconcile.** If the code does not match what
+the brief claims, that mismatch is often the most valuable output of the task — say so
+instead of quietly making one side match the other. And **put this rule in every subagent
+brief**, the same way the permission rule goes in every brief that can reach a public repo.
+
 ## Task organization: tiers of tasks, each a stack of PRs
 
 A **task** is the unit of planning; a **PR is a subtask**. Implementing a task means
