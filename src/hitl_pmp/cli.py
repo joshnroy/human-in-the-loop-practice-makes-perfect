@@ -211,6 +211,19 @@ class Cli:
             "run takes the same actions and writes a byte-identical stats.json.",
         )
         parser.add_argument(
+            "--record-wandb",
+            action="store_true",
+            help="Additionally mirror this run's evaluation sweeps into Weights & "
+            "Biases: one logged point per sweep keyed on num_online_transitions, the "
+            "resolved argparse namespace as the run config, and a summary at the end. "
+            "Offline unless WANDB_MODE says otherwise, writing to <output-dir>/wandb/ "
+            "so it lands beside stats.json and needs no network or credential; sync "
+            "later with `wandb sync`. Off by default and a pure observer: a recorded "
+            "run takes the same actions and writes a byte-identical stats.json. Needs "
+            "--output-dir and the optional wandb dependency (pip install -e '.[wandb]'), "
+            "and says so up front rather than mid-run if either is missing.",
+        )
+        parser.add_argument(
             "--num-render-checkpoints",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1,

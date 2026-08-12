@@ -17,6 +17,7 @@ from hitl_pmp.episode_traces import EpisodeTraceRecorder
 from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
+from hitl_pmp.results_writer.registry import RESULTS_WRITERS
 from hitl_pmp.run_progress import RunProgressWriter
 
 
@@ -203,9 +204,26 @@ class MethodRunner:
                 competences=method.current_competences(),
             )
 
+        # Every registered ResultsWriter that this run asked for. Built by iterating
+        # the static list rather than by naming each writer here, which is the point of
+        # the abstraction: a new observer is a class plus one line in
+        # results_writer/registry.py, and this file does not change. Opened before the
+        # loop starts, so a writer whose flag is unusable (no --output-dir, a missing
+        # optional dependency) raises before any work is done rather than hours in.
+        results_writers = [
+            writer
+            for writer_class in RESULTS_WRITERS
+            if (writer := writer_class.open_if_requested(args=args)) is not None
+        ]
+
+        def record_results_writers() -> None:
+            for writer in results_writers:
+                writer.record_checkpoint(metrics=metrics)
+
         def on_sweep_end() -> None:
             record_sweep_end()
             record_skill_competence()
+            record_results_writers()
 
         recorder = MethodRunner._build_recorder(
             args=args,
@@ -267,6 +285,11 @@ class MethodRunner:
             # watch what the loop was doing.
             if recorder is not None:
                 recorder.close()
+            # Same placement and same reason: a W&B run left unfinished would never be
+            # flushed, and whatever a writer recorded before a crash is exactly what is
+            # wanted afterwards. `metrics` is therefore whatever the run got to.
+            for writer in results_writers:
+                writer.close(metrics=metrics)
         if recorder is not None:
             print(
                 f"full-loop recording: {args.record_full_loop} ({recorder.frames_written} frames)"

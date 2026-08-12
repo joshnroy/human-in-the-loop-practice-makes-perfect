@@ -29,6 +29,12 @@ dev = [
     "pre-commit",
     "import-linter",
 ]
+# --record-wandb only. Optional, and CI deliberately does not install it: the package
+# must import, typecheck and test without wandb present, exactly as it must without
+# KINDER. results_writer/wandb_writer.py imports it lazily and the wandb-backed tests
+# gate on importlib.util.find_spec("wandb"), so a machine without it skips rather than
+# fails.
+wandb = ["wandb"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -102,7 +108,12 @@ layers = [
     "hitl_pmp.environments",
     "hitl_pmp.cli_protocols",
     "hitl_pmp.method_runner",
-    "hitl_pmp.practice_loop | hitl_pmp.config_snapshot | hitl_pmp.sampler_draws | hitl_pmp.run_progress | hitl_pmp.humans | hitl_pmp.planning | hitl_pmp.adapters",
+    # results_writer/ sits here rather than in core/ for the reason episode_traces.py
+    # already states: a ResultsWriter carries real per-run state (WandbResultsWriter
+    # holds a live W&B run handle), and a stateful recorder never crosses into core --
+    # only plain data does. It reads Metrics and nothing else, so it is independent of
+    # every sibling in this layer, and method_runner.py above it drives the registry.
+    "hitl_pmp.practice_loop | hitl_pmp.config_snapshot | hitl_pmp.sampler_draws | hitl_pmp.run_progress | hitl_pmp.results_writer | hitl_pmp.humans | hitl_pmp.planning | hitl_pmp.adapters",
     # human_intervention.py holds only WHAT a human is asked to restore
     # (HumanResetTarget) -- the human's half. WHEN to ask is the Method's, and lives in
     # methods/help_seeking.py, up in the hitl_pmp.methods layer above alongside the
