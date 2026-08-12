@@ -260,7 +260,7 @@ the code cites and what a reader has locally.
 
 The local `reference/` checkouts are not at `main` either, and since 2026-08-07 that is
 recorded rather than incidental: `kinder-baselines` is a **git submodule pinned to a fork
-branch** @ `3524010`, and `kindergarden` is a git submodule pinned to the fork's `main` @
+branch** @ `1b564a1`, and `kindergarden` is a git submodule pinned to the fork's `main` @
 `98ad2c0`. Read the
 exact pin with `scripts/update_reference_repos.sh --check`, which reports drift and never
 resets a checkout. A checkout on some other commit is somebody's work, so the script says
