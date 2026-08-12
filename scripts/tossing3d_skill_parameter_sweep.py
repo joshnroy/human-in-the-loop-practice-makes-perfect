@@ -14,13 +14,16 @@ visited once, labelled by the same classifier `SkillOraclePolicy`/EES read, and 
 to JSON so `analysis/practice_makes_perfect/tossing3d_skill_parameter_sweep.py` can
 regenerate the figures without touching the simulator again.
 
-## The one genuinely new thing this script does: imports `hitl_pmp` under kinder-venv
+## The one genuinely new thing this script does: imports `hitl_pmp` while driving KINDER
 
 Every other simulator-driving script here (`tossing3d_oracle_demo.py`) deliberately
 stays self-contained -- it re-derives its own success check
-(`_check_goals()`/`RestingPlace`) rather than importing this project's package, because
-`hitl_pmp` is developed and tested against the `hitl-pmp` conda env while KINDER lives in
-a separate venv (`kindergarden` caps `requires-python` at `<3.13`; `hitl-pmp` does not).
+(`_check_goals()`/`RestingPlace`) rather than importing this project's package. That
+habit dates from when KINDER lived in a *separate venv* from `hitl-pmp`, so importing
+this package under the simulator's interpreter was not something to rely on. The two
+environments are now unified (KINDER installs into `hitl-pmp` as the `tossing3d` extra),
+so the constraint is gone -- but the self-containment is still the right default for a
+script whose question does not need this package's own classifiers.
 
 This script needs the real thing instead: the task this sweep exists for is "does a
 cell's outcome match the classifier `HoldingClassifier`/`RobotAtSuccessfulThrowPose
@@ -29,18 +32,16 @@ not answer that question, it would answer a different one. `KinderBackend` (the 
 module in `hitl_pmp` that imports KINDER) imports it lazily, so nothing MuJoCo-shaped
 loads until the first `env.reset_to_seed(...)`, which happens after this module's own
 imports -- so importing `hitl_pmp.environments.tossing3d.*` costs nothing beyond
-`pydantic`/`numpy`/`gymnasium`, which kinder-venv already carries (`tossing3d_oracle_
-demo.py`'s own docstring notes it "needs pydantic"). The `sys.path` bootstrap below is
-what makes `import hitl_pmp` resolve at all under an interpreter that never `pip
-install -e`'d this package.
+`pydantic`/`numpy`/`gymnasium`. The `sys.path` bootstrap below is retained for the case
+where this runs under an interpreter that never `pip install -e`'d this package.
 
-Run under the KINDER venv, with this worktree's `src` on `PYTHONPATH` (the bootstrap
-below does this automatically if the environment variable is not already set), and
-under a memory cap -- this is thousands of skill executions in one process:
+Run with this worktree's `src` on `PYTHONPATH` (`with_kinder_env.sh` sets it; the
+bootstrap below also does, if the environment variable is not already set), and under a
+memory cap -- this is thousands of skill executions in one process:
 
     systemd-run --user --unit=t3d-skill-param-sweep -p MemoryMax=8G \\
         -p MemorySwapMax=0 -p OOMPolicy=continue -- \\
-        /path/to/kinder-venv/bin/python scripts/tossing3d_skill_parameter_sweep.py \\
+        scripts/with_kinder_env.sh python scripts/tossing3d_skill_parameter_sweep.py \\
         --which both --output-dir docs/experiment-logs
 
 ## Grid design

@@ -51,6 +51,55 @@ dev = [
 # gate on importlib.util.find_spec("wandb"), so a machine without it skips rather than
 # fails.
 wandb = ["wandb"]
+# `--env tossing3d` only: KINDER's `Tossing3D` simulator and its parameterized
+# controllers.
+#
+# ## This installs into `hitl-pmp` itself, and used not to
+#
+# KINDER lived in a separate `kinder-venv` virtualenv, on the stated grounds that the
+# two environments "cannot be merged" because `kindergarden` caps `requires-python` at
+# `<3.13`. **That was a misdiagnosis**: both environments were already Python 3.10.20,
+# so that cap excluded neither. The real constraint is three version ceilings, and
+# `hitl-pmp` runs its full gate unchanged under all of them -- so there is no reason for
+# a second interpreter, and the split cost real coverage (see below).
+#
+# The ceilings, all transitive through `kindergarden`, none of them ours to lift:
+#   * `pybullet_helpers 0.1.1` -> `numpy<2.0,>=1.23.5`, resolving to 1.26.4
+#   * `pybullet_helpers 0.1.1` -> `scipy==1.14.0`, an EXACT pin
+#   * `moviepy` -> `pillow<12.0`, resolving to 11.3.0
+# Installing this extra therefore DOWNGRADES numpy, scipy and pillow in whatever
+# environment it is applied to. That is expected and was measured to be safe here; it is
+# also why this is an extra rather than a main dependency.
+#
+# ## Why the two local packages are not listed here
+#
+# `kindergarden` and `kinder_models` are git submodules under `reference/`, not PyPI
+# distributions, and PEP 508 direct references would have to hardcode an absolute
+# `file://` path. So this extra declares only the ceilings, and the two packages are
+# installed alongside it (see CLAUDE.md):
+#
+#     pip install -e ".[dev,tossing3d]" \
+#         -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+#
+# Listing the ceilings here anyway is what stops a later `pip install -U numpy` from
+# silently breaking a working simulator env: pip has a declared constraint to refuse.
+#
+# ## CI deliberately does not install this
+#
+# Exactly as with `wandb`. CI installing MuJoCo, PyBullet and ~1-2 GB of MimicLabs scene
+# assets is what the current design avoids on purpose. `environments/tossing3d/` imports
+# KINDER lazily from one module and its tests gate on
+# `importlib.util.find_spec("kinder")` -- the IMPORT package name; the distribution is
+# `kindergarden` -- so a machine without it skips rather than fails. Unification improves
+# LOCAL coverage only: the simulator-backed fidelity tests now run in the normal gate
+# instead of being skipped by everyone who never created the second venv, which is how
+# a stale test survived a skill signature change unnoticed. Please do not "finish" this
+# by wiring KINDER into CI.
+tossing3d = [
+    "numpy<2.0,>=1.23.5",
+    "scipy==1.14.0",
+    "pillow<12.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

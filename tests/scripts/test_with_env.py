@@ -78,6 +78,23 @@ def test_the_wrapper_reports_its_environment_when_given_no_command() -> None:
 
 
 @needs_conda
+def test_the_wrapper_pins_the_egl_rendering_backend() -> None:
+    """KINDER installs into `hitl-pmp` itself now, so a plain `pytest` through this
+    wrapper imports it and this pair has to be set here rather than in a second wrapper.
+
+    Both variables, because `register_all_environments()` falls back to `osmesa` when
+    `DISPLAY` is unset, under which `import mujoco` raises and `_check_deps` swallows
+    *every* exception -- so all Dynamic3D environments are skipped IN SILENCE and the
+    failure surfaces much later as an unrelated-looking `NameNotFound`. Asserted even on
+    a machine with no KINDER, since the variables are what make the trap unreachable."""
+    script = "import os; print(os.environ['MUJOCO_GL'], os.environ['PYOPENGL_PLATFORM'])"
+    completed = subprocess.run(
+        [str(WRAPPER), "python", "-c", script], capture_output=True, text=True, check=True, cwd="/"
+    )
+    assert completed.stdout.split() == ["egl", "egl"]
+
+
+@needs_conda
 def test_the_wrapper_propagates_the_exit_code_of_the_command_it_runs() -> None:
     """It `exec`s rather than wrapping, so a failing gate check must still look
     like a failure to whoever ran it."""

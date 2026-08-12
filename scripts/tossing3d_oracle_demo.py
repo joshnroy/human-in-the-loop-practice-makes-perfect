@@ -64,17 +64,17 @@ own parameters, copied from
 so this depends on no branch of ours. It lives in `scripts/` rather than `analysis/`
 because it *drives* a simulator, which `analysis/` may never do (CLAUDE.md).
 
-Usage (KINDER is an optional extra; it is not in the `hitl-pmp` conda env, so this
-runs under the KINDER venv, which needs `pydantic` and wants `gifsicle` on PATH):
+Usage (KINDER is an optional extra, installed into `hitl-pmp` itself via `.[tossing3d]`;
+wants `gifsicle` on PATH):
 
-    /path/to/kinder-venv/bin/python scripts/tossing3d_oracle_demo.py \\
+    scripts/with_kinder_env.sh python scripts/tossing3d_oracle_demo.py \\
         --output-dir docs
 
 Run it under a memory cap. KINDER leaks roughly one PyBullet client and ~150 MB per
 skill execution, and a kernel OOM on this box takes the whole login session with it:
 
     systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue \\
-        /path/to/kinder-venv/bin/python scripts/tossing3d_oracle_demo.py
+        scripts/with_kinder_env.sh python scripts/tossing3d_oracle_demo.py
 
 ## Rendering settings, and the one that was got wrong twice
 

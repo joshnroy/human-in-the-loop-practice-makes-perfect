@@ -363,6 +363,15 @@ built from a 1-byte `empty.c` that exports **0 symbols** — verified with `nm -
 a stub, not a library. It was never used for any number here, and the system packages
 above supersede it entirely: there is no longer any reason to point a build at it.
 
+> **Note added later — the wiring below describes a layout that no longer exists.** KINDER
+> was subsequently unified into the `hitl-pmp` conda env as the optional `tossing3d`
+> extra, and there is no separate `kinder-venv` any more. The stated reason for the split
+> (`kindergarden` capping `requires-python` at `<3.13`) was a misdiagnosis: both
+> environments were already Python 3.10.20. The real constraints are `pybullet_helpers`'s
+> `numpy<2.0` and exact `scipy==1.14.0`, plus `moviepy`'s `pillow<12.0`. **The numbers in
+> this document are left exactly as measured** — they were taken under the venv described
+> here, and the IKFast/BLAS findings below are unaffected by where the interpreter lives.
+
 **Run wiring.** The venv lives at `/home/josh/Documents/repos/research/kinder-venv` and
 installs editable from `reference/`. It was seeded from conda's `python3.10` (this
 machine has no system 3.10), so `sysconfig`'s `CC`/`LDSHARED` still name conda's
