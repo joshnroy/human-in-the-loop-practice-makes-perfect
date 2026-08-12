@@ -219,6 +219,13 @@ __marimo__/
 results/
 .claude/worktrees/
 
+# Weights & Biases (--record-wandb). The writer passes dir=<output-dir>, so offline
+# runs normally land inside the already-ignored results/ tree -- but W&B's own default
+# is ./wandb/ relative to the *current working directory*, which for anything launched
+# from the repo root is here. A failed init can still write there, so this is belt and
+# braces rather than the primary mechanism.
+wandb/
+
 # `reference/` used to be ignored here, because an embedded git repo inside this one
 # confuses `git add -A`. The three checkouts are now **git submodules**, which is the
 # supported way to do exactly that -- so the ignore is gone and each is pinned to an
