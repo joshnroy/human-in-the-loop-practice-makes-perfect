@@ -63,12 +63,18 @@ def test_move_to_throw_pose_disables_collision_against_the_held_cube(
     supplied it, leaving it `None`.
 
     This is entirely offline: no simulator needed, since the bug is about which kwarg
-    reaches `run_controller`, not about simulator behaviour. `reference/kinder-baselines`
-    (pinned at `11eace5`) currently hardcodes collision-checking off
-    (Princeton-Robot-Planning-and-Learning/kinder-baselines#102), so today this has zero
-    observable effect -- but the moment that upstream fix lands and the pin bumps, the
-    robot's own held cube becomes an unexcluded obstacle to its own base-motion plan and
-    `move_to_target` fails universally.
+    reaches `run_controller`, not about simulator behaviour.
+
+    That upstream fix has now landed and the pin has bumped, so this is no longer the
+    dormant guard it was written as. `reference/kinder-baselines` used to be pinned at
+    `11eace5`, where `run_base_motion_planning` hardcoded `obstacle_geoms` empty
+    (Princeton-Robot-Planning-and-Learning/kinder-baselines#102) and this kwarg therefore
+    had zero observable effect. The pin is now `3524010`, which contains upstream PR #103
+    -- the fix for that issue -- so collision-checking against scene obstacles is **on**.
+    The held cube is a `MujocoObjectType` like any other, and `run_base_motion_planning`
+    filters `disable_collision_objects` out of the obstacle set *before* looking up each
+    remaining object's geom, so passing `["cube_0"]` is what keeps the robot's own held
+    cube from becoming an unexcluded obstacle to its own base-motion plan.
     """
     calls: list[dict[str, Any]] = []
 

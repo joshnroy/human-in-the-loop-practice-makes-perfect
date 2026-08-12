@@ -26,6 +26,14 @@ number.
 > `joshnroy/kindergarden` @ `4113237`. The measurements below are left exactly as
 > published; only the pointer is out of date. `scripts/update_reference_repos.sh --check`
 > prints the current pins.
+>
+> **Note, 2026-08-12.** The `kinder-baselines` pin has since moved `11eace5` → `3524010`
+> (a rebase of the same branch onto upstream `main` @ `4760956`). That is not only a
+> pointer change: `4760956` is upstream PR #103, which **turns base-motion
+> collision-checking on** — it was hardcoded off for every measurement recorded on this
+> page. The measurements below are still left exactly as published, but any of them that
+> depended on base motion planning should be treated as **provisional** until re-measured
+> at the new pin. Nothing on this page has been recomputed.
 
 Both SHAs were read back from the checkouts rather than assumed, and both were
 confirmed to be the current tip of their remote's default branch **at the time of

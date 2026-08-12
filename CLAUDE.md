@@ -39,7 +39,7 @@ working around.
 
 | path | url | pinned at |
 | --- | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `11eace5` |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `3524010` |
 | `reference/kindergarden` | `joshnroy/kindergarden` | `4113237` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
@@ -142,7 +142,7 @@ which is the single most misreadable thing about `Tossing3D`.
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
-`reference/kinder-baselines` is pinned at `11eace5`, the head of
+`reference/kinder-baselines` is pinned at `3524010`, the head of
 `josh/feature/tossing-throw-controllers`. That branch is the **Tossing3D port stack**'s
 second rung: `josh/feature/tossing-state-abstractions` → `-throw-controllers` →
 `-oracle-policy` → `-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92,
@@ -158,6 +158,18 @@ The oracle policy (#3) and the bilevel model (#4) are never imported — we carr
 tree no longer carries either of them**; `docs/` prose that assumes they are on disk is
 wrong. `9512b9e` — the PyBullet leak fix, upstream PR #87 — is an ancestor of the pin, so
 that fix is present.
+
+**The pin moved `11eace5` → `3524010` on 2026-08-12**, a pure rebase of the same four
+rungs onto upstream `main` at `4760956`: all 16/16 commits below the pin replayed
+byte-identical in content and message, so the *only* tree change is the two upstream
+commits the rebase picked up — `199cfe0` (sweep3D skills resample on infeasible sample,
+upstream PR #84) and `4760956` itself. **`4760956` is not cosmetic**: it is upstream
+PR #103, the fix for issue #102, and it **turns base-motion collision-checking on** in
+`run_base_motion_planning`, which had `obstacle_geoms` hardcoded empty. Two consequences:
+any Tossing3D number measured at `11eace5` or earlier was measured with base-motion
+collision-checking **off**, and `run_move_to_throw_pose` now genuinely needs the
+`disable_collision_objects=["cube_0"]` that PR #204 threaded through — without it the
+robot's own held cube becomes an obstacle to its own base plan.
 
 `reference/kindergarden` is pinned at `4113237`, the head of
 `josh/bugfix/tossing3d-bin-outside-goal-region`: the bin fix every committed run recorded
