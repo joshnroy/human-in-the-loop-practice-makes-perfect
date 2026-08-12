@@ -43,7 +43,7 @@ execution, without bound.
 
 The fix is a `weakref.finalize(self, p.disconnect, ...)` in `PyBulletSim`, which landed
 upstream as PR #87 (squash-merged as `9512b9e`). `reference/kinder-baselines` is a git
-submodule pinned at `3524010`, and `9512b9e` is an ancestor of that pin, so the fix is
+submodule pinned at `6af1f3c`, and `9512b9e` is an ancestor of that pin, so the fix is
 present and the client is released when the controller is collected.
 **Do not add a `_release`-style explicit `close()` here**: with the finalizer in place
 that double-disconnects.

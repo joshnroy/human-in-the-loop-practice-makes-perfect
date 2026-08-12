@@ -39,7 +39,7 @@ working around.
 
 | path | url | pinned at |
 | --- | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `3524010` |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `6af1f3c` |
 | `reference/kindergarden` | `joshnroy/kindergarden` | `4113237` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
@@ -142,7 +142,7 @@ which is the single most misreadable thing about `Tossing3D`.
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
-`reference/kinder-baselines` is pinned at `3524010`, the head of
+`reference/kinder-baselines` is pinned at `6af1f3c`, the head of
 `josh/feature/tossing-throw-controllers`. That branch is the **Tossing3D port stack**'s
 second rung: `josh/feature/tossing-state-abstractions` → `-throw-controllers` →
 `-oracle-policy` → `-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92,
@@ -170,6 +170,17 @@ any Tossing3D number measured at `11eace5` or earlier was measured with base-mot
 collision-checking **off**, and `run_move_to_throw_pose` now genuinely needs the
 `disable_collision_objects=["cube_0"]` that PR #204 threaded through — without it the
 robot's own held cube becomes an obstacle to its own base plan.
+
+**The pin then moved `3524010` → `6af1f3c` on 2026-08-12**, and this one *is* cosmetic:
+the whole tree delta is two files — `MoveToThrowPoseController`'s docstring and one test
+comment — from `joshnroy/kinder-baselines` PR #10, which was **merge-committed**, not
+squashed (`6af1f3c` has parents `3524010` and `cb95ca4`). No executable line changed, so
+every Tossing3D number measured at `3524010` stands unaltered at `6af1f3c`. What it fixes
+is a *docstring that had gone false*: it still claimed the held-object collision exclusion
+was "a no-op today" because `run_base_motion_planning` left its obstacle set empty, which
+stopped being true when `4760956` landed one bump earlier. Our own prose was already
+corrected for this in `kinder_backend.py` and `test_kinder_backend.py` by PR #204; this
+bump brings upstream's copy in line, so the two no longer contradict each other.
 
 `reference/kindergarden` is pinned at `4113237`, the head of
 `josh/bugfix/tossing3d-bin-outside-goal-region`: the bin fix every committed run recorded

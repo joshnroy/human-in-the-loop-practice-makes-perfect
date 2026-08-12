@@ -34,6 +34,13 @@ number.
 > page. The measurements below are still left exactly as published, but any of them that
 > depended on base motion planning should be treated as **provisional** until re-measured
 > at the new pin. Nothing on this page has been recomputed.
+>
+> **Second note, 2026-08-12.** The pin has since moved again, `3524010` → `6af1f3c`
+> (`joshnroy/kinder-baselines` PR #10, merge-committed rather than squashed). That delta
+> is **two files and no executable line** — `MoveToThrowPoseController`'s docstring and
+> one test comment — so unlike the previous bump it changes nothing measurable. The
+> provisional status the note above assigns is therefore **unchanged**, not lifted and not
+> widened: it still traces to `4760956`, and re-measurement is still what would settle it.
 
 Both SHAs were read back from the checkouts rather than assumed, and both were
 confirmed to be the current tip of their remote's default branch **at the time of
