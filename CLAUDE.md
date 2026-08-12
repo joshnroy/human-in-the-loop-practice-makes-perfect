@@ -46,14 +46,18 @@ working around.
 | path | url | pinned at |
 | --- | --- | --- |
 | `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `3524010` |
-| `reference/kindergarden` | `joshnroy/kindergarden` | `4113237` |
+| `reference/kindergarden` | `joshnroy/kindergarden` | `98ad2c0` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
-**Two of the three point at forks on purpose.** The commits this repo depends on live
-on unmerged branches, and a submodule *hard-fails* when its pinned SHA is force-pushed
-away mid-review — unlike a recorded SHA, which merely reports drift. A fork Josh
-controls cannot be force-pushed under us. `predicators` needs no fork: it is read-only
-reference, pinned at the tip of its own default branch (`master`, not `main`).
+**Two of the three point at forks on purpose.** `kinder-baselines` depends on commits that
+live on an unmerged branch, and a submodule *hard-fails* when its pinned SHA is
+force-pushed away mid-review — unlike a recorded SHA, which merely reports drift. A fork
+Josh controls cannot be force-pushed under us. `kindergarden`'s reason is now weaker but
+still real: since 2026-08-12 its pin sits on a **merged `main` commit** rather than a topic
+branch, so nothing can be force-pushed out from under it; the fork remains the URL because
+it is the remote the pin has always been read from, and keeping it costs nothing.
+`predicators` needs no fork: it is read-only reference, pinned at the tip of its own
+default branch (`master`, not `main`).
 
 **A fresh clone gets empty directories until you populate them:**
 
@@ -216,10 +220,32 @@ collision-checking **off**, and `run_move_to_throw_pose` now genuinely needs the
 `disable_collision_objects=["cube_0"]` that PR #204 threaded through — without it the
 robot's own held cube becomes an obstacle to its own base plan.
 
-`reference/kindergarden` is pinned at `4113237`, the head of
-`josh/bugfix/tossing3d-bin-outside-goal-region`: the bin fix every committed run recorded
-in its `config_snapshot.json`. Upstream that is `kindergarden` PR #126, still **open**;
-on the fork it is `joshnroy/kindergarden` **PR #1**.
+`reference/kindergarden` is pinned at `98ad2c0`, the head of the fork's **`main`** — which
+is upstream `main`, fast-forwarded. That commit is `kindergarden` PR #126, *"Move the
+Tossing3D-o1 bin back inside blocks_goal_region"*, **merged 2026-08-12**; the fork mirror
+of it, `joshnroy/kindergarden` PR #1, is closed as redundant.
+
+**The pin moved `4113237` → `98ad2c0` on 2026-08-12**, off the topic branch
+`josh/bugfix/tossing3d-bin-outside-goal-region` and onto `main`. Two things about that move
+are worth carrying:
+
+- **It is not a pure pointer change.** The merged form of the bin fix differs from the
+  branch's: `bin_init_region` went from `[[2.0, -0.0005, 2.001, 0.0005]]` (a 1 mm-wide
+  sampling window) to `[[2.0, 0.0, 2.0, 0.0]]` (zero-width). The bin's sampled *x* mean
+  shifts by 0.5 mm and its per-seed jitter disappears. Tiny, but a real dynamics change:
+  **every Tossing3D number measured before this bump ran against the jittered bin**, so
+  none of them is evidence about the zero-width scene. The RNG stream is *not* disturbed —
+  `sample_pose_in_bbox_3d` calls `np_random.uniform` unconditionally per axis, and
+  `uniform(a, a)` consumes one draw while leaving bit-generator state identical (verified
+  empirically across 6 seeds).
+- **It also picks up 11 unrelated upstream commits** — the fork point was `cdf1b8b`, and
+  `main` had moved on. Those add the VegaMotion3D environment and a `kinematic3d_v2`
+  backend (behind an optional `prpl-kinematics` extra we do not install), human/wheelchair/
+  bed limb assets and scenes, intermediate ConstrainedCupboard3D tasks, and a refactor
+  splitting the physics *backend* from the environment *category* in
+  `register_all_environments`. **No existing Dynamic3D env code changed** — across the whole
+  range the only modified file under `src/kinder/envs/dynamic3d/` is `Tossing3D-o1.json`
+  itself, and `kinder/Tossing3D-o1-v0` registers exactly as before.
 
 Because both pins are gitlinks, a refresh moves nothing on its own — **the pin only
 changes when someone commits a new gitlink here**. Bumping one is
