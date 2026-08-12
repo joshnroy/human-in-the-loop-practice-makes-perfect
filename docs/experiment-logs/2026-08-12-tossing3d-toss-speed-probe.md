@@ -1,8 +1,10 @@
 # Tossing3D: how far a speed dial on `Toss` can actually reach
 
-**2026-08-12.** Rung-0 feasibility probe for the velocity-controller task. 280 cells:
+**2026-08-12.** Rung-0 feasibility probe for the velocity-controller task. 320 cells:
 three profile-scaling modes x a commanded-speed grid x 10 scene seeds, all at standoff
-`ORACLE_THROW_STANDOFF = 1.35` with `Pick` held at the oracle grasp.
+`ORACLE_THROW_STANDOFF = 1.35` with `Pick` held at the oracle grasp. 280 of those are the
+main grid; a further 40 refine the upper end of the recommended window, where the main
+grid's 40 deg/s step was too coarse to locate an edge.
 
 Measured at `reference/kinder-baselines` pin **`3524010`**, which contains upstream
 PR #103 (base-motion collision-checking switched **on**). Verified at run time rather
@@ -10,6 +12,39 @@ than assumed: every result JSON records the `kinder_models.__file__` it ran agai
 the tree it names was checked to contain the uncommented `obstacle_geoms` lines.
 
 ![The ceiling, the dial's authority in metres, whether the label is missable in both directions, and R5](2026-08-12-tossing3d-toss-speed-probe.png)
+
+## Four clips, one per thing worth seeing
+
+All on scene seed 0, so the commanded speed and the scaling mode are the only things that
+differ between them. Each clip starts at the windup -- `Pick` and `MoveToThrowPose` are
+held at fixed parameters and are identical in every clip -- and is captioned in-frame with
+the mode, the commanded speed, the cube's resting position and the `InGoalRegion` verdict.
+
+| clip | mode | commanded | cube rests at x | goal box x | outcome |
+| --- | --- | --- | --- | --- | --- |
+| [short -- falls well short of the box](2026-08-12-tossing3d-toss-speed-probe-vel-accel-decel-060deg-seed0.mp4) | `vel-accel-decel` | 60 deg/s | 1.6172 | [1.850, 2.150] | missed, `0/10` seeds solve |
+| [solving -- upstream's own throw](2026-08-12-tossing3d-toss-speed-probe-vel-accel-decel-140deg-seed0.mp4) | `vel-accel-decel` | 140 deg/s | 2.0126 | [1.850, 2.150] | **in the box**, `10/10` seeds solve |
+| [over-throw -- sails past the box](2026-08-12-tossing3d-toss-speed-probe-vel-accel-decel-220deg-seed0.mp4) | `vel-accel-decel` | 220 deg/s | 2.5107 | [1.850, 2.150] | missed **long**, `0/10` seeds solve |
+| [the folded dial -- 3x the parameter, same verdict](2026-08-12-tossing3d-toss-speed-probe-vel-accel-420deg-seed0.mp4) | `vel-accel` | 420 deg/s | 2.1018 | [1.850, 2.150] | in the box, `10/10` seeds solve |
+
+The third clip is the one nothing before this could produce: no setting of `vel` or
+`vel-accel` throws far enough to miss long, so the over-throw is the visual form of "the
+label is now missable in both directions". The cube leaves the frame before it lands --
+the fixed `task_view` camera stops at roughly x = 2.35 -- but it is plainly visible in
+flight clearing the bin, and the caption carries the resting position.
+
+The fourth is the failure worth watching rather than reading. At 420 deg/s the two-limit
+dial is commanded three times upstream's default and still scores `10/10`, exactly as
+140 deg/s does, while **220 deg/s in between scores `0/10`**. Its landing point, 2.1018,
+is 0.09 m beyond 140's 2.0126 -- and within 2 mm of where the same mode lands at
+260 deg/s (`1.449` m vs `1.447` m of range). "Indistinguishable from 140" is the right
+verdict but not the right *landing*: the two are 0.09 m apart and both simply fall inside
+a 0.30 m box. It is the outcome that folds back, not the trajectory.
+
+**Every clip was checked against the grid cell it illustrates**, and reproduces its
+landing position to 0.000000 m with the same `solved` verdict -- a real check rather than
+a tautology, since the clip is produced by the public `env.take_action` path and the grid
+by the hand-driven instrumented swing.
 
 ## What was asked
 
@@ -117,20 +152,73 @@ tracking the dial (2.288 m at both 340 and 380, then *falling* to 1.984 m at 420
 achieved release speed peaks at 380 and drops. **The dial is only trustworthy below the
 saturation onset.**
 
-Over the monotone, unsaturated window **60-220 deg/s commanded**, `vel-accel-decel` gives
-range 0.954-1.846 m — **0.892 m of authority, still 1.9x option A's**, strictly increasing,
-and straddling the [1.212, 1.512] m solve band with room on both sides.
+Over the monotone, unsaturated window, `vel-accel-decel` gives roughly 0.9 m of authority,
+strictly increasing, straddling the [1.212, 1.512] m solve band with room on both sides.
+The window's exact upper edge needed a finer grid than the main pass had; the next section
+locates it.
+
+## Where the bounds actually are: 60-240 deg/s
+
+The main grid stepped 180 → 220 → 260, so it could only say the edge lay somewhere in
+(220, 260]. A refinement pass at 200/230/240/250 deg/s, same 10 seeds, resolves it to
+10 deg/s:
+
+| commanded | 180 | 200 | 220 | 230 | **240** | 250 | 260 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| range (m) | 1.652 | 1.676 | 1.846 | 1.862 | **1.878** | 1.861 | 1.748 |
+| sd (m) | 0.113 | 0.023 | 0.005 | 0.006 | **0.008** | 0.009 | 0.006 |
+| peak torque fraction | 0.743 | 0.800 | 0.875 | 0.921 | **0.956** | 0.988 | 1.000 |
+| saturated control steps | 0/160 | 0/150 | 0/140 | 0/140 | **0/137** | 0/130 | 9/130 |
+| solved | 2/10 | 0/10 | 0/10 | 0/10 | **0/10** | 0/10 | 0/10 |
+
+Two criteria, applied to the combined grid rather than assumed:
+
+- **monotone** — range must rise with the parameter, or two settings map to one outcome
+  and the sampler is given contradictory training data. This first fails at **250 deg/s**
+  (1.861 m, below 240's 1.878 m).
+- **unsaturated** — the arm must be able to deliver what the dial asks. The first
+  saturated control step appears at **260 deg/s**.
+
+Monotonicity binds first, so the highest speed satisfying both is **240 deg/s**:
+
+```text
+=> TOSS_SPEED_BOUNDS = (60, 240) deg/s
+   range spanned: 0.954 -> 1.878 m  = 0.924 m of authority
+```
+
+**This is the window Josh chose — "monotone and unsaturated" — with its endpoint measured
+rather than eyeballed off a coarse grid.** It is 20 deg/s wider than the 60-220 the coarse
+pass suggested, and worth 0.032 m more authority (0.924 m against 0.892 m).
+
+**The upper failure edge sits well inside it.** Solves within the window run
+`0/10, 0/10, 10/10, 2/10, 0/10, 0/10, 0/10, 0/10` across 60/100/140/180/200/220/230/240.
+The last speed that ever solves is 180 deg/s; the label is `0/10` from 200 deg/s upward,
+which is **40 deg/s below the upper bound**. So the parameter can genuinely overshoot
+*inside* its own sampling range, which is the entire argument for scaling all three limits.
+
+**One judgement call left open rather than made here.** 240 deg/s has a peak torque
+fraction of 0.956 — it is one grid step from where the arm starts saturating, and the
+0.032 m it buys over 220 deg/s (peak 0.875) is 3.6% more authority for most of the
+remaining headroom. A bound at 220 would be the conservative reading of the same data.
+Both satisfy every criterion above; 240 is reported because it is what the measurement
+supports, and the margin argument is a preference rather than a finding.
 
 ## Result 5 — R5 fails, and option D makes it worse, as predicted
 
 The release configuration is not speed-invariant. Peak-to-peak spread of the achieved
 release configuration over each whole grid, worst joint (joint 6 in all three modes):
 
-| mode | joint 6 spread | joint 4 | joint 2 |
-| --- | --- | --- | --- |
-| `vel` | 10.53 deg | 5.61 | 3.36 |
-| `vel-accel` | 13.58 deg | 8.76 | 3.83 |
-| `vel-accel-decel` | **19.72 deg** | 14.48 | 5.88 |
+| mode | joint 6 spread | joint 4 | joint 2 | over |
+| --- | --- | --- | --- | --- |
+| `vel` | 10.53 deg | 5.61 | 3.36 | 10 speeds x 10 seeds |
+| `vel-accel` | 13.58 deg | 8.76 | 3.83 | 8 speeds x 10 seeds |
+| `vel-accel-decel` | **19.72 deg** | 14.48 | 5.88 | 10 speeds x 10 seeds (main grid) |
+| `vel-accel-decel` | **22.70 deg** | 14.48 | 6.12 | 14 speeds x 10 seeds (with refinement) |
+
+The last row is the same quantity over a denser grid, not a re-measurement of the row
+above it: peak-to-peak can only widen as speeds are added, and the four refinement speeds
+add 2.98 deg of it. Both are stated so neither the comparison across modes (which needs
+matched grids) nor the worst case is hidden.
 
 Two causes, both structural. Release is checked once per `_CONTROL_DT = 0.1 s` step, so the
 release fraction lands wherever the discrete grid allows — measured 0.467 to 0.625 against
@@ -184,10 +272,23 @@ scripts/with_kinder_env.sh python scripts/tossing3d_toss_speed_probe.py \
     --seeds 0 1 2 3 4 5 6 7 8 9 \
     --speeds-deg 60 100 140 180 220 260 300 340 380 420
 
+# the refinement pass that locates the upper bound
+scripts/with_kinder_env.sh python scripts/tossing3d_toss_speed_probe.py \
+    --mode vel-accel-decel \
+    --output docs/experiment-logs/2026-08-12-tossing3d-toss-speed-probe-vel-accel-decel-refine.json \
+    --seeds 0 1 2 3 4 5 6 7 8 9 --speeds-deg 200 230 240 250
+
+# the four clips
+scripts/with_kinder_env.sh python scripts/tossing3d_toss_speed_probe.py \
+    --mode vel-accel-decel --output /tmp/clips-vad.json \
+    --seeds 0 --speeds-deg 60 140 220 --record-video-dir docs/experiment-logs
+
+# a mode given twice is merged, so the refinement lands on the same curve
 python analysis/tossing3d_toss_speed_probe.py \
     --probe vel=docs/experiment-logs/2026-08-12-tossing3d-toss-speed-probe-vel.json \
     --probe vel-accel=docs/experiment-logs/2026-08-12-tossing3d-toss-speed-probe-vel-accel.json \
     --probe vel-accel-decel=docs/experiment-logs/2026-08-12-tossing3d-toss-speed-probe-vel-accel-decel.json \
+    --probe vel-accel-decel=docs/experiment-logs/2026-08-12-tossing3d-toss-speed-probe-vel-accel-decel-refine.json \
     --output-png docs/experiment-logs/2026-08-12-tossing3d-toss-speed-probe.png
 ```
 
@@ -199,8 +300,9 @@ since concurrency has been measured not to perturb results.
 
 ## Recommendation
 
-Ship the parameter as an **effort scale on all three profile limits**, defaulting to
-upstream's literals, and set its sampling bounds from the **60-220 deg/s** window rather
-than from the whole reachable range. Do not ship the two-limit variant the design doc
-names. Treat R5's doubled spread and the torque ceiling above 260 deg/s as known,
+Ship the parameter as an **effort scale on all three profile limits, scaled linearly
+together**, defaulting to upstream's literals. Set
+**`TOSS_SPEED_BOUNDS = (60, 240)` deg/s** — the measured monotone, torque-unsaturated
+window, not the whole reachable range. Do not ship the two-limit variant the design doc
+names. Treat R5's doubled spread and the torque ceiling above 250 deg/s as known,
 measured, and open.

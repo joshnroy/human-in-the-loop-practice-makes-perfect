@@ -328,7 +328,17 @@ def main() -> None:
     probes: dict[str, dict[str, Any]] = {}
     for spec in args.probe:
         mode, _, path = spec.partition("=")
-        probes[mode] = load_probe(path=Path(path))
+        payload = load_probe(path=Path(path))
+        if mode in probes:
+            # A mode given twice is a base grid plus a refinement pass over it. Merging
+            # rather than replacing is what lets a coarse grid be resolved further at one
+            # end without re-running, and without either JSON having to be edited.
+            probes[mode]["cells"] += payload["cells"]
+            probes[mode]["speeds_deg"] = sorted(
+                set(probes[mode]["speeds_deg"]) | set(payload["speeds_deg"])
+            )
+        else:
+            probes[mode] = payload
     for mode, payload in probes.items():
         print_report(mode=mode, payload=payload)
     make_figure(probes=probes, output_png=args.output_png)

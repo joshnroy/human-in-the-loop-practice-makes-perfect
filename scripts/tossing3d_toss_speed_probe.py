@@ -277,6 +277,15 @@ def _parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--standoff", type=float, default=ORACLE_THROW_STANDOFF)
     parser.add_argument("--settle-steps", type=int, default=25)
     parser.add_argument("--extra-settle-steps", type=int, default=35)
+    parser.add_argument(
+        "--record-video-dir",
+        type=Path,
+        default=None,
+        help=(
+            "record one captioned .mp4 per cell here instead of instrumenting the swing. "
+            "See `record_cell` for why the two paths cannot be the same one."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -333,7 +342,8 @@ def main() -> None:
             float(np.deg2rad(decel)),
         )
         for seed in args.seeds:
-            row = run_cell(
+            cell = run_cell if args.record_video_dir is None else record_cell
+            row = cell(
                 env=env,
                 backend=backend,
                 seed=int(seed),
@@ -342,6 +352,7 @@ def main() -> None:
                 standoff=float(args.standoff),
                 settle_steps=int(args.settle_steps),
                 extra_settle_steps=int(args.extra_settle_steps),
+                video_dir=args.record_video_dir,
             )
             rows.append(row)
             print(
@@ -398,8 +409,14 @@ def run_cell(
     standoff: float,
     settle_steps: int,
     extra_settle_steps: int,
+    video_dir: Path | None = None,
 ) -> ProbeCellResult:
-    """Run one cell end to end and return what it measured."""
+    """Run one cell end to end and return what it measured.
+
+    `video_dir` is accepted and ignored so that this and `record_cell` share one call
+    shape; recording happens in `record_cell`.
+    """
+    del video_dir
     from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 
     row = ProbeCellResult(seed=seed, commanded_speed_deg=speed_deg, mode=mode, standoff=standoff)
@@ -447,6 +464,103 @@ def run_cell(
     row.base_x_final = float(state.get(robot, "pos_base_x"))
     row.solved = bool(backend.check_goals())
     row.goal_region = backend.goal_region_bbox()
+    return row
+
+
+def record_cell(
+    *,
+    env: Any,
+    backend: Any,
+    seed: int,
+    speed_deg: float,
+    mode: str,
+    standoff: float,
+    settle_steps: int,
+    extra_settle_steps: int,
+    video_dir: Path | None,
+) -> ProbeCellResult:
+    """Run one cell for the camera and write a captioned clip of the throw.
+
+    **Why this is a second path rather than a flag inside `run_cell`.** `run_cell` drives
+    the swing one control step at a time so it can read the arm's velocity and
+    configuration at the exact step the gripper opens. That hand-driven loop is the
+    measurement, and it must not acquire a rendering branch that could change what it
+    measures. This path instead runs the same three skills through the ordinary public
+    `env.take_action` route -- the same two controllers, the same monkeypatched profile --
+    and records. It reports `cube_x_final` and `solved` so a clip can be checked against
+    the grid cell it is supposed to illustrate; if those disagree, the clip is not showing
+    what the table says and the disagreement is the finding.
+
+    **Only the throw is recorded.** `Pick` and `MoveToThrowPose` are identical in every
+    clip by construction -- both are held at fixed parameters -- so including them would
+    add several seconds of identical driving to every file and bury the one second that
+    differs. The clip therefore starts at the windup.
+    """
+    import imageio.v2 as imageio
+
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
+
+    assert video_dir is not None
+    row = ProbeCellResult(seed=seed, commanded_speed_deg=speed_deg, mode=mode, standoff=standoff)
+
+    backend.set_substep_recording(enabled=False)
+    env.reset_to_seed(seed=seed)
+    env.take_action(
+        action=np.array([Tossing3DEnvironment.pick_id, ORACLE_PICK_DISTANCE, ORACLE_PICK_ROTATION])
+    )
+    row.pick_error = env.last_skill_error()
+    env.take_action(action=np.array([Tossing3DEnvironment.move_to_throw_pose_id, standoff, 0.0]))
+    row.move_error = env.last_skill_error()
+
+    # Recording starts here, so the clip is the throw and not the approach.
+    backend.set_substep_recording(enabled=True)
+    backend.drain_substep_frames()  # discard anything buffered by the wrapper going on
+    state = env.take_action(action=np.array([Tossing3DEnvironment.toss_id, 0.0, 0.0]))
+    row.toss_error = env.last_skill_error()
+    label = f"{mode} @ {speed_deg:.0f} deg/s | seed {seed} | standoff {standoff:.2f} m"
+    frames = Tossing3DRenderer.render_substep_frames(
+        frames=backend.drain_substep_frames(), state=state, env=env, label=f"{label} | throw"
+    )
+
+    # Settle on the same budget the measurement grid uses, so the clip ends where the
+    # table's `range_m` was read rather than mid-bounce.
+    gym_env = backend._env  # noqa: SLF001
+    hold = np.zeros(11, dtype=np.float32)
+    for _ in range(settle_steps + extra_settle_steps):
+        observation, _, _, _, _ = gym_env.step(hold)
+        backend._state = gym_env.observation_space.devectorize(observation)  # noqa: SLF001
+    settled = env.build_state(
+        observation=backend.observe(),
+        seed=seed,
+        steps_taken=int(round(state.get(obj=env.scene, feature_name="steps_taken"))),
+    )
+    row.solved = bool(backend.check_goals())
+    verdict = "IN the goal box" if row.solved else "MISSED the goal box"
+    frames += Tossing3DRenderer.render_substep_frames(
+        frames=backend.drain_substep_frames(),
+        state=settled,
+        env=env,
+        label=f"{label} | settling -- {verdict}",
+    )
+    backend.set_substep_recording(enabled=False)
+
+    kinder_state = backend._state  # noqa: SLF001
+    cube = kinder_state.get_object_from_name(backend.cube_name)
+    robot = kinder_state.get_object_from_name(backend.robot_name)
+    row.cube_x_final = float(kinder_state.get(cube, "x"))
+    row.cube_y_final = float(kinder_state.get(cube, "y"))
+    row.cube_z_final = float(kinder_state.get(cube, "z"))
+    row.base_x_final = float(kinder_state.get(robot, "pos_base_x"))
+    # No release instant is observed on this path, so `range_m` has no base-at-release to
+    # subtract. The base does not move during a throw, so its final x is the same number.
+    row.base_x_at_release = row.base_x_final
+    row.goal_region = backend.goal_region_bbox()
+
+    video_dir.mkdir(parents=True, exist_ok=True)
+    path = video_dir / f"{mode}-{speed_deg:03.0f}deg-seed{seed}.mp4"
+    imageio.mimsave(path, frames, fps=backend.render_fps(), macro_block_size=16)
+    print(f"  wrote {path} ({len(frames)} frames)", flush=True)
     return row
 
 
