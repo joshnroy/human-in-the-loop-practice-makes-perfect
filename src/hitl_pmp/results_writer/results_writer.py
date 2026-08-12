@@ -28,6 +28,13 @@ That list is the honest boundary of the mechanism rather than a to-do: three of 
 four are structurally out of reach of a harness-level hook, and the fourth must not
 move. See this folder's README.
 
+`progress.jsonl` *is* one, as of the change that added `run_progress.py` to this
+package: its event is exactly `record_checkpoint`'s boundary. It was left out when this
+interface landed on the grounds that an always-on output did not fit an opt-in shape;
+it turned out that `open_if_requested`'s contract already admits it, and the only real
+obstacle was `sweeps_total`, which needs a `num_cycles` that is not in `args`. See that
+method's docstring.
+
 ## A real pydantic instance, not a static-method container
 
 `core/README.md`'s dividing line is whether a class carries genuine per-run state. A
@@ -78,18 +85,33 @@ class ResultsWriter(BaseModel, abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def open_if_requested(*, args: argparse.Namespace) -> "ResultsWriter | None":
-        """This run's writer, or None -- the one place this writer's flag is
+    def open_if_requested(*, args: argparse.Namespace, num_cycles: int) -> "ResultsWriter | None":
+        """This run's writer, or None -- the one place this writer's own condition is
         interpreted, so no caller has to re-derive it.
 
         Called on every registered writer at the start of every run, which is what
-        makes the registry safe to grow: a writer whose flag was not passed returns
-        None and is never driven again. A writer whose flag *was* passed but cannot
-        work (no `--output-dir`, an optional dependency missing) must raise **here**,
-        before the run starts -- a multi-hour run that produced no instrumentation
-        because of a missing second flag is the expensive way to find out, and
+        makes the registry safe to grow: a writer that declines returns None and is
+        never driven again. A writer that *was* asked for but cannot work (no
+        `--output-dir`, an optional dependency missing) must raise **here**, before the
+        run starts -- a multi-hour run that produced no instrumentation because of a
+        missing second flag is the expensive way to find out, and
         `config_snapshot.py`'s never-raises policy is right for provenance and wrong
-        for a thing whose only job is to record."""
+        for a thing whose only job is to record.
+
+        **The condition need not be a flag.** `WandbResultsWriter` keys on
+        `--record-wandb`; `RunProgressWriter` is always on and keys on `--output-dir`
+        alone, because instrumentation you have to remember to switch on is not
+        available for the run you did not expect to need it for. "Always, when I can
+        write at all" is a legitimate answer to "does this run want you", so an
+        always-on writer needs no flag invented for it to fit this method's name.
+
+        `num_cycles` is passed rather than read off `args` because it is **not a
+        flag**: it is a method-CLI decision handed to `MethodRunner.run`, and
+        `SkillOracleCli` passes a literal `0` with no `num_cycles` in its namespace at
+        all. A writer that re-derived it from `args` would be right for today's two
+        methods by coincidence. It is the one piece of run *shape*, as opposed to run
+        *configuration*, a writer cannot otherwise see; a writer that does not need it
+        ignores it."""
 
     def record_checkpoint(self, *, metrics: Metrics) -> None:
         """One evaluation sweep just finished and was recorded.

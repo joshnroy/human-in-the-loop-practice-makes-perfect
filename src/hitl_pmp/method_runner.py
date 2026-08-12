@@ -18,7 +18,6 @@ from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 from hitl_pmp.results_writer.registry import RESULTS_WRITERS
-from hitl_pmp.run_progress import RunProgressWriter
 
 
 class MethodRunner:
@@ -164,16 +163,30 @@ class MethodRunner:
             record_practice_outcomes()
             record_practice_target_outcomes()
 
-        # Built before the loop starts, so elapsed_seconds measures the run rather
-        # than the time since the first sweep finished. None without --output-dir,
-        # which is what keeps the "nothing is written" tests honest.
-        progress = RunProgressWriter.for_run(
-            output_dir=getattr(args, "output_dir", None), num_cycles=num_cycles
-        )
+        # Every registered ResultsWriter that this run asked for -- progress.jsonl and
+        # W&B today. Built by iterating the static list rather than by naming each
+        # writer here, which is the point of the abstraction: a new observer is a class
+        # plus one line in results_writer/registry.py, and this file does not change.
+        #
+        # Before the loop starts, for two reasons that happen to coincide: a writer
+        # whose request is unusable (no --output-dir, a missing optional dependency)
+        # raises here rather than hours in, and RunProgressWriter's elapsed_seconds
+        # measures the run rather than the time since the first sweep finished.
+        #
+        # num_cycles is passed rather than left to be read off `args`, because it is not
+        # a flag: it is this method's own parameter, decided by the method-CLI, and
+        # SkillOracleCli passes a literal 0 with no `num_cycles` in its namespace at
+        # all. See ResultsWriter.open_if_requested.
+        results_writers = [
+            writer
+            for writer_class in RESULTS_WRITERS
+            if (writer := writer_class.open_if_requested(args=args, num_cycles=num_cycles))
+            is not None
+        ]
 
-        def record_sweep_end() -> None:
-            if progress is not None:
-                progress.record(metrics=metrics)
+        def record_results_writers() -> None:
+            for writer in results_writers:
+                writer.record_checkpoint(metrics=metrics)
 
         # --record-skill-competence's recorder, or None (the default, and what keeps
         # every unrecorded run byte-identical). Built here rather than inside a
@@ -204,26 +217,9 @@ class MethodRunner:
                 competences=method.current_competences(),
             )
 
-        # Every registered ResultsWriter that this run asked for. Built by iterating
-        # the static list rather than by naming each writer here, which is the point of
-        # the abstraction: a new observer is a class plus one line in
-        # results_writer/registry.py, and this file does not change. Opened before the
-        # loop starts, so a writer whose flag is unusable (no --output-dir, a missing
-        # optional dependency) raises before any work is done rather than hours in.
-        results_writers = [
-            writer
-            for writer_class in RESULTS_WRITERS
-            if (writer := writer_class.open_if_requested(args=args)) is not None
-        ]
-
-        def record_results_writers() -> None:
-            for writer in results_writers:
-                writer.record_checkpoint(metrics=metrics)
-
         def on_sweep_end() -> None:
-            record_sweep_end()
-            record_skill_competence()
             record_results_writers()
+            record_skill_competence()
 
         recorder = MethodRunner._build_recorder(
             args=args,

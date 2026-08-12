@@ -17,7 +17,16 @@ ordered, immutable declaration rather than a lookup table.
 Order is the order writers are opened, and the order their hooks fire within a
 checkpoint. Nothing today depends on it, and nothing should: a writer that needed to
 run after another would be a dependency between observers, which is a different design
-than a list.
+than a list. `RunProgressWriter` is listed first only because that is the order the
+harness fired these two in before it joined the list, which keeps a checkpoint's side
+effects in the sequence they have always happened in.
+
+## Not every entry is opt-in
+
+`RunProgressWriter` is **always on**: it has no flag and writes whenever there is an
+`--output-dir` to write into. That is a property of the writer, not an exception the
+registry makes for it -- `open_if_requested` asks each entry whether this run wants it,
+and "always, when I can write at all" is one of the answers.
 
 ## What is deliberately not in this list
 
@@ -30,6 +39,7 @@ fire at boundaries the harness does not own.
 """
 
 from hitl_pmp.results_writer.results_writer import ResultsWriter
+from hitl_pmp.results_writer.run_progress import RunProgressWriter
 from hitl_pmp.results_writer.wandb_writer import WandbResultsWriter
 
-RESULTS_WRITERS: tuple[type[ResultsWriter], ...] = (WandbResultsWriter,)
+RESULTS_WRITERS: tuple[type[ResultsWriter], ...] = (RunProgressWriter, WandbResultsWriter)

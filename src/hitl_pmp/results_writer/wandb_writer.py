@@ -144,10 +144,17 @@ class WandbResultsWriter(ResultsWriter):
         )
 
     @staticmethod
-    def open_if_requested(*, args: argparse.Namespace) -> "WandbResultsWriter | None":
+    def open_if_requested(
+        *, args: argparse.Namespace, num_cycles: int
+    ) -> "WandbResultsWriter | None":
         """This run's W&B writer, or None. Raises up front on every way the flag can be
         unusable -- no output directory, no wandb installed, an unrecognised
-        `WANDB_MODE` -- rather than discovering any of them mid-run."""
+        `WANDB_MODE` -- rather than discovering any of them mid-run.
+
+        `num_cycles` is ignored: W&B's own config already carries the resolved
+        namespace, and the cycle count is only a *denominator*, which is
+        `RunProgressWriter`'s concern rather than a dashboard's."""
+        del num_cycles
         if not getattr(args, "record_wandb", False):
             return None
         output_dir = getattr(args, "output_dir", None)
