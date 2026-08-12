@@ -18,6 +18,23 @@ publishes:
 - **`ORACLE_THROW_STANDOFF = 1.35`** is upstream's own `target_distance` in the same
   test, and is the standoff every measured number in `docs/kinder-environment-validation.md`
   and `docs/tossing3d-integration-status.md` was taken at.
+- **`ORACLE_RELEASE_SPEED_DEG_S = 140`** is upstream's own shipped default, aliased from
+  `predicates.UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S` rather than written out again. It is
+  the literal that sat inline in `TossController.reset` until `joshnroy/kinder-baselines`
+  PR #8 made it a parameter, it is what `toss_profile_limits()` still returns when passed
+  nothing, and it is the speed **every committed Tossing3D number was measured at** --
+  including the `10/10` this oracle scores at standoff 1.35 on the coincident config.
+
+  It is emphatically **not a tuned value**, and the distinction matters for what this
+  oracle is evidence about. Naming it as the oracle's own constant is what keeps the
+  oracle's throw byte-identical to the throw it made before `Toss` had a dial at all: the
+  dial's arrival changes what a *learner* can do, and changes nothing about the baseline
+  it is measured against. Moving this number would be a new measurement, not a tweak.
+
+  Note that `ORACLE_THROW_STANDOFF = 1.35` is only known to solve **at this speed**. PR
+  #221 measured the best standoffs over 60-83.34 deg/s at 1.050-1.075, *below*
+  `THROW_STANDOFF_BOUNDS`'s floor, so the two constants are not independently valid --
+  they are one operating point that was measured together.
 
 **1.35 lands the cube at x = 1.9902, inside the bin and inside the goal box, and scores
 `True`.** That used to be a contrast: on the scene KINDER shipped before the upstream bin
@@ -37,7 +54,11 @@ from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Goal
 
 from .environment import Tossing3DEnvironment
-from .predicates import HoldingClassifier, RobotAtSuccessfulThrowPoseClassifier
+from .predicates import (
+    UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
+    HoldingClassifier,
+    RobotAtSuccessfulThrowPoseClassifier,
+)
 from .skills import Tossing3DSkills
 
 # Upstream's own draw; see the module docstring.
@@ -46,6 +67,9 @@ ORACLE_PICK_ROTATION = -0.7008563047585579
 
 # Upstream's own `target_distance` for the throw.
 ORACLE_THROW_STANDOFF = 1.35
+
+# Upstream's own shipped release speed; see the module docstring.
+ORACLE_RELEASE_SPEED_DEG_S = UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
 
 
 class SkillOraclePolicy:
@@ -79,7 +103,7 @@ class SkillOraclePolicy:
                 skill=Tossing3DSkills.TOSS,
                 objects=(env.robot, env.cube, env.bin, env.barrier),
             )
-            params = np.zeros(0)
+            params = np.array([ORACLE_RELEASE_SPEED_DEG_S])
         elif holding:
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.MOVE_TO_THROW_POSE,

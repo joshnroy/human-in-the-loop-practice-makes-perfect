@@ -164,11 +164,81 @@ WORST_BARRIER_COLLISION_STANDOFF = 1.00
 BARRIER_COLLISION_MARGIN = 0.10
 THROW_STANDOFF_BOUNDS = (WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MARGIN, 1.75)
 
+# `Toss`'s own dial: the release speed, in **joint-path deg/s**.
+#
+# ## Why degrees per second, and why "joint-path"
+#
+# Every measurement of this quantity is written in deg/s -- PR #213's range fit, PR #221's
+# 660-cell grid, upstream's own `140` literal, and the real TidyBot primitive
+# (`yixuanhuang98/tidybot_real`, `robot/kinova.py:120-124`). Carrying the dial in the same
+# unit means a logged action vector reading `140.0` can be checked against those records
+# directly. Upstream's `TossController.reset` takes rad/s, so exactly one site converts --
+# `KinderBackend.run_toss` -- and `test_run_toss_converts_the_release_speed_to_radians_
+# exactly_once` pins it there. A missing conversion drives the arm 57x fast and a doubled
+# one 57x slow; neither raises.
+#
+# "Joint-path" because the speed is the rate along the *path* between upstream's two arm
+# configurations, not any single joint's rate and not a Cartesian speed. The path is
+# `TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF`, whose L2 norm is 148.8288 deg; joint 6
+# carries 0.8399 of it, so joint 6 turns at 0.8399x whatever this number says.
+#
+# **An m/s figure was considered and deliberately rejected.** Converting needs a Jacobian
+# gain, and that gain is not a constant over this range: measured at the realised release
+# configurations it runs 0.6156 (at 60) to 0.6622 (at 240) and *sawtooths* rather than
+# drifting cleanly, because the realised release fraction quantises to the 10 Hz control
+# step. A single-constant m/s label would therefore be wrong by several percent in a
+# direction that is not even monotone. Angular rate is exact and needs no constant at all.
+#
+# ## The range
+#
+# `(60, 240)` is the span PR #213's grid actually drove, so every draw is a speed something
+# has been observed at rather than an extrapolation. There is **no hardware-feasibility
+# clamp**, and that is deliberate rather than an oversight: `_ARM_MAX_VEL[5] = 70` deg/s is
+# kinder-baselines' own conservative constant, *not* a hardware limit -- the real TidyBot
+# primitive this ports runs that joint at 140 deg/s, twice it. See PR #221, which
+# established that and retracted the "83.34 deg/s ceiling" an earlier design study asserted.
+#
+# ## Known artifact: the dial is not monotone at the low end
+#
+# Release fires on the first control step past `fraction_covered >= 0.46`, once per
+# `_CONTROL_DT = 0.1 s`, so the *realised* release fraction sawtooths with speed. Measured
+# paired on (standoff, seed), n = 110: 65 -> 70 deg/s makes the throw land **0.0329 m
+# shorter**, paired t = +4.51, p = 1.6e-05. That is a fidelity defect of *our* simulation,
+# not a property of the toss -- the real primitive runs at 1 kHz, ~100x finer.
+#
+# **Whether the dial is monotone near 140 is unmeasured.** PR #213's R^2 = 0.99997 linear
+# fit came from a three-point grid (60/100/140), which cannot resolve a sawtooth, and the
+# profile *coarsens* as speed rises (32 control steps at 60, 25 at 83.34, 18 at 140, 14 at
+# 240), so there is some reason to expect the artifact worse there rather than milder. This
+# is a stated limitation, accepted for now, and the strongest candidate for a correctness
+# follow-up. Do not read a draw from this range as monotone in landing distance.
+TOSS_SPEED_BOUNDS = (60.0, 240.0)
+
+# The speed every committed Tossing3D number was measured at, and still upstream's own
+# default: the literal that was inline in `TossController.reset` before kb#8 turned it into
+# a parameter, and what `toss_profile_limits()` returns when passed nothing.
+UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S = 140.0
+
 # **The one calibrated constant in this module, and the only thing the success band is not
-# derived from.** `Toss` takes no parameters: `run_toss` executes
-# `move_arm_to_conf(windup_conf_deg)` and then `toss(toss_conf_deg)`, both fixed joint
-# configurations, so a throw displaces the cube by the same distance in the base's facing
-# direction every time. That displacement is this number, in metres.
+# derived from.** `run_toss` executes `move_arm_to_conf(windup_conf_deg)` and then
+# `toss(toss_conf_deg)`, both fixed joint configurations, so a throw displaces the cube by
+# the same distance in the base's facing direction every time. That displacement is this
+# number, in metres.
+#
+# > **Scope note, 2026-08-12.** This constant is the impact range **at 140 deg/s only**.
+# > It was calibrated when `Toss` had no parameters and every throw was the same throw;
+# > `TOSS_SPEED_BOUNDS` now lets a caller ask for 60-240 deg/s, over which the range
+# > genuinely varies. Nothing below has been recomputed and the measurements it cites stand
+# > exactly as published -- they are simply evidence about one speed.
+# >
+# > **The consequence is live, not hypothetical**: `RobotAtSuccessfulThrowPoseClassifier`
+# > derives its acceptance band from this single number, so it currently answers "is this a
+# > pose a *140 deg/s* throw scores from", while `Toss` may be executed at any speed in the
+# > bounds. Reformulating that predicate as a union over the speed range is the next PR in
+# > this stack; until it lands, the predicate is correct only for the oracle's speed. This
+# > is recorded here rather than left implicit because a silently speed-conditional
+# > precondition is exactly the kind of thing
+# > `tests/environments/test_operator_dynamics_fidelity.py` exists to forbid.
 #
 # Because it is a property of the *controller* -- upstream's arm configurations and the
 # cube's 0.1 kg mass -- and not of the scene, the success band can be recomputed from live

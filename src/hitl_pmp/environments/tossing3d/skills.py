@@ -18,20 +18,28 @@ upstream's own bounds:
 | --- | --- | --- | --- |
 | `Pick` | `pick_shelf` | distance, rotation | upstream's `MOVE_TO_TARGET_{DISTANCE,ROT}_BOUNDS` |
 | `MoveToThrowPose` | `move_to_target` | standoff | **ours** -- see `THROW_STANDOFF_BOUNDS` |
-| `Toss` | `move_arm_to_conf`, then `toss` | none | upstream's windup and toss confs, verbatim |
+| `Toss` | `move_arm_to_conf`, then `toss` | release speed | upstream's own `release_speed` |
 
 The one genuinely new range is the throw standoff, and it has to be: upstream's own
 `MOVE_TO_TARGET_DISTANCE_BOUNDS` is `(0.5, 0.6)`, which is a *grasping* standoff, and
 upstream's tossing test simply hardcodes `1.35` with no range at all. So the interval
 below is this repo's, taken from the standoffs it has actually measured rather than
-invented, and it is the only dial in this domain a learner would have to move.
+invented.
 
-**`Toss` deliberately has zero continuous parameters.** An earlier iteration of this
-domain interpolated a `swing` dial between upstream's windup and full-power arm
-configurations; that interpolation was ours, and it made the dial that mattered
-(`swing`) a quantity no upstream measurement covered while leaving the standoff -- the
-dial the coincident scene's own sweep actually resolves -- fixed. Putting the parameter
-on `MoveToThrowPose` instead keeps every arm configuration upstream's exactly.
+**`Toss` has exactly one continuous parameter, and it is upstream's, not ours.** An
+earlier iteration of this domain interpolated a `swing` dial between upstream's windup
+and full-power arm configurations. That interpolation was *ours*, and it made the dial a
+quantity no upstream measurement covered; it was removed, leaving `Toss` with no
+parameters at all.
+
+The dial is back on a different footing. `joshnroy/kinder-baselines` PR #8 made
+`release_speed` a parameter of upstream's own `TossController.reset`, so the throw's
+energy is now upstream's knob rather than a quantity this package synthesised, and
+**both arm configurations remain upstream's, untouched** -- the property the old `swing`
+dial gave up. The range is `predicates.TOSS_SPEED_BOUNDS`, `(60, 240)` joint-path deg/s,
+which is the span PR #213's grid actually drove; see that constant's own comment for the
+unit, the absence of a feasibility clamp, and the non-monotonicity artifact at the low
+end.
 
 ## The operator models, and the two choices that are load-bearing
 
@@ -85,6 +93,7 @@ from .predicates import (
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
     THROW_STANDOFF_BOUNDS,
+    TOSS_SPEED_BOUNDS,
 )
 
 # Upstream's own bounds for a `pick_shelf` base standoff and yaw, from
@@ -175,7 +184,7 @@ class Tossing3DSkills:
             # Unconditionally, hit or miss: see this module's docstring, choice 3.
             LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
         }),
-        param_dim=0,
+        param_dim=1,
     )
 
     @staticmethod
@@ -194,7 +203,7 @@ class Tossing3DSkills:
         if skill == Tossing3DSkills.MOVE_TO_THROW_POSE:
             return np.array([rng.uniform(*THROW_STANDOFF_BOUNDS)])
         if skill == Tossing3DSkills.TOSS:
-            return np.zeros(0)
+            return np.array([rng.uniform(*TOSS_SPEED_BOUNDS)])
         raise ValueError(f"Unknown skill: {skill.name}")
 
     @staticmethod
@@ -217,5 +226,5 @@ class Tossing3DSkills:
                 [Tossing3DEnvironment.move_to_throw_pose_id, float(params[0]), 0.0], dtype=float
             )
         if skill == Tossing3DSkills.TOSS:
-            return np.array([Tossing3DEnvironment.toss_id, 0.0, 0.0], dtype=float)
+            return np.array([Tossing3DEnvironment.toss_id, float(params[0]), 0.0], dtype=float)
         raise ValueError(f"Unknown skill: {skill.name}")
