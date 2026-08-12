@@ -59,6 +59,18 @@ exclude_lines = [
 [tool.ruff]
 line-length = 100
 preview = true
+# `reference/` holds third-party checkouts as git submodules. Once they are populated,
+# `ruff check .` walks 830 files of upstream code and reports 10,824 errors this repo
+# neither owns nor can fix, so the gate documented in CLAUDE.md stops being runnable
+# verbatim -- and only for people doing KINDER work, since CI never populates them.
+#
+# `extend-exclude` rather than `exclude`: `exclude` *replaces* ruff's built-in defaults
+# (`.git`, `__pycache__`, `.venv`, ...), which are all still wanted here.
+#
+# Ruff's `respect-gitignore` does not cover this. The parent repo records each submodule
+# as a gitlink, so the files inside it are neither tracked nor ignored by this repo, and
+# nothing stops the walk without saying so explicitly.
+extend-exclude = ["reference"]
 
 [tool.ruff.lint]
 # N999 bans non-lower_case.py module/file names.
