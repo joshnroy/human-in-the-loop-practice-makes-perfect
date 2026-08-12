@@ -123,7 +123,7 @@ def test_the_flag_needs_an_output_dir() -> None:
     every other recorder's `open_if_requested`."""
     args = argparse.Namespace(record_wandb=True, output_dir=None)
     with pytest.raises(ValueError, match="--record-wandb needs --output-dir"):
-        WandbResultsWriter.open_if_requested(args=args)
+        WandbResultsWriter.open_if_requested(args=args, num_cycles=2)
 
 
 @pytest.mark.skipif(
@@ -136,12 +136,15 @@ def test_the_flag_fails_loudly_when_wandb_is_not_installed(*, tmp_path: Path) ->
     open time, before the run starts, not on the first checkpoint hours in."""
     args = argparse.Namespace(record_wandb=True, output_dir=tmp_path)
     with pytest.raises(ValueError, match="pip install"):
-        WandbResultsWriter.open_if_requested(args=args)
+        WandbResultsWriter.open_if_requested(args=args, num_cycles=2)
 
 
 def test_declines_without_the_flag(*, tmp_path: Path) -> None:
     assert (
-        WandbResultsWriter.open_if_requested(args=argparse.Namespace(output_dir=tmp_path)) is None
+        WandbResultsWriter.open_if_requested(
+            args=argparse.Namespace(output_dir=tmp_path), num_cycles=2
+        )
+        is None
     )
 
 
@@ -180,7 +183,8 @@ def test_the_resolved_mode_is_settled_before_the_run_starts(
     writer = WandbResultsWriter.open_if_requested(
         args=argparse.Namespace(
             record_wandb=True, output_dir=tmp_path, env="lightswitch", method="skill-oracle", seed=0
-        )
+        ),
+        num_cycles=2,
     )
     assert writer is not None
     assert writer.mode == "disabled"
@@ -248,7 +252,7 @@ def test_the_config_and_summary_reach_wandb(
         num_render_checkpoints=1,
         record_full_loop=Path("loop.mp4"),
     )
-    writer = WandbResultsWriter.open_if_requested(args=args)
+    writer = WandbResultsWriter.open_if_requested(args=args, num_cycles=2)
     assert writer is not None
     metrics = WandbHarness.metrics_with_one_sweep()
     writer.record_checkpoint(metrics=metrics)
@@ -290,7 +294,8 @@ def test_no_wandb_run_is_started_before_the_first_checkpoint(
     writer = WandbResultsWriter.open_if_requested(
         args=argparse.Namespace(
             record_wandb=True, output_dir=tmp_path, env="lightswitch", method="skill-oracle", seed=0
-        )
+        ),
+        num_cycles=2,
     )
     assert writer is not None
     writer.close(metrics=Metrics())

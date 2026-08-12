@@ -40,7 +40,10 @@ class SpyResultsWriter(ResultsWriter):
     summaries: ClassVar[list[RunSummaryScalars]] = []
 
     @staticmethod
-    def open_if_requested(*, args: argparse.Namespace) -> "SpyResultsWriter | None":
+    def open_if_requested(
+        *, args: argparse.Namespace, num_cycles: int
+    ) -> "SpyResultsWriter | None":
+        del num_cycles
         if not getattr(args, "spy", False):
             return None
         return SpyResultsWriter()
@@ -86,13 +89,19 @@ def spy_registry(*, monkeypatch: pytest.MonkeyPatch) -> type[SpyResultsWriter]:
     return SpyResultsWriter
 
 
-def test_every_registered_writer_declines_unless_its_own_flag_was_passed() -> None:
-    """The property that makes the static list safe to grow: a run that asks for
-    nothing opens nothing, so adding a writer cannot change any existing run. Asserted
-    over the real registry rather than one writer, because the guarantee has to hold
-    for whatever the list contains today."""
+def test_every_registered_writer_declines_when_a_run_gives_it_nothing_to_work_with() -> None:
+    """The property that makes the static list safe to grow: a run with no
+    `--output-dir` and no flags opens nothing, so adding a writer cannot change any
+    existing run. Asserted over the real registry rather than one writer, because the
+    guarantee has to hold for whatever the list contains today.
+
+    Deliberately *not* "declines unless its own flag was passed": `RunProgressWriter`
+    is always on and has no flag, so `--output-dir` is the condition that has to be
+    absent here. `test_run_progress.py` covers the other side of that."""
     bare = argparse.Namespace(output_dir=None)
-    assert [writer for writer in RESULTS_WRITERS if writer.open_if_requested(args=bare)] == []
+    assert [
+        writer for writer in RESULTS_WRITERS if writer.open_if_requested(args=bare, num_cycles=2)
+    ] == []
 
 
 def test_the_registry_holds_only_results_writer_subclasses() -> None:
@@ -111,7 +120,9 @@ def test_the_hooks_are_no_ops_by_default() -> None:
 
     class MinimalWriter(ResultsWriter):
         @staticmethod
-        def open_if_requested(*, args: argparse.Namespace) -> "MinimalWriter | None":
+        def open_if_requested(
+            *, args: argparse.Namespace, num_cycles: int
+        ) -> "MinimalWriter | None":
             return None
 
     writer = MinimalWriter()
