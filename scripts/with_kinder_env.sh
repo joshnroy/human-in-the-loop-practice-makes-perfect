@@ -84,7 +84,25 @@ fi
 # --- PYTHONPATH ------------------------------------------------------------
 # Prepended, not overwritten, so an existing entry is preserved -- but this checkout's
 # src/ wins, which is the whole point.
-export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
+#
+# The two `reference/` source roots are on here for the same reason `src/` is, and the
+# omission was a real hole: the KINDER venv installs `kindergarden` and `kinder-models`
+# **editable**, so their `.pth` files carry the *main checkout's* absolute paths. From a
+# worktree, `import kinder_models` therefore resolved to the main checkout's submodule at
+# whatever commit it happened to be sitting on -- not at this branch's pin -- and nothing
+# errored, because both trees export the same module names. That is the same class of
+# silent skew `src/` was already guarded against, one directory over.
+#
+# It bit for real on 2026-08-12: the main checkout was on `3524010` while this branch
+# pinned `1b564a1`, and the difference is exactly the release-speed parameter the toss
+# stack is built on (`grep -c release_speed`: 6 in one tree, **0** in the other). A speed
+# sweep that picked up the main checkout's copy would have silently measured the
+# unparameterised toss at a single speed and looked entirely normal doing it.
+#
+# PYTHONPATH is searched before site-packages, so this wins over the `.pth` entries. In
+# the main checkout the two paths name the same trees the venv would have resolved
+# anyway, so this is a no-op there rather than a behaviour change.
+export PYTHONPATH="$REPO_ROOT/src:$REPO_ROOT/reference/kindergarden/src:$REPO_ROOT/reference/kinder-baselines/kinder-models/src${PYTHONPATH:+:$PYTHONPATH}"
 
 # --- rendering and math threads --------------------------------------------
 export MUJOCO_GL=egl
@@ -103,6 +121,10 @@ if [ "$#" -eq 0 ]; then
     echo "MUJOCO_GL     $MUJOCO_GL"
     "$KINDER_PYTHON" -c 'import hitl_pmp; print("hitl_pmp      " + hitl_pmp.__file__)'
     "$KINDER_PYTHON" -c 'import kinder; print("kinder        " + kinder.__file__)'
+    # `kinder_models` is reported separately rather than assumed to follow `kinder`: they
+    # are two independent submodules with two independent editable pointers, and it is
+    # the one whose pin moves most often.
+    "$KINDER_PYTHON" -c 'import kinder_models; print("kinder_models " + kinder_models.__file__)'
     exit 0
 fi
 
