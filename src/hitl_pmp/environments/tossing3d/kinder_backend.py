@@ -513,6 +513,7 @@ class KinderBackend(BaseModel):
         params: np.ndarray | None,
         limit: int,
         disable_collision_objects: Sequence[str] | None = None,
+        release_speed: float | None = None,
     ) -> ControllerRun:
         """Drive one upstream controller to termination, stepping the live simulator.
 
@@ -524,6 +525,14 @@ class KinderBackend(BaseModel):
         motion planners `assert plan is not None`) is reported through `error`. Both are
         ordinary outcomes of a skill whose continuous parameters do not work out, and the
         caller has to be able to keep going -- `take_action` must be total.
+
+        `disable_collision_objects` and `release_speed` are both **per-controller**
+        `reset` keywords, not universal ones: the first exists only on tossing's
+        `MoveToTargetGroundController.reset` and the second only on
+        `TossController.reset`, and passing either to a controller that does not declare
+        it is a `TypeError`. So each is forwarded only when the caller actually supplies
+        it, and it is the `run_*` wrapper below -- which knows which controller it is
+        driving -- that decides to.
         """
         api = self.api()
         state = self._require_state()
@@ -539,13 +548,14 @@ class KinderBackend(BaseModel):
         objects = tuple(state.get_object_from_name(name) for name in object_names)
         controller = lifted[key].ground(objects)
 
+        reset_kwargs: dict[str, Any] = {}
+        if disable_collision_objects is not None:
+            reset_kwargs["disable_collision_objects"] = list(disable_collision_objects)
+        if release_speed is not None:
+            reset_kwargs["release_speed"] = release_speed
+
         try:
-            if disable_collision_objects is None:
-                controller.reset(state, params)
-            else:
-                controller.reset(
-                    state, params, disable_collision_objects=list(disable_collision_objects)
-                )
+            controller.reset(state, params, **reset_kwargs)
         except Exception as exc:  # noqa: BLE001  (any planner failure is a failed skill)
             return ControllerRun(steps=0, terminated=False, error=f"{type(exc).__name__}: {exc}")
 
@@ -593,7 +603,7 @@ class KinderBackend(BaseModel):
             disable_collision_objects=[self.cube_name],
         )
 
-    def run_toss(self) -> tuple[ControllerRun, ControllerRun]:
+    def run_toss(self, *, release_speed_deg_s: float) -> tuple[ControllerRun, ControllerRun]:
         """The windup and the swing, back to back -- upstream's `move_arm_to_conf` then `toss`.
 
         Two controllers, one skill. Upstream never demonstrates `toss` from anywhere but
@@ -602,6 +612,17 @@ class KinderBackend(BaseModel):
         windup is a posture the swing requires, not a skill anything could usefully
         select on its own. The swing is skipped if the windup did not land, since tossing
         from an unknown arm pose is not the thing that was measured.
+
+        **This is the one place in the domain where degrees become radians.** The dial is
+        carried in joint-path deg/s everywhere above here, because that is the unit every
+        measurement of it is written in (see `predicates.TOSS_SPEED_BOUNDS`); upstream's
+        `TossController.reset` takes rad/s. One conversion, here, pinned by
+        `test_run_toss_converts_the_release_speed_to_radians_exactly_once` -- a second
+        conversion or a missing one is a silent 57x error in either direction.
+
+        The speed reaches the **swing only**. The windup is `move_arm_to_conf`, which is
+        a posture change rather than a throw and whose `reset` takes no release speed at
+        all; forwarding one there is a `TypeError`.
         """
         windup = self.run_controller(
             module="tossing",
@@ -619,6 +640,7 @@ class KinderBackend(BaseModel):
             object_names=(self.robot_name,),
             params=np.deg2rad(self.toss_conf_deg),
             limit=self.arm_step_limit,
+            release_speed=float(np.deg2rad(release_speed_deg_s)),
         )
         return windup, swing
 
