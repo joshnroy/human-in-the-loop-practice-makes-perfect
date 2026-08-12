@@ -29,6 +29,7 @@ from scripts.tossing3d_toss_speed_probe import (
     UPSTREAM_TOSS_MAX_VEL_DEG,
     ProbeCellResult,
     _parse_args,
+    clip_caption,
     commanded_release_speed_deg,
     profile_limits_deg,
     toss_profile_ceilings_deg,
@@ -169,6 +170,39 @@ def test_in_spec_mode_keeps_every_joint_inside_its_declared_limits() -> None:
         per_joint_accel = np.deg2rad(max(accel, decel)) * direction
         assert np.all(per_joint_vel <= _ARM_MAX_VEL + 1e-9)
         assert np.all(per_joint_accel <= _ARM_MAX_ACCEL + 1e-9)
+
+
+def test_a_clip_caption_names_the_parameters_that_produced_the_throw() -> None:
+    """A clip is evidence only if a viewer can read the parameters off the frame. The
+    renderer's second caption line already carries the measured landing x and the
+    `InGoalRegion` verdict from the state being drawn, so this line carries the inputs:
+    which standoff, which commanded speed, and -- for the non-monotone pair -- the
+    achieved release speed and realised release fraction that explain why a *faster*
+    command can land *shorter*."""
+    caption = clip_caption(
+        mode=IN_SPEC_MODE,
+        speed_deg=70.0,
+        seed=3,
+        standoff=1.100,
+        achieved_release_speed_deg=72.6,
+        release_fraction=0.4771,
+    )
+    assert "in-spec" in caption
+    assert "70" in caption
+    assert "seed 3" in caption
+    assert "1.100" in caption
+    assert "72.6" in caption
+    assert "0.477" in caption
+
+
+def test_a_clip_caption_omits_the_measured_fields_when_they_are_unknown() -> None:
+    """`record_cell` drives the public `take_action` route and never observes a release
+    instant, so those two fields are genuinely absent unless the grid supplies them.
+    Printing `None` or a fabricated `0.0` on a video frame would be worse than omitting
+    them."""
+    caption = clip_caption(mode=IN_SPEC_MODE, speed_deg=60.0, seed=0, standoff=1.05)
+    assert "None" not in caption
+    assert "rel" not in caption
 
 
 @_NEEDS_KINDER

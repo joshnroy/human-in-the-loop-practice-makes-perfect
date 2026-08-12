@@ -238,6 +238,41 @@ def commanded_release_speed_deg(*, release_speed_deg: float, mode: str) -> float
     return float("nan")
 
 
+def clip_caption(
+    *,
+    mode: str,
+    speed_deg: float,
+    seed: int,
+    standoff: float,
+    achieved_release_speed_deg: float | None = None,
+    release_fraction: float | None = None,
+) -> str:
+    """The parameter line burned under a recorded clip.
+
+    The renderer's own second caption line already reports the *outcome* -- the cube's
+    measured resting position and the `InGoalRegion` verdict, both read off the state
+    being drawn. This is the other half: the *inputs* that produced it.
+
+    `achieved_release_speed_deg` and `release_fraction` are optional because `record_cell`
+    genuinely cannot observe them. It drives the public `env.take_action` route, which
+    runs the toss controller to completion, so the release instant is gone by the time it
+    returns -- that is `run_cell`'s instrumented job. When a clip is illustrating a
+    measured grid cell those two numbers are supplied from the grid, and when it is not
+    they are omitted rather than printed as `None` or faked as `0.0`.
+
+    They matter for exactly one comparison and it is the reason this exists: at standoff
+    1.100, commanding 70 deg/s lands *shorter* than commanding 65. Without the realised
+    release fraction on the frame, that clip looks like a bug rather than the control-step
+    quantisation it is.
+    """
+    parts = [f"{mode} @ {speed_deg:.4g} deg/s", f"seed {seed}", f"standoff {standoff:.3f} m"]
+    if achieved_release_speed_deg is not None:
+        parts.append(f"rel {achieved_release_speed_deg:.1f} deg/s")
+    if release_fraction is not None:
+        parts.append(f"f={release_fraction:.3f}")
+    return " | ".join(parts)
+
+
 class ProbeCellResult(BaseModel):
     """One `(scene seed, commanded speed)` cell.
 
@@ -328,6 +363,22 @@ def _parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
             "See `record_cell` for why the two paths cannot be the same one."
         ),
     )
+    parser.add_argument(
+        "--caption-release-speed-deg",
+        type=float,
+        default=None,
+        help=(
+            "the achieved release speed to burn into the clip's caption. Supplied from "
+            "the measurement grid, because the recording path runs the toss controller "
+            "to completion and never observes the release instant itself."
+        ),
+    )
+    parser.add_argument(
+        "--caption-release-fraction",
+        type=float,
+        default=None,
+        help="the realised release fraction, from the grid, for the same reason.",
+    )
     return parser.parse_args(argv)
 
 
@@ -395,6 +446,8 @@ def main() -> None:
                 settle_steps=int(args.settle_steps),
                 extra_settle_steps=int(args.extra_settle_steps),
                 video_dir=args.record_video_dir,
+                achieved_release_speed_deg=args.caption_release_speed_deg,
+                release_fraction=args.caption_release_fraction,
             )
             rows.append(row)
             print(
@@ -452,13 +505,15 @@ def run_cell(
     settle_steps: int,
     extra_settle_steps: int,
     video_dir: Path | None = None,
+    achieved_release_speed_deg: float | None = None,
+    release_fraction: float | None = None,
 ) -> ProbeCellResult:
     """Run one cell end to end and return what it measured.
 
     `video_dir` is accepted and ignored so that this and `record_cell` share one call
     shape; recording happens in `record_cell`.
     """
-    del video_dir
+    del video_dir, achieved_release_speed_deg, release_fraction
     from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 
     row = ProbeCellResult(seed=seed, commanded_speed_deg=speed_deg, mode=mode, standoff=standoff)
@@ -520,6 +575,8 @@ def record_cell(
     settle_steps: int,
     extra_settle_steps: int,
     video_dir: Path | None,
+    achieved_release_speed_deg: float | None = None,
+    release_fraction: float | None = None,
 ) -> ProbeCellResult:
     """Run one cell for the camera and write a captioned clip of the throw.
 
@@ -560,7 +617,14 @@ def record_cell(
     backend.drain_substep_frames()  # discard anything buffered by the wrapper going on
     state = env.take_action(action=np.array([Tossing3DEnvironment.toss_id, 0.0, 0.0]))
     row.toss_error = env.last_skill_error()
-    label = f"{mode} @ {speed_deg:.0f} deg/s | seed {seed} | standoff {standoff:.2f} m"
+    label = clip_caption(
+        mode=mode,
+        speed_deg=speed_deg,
+        seed=seed,
+        standoff=standoff,
+        achieved_release_speed_deg=achieved_release_speed_deg,
+        release_fraction=release_fraction,
+    )
     frames = Tossing3DRenderer.render_substep_frames(
         frames=backend.drain_substep_frames(), state=state, env=env, label=f"{label} | throw"
     )
@@ -578,7 +642,10 @@ def record_cell(
         steps_taken=int(round(state.get(obj=env.scene, feature_name="steps_taken"))),
     )
     row.solved = bool(backend.check_goals())
-    verdict = "IN the goal box" if row.solved else "MISSED the goal box"
+    # Terse, because the caption line now also carries the release speed and fraction and
+    # the bar is one line of ~127 characters at this frame width. The full verdict is on
+    # the second line anyway, as `InGoalRegion`, measured from the state being drawn.
+    verdict = "IN BOX" if row.solved else "MISSED"
     frames += Tossing3DRenderer.render_substep_frames(
         frames=backend.drain_substep_frames(),
         state=settled,
@@ -600,7 +667,10 @@ def record_cell(
     row.goal_region = backend.goal_region_bbox()
 
     video_dir.mkdir(parents=True, exist_ok=True)
-    path = video_dir / f"{mode}-{speed_deg:03.0f}deg-seed{seed}.mp4"
+    # The standoff is in the name because it is a free axis: the in-spec grid records the
+    # same speed at eleven standoffs, and a name that omitted it would have those clips
+    # silently overwrite one another.
+    path = video_dir / f"{mode}-{speed_deg:03.0f}deg-standoff{standoff:.3f}-seed{seed}.mp4"
     imageio.mimsave(path, frames, fps=backend.render_fps(), macro_block_size=16)
     print(f"  wrote {path} ({len(frames)} frames)", flush=True)
     return row
