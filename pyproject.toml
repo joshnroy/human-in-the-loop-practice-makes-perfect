@@ -28,6 +28,22 @@ dev = [
     "mypy",
     "pre-commit",
     "import-linter",
+    # `analysis/` only, never `src/hitl_pmp` -- which is why this is a dev dependency
+    # rather than a main one: the library itself does not import scipy, and a consumer
+    # installing `hitl-pmp` should not pay for it. `dev` is exactly the set of
+    # environments that run `analysis/` and its tests, and CI already installs
+    # `.[dev]` in all three jobs, so this needs no CI change.
+    #
+    # Unlike `wandb` and KINDER, scipy is deliberately NOT an optional extra gated on
+    # `importlib.util.find_spec`. The reason it was added is that `hitl-pmp` had no
+    # scipy while the KINDER venv had 1.14.0, so the same repository gave different
+    # statistical resolution depending on which interpreter an agent ran in. An
+    # optional scipy would preserve exactly that split.
+    #
+    # Unpinned on purpose, but note the one real constraint: `pybullet_helpers` pins
+    # `scipy==1.14.0` exactly, so any environment that also installs KINDER is held at
+    # 1.14.0. Pinning a floor above that here would make the two uninstallable together.
+    "scipy",
 ]
 # --record-wandb only. Optional, and CI deliberately does not install it: the package
 # must import, typecheck and test without wandb present, exactly as it must without
