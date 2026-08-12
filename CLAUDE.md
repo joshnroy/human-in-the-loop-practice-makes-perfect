@@ -39,7 +39,7 @@ working around.
 
 | path | url | pinned at |
 | --- | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `3524010` |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `1b564a1` |
 | `reference/kindergarden` | `joshnroy/kindergarden` | `4113237` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
@@ -142,15 +142,18 @@ which is the single most misreadable thing about `Tossing3D`.
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
-`reference/kinder-baselines` is pinned at `3524010`, the head of
-`josh/feature/tossing-throw-controllers`. That branch is the **Tossing3D port stack**'s
-second rung: `josh/feature/tossing-state-abstractions` → `-throw-controllers` →
-`-oracle-policy` → `-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92,
-which are all **closed**; it now lives on the fork as `joshnroy/kinder-baselines`
-**PRs #1–#4** (`#1` targets `main`, each later one targets its predecessor).
+`reference/kinder-baselines` is pinned at `1b564a1`, the head of
+`josh/feature/toss-release-speed` (`joshnroy/kinder-baselines` **PR #8**), which stacks
+three commits on top of `3524010`, the head of `josh/feature/tossing-throw-controllers`.
+That branch is the **Tossing3D port stack**'s second rung:
+`josh/feature/tossing-state-abstractions` → `-throw-controllers` → `-oracle-policy` →
+`-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92, which are all
+**closed**; it now lives on the fork as `joshnroy/kinder-baselines` **PRs #1–#4** (`#1`
+targets `main`, each later one targets its predecessor).
 
 The pin is rung two rather than the top on purpose: **that is the only rung this repo
-imports.** `kinder_backend.py` and `scripts/tossing3d_oracle_demo.py` pull
+imports.** PR #8 sits on top of that rung rather than beside it, so the same statement
+still holds: `kinder_backend.py` and `scripts/tossing3d_oracle_demo.py` pull
 `kinder_models.dynamic3d.tossing.parameterized_skills` and
 `kinder_models.dynamic3d.shelf.parameterized_skills`, and nothing else from the stack.
 The oracle policy (#3) and the bilevel model (#4) are never imported — we carry our own
@@ -159,7 +162,28 @@ tree no longer carries either of them**; `docs/` prose that assumes they are on 
 wrong. `9512b9e` — the PyBullet leak fix, upstream PR #87 — is an ancestor of the pin, so
 that fix is present.
 
-**The pin moved `11eace5` → `3524010` on 2026-08-12**, a pure rebase of the same four
+**The pin moved `3524010` → `1b564a1` on 2026-08-12**, a clean fast-forward of +3
+commits (`3524010` is an ancestor of `1b564a1`, verified rather than assumed), all three
+in `kinder-models/dynamic3d/tossing/parameterized_skills.py`:
+
+- `cb95ca4` — corrects `MoveToThrowPoseController`'s base-collision docstring. Prose only.
+- `5a3a87d` — **makes the toss's release speed a parameter.** `TossController.reset` gains
+  `release_speed: float = TOSS_MAX_VEL`, and the `(140, 300, 200)` deg/s literals that were
+  inline in `reset` become the module constants `TOSS_MAX_VEL`/`TOSS_MAX_ACCEL`/
+  `TOSS_MAX_DECEL` behind a new `toss_profile_limits(release_speed)`. That helper scales
+  **all three** limits by one `effort = release_speed / TOSS_MAX_VEL`, with **no clamp** —
+  deliberately, because `_ARM_MAX_VEL` is kinder-baselines' own conservative constant and a
+  toss over-drives it on purpose.
+- `1b564a1` — strengthens that helper's own test to pin the profile's *shape* across scales.
+
+**The default path is byte-identical**: a caller passing no release speed gets exactly the
+motion the old inline literals produced, which `tests/environments/tossing3d/
+test_kinder_pin.py` asserts against the pinned checkout. So this bump does **not**
+invalidate any committed Tossing3D number — but note that **every Tossing3D number
+measured before this bump ran against the old pin**, where the release speed was not
+selectable at all, so none of them is evidence about any speed other than 140 deg/s.
+
+**The pin previously moved `11eace5` → `3524010` on 2026-08-12**, a pure rebase of the same four
 rungs onto upstream `main` at `4760956`: all 16/16 commits below the pin replayed
 byte-identical in content and message, so the *only* tree change is the two upstream
 commits the rebase picked up — `199cfe0` (sweep3D skills resample on infeasible sample,

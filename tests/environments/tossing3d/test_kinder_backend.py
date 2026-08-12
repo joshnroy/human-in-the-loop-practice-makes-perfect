@@ -69,7 +69,7 @@ def test_move_to_throw_pose_disables_collision_against_the_held_cube(
     dormant guard it was written as. `reference/kinder-baselines` used to be pinned at
     `11eace5`, where `run_base_motion_planning` hardcoded `obstacle_geoms` empty
     (Princeton-Robot-Planning-and-Learning/kinder-baselines#102) and this kwarg therefore
-    had zero observable effect. The pin is now `3524010`, which contains upstream PR #103
+    had zero observable effect. The pin is now `1b564a1`, which contains upstream PR #103
     -- the fix for that issue -- so collision-checking against scene obstacles is **on**.
     The held cube is a `MujocoObjectType` like any other, and `run_base_motion_planning`
     filters `disable_collision_objects` out of the obstacle set *before* looking up each
