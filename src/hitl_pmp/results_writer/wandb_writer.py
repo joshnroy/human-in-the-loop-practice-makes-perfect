@@ -51,6 +51,31 @@ inside the gitignored `results/` tree. W&B's own default is `./wandb/`, relative
 repo root. `wandb/` is gitignored anyway, belt and braces, since a failed `init` can
 still write there.
 
+## One canonical run per experiment, checked before the run starts
+
+Run names come from `run_naming.RunNamer` (curated, readable, W&B-agnostic), and this
+file adds the half that makes a curated name safe: before the run starts, it asks W&B
+whether that name is already taken and **compares configurations**, not just names. A
+same-name run with a different config means our namer is missing an axis of variation --
+a bug in this repo -- and it fails loudly, naming the field. See `run_collision.py`.
+
+**The check needs the network, so it runs only when the run itself is online.** Under
+`WANDB_MODE=offline` (this file's default) there is no API to ask, and firing one anyway
+would break the property that a sweep of ~22 concurrent runs opens no sockets and needs
+no credential. Offline runs therefore print one line saying the check was skipped, and
+their collisions surface when someone runs `wandb sync`. That is a real gap and worth
+stating plainly rather than papering over: the check is only as good as the mode the
+sweep ran in. `WANDB_MODE=online` is what today's sweeps actually use.
+
+When it does run it is bounded (`wandb.Api(timeout=...)`, at most one filtered query),
+and an unreachable or unauthenticated API is an error rather than a silent pass -- an
+online run with no reachable API is going to fail in `wandb.init` moments later anyway,
+so failing here costs nothing and says something useful.
+
+One thing it cannot catch: two runs launched *simultaneously* under the same name, since
+each queries before either exists. Nothing short of a server-side atomic reservation
+would, and W&B's is on the opaque run id rather than the display name.
+
 ## Pure observer
 
 Nothing here draws randomness and no method returns a value any caller branches on.
@@ -64,7 +89,9 @@ been measured.
 
 import argparse
 import importlib.util
+import itertools
 import os
+import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -72,7 +99,9 @@ from pydantic import ConfigDict, PrivateAttr
 
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.results_writer.results_writer import ResultsWriter
-from hitl_pmp.results_writer.types import CheckpointScalars, RunSummaryScalars
+from hitl_pmp.results_writer.run_collision import RunNameCollisionCheck
+from hitl_pmp.results_writer.run_naming import RunNamer
+from hitl_pmp.results_writer.types import CheckpointScalars, ExistingRun, RunSummaryScalars
 
 # One project per repo, not one per experiment: cross-run comparison is the entire
 # point and it does not work across projects. Overridable by W&B's own WANDB_PROJECT.
@@ -82,6 +111,17 @@ DEFAULT_PROJECT = "hitl-pmp"
 # already forwards os.environ to every child, so these configure a whole grid for free.
 PROJECT_ENV_VAR = "WANDB_PROJECT"
 MODE_ENV_VAR = "WANDB_MODE"
+ENTITY_ENV_VAR = "WANDB_ENTITY"
+
+# The only mode with an API to ask. Every other mode ("offline", "disabled", "dryrun")
+# skips the collision check rather than opening a socket a sweep did not ask for.
+ONLINE_MODE = "online"
+
+# Bounds on the one query the check makes, so a slow or wedged API costs seconds rather
+# than a run. The filter is on the exact name, so the realistic result size is 0 or 1;
+# the cap only stops a pathological project from paginating forever.
+API_TIMEOUT_SECONDS = 15
+MAX_EXISTING_RUNS_INSPECTED = 25
 
 # `wandb.init`'s `mode` parameter is a `Literal`, not a `str`, so an environment variable
 # cannot reach it unvalidated. Spelled out here rather than imported from wandb, because
@@ -147,9 +187,10 @@ class WandbResultsWriter(ResultsWriter):
     def open_if_requested(
         *, args: argparse.Namespace, num_cycles: int
     ) -> "WandbResultsWriter | None":
-        """This run's W&B writer, or None. Raises up front on every way the flag can be
-        unusable -- no output directory, no wandb installed, an unrecognised
-        `WANDB_MODE` -- rather than discovering any of them mid-run.
+        """This run's W&B writer, or None. Raises up front on every way this run can be
+        unrecordable -- no `--output-dir`, no `wandb`, an unrecognised `WANDB_MODE`, a
+        namespace the namer cannot name, or a name that is already some other
+        experiment's -- rather than discovering any of them mid-run.
 
         `num_cycles` is ignored: W&B's own config already carries the resolved
         namespace, and the cycle count is only a *denominator*, which is
@@ -172,21 +213,97 @@ class WandbResultsWriter(ResultsWriter):
                 "--record-wandb needs the optional wandb dependency, which is not "
                 'installed: pip install -e ".[wandb]"'
             )
-        method = str(getattr(args, "method", "unknown"))
-        environment = str(getattr(args, "env", "unknown"))
-        seed = getattr(args, "seed", 0)
+        config = {
+            key: WandbResultsWriter._as_scalar(value=value) for key, value in vars(args).items()
+        }
+        # Built from the resolved namespace by the shared namer, not assembled here:
+        # the name is a convention every future tracker backend shares, and burying it
+        # in one backend is how a second one ends up with a second convention.
+        run_name = RunNamer.name(args=args)
+        WandbResultsWriter._check_name_is_free(args=args, run_name=run_name, config=config)
         return WandbResultsWriter(
             output_dir=Path(output_dir),
-            config={
-                key: WandbResultsWriter._as_scalar(value=value) for key, value in vars(args).items()
-            },
-            # Deterministic, so re-running a seed updates a recognisable run rather
-            # than minting an unrelated one with a random adjective-animal name.
-            run_name=f"{method}-seed{seed}",
-            job_type=method,
-            tags=(environment, method),
+            config=config,
+            run_name=run_name,
+            # `job_type`/`tags` stay the coarse facets W&B groups a run list by; the
+            # name is what identifies it. Both read the namespace directly, and neither
+            # is optional on any method or domain.
+            job_type=str(args.method),
+            tags=(str(args.env), str(args.method)),
             mode=WandbResultsWriter.resolve_mode(),
         )
+
+    @staticmethod
+    def _check_name_is_free(
+        *, args: argparse.Namespace, run_name: str, config: dict[str, str]
+    ) -> None:
+        """Fail before the run starts if `run_name` is already taken in this project.
+
+        Setup time on purpose: the whole value is in not discovering, hours in, that
+        this run's results were about to land under a name that already means something
+        else."""
+        mode = os.environ.get(MODE_ENV_VAR) or "offline"
+        if mode != ONLINE_MODE:
+            # Not silent: a check that quietly does nothing is worse than no check,
+            # because it is trusted. One line, on stderr, beside the run's other
+            # launch-time diagnostics.
+            print(
+                f"[wandb] run name {run_name!r}: collision check skipped, "
+                f"WANDB_MODE={mode!r} has no API to ask. A name clash will surface at "
+                f"`wandb sync` instead. Run with WANDB_MODE=online to check up front.",
+                file=sys.stderr,
+            )
+            return
+        if not hasattr(args, "re_run"):
+            raise ValueError(
+                "--re-run is a global flag, so a resolved configuration always has it; "
+                "this namespace does not, which means it is not one."
+            )
+        RunNameCollisionCheck.check(
+            name=run_name,
+            config=config,
+            existing=WandbResultsWriter._existing_runs(run_name=run_name),
+            re_run=bool(args.re_run),
+        )
+
+    @staticmethod
+    def _existing_runs(*, run_name: str) -> tuple[ExistingRun, ...]:
+        """Whatever W&B already holds under this name, reduced to plain data.
+
+        Reduced at this boundary so `RunNameCollisionCheck` never touches a W&B object:
+        that is what lets every case of the check, and the wording of both its errors,
+        be tested with no network and no credential."""
+        # Lazy, for the same reason `_handle` imports lazily: this package must import,
+        # typecheck and test on a machine with no wandb at all.
+        import wandb
+
+        project = os.environ.get(PROJECT_ENV_VAR) or DEFAULT_PROJECT
+        entity = os.environ.get(ENTITY_ENV_VAR)
+        # W&B resolves the default entity itself when the path is a bare project.
+        path = f"{entity}/{project}" if entity else project
+        try:
+            api = wandb.Api(timeout=API_TIMEOUT_SECONDS)
+            found = api.runs(path, filters={"display_name": run_name})
+            runs = [
+                ExistingRun(
+                    name=str(run.name),
+                    identifier=str(run.id),
+                    url=str(run.url),
+                    config={key: str(value) for key, value in dict(run.config).items()},
+                )
+                for run in itertools.islice(found, MAX_EXISTING_RUNS_INSPECTED)
+            ]
+        except Exception as error:
+            # An error, not a shrug. This run asked for WANDB_MODE=online, so it is
+            # going to need this same API moments later in `wandb.init`; a run that
+            # skipped the check here would simply fail further in, with less to say.
+            raise ValueError(
+                f"could not check {path!r} for an existing run named {run_name!r}, so "
+                f"whether this run is the canonical one for its configuration is "
+                f"unknown: {error}. Re-run with WANDB_MODE=offline to record locally "
+                f"and sync later, or fix the credential/network first."
+            ) from error
+        return tuple(runs)
 
     def record_checkpoint(self, *, metrics: Metrics) -> None:
         scalars = CheckpointScalars.from_metrics(metrics=metrics)
