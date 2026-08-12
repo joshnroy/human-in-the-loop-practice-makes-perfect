@@ -5,6 +5,14 @@ footage: **five throws, one seed, one standoff, and nothing varying but the comm
 release speed.** Whether a throw scores is deliberately *not* the criterion — one that
 sails past the bin is exactly as interesting as one that drops in.
 
+> **Where "PR #227" is now.** #227 was **closed unmerged** and consolidated into the single
+> release-speed figures PR that carries this entry, so its chart, its two grids and its
+> write-up are the sibling entry [how far the cube goes, and the angle it is released at,
+> across 60–240 deg/s](2026-08-12-tossing3d-range-and-release-angle.md), committed beside
+> this one. Every "PR #227" below names *that* entry's grids and figure — the same data byte
+> for byte. The references are kept as written because #227 is where they were measured, so
+> the cross-checks below remain checks against a real prior run rather than a re-derivation.
+
 [the five throws, arcs accumulating (39 s)](2026-08-12-tossing3d-release-speed-throws.mp4)
 
 ![every throw on one panel, to scale](2026-08-12-tossing3d-release-speed-throws.png)

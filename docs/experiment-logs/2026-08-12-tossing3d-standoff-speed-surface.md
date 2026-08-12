@@ -30,6 +30,15 @@ Two prior slices, neither of which can answer it:
 - **PR #226 / #227** — 37 speeds (60–240, step 5) at a **single fixed standoff** (1.35).
   #226 is closed; #227 carries its grid forward and is this entry's parent.
 
+> **Where "PR #227" is now.** #227 was **closed unmerged** and consolidated into the single
+> release-speed figures PR that carries this entry, so the grid this entry is a slice of, and
+> every "PR #227" reference below, is the sibling entry [how far the cube goes, and the angle
+> it is released at, across 60–240 deg/s](2026-08-12-tossing3d-range-and-release-angle.md) —
+> the same data byte for byte, committed beside this one, along with
+> [the same relation as footage](2026-08-12-tossing3d-release-speed-throws.md). The
+> references are kept as written because #227 is where that grid was measured, so the
+> cross-check below remains a check against a real prior run.
+
 `Toss`'s release speed became a parameter only at kinder-baselines pin `1b564a1`
 (`joshnroy/kinder-baselines` PR #8). **Every Tossing3D number measured before that pin ran
 at a single release speed**, so none of them is evidence about this plane.

@@ -25,6 +25,22 @@ Seeds are shared across every speed, so comparisons across speeds are **paired o
 > mismatches, `107/370` solved in both. That is a stronger cross-check than either run gives
 > alone, and it is why they are plotted against each other without hedging.
 
+> **This entry is one of three, committed together.** The release-speed dial is characterised
+> across all three and each carries a different limit, so none of them should be read alone:
+>
+> - **this entry** — 37 speeds x 10 seeds at one standoff (1.35). Resolves the 5 deg/s
+>   reversals. Its own limit is statistical: see the Holm note below.
+> - [watching how far the cube goes as the release speed varies](2026-08-12-tossing3d-release-speed-throws.md)
+>   — the same relation as footage, `5/5` throws at 60/105/150/195/240 deg/s, every one of
+>   them also a cell of this entry's grid and agreeing with it on `5/5` ground crossings and
+>   `5/5` `solved` verdicts. **Five speeds `45` deg/s apart cannot see the reversals measured
+>   here**, so that entry supports no inference on its own.
+> - [the 2-D (standoff x commanded release speed) success surface](2026-08-12-tossing3d-standoff-speed-surface.md)
+>   — the plane this entry is a single-standoff slice of, `10 x 10 x 1 seed`. **Every cell
+>   there is `0/1` or `1/1`**, so it gives the solving region's shape and rough location and
+>   **not** its edges, and its 20 deg/s columns skip 185/190/195 so it does **not** address
+>   the release-quantisation anomaly below.
+
 ![Distance, release angle, the release quantisation behind both, and what actually solved](2026-08-12-tossing3d-range-and-release-angle.png)
 
 Reading down a vertical line is the point. Each red dotted line is a speed at which the
