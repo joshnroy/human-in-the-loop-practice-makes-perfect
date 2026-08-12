@@ -1,4 +1,4 @@
-"""Tossing3D's symbolic layer: five predicates, all pure arithmetic over `core.State`.
+"""Tossing3D's symbolic layer: six predicates, all pure arithmetic over `core.State`.
 
 **KINDER ships no symbolic model for Tossing3D.** `kinder_bilevel_planning.env_models.
 dynamic3d` has one for base motion, one for `Shelf3D` and one for `Sweep3D`, and that is
@@ -8,10 +8,51 @@ scene's objects, consumed by `LiftedOperator`s that are paired to upstream's con
 (there, `LiftedSkill(PickTargetOperator, LiftedPickShelfController)`; here, `skills.py`'s
 `Skill`s plus `skill_provider.py`).
 
-Three of the five are ported from upstream's own `kinder_models.dynamic3d.shelf.
+Three of the six are ported from upstream's own `kinder_models.dynamic3d.shelf.
 state_abstractions`, whose `HandEmpty`/`Holding`/`OnGround` classify the same TidyBot
 state this domain reads -- thresholds included, so they are upstream's numbers rather
 than ours. Two are genuinely new, and are called out below.
+
+## The stated assumption: the bin's interior **is** the scored region
+
+Every predicate below that needs a landing box reads it off the **bin**, and no predicate
+and no operator takes a goal region as an argument. That is an assumption this domain
+makes, deliberately, and it is **false in general**.
+
+What is true in general is that KINDER scores `["on", "cube_0", "blocks_goal_region"]` --
+a ground *region*, which is a box in the scene, entirely independent of where the bin is.
+Under upstream's stock `Tossing3D-o1` the two are 23 cm apart: the bin sits at x = 2.2305
+while `blocks_goal_region` inflates to x in [1.85, 2.15], so **a cube that lands in the bin
+scores a failure** and only one that misses the bin and lands on bare floor scores a
+success. There is a commit in this repo's history titled "Tossing3D: the bin is scenery"
+for exactly that reason. Our default `scripts/task_configs/Tossing3D-o1-coincident.json`
+is *named* for putting the bin back at x = 2.0 so that the two coincide -- measured live,
+they then agree to 0.1 mm.
+
+So this is a modelling choice, not an observation. Three consequences, stated rather than
+left to be discovered:
+
+1. **Fidelity is preserved, because the number is unchanged.** The box these classifiers
+   read is still the live `Region.bbox` of `blocks_goal_region`
+   (`KinderBackend.goal_region_bbox`), carried in the `State` on the bin object. Nothing is
+   re-derived from the bin's pose or from a literal, so `InBin` still agrees with
+   `_check_goals()` exactly, on **both** task configs. What was dropped is the *symbolic*
+   dependence -- an object a planner had to bind and no skill could act on -- not the
+   classifier's access to scene geometry.
+2. **Under `Tossing3DTaskConfig.STOCK` the name lies, and the bin object is internally
+   inconsistent.** Its own `x` (2.2305) sits outside its own `x_max` (2.15). `InBin` is then
+   true exactly when the cube is *not* in the bin. The predicate remains *correct* -- it
+   still scores what KINDER scores -- but it is misnamed there, and any reading of a stock
+   run's symbolic trace has to account for that. Stock stays selectable because every
+   number in `docs/kinder-environment-validation.md` was measured on it.
+3. **Wherever the bin is taken to be movable, moving it moves the goal.** kindergarden#126
+   moves the bin, and the rest of this module is written so the accepted band follows live
+   scene geometry rather than a literal; under this assumption the scored box is *part of*
+   that geometry, so relocating the bin retargets the throw rather than leaving a stale
+   target behind. That is the intended reading of a move-the-bin task -- "put the cube in
+   the bin, wherever the bin is" -- rather than a problem to work around. It is worth
+   stating because the opposite reading, a fixed goal the bin merely decorates, is exactly
+   what the stock config implements.
 
 Where the port deviates from upstream, once, and deliberately: upstream's `Holding` also
 requires the end-effector to be within 5 cm of the object, computed by forward kinematics
@@ -206,8 +247,8 @@ THROW_OVERSHOOT_MARGIN = 0.025
 THROW_SHORTFALL_MARGIN = 0.05
 
 
-class InGoalRegionClassifier:
-    """The cube's centre lies inside the goal region's box.
+class InBinClassifier:
+    """The cube's centre lies inside the bin's interior.
 
     This is the domain's success criterion, and it is written to agree with KINDER's own
     `_check_goals()` **exactly**, not approximately. That is checkable rather than
@@ -216,27 +257,34 @@ class InGoalRegionClassifier:
     features and hands it to `Region.check_in_region`, which is a plain inclusive
     point-in-box test against `Region.bbox` (`objects/base.py:148-185`). Both halves are
     reproduced here: the box arrives in the `State` as the live `bbox`
-    (`KinderBackend.goal_region_bbox`), and the comparison below is the same six
-    inclusive bounds.
+    (`KinderBackend.goal_region_bbox`), carried on the bin, and the comparison below is the
+    same six inclusive bounds.
+
+    **"The bin's interior" is this domain's assumption, not KINDER's arrangement** -- see
+    this module's docstring for what it buys, and for the stock config where the name is
+    wrong while the arithmetic stays right. The name is chosen to read honestly under the
+    default config every committed number on this domain is measured at, where the bin and
+    the scored region coincide to 0.1 mm and "the cube is in the bin" is exactly what
+    KINDER scores. The alternative -- keeping `InGoalRegion` -- would name a thing that no
+    longer exists as an object anywhere in the domain, which is worse: it would invite a
+    reader to look for a goal-region argument that is gone.
 
     Inclusive on purpose (`<=`, not `<`), because upstream's is.
 
-    The box is read from the state rather than re-derived from the task JSON. The JSON's
-    range is inflated by `ground_placement_threshold` (0.05 m per side, z clamped at 0)
-    before it becomes a region, so the literal in the file is 2/3 of the true width on x
-    -- the axis a toss controls -- and a predicate written against it scores KINDER
-    successes as failures. That defect has already shipped once in this project's history.
+    The box is read from the state rather than re-derived from the task JSON, and *never*
+    from the bin's own pose. The JSON's range is inflated by `ground_placement_threshold`
+    (0.05 m per side, z clamped at 0) before it becomes a region, so the literal in the
+    file is 2/3 of the true width on x -- the axis a toss controls -- and a predicate
+    written against it scores KINDER successes as failures. That defect has already shipped
+    once in this project's history. Deriving the box from the bin's pose plus a half-extent
+    would be the same defect in a new costume.
     """
 
     @staticmethod
-    def holds(*, state: State, cube: Object, goal_region: Object) -> bool:
+    def holds(*, state: State, cube: Object, target: Object) -> bool:
         position = [state.get(obj=cube, feature_name=name) for name in ("x", "y", "z")]
-        lower = [
-            state.get(obj=goal_region, feature_name=name) for name in ("x_min", "y_min", "z_min")
-        ]
-        upper = [
-            state.get(obj=goal_region, feature_name=name) for name in ("x_max", "y_max", "z_max")
-        ]
+        lower = [state.get(obj=target, feature_name=name) for name in ("x_min", "y_min", "z_min")]
+        upper = [state.get(obj=target, feature_name=name) for name in ("x_max", "y_max", "z_max")]
         return all(
             low <= value <= high for value, low, high in zip(position, lower, upper, strict=True)
         )
@@ -307,9 +355,9 @@ class ReachableClassifier:
 
 
 class RobotAtSuccessfulThrowPoseClassifier:
-    """The base is standing somewhere a throw from here lands the cube in the goal region:
-    on the bin's axis, and at a standoff from which the throw's fixed displacement carries
-    the cube into the goal box.
+    """The base is standing somewhere a throw from here lands the cube in the bin: on the
+    bin's axis, and at a standoff from which the throw's fixed displacement carries the
+    cube into the scored box.
 
     **Ours.** `move_to_target` has no symbolic model upstream, and its own termination
     condition (`_robot_is_close_to_pose`) is about the base having reached *its own
@@ -334,22 +382,26 @@ class RobotAtSuccessfulThrowPoseClassifier:
     cube by the constant `THROW_RANGE` in the base's facing direction. `MoveToThrowPose`
     pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base satisfying the lateral
     conjunct faces `+x` and the cube's predicted resting place is `base_x + THROW_RANGE`.
-    `InGoalRegion` tests the cube's centre against the goal region's box, which the `State`
-    already carries as the live `Region.bbox`. So the test below is *that same box*, trimmed
-    by the two margins above, applied to the predicted landing point, and the accepted band
-    of standoffs
+    `InBin` tests the cube's centre against the scored box, which the `State` already
+    carries on the bin as the live `Region.bbox`. So the test below is *that same box*,
+    read off *that same object*, trimmed by the two margins above and applied to the
+    predicted landing point -- and the accepted band of standoffs
 
         [bin_x + THROW_RANGE - (x_max - THROW_OVERSHOOT_MARGIN),
          bin_x + THROW_RANGE - (x_min + THROW_SHORTFALL_MARGIN)]
 
-    falls out rather than being written down. Move the bin, resize the goal region, or
+    falls out rather than being written down. Move the bin, resize the scored box, or
     change `ground_placement_threshold`, and the band follows on its own -- which matters,
     because kindergarden#126 moves the bin. A hard-coded band would be silently wrong the
     moment that lands. The two margins are fixed metres, not a fraction of the box, so they
     do not move with it.
 
+    That this predicate and `InBin` now read their box off the same object is what makes
+    "the pose a throw succeeds from" and "the place a throw must land" provably the same
+    geometry rather than two things kept in step by hand.
+
     On the coincident config the *geometric* band -- before the two margins below -- works
-    out to `[1.125, 1.425]`: **0.300 m wide, which is exactly the goal region's own
+    out to `[1.125, 1.425]`: **0.300 m wide, which is exactly the scored box's own
     x-extent**, as it must be for a constant-displacement throw. That geometric band is
     over-permissive: PR #105's finer sweep (5 scene seeds, 0.025 m resolution) found the
     band solving on *every* seed is `[1.150, 1.375]`, 0.225 m wide, with the geometric
@@ -379,7 +431,7 @@ class RobotAtSuccessfulThrowPoseClassifier:
     """
 
     @staticmethod
-    def holds(*, state: State, robot: Object, target: Object, goal_region: Object) -> bool:
+    def holds(*, state: State, robot: Object, target: Object) -> bool:
         lateral_offset = abs(
             state.get(obj=robot, feature_name="pos_base_y")
             - state.get(obj=target, feature_name="y")
@@ -387,19 +439,19 @@ class RobotAtSuccessfulThrowPoseClassifier:
         if lateral_offset > THROW_POSE_LATERAL_TOLERANCE:
             return False
         landing_x = state.get(obj=robot, feature_name="pos_base_x") + THROW_RANGE
-        x_min = state.get(obj=goal_region, feature_name="x_min") + THROW_SHORTFALL_MARGIN
-        x_max = state.get(obj=goal_region, feature_name="x_max") - THROW_OVERSHOOT_MARGIN
+        x_min = state.get(obj=target, feature_name="x_min") + THROW_SHORTFALL_MARGIN
+        x_max = state.get(obj=target, feature_name="x_max") - THROW_OVERSHOOT_MARGIN
         return bool(x_min <= landing_x <= x_max)
 
 
 # `Predicate.holds` is a positional `(state, objects)` callable per its interface contract
 # (`Goal.is_satisfied` calls it that way), so each lambda below adapts that into a call to
 # the relevant class's keyword-only `holds` -- exactly as Light Switch and Tossing Room do.
-IN_GOAL_REGION = Predicate(
-    name="InGoalRegion",
-    types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.goal_region_type),
-    holds=lambda state, objects: InGoalRegionClassifier.holds(
-        state=state, cube=objects[0], goal_region=objects[1]
+IN_BIN = Predicate(
+    name="InBin",
+    types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.bin_type),
+    holds=lambda state, objects: InBinClassifier.holds(
+        state=state, cube=objects[0], target=objects[1]
     ),
 )
 
@@ -433,12 +485,8 @@ REACHABLE = Predicate(
 
 ROBOT_AT_SUCCESSFUL_THROW_POSE = Predicate(
     name="RobotAtSuccessfulThrowPose",
-    types=(
-        Tossing3DEnvironment.robot_type,
-        Tossing3DEnvironment.bin_type,
-        Tossing3DEnvironment.goal_region_type,
-    ),
+    types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.bin_type),
     holds=lambda state, objects: RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state, robot=objects[0], target=objects[1], goal_region=objects[2]
+        state=state, robot=objects[0], target=objects[1]
     ),
 )

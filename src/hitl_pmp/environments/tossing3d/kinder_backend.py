@@ -112,8 +112,10 @@ class KinderObservation(BaseModel):
     the compiled model rather than re-derived from the task JSON. The JSON range is
     inflated by `ground_placement_threshold` (0.05 m per side, z clamped at 0) before it
     becomes a region, so the literal in the file is not the box that scores. Reading it
-    back is what lets `predicates.InGoalRegionClassifier` be a pure function of `State`
-    and still agree with `_check_goals()` exactly.
+    back is what lets `predicates.InBinClassifier` be a pure function of `State` and
+    still agree with `_check_goals()` exactly. It reaches that classifier carried on the
+    **bin** object, under this domain's assumption that the bin's interior is this region
+    -- see `predicates.py`'s module docstring.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -437,7 +439,7 @@ class KinderBackend(BaseModel):
     def check_goals(self) -> bool:
         """Upstream's own verdict -- `ObjectCentricTidyBot3DEnv._check_goals()`.
 
-        This is the success criterion for this domain. `predicates.IN_GOAL_REGION` is
+        This is the success criterion for this domain. `predicates.IN_BIN` is
         written to agree with it and is differentially tested against it; it is never a
         second, independent definition of success.
         """

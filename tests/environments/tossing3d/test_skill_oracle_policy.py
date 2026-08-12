@@ -107,7 +107,7 @@ def test_the_label_names_the_skill_its_objects_and_its_parameters() -> None:
     """`LabeledAction.label` is what the renderer burns into the frame, so it has to say
     what actually happened rather than just which skill ran."""
     label = _act().label
-    assert label.startswith("Pick(robot, cube_0, cuboid_barrier, bin_0, blocks_goal_region)")
+    assert label.startswith("Pick(robot, cube_0, cuboid_barrier, bin_0)")
     assert "params=[0.57, -0.7]" in label
 
 
@@ -117,6 +117,7 @@ def test_a_parameterless_skill_gets_no_params_suffix() -> None:
         cube_z=0.4,
         base_x=BIN_X - ORACLE_THROW_STANDOFF,
     ).label
+    assert label.startswith("Toss(robot, cube_0, bin_0, cuboid_barrier)")
     assert "params=" not in label
 
 

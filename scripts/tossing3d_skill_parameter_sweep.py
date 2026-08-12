@@ -322,7 +322,7 @@ def run_move_grid(
             state2 = env.take_action(action=move_action)
             move_error = env.last_skill_error()
             success = RobotAtSuccessfulThrowPoseClassifier.holds(
-                state=state2, robot=env.robot, target=env.bin, goal_region=env.goal_region
+                state=state2, robot=env.robot, target=env.bin
             )
             robot_base_y = float(state2.get(obj=env.robot, feature_name="pos_base_y"))
             target_y = float(state2.get(obj=env.bin, feature_name="y"))

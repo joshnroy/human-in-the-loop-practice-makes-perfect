@@ -9,7 +9,7 @@ no dependence on the optional `tossing3d` extra CI never installs.
 import pytest
 
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import IN_GOAL_REGION
+from hitl_pmp.environments.tossing3d.predicates import IN_BIN
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 
 from .observations import state
@@ -73,7 +73,7 @@ def test_the_in_place_task_asks_for_the_same_goal_as_a_sampled_one() -> None:
     goal = tasks.sample_train_task_in_place().goal
 
     assert goal.atoms == frozenset({
-        IN_GOAL_REGION(state=env.get_current_state(), objects=(env.cube, env.goal_region))
+        IN_BIN(state=env.get_current_state(), objects=(env.cube, env.bin))
     })
 
 

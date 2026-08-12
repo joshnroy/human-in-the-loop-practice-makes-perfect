@@ -47,7 +47,7 @@ from hitl_pmp.core.metrics.metrics import Metrics  # noqa: E402
 # The standoff: Tossing3D's only meaningful learnable parameter, and the skill the
 # diagnosis is about. Its add effect is NearBin.
 THROW_POSE_SKILL = "MoveToThrowPose"
-# The skill whose add effect is InGoalRegion -- the domain's actual success criterion --
+# The skill whose add effect is InBin -- the domain's actual success criterion --
 # and which has param_dim = 0, so no sampler is ever fitted for it.
 TOSS_SKILL = "Toss"
 # The positive control: a different sampler, same runs, same file. See the module

@@ -10,7 +10,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     BARRIER_COLLISION_MARGIN,
     HAND_EMPTY,
     HOLDING,
-    IN_GOAL_REGION,
+    IN_BIN,
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
@@ -35,24 +35,64 @@ _ENV = Tossing3DEnvironment()
 _SKILLS = Tossing3DSkills
 
 
+# The exact lifted signature of each operator, in declaration order. Pinned as a literal
+# rather than derived, because the thing under test is precisely *which* objects an
+# operator is allowed to name -- a derivation would restate whatever `skills.py` happens
+# to declare and could never fail.
+#
+# **No operator names a goal region.** This domain assumes the bin's interior *is* the
+# scored region (see `predicates.py`'s module docstring), so the region stopped being a
+# symbolic object: it is scene geometry the classifiers read out of `State`, not a thing a
+# planner binds a variable to. A signature that reintroduced it would put an object into
+# every plan step that no skill can act on.
+_EXPECTED_PARAMETERS = {
+    "Pick": ("robot", "cube", "barrier", "bin"),
+    "MoveToThrowPose": ("robot", "cube", "bin"),
+    "Toss": ("robot", "cube", "bin", "barrier"),
+}
+
+
+def test_no_operator_names_a_goal_region_object() -> None:
+    """The headline invariant of the bin-is-the-goal-region simplification.
+
+    Checked by *type* rather than by variable name, so renaming the variable cannot smuggle
+    the dependency back in."""
+    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+        declared = [variable.type.name for variable in skill.parameters]
+        assert "tossing3d_goal_region" not in declared, (
+            f"{skill.name} still takes a goal-region parameter: {declared}"
+        )
+
+
+def test_each_operator_declares_exactly_the_objects_it_acts_on() -> None:
+    """The positive half of the test above: dropping the goal region must not have
+    disturbed the objects that remain, nor their order (`GroundSkill.objects` is
+    positional, and the oracle builds its groundings by hand)."""
+    actual = {
+        skill.name: tuple(variable.name for variable in skill.parameters)
+        for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS)
+    }
+    assert actual == _EXPECTED_PARAMETERS
+
+
 def _pick() -> GroundSkill:
     return GroundSkill(
         skill=_SKILLS.PICK,
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin, _ENV.goal_region),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin),
     )
 
 
 def _move() -> GroundSkill:
     return GroundSkill(
         skill=_SKILLS.MOVE_TO_THROW_POSE,
-        objects=(_ENV.robot, _ENV.cube, _ENV.bin, _ENV.goal_region),
+        objects=(_ENV.robot, _ENV.cube, _ENV.bin),
     )
 
 
 def _toss() -> GroundSkill:
     return GroundSkill(
         skill=_SKILLS.TOSS,
-        objects=(_ENV.robot, _ENV.cube, _ENV.bin, _ENV.barrier, _ENV.goal_region),
+        objects=(_ENV.robot, _ENV.cube, _ENV.bin, _ENV.barrier),
     )
 
 
@@ -74,7 +114,7 @@ def test_pick_deletes_the_throw_pose_because_the_grasp_drives_the_base_to_the_cu
     assert (
         LiftedAtom(
             predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            variables=(_SKILLS._robot, _SKILLS._bin, _SKILLS._goal_region),
+            variables=(_SKILLS._robot, _SKILLS._bin),
         )
         in _SKILLS.PICK.delete_effects
     )
@@ -106,7 +146,7 @@ def test_the_three_operator_models_are_exactly_as_declared() -> None:
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
         LiftedAtom(
             predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            variables=(_SKILLS._robot, _SKILLS._bin, _SKILLS._goal_region),
+            variables=(_SKILLS._robot, _SKILLS._bin),
         ),
     })
 
@@ -116,7 +156,7 @@ def test_the_three_operator_models_are_exactly_as_declared() -> None:
     assert _SKILLS.MOVE_TO_THROW_POSE.add_effects == frozenset({
         LiftedAtom(
             predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            variables=(_SKILLS._robot, _SKILLS._bin, _SKILLS._goal_region),
+            variables=(_SKILLS._robot, _SKILLS._bin),
         )
     })
     assert _SKILLS.MOVE_TO_THROW_POSE.delete_effects == frozenset()
@@ -125,11 +165,11 @@ def test_the_three_operator_models_are_exactly_as_declared() -> None:
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
         LiftedAtom(
             predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            variables=(_SKILLS._robot, _SKILLS._bin, _SKILLS._goal_region),
+            variables=(_SKILLS._robot, _SKILLS._bin),
         ),
     })
     assert _SKILLS.TOSS.add_effects == frozenset({
-        LiftedAtom(predicate=IN_GOAL_REGION, variables=(_SKILLS._cube, _SKILLS._goal_region)),
+        LiftedAtom(predicate=IN_BIN, variables=(_SKILLS._cube, _SKILLS._bin)),
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
     })
     assert _SKILLS.TOSS.delete_effects == frozenset({
@@ -171,9 +211,9 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
     PDDL; this one catches any of them, and is the check that was missing when
     `--env tossing3d --method ees` ran to completion planning nothing."""
     env = Tossing3DEnvironment()
-    objects = (env.robot, env.cube, env.bin, env.barrier, env.goal_region)
+    objects = (env.robot, env.cube, env.bin, env.barrier)
     predicates = (
-        IN_GOAL_REGION,
+        IN_BIN,
         HAND_EMPTY,
         HOLDING,
         ON_GROUND,
@@ -184,16 +224,10 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
     plan = FastDownwardPlanner.plan(
         skills=(_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS),
         predicates=predicates,
-        types=(
-            env.robot_type,
-            env.cube_type,
-            env.bin_type,
-            env.barrier_type,
-            env.goal_region_type,
-        ),
+        types=(env.robot_type, env.cube_type, env.bin_type, env.barrier_type),
         objects=objects,
         init_atoms=init_atoms,
-        goal=frozenset({GroundAtom(predicate=IN_GOAL_REGION, objects=(env.cube, env.goal_region))}),
+        goal=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}),
     )
     assert [step.skill.name for step in plan] == ["Pick", "MoveToThrowPose", "Toss"]
 
@@ -260,7 +294,6 @@ def test_the_sampler_draws_both_satisfying_and_unsatisfying_standoffs() -> None:
                 state=state(base_x=BIN_X - standoff),
                 robot=_ENV.robot,
                 target=_ENV.bin,
-                goal_region=_ENV.goal_region,
             )
         )
     assert any(outcomes), "no draw ever succeeds: the skill could never achieve its effect"
@@ -322,7 +355,6 @@ def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:
             state=state(base_x=BIN_X - standoff / 1000),
             robot=_ENV.robot,
             target=_ENV.bin,
-            goal_region=_ENV.goal_region,
         )
     ]
     assert accepted
@@ -338,7 +370,7 @@ def test_toss_samples_no_parameters_at_all() -> None:
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     stray = GroundSkill(
         skill=_SKILLS.PICK.model_copy(update={"name": "NotASkill"}),
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin, _ENV.goal_region),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin),
     )
     with pytest.raises(ValueError, match="Unknown skill"):
         Tossing3DSkills.sample_params(ground_skill=stray, rng=np.random.default_rng(0))

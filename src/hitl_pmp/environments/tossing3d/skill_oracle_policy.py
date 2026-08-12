@@ -64,12 +64,12 @@ class SkillOraclePolicy:
 
         Goal-agnostic: unlike Tossing Room, whose state cannot distinguish a
         throw-recycling task from a throw-trash one, there is exactly one goal family
-        here (`InGoalRegion(cube_0, blocks_goal_region)`) and the state says everything.
+        here (`InBin(cube_0, bin_0)`) and the state says everything.
         """
         del goal
         holding = HoldingClassifier.holds(state=state, robot=env.robot, cube=env.cube)
         at_throw_pose = RobotAtSuccessfulThrowPoseClassifier.holds(
-            state=state, robot=env.robot, target=env.bin, goal_region=env.goal_region
+            state=state, robot=env.robot, target=env.bin
         )
 
         ground_skill: GroundSkill
@@ -77,13 +77,13 @@ class SkillOraclePolicy:
         if holding and at_throw_pose:
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.TOSS,
-                objects=(env.robot, env.cube, env.bin, env.barrier, env.goal_region),
+                objects=(env.robot, env.cube, env.bin, env.barrier),
             )
             params = np.zeros(0)
         elif holding:
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.MOVE_TO_THROW_POSE,
-                objects=(env.robot, env.cube, env.bin, env.goal_region),
+                objects=(env.robot, env.cube, env.bin),
             )
             params = np.array([throw_standoff])
         else:
@@ -94,7 +94,7 @@ class SkillOraclePolicy:
             # otherwise would hide the irreversibility the domain exists to exhibit.
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.PICK,
-                objects=(env.robot, env.cube, env.barrier, env.bin, env.goal_region),
+                objects=(env.robot, env.cube, env.barrier, env.bin),
             )
             params = np.array([ORACLE_PICK_DISTANCE, ORACLE_PICK_ROTATION])
 

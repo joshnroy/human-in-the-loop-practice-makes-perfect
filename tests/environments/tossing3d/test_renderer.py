@@ -19,7 +19,7 @@ def test_the_caption_reports_the_cube_position_the_goal_box_and_the_verdict() ->
     )
     assert "1.9902" in lines[1]
     assert "[1.8500, 2.1500]" in lines[1]
-    assert "InGoalRegion = True" in lines[1]
+    assert "InBin = True" in lines[1]
 
 
 def test_the_caption_names_the_variant_but_no_longer_a_scene_choice() -> None:
@@ -41,7 +41,7 @@ def test_a_landing_past_the_goal_box_is_captioned_as_outside_it() -> None:
     lines = Tossing3DRenderer.caption(
         state=state(cube_x=2.2197, cube_z=0.0444), env=Tossing3DEnvironment()
     )
-    assert "InGoalRegion = False" in lines[1]
+    assert "InBin = False" in lines[1]
 
 
 def test_the_first_frame_of_an_episode_is_labelled_as_the_initial_state() -> None:

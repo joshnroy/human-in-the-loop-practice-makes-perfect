@@ -1,9 +1,14 @@
 """Task generation for Tossing3D.
 
 One goal family, and it is upstream's: `["on", "cube_0", "blocks_goal_region"]`, which
-`_check_goals()` evaluates as containment in a ground region. `predicates.IN_GOAL_REGION`
+`_check_goals()` evaluates as containment in a ground region. `predicates.IN_BIN`
 reproduces that check exactly (see its docstring), so a `Task` here asks for precisely
 what KINDER scores.
+
+The goal atom names the **bin**, not the region, because this domain assumes the bin's
+interior *is* that region -- the box `IN_BIN` tests against is still the live
+`blocks_goal_region` bbox, carried in the `State` on the bin object. See `predicates.py`'s
+module docstring for the assumption and for the task config under which it is false.
 
 ## A task is a scene seed, not an arithmetic construction
 
@@ -38,7 +43,7 @@ from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, Task
 
 from .environment import Tossing3DEnvironment
-from .predicates import IN_GOAL_REGION
+from .predicates import IN_BIN
 
 # Scene seeds are drawn from [0, SCENE_SEED_LIMIT). Gymnasium seeds are non-negative
 # ints; the bound is 2**31 - 1 rather than 2**63 purely so a seed printed in a log or a
@@ -112,9 +117,7 @@ class Tossing3DTasks(Tasks):
         return Task(
             initial_state=state,
             goal=Goal(
-                atoms=frozenset({
-                    IN_GOAL_REGION(state=state, objects=(self.env.cube, self.env.goal_region))
-                })
+                atoms=frozenset({IN_BIN(state=state, objects=(self.env.cube, self.env.bin))})
             ),
         )
 
@@ -131,10 +134,7 @@ class Tossing3DTasks(Tasks):
             initial_state=initial_state,
             goal=Goal(
                 atoms=frozenset({
-                    IN_GOAL_REGION(
-                        state=initial_state,
-                        objects=(self.env.cube, self.env.goal_region),
-                    )
+                    IN_BIN(state=initial_state, objects=(self.env.cube, self.env.bin))
                 })
             ),
         )
