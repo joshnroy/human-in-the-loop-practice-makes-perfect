@@ -20,7 +20,24 @@ family needs exactly this rule, and there is now one place to change it.
 # throw families' denominators honest. A caller's `composition_violations` is the
 # backstop: a misclassification shows up there as a wrong denominator rather than as a
 # plausible wrong answer.
-_FAMILY_RULES = (("BinEmpty", "EMPTY"), ("Trash", "TRASH"), ("Recycling", "RECYCLING"))
+#
+# The list covers BOTH of Tossing Room's skill configurations, because `--unsplit-skills`
+# is a flag on the same domain with the same fixed 14/14/2 test set -- not a separate
+# environment -- so any per-family analysis has to read either rendering. Under that flag
+# the two throw predicates collapse to one shared `ItemInBin` and the two BinEmpty
+# predicates to one shared `BinEmpty`, so the *predicate* stops naming the family and only
+# the bound object does. Hence the lowercase `ItemInBin(<kind>` rules below. They are
+# matched on the predicate-plus-first-object prefix rather than on a bare "trash", because
+# the unsplit EMPTY string ("BinEmpty(recycling_bin) & BinEmpty(trash_bin)") contains both
+# lowercase kind names -- the same ordering trap as the split rendering, one case lower.
+# `BinEmpty` leads the list and so catches both renderings before either throw rule.
+_FAMILY_RULES = (
+    ("BinEmpty", "EMPTY"),
+    ("Trash", "TRASH"),
+    ("Recycling", "RECYCLING"),
+    ("ItemInBin(trash", "TRASH"),
+    ("ItemInBin(recycling", "RECYCLING"),
+)
 
 
 class GoalFamilies:
