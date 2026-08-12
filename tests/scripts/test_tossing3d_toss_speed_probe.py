@@ -21,6 +21,8 @@ import numpy as np
 import pytest
 
 from scripts.tossing3d_toss_speed_probe import (
+    ALL_MODES,
+    IN_SPEC_MODE,
     SCALING_MODES,
     UPSTREAM_TOSS_MAX_ACCEL_DEG,
     UPSTREAM_TOSS_MAX_DECEL_DEG,
@@ -29,6 +31,7 @@ from scripts.tossing3d_toss_speed_probe import (
     _parse_args,
     commanded_release_speed_deg,
     profile_limits_deg,
+    toss_profile_ceilings_deg,
 )
 
 _KINDER_MISSING = importlib.util.find_spec("kinder_models") is None
@@ -79,6 +82,93 @@ def test_vel_accel_decel_mode_scales_all_three_by_the_same_factor() -> None:
 def test_an_unknown_mode_is_rejected_rather_than_silently_treated_as_vel_only() -> None:
     with pytest.raises(ValueError, match="unknown scaling mode"):
         profile_limits_deg(release_speed_deg=280.0, mode="effort")
+
+
+def test_in_spec_is_offered_as_a_mode_but_is_not_one_of_the_scaling_modes() -> None:
+    """`in-spec` does not scale upstream's literals -- it replaces them with limits
+    derived from KINDER's own declared per-joint ceilings. Keeping it out of
+    `SCALING_MODES` is what lets
+    `test_every_mode_reproduces_upstream_literals_at_the_default_speed` stay true: at
+    140 deg/s `in-spec` deliberately does *not* reproduce them, because 140 is 1.68x
+    over the ceiling and gets clamped."""
+    assert IN_SPEC_MODE not in SCALING_MODES
+    assert set(ALL_MODES) == set(SCALING_MODES) | {IN_SPEC_MODE}
+
+
+@_NEEDS_KINDER
+def test_the_in_spec_ceilings_are_derived_from_kinders_declared_arm_limits() -> None:
+    """The whole point of deriving rather than hardcoding: the ceiling must track
+    `_ARM_MAX_VEL`/`_ARM_MAX_ACCEL`, so that changing kinder's declared limits changes
+    this and nothing has to remember to follow. Joint 6 binds, carrying 0.8399 of the
+    toss direction against the smallest velocity limit in the arm."""
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        TOSS_RELEASE_ARM_CONF,
+        TOSS_WINDUP_ARM_CONF,
+    )
+    from kinder_models.dynamic3d.utils import _ARM_MAX_ACCEL, _ARM_MAX_VEL  # noqa: PLC2701
+
+    direction = TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF
+    direction = direction / float(np.linalg.norm(direction))
+    moving = np.abs(direction) > 1e-6
+    expected_vel = float(np.rad2deg(np.min(_ARM_MAX_VEL[moving] / np.abs(direction)[moving])))
+    expected_accel = float(np.rad2deg(np.min(_ARM_MAX_ACCEL[moving] / np.abs(direction)[moving])))
+
+    vel_ceiling, accel_ceiling = toss_profile_ceilings_deg()
+
+    assert vel_ceiling == pytest.approx(expected_vel)
+    assert accel_ceiling == pytest.approx(expected_accel)
+    # Joint 6 (index 5) is the binding one, and it binds on velocity.
+    assert int(np.argmin(_ARM_MAX_VEL[moving] / np.abs(direction)[moving])) == 2
+
+
+@_NEEDS_KINDER
+def test_in_spec_mode_clamps_a_request_above_the_ceiling_instead_of_honouring_it() -> None:
+    """Upstream's shipped 140 deg/s is 1.68x the derived ceiling. Under `in-spec` the
+    dial saturates there rather than reproducing it, which is exactly the difference
+    between a hardware-feasible throw and the one that ships today."""
+    vel_ceiling, _ = toss_profile_ceilings_deg()
+
+    at_default = profile_limits_deg(release_speed_deg=UPSTREAM_TOSS_MAX_VEL_DEG, mode=IN_SPEC_MODE)
+    way_over = profile_limits_deg(release_speed_deg=420.0, mode=IN_SPEC_MODE)
+
+    assert at_default[0] == pytest.approx(vel_ceiling)
+    assert way_over[0] == pytest.approx(vel_ceiling)
+    assert vel_ceiling < UPSTREAM_TOSS_MAX_VEL_DEG
+
+
+@_NEEDS_KINDER
+def test_in_spec_mode_decelerates_as_hard_as_it_accelerates() -> None:
+    """`_compute_per_joint_profile`, which `MoveArmToConfController` already uses, passes
+    `max_decel = max_accel`. Adopting its convention repairs the shipped profile's 1.120x
+    deceleration asymmetry as a side effect rather than as a separate change."""
+    _, accel_ceiling = toss_profile_ceilings_deg()
+
+    for requested in (60.0, 75.0, 140.0):
+        _, accel, decel = profile_limits_deg(release_speed_deg=requested, mode=IN_SPEC_MODE)
+        assert accel == pytest.approx(accel_ceiling)
+        assert decel == pytest.approx(accel_ceiling)
+
+
+@_NEEDS_KINDER
+def test_in_spec_mode_keeps_every_joint_inside_its_declared_limits() -> None:
+    """The hardware-feasibility claim itself, checked per joint rather than on the path
+    scalar. Each joint moves `|toss_dir_j|` of the path rate, so a path rate that is in
+    spec on the binding joint must be in spec on all of them."""
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        TOSS_RELEASE_ARM_CONF,
+        TOSS_WINDUP_ARM_CONF,
+    )
+    from kinder_models.dynamic3d.utils import _ARM_MAX_ACCEL, _ARM_MAX_VEL  # noqa: PLC2701
+
+    direction = TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF
+    direction = np.abs(direction / float(np.linalg.norm(direction)))
+
+    for requested in (60.0, 70.0, 83.0, 140.0, 420.0):
+        vel, accel, decel = profile_limits_deg(release_speed_deg=requested, mode=IN_SPEC_MODE)
+        per_joint_vel = np.deg2rad(vel) * direction
+        per_joint_accel = np.deg2rad(max(accel, decel)) * direction
+        assert np.all(per_joint_vel <= _ARM_MAX_VEL + 1e-9)
+        assert np.all(per_joint_accel <= _ARM_MAX_ACCEL + 1e-9)
 
 
 @_NEEDS_KINDER

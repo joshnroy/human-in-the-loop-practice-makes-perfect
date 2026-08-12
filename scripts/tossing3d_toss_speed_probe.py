@@ -128,6 +128,14 @@ UPSTREAM_TOSS_MAX_DECEL_DEG = 200.0
 
 SCALING_MODES = ("vel", "vel-accel", "vel-accel-decel")
 
+# `in-spec` is deliberately *not* a scaling mode. The three above all multiply upstream's
+# literals, so each reproduces them exactly at 140 deg/s. This one replaces them with
+# limits derived from KINDER's own declared per-joint ceilings, under which 140 is 1.68x
+# too fast and gets clamped -- so it cannot satisfy that invariant and must not be
+# parametrized alongside modes that do.
+IN_SPEC_MODE = "in-spec"
+ALL_MODES = (*SCALING_MODES, IN_SPEC_MODE)
+
 # `_CONTROL_DT` in `kinder_models.dynamic3d.utils`, and `_release_fraction` in
 # `TossController.__init__`. Both are needed by the analytic helper below, which runs
 # without importing KINDER's heavier dependencies where it can.
@@ -138,15 +146,49 @@ DEFAULT_SEEDS = tuple(range(10))
 DEFAULT_SPEEDS_DEG = (60.0, 80.0, 100.0, 120.0, 140.0, 160.0, 180.0, 200.0, 220.0, 240.0)
 
 
+def toss_profile_ceilings_deg() -> tuple[float, float]:
+    """The `(max_path_rate, max_path_accel)` the toss may use, in deg/s and deg/s^2.
+
+    Derived, never hardcoded, so it tracks `_ARM_MAX_VEL`/`_ARM_MAX_ACCEL` rather than
+    going stale beside them. The toss is a straight line in joint space, so every joint
+    moves `|toss_dir_j|` of one path rate and the admissible rate is
+    `min_j(limit_j / |toss_dir_j|)` -- exactly what `_compute_per_joint_profile` computes
+    for `MoveArmToConfController`, which `TossController` bypasses.
+
+    Joint 6 binds: it carries 0.8399 of the toss direction against the arm's smallest
+    velocity limit, giving 83.34 deg/s against the 140 that ships.
+    """
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        TOSS_RELEASE_ARM_CONF,
+        TOSS_WINDUP_ARM_CONF,
+    )
+    from kinder_models.dynamic3d.utils import _ARM_MAX_ACCEL, _ARM_MAX_VEL  # noqa: PLC2701
+
+    direction = TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF
+    direction = direction / float(np.linalg.norm(direction))
+    moving = np.abs(direction) > 1e-6
+    max_rate = float(np.rad2deg(np.min(_ARM_MAX_VEL[moving] / np.abs(direction)[moving])))
+    max_accel = float(np.rad2deg(np.min(_ARM_MAX_ACCEL[moving] / np.abs(direction)[moving])))
+    return (max_rate, max_accel)
+
+
 def profile_limits_deg(*, release_speed_deg: float, mode: str) -> tuple[float, float, float]:
     """The `(max_vel, max_accel, max_decel)` triple, in deg/s and deg/s^2, that `mode`
     hands `_trapezoidal_motion_profile` for a commanded `release_speed_deg`.
 
-    At `release_speed_deg == UPSTREAM_TOSS_MAX_VEL_DEG` every mode returns upstream's own
-    literals exactly, so the dial's default is upstream's toss in all three.
+    At `release_speed_deg == UPSTREAM_TOSS_MAX_VEL_DEG` every *scaling* mode returns
+    upstream's own literals exactly, so the dial's default is upstream's toss in all
+    three. `in-spec` is the exception and the point: it clamps to the derived ceiling,
+    where 140 deg/s is 1.68x too fast.
     """
+    if mode == IN_SPEC_MODE:
+        max_rate, max_accel = toss_profile_ceilings_deg()
+        # Deceleration equals acceleration, adopting `_compute_per_joint_profile`'s own
+        # convention. That repairs the shipped profile's 1.120x decel asymmetry as a side
+        # effect rather than as a separate change.
+        return (min(release_speed_deg, max_rate), max_accel, max_accel)
     if mode not in SCALING_MODES:
-        raise ValueError(f"unknown scaling mode {mode!r}; expected one of {SCALING_MODES}")
+        raise ValueError(f"unknown scaling mode {mode!r}; expected one of {ALL_MODES}")
     scale = release_speed_deg / UPSTREAM_TOSS_MAX_VEL_DEG
     accel_scale = scale if mode in ("vel-accel", "vel-accel-decel") else 1.0
     decel_scale = scale if mode == "vel-accel-decel" else 1.0
@@ -270,7 +312,7 @@ class ProbeCellResult(BaseModel):
 
 def _parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=SCALING_MODES, required=True)
+    parser.add_argument("--mode", choices=ALL_MODES, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seeds", type=int, nargs="+", default=list(DEFAULT_SEEDS))
     parser.add_argument("--speeds-deg", type=float, nargs="+", default=list(DEFAULT_SPEEDS_DEG))
