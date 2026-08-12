@@ -14,6 +14,8 @@ from hitl_pmp.environments.tossing3d.predicates import (
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
+    TOSS_SPEED_BOUNDS,
+    UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
     WORST_BARRIER_COLLISION_STANDOFF,
     RobotAtSuccessfulThrowPoseClassifier,
 )
@@ -198,13 +200,19 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
     assert [step.skill.name for step in plan] == ["Pick", "MoveToThrowPose", "Toss"]
 
 
-def test_param_dims_put_the_only_learnable_dial_on_the_walk_not_the_throw() -> None:
-    """`Toss` has zero parameters on purpose: both arm configurations are upstream's own
-    and this package interpolates nothing. The standoff is the dial the coincident
-    scene's own sweep actually resolves, so that is where the parameter lives."""
+def test_param_dims_give_the_throw_a_release_speed_of_its_own() -> None:
+    """`Toss` used to have zero parameters, because the only dial this package could
+    offer without inventing one was an interpolation between upstream's two arm
+    configurations -- and that interpolation would have been ours.
+
+    It is a real dial now, and still not an invented one: upstream's `TossController.
+    reset` takes `release_speed` as of `joynroy/kinder-baselines` PR #8, so the throw's
+    energy is upstream's own parameter rather than a quantity this package synthesised.
+    Both arm configurations remain upstream's, untouched.
+    """
     assert _SKILLS.PICK.param_dim == 2
     assert _SKILLS.MOVE_TO_THROW_POSE.param_dim == 1
-    assert _SKILLS.TOSS.param_dim == 0
+    assert _SKILLS.TOSS.param_dim == 1
 
 
 def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
@@ -215,15 +223,15 @@ def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
         ground_skill=_move(), params=np.array([1.35]), state=state()
     ) == pytest.approx([Tossing3DEnvironment.move_to_throw_pose_id, 1.35, 0.0])
     assert Tossing3DSkills.compute_action(
-        ground_skill=_toss(), params=np.zeros(0), state=state()
-    ) == pytest.approx([Tossing3DEnvironment.toss_id, 0.0, 0.0])
+        ground_skill=_toss(), params=np.array([140.0]), state=state()
+    ) == pytest.approx([Tossing3DEnvironment.toss_id, 140.0, 0.0])
 
 
 def test_every_action_matches_the_declared_action_space() -> None:
     for ground_skill, params in (
         (_pick(), np.array([0.55, 0.1])),
         (_move(), np.array([1.35])),
-        (_toss(), np.zeros(0)),
+        (_toss(), np.array([140.0])),
     ):
         action = Tossing3DSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state()
@@ -329,10 +337,27 @@ def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:
     assert max(accepted) - min(accepted) < (high - low) / 2
 
 
-def test_toss_samples_no_parameters_at_all() -> None:
-    assert Tossing3DSkills.sample_params(
-        ground_skill=_toss(), rng=np.random.default_rng(0)
-    ).shape == (0,)
+def test_toss_samples_one_release_speed_inside_the_measured_bounds() -> None:
+    """The dial is in **joint-path deg/s**, the same unit every measurement of it is in.
+
+    `TOSS_SPEED_BOUNDS` is `(60, 240)`, the span PR #213's grid actually drove, so a
+    draw is always a speed something has been observed at rather than an extrapolation.
+    """
+    rng = np.random.default_rng(0)
+    draws = [
+        float(Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[0]) for _ in range(200)
+    ]
+    assert all(TOSS_SPEED_BOUNDS[0] <= speed <= TOSS_SPEED_BOUNDS[1] for speed in draws)
+    # A real draw, not a constant dressed as one: the sampler has to be able to move the
+    # dial or `Toss` is back to having no learnable parameter.
+    assert max(draws) - min(draws) > (TOSS_SPEED_BOUNDS[1] - TOSS_SPEED_BOUNDS[0]) / 2
+
+
+def test_the_shipped_default_speed_is_inside_the_bounds_the_sampler_draws_from() -> None:
+    """140 deg/s is upstream's own default and the speed every committed Tossing3D
+    number was measured at. A sampler whose range excluded it would make the oracle's
+    throw unreachable by learning, which is the one thing this dial exists to allow."""
+    assert TOSS_SPEED_BOUNDS[0] < UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S < TOSS_SPEED_BOUNDS[1]
 
 
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:

@@ -10,6 +10,7 @@ frame per physics tick is a question only a simulator can answer, and lives in
 import sys
 from typing import Any
 
+import numpy as np
 import pytest
 
 from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
@@ -99,3 +100,66 @@ def test_move_to_throw_pose_disables_collision_against_the_held_cube(
 
     assert len(calls) == 1
     assert calls[0]["disable_collision_objects"] == [backend.cube_name]
+
+
+def test_run_toss_converts_the_release_speed_to_radians_exactly_once(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**The one place degrees become radians.**
+
+    This domain carries the dial in joint-path deg/s, because that is the unit every
+    measurement of it is written in (#213's fit, #221's grid, upstream's own `140`
+    literal, and the real TidyBot primitive). Upstream's `TossController.reset` takes
+    rad/s. So exactly one site converts, and this test is what pins it: a second
+    conversion anywhere upstream of here would drive the arm at 1/57th of the commanded
+    speed, and a *missing* one would drive it at 57x -- neither of which raises, and both
+    of which would silently invalidate every number measured afterwards.
+
+    Offline: it spies on `run_controller`, so no simulator and no controller is involved.
+    """
+    calls: list[dict[str, Any]] = []
+
+    def spy_run_controller(  # noqa: PLR0917  (see the sibling test for why `self` is positional)
+        self: KinderBackend, *, module: str, key: str, **kwargs: Any
+    ) -> ControllerRun:
+        calls.append({"module": module, "key": key, **kwargs})
+        return ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
+
+    backend = KinderBackend()
+    backend._robot_name = "robot_test"  # noqa: SLF001
+
+    backend.run_toss(release_speed_deg_s=140.0)
+
+    assert [call["key"] for call in calls] == ["move_arm_to_conf", "toss"]
+    # The windup is `move_arm_to_conf`, whose `reset` takes no release speed at all --
+    # passing one is a TypeError, so it must not be forwarded there.
+    assert "release_speed" not in calls[0]
+    assert calls[1]["release_speed"] == pytest.approx(np.deg2rad(140.0))
+
+
+def test_run_toss_skips_the_swing_when_the_windup_fails_whatever_the_speed(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding a parameter must not change the windup-failed short circuit: tossing from
+    an unknown arm pose is not the thing upstream measured, at any release speed."""
+    calls: list[str] = []
+
+    def spy_run_controller(  # noqa: PLR0917
+        self: KinderBackend, *, module: str, key: str, **kwargs: Any
+    ) -> ControllerRun:
+        del module, kwargs
+        calls.append(key)
+        return ControllerRun(steps=0, terminated=False, error="planning failed")
+
+    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
+
+    backend = KinderBackend()
+    backend._robot_name = "robot_test"  # noqa: SLF001
+
+    windup, swing = backend.run_toss(release_speed_deg_s=240.0)
+
+    assert calls == ["move_arm_to_conf"]
+    assert windup.terminated is False
+    assert swing.error == "windup did not terminate"
