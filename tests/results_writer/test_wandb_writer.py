@@ -27,6 +27,8 @@ from pathlib import Path
 import pytest
 
 from hitl_pmp.core.metrics.metrics import Metrics
+from hitl_pmp.results_writer.run_collision import MissingVariationAxisError
+from hitl_pmp.results_writer.types import ExistingRun
 from hitl_pmp.results_writer.wandb_writer import WandbResultsWriter
 
 # Two cycles of the oracle on Light Switch: pure numpy, about a second per invocation,
@@ -38,6 +40,26 @@ wandb_installed = pytest.mark.skipif(
     importlib.util.find_spec("wandb") is None,
     reason="wandb is an optional extra; CI does not install it",
 )
+
+
+class Args:
+    """Resolved namespaces for the writer's own entry point. A static-method container,
+    never instantiated, same as every other business-logic class in this project."""
+
+    @staticmethod
+    def lightswitch(*, output_dir: Path) -> argparse.Namespace:
+        """A complete namespace, not the two attributes a given assertion reads: the
+        namer raises on a namespace missing a field it names, which is the point of it,
+        so a half-built one would exercise that error path by accident."""
+        return argparse.Namespace(
+            record_wandb=True,
+            output_dir=output_dir,
+            env="lightswitch",
+            method="skill-oracle",
+            seed=0,
+            practice_reset_policy="scheduled",
+            re_run=False,
+        )
 
 
 class WandbHarness:
@@ -181,10 +203,7 @@ def test_the_resolved_mode_is_settled_before_the_run_starts(
     readable property of the writer rather than a re-read of the environment."""
     monkeypatch.setenv("WANDB_MODE", "disabled")
     writer = WandbResultsWriter.open_if_requested(
-        args=argparse.Namespace(
-            record_wandb=True, output_dir=tmp_path, env="lightswitch", method="skill-oracle", seed=0
-        ),
-        num_cycles=2,
+        args=Args.lightswitch(output_dir=tmp_path), num_cycles=2
     )
     assert writer is not None
     assert writer.mode == "disabled"
@@ -249,6 +268,8 @@ def test_the_config_and_summary_reach_wandb(
         env="lightswitch",
         method="skill-oracle",
         seed=3,
+        practice_reset_policy="scheduled",
+        re_run=False,
         num_render_checkpoints=1,
         record_full_loop=Path("loop.mp4"),
     )
@@ -264,9 +285,9 @@ def test_the_config_and_summary_reach_wandb(
     assert run.config["env"] == "lightswitch"
     assert run.config["num_render_checkpoints"] == "1"
     assert run.config["record_full_loop"] == "loop.mp4"
-    # Deterministic, so re-running a seed updates a recognisable run rather than
-    # minting an unrelated adjective-animal name.
-    assert run.name == "skill-oracle-seed3"
+    # Built by the shared namer: the environment, the arm and the seed, so the project's
+    # run list distinguishes runs without anyone opening them.
+    assert run.name == "lightswitch-skill-oracle-scheduled-seed3"
     assert set(run.tags) == {"lightswitch", "skill-oracle"}
 
     # The checkpoint's own scalars, which `log` also mirrors into the summary. Read
@@ -292,11 +313,78 @@ def test_no_wandb_run_is_started_before_the_first_checkpoint(
     monkeypatch.setenv("WANDB_MODE", "offline")
     monkeypatch.setenv("WANDB_SILENT", "true")
     writer = WandbResultsWriter.open_if_requested(
-        args=argparse.Namespace(
-            record_wandb=True, output_dir=tmp_path, env="lightswitch", method="skill-oracle", seed=0
-        ),
-        num_cycles=2,
+        args=Args.lightswitch(output_dir=tmp_path), num_cycles=2
     )
     assert writer is not None
     writer.close(metrics=Metrics())
     assert not (tmp_path / "wandb").exists()
+
+
+@wandb_installed
+def test_offline_never_reaches_for_the_network(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The collision check needs an API to ask, and offline mode has none. Firing one
+    anyway would break what offline mode is for: a sweep of ~22 concurrent runs that
+    opens no sockets and needs no credential."""
+    monkeypatch.setenv("WANDB_MODE", "offline")
+    monkeypatch.setattr(
+        WandbResultsWriter,
+        "_existing_runs",
+        staticmethod(lambda **_: pytest.fail("offline must not query the W&B API")),
+    )
+    assert WandbResultsWriter.open_if_requested(
+        args=Args.lightswitch(output_dir=tmp_path), num_cycles=2
+    )
+
+
+@wandb_installed
+def test_online_refuses_a_name_that_is_already_another_experiment(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wiring, with the fetch stubbed: online, the writer asks W&B what it already
+    holds under this name and hands it to the checker. The checker's own cases are
+    covered in `test_run_collision.py`; what is asserted here is that setup fails
+    *before* a writer is returned, so no work happens first."""
+    monkeypatch.setenv("WANDB_MODE", "online")
+    monkeypatch.setattr(
+        WandbResultsWriter,
+        "_existing_runs",
+        staticmethod(
+            lambda *, run_name: (
+                ExistingRun(
+                    name=run_name,
+                    identifier="ezy6q16y",
+                    url="https://wandb.ai/josh-princeton/hitl-pmp/runs/ezy6q16y",
+                    # A different seed: the same name, a genuinely different experiment.
+                    config={"env": "lightswitch", "method": "skill-oracle", "seed": "999"},
+                ),
+            )
+        ),
+    )
+    with pytest.raises(MissingVariationAxisError, match="seed"):
+        WandbResultsWriter.open_if_requested(
+            args=Args.lightswitch(output_dir=tmp_path), num_cycles=2
+        )
+
+
+@wandb_installed
+def test_online_reports_an_unreachable_api_rather_than_skipping(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A check that silently passes when it could not run is worse than no check. An
+    online run with no reachable API is going to fail in `wandb.init` moments later
+    anyway, so failing here costs nothing and says something useful."""
+    # Gated above; deliberately not imported at module scope, so this file still
+    # collects on a machine with no wandb.
+    import wandb
+
+    def unreachable(**_: object) -> object:
+        raise OSError("network is unreachable")
+
+    monkeypatch.setenv("WANDB_MODE", "online")
+    monkeypatch.setattr(wandb, "Api", unreachable)
+    with pytest.raises(ValueError, match="could not check"):
+        WandbResultsWriter.open_if_requested(
+            args=Args.lightswitch(output_dir=tmp_path), num_cycles=2
+        )

@@ -8,7 +8,9 @@ the harness does not change.
 | file | holds |
 | --- | --- |
 | `results_writer.py` | `ResultsWriter` — the ABC and its hook contract |
-| `types.py` | `RunSummaryScalars`, `CheckpointScalars` — the flat payloads, derived from `Metrics` in one place |
+| `types.py` | `RunSummaryScalars`, `CheckpointScalars` — the flat payloads, derived from `Metrics` in one place; `ExistingRun`, `RunNameField` — the plain data naming shares |
+| `run_naming.py` | `RunNamer`, `RUN_NAME_FIELDS` — what a run is called, for any backend |
+| `run_collision.py` | `RunNameCollisionCheck` — one canonical run per experiment |
 | `registry.py` | `RESULTS_WRITERS` — the static list every run is offered |
 | `run_progress.py` | `RunProgressWriter` — `progress.jsonl`, always on, no flag |
 | `wandb_writer.py` | `WandbResultsWriter` — `--record-wandb`, the first concrete one |
@@ -114,6 +116,44 @@ See `wandb_writer.py`'s module docstring for the full rationale. The short versi
   own hyperparameter values, which is directly at odds with this project's fixed-seed
   discipline; `scripts/run_sweep.py` keeps ownership of the grid and W&B's *grouping*
   gives what its sweeps would have.
+
+## Run names, and the check that makes them safe
+
+A run's name comes from `run_naming.RunNamer`, which is backend-agnostic so the next
+concrete writer reuses the convention instead of inventing a second one.
+
+```text
+<env>-<method>[-<domain variant>...]-<reset policy>[-ask-<help policy>][-c<cycles>]-seed<seed>
+
+tossingroom-ees-oneway-split-never-ask-never-c100-seed3
+lightswitch-skill-oracle-scheduled-seed7
+```
+
+Outermost axis first, **seed last**, so an alphabetical run list groups an arm's seeds
+together — the same ordering `scripts/run_sweep.py` uses for directories. `RUN_NAME_FIELDS`
+holds the axes this project's committed studies actually vary; everything else is left
+out on purpose, because a name carrying every flag is a name nobody reads.
+
+That curation is safe only because of the second half. At **setup**, before any work,
+`--record-wandb` asks W&B what it already holds under this name and compares
+**configurations**:
+
+| existing run with this name | its config | result |
+| --- | --- | --- |
+| none | — | proceed |
+| one or more | **differs** | `MissingVariationAxisError` — **our namer is missing a field**, and the error names it |
+| one or more | identical | `DuplicateExperimentError` — a genuine re-run; pass `--re-run` |
+
+`--re-run` authorises the third row **only**. Silencing the second would knowingly put
+two different experiments under one canonical name, which is the entire thing being
+prevented.
+
+**The check needs an API, so it only runs online.** Under `WANDB_MODE=offline` — this
+writer's default — it prints one line saying it was skipped and proceeds; a clash then
+surfaces at `wandb sync`. That is a real gap, and stated rather than hidden. Online, the
+query is bounded (`timeout=15s`, one filtered request), and an unreachable or
+unauthenticated API is an **error**, not a silent pass, since such a run would fail in
+`wandb.init` moments later anyway.
 
 ### Two limits worth stating plainly
 

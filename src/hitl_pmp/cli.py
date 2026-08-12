@@ -224,6 +224,21 @@ class Cli:
             "and says so up front rather than mid-run if either is missing.",
         )
         parser.add_argument(
+            "--re-run",
+            action="store_true",
+            help="Authorise repeating an experiment that has already been recorded. "
+            "A results writer that indexes runs by name (--record-wandb) checks at "
+            "setup that this run's name is not already taken by a DIFFERENT "
+            "configuration, so that one experiment has one canonical run; an existing "
+            "run whose configuration is identical to this one's is a deliberate repeat "
+            "and needs this flag. Deliberately narrow: it authorises one identical "
+            "re-run, and does NOT silence the other case, where an existing run of the "
+            "same name has a different configuration -- that means the run namer is "
+            "missing an axis of variation, which is a bug to fix rather than to "
+            "override. No effect without a writer that checks (nothing checks offline: "
+            "there is no API to ask).",
+        )
+        parser.add_argument(
             "--num-render-checkpoints",
             type=lambda value: Cli.parse_positive_int(value=value),
             default=1,

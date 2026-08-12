@@ -259,6 +259,20 @@ def test_parse_args_rejects_an_unknown_practice_reset_policy() -> None:
         )
 
 
+def test_parse_args_defaults_re_run_to_false() -> None:
+    """Off by default, which is what makes the collision check a check: an ordinary
+    launch is refused if its name already belongs to a recorded experiment."""
+    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
+    assert args.re_run is False
+
+
+def test_parse_args_accepts_re_run() -> None:
+    """Global rather than a --record-wandb sub-flag: it authorises repeating an
+    experiment, which is a statement about the run, not about one writer's backend."""
+    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees", "--re-run"])
+    assert args.re_run is True
+
+
 def test_parse_args_defaults_record_full_loop_to_none() -> None:
     """Off unless asked for: a run that does not pass it is unchanged, right down
     to taking no rendering path at all."""
