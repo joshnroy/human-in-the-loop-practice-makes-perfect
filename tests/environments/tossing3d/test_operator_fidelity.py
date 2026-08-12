@@ -163,7 +163,8 @@ def test_a_restore_really_rewinds_the_simulator_and_not_just_the_state_object() 
         assert state.get(obj=env.cube, feature_name="z") > 0.1
 
         ground_skill = GroundSkill(
-            skill=provider.skills()[1], objects=(env.robot, env.cube, env.bin)
+            skill=provider.skills()[1],
+            objects=(env.robot, env.cube, env.bin, env.goal_region),
         )
         action = provider.compute_action(
             ground_skill=ground_skill, params=np.array([1.35]), state=state

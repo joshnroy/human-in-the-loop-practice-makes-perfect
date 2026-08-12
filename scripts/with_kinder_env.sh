@@ -1,116 +1,53 @@
 #!/usr/bin/env bash
 #
-# Run a command inside a fully set-up KINDER environment -- `with_env.sh`'s twin for
-# anything that touches the simulator (`--env tossing3d`).
+# A thin alias for `with_env.sh` that adds the two determinism pins Tossing3D runs
+# want. It is NOT a separate environment any more.
 #
 #     scripts/with_kinder_env.sh python -m hitl_pmp.cli --env tossing3d --method ees ...
-#     scripts/with_kinder_env.sh python -m scripts.run_sweep --env tossing3d ...
 #     scripts/with_kinder_env.sh          # no command: print the resolved environment
 #
-# Why a SECOND wrapper rather than a flag on the first: KINDER lives in its own
-# virtualenv, never in `hitl-pmp`. It pulls MuJoCo, PyBullet and OpenCV, and
-# `kindergarden` caps `requires-python` at `<3.13` (see CLAUDE.md). The two
-# environments cannot be merged, so the two wrappers cannot be either -- and
-# `with_env.sh`'s conda activation would actively select the interpreter that has no
-# `kinder` in it.
+# ## Why this file shrank from ~110 lines to this
 #
-# Everything `with_env.sh` sets, this sets too, for the same reasons:
-#   * PYTHONPATH, so a *worktree* imports its own src/ and not the main checkout's
-#   * FD_EXEC_PATH, for planning-based methods (`--method ees`)
-# ...plus two that only matter on this side:
-#   * MUJOCO_GL / PYOPENGL_PLATFORM = egl
-#   * OMP_NUM_THREADS / MKL_NUM_THREADS = 1
+# It used to activate a *second* interpreter -- a `kinder-venv` virtualenv beside the
+# main checkout -- and its own header explained that "the two environments cannot be
+# merged" because KINDER pulls MuJoCo, PyBullet and OpenCV and `kindergarden` caps
+# `requires-python` at `<3.13`.
 #
-# The EGL pair is not cosmetic. `register_all_environments()` forces `osmesa` when
-# DISPLAY is unset; under `osmesa` `import mujoco` raises, and `_check_deps` swallows
-# *every* exception -- so all Dynamic3D environments are skipped IN SILENCE and
-# `kinder.make("kinder/Tossing3D-o1-v0")` fails much later with a `NameNotFound` that
-# names nothing relevant. That trap has cost an hour more than once.
+# **That justification was wrong, and was measured to be wrong.** Both environments were
+# already Python 3.10.20, so the `<3.13` cap excluded neither. The real constraint is a
+# set of version ceilings, not an interpreter split: `pybullet_helpers 0.1.1` requires
+# `numpy<2.0,>=1.23.5` and pins `scipy==1.14.0` exactly, and `moviepy` caps `pillow<12.0`.
+# `hitl-pmp` runs its full gate unchanged under all three, so KINDER installs directly
+# into it via the `tossing3d` extra and there is nothing left to activate.
 #
-# The thread pins match what `scripts/run_sweep.py` already sets on its children.
-# Without them a bare CLI run inherits the machine default (24 here) while a swept run
-# gets 1, and multi-threaded float reductions reassociate -- so the same seed trains to
-# different weights and a sweep and a re-run are two different experiments. Setting it
-# here means a hand-run reproduction matches the sweep it is reproducing.
+# What remains here is only what is genuinely specific to a simulator *run*:
+# OMP_NUM_THREADS / MKL_NUM_THREADS = 1. Those are deliberately NOT in `with_env.sh`,
+# because pinning them for every command would change how non-simulator work runs. They
+# match what `scripts/run_sweep.py` already sets on its children: without them a bare CLI
+# run inherits the machine default (24 here) while a swept run gets 1, and multi-threaded
+# float reductions reassociate -- so the same seed trains to different weights and a
+# sweep and a re-run are two different experiments. Setting them here means a hand-run
+# reproduction matches the sweep it is reproducing.
+#
+# MUJOCO_GL / PYOPENGL_PLATFORM moved *into* `with_env.sh`, because KINDER now lives in
+# the default env and a plain `pytest` imports it -- see that file's EGL note for why
+# getting this wrong fails silently rather than loudly.
+#
+# Keeping this as an alias rather than deleting it: it is referenced from docs and from
+# muscle memory, the thread pins are a real and separate concern, and a script that
+# quietly does the right thing beats a "no such file" for anyone who types it.
 
 set -euo pipefail
 
-# Resolve this script's directory even when reached through a symlink, then take the
-# repo root as its parent. Deliberately not `git rev-parse`: `$PWD` is wrong the moment
-# a caller cd's, and the wrapper must be correct wherever it is invoked from.
 script_source="${BASH_SOURCE[0]}"
 while [ -L "$script_source" ]; do
     script_dir="$(cd -P "$(dirname "$script_source")" && pwd)"
     script_source="$(readlink "$script_source")"
     [[ "$script_source" != /* ]] && script_source="$script_dir/$script_source"
 done
-REPO_ROOT="$(cd -P "$(dirname "$script_source")/.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "$script_source")" && pwd)"
 
-# The main checkout, which is where sibling directories actually live. In a worktree the
-# literal parent is .git/worktrees/..., where no sibling venv will ever be -- the same
-# resolution with_env.sh uses for Fast Downward.
-git_common_dir="$(git -C "$REPO_ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
-if [ -n "$git_common_dir" ]; then
-    MAIN_CHECKOUT="$(dirname "$git_common_dir")"
-else
-    MAIN_CHECKOUT="$REPO_ROOT"
-fi
-
-# --- the KINDER venv -------------------------------------------------------
-# KINDER_VENV may be preset to point elsewhere; otherwise use CLAUDE.md's documented
-# sibling location. Failing loudly beats falling back to a python without `kinder`,
-# which would surface as a confusing ModuleNotFoundError deep inside a domain import.
-KINDER_VENV="${KINDER_VENV:-$(dirname "$MAIN_CHECKOUT")/kinder-venv}"
-KINDER_PYTHON="$KINDER_VENV/bin/python"
-if [ ! -x "$KINDER_PYTHON" ]; then
-    echo "with_kinder_env.sh: no KINDER venv at $KINDER_VENV" >&2
-    echo "  create it with:" >&2
-    echo "    python3.10 -m venv $KINDER_VENV" >&2
-    echo "    $KINDER_VENV/bin/pip install -e reference/kindergarden \\" >&2
-    echo "        -e reference/kinder-baselines/kinder-models" >&2
-    echo "  or set KINDER_VENV to an existing one." >&2
-    exit 1
-fi
-
-# --- Fast Downward ---------------------------------------------------------
-# Only planning-based methods need this, so a missing checkout is not fatal here --
-# those runs fail loudly on their own.
-if [ -z "${FD_EXEC_PATH:-}" ]; then
-    candidate="$(dirname "$MAIN_CHECKOUT")/downward"
-    [ -d "$candidate" ] && FD_EXEC_PATH="$candidate"
-fi
-[ -n "${FD_EXEC_PATH:-}" ] && export FD_EXEC_PATH
-
-# --- PYTHONPATH ------------------------------------------------------------
-# Prepended, not overwritten, so an existing entry is preserved -- but this checkout's
-# src/ wins, which is the whole point.
-export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
-
-# --- rendering and math threads --------------------------------------------
-export MUJOCO_GL=egl
-export PYOPENGL_PLATFORM=egl
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 
-# With no command, report what was resolved. This doubles as the sanity check an agent
-# is told to run before trusting any number: `hitl_pmp` must resolve inside REPO_ROOT,
-# and `kinder` must resolve inside reference/.
-if [ "$#" -eq 0 ]; then
-    echo "REPO_ROOT     $REPO_ROOT"
-    echo "python        $KINDER_PYTHON"
-    echo "PYTHONPATH    $PYTHONPATH"
-    echo "FD_EXEC_PATH  ${FD_EXEC_PATH:-<unset>}"
-    echo "MUJOCO_GL     $MUJOCO_GL"
-    "$KINDER_PYTHON" -c 'import hitl_pmp; print("hitl_pmp      " + hitl_pmp.__file__)'
-    "$KINDER_PYTHON" -c 'import kinder; print("kinder        " + kinder.__file__)'
-    exit 0
-fi
-
-# `python` as the first argument means "the venv's python", so callers can write the
-# same command shape `with_env.sh` takes rather than knowing the interpreter's path.
-if [ "$1" = "python" ]; then
-    shift
-    exec "$KINDER_PYTHON" "$@"
-fi
-
-exec "$@"
+exec "$SCRIPT_DIR/with_env.sh" "$@"

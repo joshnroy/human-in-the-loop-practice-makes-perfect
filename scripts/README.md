@@ -281,9 +281,9 @@ and this deliberately depends on nothing but upstream, so it survives that work
 landing, changing, or staying closed. It imports no `hitl_pmp` module.
 
 ```bash
-# KINDER is an optional extra and is NOT in the hitl-pmp conda env.
+# KINDER is an optional extra (`.[tossing3d]`), installed into the hitl-pmp conda env.
 systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue \
-    /path/to/kinder-venv/bin/python scripts/tossing3d_oracle_demo.py --output-dir docs
+    scripts/with_kinder_env.sh python scripts/tossing3d_oracle_demo.py --output-dir docs
 ```
 
 Three things about running it are easy to get wrong, and each costs an hour:
@@ -444,12 +444,12 @@ which task JSON was loaded — and the verdict flips.
 ```bash
 # sweep (no rendering, no output files)
 systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue \
-    /path/to/kinder-venv/bin/python scripts/tossing3d_oracle_demo.py \
+    scripts/with_kinder_env.sh python scripts/tossing3d_oracle_demo.py \
     --sweep --task-config coincident-bin-goal --standoffs 1.20 1.25 1.30 1.35 1.40 1.425
 
 # the committed coincident clip
 systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue \
-    /path/to/kinder-venv/bin/python scripts/tossing3d_oracle_demo.py \
+    scripts/with_kinder_env.sh python scripts/tossing3d_oracle_demo.py \
     --output-dir docs --task-config coincident-bin-goal --standoffs 1.35
 ```
 

@@ -155,12 +155,17 @@ call and tracks the bin and the goal region wherever they move.
 
 ## Running it
 
-KINDER goes in **its own virtualenv**, never `hitl-pmp` — see CLAUDE.md's `reference/`
-section for the install, the four environment traps, and the memory cap.
+KINDER installs **into `hitl-pmp` itself**, as the optional `tossing3d` extra — see
+CLAUDE.md's `reference/` section for the install, the version ceilings it imposes, the
+four environment traps, and the memory cap. (It used to require its own virtualenv; that
+split rested on a `requires-python` cap that was measured to exclude neither environment.)
+
+`scripts/with_kinder_env.sh` is a thin alias for `with_env.sh` that adds the
+`OMP_NUM_THREADS`/`MKL_NUM_THREADS` pins a reproducible simulator run wants:
 
 ```bash
 systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue -- \
-  /path/to/kinder-venv/bin/python -m hitl_pmp.cli \
+  scripts/with_kinder_env.sh python -m hitl_pmp.cli \
     --env tossing3d --method skill-oracle --num-test-tasks 5 --output-dir /tmp/tossing3d
 ```
 
@@ -171,11 +176,11 @@ measured position and the `InGoalRegion` verdict), plus `stats.json` and
 `scripts/tossing3d_oracle_demo.py`, which stays separate — one frame per transition is a
 property of `core.Renderer`, not of this domain.
 
-The KINDER-backed tests skip cleanly without the simulator (CI never installs it), so run
-them under the same venv:
+The KINDER-backed tests skip cleanly without the simulator (CI still never installs it),
+and now run as part of the ordinary local gate. To run just this domain's:
 
 ```bash
-PYTHONPATH=$(pwd)/src /path/to/kinder-venv/bin/python -m pytest tests/environments/tossing3d/ -q
+scripts/with_env.sh python -m pytest tests/environments/tossing3d/ -q
 ```
 
 ## Known gaps

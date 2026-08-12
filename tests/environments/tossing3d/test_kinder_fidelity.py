@@ -3,9 +3,10 @@
 **Every test in this file skips cleanly without KINDER**, gated on
 `importlib.util.find_spec("kinder")` -- the *import* package name, not the distribution
 name `kindergarden`. CI never installs the optional extra, so on CI this whole file
-skips and the offline files carry the suite. Run it under the KINDER venv:
+skips and the offline files carry the suite. Locally, KINDER installs into `hitl-pmp`
+itself (the `tossing3d` extra), so this runs in the ordinary gate:
 
-    /path/to/kinder-venv/bin/python -m pytest tests/environments/tossing3d/ -q
+    scripts/with_env.sh python -m pytest tests/environments/tossing3d/ -q
 
 and under a memory cap, because these tests execute real controllers:
 

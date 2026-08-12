@@ -16,11 +16,13 @@
 # Humans in an interactive shell can keep using `conda activate` directly; this
 # is additive, not a replacement.
 #
-# Three things get set, and the third is the one that silently corrupts results
+# Four things get set, and the third is the one that silently corrupts results
 # if missed:
 #   * the `hitl-pmp` conda env (`base` has mismatched dependency versions)
 #   * FD_EXEC_PATH, for planning-based methods (`--method ees`) and planning/'s tests
 #   * PYTHONPATH, so a *worktree* imports its own src/ and not the main checkout's
+#   * MUJOCO_GL / PYOPENGL_PLATFORM = egl, because KINDER now installs into this same
+#     env rather than a separate venv (see the EGL note further down)
 #
 # PYTHONPATH is derived from this script's own location, never `$PWD`, so the
 # wrapper is correct no matter where it is invoked from. That matters here: the
@@ -86,6 +88,21 @@ fi
 # checkout's src/ wins, which is the whole point.
 export PYTHONPATH="$REPO_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
+# --- rendering backend -----------------------------------------------------
+# KINDER installs into THIS env now (the `tossing3d` extra), so a plain `pytest`
+# imports it, and the EGL pair has to be set here rather than in a second wrapper.
+#
+# It is not cosmetic and it is not optional. `register_all_environments()` forces
+# `osmesa` when DISPLAY is unset; under `osmesa` `import mujoco` raises, and
+# `_check_deps` swallows *every* exception -- so all Dynamic3D environments are
+# skipped IN SILENCE and `kinder.make("kinder/Tossing3D-o1-v0")` fails much later
+# with a `NameNotFound` that names nothing relevant. That trap has cost an hour
+# more than once, and unification makes it reachable from the default gate.
+#
+# Harmless when KINDER is not installed: nothing reads these but MuJoCo/PyOpenGL.
+export MUJOCO_GL=egl
+export PYOPENGL_PLATFORM=egl
+
 # With no command, report what was resolved. This doubles as the skill's sanity
 # check: `import hitl_pmp` must resolve inside REPO_ROOT.
 if [ "$#" -eq 0 ]; then
@@ -94,7 +111,9 @@ if [ "$#" -eq 0 ]; then
     echo "python        $(command -v python)"
     echo "PYTHONPATH    $PYTHONPATH"
     echo "FD_EXEC_PATH  ${FD_EXEC_PATH:-<unset>}"
+    echo "MUJOCO_GL     $MUJOCO_GL"
     python -c 'import hitl_pmp; print("hitl_pmp      " + hitl_pmp.__file__)'
+    python -c 'from importlib.util import find_spec; print("kinder        " + ("installed" if find_spec("kinder") else "<not installed -- tossing3d tests will skip>"))'
     exit 0
 fi
 

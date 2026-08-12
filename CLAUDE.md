@@ -16,6 +16,12 @@ conda activate hitl-pmp
 pip install -e ".[dev]"
 ```
 
+**Or just prefix every command with `scripts/with_env.sh`**, which activates the env,
+sets `FD_EXEC_PATH`, sets `PYTHONPATH` to its own checkout's `src/`, and pins the EGL
+rendering backend. Run it bare to print what it resolved. An agent sandbox cannot execute
+`source`/`export`/`VAR=x cmd` forms at all, so for agents the wrapper is not a
+convenience — it is the only way to get a correct environment. See the `hitl-env` skill.
+
 **Fast Downward** is required by any planning-based `Method` (`--method ees`, and
 `planning/`'s own tests). It is deliberately not vendored — build it once and it is
 found automatically if it sits beside this repo, or point `FD_EXEC_PATH` at any other
@@ -81,21 +87,57 @@ populate `reference/` at all; `--check` answers "am I in sync?" without paying f
 clone to find out.
 
 **KINDER** (the `Tossing3D` benchmark and its parameterized controllers) is two of
-those repos, installed into a **separate venv — never `hitl-pmp`**, because it pulls
-MuJoCo, PyBullet and OpenCV and `kindergarden` caps `requires-python` at `<3.13`. The
-submodules must be populated first, or both `-e` paths are empty directories and pip
-fails:
+those repos, and it installs **into `hitl-pmp` itself**, as the optional `tossing3d`
+extra. The submodules must be populated first, or both `-e` paths are empty directories
+and pip fails:
 
 ```bash
 git submodule update --init reference/kindergarden reference/kinder-baselines
-python3.10 -m venv ../kinder-venv
-../kinder-venv/bin/pip install -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+pip install -e ".[dev,tossing3d]" \
+    -e reference/kindergarden -e reference/kinder-baselines/kinder-models
 ```
 
 Install from `reference/` specifically, so the tree that is *read* and the tree that
 is *run* are the same one — a read-vs-run skew between two copies at different
 commits has already caused a wrong SHA to be stated as fact. Verify it took:
 `kinder.__file__` and `kinder_models.__file__` must both resolve under `reference/`.
+
+**This used to be a separate `../kinder-venv` virtualenv, "never `hitl-pmp`", and the
+reason given here was wrong.** The stated justification was that `kindergarden` caps
+`requires-python` at `<3.13`. That cap is real but excluded nothing: **both environments
+were already Python 3.10.20**, measured directly, so it never separated them. The
+misdiagnosis is recorded rather than deleted because the conclusion it supported —
+"the two cannot be merged" — was load-bearing in `scripts/with_kinder_env.sh`'s own
+header and survived unchallenged for months.
+
+What actually constrains the environment is three version ceilings, all transitive
+through `kindergarden`, none of them ours to lift:
+
+| ceiling | imposed by | resolves to |
+| --- | --- | --- |
+| `numpy<2.0,>=1.23.5` | `pybullet_helpers 0.1.1` | 1.26.4 |
+| `scipy==1.14.0` (an **exact** pin) | `pybullet_helpers 0.1.1` | 1.14.0 |
+| `pillow<12.0` | `moviepy` | 11.3.0 |
+
+So installing the extra **downgrades numpy, scipy and pillow** in whatever environment
+it touches. That is the real cost of unification, and it was measured to be acceptable
+rather than assumed: `hitl-pmp` runs its full gate unchanged under all three, and the
+`recording/` path — which imports PIL directly in `overlay.py` — was exercised
+end-to-end under pillow 11.3.0. The `numpy<2.0` cap has **not** been lifted upstream, so
+this is not a wait-for-the-next-release situation.
+
+**Why the split was worth removing rather than tolerating.** The simulator-backed
+fidelity tests gate on `importlib.util.find_spec("kinder")`, so under the two-venv layout
+they *skipped* for everyone who ran the ordinary gate — which is everyone who never
+built the second venv. A stale test survived a skill signature change unnoticed that
+way (`MoveToThrowPose` gained a `?goal_region` parameter in PR #123; the fidelity test
+still passed three objects and nobody saw it fail until unification). Now those tests
+run locally by default.
+
+**CI still does not install KINDER**, exactly as it does not install `wandb`. Unification
+improves *local* coverage only; CI pulling MuJoCo, PyBullet and ~1–2 GB of MimicLabs
+assets is what the `find_spec` gating deliberately avoids. Please do not "complete" this
+by wiring the extra into CI.
 
 **Only if you need IKFast**, install system BLAS/LAPACK once. `pybullet_helpers`
 compiles IKFast from C++ the first time a controller asks for inverse kinematics —
@@ -108,8 +150,8 @@ sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf 
 
 With those present the compile is stock: `compile.py`'s own default paths, no
 `BLAS_DIR`/`LAPACK_DIR`/`LIBGFORTRAN_DIR` and no `CC`/`CXX`/`LDSHARED` overrides, even
-in a venv seeded from conda's interpreter (which inherits conda's `compiler_compat`
-build flags). Without them the build fails; do not substitute wheel-internal libraries.
+under conda's interpreter (which carries conda's `compiler_compat` build flags).
+Without them the build fails; do not substitute wheel-internal libraries.
 
 Four traps, each of which costs an hour:
 
@@ -124,6 +166,9 @@ Four traps, each of which costs an hour:
   `NameNotFound`. Import a dynamic3d **module** (e.g. `kinder.envs.dynamic3d.envs`,
   *not* the `kinder.envs.dynamic3d` package, which does not pull in `mujoco`) before
   that call, and set both variables back to `egl` after it.
+  **`scripts/with_env.sh` now exports both**, because KINDER lives in the default env
+  and a plain `pytest` reaches this trap. That covers the variables, not the import
+  ordering, which is still yours to get right.
 - **The unbounded memory leak is fixed upstream**, but memory still needs care. Each
   skill execution used to strand one PyBullet client and ~136 MB forever; `PyBulletSim`
   now disconnects its client from a `weakref.finalize` when it is collected, so a
