@@ -34,6 +34,16 @@ number.
 > page. The measurements below are still left exactly as published, but any of them that
 > depended on base motion planning should be treated as **provisional** until re-measured
 > at the new pin. Nothing on this page has been recomputed.
+>
+> **Second note, 2026-08-12.** The `kinder-baselines` pin has moved again, `3524010` →
+> `1b564a1` (`joshnroy/kinder-baselines` PR #8), a clean +3-commit fast-forward that makes
+> the toss's release speed a parameter. **This one changes no default behaviour**: a caller
+> that passes no release speed gets exactly the `(140, 300, 200)` deg/s profile the old
+> inline literals produced, asserted against the pinned checkout by
+> `tests/environments/tossing3d/test_kinder_pin.py`. So it does not add to the provisional
+> status above. What it *does* mean is that every measurement on this page was taken when
+> the release speed could not be selected at all — each is evidence about **140 deg/s and
+> no other speed**. Nothing on this page has been recomputed.
 
 Both SHAs were read back from the checkouts rather than assumed, and both were
 confirmed to be the current tip of their remote's default branch **at the time of
