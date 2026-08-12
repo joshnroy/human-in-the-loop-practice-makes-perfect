@@ -238,7 +238,7 @@ the code cites and what a reader has locally.
 
 The local `reference/` checkouts are not at `main` either, and since 2026-08-07 that is
 recorded rather than incidental: both are **git submodules pinned to a fork branch** —
-`joshnroy/kinder-baselines` @ `11eace5` and `joshnroy/kindergarden` @ `4113237`. Read the
+`joshnroy/kinder-baselines` @ `3524010` and `joshnroy/kindergarden` @ `4113237`. Read the
 exact pin with `scripts/update_reference_repos.sh --check`, which reports drift and never
 resets a checkout. A checkout on some other commit is somebody's work, so the script says
 so instead of moving it.
