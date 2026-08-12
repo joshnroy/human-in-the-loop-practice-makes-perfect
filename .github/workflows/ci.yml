@@ -34,7 +34,28 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+      # Two passes, in this order, because the two conditions catch different bugs and
+      # neither subsumes the other.
+      #
+      # Without the optional `wandb` extra: this is the import path the package
+      # guarantees -- `wandb_writer.py` imports wandb lazily and the wandb-backed tests
+      # gate on `importlib.util.find_spec`, exactly as `tossing3d` does for KINDER. A
+      # regression that made the package need wandb at import or annotation time would
+      # only ever be caught here.
       - run: pip install -e ".[dev]"
+      - run: mypy src
+      # With it: `ignore_missing_imports = true` means that with no wandb package to
+      # read, `wandb.init` is `Any` and *every* argument to it type-checks. So the pass
+      # above cannot see a single mismatch against W&B's real signatures, and
+      # `wandb_writer.py` was effectively untypechecked on CI. Measured on 04717d6: a
+      # tree with a real `wandb.init` type error reported 1 error with wandb importable
+      # and 0 without, while CI's typecheck job reported success -- the error PR #211
+      # then fixed. Sequential steps in this one job rather than a build matrix: two
+      # extra lines against a new job name plus a second ~30 s runner startup and a
+      # second full install, for a job that already runs in under two minutes. Order
+      # matters and is not arbitrary -- installing the extra is additive, so the
+      # wandb-free condition can only be tested before it, never after.
+      - run: pip install -e ".[dev,wandb]"
       - run: mypy src
 
   test:
