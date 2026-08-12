@@ -145,6 +145,47 @@ def test_declines_without_the_flag(*, tmp_path: Path) -> None:
     )
 
 
+def test_the_mode_defaults_to_offline(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The module docstring's central promise: no credential, no network, no blocking,
+    unless the environment explicitly asks otherwise."""
+    monkeypatch.delenv("WANDB_MODE", raising=False)
+    assert WandbResultsWriter.resolve_mode() == "offline"
+
+
+def test_an_explicit_mode_wins(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Watching one long run live stays a launch-time choice rather than a code change."""
+    monkeypatch.setenv("WANDB_MODE", "online")
+    assert WandbResultsWriter.resolve_mode() == "online"
+
+
+def test_an_unrecognised_mode_is_rejected_rather_than_silently_downgraded(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A typo'd `WANDB_MODE=onlien` must not fall back to offline: that is exactly the
+    "looks logged and is not" failure `open_if_requested` already refuses for a missing
+    dependency, discovered only when the data is wanted."""
+    monkeypatch.setenv("WANDB_MODE", "onlien")
+    with pytest.raises(ValueError, match="WANDB_MODE"):
+        WandbResultsWriter.resolve_mode()
+
+
+@wandb_installed
+def test_the_resolved_mode_is_settled_before_the_run_starts(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resolved at open time and carried on the writer, so a bad value fails before the
+    run rather than at the first checkpoint hours in -- and so the mode a run used is a
+    readable property of the writer rather than a re-read of the environment."""
+    monkeypatch.setenv("WANDB_MODE", "disabled")
+    writer = WandbResultsWriter.open_if_requested(
+        args=argparse.Namespace(
+            record_wandb=True, output_dir=tmp_path, env="lightswitch", method="skill-oracle", seed=0
+        )
+    )
+    assert writer is not None
+    assert writer.mode == "disabled"
+
+
 @wandb_installed
 def test_recording_leaves_stats_json_byte_identical(
     *, recording_off: Path, recording_on: Path

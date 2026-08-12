@@ -25,7 +25,10 @@ syncs later (`wandb sync <output-dir>/wandb/offline-run-*`). That default is set
 rather than left to the environment for three independent reasons: no run ever blocks
 on the network; a machine with no credential (CI, a fresh worktree) still works; and a
 sweep of ~22 concurrent runs opens no sockets. An explicit `WANDB_MODE=online` wins, so
-watching a single long run live is a launch-time choice, not a code change.
+watching a single long run live is a launch-time choice, not a code change. Only W&B's
+own four modes are accepted; anything else raises before the run starts rather than
+falling back to offline, since a silent downgrade is a run the launcher believes is
+syncing and is not.
 
 `scripts/run_sweep.py` already forwards `os.environ` to every child, so `WANDB_MODE`,
 `WANDB_ENTITY`, `WANDB_PROJECT` and `WANDB_RUN_GROUP` propagate across a whole grid with
@@ -63,7 +66,7 @@ import argparse
 import importlib.util
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ConfigDict, PrivateAttr
 
@@ -79,6 +82,15 @@ DEFAULT_PROJECT = "hitl-pmp"
 # already forwards os.environ to every child, so these configure a whole grid for free.
 PROJECT_ENV_VAR = "WANDB_PROJECT"
 MODE_ENV_VAR = "WANDB_MODE"
+
+# `wandb.init`'s `mode` parameter is a `Literal`, not a `str`, so an environment variable
+# cannot reach it unvalidated. Spelled out here rather than imported from wandb, because
+# this module must import and typecheck on a machine that does not have wandb at all --
+# which is also why mypy on CI, where the extra is not installed, cannot see this
+# mismatch: with no package to read, `wandb.init` is `Any` and every argument type-checks.
+WandbMode = Literal["online", "offline", "disabled", "shared"]
+VALID_MODES: tuple[WandbMode, ...] = ("online", "offline", "disabled", "shared")
+DEFAULT_MODE: WandbMode = "offline"
 
 
 class WandbResultsWriter(ResultsWriter):
@@ -104,13 +116,38 @@ class WandbResultsWriter(ResultsWriter):
     run_name: str
     job_type: str
     tags: tuple[str, ...]
+    # Resolved once at open time rather than re-read at each checkpoint, so the mode a
+    # run used is a readable property of the writer and a bad value fails before the run.
+    mode: WandbMode
 
     _run: Any = PrivateAttr(default=None)
 
     @staticmethod
+    def resolve_mode() -> WandbMode:
+        """`WANDB_MODE`, narrowed to the literal `wandb.init` accepts.
+
+        A real check rather than a cast: `os.environ.get` returns `str`, and an
+        unrecognised value has to be rejected somewhere. It is rejected here, loudly,
+        for the same reason `open_if_requested` refuses a missing dependency -- a typo'd
+        `WANDB_MODE=onlien` that quietly fell back to offline would produce a run the
+        launcher believes is syncing and is not, discovered only when the data is
+        wanted. Unset and empty both mean the offline default."""
+        requested = os.environ.get(MODE_ENV_VAR)
+        if not requested:
+            return DEFAULT_MODE
+        for mode in VALID_MODES:
+            if requested == mode:
+                return mode
+        raise ValueError(
+            f"{MODE_ENV_VAR}={requested!r} is not one of {VALID_MODES}. W&B accepts only "
+            "those four modes; leave it unset for this project's offline default."
+        )
+
+    @staticmethod
     def open_if_requested(*, args: argparse.Namespace) -> "WandbResultsWriter | None":
-        """This run's W&B writer, or None. Raises up front on both ways the flag can be
-        unusable, rather than discovering either mid-run."""
+        """This run's W&B writer, or None. Raises up front on every way the flag can be
+        unusable -- no output directory, no wandb installed, an unrecognised
+        `WANDB_MODE` -- rather than discovering any of them mid-run."""
         if not getattr(args, "record_wandb", False):
             return None
         output_dir = getattr(args, "output_dir", None)
@@ -141,6 +178,7 @@ class WandbResultsWriter(ResultsWriter):
             run_name=f"{method}-seed{seed}",
             job_type=method,
             tags=(environment, method),
+            mode=WandbResultsWriter.resolve_mode(),
         )
 
     def record_checkpoint(self, *, metrics: Metrics) -> None:
@@ -173,9 +211,9 @@ class WandbResultsWriter(ResultsWriter):
             self.output_dir.mkdir(parents=True, exist_ok=True)
             self._run = wandb.init(
                 project=os.environ.get(PROJECT_ENV_VAR) or DEFAULT_PROJECT,
-                # Offline unless the environment says otherwise -- see the module
+                # Offline unless the environment said otherwise -- see the module
                 # docstring. W&B reads entity and group from its own env vars.
-                mode=os.environ.get(MODE_ENV_VAR) or "offline",
+                mode=self.mode,
                 dir=str(self.output_dir),
                 name=self.run_name,
                 job_type=self.job_type,
