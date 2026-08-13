@@ -254,6 +254,44 @@ UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S = 140.0
 # > redoing PR #105's 5-seed, 0.025 m sweep.
 THROW_RANGE = 1.275
 
+# **The two endpoints of the interval `RobotAtSuccessfulThrowPose` unions over**, since a
+# parameterised `Toss` no longer displaces the cube by the one constant above. Both are
+# distance covered *before first ground contact* -- the same quantity `THROW_RANGE` is
+# calibrated in -- pooled over 3359 unobstructed rows from PR #240's grid and this stack's
+# standoff grid, whose envelopes are [0.3330, 1.3465] and [0.3386, 1.3552].
+#
+# **Read as resting x instead and the measurement is contaminated by a step, not a drift**:
+# 690 ms lands 1.7175, 705 ms lands 1.7428, then 710 ms jumps 244 mm to 1.9870, because past
+# that release the cube hits the bin and settles inside it, so resting x reports the bin's
+# position rather than the throw's reach.
+#
+# **Dropping the bin-contact rows is the obvious fix and is a biased estimator** -- the
+# longest throws are exactly the ones that reach the bin, so it censors the top of the
+# distribution by an amount set by whatever standoff the grid fixed. Floor-only resting x
+# gives 1.3865 on one grid and 1.2084 on the other, 178 mm apart for the same constant;
+# before-ground-contact gives 1.3552 and 1.3465, 8.7 mm apart. Rows whose cube first struck
+# `cuboid_barrier` or the robot's own base *are* excluded: those flights were intercepted.
+#
+# **These derive from the toss parameter box, never from `THROW_STANDOFF_BOUNDS`**, which is
+# what keeps the `NearBin` tautology from returning by another door: widening the sampler's
+# standoff range cannot widen the accepted band, because no standoff constant appears here.
+THROW_RANGE_MIN = 0.333
+
+# **Trimmed, so this one carries a decision as well as a measurement.** The measured 1.3552
+# would put the accepted band's far edge at standoff 1.455, and nothing scores near there:
+# `0/1050` solved beyond 1.400 on the standoff grid -- the only one that varies the standoff,
+# so the only evidence for this trim -- against `3/150` at 1.400 itself. Reach and
+# scoring disagree because reaching the box ballistically is not coming to rest in it -- from
+# 1.45 the longest in-bounds throw lands at x = 1.905, just inside the trimmed box's 1.900
+# near edge, and never stays. So this is trimmed 55.2 mm to put the edge on 1.400, the last
+# standoff anything was observed to score from:
+# `1.400 - (bin_x - x_min - THROW_SHORTFALL_MARGIN)` = `1.400 - (2.0 - 1.85 - 0.05)`.
+#
+# The cost, stated rather than buried: **that trim couples this constant to the shipped
+# scene** in a way `THROW_RANGE_MIN` is not. Re-deriving it after a scene change means
+# re-running the standoff grid, not editing the literal.
+THROW_RANGE_MAX = 1.300
+
 # Upstream's `WAYPOINT_TOL` (`kinder_models/dynamic3d/utils.py:54`), which is how close
 # `MoveToTargetGroundController.terminated()` requires the base to be to its own planned
 # waypoint. Using upstream's own number means the lateral conjunct admits exactly the poses
@@ -428,24 +466,57 @@ class RobotAtSuccessfulThrowPoseClassifier:
     classifier saw a single class, and the sampler fell back to uniform on every draw
     forever -- 16/16 attempts labelled success with 0/16 informed draws in a probe run,
     against 7/20 informed draws for `Pick` in the same run. A skill whose add effect cannot
-    fail is a skill whose sampler cannot learn, and this skill's standoff is the one
-    continuous parameter in the domain that decides the outcome: `Toss`, which does decide
-    it, has `param_dim = 0`.
+    fail is a skill whose sampler cannot learn.
 
-    **The standoff conjunct is derived from live state, not measured and pinned.** `Toss`
-    takes no parameters -- fixed windup conf, fixed toss conf -- so a throw displaces the
-    cube by the constant `THROW_RANGE` in the base's facing direction. `MoveToThrowPose`
-    pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base satisfying the lateral
-    conjunct faces `+x` and the cube's predicted resting place is `base_x + THROW_RANGE`.
+    **Both skills are now learnable, and keeping them that way is why the standoff conjunct
+    survives.** When this was written `Toss` had `param_dim = 0`, so the standoff was the
+    only continuous parameter in the domain that decided the outcome. `Toss` now carries
+    `(release_speed, gripper_release_ms)`, which would have allowed the simpler design of
+    dropping the standoff conjunct entirely and letting all the learning happen on `Toss`.
+    That was considered and rejected: it would hand `MoveToThrowPose` a constant-true label
+    again -- the same defect this predicate exists to fix -- merely relocated. The union
+    form below keeps a genuinely two-class label on *both* skills, which is the property to
+    preserve if either conjunct is ever revisited.
+
+    **The standoff conjunct is derived from live state, not measured and pinned.**
+    `MoveToThrowPose` pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base
+    satisfying the lateral conjunct faces `+x` and every throw from it lands along `+x`.
     `InBin` tests the cube's centre against the scored box, which the `State` already
     carries on the bin as the live `Region.bbox`. So the test below is *that same box*,
-    read off *that same object*, trimmed by the two margins above and applied to the
-    predicted landing point -- and the accepted band of standoffs
+    read off *that same object*, and trimmed by the two margins above.
 
-        [bin_x + THROW_RANGE - (x_max - THROW_OVERSHOOT_MARGIN),
-         bin_x + THROW_RANGE - (x_min + THROW_SHORTFALL_MARGIN)]
+    **What it applies that box to is an interval, not a point, and that is the union.**
+    Because `Toss` is parameterised, the reachable landing points from a given base form
 
-    falls out rather than being written down. Move the bin, resize the scored box, or
+        [base_x + THROW_RANGE_MIN, base_x + THROW_RANGE_MAX]
+
+    and the pose is accepted iff that interval **intersects** the margin-trimmed box -- iff
+    *some* toss parameterisation in bounds scores from here. That is the question the
+    planner actually needs answered, because it commits to a standoff before it picks the
+    toss parameters. The accepted band of standoffs
+
+        [bin_x + THROW_RANGE_MIN - (x_max - THROW_OVERSHOOT_MARGIN),
+         bin_x + THROW_RANGE_MAX - (x_min + THROW_SHORTFALL_MARGIN)]
+
+    falls out rather than being written down, and is wider than the old single-range band by
+    exactly `THROW_RANGE_MAX - THROW_RANGE_MIN` -- the dials' own reach.
+
+    **The near edge lands at 0.209 m, below the sampler's own 1.10 m floor**, so inside
+    `THROW_STANDOFF_BOUNDS` this is effectively a one-sided threshold at 1.400 and no
+    measurement constrains the lower conjunct (both grids start at 1.10). The label stays
+    two-class -- 301/650 millimetre standoffs accepted, 349/650 rejected -- so the sampler
+    still has a gradient. Short standoffs this predicate used to reject are now accepted,
+    which is a correction: those rejections were measured with the single fixed 140 deg/s
+    throw, and over the parameter box the standoff grid solves 37/150 at 1.10.
+
+    **The interval form is correct only if achievable range is contiguous over the toss
+    parameter box.** Range is continuous in two continuous parameters over a connected box,
+    so its image is an interval unless the release physics is discontinuous -- an argument,
+    not a measurement. At 5x10 and 20x20 the grids leave sampling gaps up to 93 mm, too
+    coarse to settle it. `test_no_toss_parameterisation_scores_from_beyond_the_accepted_band`
+    is what would catch a hole at the far edge.
+
+    Move the bin, resize the scored box, or
     change `ground_placement_threshold`, and the band follows on its own -- which matters,
     because kindergarden#126 moves the bin. A hard-coded band would be silently wrong the
     moment that lands. The two margins are fixed metres, not a fraction of the box, so they
@@ -454,6 +525,10 @@ class RobotAtSuccessfulThrowPoseClassifier:
     That this predicate and `InBin` now read their box off the same object is what makes
     "the pose a throw succeeds from" and "the place a throw must land" provably the same
     geometry rather than two things kept in step by hand.
+
+    **Where the two margins come from, measured when `Toss` was a single fixed throw.** They
+    are unchanged by the union -- it widens the band, it does not retune the trim -- but the
+    reasoning below is about the constant-displacement era and reads that way.
 
     On the coincident config the *geometric* band -- before the two margins below -- works
     out to `[1.125, 1.425]`: **0.300 m wide, which is exactly the scored box's own
@@ -493,10 +568,13 @@ class RobotAtSuccessfulThrowPoseClassifier:
         )
         if lateral_offset > THROW_POSE_LATERAL_TOLERANCE:
             return False
-        landing_x = state.get(obj=robot, feature_name="pos_base_x") + THROW_RANGE
+        base_x = state.get(obj=robot, feature_name="pos_base_x")
+        landing_min = base_x + THROW_RANGE_MIN
+        landing_max = base_x + THROW_RANGE_MAX
         x_min = state.get(obj=target, feature_name="x_min") + THROW_SHORTFALL_MARGIN
         x_max = state.get(obj=target, feature_name="x_max") - THROW_OVERSHOOT_MARGIN
-        return bool(x_min <= landing_x <= x_max)
+        # Two closed intervals intersect iff each starts at or before the other ends.
+        return bool(landing_min <= x_max and x_min <= landing_max)
 
 
 # `Predicate.holds` is a positional `(state, objects)` callable per its interface contract
