@@ -1,10 +1,10 @@
-"""Tossing3D's privileged solver: the three-skill sequence, with upstream's parameters.
+"""Tossing3D's privileged solver: the three-skill sequence and its parameters.
 
 The whole policy is a three-way branch on the symbolic state -- pick, walk to the throw
 pose, throw -- because the domain admits exactly one plan shape. What makes it an
 *oracle* rather than a fixed script is the continuous parameters, which are the part a
-learner would have to find, and every one of them here is a value upstream itself
-publishes:
+learner would have to find -- all upstream's own published values except
+`ORACLE_GRIPPER_RELEASE_MS`, which is ours and measured:
 
 - **`ORACLE_PICK_DISTANCE` / `ORACLE_PICK_ROTATION`** are the pair upstream's own
   `PickShelfController.sample_parameters` draws from `np.random.default_rng(123)` -- the
@@ -24,14 +24,12 @@ publishes:
   including the `10/10` this oracle scores at standoff 1.35. Not a tuned value; moving it
   would be a new measurement.
 
-- **`ORACLE_GRIPPER_RELEASE_MS = 720`** is upstream's shipped default for the second dial,
-  aliased from `predicates.UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS`. It is 720 rather than 723
-  because it is measured against the motion-planned path; that 3 ms is 52 mm of landing
-  distance. See the constant's own comment in `predicates.py`.
+- **`ORACLE_GRIPPER_RELEASE_MS = 792`** is ours, not upstream's: the midpoint of the
+  `5/5` band PR #240 measured at `ORACLE_RELEASE_SPEED_DEG_S`, 763.2-821.1 ms, rounded
+  to whole ms by `KinderBackend.run_toss`. Upstream's 720 is below that band.
 
-These three are **one operating point measured together**, not three independently valid
-constants. 720 ms is fraction 0.458 of the swing at 140 deg/s but 0.196 at 60, and PR #221
-measured the best standoffs over 60-83.34 deg/s at 1.050-1.075, below
+These are **one operating point measured together**, not independently valid constants.
+PR #221 measured the best standoffs over 60-83.34 deg/s at 1.050-1.075, below
 `THROW_STANDOFF_BOUNDS`'s floor. Moving any one alone changes the throw.
 
 **1.35 lands the cube at x = 1.9902, inside the bin and inside the goal box, and scores
@@ -42,6 +40,9 @@ measured the best standoffs over 60-83.34 deg/s at 1.050-1.075, below
 > the scheduled 1 kHz release the same standoff, seed and speed rest at **x = 2.0318**:
 > +41.6 mm, still inside the bin and still `True`.
 > `tests/environments/tossing3d/test_kinder_fidelity.py` carries both values.
+
+> **Second staleness note, 2026-08-13.** Both numbers above were measured at 720 ms; at
+> 792 ms the same rollout rests at **x = 1.9926**, still in the bin and still `True`.
 
 That used to be a contrast: on the scene KINDER shipped before the upstream bin
 fix (`kindergarden` PR #126, now carried on this repo's `reference/kindergarden` pin) the
@@ -61,7 +62,6 @@ from hitl_pmp.core.problem.tasks.types import Goal
 
 from .environment import Tossing3DEnvironment
 from .predicates import (
-    UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS,
     UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
     HoldingClassifier,
     RobotAtSuccessfulThrowPoseClassifier,
@@ -78,8 +78,8 @@ ORACLE_THROW_STANDOFF = 1.35
 # Upstream's own shipped release speed; see the module docstring.
 ORACLE_RELEASE_SPEED_DEG_S = UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
 
-# Upstream's own shipped default release millisecond; see the module docstring.
-ORACLE_GRIPPER_RELEASE_MS = UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS
+# Ours, not upstream's; see the module docstring.
+ORACLE_GRIPPER_RELEASE_MS = 792.0
 
 
 class SkillOraclePolicy:
