@@ -166,7 +166,10 @@ def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
 
     seen: list[float] = []
 
-    def spy_run_toss(self: KinderBackend, *, release_speed_deg_s: float):  # noqa: PLR0917, ANN202
+    def spy_run_toss(  # noqa: PLR0917, ANN202
+        self: KinderBackend, *, release_speed_deg_s: float, gripper_release_ms: float
+    ):
+        del gripper_release_ms
         seen.append(release_speed_deg_s)
         return ControllerRun(steps=1, terminated=True), ControllerRun(steps=1, terminated=True)
 
@@ -181,3 +184,39 @@ def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
     env._execute(action=np.array([float(env.toss_id), 60.0, 0.0]))
 
     assert seen == [240.0, 60.0]
+
+
+def test_the_toss_dispatch_reads_its_gripper_release_ms_from_slot_two(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The sibling test above covers slot 1. This covers slot 2, and it is the more
+    dangerous of the two: slot 2 held a literal `0.0` on this branch for as long as
+    `Toss` existed, so a dispatch that kept passing the constant would compile, run, and
+    throw at a fixed release millisecond forever while the sampler dutifully drew a range
+    of values that reached nothing.
+
+    Asserted at two distinct values rather than one, so a hardcoded pass-through of the
+    *default* would fail here too.
+
+    Offline: the backend is stubbed, so no simulator runs.
+    """
+    from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+
+    seen: list[float] = []
+
+    def spy_run_toss(  # noqa: PLR0917, ANN202
+        self: KinderBackend, *, release_speed_deg_s: float, gripper_release_ms: float
+    ):
+        del release_speed_deg_s
+        seen.append(gripper_release_ms)
+        return ControllerRun(steps=1, terminated=True), ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_toss", spy_run_toss)
+
+    env = Tossing3DEnvironment()
+    env._backend = KinderBackend()  # noqa: SLF001
+
+    env._execute(action=np.array([float(env.toss_id), 140.0, 300.0]))
+    env._execute(action=np.array([float(env.toss_id), 140.0, 1300.0]))
+
+    assert seen == [300.0, 1300.0]

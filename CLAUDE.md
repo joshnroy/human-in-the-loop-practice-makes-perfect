@@ -45,8 +45,8 @@ working around.
 
 | path | url | pinned at |
 | --- | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `1b564a1` |
-| `reference/kindergarden` | `joshnroy/kindergarden` | `98ad2c0` |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `f2378e6` |
+| `reference/kindergarden` | `joshnroy/kindergarden` | `539c6b8` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
 **Two of the three point at forks on purpose.** `kinder-baselines` depends on commits that
@@ -213,9 +213,30 @@ were measured before PR #126 are left as published, with staleness notes beside 
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
-`reference/kinder-baselines` is pinned at `1b564a1`, the head of
-`josh/feature/toss-release-speed` (`joshnroy/kinder-baselines` **PR #8**), which stacks
-three commits on top of `3524010`, the head of `josh/feature/tossing-throw-controllers`.
+`reference/kinder-baselines` is pinned at `f2378e6`, the head of
+`josh/feature/toss-release-params`, which stacks four commits on top of `3524010`, the head
+of `josh/feature/tossing-throw-controllers`. The top commit gives `TossController.reset`
+a `gripper_release_ms` alongside `release_speed` -- exactly the two knobs the real TidyBot's
+`movej_primitive.execute()` takes -- and **deletes** `_release_fraction`, so there is only
+one way to say when the gripper opens. `reference/kindergarden` moves to `539c6b8`
+(`joshnroy/kindergarden` PR #2) in the same step, because that is where `MujocoEnv.step`
+learns to read a 2-D action as a per-substep control schedule, which is the mechanism the
+millisecond is scheduled through.
+
+> **Open, and load-bearing: the 723 ms default does not reproduce the pre-bump throw.**
+> Measured on the oracle's own rollout (seed 125, standoff 1.35, 140 deg/s), the cube's
+> resting x is **1.9901** at the old pins (10 Hz release, fraction 0.46), **2.0318** at
+> `0f8c554` + `539c6b8` (1 kHz release, fraction 0.46) and **2.0844** at these pins with
+> the shipped 723 ms default. So *two* separate shifts land here, and
+> `tests/environments/tossing3d/test_kinder_fidelity.py`'s `REST_X = 1.9902` is stale for
+> both. The second shift is because 723 was derived from the **nominal** windup->release
+> path, while the controller builds its profile from the **motion-planned** one: the true
+> 0.46 crossing in the live sim is at **720 ms**, and 720 reproduces `2.0318` exactly.
+> The axis is steep enough that 3 ms is 52 mm. Resolving this -- which default, and how the
+> published 1.9902 is annotated rather than overwritten -- is pending.
+
+That branch stacks on `josh/feature/toss-release-speed` (`joshnroy/kinder-baselines`
+**PR #8**), which itself stacks three commits on top of `3524010`.
 That branch is the **Tossing3D port stack**'s second rung:
 `josh/feature/tossing-state-abstractions` → `-throw-controllers` → `-oracle-policy` →
 `-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92, which are all

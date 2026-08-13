@@ -198,21 +198,79 @@ THROW_STANDOFF_BOUNDS = (WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MA
 # primitive this ports runs that joint at 140 deg/s, twice it. See PR #221, which
 # established that and retracted the "83.34 deg/s ceiling" an earlier design study asserted.
 #
-# ## Known artifact: the dial is not monotone at the low end
+# ## The sawtooth artifact this range used to carry is gone
 #
-# Release fires on the first control step past `fraction_covered >= 0.46`, once per
-# `_CONTROL_DT = 0.1 s`, so the *realised* release fraction sawtooths with speed. Measured
-# paired on (standoff, seed), n = 110: 65 -> 70 deg/s makes the throw land **0.0329 m
-# shorter**, paired t = +4.51, p = 1.6e-05. That is a fidelity defect of *our* simulation,
-# not a property of the toss -- the real primitive runs at 1 kHz, ~100x finer.
+# Release used to fire on the first control step past `fraction_covered >= 0.46`, tested
+# once per `_CONTROL_DT = 0.1 s`, so the *realised* release fraction sawtoothed with speed:
+# measured paired on (standoff, seed), n = 110, `65 -> 70` deg/s made the throw land
+# **0.0329 m shorter**, paired t = +4.51, p = 1.6e-05. That was a fidelity defect of our
+# simulation rather than a property of the toss -- the real primitive runs at 1 kHz.
 #
-# **Whether the dial is monotone near 140 is unmeasured.** PR #213's R^2 = 0.99997 linear
-# fit came from a three-point grid (60/100/140), which cannot resolve a sawtooth, and the
-# profile *coarsens* as speed rises (32 control steps at 60, 25 at 83.34, 18 at 140, 14 at
-# 240), so there is some reason to expect the artifact worse there rather than milder. This
-# is a stated limitation, accepted for now, and the strongest candidate for a correctness
-# follow-up. Do not read a draw from this range as monotone in landing distance.
+# `joshnroy/kinder-baselines` PR #12 replaced the fraction test with a scheduled release on
+# an absolute millisecond, so the trigger no longer quantises to 100 ms. The published
+# numbers above stand as what was measured; they are simply evidence about the old trigger.
+# What is **not** yet established is monotonicity under the new one -- see
+# `TOSS_RELEASE_MS_BOUNDS` below, and do not read a draw from this range as monotone in
+# landing distance without checking.
 TOSS_SPEED_BOUNDS = (60.0, 240.0)
+
+# `Toss`'s second dial: the wall-clock millisecond, measured from the start of the swing,
+# at which the gripper opens.
+#
+# ## Why an absolute millisecond rather than a fraction of the swing
+#
+# Because that is what the real robot takes. `movej_primitive.execute()` on the TidyBot
+# (`yixuanhuang98/tidybot_real`, `robot/kinova.py`) takes exactly `max_vel` and
+# `gripper_release_ms`, and kb#12 gave upstream's `TossController.reset` the same two, so
+# both of this skill's parameters are now upstream's knobs rather than quantities this
+# package synthesised. Carrying a fraction here would re-introduce a derived unit on our
+# side of the boundary.
+#
+# **The real robot's own literal 600 is deliberately not copied across.** That primitive
+# normalises its joint profile on the **L-infinity** norm (125.0 deg) and finishes in
+# 1476 ms, so its 600 ms is fraction 0.4107 of its swing; 600 ms here would be 0.3449 of
+# this one. The two swings are not the same length, so the literal does not transfer --
+# only the parameterisation does.
+#
+# ## The range, and why it is this narrow
+#
+# **The swing's duration is itself a function of `release_speed`**, so the two dials are
+# coupled and an absolute-millisecond range cannot mean the same thing at both ends.
+# Measured from `toss_profile_limits` + `_trapezoidal_motion_profile` on upstream's own
+# path (`TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF`, L2 norm 148.8288 deg):
+#
+# | `release_speed` deg/s | 60 | 100 | 140 | 180 | 240 |
+# | --- | --- | --- | --- | --- | --- |
+# | swing duration ms | 3100 | 2100 | 1700 | 1500 | 1300 |
+# | path fraction at 723 ms | 0.197 | 0.329 | 0.461 | 0.591 | 0.732 |
+#
+# So the swing is **2.4x longer at the bottom of `TOSS_SPEED_BOUNDS` than at the top**, and
+# one fixed millisecond walks from a fifth of the way through the swing to three quarters
+# of the way through it as the speed rises.
+#
+# The upper edge is set by the *shortest* swing in `TOSS_SPEED_BOUNDS`, 1300 ms at
+# 240 deg/s. `gripper_release_ms` is deliberately **not clamped** upstream: a value at or
+# past the end of the swing means the gripper never opens and the cube is never thrown.
+# That is a real and reachable corner of the space rather than an error, and the
+# characterisation sweep has to be able to land in it -- but a *sampler* drawing there
+# would spend those draws on throws that cannot score, so the bounds stop at the point
+# where every speed in range still releases.
+#
+# > **What this range gives up, stated plainly.** At 60 deg/s the canonical release point
+# > -- path fraction 0.46, which is where the retired trigger fired and where every
+# > committed Tossing3D number was measured -- falls at **1375 ms**, outside this range.
+# > So a slow throw drawn from these bounds always releases *earlier* in its swing than a
+# > fast one does, and the two dials are not independent in effect even though they are
+# > independent in the sampler. Making the second dial speed-relative would fix that at the
+# > cost of no longer being upstream's own parameter; that trade is recorded here rather
+# > than taken, and is the obvious follow-up if the sweep shows the slow end starved.
+TOSS_RELEASE_MS_BOUNDS = (300.0, 1300.0)
+
+# Upstream's own shipped default, and the millisecond the retired 0.46 fraction fell at for
+# the shipped windup->release path at 140 deg/s -- so a caller passing nothing reproduces
+# the throw every earlier result was measured against. Not the real robot's 600; see
+# `TOSS_RELEASE_MS_BOUNDS` for why that literal does not transfer.
+UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS = 723.0
 
 # The speed every committed Tossing3D number was measured at, and still upstream's own
 # default: the literal that was inline in `TossController.reset` before kb#8 turned it into

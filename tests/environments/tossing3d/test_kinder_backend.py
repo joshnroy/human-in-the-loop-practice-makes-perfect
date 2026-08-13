@@ -130,13 +130,50 @@ def test_run_toss_converts_the_release_speed_to_radians_exactly_once(
     backend = KinderBackend()
     backend._robot_name = "robot_test"  # noqa: SLF001
 
-    backend.run_toss(release_speed_deg_s=140.0)
+    backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=723.0)
 
     assert [call["key"] for call in calls] == ["move_arm_to_conf", "toss"]
     # The windup is `move_arm_to_conf`, whose `reset` takes no release speed at all --
     # passing one is a TypeError, so it must not be forwarded there.
     assert "release_speed" not in calls[0]
     assert calls[1]["release_speed"] == pytest.approx(np.deg2rad(140.0))
+
+
+def test_run_toss_rounds_the_gripper_release_ms_to_an_int_rather_than_truncating(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The second dial needs no *unit* conversion -- milliseconds on both sides -- but it
+    does need a *type* one, and getting it wrong is silent.
+
+    Upstream `divmod`s `int(gripper_release_ms)`, and `int()` truncates toward zero. A
+    float handed straight through would therefore make `722.9` mean 722 while `723.0`
+    means 723: a systematic half-millisecond bias toward releasing *early*, applied to
+    every draw a continuous sampler ever makes, with nothing raising. Rounding at this
+    boundary is what makes the scheduled millisecond the nearest one to the drawn value.
+
+    The windup takes no release timing at all, so it must not be forwarded there.
+
+    Offline: it spies on `run_controller`, so no simulator and no controller is involved.
+    """
+    calls: list[dict[str, Any]] = []
+
+    def spy_run_controller(  # noqa: PLR0917  (see the sibling test for why `self` is positional)
+        self: KinderBackend, *, module: str, key: str, **kwargs: Any
+    ) -> ControllerRun:
+        calls.append({"module": module, "key": key, **kwargs})
+        return ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
+
+    backend = KinderBackend()
+    backend._robot_name = "robot_test"  # noqa: SLF001
+
+    backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=722.9)
+
+    assert "gripper_release_ms" not in calls[0]
+    scheduled = calls[1]["gripper_release_ms"]
+    assert isinstance(scheduled, int)
+    assert scheduled == 723
 
 
 def test_run_toss_skips_the_swing_when_the_windup_fails_whatever_the_speed(
@@ -158,7 +195,7 @@ def test_run_toss_skips_the_swing_when_the_windup_fails_whatever_the_speed(
     backend = KinderBackend()
     backend._robot_name = "robot_test"  # noqa: SLF001
 
-    windup, swing = backend.run_toss(release_speed_deg_s=240.0)
+    windup, swing = backend.run_toss(release_speed_deg_s=240.0, gripper_release_ms=520.0)
 
     assert calls == ["move_arm_to_conf"]
     assert windup.terminated is False

@@ -36,6 +36,19 @@ publishes:
   `THROW_STANDOFF_BOUNDS`'s floor, so the two constants are not independently valid --
   they are one operating point that was measured together.
 
+- **`ORACLE_GRIPPER_RELEASE_MS = 723`** is upstream's own shipped default for the second
+  dial, aliased from `predicates.UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS` for the same reason.
+  723 ms is the millisecond the retired `_release_fraction = 0.46` trigger fell at for the
+  shipped windup->release path **at 140 deg/s** -- which is the speed above it, so the
+  pair reproduces the throw every earlier result was measured against rather than merely
+  being near it.
+
+  The same operating-point caveat applies, and more sharply here: 723 ms is fraction 0.461
+  of the swing at 140 deg/s but 0.197 at 60 and 0.732 at 240, because the swing's duration
+  is a function of the speed. So this constant is only the canonical release **paired with
+  `ORACLE_RELEASE_SPEED_DEG_S`**; it is not a good release millisecond in general, and
+  moving either one alone changes the throw.
+
 **1.35 lands the cube at x = 1.9902, inside the bin and inside the goal box, and scores
 `True`.** That used to be a contrast: on the scene KINDER shipped before the upstream bin
 fix (`kindergarden` PR #126, now carried on this repo's `reference/kindergarden` pin) the
@@ -55,6 +68,7 @@ from hitl_pmp.core.problem.tasks.types import Goal
 
 from .environment import Tossing3DEnvironment
 from .predicates import (
+    UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS,
     UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
     HoldingClassifier,
     RobotAtSuccessfulThrowPoseClassifier,
@@ -70,6 +84,9 @@ ORACLE_THROW_STANDOFF = 1.35
 
 # Upstream's own shipped release speed; see the module docstring.
 ORACLE_RELEASE_SPEED_DEG_S = UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
+
+# Upstream's own shipped default release millisecond; see the module docstring.
+ORACLE_GRIPPER_RELEASE_MS = UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS
 
 
 class SkillOraclePolicy:
@@ -103,7 +120,7 @@ class SkillOraclePolicy:
                 skill=Tossing3DSkills.TOSS,
                 objects=(env.robot, env.cube, env.bin, env.barrier),
             )
-            params = np.array([ORACLE_RELEASE_SPEED_DEG_S])
+            params = np.array([ORACLE_RELEASE_SPEED_DEG_S, ORACLE_GRIPPER_RELEASE_MS])
         elif holding:
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.MOVE_TO_THROW_POSE,

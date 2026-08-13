@@ -112,3 +112,35 @@ def test_toss_controller_reset_accepts_a_release_speed() -> None:
     parameters = inspect.signature(TossController.reset).parameters
     assert "release_speed" in parameters
     assert parameters["release_speed"].default == TOSS_MAX_VEL
+
+
+def test_toss_controller_reset_accepts_a_gripper_release_millisecond() -> None:
+    """The second dial, added by `joshnroy/kinder-baselines` PR #12.
+
+    Signature-only, for the same reason as the sibling test above.
+    """
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        TOSS_DEFAULT_GRIPPER_RELEASE_MS,
+        TossController,
+    )
+
+    parameters = inspect.signature(TossController.reset).parameters
+    assert "gripper_release_ms" in parameters
+    assert parameters["gripper_release_ms"].default == TOSS_DEFAULT_GRIPPER_RELEASE_MS
+    assert TOSS_DEFAULT_GRIPPER_RELEASE_MS == 723
+
+
+def test_the_release_fraction_trigger_is_gone_rather_than_kept_alongside() -> None:
+    """kb#12 **deletes** `_release_fraction` rather than leaving it beside the new dial.
+
+    This matters to us, not just to upstream tidiness: two ways to say when the gripper
+    opens would mean a `gripper_release_ms` we passed could be silently overridden by a
+    distance-fraction test that fired first, and our dial would appear connected while
+    doing nothing at some speeds and something at others. Asserted against the pinned
+    source so a pin walking backwards is loud.
+    """
+    from kinder_models.dynamic3d.tossing import parameterized_skills
+
+    source = inspect.getsource(parameterized_skills)
+    assert "_release_fraction" not in source
+    assert "gripper_release_ms" in source

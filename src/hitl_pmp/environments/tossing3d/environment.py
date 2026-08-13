@@ -408,11 +408,16 @@ class Tossing3DEnvironment(Environment):
             # and no measurement in this repo covers it.
             return [backend.run_move_to_throw_pose(standoff=float(action[1]), rotation=0.0)]
         if skill_id == self.toss_id:
-            # Slot 1 is the release speed in joint-path deg/s; slot 2 is unused. This
-            # branch ignored slot 1 entirely until `Toss` gained a dial, so a dispatch
-            # that kept ignoring it would leave every speed throwing identically --
-            # `test_the_toss_dispatch_reads_its_release_speed_from_slot_one` pins it.
-            windup, swing = backend.run_toss(release_speed_deg_s=float(action[1]))
+            # Slot 1 is the release speed in joint-path deg/s; slot 2 is the millisecond
+            # from the start of the swing at which the gripper opens. This branch ignored
+            # both slots until `Toss` gained its dials, so a dispatch that kept ignoring
+            # either would leave that whole axis throwing identically --
+            # `test_the_toss_dispatch_reads_its_release_speed_from_slot_one` and
+            # `test_the_toss_dispatch_reads_its_gripper_release_ms_from_slot_two` pin it.
+            windup, swing = backend.run_toss(
+                release_speed_deg_s=float(action[1]),
+                gripper_release_ms=float(action[2]),
+            )
             return [windup, swing]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []

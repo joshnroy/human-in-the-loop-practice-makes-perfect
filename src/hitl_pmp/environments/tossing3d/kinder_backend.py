@@ -515,6 +515,7 @@ class KinderBackend(BaseModel):
         limit: int,
         disable_collision_objects: Sequence[str] | None = None,
         release_speed: float | None = None,
+        gripper_release_ms: int | None = None,
     ) -> ControllerRun:
         """Drive one upstream controller to termination, stepping the live simulator.
 
@@ -527,13 +528,13 @@ class KinderBackend(BaseModel):
         ordinary outcomes of a skill whose continuous parameters do not work out, and the
         caller has to be able to keep going -- `take_action` must be total.
 
-        `disable_collision_objects` and `release_speed` are both **per-controller**
-        `reset` keywords, not universal ones: the first exists only on tossing's
-        `MoveToTargetGroundController.reset` and the second only on
-        `TossController.reset`, and passing either to a controller that does not declare
-        it is a `TypeError`. So each is forwarded only when the caller actually supplies
-        it, and it is the `run_*` wrapper below -- which knows which controller it is
-        driving -- that decides to.
+        `disable_collision_objects`, `release_speed` and `gripper_release_ms` are all
+        **per-controller** `reset` keywords, not universal ones: the first exists only on
+        tossing's `MoveToTargetGroundController.reset` and the other two only on
+        `TossController.reset`, and passing any of them to a controller that does not
+        declare it is a `TypeError`. So each is forwarded only when the caller actually
+        supplies it, and it is the `run_*` wrapper below -- which knows which controller
+        it is driving -- that decides to.
         """
         api = self.api()
         state = self._require_state()
@@ -554,6 +555,8 @@ class KinderBackend(BaseModel):
             reset_kwargs["disable_collision_objects"] = list(disable_collision_objects)
         if release_speed is not None:
             reset_kwargs["release_speed"] = release_speed
+        if gripper_release_ms is not None:
+            reset_kwargs["gripper_release_ms"] = gripper_release_ms
 
         try:
             controller.reset(state, params, **reset_kwargs)
@@ -604,7 +607,9 @@ class KinderBackend(BaseModel):
             disable_collision_objects=[self.cube_name],
         )
 
-    def run_toss(self, *, release_speed_deg_s: float) -> tuple[ControllerRun, ControllerRun]:
+    def run_toss(
+        self, *, release_speed_deg_s: float, gripper_release_ms: float
+    ) -> tuple[ControllerRun, ControllerRun]:
         """The windup and the swing, back to back -- upstream's `move_arm_to_conf` then `toss`.
 
         Two controllers, one skill. Upstream never demonstrates `toss` from anywhere but
@@ -624,6 +629,14 @@ class KinderBackend(BaseModel):
         The speed reaches the **swing only**. The windup is `move_arm_to_conf`, which is
         a posture change rather than a throw and whose `reset` takes no release speed at
         all; forwarding one there is a `TypeError`.
+
+        `gripper_release_ms` needs **no** unit conversion -- it is milliseconds on both
+        sides -- but it does need a *type* conversion, and that is the trap. Upstream
+        `divmod`s `int(gripper_release_ms)`, so handing it a float silently **truncates**:
+        a sampler drawing `722.9` would get 722 while `723.0` gets 723. We round at this
+        boundary instead and pass an `int`, so the value upstream schedules is the nearest
+        millisecond to the one that was drawn rather than the one below it. The timing is
+        still not clamped to the swing -- see `predicates.TOSS_RELEASE_MS_BOUNDS`.
         """
         windup = self.run_controller(
             module="tossing",
@@ -642,6 +655,7 @@ class KinderBackend(BaseModel):
             params=np.deg2rad(self.toss_conf_deg),
             limit=self.arm_step_limit,
             release_speed=float(np.deg2rad(release_speed_deg_s)),
+            gripper_release_ms=int(round(gripper_release_ms)),
         )
         return windup, swing
 
