@@ -79,23 +79,42 @@ CANONICAL_SEED = 125
 # The measured landing at standoff 1.35, from that same record, reproduced by
 # `scripts/tossing3d_oracle_demo.py` on this machine.
 #
-# > **Superseded 2026-08-13 by the 1 kHz gripper release; left exactly as published.**
-# > 1.9902 remains correct for the throw it measured -- the gripper opening on the first
-# > *control step* past path fraction 0.46, at pins `kinder-baselines` `1b564a1` +
-# > `kindergarden` `98ad2c0`, where it re-measured at 1.9901. Scheduling the release on an
-# > absolute millisecond moves the landing +41.6 mm with the fraction held at 0.46 and no
-# > parameter changed. A future pin bump that moves it again should add a third line here
-# > rather than edit either.
+# > **Superseded 2026-08-13 by the 1 kHz gripper release. The value below is left exactly
+# > as published.** `REST_X_PRE_1KHZ_RELEASE = 1.9902` remains correct for what it
+# > measured: the throw as it stood when the gripper opened on the first *control step*
+# > past path fraction 0.46, i.e. at the old `reference/` pins (`kinder-baselines`
+# > `1b564a1`, `kindergarden` `98ad2c0`). Re-measured on those pins during this change it
+# > reproduced at **1.9901**, so it was never wrong.
+# >
+# > What moved is the trigger, not this domain. `joshnroy/kinder-baselines` PR #12 plus
+# > `joshnroy/kindergarden` PR #2 schedule the release on an absolute millisecond inside
+# > the physics substep loop, so it fires when it says rather than at the next 100 ms
+# > boundary. **That change alone moves the landing +41.6 mm, with the release fraction
+# > held at 0.46 and no parameter changed**: measured 2.0318 at `0f8c554` + `539c6b8`.
+# > The `Toss` parameters arriving in the same PR contribute nothing further at the
+# > oracle's own operating point -- `(140 deg/s, 720 ms)` reproduces that same 2.0318.
+# >
+# > Both numbers are kept because they answer different questions. The old one is the
+# > record of what the pre-scheduling throw did; the new one is what the gate asserts now.
+# > A future pin bump that moves the landing again should add a third line here rather
+# > than editing either.
 REST_X_PRE_1KHZ_RELEASE = 1.9902
 
-# What the oracle lands at under the scheduled 1 kHz release, at
-# `ORACLE_RELEASE_SPEED_DEG_S` and `ORACLE_GRIPPER_RELEASE_MS`.
-REST_X = 2.0318
+# What the oracle lands at under the scheduled 1 kHz release, at `ORACLE_RELEASE_SPEED_DEG_S`
+# and `ORACLE_GRIPPER_RELEASE_MS`. This is what the assertions below use.
+#
+# > **Third line, 2026-08-13.** `2.0318` is the landing at upstream's 720 ms; at the
+# > oracle's 792 ms the same rollout rests at `1.9926`. Resting x is a bin-carom
+# > outcome (first contact is `bin_0` in `17/18` rows; across three seeds of one cell
+# > impact x spreads 2.2 mm, resting x 216.5 mm), not evidence about throw distance.
+REST_X = 1.9926
 BIN_FLOOR_Z = 0.0444
 
-# `(release_speed, gripper_release_ms)` probes for "does *any* throw score from here".
-# The oracle's own pair leads because it is verified to score at standoff 1.15 on
-# `CANONICAL_SEED`; the others are the measured reach argmax (763 ms) and a slow throw.
+# The toss parameterisations `test_the_derived_band_agrees_with_whether_the_throw_actually_
+# scores` probes to decide whether *any* throw scores from a standoff. The oracle's own pair
+# leads because it is the one verified to score at 1.15 on `CANONICAL_SEED`, so the `True`
+# case short-circuits after a single sequence; the other two are the measured reach argmax
+# and a slow throw, so a `False` verdict does not rest on one parameterisation.
 _UNION_PROBE_PARAMS = ((140.0, 720.0), (140.0, 763.0), (60.0, 850.0))
 
 
@@ -181,7 +200,8 @@ def test_oracle_pick_parameters_match_upstreams_own_sampler() -> None:
 
 
 def test_the_oracle_reproduces_the_recorded_landing_and_step_counts() -> None:
-    """The reference numbers: cube at rest x = 2.0318, z = 0.0444 (the bin's interior
+    """The reference numbers: cube at rest x = 2.0318 (was 1.9902 before the 1 kHz
+    gripper release -- see `REST_X_PRE_1KHZ_RELEASE`), z = 0.0444 (the bin's interior
     floor, i.e. the cube is *in* the bin), `_check_goals()` True, and the four controller
     executions terminating in 71 / 23 / 16 / 18 steps."""
     env = _env()
@@ -233,17 +253,36 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
     3/3 and 1.45 solves 0/3, so the predicate must say exactly the opposite of the wrong
     value at both points.
 
-    Asserted against real episode outcomes rather than a recorded number, so this is a
-    check that the symbolic layer still describes the dynamics.
+    Asserted against real episode outcomes rather than against a recorded number, so this
+    is a check that the symbolic layer still describes the dynamics.
 
-    `expected` means "*some* toss parameterisation scores from here", so the reality
-    half probes `_UNION_PROBE_PARAMS` rather than the oracle, whose release millisecond
-    is not an input to the predicate. The strong form of the `False` case is
-    `test_no_toss_parameterisation_scores_from_beyond_the_accepted_band`.
+    **Both halves assert the union claim, which is what the band now means.** `expected`
+    used to mean "the oracle's throw scores from here"; it means "*some* toss
+    parameterisation scores from here", which is the weaker claim the predicate makes. The
+    reality half therefore probes `_UNION_PROBE_PARAMS` rather than running the oracle: the
+    oracle throws at whatever millisecond it currently carries, so asserting *its* outcome
+    would re-assert the old meaning and fail on a release-millisecond change that broke
+    nothing. That is not hypothetical -- at standoff 1.15 the throw scores at 720 ms and
+    misses at 792 ms, while the pose stays genuinely throwable at both.
 
-    Resting x is not asserted: first contact here is the bin (`bin_0` in 17/18 committed
-    grid rows at 140 deg/s), and one cell's three seeds rest 216 mm apart while their
-    distances before first ground contact agree to 2.2 mm.
+    **The predicate half cannot depend on the release millisecond at all**, which is the
+    structural reason it survives such a change: it is evaluated after `MoveToThrowPose` and
+    before `Toss`, and reads only the base pose and the bin's live geometry. Confirmed by
+    driving the raw action interface -- `True` at 1.15 and `False` at 1.45, identical at 720
+    and 792, with no constant re-measured.
+
+    **The `False` case is deliberately weaker than it looks, and is reinforced elsewhere.**
+    Three parameterisations failing is not "no parameterisation scores"; the standoff it
+    probes, 1.45, is the same pose
+    `test_no_toss_parameterisation_scores_from_beyond_the_accepted_band` covers with a wider
+    sample, and that test carries the strong claim.
+
+    **Resting x is deliberately not asserted here.** At these standoffs the cube's first
+    contact is the bin rather than the floor (`bin_0` in 17/18 committed grid rows at
+    140 deg/s), so where it comes to rest is set by how it caroms rather than by the throw:
+    at standoff 1.15 and 789 ms three seeds of the *same* cell rest 216 mm apart while their
+    distances before first ground contact agree to 2.2 mm. Outcomes are unaffected --
+    `check_goals()` is a verdict, not a distance -- so this asserts outcomes.
     """
     env = _env()
     try:
@@ -267,6 +306,7 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
     finally:
         env.close()
 
+    # The reality half, stated as the union claim rather than as the oracle's own outcome.
     # Short-circuits on the first scoring pair, so the `True` case costs one sequence.
     scored = next(
         (
@@ -611,13 +651,26 @@ def test_recording_does_not_change_where_the_cube_comes_to_rest() -> None:
     assert rest["recorded"] == pytest.approx(rest["plain"], abs=1e-6)
 
 
-# How far outside the accepted band to stand. Clears `move_to_target`'s own stopping
-# noise -- PR #196's closest miss at 1.375 was 0.1 mm.
+# The converse-direction guard for `RobotAtSuccessfulThrowPose`. Every other check on this
+# predicate runs FORWARD -- a pose the band accepts does score. This asserts the other half,
+# that a pose the band rejects cannot be rescued by some toss parameterisation, which
+# nothing else covers: `tests/environments/test_operator_dynamics_fidelity.py` does not
+# list this domain, and both it and this domain's stand-in (`test_operator_fidelity.py`)
+# assert only that an applicable skill CHANGES the real state -- which a missed throw does.
+#
+# Newly load-bearing because the band is now a union, and a union is over-permissive exactly
+# when the thing it unions over is not contiguous. The forward tests would all still pass,
+# since they only ever visit poses the band accepts.
+
+# How far outside the accepted band to stand. Large enough to clear `move_to_target`'s own
+# several-millimetre stopping noise -- PR #196's closest miss at 1.375 was 0.1 mm, and a
+# guard placed inside that noise would flake rather than fail.
 BAND_EDGE_PROBE_OFFSET = 0.05
 
 # A coarse sample of the toss parameter box, as (release_speed, gripper_release_ms)
-# fractions of their bounds. `(1.0, 0.42)` is the measured reach argmax: at 140 deg/s
-# the impact range peaks near 763 ms, not at either end of `TOSS_RELEASE_MS_BOUNDS`.
+# fractions of their bounds. `(1.0, 0.42)` is the measured reach argmax -- at 140 deg/s the
+# impact range peaks near 763 ms, not at either end of `TOSS_RELEASE_MS_BOUNDS` -- so the
+# sample includes the throw most likely to reach, which is the one the assertion rests on.
 _PARAM_GRID = (
     (0.0, 0.5),
     (1.0, 0.5),
@@ -633,9 +686,12 @@ def _lerp(*, bounds: tuple[float, float], fraction: float) -> float:
 
 
 def _throw_scores_from_standoff(*, standoff: float, speed: float, release_ms: float) -> bool:
-    """Run one `Pick -> MoveToThrowPose(standoff) -> Toss(speed, release_ms)` and report
-    whether KINDER's own `_check_goals()` scored it. Raw action interface rather than
-    `SkillOraclePolicy`, which hard-codes the toss parameters callers choose here."""
+    """Run one full `Pick -> MoveToThrowPose(standoff) -> Toss(speed, release_ms)` and
+    report whether KINDER's own `_check_goals()` scored it.
+
+    Driven through the raw action interface rather than `SkillOraclePolicy`, because the
+    oracle hard-codes the toss parameters and this test's whole purpose is to choose them
+    adversarially."""
     env = _env()
     try:
         env.reset_to_seed(seed=CANONICAL_SEED)
@@ -648,8 +704,9 @@ def _throw_scores_from_standoff(*, standoff: float, speed: float, release_ms: fl
 
 
 def _accepted_standoff_band() -> tuple[float, float]:
-    """The band `RobotAtSuccessfulThrowPose` accepts, read off a real scene rather than
-    recomputed, so it cannot drift from the predicate."""
+    """The band `RobotAtSuccessfulThrowPose` currently accepts, read back from a real
+    scene rather than recomputed here -- so this test cannot drift from the predicate by
+    duplicating its arithmetic."""
     env = _env()
     try:
         state = env.reset_to_seed(seed=CANONICAL_SEED)
@@ -670,20 +727,28 @@ def _accepted_standoff_band() -> tuple[float, float]:
 
 
 def test_no_toss_parameterisation_scores_from_beyond_the_accepted_band() -> None:
-    """A pose past the band's far edge is unthrowable, by every toss parameterisation in
-    bounds. The converse of every other check on this predicate, which only ever visits
-    poses the band accepts -- so without this the band could widen arbitrarily.
+    """**The converse direction: a pose past the band's far edge is unthrowable, by every
+    toss parameterisation in bounds.**
 
-    Only the far edge is probed: the near edge sits at 0.21 m, below the sampler's
-    1.10 m floor, so `BAND_EDGE_PROBE_OFFSET` below it is not a pose `MoveToThrowPose`
-    can reach.
+    Without this, `RobotAtSuccessfulThrowPose` could widen arbitrarily and every existing
+    test would still pass -- they only ever check poses it accepts. An over-permissive band
+    here is the `NearBin` tautology's failure mode wearing a different shape: it does not
+    make the label constant-true, it makes it constant-true *on the wrong side*, promising
+    the planner a throw that no parameter draw can deliver.
 
-    The pass is not vacuous. At the probe standoff of 1.450 every cell executes with no
-    skill error, the base arrives (`base_x` 0.5497 against the commanded 2.0 - 1.45),
-    and the cube flies 0.377 to 1.206 m over `_PARAM_GRID`. A wider manual check at the
-    same pose -- 6 release milliseconds bracketing the reach argmax, over 3 seeds --
-    scored `0/18`, the furthest resting at x = 1.8323, 68 mm short of the trimmed box's
-    1.900 near edge. `0/24` at this pose in total."""
+    **Only the far edge is probed.** The near edge sits at 0.21 m, far below both the
+    sampler's 1.10 m floor and the standoff at which the base starts shoving the bin, so a
+    probe `BAND_EDGE_PROBE_OFFSET` below it is not a pose `MoveToThrowPose` can reach and
+    the sequence would fail for reasons that have nothing to do with the band.
+
+    **The pass is not vacuous, which for a negative assertion has to be checked separately
+    from the assertion.** At the probe standoff of 1.450 every cell executes with no skill
+    error, the base really arrives (`base_x` 0.5497 against the commanded 2.0 - 1.45), and
+    the cube really flies: displacements of 0.377 to 1.206 m over `_PARAM_GRID`. A wider
+    manual check at the same pose -- 6 release milliseconds bracketing the measured reach
+    argmax, over 3 seeds -- scored `0/18`, with the furthest of those coming to rest at
+    x = 1.8323, still 68 mm short of the trimmed box's 1.900 near edge. So `0/24` at this
+    pose in total, and the guard is failing throws rather than failing to throw."""
     lo, hi = _accepted_standoff_band()
     standoff = hi + BAND_EDGE_PROBE_OFFSET
 
@@ -706,16 +771,24 @@ def test_no_toss_parameterisation_scores_from_beyond_the_accepted_band() -> None
 
 
 def test_the_converse_guard_would_catch_a_widened_band(*, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Proves the guard above can fail: its negative assertion passes trivially if the
-    band it reads is not the band the predicate applies. A pose one metre past the far
-    edge is rejected at the shipped constants and accepted once `THROW_RANGE_MAX` is
-    widened past it. Executes no throw."""
+    """**Proves the guard above can fail.** A test that only ever passes is not evidence.
+
+    The guard asserts a *negative* -- no parameterisation scores from outside the band --
+    and a negative passes trivially if the band it reads is not the band the predicate
+    applies. This pins the two together: a pose one metre past the far edge is rejected
+    now, and accepted once `THROW_RANGE_MAX` is widened past it. So the edge the guard
+    probes is a live boundary derived from these constants, and a widened band really would
+    push a throwable-looking pose into the guard's probe region.
+
+    It deliberately executes no throw: the expensive half of the argument is the guard's
+    own, and this half is about which numbers the predicate actually reads."""
     _, hi_before = _accepted_standoff_band()
 
     env = _env()
     try:
         state = env.reset_to_seed(seed=CANONICAL_SEED)
-        # On the bin's axis, so the standoff conjunct is the only thing under test.
+        # A metre beyond the far edge, on the bin's axis so the lateral conjunct passes and
+        # the standoff conjunct is the only thing under test.
         far_past_the_box = state.get(obj=env.bin, feature_name="x") - (hi_before + 1.0)
         state.set(obj=env.robot, feature_name="pos_base_x", feature_val=far_past_the_box)
         state.set(
