@@ -647,6 +647,18 @@ palette.
   **working-tree** file (never `git cat-file`, which hashes what a commit holds rather than
   what the URL actually serves); and `git merge-base --is-ancestor <sha> <branch>`, since
   `200` and `sha256` both pass on an already-orphaned commit.
+  **Do all three against the `raw.githubusercontent.com` URL — the one actually in the body —
+  and never against the `github.com/.../blob/...` page**, which is the trap this rule exists
+  for. A blob URL returns `200` and `text/html` for *every* path, because it serves GitHub's
+  rendered viewer rather than the file; hashing it gets you the sha of a web page, and that
+  sha is stable and plausible-looking, so the check passes while proving nothing. This bites
+  PNGs exactly as hard as videos.
+  The corollary, which was misread once in the other direction: at a **raw** URL,
+  `application/octet-stream` on an `.mp4` is the **correct** content type and not a failure to
+  chase — it is why a raw video link downloads instead of playing, which is the documented
+  reason bodies link the blob page for playback while pinning raw for verification. "The right
+  content-type" therefore means *the one raw is expected to serve for that extension*, not
+  `video/mp4`.
 - **Every other PR leaves a drag-drop `TODO` block** where the image belongs, and serves
   the file on the scratch web server (`127.0.0.1:8765`) for Josh to drop in. Dragging a
   file into the GitHub editor uploads it to `user-attachments`, which is permanent and
