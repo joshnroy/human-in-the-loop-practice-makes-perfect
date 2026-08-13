@@ -130,7 +130,7 @@ def test_run_toss_converts_the_release_speed_to_radians_exactly_once(
     backend = KinderBackend()
     backend._robot_name = "robot_test"  # noqa: SLF001
 
-    backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=723.0)
+    backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=720.0)
 
     assert [call["key"] for call in calls] == ["move_arm_to_conf", "toss"]
     # The windup is `move_arm_to_conf`, whose `reset` takes no release speed at all --
@@ -195,7 +195,7 @@ def test_run_toss_skips_the_swing_when_the_windup_fails_whatever_the_speed(
     backend = KinderBackend()
     backend._robot_name = "robot_test"  # noqa: SLF001
 
-    windup, swing = backend.run_toss(release_speed_deg_s=240.0, gripper_release_ms=520.0)
+    windup, swing = backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=520.0)
 
     assert calls == ["move_arm_to_conf"]
     assert windup.terminated is False

@@ -258,15 +258,15 @@ def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
         ground_skill=_move(), params=np.array([1.35]), state=state()
     ) == pytest.approx([Tossing3DEnvironment.move_to_throw_pose_id, 1.35, 0.0])
     assert Tossing3DSkills.compute_action(
-        ground_skill=_toss(), params=np.array([140.0, 723.0]), state=state()
-    ) == pytest.approx([Tossing3DEnvironment.toss_id, 140.0, 723.0])
+        ground_skill=_toss(), params=np.array([140.0, 720.0]), state=state()
+    ) == pytest.approx([Tossing3DEnvironment.toss_id, 140.0, 720.0])
 
 
 def test_every_action_matches_the_declared_action_space() -> None:
     for ground_skill, params in (
         (_pick(), np.array([0.55, 0.1])),
         (_move(), np.array([1.35])),
-        (_toss(), np.array([140.0, 723.0])),
+        (_toss(), np.array([140.0, 720.0])),
     ):
         action = Tossing3DSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state()
@@ -386,11 +386,23 @@ def test_toss_samples_one_release_speed_inside_the_measured_bounds() -> None:
     assert max(draws) - min(draws) > (TOSS_SPEED_BOUNDS[1] - TOSS_SPEED_BOUNDS[0]) / 2
 
 
-def test_the_shipped_default_speed_is_inside_the_bounds_the_sampler_draws_from() -> None:
-    """140 deg/s is upstream's own default and the speed every committed Tossing3D
-    number was measured at. A sampler whose range excluded it would make the oracle's
-    throw unreachable by learning, which is the one thing this dial exists to allow."""
-    assert TOSS_SPEED_BOUNDS[0] < UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S < TOSS_SPEED_BOUNDS[1]
+def test_the_shipped_default_speed_is_the_upper_edge_of_the_samplers_range() -> None:
+    """140 deg/s is upstream's own default, the speed every committed Tossing3D number was
+    measured at, and **exactly the top of the sampler's range**.
+
+    A sampler whose range excluded it would make the oracle's throw unreachable by
+    learning, which is the one thing this dial exists to allow -- so it must be reachable.
+    But it is the *edge* rather than an interior point, and that is deliberate rather than
+    an accident of rounding: 140 is what the real TidyBot primitive commands
+    (`movej_primitive.execute(..., max_vel=140, ...)`), so drawing above it would be asking
+    for a throw the hardware is never asked for.
+
+    Asserted as equality on the upper edge, not as strict containment, precisely so that
+    widening the range back to something like the old `(60, 240)` fails here and has to be
+    argued for rather than slipping through.
+    """
+    assert TOSS_SPEED_BOUNDS[0] < UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
+    assert TOSS_SPEED_BOUNDS[1] == UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
 
 
 def test_toss_samples_a_gripper_release_ms_inside_the_measured_bounds() -> None:
@@ -434,7 +446,7 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
     gripper never opens and the cube is never thrown. That corner is real and the sweep
     has to be able to reach it, but a *sampler* drawing there would spend those draws on
     throws that cannot score. The shortest swing over `TOSS_SPEED_BOUNDS` is 1300 ms, at
-    240 deg/s, so that is where the sampler's range has to stop.
+    140 deg/s, so that is where the sampler's range has to stop.
 
     Recomputed from upstream's own profile rather than asserted against a copied number,
     so it fails if a pin bump changes the swing's timing.

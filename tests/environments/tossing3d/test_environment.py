@@ -180,10 +180,10 @@ def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
     # `PrivateAttr` it caches into skips that, so this stays a pure dispatch test.
     env._backend = KinderBackend()  # noqa: SLF001
 
-    env._execute(action=np.array([float(env.toss_id), 240.0, 0.0]))
+    env._execute(action=np.array([float(env.toss_id), 140.0, 0.0]))
     env._execute(action=np.array([float(env.toss_id), 60.0, 0.0]))
 
-    assert seen == [240.0, 60.0]
+    assert seen == [140.0, 60.0]
 
 
 def test_the_toss_dispatch_reads_its_gripper_release_ms_from_slot_two(

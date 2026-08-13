@@ -84,9 +84,17 @@ def test_toss_profile_limits_does_not_clamp_above_the_default() -> None:
 
     `_ARM_MAX_VEL[5] = 70` deg/s is kinder-baselines' own conservative constant, not a
     hardware limit -- the real TidyBot primitive this ports runs that joint at 140 deg/s.
-    So a release speed above the default is a legitimate request, and our
-    `TOSS_SPEED_BOUNDS` upper edge (240 deg/s) sits well above it. A silent clamp here
-    would make the top of our sampler's range indistinguishable from its middle.
+    So a release speed above upstream's own `TOSS_MAX_VEL` is a legitimate request of the
+    controller, and this asserts the controller honours it.
+
+    **Our sampler no longer draws above 140**: `TOSS_SPEED_BOUNDS` caps at exactly
+    `TOSS_MAX_VEL`, because 140 is what the real primitive commands. That makes this test
+    a check on upstream rather than on our range -- and it is still worth keeping, for two
+    reasons. A clamp introduced at *or below* the default would be invisible from inside
+    our own bounds, since every draw we make would hit it identically. And the cap is a
+    policy choice about what the robot should be asked to do, not a statement that the
+    controller cannot go faster; if it is ever revisited, this is what says whether the
+    mechanism underneath still responds.
     """
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
         TOSS_MAX_VEL,
@@ -127,7 +135,7 @@ def test_toss_controller_reset_accepts_a_gripper_release_millisecond() -> None:
     parameters = inspect.signature(TossController.reset).parameters
     assert "gripper_release_ms" in parameters
     assert parameters["gripper_release_ms"].default == TOSS_DEFAULT_GRIPPER_RELEASE_MS
-    assert TOSS_DEFAULT_GRIPPER_RELEASE_MS == 723
+    assert TOSS_DEFAULT_GRIPPER_RELEASE_MS == 720
 
 
 def test_the_release_fraction_trigger_is_gone_rather_than_kept_alongside() -> None:

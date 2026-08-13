@@ -448,6 +448,16 @@ now has, though measured before PR #126 and not re-run since — **6/11 solve**:
 | 1.60 | `x=1.7739 z=0.0249` | bare floor | `False` |
 | 1.65 | `x=1.7238 z=0.0249` | bare floor | `False` |
 
+> **Doubly stale as of 2026-08-13, and left as published.** These rows were already
+> flagged above as measured before `kindergarden` PR #126. They are now stale for a second,
+> independent reason: `joshnroy/kinder-baselines` PR #12 and `joshnroy/kindergarden` PR #2
+> schedule the gripper release on an absolute millisecond inside the physics substep loop
+> rather than testing a path fraction once per 100 ms control step, which moves the landing
+> **without any parameter changing**. Only the 1.35 row has been re-measured on the current
+> pins: `x=1.9902` there, `x=2.0318` now, +41.6 mm. The other ten have **not** been re-run,
+> so neither the individual positions nor the `6/11` count should be quoted as current.
+> Nothing here has been recomputed — the note is the correction, not an edit.
+
 The solving band `[1.20, 1.425]` is contiguous and 0.225 m wide, so this is not a
 knife-edge that happened to be found. Note what the two columns say together: on this
 config, **11/11 rollouts agree — every cube that came to rest in the bin scored, and

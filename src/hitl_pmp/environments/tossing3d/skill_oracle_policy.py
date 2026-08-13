@@ -36,21 +36,37 @@ publishes:
   `THROW_STANDOFF_BOUNDS`'s floor, so the two constants are not independently valid --
   they are one operating point that was measured together.
 
-- **`ORACLE_GRIPPER_RELEASE_MS = 723`** is upstream's own shipped default for the second
+- **`ORACLE_GRIPPER_RELEASE_MS = 720`** is upstream's own shipped default for the second
   dial, aliased from `predicates.UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS` for the same reason.
-  723 ms is the millisecond the retired `_release_fraction = 0.46` trigger fell at for the
-  shipped windup->release path **at 140 deg/s** -- which is the speed above it, so the
-  pair reproduces the throw every earlier result was measured against rather than merely
-  being near it.
+  720 ms is the millisecond the retired `_release_fraction = 0.46` trigger fell at for the
+  shipped windup->release path **at 140 deg/s**, which is the speed above it -- so the pair
+  reproduces the release point of the fraction rule rather than merely being near it.
 
-  The same operating-point caveat applies, and more sharply here: 723 ms is fraction 0.461
-  of the swing at 140 deg/s but 0.197 at 60 and 0.732 at 240, because the swing's duration
-  is a function of the speed. So this constant is only the canonical release **paired with
+  **It is 720 and not 723 because it is measured against the motion-planned path**, which
+  is what the controller actually profiles, rather than against the nominal difference of
+  the two arm configurations. On this rollout that 3 ms is 52 mm of landing distance. See
+  the constant's own comment in `predicates.py`.
+
+  The same operating-point caveat applies, and more sharply here: 720 ms is fraction 0.458
+  of the swing at 140 deg/s but 0.196 at 60, because the swing's duration is a function of
+  the speed. So this constant is only the canonical release **paired with
   `ORACLE_RELEASE_SPEED_DEG_S`**; it is not a good release millisecond in general, and
   moving either one alone changes the throw.
 
 **1.35 lands the cube at x = 1.9902, inside the bin and inside the goal box, and scores
-`True`.** That used to be a contrast: on the scene KINDER shipped before the upstream bin
+`True`.**
+
+> **Staleness note, 2026-08-13.** That 1.9902 is left as published and is correct for the
+> throw it measured -- the release firing on the first control step past path fraction
+> 0.46. Since `joshnroy/kinder-baselines` PR #12 and `joshnroy/kindergarden` PR #2 the
+> release is scheduled on an absolute millisecond inside the physics substep loop, and the
+> **same** standoff, seed and speed now rest at **x = 2.0318**: +41.6 mm, from the
+> scheduling alone, with the release fraction unchanged. Still inside the bin, still inside
+> the goal box, still `True`, so the sentence's claim survives -- only its number moved.
+> `tests/environments/tossing3d/test_kinder_fidelity.py` carries both values and the
+> derivation.
+
+That used to be a contrast: on the scene KINDER shipped before the upstream bin
 fix (`kindergarden` PR #126, now carried on this repo's `reference/kindergarden` pin) the
 bin sat 23 cm further out, the same standoff put the cube *in* it at x = 2.2197, and
 `_check_goals()` was `False` -- landing in the bin was a scored failure. There is one

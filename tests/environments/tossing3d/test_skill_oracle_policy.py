@@ -130,7 +130,7 @@ def test_the_oracle_release_speed_is_upstreams_own_shipped_default() -> None:
 
 
 def test_the_oracle_gripper_release_ms_is_upstreams_own_shipped_default() -> None:
-    """723 ms is not a tuned number either. It is the millisecond the retired
+    """720 ms is not a tuned number either. It is the millisecond the retired
     `_release_fraction = 0.46` trigger fell at for the shipped windup->release path at
     140 deg/s, which is `ORACLE_RELEASE_SPEED_DEG_S` -- so the *pair* reproduces the throw
     every committed Tossing3D number was measured against.
@@ -140,7 +140,7 @@ def test_the_oracle_gripper_release_ms_is_upstreams_own_shipped_default() -> Non
     swing while 600 ms here would be 0.3449 of this one. The parameterisation transfers;
     the literal does not.
     """
-    assert ORACLE_GRIPPER_RELEASE_MS == 723.0
+    assert ORACLE_GRIPPER_RELEASE_MS == 720.0
     assert ORACLE_GRIPPER_RELEASE_MS == UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS
     assert ORACLE_GRIPPER_RELEASE_MS != 600.0
 
@@ -164,7 +164,7 @@ def test_the_toss_label_now_carries_its_release_speed() -> None:
         base_x=BIN_X - ORACLE_THROW_STANDOFF,
     ).label
     assert label.startswith("Toss(robot, cube_0, bin_0, cuboid_barrier)")
-    assert "params=[140.0, 723.0]" in label
+    assert "params=[140.0, 720.0]" in label
 
 
 def test_the_provider_forwards_its_configured_standoff() -> None:

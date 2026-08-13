@@ -39,14 +39,18 @@ throw's energy *and* the moment the hand opens are upstream's parameters rather 
 quantities this package synthesised, and **both arm configurations remain upstream's,
 untouched**, which is the property the old `swing` dial gave up.
 
-The ranges are `predicates.TOSS_SPEED_BOUNDS`, `(60, 240)` joint-path deg/s, and
-`predicates.TOSS_RELEASE_MS_BOUNDS`, `(300, 1300)` ms from the start of the swing. **They
-are drawn independently but are not independent in effect**: the swing lasts 3100 ms at
-60 deg/s and 1300 ms at 240 deg/s, so a fixed millisecond is a fifth of the way through
-the slow swing and three quarters of the way through the fast one. See
-`TOSS_RELEASE_MS_BOUNDS`'s own comment for the measured duration table, why the upper
-edge is the *shortest* swing rather than the longest, and what a fixed-millisecond
-parameterisation gives up at the slow end.
+The ranges are `predicates.TOSS_SPEED_BOUNDS`, `(60, 140)` joint-path deg/s, and
+`predicates.TOSS_RELEASE_MS_BOUNDS`, `(300, 1400)` ms from the start of the swing. The
+speed's upper edge is what the real TidyBot primitive actually commands
+(`movej_primitive.execute(..., max_vel=140, ...)`), so no draw asks for a throw the
+hardware is never asked for.
+
+**The two are drawn independently but are not independent in effect**: the swing lasts
+3100 ms at 60 deg/s and 1700 ms at 140, so a fixed millisecond is a fifth of the way
+through the slow swing and just under half way through the fast one. See
+`TOSS_RELEASE_MS_BOUNDS`'s own comment for the measured duration table, why the upper edge
+is the *shortest* swing rather than the longest, and a retracted claim about
+absolute-versus-relative parameterisation that was an artifact of the old 240 cap.
 
 ## The operator models, and the two choices that are load-bearing
 
