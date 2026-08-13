@@ -45,8 +45,8 @@ working around.
 
 | path | url | pinned at |
 | --- | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `3524010` |
-| `reference/kindergarden` | `joshnroy/kindergarden` | `98ad2c0` |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `0f8c554` |
+| `reference/kindergarden` | `joshnroy/kindergarden` | `539c6b8` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
 **Two of the three point at forks on purpose.** `kinder-baselines` depends on commits that
@@ -213,7 +213,24 @@ were measured before PR #126 are left as published, with staleness notes beside 
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
-`reference/kinder-baselines` is pinned at `3524010`, the head of
+**Both pins now sit one commit above where the prose below describes them, and that
+commit is the same change on both sides: the toss's gripper release moved from the 10 Hz
+control boundary to a 1 kHz schedule inside MuJoCo's substep loop.** `kindergarden`
+`539c6b8` teaches `MujocoEnv.step` to accept a 2-D action as a per-substep control
+schedule (1-D behaves exactly as before, byte for byte); `kinder-baselines` `0f8c554`
+has `TossController` solve for the release millisecond analytically and hand it over as
+that schedule. **Every Tossing3D number measured before this pair ran against the 10 Hz
+release**, whose realised release fraction was `0.4636`–`0.5375` across 60–140 deg/s
+against a `0.46` target, sawtoothing with speed rather than biasing; it is now
+`0.4600`–`0.4608`. That is a dynamics change, not a refactor, and it invalidates
+throw-geometry numbers the way `4760956` invalidated base-motion ones.
+
+`kinder-baselines` `0f8c554` also brings `cb95ca4`, `5a3a87d` and `1b564a1` with it —
+the `release_speed` parameter, which PR #233 bumps the pin for on its own branch. So this
+repo's kinder-baselines pin subsumes #233's; if #233 merges first that bump becomes a
+no-op, and if it does not, this pin carries the dial in regardless.
+
+`reference/kinder-baselines` was pinned at `3524010`, the head of
 `josh/feature/tossing-throw-controllers`. That branch is the **Tossing3D port stack**'s
 second rung: `josh/feature/tossing-state-abstractions` → `-throw-controllers` →
 `-oracle-policy` → `-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92,
@@ -242,7 +259,7 @@ collision-checking **off**, and `run_move_to_throw_pose` now genuinely needs the
 `disable_collision_objects=["cube_0"]` that PR #204 threaded through — without it the
 robot's own held cube becomes an obstacle to its own base plan.
 
-`reference/kindergarden` is pinned at `98ad2c0`, the head of the fork's **`main`** — which
+`reference/kindergarden` was pinned at `98ad2c0`, the head of the fork's **`main`** — which
 is upstream `main`, fast-forwarded. That commit is `kindergarden` PR #126, *"Move the
 Tossing3D-o1 bin back inside blocks_goal_region"*, **merged 2026-08-12**; the fork mirror
 of it, `joshnroy/kindergarden` PR #1, is closed as redundant.
