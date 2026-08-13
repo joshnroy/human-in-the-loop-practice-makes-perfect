@@ -93,6 +93,13 @@ REST_X_PRE_1KHZ_RELEASE = 1.9902
 REST_X = 2.0318
 BIN_FLOOR_Z = 0.0444
 
+# The toss parameterisations `test_the_derived_band_agrees_with_whether_the_throw_actually_
+# scores` probes to decide whether *any* throw scores from a standoff. The oracle's own pair
+# leads because it is the one verified to score at 1.15 on `CANONICAL_SEED`, so the `True`
+# case short-circuits after a single sequence; the other two are the measured reach argmax
+# and a slow throw, so a `False` verdict does not rest on one parameterisation.
+_UNION_PROBE_PARAMS = ((140.0, 720.0), (140.0, 763.0), (60.0, 850.0))
+
 
 def _env():
     return Tossing3DEnvironment()
@@ -228,21 +235,36 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
     3/3 and 1.45 solves 0/3, so the predicate must say exactly the opposite of the wrong
     value at both points.
 
-    Asserted against the real episode outcome rather than against a recorded number, so
-    this is a check that the symbolic layer still describes the dynamics.
+    Asserted against real episode outcomes rather than against a recorded number, so this
+    is a check that the symbolic layer still describes the dynamics.
 
-    **What this now asserts, since the band became a union.** `expected` used to mean "the
-    oracle's throw scores from here"; it now means "*some* toss parameterisation scores from
-    here", which is the weaker claim the predicate actually makes. The difference is
-    live rather than pedantic: at standoff 1.15 the throw scores at 720 ms (cube rests at
-    2.0848) and misses at 792 ms (2.3260, past the box's 2.15 far edge), so the old reading
-    would make this test fail on a release-millisecond change that broke nothing.
+    **Both halves assert the union claim, which is what the band now means.** `expected`
+    used to mean "the oracle's throw scores from here"; it means "*some* toss
+    parameterisation scores from here", which is the weaker claim the predicate makes. The
+    reality half therefore probes `_UNION_PROBE_PARAMS` rather than running the oracle: the
+    oracle throws at whatever millisecond it currently carries, so asserting *its* outcome
+    would re-assert the old meaning and fail on a release-millisecond change that broke
+    nothing. That is not hypothetical -- at standoff 1.15 the throw scores at 720 ms and
+    misses at 792 ms, while the pose stays genuinely throwable at both.
 
-    **The verdict cannot depend on the release millisecond at all**, which is the structural
-    reason this survives such a change: the predicate is evaluated after `MoveToThrowPose`
-    and before `Toss`, and reads only the base pose and the bin's live geometry. Confirmed
-    by driving the raw action interface at both milliseconds -- `True` at 1.15 and `False`
-    at 1.45, identical at 720 and 792, with no constant re-measured.
+    **The predicate half cannot depend on the release millisecond at all**, which is the
+    structural reason it survives such a change: it is evaluated after `MoveToThrowPose` and
+    before `Toss`, and reads only the base pose and the bin's live geometry. Confirmed by
+    driving the raw action interface -- `True` at 1.15 and `False` at 1.45, identical at 720
+    and 792, with no constant re-measured.
+
+    **The `False` case is deliberately weaker than it looks, and is reinforced elsewhere.**
+    Three parameterisations failing is not "no parameterisation scores"; the standoff it
+    probes, 1.45, is the same pose
+    `test_no_toss_parameterisation_scores_from_beyond_the_accepted_band` covers with a wider
+    sample, and that test carries the strong claim.
+
+    **Resting x is deliberately not asserted here.** At these standoffs the cube's first
+    contact is the bin rather than the floor (`bin_0` in 17/18 committed grid rows at
+    140 deg/s), so where it comes to rest is set by how it caroms rather than by the throw:
+    at standoff 1.15 and 789 ms three seeds of the *same* cell rest 216 mm apart while their
+    distances before first ground contact agree to 2.2 mm. Outcomes are unaffected --
+    `check_goals()` is a verdict, not a distance -- so this asserts outcomes.
     """
     env = _env()
     try:
@@ -263,12 +285,25 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
             f"at standoff {standoff} the predicate says {predicted}, but it was measured "
             f"to be {expected}. THROW_RANGE = {THROW_RANGE} is no longer calibrated."
         )
-        assert env.is_solved() == expected, (
-            f"at standoff {standoff} the episode scored {env.is_solved()}, not {expected} "
-            "as measured -- the dynamics moved, so THROW_RANGE needs re-measuring."
-        )
     finally:
         env.close()
+
+    # The reality half, stated as the union claim rather than as the oracle's own outcome.
+    # Short-circuits on the first scoring pair, so the `True` case costs one sequence.
+    scored = next(
+        (
+            (speed, release_ms)
+            for speed, release_ms in _UNION_PROBE_PARAMS
+            if _throw_scores_from_standoff(standoff=standoff, speed=speed, release_ms=release_ms)
+        ),
+        None,
+    )
+    assert (scored is not None) == expected, (
+        f"at standoff {standoff} the predicate says {expected}, but of the "
+        f"{len(_UNION_PROBE_PARAMS)} toss parameterisations probed "
+        f"{'none scored' if scored is None else f'{scored} scored'}. The band and the "
+        "dynamics disagree about whether ANY parameterisation scores from this pose."
+    )
 
 
 def test_move_to_throw_pose_at_the_lower_standoff_bound_does_not_disturb_the_barrier() -> None:
