@@ -49,6 +49,16 @@ number.
 > page. The measurements below are still left exactly as published, but any of them that
 > depended on base motion planning should be treated as **provisional** until re-measured
 > at the new pin. Nothing on this page has been recomputed.
+>
+> **Note, 2026-08-12 (second).** The `kindergarden` pin has since moved `4113237` →
+> `98ad2c0`, off the topic branch `josh/bugfix/tossing3d-bin-outside-goal-region` and onto
+> `main`, where that branch merged as upstream PR #126. This is also not only a pointer
+> change: the merged form of the bin fix sets `bin_init_region` to `[[2.0, 0.0, 2.0, 0.0]]`
+> (zero-width) where the branch had `[[2.0, -0.0005, 2.001, 0.0005]]` (1 mm wide), so the
+> bin's sampled *x* mean shifts by 0.5 mm and its per-seed placement jitter is gone. Every
+> measurement on this page ran against the **jittered** bin, so none of them is evidence
+> about the zero-width scene. The measurements below are still left exactly as published;
+> nothing here has been recomputed.
 
 Both SHAs were read back from the checkouts rather than assumed, and both were
 confirmed to be the current tip of their remote's default branch **at the time of

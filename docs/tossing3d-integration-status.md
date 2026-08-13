@@ -245,6 +245,13 @@ Independently re-verified while writing this file, via the GitHub API:
 
 ### Upstream has moved one commit past the pin
 
+> **Note, 2026-08-12.** This section is **no longer true of `kindergarden`**, and is kept
+> for the record rather than as current state. The pin has moved `4113237` → `98ad2c0`,
+> which *is* upstream `main` — so there is no longer any gap between the pinned tree and
+> `main` for that repo. The move also carried a real if tiny dynamics change:
+> `bin_init_region` went from `[[2.0, -0.0005, 2.001, 0.0005]]` to `[[2.0, 0.0, 2.0, 0.0]]`,
+> shifting the bin's sampled *x* mean by 0.5 mm. See `CLAUDE.md`'s `reference/` section.
+
 Upstream `kindergarden` `main` is `cdf1b8b`, i.e. **one commit ahead of the pin**. Reading
 source out of a checkout at `main` is therefore reading a slightly different tree than the
 pinned one. For everything Tossing3D touches this is believed harmless (the single
@@ -252,8 +259,9 @@ intervening commit is the cluttered-retrieval fix above), but it is a real gap b
 the code cites and what a reader has locally.
 
 The local `reference/` checkouts are not at `main` either, and since 2026-08-07 that is
-recorded rather than incidental: both are **git submodules pinned to a fork branch** —
-`joshnroy/kinder-baselines` @ `3524010` and `joshnroy/kindergarden` @ `4113237`. Read the
+recorded rather than incidental: `kinder-baselines` is a **git submodule pinned to a fork
+branch** @ `3524010`, and `kindergarden` is a git submodule pinned to the fork's `main` @
+`98ad2c0`. Read the
 exact pin with `scripts/update_reference_repos.sh --check`, which reports drift and never
 resets a checkout. A checkout on some other commit is somebody's work, so the script says
 so instead of moving it.
