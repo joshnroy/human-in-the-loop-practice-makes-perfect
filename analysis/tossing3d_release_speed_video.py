@@ -1,57 +1,28 @@
 """Compose the toss-parameter clips into one video where the arcs accumulate.
 
-`scripts/tossing3d_release_speed_clips.py` films one throw per `(release_speed,
-gripper_release_ms)` cell -- a 3x3 by default -- and writes a `clip_<speed>_<ms>.mp4` per
-cell plus a `tosses.json` of measurements. This reads both back and builds the artifact: the
-simulator footage on the left, a to-scale side elevation of the throw on the right, and a
-status bar underneath. **The right-hand panel never clears.** Each throw's parabola is drawn
-as it happens and then stays, faint, under the next one, so the last segment shows the whole
-family at once and "how far the cube goes as the two dials move" is a picture rather than a
-column of numbers.
+Reads `scripts/tossing3d_release_speed_clips.py`'s output -- one `clip_<speed>_<ms>.mp4` per
+cell plus a `tosses.json` -- and builds simulator footage on the left, a to-scale side
+elevation on the right, and a status bar underneath. **The right-hand panel never clears**:
+each parabola stays, faint, under the next, so the last segment shows the whole family.
+Never touches a simulator, so the visual design can be re-cut against footage that cost
+minutes.
 
-Nine cells rather than five, because `Toss` has two parameters and a family that varies only
-one of them cannot show the thing the surface exists to establish -- that the second dial
-moves the throw at all, and that how much it moves it depends on the first. Every one of the
-nine is also a cell of the committed `20 x 20 x 5` grid, so the video illustrates that
-surface rather than standing beside it as a separate measurement.
+No goal box is drawn: the subject is how far the cube flies, and the bin is marked only as
+the landmark that contaminates the resting position. Both distances are annotated **from the
+robot base**, the quantity `analysis/tossing3d_toss_parameter_surface.py` computes on.
 
-**No goal box is drawn**, and neither distance is reported as a world x. PR #228 dropped the
-goal region as an object, and this video's subject is how far the cube flies rather than
-whether a throw scored; the bin is marked as a landmark because it is what contaminates the
-resting position, not as a criterion. Both the ballistic crossing and the resting position
-are annotated **from the robot base**, which is the same quantity
-`analysis/tossing3d_toss_parameter_surface.py` computes every statistic on, so the two
-artifacts can be checked against each other.
+`recording.StatusBarOverlay` is the right shape but cannot carry these fields: `LoopStatus`
+is frozen around the practice loop's vocabulary and `compose` always paints a phase chip, so
+it would burn `PHASE EVALUATION` `SWEEP 0/0` onto a video with neither. `StatusBar` below is
+a sibling of it.
 
-It reads run output and draws; it never touches a simulator. That split is what lets the
-visual design be re-cut in seconds against footage that cost minutes.
-
-## Why not `recording.StatusBarOverlay`
-
-That class composes annotation around a domain frame, which is exactly the right shape,
-and it is what this follows. What it cannot do is carry *these* fields: `LoopStatus` is
-frozen and its vocabulary is the practice loop's -- phase (baseline/practice/evaluation),
-cycle, sweep, test task, reset kind. None of those exist in a standalone toss sweep, and
-`compose` always paints a phase chip, so reusing it would burn `PHASE EVALUATION`
-`SWEEP 0/0` onto every frame of a video that contains no evaluation and no sweep, with the
-commanded speed smuggled into a free-text field. The bar below is a sibling of it, not a
-replacement for it: same static-method container, same compose-around-a-frame contract,
-same matplotlib-bundled DejaVu so it renders on a machine with no fonts.
-
-## Palette
-
-The nine cells are an **ordered** family, so they are carried by a sequential ramp
-(viridis), dark = slow/early, bright = fast/late. This is deliberately outside the project's
-blue/orange convention, for the reason PR #227's entry gives: `#0072B2`/`#D55E00` encode
-"an assistance mechanism is available" versus "nothing intervenes", and nothing here is an
-arm of any such comparison -- these are nine measurements of one throw. Linestyle is not
-free to carry the ordering either, since every trace here is the same kind of thing.
+Sequential ramp (viridis, dark = slow/early), not the project's `#0072B2`/`#D55E00`, which
+encode assistance-available versus nothing-intervenes.
 
     scripts/with_env.sh python analysis/tossing3d_release_speed_video.py \
         --clips-dir /tmp/toss-clips --output-video out.mp4 --output-figure out.png
 
-(This step reads JSON and PNG frames only, so unlike the recording step it does not need a
-worktree-shadowing `PYTHONPATH` -- see `scripts/tossing3d_toss_parameter_grid.py` for that.)
+(JSON and PNG frames only, so this needs no worktree-shadowing `PYTHONPATH`.)
 """
 
 import argparse
@@ -66,17 +37,16 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 
-# Playback. The footage is 200 Hz; every `PLAYBACK_STRIDE`-th frame at `PLAYBACK_FPS`
-# gives 3.3x slow motion, which is what makes a 0.39 s flight legible as a throw.
+# The footage is 200 Hz; every `PLAYBACK_STRIDE`-th frame at `PLAYBACK_FPS` is 3.3x slow
+# motion, which makes a 0.39 s flight legible as a throw.
 PLAYBACK_FPS = 30
 PLAYBACK_STRIDE = 2
 PRE_RELEASE_SECONDS = 0.8
 POST_LANDING_SECONDS = 0.7
-# The finale: the accumulated panel, held, so the family is the last thing on screen.
+# The accumulated panel, held, so the family is the last thing on screen.
 FINALE_SECONDS = 6.0
-# A flight that ended above this height was intercepted in mid-air rather than reaching
-# the floor, and its arc needs the extrapolation drawn in. Comfortably above a resting
-# cube's 0.025 m centre and comfortably below the 0.20 m top of the bin's walls.
+# Above this, a flight ended in mid-air and its arc needs the extrapolation drawn in.
+# Between a resting cube's 0.025 m centre and the 0.20 m top of the bin's walls.
 TAIL_MIN_HEIGHT = 0.06
 
 BAR_HEIGHT = 116
@@ -93,14 +63,8 @@ BASE_COLOR = (150, 162, 174)
 
 
 class TossPhase(str, Enum):
-    """The three stretches of a throw a viewer can actually distinguish on screen.
-
-    SWING is everything before the gripper opens -- the windup included, since from
-    outside they are one continuous motion. FLIGHT is the contact-free parabola, and is
-    the only stretch in which the cube's position is a measurement of the release rather
-    than of a collision. LANDED is after first contact, where the resting position is
-    being decided by bounces this video makes no claim about.
-    """
+    """SWING includes the windup. FLIGHT is the contact-free parabola, the only stretch
+    where the cube's position measures the release rather than a collision."""
 
     SWING = "swing"
     FLIGHT = "flight"
@@ -110,11 +74,7 @@ class TossPhase(str, Enum):
 class PanelTransform(BaseModel):
     """World metres (x forward, z up) to panel pixels, isotropically.
 
-    Isotropic is the whole point: the panel's subject is how far against how high, and
-    anisotropic axes would make the parabola's shape an artefact of the panel's aspect
-    ratio. `fit` therefore treats the requested z span as a hard floor and widens x to
-    absorb the difference, because clipping the top off a lob would hide exactly the
-    throws whose height matters.
+    `fit` treats the requested z span as a hard floor and widens x to absorb the difference.
     """
 
     x_min: float
@@ -137,8 +97,7 @@ class PanelTransform(BaseModel):
     ) -> "PanelTransform":
         x_lo, x_hi = x_min - margin, x_max + margin
         z_lo, z_hi = z_min, z_max + margin
-        # Metres per pixel that each axis would need on its own; the coarser one wins, so
-        # neither requested span is ever compressed.
+        # The coarser axis wins, so neither requested span is compressed.
         scale = max((x_hi - x_lo) / width, (z_hi - z_lo) / height)
         x_span, z_span = scale * width, scale * height
         x_slack = (x_span - (x_hi - x_lo)) / 2.0
@@ -183,10 +142,9 @@ def playback_indices(  # noqa: PLR0917
     post_seconds: float,
     stride: int,
 ) -> list[int]:
-    """The recorded frames to actually play, bracketing the flight and clamped to what exists.
+    """The recorded frames to play, bracketing the flight and clamped to what exists.
 
-    Clamped rather than extended: a window that runs off the recording would otherwise be
-    silently padded with the first or last frame, which reads as the simulation hanging.
+    Clamped rather than padded with the first or last frame, which reads as a hang.
     """
     first = int(np.searchsorted(times, release_t - pre_seconds, side="left"))
     last = int(np.searchsorted(times, land_t + post_seconds, side="right")) - 1
@@ -210,11 +168,10 @@ def status_fields(  # noqa: PLR0917
     resting_x: float | None,
     solved: bool | None,
 ) -> tuple[tuple[str, str], ...]:
-    """The bar's (label, value) pairs in reading order -- pure, so what it *says* is testable.
+    """The bar's (label, value) pairs in reading order.
 
-    The measured range is withheld until the cube has actually landed. It is the video's
-    punchline, and printing it during the flight both answers the question the footage is
-    being watched to answer and implies the number was observed at that instant.
+    The measured range is withheld until the cube has landed: printing it mid-flight would
+    imply the number was observed at that instant.
     """
     fields: list[tuple[str, str]] = [
         ("SPEED", f"{speed:.0f} deg/s"),
@@ -234,12 +191,9 @@ def status_fields(  # noqa: PLR0917
 
 
 class TossPanel:
-    """The side elevation: ground, goal region, robot base, and every arc drawn so far.
+    """The side elevation: ground, bin, robot base, and every arc drawn so far.
 
-    A static-method container composing onto an `Image`, in the same spirit as
-    `recording.StatusBarOverlay` -- it holds no state, and the accumulation lives in the
-    caller's list of already-completed arcs rather than inside this class.
-    """
+    Stateless: the accumulation lives in the caller's list of completed arcs."""
 
     _fonts: ClassVar[dict[tuple[str, int], ImageFont.FreeTypeFont]] = {}
 
@@ -274,8 +228,7 @@ class TossPanel:
             column, row = transform.to_pixel(x=x, z=z)
             return left + column, top + row
 
-        # A half-metre grid on both axes, so the panel is readable as a distance and not
-        # just a shape -- and so the isotropy is checkable by eye rather than asserted.
+        # A half-metre grid on both axes, so the isotropy is checkable by eye.
         tick_font = TossPanel.font(name="DejaVuSans.ttf", size=12)
         tick = np.floor(transform.x_min * 2.0) / 2.0
         while tick <= transform.x_max:
@@ -298,11 +251,8 @@ class TossPanel:
             [(ground_left, ground_row), (ground_right, ground_row)], fill=GROUND_COLOR, width=2
         )
 
-        # The bin, marked as a landmark only. **No goal box is drawn.** PR #228 dropped the
-        # goal region as an object -- the bin's interior *is* the goal region now -- and this
-        # video's subject is how far the cube flies, not whether a throw scored. Drawing a
-        # scoring box would invite reading each arc against a criterion this figure is
-        # deliberately not about, and the bin is also what contaminates the resting position.
+        # A landmark only: no scoring box is drawn, since the subject is how far the cube
+        # flies rather than whether the throw scored.
         bin_col, bin_row = px(x=bin_x, z=0.0)
         draw.line([(bin_col, bin_row), (bin_col, bin_row - 34)], fill=BIN_COLOR, width=2)
         draw.text(
@@ -332,10 +282,8 @@ class TossPanel:
             font=TossPanel.font(name="DejaVuSans-Bold.ttf", size=14),
             fill=TEXT_COLOR,
         )
-        # The legend lives in the panel's headroom -- empty sky, because isotropy leaves
-        # more vertical room than any of these throws uses. It doubles as the running
-        # tally: an entry stays dim until that throw has actually landed, so what the
-        # video has measured so far is readable from a single still.
+        # In the panel's headroom, which isotropy leaves empty. Doubles as a running tally:
+        # an entry stays dim until that throw has landed.
         legend_font = TossPanel.font(name="DejaVuSans-Bold.ttf", size=14)
         for row_index, (color, text, measured) in enumerate(legend):
             y = top + 36 + row_index * 21
@@ -365,8 +313,7 @@ class TossPanel:
                 fill=color,
                 outline=BACKGROUND,
             )
-            # Above the ground line, not below it: below is off the bottom of the panel,
-            # where the label is drawn and then silently clipped away.
+            # Above the ground line: below it is off the bottom of the panel, and clipped.
             label_font = TossPanel.font(name="DejaVuSans-Bold.ttf", size=13)
             draw.text(
                 (column - 0.5 * draw.textlength(f"{marker:.2f}", font=label_font), row - 26),
@@ -374,20 +321,15 @@ class TossPanel:
                 font=label_font,
                 fill=color,
             )
-        # The dotted continuation is the *extrapolation* the reported distance actually
-        # rests on. A throw that hits the bin's far wall stops in mid-air, and without
-        # this the panel would show an arc ending at z = 0.35 m and a ground marker three
-        # metres away with nothing connecting them. Drawn as the fitted parabola rather
-        # than a chord, because a chord is not what was solved.
+        # The extrapolation the reported distance rests on, for a throw that stopped in
+        # mid-air against the bin's wall. The fitted parabola, not a chord.
         tail = arc.get("tail_xs")
         if tail:
             tail_points = [px(x=x, z=z) for x, z in zip(tail, arc["tail_zs"], strict=True)]
             for start, stop in zip(tail_points[::4], tail_points[2::4], strict=False):
                 draw.line([start, stop], fill=color, width=2)
-        # The white marker tracks the cube *now*, which before release is in the gripper
-        # and not on the arc at all. Pinning it to the polyline's last point instead would
-        # park it on the release position through the whole windup -- a dot sitting where
-        # the cube is going to be, which reads as the cube already being there.
+        # Tracks the cube *now*, which before release is in the gripper and off the arc.
+        # The polyline's last point would park it on the release position through the windup.
         live = arc.get("live")
         if live is not None:
             head = px(x=live[0], z=live[1])
@@ -399,8 +341,7 @@ class TossPanel:
 
 
 class StatusBar:
-    """The bar under the composed frame. A sibling of `recording.StatusBarOverlay`;
-    see this module's docstring for why it is not that class."""
+    """The bar under the composed frame. A sibling of `recording.StatusBarOverlay`."""
 
     @staticmethod
     def draw(*, image: Image.Image, top: int, width: int, height: int, fields: Any) -> None:
@@ -426,7 +367,7 @@ class StatusBar:
 
 
 def speed_colors(*, speeds: Sequence[float]) -> list[tuple[int, int, int]]:
-    """A sequential ramp, dark = slow. See the module docstring on the palette choice."""
+    """A sequential ramp, dark = slow."""
     cmap = matplotlib.colormaps["viridis"]
     positions = np.linspace(0.12, 0.92, len(speeds))
     return [tuple(int(round(255 * c)) for c in cmap(p)[:3]) for p in positions]
@@ -437,11 +378,8 @@ def _rounded_up(*, value: int) -> int:
 
 
 def _flight_slice(*, clip: dict[str, Any]) -> dict[str, np.ndarray]:
-    """The recorded frames between release and first contact, as arrays.
-
-    Every extent, every drawn arc and every apex label reads this one slice, so "the
-    flight" means the same thing in all of them.
-    """
+    """The recorded frames between release and first contact. Every extent, arc and apex
+    label reads this one slice."""
     times = np.array(clip["frame_times"], dtype=float)
     start = int(np.searchsorted(times, float(clip["release_t"]), side="left"))
     stop = int(np.searchsorted(times, float(clip["land_t"]), side="right"))
@@ -456,16 +394,10 @@ def _flight_slice(*, clip: dict[str, Any]) -> dict[str, np.ndarray]:
 def ballistic_tail(*, clip: dict[str, Any]) -> tuple[list[float], list[float]]:
     """The fitted flight parabola continued from first contact to the ground crossing.
 
-    Empty when the cube's first contact *is* open floor, which is the ordinary case: there
-    is nothing to extrapolate and drawing a stub there would imply the measurement went
-    further than the footage. Non-empty exactly when the throw was intercepted in mid-air
-    by the bin's wall, which is where the reported distance is otherwise unexplained on
-    screen.
-
-    "In mid-air" is decided on the **height** the footage ended at, not on whether the
-    last recorded frame precedes the computed crossing time. The latter is always true by
-    up to one frame interval -- frames land where they land -- so it would draw a
-    sub-pixel stub under every arc.
+    Empty when the cube reached open floor on its own, non-empty when the bin's wall
+    intercepted it in mid-air. Decided on the **height** the footage ended at, not on
+    whether the last frame precedes the crossing time -- the latter is always true by up to
+    one frame interval, so it would draw a sub-pixel stub under every arc.
     """
     times = np.array(clip["frame_times"], dtype=float)
     flight = _flight_slice(clip=clip)
@@ -490,9 +422,7 @@ def legend_rows(
 ) -> list[tuple[tuple[int, int, int], str, bool]]:
     """One row per `(speed, release ms)` cell, dim until that throw has landed on screen.
 
-    `measured` is how many throws the video has finished, so the legend is a running tally
-    rather than a spoiler -- the same reason `status_fields` withholds the range mid-flight.
-    """
+    `measured` is how many throws the video has finished: a running tally, not a spoiler."""
     rows: list[tuple[tuple[int, int, int], str, bool]] = []
     for index, clip in enumerate(clips):
         speed = float(clip["commanded_speed_deg"])
@@ -519,10 +449,9 @@ def build_video(*, clips_dir: Path, output_video: Path, output_figure: Path) -> 
 
     base_x = float(clips[0]["base_x_before_toss"])
     bin_x = float(clips[0]["bin_x"])
-    # Extents from the **flight** only, not from every recorded frame. The windup lifts
-    # the cube well above anything it reaches in the air, so including the whole recording
-    # inflates the z extent by roughly half a metre -- and because the panel is isotropic,
-    # that inflation is paid for in *width*, pushing every arc into a corner.
+    # From the flight only: the windup lifts the cube ~0.5 m above anything it reaches in
+    # the air, and isotropy pays that inflation back in width, pushing every arc into a
+    # corner.
     flights = [_flight_slice(clip=clip) for clip in clips]
     x_lo = min(base_x, min(float(np.min(f["xs"])) for f in flights)) - 0.15
     x_hi = (
@@ -681,8 +610,7 @@ def _finale_frame(  # noqa: PLR0917
 ) -> Image.Image:
     """All the arcs on one full-width panel, with the numbers under them.
 
-    Full width rather than beside a still: by this point there is no single throw to show,
-    and a frozen simulator frame would suggest one of them is the subject.
+    Full width, since a frozen simulator frame would suggest one throw is the subject.
     """
     wide = PanelTransform.fit(
         x_min=transform.x_min,
@@ -722,8 +650,7 @@ def _finale_frame(  # noqa: PLR0917
         font=key_font,
         fill=KEY_COLOR,
     )
-    # Laid out per speed group rather than as one run-on row: nine labels do not fit on one
-    # line, and the previous single row was silently clipped at the right edge.
+    # One row per speed group: nine labels on one line are clipped at the right edge.
     per_row = max(1, len({c["commanded_speed_deg"] for c in clips}))
     x = 14
     row = 0
@@ -737,9 +664,8 @@ def _finale_frame(  # noqa: PLR0917
         )
         draw.text((x, top + 34 + row * 20), text, font=value_font, fill=colors[index])
         x = int(x + draw.textlength(text, font=value_font) + 22)
-    # The **reach**, which is the figure's actual subject: how much of the distance range the
-    # two dials together open up. Deliberately not "first minus last" -- the surface is not
-    # monotone in either dial, so an endpoint difference is not the span.
+    # The reach the two dials open up. Not "first minus last": the surface is not monotone
+    # in either dial, so an endpoint difference is not the span.
     draw.text(
         (int(canvas_w * 0.62), top + 12),
         f"reach over these {len(clips)} cells: "
@@ -748,9 +674,6 @@ def _finale_frame(  # noqa: PLR0917
         font=key_font,
         fill=TEXT_COLOR,
     )
-    # No solve count. PR #228 made the bin's interior the goal region, so the old caption
-    # here ("landing in the bin scores a failure") is not merely stale but backwards; and
-    # whether a throw scores is not what this figure is about in any case.
     return canvas
 
 

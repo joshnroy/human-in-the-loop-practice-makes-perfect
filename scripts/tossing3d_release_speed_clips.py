@@ -1,47 +1,24 @@
 """Record one Tossing3D throw per `(release_speed, gripper_release_ms)` cell, densely enough
 to *see* it.
 
-`scripts/tossing3d_toss_parameter_grid.py` measures the whole `20 x 20 x 5` surface. This
-records nine of its cells as footage: the standoff held at `ORACLE_THROW_STANDOFF`, one
-fixed seed, and a **3x3** spanning both dials at their axis endpoints and midpoints -- so
-"how far the cube goes" stops being a surface and becomes nine arcs. Whether a throw scores
-is deliberately not the criterion; one that sails past the bin is exactly as interesting as
-one that drops in, and no goal box is drawn.
+Nine cells of the `20 x 20 x 5` grid `scripts/tossing3d_toss_parameter_grid.py` measures: a
+3x3 spanning both dials at their axis endpoints and midpoints, standoff at
+`ORACLE_THROW_STANDOFF`, one fixed seed. 3x3 rather than 5x1 because a family that varies
+only the speed cannot show that the second dial moves the throw. Whether a throw scores is
+not the criterion, and no goal box is drawn.
 
-Three by three rather than five by one because `Toss` has two parameters. A family that
-varies only the speed cannot show the thing the surface exists to establish -- that the
-second dial moves the throw at all, and that how much it moves it depends on the first.
+Rendered from inside `sim.step` every `RENDER_EVERY_N_TICKS` ticks -- 200 frames per
+simulated second, at 1.7 ms per render. `KinderBackend.set_substep_recording` instead gives
+one frame per `env.step()`, measured at 100 MuJoCo ticks x 0.0005 s = 0.05 s, so a 0.4-0.9 s
+flight gets 8-18 frames and reads as a teleport. Position and contact state are recorded on
+every tick regardless, which is what the ballistic fit reads.
 
-## Why this records at 200 Hz rather than using the domain's existing substep recording
+Distance is the ballistic ground-crossing, not first contact: a cube whose crossing lies
+past the bin's far wall still hits that wall, so first contact is a function of the
+independent variable. Resting x is recorded too, since the two differ.
 
-`KinderBackend.set_substep_recording` wraps the env in `gymnasium.wrappers.
-RenderCollection`, which collects one frame per `env.step()`. Measured on this scene, one
-`env.step` is **100 MuJoCo ticks at a 0.0005 s timestep = 0.05 s**, and the environment's
-own `render_fps` metadata is 20 -- consistent. That is the right rate for a whole episode
-and the wrong rate for a throw: the cube's free flight here lasts 0.4-0.9 s, so the entire
-parabola gets 8-18 frames and reads on screen as a teleport rather than a throw.
-
-So this probe renders from *inside* `sim.step`, every `RENDER_EVERY_N_TICKS` ticks -- 200
-frames per simulated second. A render measured 1.7 ms on this machine, so a whole throw's
-worth costs under two seconds of wall clock; the rate is a choice about legibility, not a
-budget. The cube's position and contact state are recorded on **every** tick regardless,
-since that costs nothing and is what the ballistic fit reads.
-
-Frames go out as one `clip_<speed>.mp4` per speed plus a `tosses.json` of measurements;
-`analysis/tossing3d_release_speed_video.py` reads both back and composes the annotated,
-arc-accumulating video. The split is deliberate -- the simulation is minutes and the
-visual design wants iterating, so the two must not be one script.
-
-## How far the cube goes
-
-The same instrument PR #227's distance grid used, and for the same reason: **the ballistic
-ground-crossing**, not first contact. On the coincident config the bin sits on the goal
-region and is a catcher, so a cube whose ground-crossing lies past the bin's far wall still
-hits that wall and drops in -- making "where it first touched something" a function of the
-independent variable. Between release and first contact the cube is a free body that MuJoCo
-integrates without drag, so its flight is an exact parabola; fitting it and solving for the
-height a resting cube's centre sits at gives a bin-independent distance. The resting x is
-recorded too, since the two genuinely differ.
+Frames go out as one `clip_<speed>_<ms>.mp4` per cell plus a `tosses.json`;
+`analysis/tossing3d_release_speed_video.py` composes them.
 
 Wrap in a memory-capped scope, and use `scripts/with_kinder_env.sh` so `kinder_models`
 resolves to this worktree rather than the main checkout:
@@ -64,12 +41,8 @@ import numpy as np
 from pydantic import BaseModel
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-# `src/` and the two `reference/` source roots ahead of everything else -- see
-# `tossing3d_release_angle_probe.py`'s own note. The KINDER venv installs both submodules
-# editable against the *main checkout's* absolute paths, so without this a worktree
-# silently imports whatever commit that checkout is sitting on. Here that would be fatal
-# and invisible at once: at a pin without `release_speed` every cell runs the default
-# 140 deg/s toss, and the video would be ten identical throws looking entirely normal.
+# Both KINDER packages are installed editable against the *main checkout's* absolute paths,
+# so without this a worktree imports whatever commit that checkout is sitting on.
 for _path in (
     _REPO_ROOT / "src",
     _REPO_ROOT / "reference" / "kindergarden" / "src",
@@ -93,36 +66,30 @@ from scripts.tossing3d_release_angle_probe import (  # noqa: E402
     longest_contact_free_window,
 )
 
-# The z a resting cube's centre sits at: half the 0.05 m cube. PR #227's distance grid
-# solves the flight parabola for this same height, so the two are directly comparable.
+# Half the 0.05 m cube. #227's distance grid solves for this same height.
 CUBE_RESTING_HALF_HEIGHT = 0.025
 
-# Gravity is read from the live model rather than assumed; this is only the fallback used
-# by the pure fit when a caller supplies no model (i.e. in tests).
+# Fallback for the pure fit when a caller supplies no model (i.e. in tests); the probe reads
+# gravity off the live model.
 NOMINAL_GRAVITY = 9.81
 
-# One rendered frame per this many MuJoCo ticks. At the scene's 0.0005 s timestep that is
-# 200 frames per simulated second -- see the module docstring for why 20 is not enough.
+# One rendered frame per this many MuJoCo ticks: 200 fps at the scene's 0.0005 s timestep.
 RENDER_EVERY_N_TICKS = 10
 
 # `env.step` calls to hold after the swing, so the cube is at rest before the clip ends.
-# PR #227's grids used 30; kept identical so `cube_x_final` means the same thing.
+# #227's grids used 30; kept identical so `cube_x_final` means the same thing.
 DEFAULT_SETTLE_STEPS = 30
 
 DEFAULT_SEED = 0
 
-# Both axes span exactly the interval the sampler draws from, **imported rather than
-# retyped**, so a clip can never illustrate a corner of the space the sampler cannot reach.
-# The previous value here was a `240` upper bound that was a measurement range rather than
-# a command range; #239 corrected it, and importing is what stops it coming back.
+# Imported rather than retyped: #239 corrected a retyped `240 deg/s` ceiling that was never
+# a command range.
 DEFAULT_SPEED_START, DEFAULT_SPEED_STOP = TOSS_SPEED_BOUNDS
 DEFAULT_RELEASE_MS_START, DEFAULT_RELEASE_MS_STOP = TOSS_RELEASE_MS_BOUNDS
 
-# Three by three, not five by one. Nine arcs is about the most a viewer reads as a family
-# at a glance, and a 3x3 spans both dials rather than one -- which is the whole point once
-# `Toss` has two parameters. Every one of the nine is also a cell of the committed
-# `20 x 20 x 5` grid (indices 0 / 9 / 19 on each axis), so the video illustrates that
-# surface rather than sitting beside it as a separate measurement.
+# Nine arcs is about the most a viewer reads as a family at a glance. Evenly spaced, so
+# these do *not* land on the committed grid's axis points -- pass `--speeds`/`--release-ms`
+# for that.
 DEFAULT_SPEED_COUNT = 3
 DEFAULT_RELEASE_MS_COUNT = 3
 
@@ -130,11 +97,7 @@ DEFAULT_RELEASE_MS_COUNT = 3
 class GroundCrossing(BaseModel):
     """Where a free-flying cube's parabola meets a resting cube's centre height.
 
-    The two velocities are the ones at **release**, not at the crossing: they are the
-    fitted parabola's derivatives at its first sample, and what they describe is the
-    launch the release speed produced. The arrival velocity is a different quantity that
-    nothing here reports -- see PR #227's entry on why the two are easy to conflate.
-    """
+    The velocities are at release, not at the crossing."""
 
     x: float
     t: float
@@ -155,8 +118,7 @@ class TossClip(BaseModel):
     frame_hz: float
     physics_timestep: float
 
-    # Every rendered frame's simulated time and the cube's position at it, so the arc can
-    # be drawn progressively in lockstep with the footage rather than approximately.
+    # Per rendered frame, so the arc can be drawn in lockstep with the footage.
     frame_times: list[float] = []
     frame_cube_x: list[float] = []
     frame_cube_z: list[float] = []
@@ -192,12 +154,7 @@ class TossClip(BaseModel):
 
 
 def evenly_spaced_speeds(*, start: float, stop: float, count: int) -> list[float]:
-    """`count` speeds from `start` to `stop` inclusive, both endpoints hit exactly.
-
-    Endpoints matter here in a way they would not for a grid: the video's whole claim is
-    that it spans the dial, so the first and last clips must be the dial's own limits
-    rather than something a step size happened to land on.
-    """
+    """`count` speeds from `start` to `stop` inclusive, both endpoints hit exactly."""
     if count < 2:
         raise ValueError(f"a speed sweep needs at least 2 speeds to span a range, got {count}")
     step = (stop - start) / (count - 1)
@@ -209,14 +166,9 @@ def ballistic_ground_crossing(
 ) -> GroundCrossing:
     """Fit the free-flight parabola and solve it for a resting cube's centre height.
 
-    Pure, so the arithmetic the video's distance labels rest on is testable without
-    MuJoCo. `times`/`xs`/`zs` must already be restricted to the contact-free window --
-    picking that window is `longest_contact_free_window`'s job, and mixing a post-landing
-    sample in would bend the parabola.
-
-    The **descending** root is taken. Both roots are real and positive whenever the cube is
-    released below the resting height, and the ascending one is the instant it first passes
-    0.025 m on the way *up* -- a plausible-looking number that is most of a flight short.
+    `times`/`xs`/`zs` must already be restricted to the contact-free window. The
+    **descending** root is taken: both are real and positive when the cube is released below
+    the resting height, and the ascending one is it first passing 0.025 m going up.
     """
     if len(times) < 3:
         raise ValueError(f"a parabola needs at least 3 samples to fit, got {len(times)}")
@@ -225,8 +177,7 @@ def ballistic_ground_crossing(
     x_coeffs = np.polyfit(rel, np.asarray(xs, dtype=float), 1)
     residual = float(np.max(np.abs(np.polyval(z_coeffs, rel) - np.asarray(zs, dtype=float))))
 
-    # z(t) = a t^2 + b t + c, solved for z = h. `a` is -g/2 and is fitted, not assumed, so
-    # a scene whose gravity differed would still be read correctly.
+    # z(t) = a t^2 + b t + c, solved for z = h. `a` is -g/2, fitted rather than assumed.
     a, b, c = (float(v) for v in z_coeffs)
     discriminant = b * b - 4.0 * a * (c - CUBE_RESTING_HALF_HEIGHT)
     if discriminant < 0.0 or a == 0.0:
@@ -262,14 +213,9 @@ def record_one_toss(  # noqa: PLR0917
 ) -> TossClip:
     """`reset -> Pick -> MoveToThrowPose -> Toss -> settle`, filmed from inside the physics.
 
-    A whole sequence rather than a jump into a throw-ready state, because there is no
-    shortcut: `Tossing3DEnvironment.set_state` restores only episode-initial states, so a
-    throw has to be arrived at.
-
-    Only the toss skill and the settle are filmed. The pick and the base motion are
-    identical across every speed by construction -- same seed, same parameters, and
-    `release_speed` reaches the swing only -- so filming them would put the same 20 seconds
-    in front of all ten clips.
+    The whole sequence, because `Tossing3DEnvironment.set_state` restores only
+    episode-initial states. Only the toss and the settle are filmed; neither dial reaches
+    the pick or the base motion.
     """
     env.reset_to_seed(seed=seed)
     backend = env.backend()
@@ -331,18 +277,15 @@ def record_one_toss(  # noqa: PLR0917
         return out
 
     observation = backend.observe()
-    # `pos_base_x`, not `x`: the robot carries a joint-space feature schema of its own
-    # (`pos_base_*` / `pos_arm_joint*` / `vel_*`) while every movable object carries a
-    # pose. `KinderObservation.get` raises rather than returning 0.0 for a wrong name,
-    # which is how this one was found.
+    # `pos_base_x`, not `x`: the robot carries a joint-space feature schema
+    # (`pos_base_*` / `pos_arm_joint*` / `vel_*`) while movable objects carry a pose.
     clip.base_x_before_toss = observation.get(name=backend.robot_name, feature="pos_base_x")
     clip.bin_x = observation.get(name=backend.bin_name, feature="x")
     clip.bin_z = observation.get(name=backend.bin_name, feature="z")
 
     sim.step = recording_step
     try:
-        # Slot two is `gripper_release_ms`. It was an unread `0.0` at the pin this script
-        # was written against; at this one it is a release at time zero.
+        # Slot two is `gripper_release_ms`; a literal `0.0` here is a release at time zero.
         env.take_action(action=np.array([env_cls.toss_id, speed, release_ms]))
         clip.toss_error = env.last_skill_error()
         hold = np.zeros(11, dtype=np.float32)
@@ -392,9 +335,7 @@ def record_one_toss(  # noqa: PLR0917
 def _worker(job: tuple[int, list[tuple[float, float]], float, int, str]) -> list[dict[str, Any]]:  # noqa: PLR0917
     """One process, one live simulator, however many `(speed, release_ms)` cells it was handed.
 
-    Takes one positional tuple because `Pool.map` passes exactly one positional argument;
-    the project's keyword-only rule cannot apply to a callable multiprocessing owns the
-    calling convention for.
+    One positional tuple because `Pool.map` passes exactly one positional argument.
     """
     import imageio.v2 as imageio
     import kinder
@@ -419,8 +360,8 @@ def _worker(job: tuple[int, list[tuple[float, float]], float, int, str]) -> list
                 fps=fps,
                 codec="libx264",
                 macro_block_size=1,
-                # Near-visually-lossless: these clips are re-read and re-encoded by the
-                # analysis step, so compression here would be paid for twice.
+                # Near-lossless: the analysis step re-encodes these, so compression here
+                # would be paid for twice.
                 output_params=["-crf", "12", "-preset", "medium", "-pix_fmt", "yuv420p"],
             )
             try:
@@ -463,14 +404,9 @@ def _parse_args(*, argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--release-ms-start", type=float, default=DEFAULT_RELEASE_MS_START)
     parser.add_argument("--release-ms-stop", type=float, default=DEFAULT_RELEASE_MS_STOP)
     parser.add_argument("--release-ms-count", type=int, default=DEFAULT_RELEASE_MS_COUNT)
-    # Explicit axis values, overriding the evenly-spaced form above.
-    #
-    # Needed because a clip must land on a cell the committed grid actually measured, and an
-    # evenly-spaced 3-point axis does not. `tossing3d_toss_parameter_grid.py`'s 20-point axis
-    # over `(60, 140)` steps by `80/19`, so its interior points are 64.21, 68.42, ... and
-    # never 100 -- while `--speed-count 3` gives exactly 60/100/140. Filming 100 would make
-    # the video a *separate measurement* that merely resembles the surface, rather than nine
-    # of its cells; there would be no committed number to check any middle clip against.
+    # Explicit axis values, so a clip lands on a cell the committed grid measured. The
+    # grid's 20-point axis over `(60, 140)` steps by `80/19`, whose interior points are
+    # 64.21, 68.42, ... and never the 100 an evenly-spaced 3-point axis gives.
     parser.add_argument("--speeds", type=float, nargs="+", default=None)
     parser.add_argument("--release-ms", type=float, nargs="+", default=None)
     parser.add_argument("--standoff", type=float, default=ORACLE_THROW_STANDOFF)
@@ -490,8 +426,7 @@ def main() -> None:
     cells = [(speed, release_ms) for speed in speeds for release_ms in release_ms_values]
     args.output_dir.mkdir(parents=True, exist_ok=True)
     workers = max(1, min(args.max_workers, len(cells)))
-    # Round-robin shares: a worker holds one simulator and reuses it across its cells, so
-    # fewer workers means fewer scene builds, not fewer throws.
+    # A worker holds one simulator and reuses it, so fewer workers means fewer scene builds.
     shares: list[list[tuple[float, float]]] = [cells[i::workers] for i in range(workers)]
     jobs = [
         (args.seed, share, args.standoff, args.settle_steps, str(args.output_dir))

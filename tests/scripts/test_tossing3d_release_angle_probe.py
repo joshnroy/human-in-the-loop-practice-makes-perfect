@@ -1,15 +1,9 @@
-"""The release probe's quantisation rule, tested without a simulator.
+"""The release probe's quantisation rule -- which control step the gripper opens on, and
+what fraction of the swing that is -- tested without a simulator.
 
-`release_index_and_fraction` is the whole mechanism the release-angle figure reports: which
-control step the gripper opens on, and therefore what fraction of the swing the arm has
-covered when it lets go. Everything else in the probe needs MuJoCo and is exercised by
-running it.
-
-The rule has one detail that is easy to get wrong and impossible to notice: the denominator
-is the trapezoidal profile's **last sample**, not the `total_dist` the profile was asked
-for. The profile's time grid overshoots the motion's duration, so the two differ -- and
-using the wrong one shifts the realised fraction enough to move which step the release
-lands on, which moves every angle in the figure.
+The detail that is easy to get wrong: the denominator is the trapezoidal profile's last
+sample, not the `total_dist` it was asked for, and the two differ because the time grid
+overshoots. Using the wrong one moves which step the release lands on.
 """
 
 from types import SimpleNamespace
@@ -25,9 +19,8 @@ from scripts.tossing3d_release_angle_probe import (
 )
 
 
-# Both stand in for `TossController.reset`, so both must mirror upstream's *positional*
-# signature -- that is exactly what `assert_kinder_pins` inspects, and rewriting them
-# keyword-only would test a signature no KINDER pin has ever had.
+# These stand in for `TossController.reset`, so they mirror upstream's *positional*
+# signature, which is what `assert_kinder_pins` inspects.
 def _reset_with_both_dials(  # noqa: PLR0917
     self: object,
     x: object,
@@ -47,7 +40,6 @@ def _reset_without_speed(self: object, x: object, params: object) -> None:  # no
 
 
 def test_the_probe_refuses_a_kinder_models_from_another_checkout() -> None:
-    """The silent-skew guard: a different checkout's pin would measure a different toss."""
     with pytest.raises(RuntimeError, match="outside this checkout"):
         assert_kinder_pins(
             kinder_models=SimpleNamespace(__file__="/somewhere/else/kinder_models/__init__.py"),
@@ -65,13 +57,7 @@ def test_the_probe_refuses_a_pin_whose_toss_has_no_release_speed() -> None:
 
 
 def test_the_probe_refuses_a_pin_whose_toss_has_no_gripper_release_millisecond() -> None:
-    """On a pin before kb#12 every cell of a millisecond axis is the same throw.
-
-    This is the live failure mode rather than a hypothetical one: since PR #232 the
-    `tossing3d` extra is installed editable by absolute path to the *shared* checkout, so a
-    worktree imports whatever pin that tree happens to sit on unless something shadows it.
-    A sweep that hits this produces N identical columns and never raises.
-    """
+    """On a pin before kb#12 every cell of a millisecond axis is the same throw."""
     with pytest.raises(RuntimeError, match="no gripper_release_ms parameter"):
         assert_kinder_pins(
             kinder_models=SimpleNamespace(__file__=__file__),
@@ -80,7 +66,6 @@ def test_the_probe_refuses_a_pin_whose_toss_has_no_gripper_release_millisecond()
 
 
 def test_a_correctly_pinned_kinder_inside_this_checkout_is_accepted() -> None:
-    """The guard must not be so strict that the real, correct setup fails to start."""
     assert_kinder_pins(
         kinder_models=SimpleNamespace(__file__=__file__),
         toss_controller=SimpleNamespace(reset=_reset_with_both_dials),
@@ -98,7 +83,6 @@ def test_a_recording_that_never_touches_anything_is_one_window() -> None:
 
 
 def test_a_recording_always_in_contact_has_an_empty_window() -> None:
-    """An empty window must be empty rather than a spurious one-sample flight."""
     start, stop = longest_contact_free_window(contacted=[True] * 5)
     assert stop - start == 0
 
@@ -113,12 +97,8 @@ def test_release_is_the_first_sample_at_or_past_the_target_fraction() -> None:
 
 
 def test_the_denominator_is_the_profiles_last_sample_not_the_requested_distance() -> None:
-    """The profile overshoots its own total; normalising by the wrong one moves the step.
-
-    This trajectory ends at 1.10 while a caller would have asked for 1.00. Against 1.10 the
-    first sample past 0.46 is index 3 (0.50/1.10 = 0.4545 is short, 0.55/1.10 = 0.50 is
-    not). Against 1.00 it would have been index 2. One step earlier is a different throw.
-    """
+    """This trajectory ends at 1.10 while a caller would have asked for 1.00. Against 1.10
+    the first sample past 0.46 is index 3; against 1.00 it would have been index 2."""
     trajectory = np.array([0.0, 0.25, 0.50, 0.55, 0.90, 1.10])
     index, fraction, _ = release_index_and_fraction(trajectory=trajectory)
     assert index == 3
@@ -143,20 +123,14 @@ def test_the_realised_fraction_is_never_below_the_target() -> None:
 
 
 def test_a_coarser_profile_never_releases_earlier_in_the_swing() -> None:
-    """The mechanism behind the sawtooth: fewer control steps means a coarser sampling.
-
-    Coarsening cannot move the release *earlier* in path terms -- a sample grid that is a
-    subset of a finer one can only skip past the threshold, never land short of it. It
-    often lands in the same place, so the property is `>=` and not `>`; the strict case is
-    covered separately below. This is why raising the commanded speed pushes the realised
-    fraction up until the step index drops and it resets.
-    """
+    """A coarser sample grid can only skip past the threshold, never land short of it, so
+    the property is `>=` and not `>`. The strict case is covered below."""
     fine = np.linspace(0.0, 1.0, 21)
     coarse = np.linspace(0.0, 1.0, 5)
     _, fine_fraction, _ = release_index_and_fraction(trajectory=fine)
     _, coarse_fraction, _ = release_index_and_fraction(trajectory=coarse)
     assert coarse_fraction >= fine_fraction
-    # Both grids happen to carry a sample at exactly 0.5, so this pair is the equality case.
+    # Both grids carry a sample at exactly 0.5, so this pair is the equality case.
     assert coarse_fraction == fine_fraction == 0.5
 
 

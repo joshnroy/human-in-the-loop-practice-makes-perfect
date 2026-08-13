@@ -1,43 +1,28 @@
 """How far the cube goes, and the angle it is released at, across 60-240 deg/s.
 
-Post-run analysis only: this reads two committed grids back in and never builds an
-environment or drives a skill. Both grids ship beside this repo's experiment-log entry, so
-the figure is reproducible from the tree alone. **One figure, four panels, one shared
-commanded-speed axis**, because the four quantities are one causal chain and splitting them
-across figures would make a reader reconstruct the link by eye:
+Post-run analysis only, on two committed grids. Four panels on one shared commanded-speed
+axis, because they are one causal chain -- a reset in panel 3 puts a notch in panel 2, which
+puts a reversal in panel 1, which moves panel 4:
 
-1. **how far the cube goes** -- the ballistic ground-crossing and the resting position.
-   Two series rather than one: they are different quantities and the gap between them is
-   speed-dependent, so plotting one and calling it "how far it goes" would hide a real
-   effect;
-2. **the release angle** -- the launch elevation, plotted two ways that disagree: the
-   *kinematic* angle from the pinch-site Jacobian, and the *actual* elevation the cube
-   leaves with. Reporting only the first would overstate the launch by ~10 deg;
-3. **the realised release fraction** -- the mechanism. `TossController` opens the gripper
-   on the first control step past `fraction_covered >= 0.46`, and control steps come once
-   per 0.1 s, so raising the speed shortens the swing, coarsens the sampling, and makes the
-   release step index *decrement*. Every reset in this panel is a step index dropping by one;
-4. **seeds solved per speed**, the ground truth the other three have to answer to.
+1. how far the cube goes: the ballistic ground-crossing and the resting position, which are
+   different quantities whose gap is speed-dependent;
+2. the release angle, two ways -- the kinematic angle from the pinch-site Jacobian, which
+   overstates the cube's actual launch elevation by ~10 deg, and that actual elevation;
+3. the realised release fraction, the mechanism. `TossController` opens the gripper on the
+   first control step past `fraction_covered >= 0.46`, once per 0.1 s, so raising the speed
+   shortens the swing and makes the release step index decrement;
+4. seeds solved per speed.
 
-Reading down a vertical line is the point: a reset in panel 3 puts a notch in panel 2,
-which puts a reversal in panel 1, which moves panel 4.
+**Significance without scipy**, which `hitl-pmp` does not ship: an exact paired permutation
+test, since 10 seeds means 2^10 = 1024 sign-flips enumerate the whole null distribution. That
+floors the two-sided p at 2/1024 = 1.95e-03, while Holm across 36 consecutive steps needs
+0.05/36 = 1.39e-03 -- **below the floor, so no step can reach Holm-corrected significance
+however real its effect**. The corrected column means "cannot be resolved at n=10", not "no
+effect"; both are printed. #226's parametric t-test on five of these steps reached 4.4e-05
+down to 3.1e-07, agreeing on sign and on which steps are real.
 
-**Significance without scipy, and what that costs.** `hitl-pmp` does not ship scipy, so
-rather than add a dependency this uses an *exact* paired permutation test: with 10 seeds
-the 2^10 = 1024 sign-flips of the within-seed differences enumerate the entire null
-distribution, no normality assumption. Exact rather than asymptotic -- but it floors the
-two-sided p at 2/1024 = 1.95e-03, and Holm across all 36 consecutive steps needs the
-smallest p below 0.05/36 = 1.39e-03, which is *below that floor*. **So no step can reach
-Holm-corrected significance under this test however real its effect** -- the corrected
-column reads "cannot be resolved at n=10", not "no effect". Both are printed so the
-distinction stays visible. PR #226's parametric t-test on five of these steps reached
-4.4e-05 down to 3.1e-07; the two agree on sign and on which steps are real.
-
-**Palette.** Deliberately *not* the project's `#0072B2`/`#D55E00`. Those encode "assistance
-mechanism available" versus "nothing intervenes" across every reset-policy figure here, and
-nothing in this figure is an arm of any such comparison -- these are all measurements of the
-same throw. Using them would import a contrast that does not exist. Purple/green carry the
-two distances, magenta/teal the two release angles, and grey stays reference.
+Not the project's `#0072B2`/`#D55E00`, which encode assistance-available versus
+nothing-intervenes; nothing here is an arm of that comparison.
 """
 
 import argparse
@@ -51,7 +36,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 
-# Not the project blue/orange -- see the module docstring for why.
 IMPACT = "#5D3A9B"
 RESTING = "#1B7837"
 KINEMATIC = "#B2168B"
@@ -103,8 +87,7 @@ def _field(*, name: str) -> Any:
 def _exact_paired_permutation_p(*, diffs: np.ndarray) -> float:
     """Two-sided exact p for `mean(diffs) == 0` by enumerating every sign-flip.
 
-    Exact rather than asymptotic, and dependency-free. Only tractable because n is 10:
-    2^10 = 1024 sign assignments enumerate the entire null distribution.
+    Only tractable because n is 10: 2^10 = 1024 sign assignments.
     """
     n = len(diffs)
     signs = 1 - 2 * ((np.arange(2**n)[:, None] >> np.arange(n)) & 1)
@@ -145,8 +128,8 @@ def _step_tests(*, values: np.ndarray, speeds: list[float]) -> list[dict[str, An
 def reset_speeds(*, index: np.ndarray, speeds: list[float]) -> list[float]:
     """Speeds at which the *majority* release step index drops relative to the speed below.
 
-    A reset is a discrete event -- the gripper opening one control step earlier in the
-    swing -- so it is read off the step index rather than off a threshold on the fraction.
+    A reset is discrete -- the gripper opening one control step earlier -- so it is read off
+    the step index rather than a threshold on the fraction.
     """
     modal = [float(np.bincount(index[:, j].astype(int)).argmax()) for j in range(len(speeds))]
     return [speeds[j] for j in range(1, len(speeds)) if modal[j] < modal[j - 1]]
@@ -190,8 +173,7 @@ def main() -> None:
     resets = reset_speeds(index=step_index, speeds=speeds)
     tests = _step_tests(values=impact, speeds=speeds)
     reversals = [t for t in tests if t["delta"] < 0]
-    # Uncorrected, deliberately: the exact test's floor sits below Holm's threshold for
-    # 36 comparisons, so the corrected column can never fire. See the module docstring.
+    # Uncorrected: the exact test's floor sits below Holm's threshold for 36 comparisons.
     significant = [t for t in reversals if t["p"] < 0.05]
 
     fig, axes = plt.subplots(
@@ -312,15 +294,13 @@ def main() -> None:
     ax.axhline(
         0.46, color=GREY, linestyle="--", linewidth=1.5, label="_release_fraction = 0.46 (target)"
     )
-    # The two speeds where the seed population straddles two release step indices: the
-    # faint traces show it, this makes the count explicit rather than eyeballed.
+    # Where the seed population straddles two release step indices, with the count explicit.
     split_rank = 0
     for j, sp in enumerate(speeds):
         counts = np.bincount(step_index[:, j].astype(int))
         present = [(i, int(c)) for i, c in enumerate(counts) if c]
         if len(present) > 1:
-            # Stagger successive callouts vertically; at 5 deg/s spacing two adjacent
-            # labels at the same height overlap and neither is readable.
+            # Staggered: at 5 deg/s spacing, two adjacent labels at one height overlap.
             ax.annotate(
                 " / ".join(f"step {i}: {c}/{n_seeds}" for i, c in present),
                 xy=(sp, float(np.nanmean(fraction[:, j]))),

@@ -1,51 +1,19 @@
-"""Measure the toss's **release angle** as a function of commanded release speed.
+"""Measure the toss's release angle as a function of commanded release speed.
 
-PR #226 measured where the cube lands across 60-240 deg/s and found the dial significantly
-non-monotone -- `4/5` tested steps reverse. The mechanism it names is **release
-quantisation**: `TossController` opens the gripper on the first control step at which
-`fraction_covered >= self._release_fraction` (0.46), and control steps come once per
-`_CONTROL_DT = 0.1` s. Raising the commanded speed shortens the swing, so the profile is
-sampled at *coarser* fractions of the path and the step the release actually lands on
-jumps. This probe measures the angle that quantisation produces.
+`TossController` opens the gripper on the first control step at which
+`fraction_covered >= self._release_fraction` (0.46), once per `_CONTROL_DT = 0.1` s. Raising
+the commanded speed shortens the swing, so the profile is sampled at coarser fractions and
+the release step jumps -- the quantisation behind #226's non-monotone range grid.
 
-## What "release angle" means here, and what it deliberately is not
+The quantity is `atan2(v_z, v_x)` of `J(q_r) . d`: `d` the toss path's unit direction in
+joint space, `q_r` the arm configuration at the step the gripper actually opened on, `J` the
+world-frame translational Jacobian at `robot_pinch_site` over the arm's 7 columns only. It
+is kinematic, not the cube's launch velocity, which `--validation-speeds` measures
+separately; nor the arrival angle #226 reports (74.1 deg at 185, 64.7 deg at 190).
 
-The quantity is the **launch elevation of the gripper**: `atan2(v_z, v_x)` of `J(q_r) . d`,
-where `d` is the toss path's unit direction in joint space, `q_r` is the arm configuration
-at the control step the gripper actually opened on, and `J` is the world-frame translational
-Jacobian at `robot_pinch_site` -- MuJoCo's own site for the point between the fingers.
-
-Three things that choice pins down, each of which is a way to get this wrong:
-
-  * **the realised release configuration, not the nominal one.** `_release_fraction` is
-    0.46, but the fraction the controller actually releases at is whatever the first
-    profile sample past 0.46 happens to be, and that is what determines the arm's pose.
-    Evaluating at 0.46 would measure a throw the robot never makes;
-  * **the pinch site, not a link frame.** The site is where the cube is held, and it is
-    ~0.18 m past the last arm link. A Jacobian at `robot_bracelet_link` answers a
-    different question with a plausible-looking number;
-  * **the arm's 7 columns only.** The base is stationary through the swing, so the base
-    dofs contribute nothing and including them would let base drift leak in.
-
-This is a **kinematic** quantity -- where the gripper is heading at release. It is *not*
-the cube's actual launch velocity: the controller tracks its profile through a kp/kv servo
-with real lag, and the cube leaves with whatever the gripper hands it. Those two can differ,
-so the probe measures the cube's launch velocity as well, at a few speeds, rather than
-asserting they agree. See `--validation-speeds`.
-
-It is also *not* the **arrival** angle PR #226 reports (74.1 deg at 185, 64.7 deg at 190).
-That is the angle the cube comes *down* at, after a whole parabola; this is the angle it
-goes *up* at. Conflating them is easy and they behave differently.
-
-## Why this is not a re-run of PR #226's grid
-
-The toss path's geometry -- the windup configuration it starts from, the joint-space
-direction `d`, and the path length `s_total` -- is set in `TossController.reset` **before**
-`release_speed` is used for anything. `release_speed` enters only through
-`toss_profile_limits`, which scales the trapezoidal profile's three limits. So the geometry
-is *speed-independent*, and one execution per seed yields the release configuration at
-every speed on the dial by re-timing the same path. 370 cells of angle come out of 10 seeds
-of simulation, not 370.
+The toss path's geometry is fixed in `TossController.reset` before `release_speed` is used;
+that only reaches `toss_profile_limits`. So one execution per seed re-times to every speed:
+370 cells of angle out of 10 seeds of simulation, not 370.
 
 Wrap in a memory-capped scope, and use `scripts/with_kinder_env.sh` so `kinder_models`
 resolves to this worktree rather than the main checkout:
@@ -54,8 +22,7 @@ resolves to this worktree rather than the main checkout:
         scripts/with_kinder_env.sh python scripts/tossing3d_release_angle_probe.py \
         --output results.json --max-workers 10
 
-`analysis/tossing3d_range_and_release_angle.py` reads this JSON back alongside PR #226's
-range grid and draws the figure; this script never plots.
+`analysis/tossing3d_range_and_release_angle.py` draws the figure; this never plots.
 """
 
 import argparse
@@ -71,18 +38,10 @@ import numpy as np
 from pydantic import BaseModel
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-# `src/` and the two `reference/` source roots, ahead of everything else. The KINDER venv
-# installs `kindergarden` and `kinder-models` **editable**, so their `.pth` files carry the
-# *main checkout's* absolute paths -- from a worktree, `import kinder_models` otherwise
-# resolves to whatever commit that checkout happens to be sitting on rather than to this
-# branch's pin, and nothing errors, because both trees export the same module names.
-#
-# That is not a hypothetical: on 2026-08-12 the main checkout was on `3524010` while this
-# branch pins `1b564a1`, and the difference is exactly the release-speed parameter this
-# probe sweeps (`grep -c release_speed`: 6 in one tree, 0 in the other). A run that picked
-# up the main checkout's copy would have measured the *unparameterised* toss at a single
-# speed and looked entirely normal doing it. `assert_kinder_pins` below turns that from a
-# silent wrong answer into a refusal to start.
+# Both KINDER packages are installed editable against the *main checkout's* absolute paths,
+# so without this a worktree imports whatever commit that checkout is sitting on. Measured
+# 2026-08-12: main was on `3524010`, this branch pins `1b564a1`, and the difference is the
+# release-speed parameter this probe sweeps. `assert_kinder_pins` catches it.
 for _path in (
     _REPO_ROOT / "src",
     _REPO_ROOT / "reference" / "kindergarden" / "src",
@@ -98,30 +57,25 @@ from hitl_pmp.environments.tossing3d.skill_oracle_policy import (  # noqa: E402
     ORACLE_THROW_STANDOFF,
 )
 
-# MuJoCo's own site for the point between the fingers -- where the cube is actually held.
+# MuJoCo's site for the point between the fingers, where the cube is held.
 PINCH_SITE = "robot_pinch_site"
 
-# `robot_joint_1` .. `robot_joint_7`. Resolved by name at run time rather than hardcoded as
-# addresses; the probe asserts it found all seven.
 ARM_JOINT_NAMES = tuple(f"robot_joint_{i}" for i in range(1, 8))
 
-# Ten fixed scene seeds. Never randomly drawn.
+# Fixed, never randomly drawn.
 DEFAULT_SEEDS = tuple(range(10))
 
-# The same 60-240 deg/s at 5 deg/s that PR #226 stepped, so the two figures line up.
+# The 60-240 deg/s at 5 deg/s #226 stepped, so the two figures line up.
 DEFAULT_SPEED_START = 60.0
 DEFAULT_SPEED_STOP = 240.0
 DEFAULT_SPEED_STEP = 5.0
 
-# Speeds at which the toss is *actually executed* so the kinematic angle can be checked
-# against the cube's measured launch velocity. Chosen as the three PR #226 makes the
-# non-monotonicity argument from: 140 is the default, and 185/190 is the reversal where
-# 0/10 becomes 10/10.
+# Speeds the toss is actually executed at, so the kinematic angle can be checked against the
+# cube's measured launch velocity. 140 is the default; 185/190 is #226's 0/10 -> 10/10 step.
 DEFAULT_VALIDATION_SPEEDS = (140.0, 185.0, 190.0)
 
-# `_release_fraction` on `TossController`, and `_CONTROL_DT` in kinder-models' utils.
-# Copied so this module's arithmetic is testable without KINDER; the probe asserts the
-# live class agrees before trusting a number.
+# `TossController._release_fraction` and kinder-models' `_CONTROL_DT`, copied so this
+# module is testable without KINDER. The probe asserts the live class agrees.
 RELEASE_FRACTION = 0.46
 CONTROL_DT = 0.1
 
@@ -133,16 +87,14 @@ class ReleaseAngleCell(BaseModel):
     commanded_speed_deg: float
     standoff: float
 
-    # Geometry of the toss path, captured once per seed and identical across speeds.
+    # Toss path geometry, captured once per seed and identical across speeds.
     s_total: float | None = None
     trajectory_end: float | None = None
     n_control_steps: int | None = None
 
-    # The quantisation itself.
     release_step_index: int | None = None
     realised_release_fraction: float | None = None
 
-    # The measurement.
     release_elevation_deg: float | None = None
     release_speed_mps: float | None = None
 
@@ -168,10 +120,8 @@ class ReleaseAngleCell(BaseModel):
 def longest_contact_free_window(*, contacted: list[bool]) -> tuple[int, int]:
     """The `[start, stop)` index range of the longest run of contact-free samples.
 
-    The cube is in contact with the gripper before release and with the bin or the floor
-    after landing, so its free flight is the longest contact-free run in the recording.
-    Taking the *longest* run rather than the first is what makes this robust to the brief
-    contact-free moments that occur while the gripper is opening.
+    Longest rather than first: the gripper opening produces brief contact-free moments
+    before the throw proper.
     """
     best_start, best_len = 0, 0
     run_start: int | None = None
@@ -191,23 +141,12 @@ def longest_contact_free_window(*, contacted: list[bool]) -> tuple[int, int]:
 def assert_kinder_pins(*, kinder_models: Any, toss_controller: Any) -> None:
     """Refuse to run unless KINDER resolved inside this checkout, at a pin that has the dial.
 
-    Three independent failure modes, all of which otherwise produce a full grid of
-    plausible numbers rather than an error:
+    Three failure modes, each of which otherwise yields a full grid of plausible numbers:
+    `kinder_models` resolving to another checkout; a pin whose `TossController.reset` has no
+    `release_speed`, so a speed sweep is N copies of the default 140 deg/s throw; a pin
+    older than kb#12 with no `gripper_release_ms`, likewise on a millisecond axis.
 
-      * `kinder_models` resolving to a *different* checkout (see the `sys.path` note at the
-        top of this module);
-      * that checkout being on a pin where `TossController.reset` has no `release_speed`
-        parameter, so every cell silently runs the default 140 deg/s toss and the "speed
-        sweep" is 37 copies of one throw;
-      * that checkout being on a pin where `reset` has no `gripper_release_ms` -- anything
-        older than kb#12 -- so every cell of a *millisecond* axis runs the same throw and
-        that axis is N copies of one column. Since PR #232 the `tossing3d` extra is
-        installed editable by absolute path to the shared checkout, so this is the live
-        default rather than a hypothetical: a worktree gets whatever pin *that* tree sits
-        on unless something shadows it on `PYTHONPATH`.
-
-    The checks are on the signature rather than on the pin SHA on purpose: they test the
-    capability actually depended on, so they keep working when the pin moves.
+    On the signature rather than the pin SHA, so the checks survive a pin bump.
     """
     resolved = Path(kinder_models.__file__).resolve()
     if _REPO_ROOT not in resolved.parents:
@@ -233,15 +172,11 @@ def assert_kinder_pins(*, kinder_models: Any, toss_controller: Any) -> None:
 def release_index_and_fraction(*, trajectory: np.ndarray) -> tuple[int, float, float]:
     """The control step the gripper opens on, and the path fraction it opens at.
 
-    Returns `(release_index, realised_fraction, trajectory_end)`. Pure, so it is testable
-    without KINDER, and it is the whole quantisation rule in one place.
-
-    Reproduces `TossController.step` exactly, including the detail that is easy to get
-    wrong: the denominator is the profile's **last sample** (`self._trajectory[-1]`), not
-    the `total_dist` handed to the profile. The two differ because the profile's time grid
-    is `arange(0, duration + step, step)` and so overshoots the motion's duration -- and
-    using `total_dist` instead shifts the realised fraction enough to move which step the
-    release lands on.
+    Returns `(release_index, realised_fraction, trajectory_end)`. Reproduces
+    `TossController.step`, including the detail that is easy to get wrong: the denominator
+    is the profile's last sample, not the `total_dist` handed to the profile. The time grid
+    is `arange(0, duration + step, step)`, which overshoots, and using `total_dist` moves
+    which step the release lands on.
     """
     end = float(trajectory[-1])
     fractions = trajectory / end if end > 0 else np.ones_like(trajectory)
@@ -281,10 +216,9 @@ def elevation_from_jacobian(
 ) -> tuple[float, float]:
     """`atan2(v_z, v_x)` in degrees, and `|v|`, for the pinch site moving along `toss_dir`.
 
-    `qpos_at_release` is the full configuration -- base included, at the throw pose -- with
-    the seven arm joints already set to the release configuration. The Jacobian is taken in
-    the world frame, so the base's yaw matters and is therefore the real one rather than a
-    canonical pose.
+    `qpos_at_release` is the full configuration, base included at the real throw pose, with
+    the seven arm joints set to the release configuration. The Jacobian is world-frame, so
+    the base's yaw matters.
     """
     saved = data.qpos.copy()
     saved_vel = data.qvel.copy()
@@ -328,9 +262,7 @@ def _speeds_from(*, args: argparse.Namespace) -> list[float]:
 def _worker(job: tuple[int, list[float], list[float], float, int]) -> list[dict[str, Any]]:  # noqa: PLR0917
     """One seed, start to finish, in its own process.
 
-    Takes its arguments as one positional tuple because `Pool.map` passes exactly one
-    positional argument; the project's keyword-only rule cannot apply to a callable the
-    multiprocessing API owns the calling convention for.
+    One positional tuple because `Pool.map` passes exactly one positional argument.
     """
     import kinder
     import kinder_models
@@ -382,13 +314,9 @@ def execute_toss(  # noqa: PLR0917
 ) -> tuple[dict[str, Any], Any, Any]:
     """Run pick -> move -> toss once, recording the cube at every physics substep.
 
-    A function rather than a loop body so the two closures below capture *parameters*
-    rather than a caller's loop variables -- the same code inlined in a `for` loop is a
-    live `B023`, and a closure that reads the wrong iteration's simulator handle would
-    record one throw's contacts against another throw's geometry.
-
-    Returns the cell's measurements plus the live `(model, data)`, which the caller needs
-    afterwards to evaluate the Jacobian.
+    A function rather than a loop body so the closures below capture parameters rather than
+    a caller's loop variables -- inlined in a `for` loop this is a live `B023`. Returns the
+    cell's measurements plus the live `(model, data)` the caller needs for the Jacobian.
     """
     env.reset_to_seed(seed=seed)
     backend = env.backend()
@@ -454,8 +382,7 @@ def execute_toss(  # noqa: PLR0917
         toss_controller.reset = original_reset
 
     entry["solved"] = bool(backend.check_goals())
-    # The cube's launch velocity: the free-flight parabola's velocity at the window's first
-    # sample, which is the first substep after the gripper let go.
+    # Launch velocity: the fitted parabola at the first substep after the gripper let go.
     start, stop = longest_contact_free_window(contacted=contacted)
     entry["free_flight_samples"] = stop - start
     if stop - start >= 3:
@@ -491,12 +418,10 @@ def run_seed(  # noqa: PLR0917
     captured: dict[str, Any] = {}
     original_reset = TossController.reset
 
-    # Positional, because it replaces `TossController.reset` and must match the signature
-    # upstream's own callers use.
+    # Positional, to match the signature upstream's own callers use.
     def recording_reset(self: Any, x: Any, params: Any, **kwargs: Any) -> None:  # noqa: PLR0917
         original_reset(self, x, params, **kwargs)
-        # Assert the live class agrees with the constant this probe re-derives the
-        # release step from. A drift here would silently move every reported angle.
+        # A drift here would silently move every reported angle.
         if abs(float(self._release_fraction) - RELEASE_FRACTION) > 1e-12:  # noqa: SLF001
             raise RuntimeError(
                 f"TossController._release_fraction is {self._release_fraction}, not the "  # noqa: SLF001
@@ -572,7 +497,7 @@ def run_seed(  # noqa: PLR0917
             toss_dir=toss_dir,
         )
         row.release_elevation_deg = elevation
-        # Scale the unit-direction Jacobian velocity by the profile's speed at release.
+        # The unit-direction Jacobian velocity, scaled by the profile's speed at release.
         row.release_speed_mps = magnitude * float(np.deg2rad(speed))
 
         if speed in physics:

@@ -1,9 +1,6 @@
-"""Unit tests for the release-speed video composer's geometry and captions.
+"""The release-speed video composer's world -> pixel map and its status-bar captions.
 
-No video is encoded here and no simulator is started. What is worth pinning is the world
--> pixel map the arc panel draws through, and what the status bar *says*, because both are
-claims about the measurement and both would look plausible on screen while being wrong.
-"""
+No video is encoded and no simulator is started."""
 
 import numpy as np
 import pytest
@@ -22,8 +19,7 @@ from analysis.tossing3d_release_speed_video import (
 def _synthetic_clip(*, cut_short: bool) -> dict[str, object]:
     """One throw's recorded frames, from a parabola whose crossing is known in closed form.
 
-    `cut_short` intercepts the cube in mid-air, which is what the bin's far wall does to a
-    flat throw -- the case the dotted extrapolation exists for.
+    `cut_short` intercepts the cube in mid-air, as the bin's far wall does to a flat throw.
     """
     g, z0, vz, x0, vx = 9.81, 0.9, 3.0, 1.4, 2.6
     impact_t = (vz + np.sqrt(vz**2 - 2 * g * (0.025 - z0))) / g
@@ -51,13 +47,8 @@ def _transform() -> PanelTransform:
 
 
 def test_panel_transform_is_isotropic_so_an_arc_is_not_stretched() -> None:
-    """One metre must be the same number of pixels along x as along z.
-
-    A panel whose whole subject is "how far, how high" cannot use different scales on its
-    two axes: the parabola's shape would be an artefact of the aspect ratio, and a reader
-    comparing the height of a lob against the length of a flat throw would be reading the
-    figure's geometry rather than the throw's.
-    """
+    """One metre must be the same number of pixels along x as along z, or the parabola's
+    shape is an artefact of the aspect ratio."""
     t = _transform()
     assert t.metres_per_pixel_x == pytest.approx(t.metres_per_pixel_z, rel=1e-12)
 
@@ -70,8 +61,7 @@ def test_panel_transform_puts_z_zero_at_the_bottom_and_x_min_at_the_left() -> No
 
 
 def test_panel_transform_is_monotone_the_right_way_round_on_both_axes() -> None:
-    """z grows *up* the world and *down* the image; getting that sign wrong draws every
-    parabola as a valley and would be easy to mistake for a physics bug."""
+    """z grows *up* the world and *down* the image."""
     t = _transform()
     x_near, _ = t.to_pixel(x=1.0, z=0.0)
     x_far, _ = t.to_pixel(x=2.0, z=0.0)
@@ -82,11 +72,7 @@ def test_panel_transform_is_monotone_the_right_way_round_on_both_axes() -> None:
 
 
 def test_panel_transform_widens_x_rather_than_squashing_z_when_the_arc_is_tall() -> None:
-    """The requested z span is never compressed to fit; the x span grows instead.
-
-    Enforcing isotropy has to give somewhere. Clipping the top off a lob would silently
-    hide the very throws whose height is the point, so the spare room is taken sideways.
-    """
+    """The requested z span is never compressed to fit; the x span grows instead."""
     tall = PanelTransform.fit(
         x_min=0.0, x_max=1.0, z_min=0.0, z_max=4.0, width=640, height=480, margin=0
     )
@@ -117,7 +103,7 @@ def test_playback_indices_clamps_to_the_recording_rather_than_running_off_it() -
     assert indices[-1] == len(times) - 1
 
 
-def test_phase_at_names_the_four_stretches_in_order() -> None:
+def test_phase_at_names_the_three_stretches_in_order() -> None:
     assert phase_at(t=0.5, release_t=1.0, land_t=1.5) is TossPhase.SWING
     assert phase_at(t=1.0, release_t=1.0, land_t=1.5) is TossPhase.FLIGHT
     assert phase_at(t=1.2, release_t=1.0, land_t=1.5) is TossPhase.FLIGHT
@@ -125,12 +111,7 @@ def test_phase_at_names_the_four_stretches_in_order() -> None:
 
 
 def test_status_fields_withholds_the_range_until_the_cube_has_landed() -> None:
-    """The distance is the video's punchline and must not be readable before the throw.
-
-    A bar that shows the final range while the cube is still in the air answers the
-    question the footage is being watched to answer, and worse, invites the reader to
-    believe the number was somehow observed at that instant.
-    """
+    """A range shown mid-flight would imply it was observed at that instant."""
     before = dict(
         status_fields(
             speed=105.0,
@@ -171,12 +152,7 @@ def test_status_fields_withholds_the_range_until_the_cube_has_landed() -> None:
 
 
 def test_ballistic_tail_reaches_the_reported_crossing_when_the_throw_was_intercepted() -> None:
-    """The dotted continuation must land exactly on the marker it explains.
-
-    It is drawn as the fitted parabola rather than a chord, so a tail that stopped short
-    of -- or ran past -- the reported ground crossing would be a visible contradiction
-    between two things the panel asserts about the same throw.
-    """
+    """The dotted continuation must land exactly on the marker it explains."""
     clip = _synthetic_clip(cut_short=True)
     xs, zs = ballistic_tail(clip=clip)
 
@@ -188,8 +164,7 @@ def test_ballistic_tail_reaches_the_reported_crossing_when_the_throw_was_interce
 
 
 def test_ballistic_tail_is_empty_when_the_cube_reached_open_floor_on_its_own() -> None:
-    """Nothing to extrapolate, so nothing is drawn: a stub there would claim the
-    measurement went further than the footage did."""
+    """Nothing to extrapolate, so nothing is drawn."""
     assert ballistic_tail(clip=_synthetic_clip(cut_short=False)) == ([], [])
 
 
@@ -198,21 +173,15 @@ def test_legend_rows_stay_dim_until_their_throw_has_actually_been_shown() -> Non
     rows = legend_rows(clips=clips, colors=[(1, 2, 3), (4, 5, 6)], measured=1)
     assert [measured for _, _, measured in rows] == [True, False]
     assert "not thrown yet" in rows[1][1]
-    # Labelled by both dials, and reporting the distance *from the base* rather than the
-    # world x -- the same quantity the surface figures and the statistics are computed on,
-    # so a reader can check one artifact against the other.
+    # From the base, the same quantity the surface figures are computed on.
     thrown = clips[0]["ballistic_impact_x"] - clips[0]["base_x_before_toss"]
     assert f"{thrown:.3f}" in rows[0][1]
     assert "105 deg/s @  720 ms" in rows[0][1]
 
 
 def test_status_fields_reports_the_throw_distance_relative_to_the_base() -> None:
-    """ "How far the cube goes" is a distance, and a world x is not one on its own.
-
-    Both dials are shown, and both distances are reported from the base -- the ballistic
-    crossing, which is the primary criterion, and the resting position beside it. A world x
-    in either slot would silently carry wherever `MoveToThrowPose` parked the robot.
-    """
+    """Both dials shown, and both distances reported from the base -- a world x in either
+    slot would carry wherever `MoveToThrowPose` parked the robot."""
     fields = dict(
         status_fields(
             speed=140.0,

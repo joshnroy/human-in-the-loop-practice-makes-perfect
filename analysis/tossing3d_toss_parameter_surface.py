@@ -1,57 +1,25 @@
-"""Tossing3D's `(release_speed x gripper_release_ms)` surface: figures and the two tests.
+"""Tossing3D's `(release_speed x gripper_release_ms)` surface: figures and two tests.
 
-Post-run analysis only: this reads the committed grid back in and never builds an
-environment or drives a skill. It exists to answer two questions that a heatmap alone
-cannot, so unlike PR #234's surface script -- which this file is the generalisation of --
-it does draw inference, and every claim it prints carries a p-value.
+Post-run analysis only. Every claim it prints carries a p-value.
 
-## Question 1: is the reachable set degenerate?
+**Q1, is the reachable set degenerate?** `Toss` has `param_dim=2`, justified only if the
+second dial reaches throws the first cannot. `reach_interval` compares the ballistic-distance
+span over the 2-D grid against the span along the `ms = 720` row alone; `variance_shares`
+decomposes it into speed, millisecond and interaction. The interaction is predicted: the
+swing runs 3100 ms at 60 deg/s down to 1700 ms at 140, so a fixed absolute millisecond is a
+different point in the swing at each end.
 
-`Toss` has `param_dim=2`. That is only justified if the second dial reaches throws the
-first cannot. If every `(speed, ms)` pair merely reproduces a distance some speed already
-reaches at the default millisecond, the second dial buys redundancy rather than reach and
-the parameter should be one-dimensional.
+**Q2, does the speed reversal survive?** kb#11 measured `1/16` reversals at 3.3 mm on a
+single seed without establishing whether it was real. Paired on `(release_ms, seed)`, so
+`n = 20 x 5 = 100` per speed step, Holm-corrected across the 19 steps.
 
-`reach_interval` answers it directly and without a model: the span of ballistic distances
-reachable over the whole 2-D grid, against the span reachable along the single `ms = 720`
-row. `variance_shares` then says *how* the surface is shaped -- a two-way decomposition into
-a speed main effect, a millisecond main effect and their interaction. The interaction term
-is not a nuisance here, it is predicted: the swing's duration is itself a function of the
-speed (3100 ms at 60 deg/s down to 1700 ms at 140), so the same absolute millisecond is a
-different point in the swing at each end of the speed range.
+Every statistic is on the ballistic distance. Resting x is plotted beside it to show its
+bin-contact artifact -- a step: at 140 deg/s, `690 -> 1.7175`, `705 -> 1.7428`,
+`710 -> 1.9870`.
 
-## Question 2: does the speed reversal survive?
-
-kb#11 measured `1/16` reversals at 3.3 mm on a single seed and explicitly did not establish
-whether it was real. `adjacent_speed_reversals` re-asks it with the seed axis populated: for
-each adjacent pair of commanded speeds, is the mean change in ballistic distance negative?
-
-**The test is paired, and that is not optional.** Every cell of this grid runs the same five
-seeds, so a speed pair's two arms are the same five scenes throw for throw. An unpaired test
-discards that structure and understates the effect. `paired_difference_test` pairs on
-`(release_ms, seed)`, giving `n = 20 x 5 = 100` paired observations per speed step.
-
-Holm-Bonferroni is applied across the 19 speed steps, because asking 19 questions at
-`alpha = 0.05` expects roughly one false positive and this experiment exists partly to
-decide whether a single reported reversal was one.
-
-## Ballistic distance is primary; resting distance is drawn beside it, not instead
-
-Resting x is contaminated by bin contact and the contamination is a **step**, not a drift:
-scanning the millisecond axis at 140 deg/s gave `690 -> 1.7175`, `705 -> 1.7428`, then a jump
-of 244 mm to `710 -> 1.9870`. That is the bin catching the cube versus not. Both surfaces are
-plotted so a reader can see the artifact rather than be told about it, but every statistic
-above is computed on the ballistic distance.
-
-## Palette
-
-Deliberately **not** the project's `#0072B2`/`#D55E00`. Those encode "an assistance mechanism
-is available" versus "nothing intervenes", and no cell here is an arm of that comparison --
-every cell is the same robot doing the same thing with two dials moved. Borrowing them would
-import a distinction that does not exist. The millisecond is an **ordered continuous**
-variable, so its curve family gets a sequential ramp, which is the one encoding that makes
-"these curves are in order" readable at a glance; the same ramp carries the heatmaps. Cells
-where nothing was thrown are hatched grey -- a third state, not a low distance.
+Not the project's `#0072B2`/`#D55E00`: those encode assistance-available versus
+nothing-intervenes, and no cell here is an arm of that comparison. The millisecond is
+ordered and continuous, so it gets a sequential ramp; never-thrown cells are hatched grey.
 """
 
 import argparse
@@ -68,14 +36,11 @@ import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 from scipy import stats  # noqa: E402
 
-# Upstream's own shipped default, and the row the 1-D reachable set is measured along. Kept
-# as a module constant rather than read from `predicates` because it is a *property of the
-# grid being analysed* -- the row must actually exist in the axis, and a grid swept over
-# different bounds will not have it. `main` reports which row it fell back to.
+# Upstream's shipped default, and the row the 1-D reachable set is measured along. A module
+# constant, not read from `predicates`: the row must exist in the grid being analysed, and
+# `main` reports which row it fell back to.
 DEFAULT_RELEASE_MS = 720.0
 
-# Sequential, because the millisecond is an ordered continuous variable. Pale -> saturated
-# purple; see the palette note above for why the project's blue/orange is wrong here.
 SEQUENTIAL = plt.get_cmap("viridis")
 SURFACE_CMAP = "viridis"
 NOT_THROWN_COLOUR = "#BFBFBF"
@@ -101,14 +66,8 @@ def load_grid(*, path: Path) -> dict[str, Any]:
 def distance_table(*, grid: dict[str, Any], field: str) -> dict[tuple[float, float, int], float]:
     """`(speed, release_ms, seed) -> distance from the robot base`, in metres.
 
-    **From the base, not the world x.** `MoveToThrowPose` parks the base a standoff back from
-    the bin, so a world-frame landing position carries wherever the base ended up; subtracting
-    `base_x_before_toss` makes the number a property of the throw. Every comparison in this
-    module is on this quantity, and a forgotten subtraction would shift all of them alike --
-    which is exactly why it is done once, here.
-
-    Cells where nothing was thrown are **absent** rather than zero. A missing key is a fact
-    about the parameter pair; a zero would be a measurement of a throw that never happened.
+    From the base, not the world x: `MoveToThrowPose` parks the base a standoff back from
+    the bin. Cells where nothing was thrown are absent rather than zero.
     """
     table: dict[tuple[float, float, int], float] = {}
     for row in grid["rows"]:
@@ -126,10 +85,8 @@ def distance_table(*, grid: dict[str, Any], field: str) -> dict[tuple[float, flo
 def dead_cells(*, grid: dict[str, Any]) -> list[tuple[float, float, int]]:
     """Cells where the gripper never opened, so no throw happened at all.
 
-    `gripper_release_ms` is not clamped upstream, so a millisecond at or past the end of the
-    swing is a real and reachable corner rather than an error. Reported as itself so it can
-    never be read as a flat measurement -- PR #231 hatched its `30/100` never-threw cells for
-    the same reason.
+    `gripper_release_ms` is not clamped upstream, so this is a reachable corner, not an
+    error. Reported as itself so it can never be read as a flat measurement.
     """
     return sorted(
         (row["commanded_speed_deg"], row["commanded_release_ms"], row["seed"])
@@ -153,13 +110,8 @@ def reach_interval(
 ) -> tuple[float, float]:
     """The span of ballistic distances the parameter set reaches, as `(min, max)`.
 
-    With `release_ms=None` this is the 2-D reachable set: what both dials together can
-    command. With a millisecond fixed it is the 1-D set: what the speed dial alone reaches
-    with the second held at its default. **The comparison of those two intervals is the
-    degeneracy statistic** -- if they coincide, the second dial adds no reach.
-
-    Computed on seed means, because the question is what a caller can *command*: a single
-    seed's outlier is not a distance the parameter reaches, it is scene noise.
+    `release_ms=None` gives the 2-D set, a fixed millisecond the 1-D set; comparing the two
+    is the degeneracy statistic. On seed means, since a single seed's outlier is scene noise.
     """
     surface = seed_mean_surface(table=table)
     values = [
@@ -175,19 +127,9 @@ def reach_interval(
 def variance_shares(*, table: dict[tuple[float, float, int], float]) -> dict[str, float]:
     """Two-way decomposition of the seed-mean surface into speed, millisecond, interaction.
 
-    The classical identity on a complete grid:
-    `SS_total = SS_speed + SS_release_ms + SS_interaction`, exactly, so the three returned
-    shares sum to 1. Reported as shares rather than raw sums of squares because the question
-    is proportional -- "how much of the surface's shape does each dial account for" -- and a
-    raw SS is not comparable across grids of different size.
-
-    The **interaction** term is the one to read first here. A large interaction means the two
-    dials are not separable, which is the mechanism this domain predicts: the swing's
-    duration is a function of the speed, so a fixed absolute millisecond is a different point
-    in the swing at each speed.
-
-    Requires a complete rectangular grid; incomplete cells are dropped along with their whole
-    row and column, since an unbalanced decomposition is not the identity above.
+    `SS_total = SS_speed + SS_release_ms + SS_interaction` holds exactly on a complete grid,
+    so the three shares sum to 1. Needs a complete rectangular grid: incomplete cells are
+    dropped with their whole row and column.
     """
     surface = seed_mean_surface(table=table)
     speeds = sorted({s for s, _ in surface})
@@ -216,22 +158,13 @@ def variance_shares(*, table: dict[tuple[float, float, int], float]) -> dict[str
 def paired_difference_test(*, before: np.ndarray, after: np.ndarray) -> dict[str, float]:
     """A paired t-test on `after - before`, with the degenerate case handled explicitly.
 
-    Paired because the two arms are the same `(release_ms, seed)` cells at two speeds -- the
-    same scenes, throw for throw. An unpaired test would attribute the between-cell spread
-    (which here is metres) to noise and could not see an effect of millimetres.
+    Paired because the arms are the same `(release_ms, seed)` cells at two speeds: the
+    between-cell spread is metres and the effect is millimetres.
 
-    `scipy.stats.ttest_rel` returns `nan` when every difference is identical, because the
-    sample variance is zero. That is not "no information", it is a perfectly consistent
-    effect, and letting a `nan` through would silently drop the comparison from a
-    significance count. So it is resolved here: a constant non-zero difference is `p = 0`,
-    a constant zero difference is `p = 1`.
-
-    The zero test is **relative, not exact**. Differences that cancel algebraically need not
-    cancel in floating point, so a genuinely constant difference can arrive with a standard
-    deviation of ~1e-17 -- which slips past an `== 0.0` guard and reaches scipy, which then
-    emits a catastrophic-cancellation warning and returns a t-statistic built from rounding
-    noise. Scaling the threshold by the mean is what makes the guard describe the situation
-    ("all the differences are the same") rather than a bit pattern.
+    `stats.ttest_rel` returns `nan` when every difference is identical, so a constant
+    non-zero difference is resolved to `p = 0` and a constant zero one to `p = 1`. The guard
+    is relative, not `== 0.0`: algebraic cancellation can leave a standard deviation of
+    ~1e-17, which reaches scipy and returns a t-statistic built from rounding noise.
     """
     before_array = np.asarray(before, dtype=float)
     after_array = np.asarray(after, dtype=float)
@@ -248,9 +181,7 @@ def paired_difference_test(*, before: np.ndarray, after: np.ndarray) -> dict[str
             "ci_high": mean_difference,
         }
     result = stats.ttest_rel(after_array, before_array)
-    # A 95% interval on the paired mean, so a null step can be *shown* to be a null step.
-    # Without it a bar of height zero and a bar whose interval spans +/- 200 mm look
-    # identical, and only one of them is evidence of no effect.
+    # A 95% interval on the paired mean, so a null step can be shown to be one.
     half_width = float(
         stats.t.ppf(0.975, len(differences) - 1)
         * differences.std(ddof=1)
@@ -269,10 +200,7 @@ def paired_difference_test(*, before: np.ndarray, after: np.ndarray) -> dict[str
 def holm_bonferroni(*, p_values: list[float]) -> list[float]:
     """Holm-Bonferroni adjusted p-values, order preserved.
 
-    Applied because the reversal question is asked once per adjacent speed step. At 19 steps
-    and `alpha = 0.05`, roughly one uncorrected false positive is expected -- and "a single
-    reported reversal" is precisely the thing this analysis is deciding the reality of, so an
-    uncorrected count would beg its own question.
+    At 19 speed steps and `alpha = 0.05`, roughly one uncorrected false positive is expected.
     """
     order = sorted(range(len(p_values)), key=lambda i: p_values[i])
     adjusted = [0.0] * len(p_values)
@@ -289,12 +217,9 @@ def adjacent_speed_reversals(
 ) -> list[dict[str, float]]:
     """For each adjacent pair of commanded speeds, the paired change in ballistic distance.
 
-    A **negative** `mean_difference` is a reversal: distance falling as commanded speed rises.
-    Each pair is tested on the `(release_ms, seed)` cells the two speeds share, so the arms
-    are the same scenes at the same millisecond and the pairing is real rather than nominal.
-
-    Returns one record per adjacent pair, in speed order, carrying both the raw and the
-    Holm-adjusted p-value so a reader can see the correction rather than only its verdict.
+    A negative `mean_difference` is a reversal. Each pair is tested on the
+    `(release_ms, seed)` cells the two speeds share; one record per pair in speed order,
+    carrying both the raw and the Holm-adjusted p-value.
     """
     speeds = sorted({s for s, _, _ in table})
     records: list[dict[str, float]] = []
@@ -327,13 +252,7 @@ def _panel_curve_family(  # noqa: PLR0917
     outer_is_speed: bool,
     colourbar_label: str,
 ) -> None:
-    """One curve per `outer` value, over `inner`, with faint per-seed traces underneath.
-
-    Project style, not re-derived per figure: the per-seed traces are drawn first at
-    `alpha=0.16 / lw=0.8`, the bold seed means over them at `lw=2.3`, and every legend entry
-    carries its own `n=`. A bold mean over a population that splits describes none of it, and
-    the faint lines are what make that visible instead of asserted.
-    """
+    """One curve per `outer` value, over `inner`, with faint per-seed traces underneath."""
     for index, outer_value in enumerate(outer):
         colour = SEQUENTIAL(index / max(1, len(outer) - 1))
         for seed in seeds:
@@ -373,9 +292,8 @@ def _panel_curve_family(  # noqa: PLR0917
         ax.plot(xs, ys, color=colour, lw=MEAN_TRACE_WIDTH, zorder=3, label=label)
     ax.legend(fontsize=7.6, frameon=False, loc="best")
     ax.grid(alpha=0.25, lw=0.6)
-    # Only three of the twenty curves can carry a legend entry without the legend eating the
-    # panel, so the ramp itself is the key for the other seventeen. Without this a reader can
-    # see that the curves are ordered but cannot read *which* curve is which.
+    # Only three curves can carry a legend entry without the legend eating the panel, so the
+    # ramp is the key for the rest.
     mappable = plt.cm.ScalarMappable(
         cmap=SURFACE_CMAP, norm=plt.Normalize(vmin=min(outer), vmax=max(outer))
     )
@@ -542,10 +460,7 @@ def build_reversal_figure(*, grid: dict[str, Any], output: Path) -> None:
     significant_negative = [r["mean_difference"] < 0 and r["p_value_holm"] < 0.05 for r in records]
     colours = ["#8B1A1A" if flag else "#4C72B0" for flag in significant_negative]
     ax.bar(xs, means * 1000.0, color=colours, width=0.72)
-    # 95% intervals on every bar. The finding here is a *negative* one -- no step's apparent
-    # reversal survives -- and a null claim is only readable if the reader can see how
-    # tightly zero is bracketed. Bars alone leave "no effect" and "no power" looking
-    # identical, which is exactly the ambiguity kb#11's single-seed `1/16` left behind.
+    # 95% intervals on every bar: bars alone leave "no effect" and "no power" identical.
     ax.errorbar(
         xs,
         means * 1000.0,
@@ -641,7 +556,7 @@ def main() -> None:
     for name, value in shares.items():
         print(f"    {name:12s} {value:.4f}")
 
-    # The paired test that the second dial does anything at all, at fixed speed.
+    # Does the second dial do anything at all, at matched speed?
     lowest, highest = grid["release_ms"][0], grid["release_ms"][-1]
     shared = sorted(
         {(s, k) for s, m, k in ballistic if m == lowest}

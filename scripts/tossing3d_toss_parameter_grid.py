@@ -1,89 +1,23 @@
-"""Measure Tossing3D's **`Toss` parameter surface** over any of its three dials.
+"""Measure Tossing3D's `Toss` parameter surface over any of its three dials.
 
-`Toss` has two parameters -- `release_speed` (joint-path deg/s) and `gripper_release_ms`
-(the wall-clock millisecond, from the start of the swing, at which the gripper opens) -- and
-the throw is aimed by a third, `MoveToThrowPose`'s `standoff`. This one driver sweeps a
-Cartesian grid over all three, holding any of them fixed at `points=1`. Which axes are live
-is a command-line choice, not a fork of this file: it started life as PR #234's
-`(standoff x speed)` probe and was generalised rather than copied, because two divergent
-copies of a 500-line sweep driver is a worse outcome than any figure it could produce.
+Axes are `(standoff, release_speed, gripper_release_ms)`, any held fixed at `points=1`. One
+cell is a full `Pick -> MoveToThrowPose -> Toss`, `Pick` pinned at the oracle's point;
+`solved` is the environment's own `check_goals()`.
 
-## What one cell is
+The primary criterion is the ballistic distance -- the free-flight parabola extrapolated to
+`z = cube_half_height` whether or not the cube got that far -- so a cell stopped by the
+bin's wall stays comparable with one that reached open floor. Resting x is contaminated by
+bin contact as a step: at 140 deg/s, `690 -> 1.7175`, `705 -> 1.7428`, `710 -> 1.9870`.
 
-One `(standoff, speed, release_ms, seed)` cell is a full `Pick -> MoveToThrowPose(standoff)
--> Toss(speed, release_ms)` sequence in the real simulator, with `Pick` held at the oracle's
-point for the same reason `tossing3d_skill_parameter_sweep.py` holds it there: letting the
-grasp's own variance in would confound "do these parameters work" with "did the grasp land".
-`solved` is `KinderBackend.check_goals()` -- the environment's own verdict, not a
-re-derivation of it.
+`gripper_release_ms` is not clamped upstream: at or past the end of the swing the gripper
+never opens, and that cell gets `threw=False` and no ballistic fields. The swing runs
+3100 ms at 60 deg/s down to 1700 ms at 140; `TOSS_RELEASE_MS_BOUNDS` stops at 1400.
 
-This is **not** re-timeable the way `tossing3d_release_angle_probe.py`'s angle grid was.
-That probe exploited the toss path's geometry being speed-independent, so one execution
-re-timed to every speed. Nothing here is independent of any of the three: where the cube
-actually lands is the measurement, and it needs the throw to actually happen.
+Jobs are `(standoff, seed, speed)` triples, one persistent environment each, submitted in
+`refinement_order` over the speed axis so a partial sweep spans the whole range.
 
-## Ballistic distance is the primary criterion; resting position rides along
-
-`fit_free_flight` fits the free-flight parabola and solves it for the crossing of
-`z = cube_half_height` -- the height the cube's centre sits at when resting on the floor --
-**whether or not the cube got that far**. A cube that hits the bin's near wall stops being
-recorded well above the floor; its ballistic distance is still the distance it would have
-flown. Taking the last recorded sample instead would put wall cells and floor cells on two
-different scales.
-
-The **resting** x is recorded beside it (`cube_x_final`) because it is free -- `take_action`
-runs the toss to completion anyway -- and because a downstream predicate needs it. It is
-deliberately *not* the primary criterion: it is contaminated by bin contact, and the
-contamination is a step rather than a drift. Scanning the millisecond axis at 140 deg/s,
-resting x went `690 -> 1.7175`, `705 -> 1.7428`, then **jumped 244 mm to `710 -> 1.9870`**.
-That step is the bin catching the cube versus not, and it is exactly the artifact the
-extrapolated ballistic crossing avoids. `first_contact_body` is recorded separately and is
-what distinguishes "flew the predicted distance and was stopped by the wall" from "flew the
-wrong distance".
-
-## Cells where nothing is thrown
-
-`gripper_release_ms` is **not clamped** upstream, so a value at or past the end of the swing
-means the gripper never opens and the cube is never thrown. That is a real corner of the
-space rather than an error, and this driver has to be able to land in it: such a cell gets
-`threw=False` and leaves every ballistic field unset, so a reader can never mistake it for a
-flat measurement of zero distance.
-
-It should not arise inside `TOSS_RELEASE_MS_BOUNDS`. The swing runs 3100 ms at 60 deg/s down
-to 1700 ms at 140 deg/s, and the bounds stop at 1400, so every cell of a default-bounds grid
-is still swinging when the gripper opens. A dead cell inside those bounds is therefore a
-finding about the bounds, not a quirk of the sweep.
-
-## Axes are `start/stop/points`, and the defaults are read from `predicates`
-
-A 20-point axis over `(60, 140)` has step `80/19`, which `start/stop/step` cannot express
-without the endpoint drifting off the bound the sampler actually draws from -- so
-`linear_axis` takes a point count and pins both endpoints exactly.
-
-The defaults are **imported from `hitl_pmp.environments.tossing3d.predicates`** rather than
-retyped, so this sweep cannot silently disagree with the interval the sampler draws from.
-That is not a stylistic preference: this task has already shipped two measurements against
-wrong constants -- a `240 deg/s` speed ceiling that was a measurement range rather than a
-command range, and a `723 ms` default that was the nominal arithmetic rather than the
-motion-planned one, worth 52 mm of landing distance.
-
-## Row order: a half-finished sweep is still a whole-range sweep
-
-Jobs are `(standoff, seed, speed)` triples -- one persistent environment runs every
-millisecond for one triple, since constructing the simulator is what costs. They are
-submitted in `refinement_order` over the speed axis: both endpoints, then the midpoint, then
-the quarter points, and so on. A sweep stopped or inspected halfway is then a *coarse* grid
-of the full speed range rather than a fine grid of its bottom third, so a partial figure
-shows the shape and can be early-stopped on. The parent rewrites its checkpoint after every
-completed job.
-
-Run it under a memory cap. **From a worktree, `PYTHONPATH` must shadow the shared checkout's
-editable KINDER with this worktree's own `reference/` submodules** -- since PR #232 the
-`tossing3d` extra is installed editable by absolute path to the shared checkout, so a
-worktree otherwise imports whatever pin that tree happens to sit on. `assert_kinder_pins`
-(reused from the release-angle probe) refuses to start when it does, because a pin without
-`gripper_release_ms` turns the millisecond axis into N copies of one column while looking
-entirely normal:
+Run under a memory cap, with `PYTHONPATH` shadowing the shared checkout's editable KINDER
+with this worktree's own `reference/`; `assert_kinder_pins` refuses to start otherwise.
 
     systemd-run --user --scope -p MemoryMax=16G -p OOMPolicy=continue \
         env PYTHONPATH=<worktree>/reference/kinder-baselines/kinder-models/src:\
@@ -92,8 +26,7 @@ entirely normal:
         --output grid.json --speed-points 20 --release-ms-points 20 \
         --seeds 0 1 2 3 4 --max-workers 20
 
-`analysis/tossing3d_toss_parameter_surface.py` reads the JSON back and draws the figures;
-this script never plots.
+`analysis/tossing3d_toss_parameter_surface.py` draws the figures; this never plots.
 """
 
 import argparse
@@ -108,9 +41,8 @@ import numpy as np
 from pydantic import BaseModel
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-# See `tossing3d_release_angle_probe`'s own note: the KINDER venv installs both packages
-# editable, so their `.pth` files carry the *main checkout's* absolute paths and a worktree
-# otherwise imports whatever commit that checkout is sitting on.
+# Both KINDER packages are installed editable against the *main checkout's* absolute paths,
+# so without this a worktree imports whatever commit that checkout is sitting on.
 for _path in (
     _REPO_ROOT / "src",
     _REPO_ROOT / "reference" / "kindergarden" / "src",
@@ -133,27 +65,19 @@ from scripts.tossing3d_release_angle_probe import (  # noqa: E402
     longest_contact_free_window,
 )
 
-# Five fixed scene seeds, never randomly drawn. Seed 0 is the one #226/#227 and PR #234's
-# surface used, so a column here is the *same* scene as theirs rather than merely a
-# comparable one; the other four are what make a cell an `x/5` rather than a coin flip.
+# Fixed, never randomly drawn. Seed 0 is the scene #226/#227 measured.
 DEFAULT_SEEDS = (0, 1, 2, 3, 4)
 
-# Both `Toss` axes span exactly the interval the sampler draws from, **imported rather than
-# retyped**. See the module docstring: a sweep whose bounds are a copy of the sampler's can
-# silently drift off them, and this task has already published one measurement over a
-# `240 deg/s` ceiling that was never a command range.
+# Imported rather than retyped: #239 corrected a retyped `240 deg/s` ceiling that was never
+# a command range.
 DEFAULT_SPEED_START, DEFAULT_SPEED_STOP = TOSS_SPEED_BOUNDS
 DEFAULT_SPEED_POINTS = 20
 
 DEFAULT_RELEASE_MS_START, DEFAULT_RELEASE_MS_STOP = TOSS_RELEASE_MS_BOUNDS
 DEFAULT_RELEASE_MS_POINTS = 20
 
-# The standoff is **held fixed** by default -- `points=1` -- because the throw's ballistic
-# distance is a property of the swing and the standoff only translates where it lands. 1.35
-# is the value #226/#227 and PR #234's surface fixed it at, so distances are directly
-# comparable with those grids; it sits inside `THROW_STANDOFF_BOUNDS = (1.10, 1.75)`.
-# A follow-up that wants the standoff dependence back sets `--standoff-points` and needs no
-# change to this file.
+# 1.35 is what #226/#227 fixed it at, so distances are comparable with those grids. Held at
+# `points=1`: the standoff only translates where the throw lands.
 DEFAULT_STANDOFF_START = 1.35
 DEFAULT_STANDOFF_STOP = 1.35
 DEFAULT_STANDOFF_POINTS = 1
@@ -161,8 +85,7 @@ DEFAULT_STANDOFF_POINTS = 1
 # Physics substeps to hold after the toss so the cube comes to rest before `check_goals`.
 DEFAULT_SETTLE_STEPS = 30
 
-# Fewer free-flight samples than this cannot determine a parabola, which is what
-# `fit_free_flight` requires. A cell below it is a cell where the gripper never opened.
+# Below this a parabola is underdetermined: the gripper never opened.
 MIN_FREE_FLIGHT_SAMPLES = 3
 
 
@@ -191,17 +114,13 @@ class GridCell(BaseModel):
 
     solved: bool | None = None
 
-    # Did the gripper ever open? `False` marks a cell where no throw happened at all, which
-    # is a third state rather than a throw of zero distance -- see the module docstring.
+    # `False` is a third state, not a throw of zero distance.
     threw: bool | None = None
 
-    # Where the base actually ended up, against the standoff it was commanded. Every
-    # distance here is reported *from the base*, so this is what makes a cell's ballistic
-    # distance a property of the throw rather than of where the robot happened to park.
+    # Distances are reported from the base, not in world x.
     base_x_before_toss: float | None = None
     bin_x: float | None = None
 
-    # The throw itself.
     free_flight_samples: int | None = None
     ballistic_residual_m: float | None = None
     ballistic_impact_x: float | None = None
@@ -214,7 +133,7 @@ class GridCell(BaseModel):
     launch_elevation_deg: float | None = None
     cube_half_height: float | None = None
 
-    # What actually stopped it, which is how a wall failure is told from a short throw.
+    # What stopped it, which is how a wall failure is told from a short throw.
     first_contact_x: float | None = None
     first_contact_z: float | None = None
     first_contact_body: str | None = None
@@ -234,14 +153,8 @@ class GridCell(BaseModel):
 def linear_axis(*, start: float, stop: float, points: int) -> list[float]:
     """An inclusive `start..stop` axis of exactly `points` values, both endpoints pinned.
 
-    A point count rather than a step, because the interesting axes here do not divide
-    evenly: 20 points over `TOSS_SPEED_BOUNDS = (60, 140)` steps by `80/19`, and expressing
-    that as a step drifts the top of the axis off 140.0 -- which would make the sweep a
-    measurement of a range slightly different from the one the sampler draws from.
-
-    Values are rounded to 6 decimals so that a float written into the JSON and the same
-    float recomputed by the analysis compare equal as dict keys. Without that, a column
-    silently vanishes from the surface rather than raising.
+    A point count, not a step: 20 points over `(60, 140)` steps by `80/19`. Rounded to 6
+    decimals so JSON round-tripped values still compare equal as dict keys.
     """
     if points <= 1:
         return [round(start, 6)]
@@ -252,9 +165,7 @@ def linear_axis(*, start: float, stop: float, points: int) -> list[float]:
 def refinement_order(*, n: int) -> list[int]:
     """`range(n)` reordered endpoints-first, then repeatedly bisecting.
 
-    The point is that *any prefix* of the result is a roughly-even coarse sample of the
-    whole range, so a sweep inspected or stopped halfway shows the shape of the surface
-    rather than one edge of it. Returns a permutation: every row runs exactly once.
+    Any prefix is a coarse sample of the whole range. A permutation: every row runs once.
     """
     if n <= 0:
         return []
@@ -281,14 +192,9 @@ def fit_free_flight(
 ) -> BallisticFit | None:
     """Fit the cube's free flight and solve it for its crossing of `z = ground_z`.
 
-    `times` are absolute; the fit is done against `times - times[0]` so `launch_*` are the
-    velocities at the window's first sample -- the first substep after the gripper let go.
-
-    The crossing is **extrapolated**: it is where the parabola would reach `ground_z`, not
-    where the recording stopped. That is what makes a bin-wall cell's range comparable with
-    an open-floor cell's. Returns `None` when the window is too short to determine a
-    parabola at all, and leaves the `impact_*` fields unset when the parabola has no real
-    descending crossing.
+    `launch_*` are the velocities at the first substep after the gripper let go. The
+    crossing is extrapolated, not where the recording stopped. `None` when the window is too
+    short to fit; `impact_*` unset when there is no real descending crossing.
     """
     if len(times) < 3:
         return None
@@ -309,7 +215,7 @@ def fit_free_flight(
     )
 
     # The later root of `quad t^2 + launch_vz t + (z0 - ground_z) = 0`: the descending
-    # crossing. `quad` is about -g/2 for a real throw, so `roots` is well conditioned.
+    # crossing. The ascending one is the cube passing `ground_z` on the way up.
     roots = np.roots([quad, launch_vz, z0 - ground_z]) if quad != 0.0 else np.array([])
     real_roots = [float(r.real) for r in np.atleast_1d(roots) if abs(r.imag) < 1e-9 and r.real > 0]
     if real_roots:
@@ -350,12 +256,8 @@ def run_cell(  # noqa: PLR0917
 
     cube_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, backend.cube_name)
     cube_geoms = {g for g in range(model.ngeom) if model.geom_bodyid[g] == cube_body}
-    # The cube's centre height when it rests on the floor, so the ground crossing is solved
-    # for where the *centre* arrives rather than where a corner would.
+    # The cube's centre height at rest: the crossing is solved for the centre, not a corner.
     cell.cube_half_height = float(min(model.geom_size[g][2] for g in cube_geoms))
-    # No goal-region object is read: PR #228 dropped it, and the bin's interior *is* the
-    # goal region now. This grid does not need one either way -- its criterion is ballistic
-    # distance, not whether a cell scored.
     cell.bin_x = float(state0.get(obj=env.bin, feature_name="x"))
 
     env.take_action(action=np.array([env_cls.pick_id, ORACLE_PICK_DISTANCE, ORACLE_PICK_ROTATION]))
@@ -396,10 +298,7 @@ def run_cell(  # noqa: PLR0917
     sim.step = recording_step
     try:
         recording["on"] = True
-        # Slot two is `gripper_release_ms`. PR #234's version of this line passed a literal
-        # `0.0` there, which was harmless at a pin where the slot was unread and is a
-        # release at time zero at this one -- exactly the kind of silent axis collapse
-        # `assert_kinder_pins` now refuses to start without.
+        # Slot two is `gripper_release_ms`; a literal `0.0` here is a release at time zero.
         env.take_action(action=np.array([env_cls.toss_id, speed, release_ms]))
         cell.toss_error = env.last_skill_error()
         hold = np.zeros(11, dtype=np.float32)
@@ -412,9 +311,7 @@ def run_cell(  # noqa: PLR0917
         sim.step = original_step
 
     cell.solved = bool(backend.check_goals())
-    # Straight off the simulator rather than through a devectorized observation: this is
-    # the same body the flight was recorded from, so a resting position and a flight path
-    # can never disagree about which object they describe.
+    # Straight off the simulator: the same body the flight was recorded from.
     cell.cube_x_final = float(data.xpos[cube_body][0])
     cell.cube_y_final = float(data.xpos[cube_body][1])
     cell.cube_z_final = float(data.xpos[cube_body][2])
@@ -428,10 +325,7 @@ def run_cell(  # noqa: PLR0917
         if partner_geom is not None:
             body = int(model.geom_bodyid[partner_geom])
             cell.first_contact_body = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, body)
-    # A gripper that never opened leaves the cube in contact for the whole recording, so
-    # there is no free-flight window to fit. That is a real corner of the parameter space
-    # (`gripper_release_ms` is not clamped to the swing), and it is recorded as its own
-    # state rather than as a throw of zero distance.
+    # A gripper that never opened leaves the cube in contact throughout: no window to fit.
     cell.threw = (stop - start) >= MIN_FREE_FLIGHT_SAMPLES
     fit = fit_free_flight(
         times=np.array(times[start:stop]),
@@ -455,14 +349,8 @@ def run_cell(  # noqa: PLR0917
 def _worker(job: tuple[float, int, float, list[float], int]) -> list[dict[str, Any]]:  # noqa: PLR0917
     """One `(standoff, seed, speed)` triple, every release millisecond, in its own process.
 
-    The millisecond is the inner axis because constructing the simulator is what costs, not
-    switching a parameter -- so the job is sized to amortise one `Tossing3DEnvironment` over
-    a whole column while still leaving `standoffs x seeds x speeds` jobs to spread across
-    workers. At this grid's shape that is `1 x 5 x 20 = 100` jobs of 20 cells each.
-
-    One positional tuple because `Pool.imap_unordered` passes exactly one positional
-    argument; the project's keyword-only rule cannot apply to a callable whose calling
-    convention the multiprocessing API owns.
+    The millisecond is the inner axis so one `Tossing3DEnvironment` amortises over a column.
+    One positional tuple because `Pool.imap_unordered` passes exactly one argument.
     """
     import kinder
     import kinder_models
@@ -499,15 +387,9 @@ def _worker(job: tuple[float, int, float, list[float], int]) -> list[dict[str, A
 def ensure_assets_once() -> None:
     """Fetch the MimicLabs scene assets in the parent, before any worker is forked.
 
-    `kinder.make` auto-downloads a ~2 GB archive into the checkout on first use, and the
-    guard it skips on is "does `mimiclabs_scenes/meshes` exist". In a *fresh worktree* that
-    is false for every worker at once, so N workers start N downloads into the same
-    `assets.zip`, each overwrites the others, and every one of them then fails to unpack
-    with `assets.zip is not a zip file`. That is not hypothetical -- it is how this probe's
-    first launch died, at `--max-workers 14`.
-
-    Doing it once here serialises the download by construction. It is a no-op once the
-    assets are present, so the cost on every later run is one import.
+    `kinder.make` auto-downloads ~2 GB, guarded only on whether `mimiclabs_scenes/meshes`
+    exists, so N workers otherwise download into the same `assets.zip` and all fail to
+    unpack. A no-op once the assets are present.
     """
     import kinder
     import kinder.envs.dynamic3d.envs  # noqa: F401  # the *module*, so mujoco is imported
@@ -542,8 +424,7 @@ def main() -> None:
     standoffs = linear_axis(
         start=args.standoff_start, stop=args.standoff_stop, points=args.standoff_points
     )
-    # Refined over the *speed* axis, since that is the outer axis a partial sweep most needs
-    # to span: a half-finished grid should be a coarse read of the whole speed range.
+    # Refined over the speed axis, so a half-finished grid still spans it.
     ordered_speeds = [speeds[i] for i in refinement_order(n=len(speeds))]
     jobs = [
         (standoff, seed, speed, release_ms_values, args.settle_steps)
