@@ -164,11 +164,60 @@ WORST_BARRIER_COLLISION_STANDOFF = 1.00
 BARRIER_COLLISION_MARGIN = 0.10
 THROW_STANDOFF_BOUNDS = (WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MARGIN, 1.75)
 
+# `Toss`'s release speed, in joint-path deg/s -- the rate along the path between upstream's
+# two arm configurations (L2 norm 148.8288 deg). `KinderBackend.run_toss` is the one site
+# that converts to upstream's rad/s.
+#
+# 140 is what the real TidyBot primitive commands
+# (`movej_primitive.execute(..., max_vel=140, ...)`); 60 is the bottom of PR #213's grid.
+# No feasibility clamp below 140: `_ARM_MAX_VEL[5] = 70` deg/s is kinder-baselines' own
+# conservative constant, not a hardware limit (PR #221).
+TOSS_SPEED_BOUNDS = (60.0, 140.0)
+
+# `Toss`'s second dial: the millisecond from the start of the swing at which the gripper
+# opens. Absolute rather than a swing fraction because that is what the real TidyBot's
+# `movej_primitive.execute()` takes. Its own 600 ms does not transfer -- it normalises on
+# the L-infinity norm and finishes in 1476 ms, so 600 is fraction 0.4107 of its swing
+# against 0.3449 of this one.
+#
+# Swing duration is a function of `release_speed`, so the two dials are coupled. Measured
+# from `toss_profile_limits` + `_trapezoidal_motion_profile`:
+#
+# | `release_speed` deg/s | 60 | 80 | 100 | 120 | 140 |
+# | --- | --- | --- | --- | --- | --- |
+# | swing duration ms | 3100 | 2500 | 2100 | 1900 | 1700 |
+# | path fraction at 720 ms | 0.196 | 0.262 | 0.327 | 0.392 | 0.458 |
+# | ms at path fraction 0.46 | 1375 | 1090 | 918 | 804 | 723 |
+#
+# 1400 is set by the shortest swing (1700 ms, at 140 deg/s). `gripper_release_ms` is not
+# clamped upstream: at or past the end of the swing the gripper never opens. Raising
+# `TOSS_SPEED_BOUNDS` invalidates this interval -- at a 240 deg/s cap the shortest swing is
+# 1300 ms, below the slow end's 1375 ms crossing.
+TOSS_RELEASE_MS_BOUNDS = (300.0, 1400.0)
+
+# Upstream's shipped default: the millisecond path fraction 0.46 falls at, for the shipped
+# windup->release path at 140 deg/s.
+#
+# **720, not the 723 the nominal `TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF` difference
+# gives**: `TossController.reset` profiles both endpoints out of `run_motion_planning`, and
+# the bent path moves the crossing 3 ms earlier -- 52 mm of landing distance. Re-derive by
+# running the swing, never from the two arm configurations.
+UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS = 720.0
+
+# Upstream's own default, and the speed every committed Tossing3D number was measured at:
+# what `toss_profile_limits()` returns when passed nothing.
+UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S = 140.0
+
 # **The one calibrated constant in this module, and the only thing the success band is not
-# derived from.** `Toss` takes no parameters: `run_toss` executes
-# `move_arm_to_conf(windup_conf_deg)` and then `toss(toss_conf_deg)`, both fixed joint
-# configurations, so a throw displaces the cube by the same distance in the base's facing
-# direction every time. That displacement is this number, in metres.
+# derived from.** `run_toss` executes `move_arm_to_conf(windup_conf_deg)` and then
+# `toss(toss_conf_deg)`, both fixed joint configurations, so a throw displaces the cube by
+# the same distance in the base's facing direction every time. That displacement is this
+# number, in metres.
+#
+# > **Scope note, 2026-08-12.** This is the impact range at 140 deg/s only, and
+# > `TOSS_SPEED_BOUNDS` spans 60-140. `RobotAtSuccessfulThrowPoseClassifier` derives its
+# > acceptance band from it, so that predicate is correct only at the oracle's speed until
+# > it is reformulated as a union over the range.
 #
 # Because it is a property of the *controller* -- upstream's arm configurations and the
 # cube's 0.1 kg mass -- and not of the scene, the success band can be recomputed from live
@@ -197,6 +246,12 @@ THROW_STANDOFF_BOUNDS = (WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MA
 # 1.275 sits inside both brackets. `test_throw_range_predicts_where_the_cube_lands`
 # re-measures it against the real simulator, so upstream changing the toss controller, the
 # windup conf or the physics fails loudly rather than silently.
+#
+# > **Provisional as of 2026-08-13; left as published, NOT recomputed.** The brackets above
+# > were measured with the gripper opening on the first control step past fraction 0.46.
+# > Scheduling on an absolute millisecond moves the oracle's landing +41.6 mm, so read
+# > 1.275 as approximate. The guard tests still pass on the current pins; re-deriving means
+# > redoing PR #105's 5-seed, 0.025 m sweep.
 THROW_RANGE = 1.275
 
 # Upstream's `WAYPOINT_TOL` (`kinder_models/dynamic3d/utils.py:54`), which is how close

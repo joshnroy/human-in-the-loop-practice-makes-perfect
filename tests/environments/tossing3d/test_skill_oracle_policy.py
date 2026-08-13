@@ -5,10 +5,18 @@ import pytest
 
 from hitl_pmp.core.problem.tasks.types import Goal
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import GRASP_THRESHOLD
+from hitl_pmp.environments.tossing3d.predicates import (
+    GRASP_THRESHOLD,
+    TOSS_RELEASE_MS_BOUNDS,
+    TOSS_SPEED_BOUNDS,
+    UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS,
+    UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
+)
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
+    ORACLE_GRIPPER_RELEASE_MS,
     ORACLE_PICK_DISTANCE,
     ORACLE_PICK_ROTATION,
+    ORACLE_RELEASE_SPEED_DEG_S,
     ORACLE_THROW_STANDOFF,
     SkillOraclePolicy,
 )
@@ -49,6 +57,8 @@ def test_the_oracle_throws_once_it_is_holding_the_cube_and_near_the_bin() -> Non
         base_x=BIN_X - ORACLE_THROW_STANDOFF,
     )
     assert action.action[0] == pytest.approx(Tossing3DEnvironment.toss_id)
+    assert action.action[1] == pytest.approx(ORACLE_RELEASE_SPEED_DEG_S)
+    assert action.action[2] == pytest.approx(ORACLE_GRIPPER_RELEASE_MS)
 
 
 def test_the_oracle_solves_the_domain_in_exactly_three_skills() -> None:
@@ -85,6 +95,8 @@ def test_the_oracle_parameters_lie_inside_the_samplers_own_ranges() -> None:
     assert PICK_DISTANCE_BOUNDS[0] <= ORACLE_PICK_DISTANCE <= PICK_DISTANCE_BOUNDS[1]
     assert PICK_ROTATION_BOUNDS[0] <= ORACLE_PICK_ROTATION <= PICK_ROTATION_BOUNDS[1]
     assert THROW_STANDOFF_BOUNDS[0] <= ORACLE_THROW_STANDOFF <= THROW_STANDOFF_BOUNDS[1]
+    assert TOSS_SPEED_BOUNDS[0] <= ORACLE_RELEASE_SPEED_DEG_S <= TOSS_SPEED_BOUNDS[1]
+    assert TOSS_RELEASE_MS_BOUNDS[0] <= ORACLE_GRIPPER_RELEASE_MS <= TOSS_RELEASE_MS_BOUNDS[1]
 
 
 def test_the_pick_parameters_are_upstreams_own_draw_at_its_own_rng_seed() -> None:
@@ -103,6 +115,29 @@ def test_the_throw_standoff_is_upstreams_own_test_value() -> None:
     assert ORACLE_THROW_STANDOFF == 1.35
 
 
+def test_the_oracle_release_speed_is_upstreams_own_shipped_default() -> None:
+    """140 deg/s is not a tuned number: it is what `toss_profile_limits()` returns by
+    default, and the speed every committed Tossing3D number -- including the `10/10` at
+    standoff 1.35 -- was measured at. Moving it is a new measurement, not a tweak.
+    """
+    assert ORACLE_RELEASE_SPEED_DEG_S == 140.0
+    assert ORACLE_RELEASE_SPEED_DEG_S == UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
+
+
+def test_the_oracle_gripper_release_ms_is_upstreams_own_shipped_default() -> None:
+    """720 ms is the millisecond path fraction 0.46 falls at for the shipped
+    windup->release path at `ORACLE_RELEASE_SPEED_DEG_S`, so the *pair* reproduces the
+    throw every committed Tossing3D number was measured against.
+
+    Not the real robot's 600: `movej_primitive` normalises on the L-infinity norm and
+    finishes in 1476 ms, so its 600 ms is fraction 0.4107 of its swing against 0.3449 of
+    this one.
+    """
+    assert ORACLE_GRIPPER_RELEASE_MS == 720.0
+    assert ORACLE_GRIPPER_RELEASE_MS == UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS
+    assert ORACLE_GRIPPER_RELEASE_MS != 600.0
+
+
 def test_the_label_names_the_skill_its_objects_and_its_parameters() -> None:
     """`LabeledAction.label` is what the renderer burns into the frame, so it has to say
     what actually happened rather than just which skill ran."""
@@ -111,14 +146,16 @@ def test_the_label_names_the_skill_its_objects_and_its_parameters() -> None:
     assert "params=[0.57, -0.7]" in label
 
 
-def test_a_parameterless_skill_gets_no_params_suffix() -> None:
+def test_the_toss_label_carries_its_release_speed_and_millisecond() -> None:
+    """The renderer burns the label into the frame, so a clip of a throw has to say how
+    hard it was -- otherwise two clips at different speeds are indistinguishable."""
     label = _act(
         gripper=GRASP_THRESHOLD + 0.5,
         cube_z=0.4,
         base_x=BIN_X - ORACLE_THROW_STANDOFF,
     ).label
     assert label.startswith("Toss(robot, cube_0, bin_0, cuboid_barrier)")
-    assert "params=" not in label
+    assert "params=[140.0, 720.0]" in label
 
 
 def test_the_provider_forwards_its_configured_standoff() -> None:

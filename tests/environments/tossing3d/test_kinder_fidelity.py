@@ -71,7 +71,19 @@ CANONICAL_SEED = 125
 
 # The measured landing at standoff 1.35, from that same record, reproduced by
 # `scripts/tossing3d_oracle_demo.py` on this machine.
-REST_X = 1.9902
+#
+# > **Superseded 2026-08-13 by the 1 kHz gripper release; left exactly as published.**
+# > 1.9902 remains correct for the throw it measured -- the gripper opening on the first
+# > *control step* past path fraction 0.46, at pins `kinder-baselines` `1b564a1` +
+# > `kindergarden` `98ad2c0`, where it re-measured at 1.9901. Scheduling the release on an
+# > absolute millisecond moves the landing +41.6 mm with the fraction held at 0.46 and no
+# > parameter changed. A future pin bump that moves it again should add a third line here
+# > rather than edit either.
+REST_X_PRE_1KHZ_RELEASE = 1.9902
+
+# What the oracle lands at under the scheduled 1 kHz release, at
+# `ORACLE_RELEASE_SPEED_DEG_S` and `ORACLE_GRIPPER_RELEASE_MS`.
+REST_X = 2.0318
 BIN_FLOOR_Z = 0.0444
 
 
@@ -157,7 +169,7 @@ def test_oracle_pick_parameters_match_upstreams_own_sampler() -> None:
 
 
 def test_the_oracle_reproduces_the_recorded_landing_and_step_counts() -> None:
-    """The reference numbers: cube at rest x = 1.9902, z = 0.0444 (the bin's interior
+    """The reference numbers: cube at rest x = 2.0318, z = 0.0444 (the bin's interior
     floor, i.e. the cube is *in* the bin), `_check_goals()` True, and the four controller
     executions terminating in 71 / 23 / 16 / 18 steps."""
     env = _env()

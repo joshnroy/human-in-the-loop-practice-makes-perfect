@@ -149,3 +149,61 @@ def test_the_noop_action_runs_no_controller_at_all() -> None:
 def test_the_noop_id_is_not_a_real_skill_id() -> None:
     env = Tossing3DEnvironment()
     assert env.noop_id not in {env.pick_id, env.move_to_throw_pose_id, env.toss_id}
+
+
+def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_execute` turns an action vector into controller arguments, so it is where a slot
+    could be read from the wrong index. Offline: the backend is stubbed.
+    """
+    from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+
+    seen: list[float] = []
+
+    def spy_run_toss(  # noqa: PLR0917, ANN202
+        self: KinderBackend, *, release_speed_deg_s: float, gripper_release_ms: float
+    ):
+        del gripper_release_ms
+        seen.append(release_speed_deg_s)
+        return ControllerRun(steps=1, terminated=True), ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_toss", spy_run_toss)
+
+    env = Tossing3DEnvironment()
+    # Assigning the cached `PrivateAttr` skips `backend()`'s lazy build, which would
+    # resolve a task-config path.
+    env._backend = KinderBackend()  # noqa: SLF001
+
+    env._execute(action=np.array([float(env.toss_id), 140.0, 0.0]))
+    env._execute(action=np.array([float(env.toss_id), 60.0, 0.0]))
+
+    assert seen == [140.0, 60.0]
+
+
+def test_the_toss_dispatch_reads_its_gripper_release_ms_from_slot_two(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Asserted at two distinct values, so a hardcoded pass-through of the default fails
+    here too. Offline: the backend is stubbed.
+    """
+    from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+
+    seen: list[float] = []
+
+    def spy_run_toss(  # noqa: PLR0917, ANN202
+        self: KinderBackend, *, release_speed_deg_s: float, gripper_release_ms: float
+    ):
+        del release_speed_deg_s
+        seen.append(gripper_release_ms)
+        return ControllerRun(steps=1, terminated=True), ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_toss", spy_run_toss)
+
+    env = Tossing3DEnvironment()
+    env._backend = KinderBackend()  # noqa: SLF001
+
+    env._execute(action=np.array([float(env.toss_id), 140.0, 300.0]))
+    env._execute(action=np.array([float(env.toss_id), 140.0, 1300.0]))
+
+    assert seen == [300.0, 1300.0]

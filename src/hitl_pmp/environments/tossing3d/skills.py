@@ -18,20 +18,24 @@ upstream's own bounds:
 | --- | --- | --- | --- |
 | `Pick` | `pick_shelf` | distance, rotation | upstream's `MOVE_TO_TARGET_{DISTANCE,ROT}_BOUNDS` |
 | `MoveToThrowPose` | `move_to_target` | standoff | **ours** -- see `THROW_STANDOFF_BOUNDS` |
-| `Toss` | `move_arm_to_conf`, then `toss` | none | upstream's windup and toss confs, verbatim |
+| `Toss` | `move_arm_to_conf`, then `toss` | speed, release ms | upstream's own two knobs |
 
 The one genuinely new range is the throw standoff, and it has to be: upstream's own
 `MOVE_TO_TARGET_DISTANCE_BOUNDS` is `(0.5, 0.6)`, which is a *grasping* standoff, and
 upstream's tossing test simply hardcodes `1.35` with no range at all. So the interval
 below is this repo's, taken from the standoffs it has actually measured rather than
-invented, and it is the only dial in this domain a learner would have to move.
+invented.
 
-**`Toss` deliberately has zero continuous parameters.** An earlier iteration of this
-domain interpolated a `swing` dial between upstream's windup and full-power arm
-configurations; that interpolation was ours, and it made the dial that mattered
-(`swing`) a quantity no upstream measurement covered while leaving the standoff -- the
-dial the coincident scene's own sweep actually resolves -- fixed. Putting the parameter
-on `MoveToThrowPose` instead keeps every arm configuration upstream's exactly.
+**`Toss`'s two continuous parameters are upstream's, not ours.** `TossController.reset`
+takes exactly the two knobs the real TidyBot's `movej_primitive.execute()` does --
+`release_speed` and `gripper_release_ms` -- so both arm configurations remain upstream's,
+untouched. The ranges are `predicates.TOSS_SPEED_BOUNDS`, `(60, 140)` joint-path deg/s,
+and `predicates.TOSS_RELEASE_MS_BOUNDS`, `(300, 1400)` ms from the start of the swing.
+
+**They are drawn independently but are not independent in effect**: the swing lasts
+3100 ms at 60 deg/s and 1700 ms at 140, so a fixed millisecond is a fifth of the way
+through the slow swing and just under half way through the fast one. See
+`TOSS_RELEASE_MS_BOUNDS` for the measured duration table.
 
 ## The operator models, and the two choices that are load-bearing
 
@@ -85,6 +89,8 @@ from .predicates import (
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
     THROW_STANDOFF_BOUNDS,
+    TOSS_RELEASE_MS_BOUNDS,
+    TOSS_SPEED_BOUNDS,
 )
 
 # Upstream's own bounds for a `pick_shelf` base standoff and yaw, from
@@ -175,7 +181,7 @@ class Tossing3DSkills:
             # Unconditionally, hit or miss: see this module's docstring, choice 3.
             LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
         }),
-        param_dim=0,
+        param_dim=2,
     )
 
     @staticmethod
@@ -194,7 +200,12 @@ class Tossing3DSkills:
         if skill == Tossing3DSkills.MOVE_TO_THROW_POSE:
             return np.array([rng.uniform(*THROW_STANDOFF_BOUNDS)])
         if skill == Tossing3DSkills.TOSS:
-            return np.zeros(0)
+            # Drawn independently, but not independent in effect: the swing's duration is a
+            # function of the speed. See `TOSS_RELEASE_MS_BOUNDS`.
+            return np.array([
+                rng.uniform(*TOSS_SPEED_BOUNDS),
+                rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
+            ])
         raise ValueError(f"Unknown skill: {skill.name}")
 
     @staticmethod
@@ -217,5 +228,7 @@ class Tossing3DSkills:
                 [Tossing3DEnvironment.move_to_throw_pose_id, float(params[0]), 0.0], dtype=float
             )
         if skill == Tossing3DSkills.TOSS:
-            return np.array([Tossing3DEnvironment.toss_id, 0.0, 0.0], dtype=float)
+            return np.array(
+                [Tossing3DEnvironment.toss_id, float(params[0]), float(params[1])], dtype=float
+            )
         raise ValueError(f"Unknown skill: {skill.name}")

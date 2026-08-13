@@ -10,6 +10,7 @@ frame per physics tick is a question only a simulator can answer, and lives in
 import sys
 from typing import Any
 
+import numpy as np
 import pytest
 
 from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
@@ -69,7 +70,7 @@ def test_move_to_throw_pose_disables_collision_against_the_held_cube(
     dormant guard it was written as. `reference/kinder-baselines` used to be pinned at
     `11eace5`, where `run_base_motion_planning` hardcoded `obstacle_geoms` empty
     (Princeton-Robot-Planning-and-Learning/kinder-baselines#102) and this kwarg therefore
-    had zero observable effect. The pin is now `3524010`, which contains upstream PR #103
+    had zero observable effect. The pin is now `1b564a1`, which contains upstream PR #103
     -- the fix for that issue -- so collision-checking against scene obstacles is **on**.
     The held cube is a `MujocoObjectType` like any other, and `run_base_motion_planning`
     filters `disable_collision_objects` out of the obstacle set *before* looking up each
@@ -99,3 +100,84 @@ def test_move_to_throw_pose_disables_collision_against_the_held_cube(
 
     assert len(calls) == 1
     assert calls[0]["disable_collision_objects"] == [backend.cube_name]
+
+
+def test_run_toss_converts_the_release_speed_to_radians_exactly_once(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """This domain carries the dial in joint-path deg/s and `TossController.reset` takes
+    rad/s, so exactly one site converts. A second or missing conversion is a silent 57x
+    error either way. Offline: it spies on `run_controller`.
+    """
+    calls: list[dict[str, Any]] = []
+
+    def spy_run_controller(  # noqa: PLR0917  (see the sibling test for why `self` is positional)
+        self: KinderBackend, *, module: str, key: str, **kwargs: Any
+    ) -> ControllerRun:
+        calls.append({"module": module, "key": key, **kwargs})
+        return ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
+
+    backend = KinderBackend()
+    backend._robot_name = "robot_test"  # noqa: SLF001
+
+    backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=720.0)
+
+    assert [call["key"] for call in calls] == ["move_arm_to_conf", "toss"]
+    # `move_arm_to_conf.reset` declares no release speed; passing one is a TypeError.
+    assert "release_speed" not in calls[0]
+    assert calls[1]["release_speed"] == pytest.approx(np.deg2rad(140.0))
+
+
+def test_run_toss_rounds_the_gripper_release_ms_to_an_int_rather_than_truncating(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Upstream `divmod`s `int(gripper_release_ms)`, and `int()` truncates toward zero, so
+    a float handed straight through would make `722.9` mean 722 -- a systematic bias toward
+    releasing early. Offline: it spies on `run_controller`.
+    """
+    calls: list[dict[str, Any]] = []
+
+    def spy_run_controller(  # noqa: PLR0917  (see the sibling test for why `self` is positional)
+        self: KinderBackend, *, module: str, key: str, **kwargs: Any
+    ) -> ControllerRun:
+        calls.append({"module": module, "key": key, **kwargs})
+        return ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
+
+    backend = KinderBackend()
+    backend._robot_name = "robot_test"  # noqa: SLF001
+
+    backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=722.9)
+
+    assert "gripper_release_ms" not in calls[0]
+    scheduled = calls[1]["gripper_release_ms"]
+    assert isinstance(scheduled, int)
+    assert scheduled == 723
+
+
+def test_run_toss_skips_the_swing_when_the_windup_fails_whatever_the_speed(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tossing from an unknown arm pose is not what upstream measured, at any speed."""
+    calls: list[str] = []
+
+    def spy_run_controller(  # noqa: PLR0917
+        self: KinderBackend, *, module: str, key: str, **kwargs: Any
+    ) -> ControllerRun:
+        del module, kwargs
+        calls.append(key)
+        return ControllerRun(steps=0, terminated=False, error="planning failed")
+
+    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
+
+    backend = KinderBackend()
+    backend._robot_name = "robot_test"  # noqa: SLF001
+
+    windup, swing = backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=520.0)
+
+    assert calls == ["move_arm_to_conf"]
+    assert windup.terminated is False
+    assert swing.error == "windup did not terminate"

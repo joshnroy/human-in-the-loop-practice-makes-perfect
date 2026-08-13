@@ -43,7 +43,7 @@ execution, without bound.
 
 The fix is a `weakref.finalize(self, p.disconnect, ...)` in `PyBulletSim`, which landed
 upstream as PR #87 (squash-merged as `9512b9e`). `reference/kinder-baselines` is a git
-submodule pinned at `3524010`, and `9512b9e` is an ancestor of that pin, so the fix is
+submodule pinned at `1b564a1`, and `9512b9e` is an ancestor of that pin, so the fix is
 present and the client is released when the controller is collected.
 **Do not add a `_release`-style explicit `close()` here**: with the finalizer in place
 that double-disconnects.
@@ -514,6 +514,8 @@ class KinderBackend(BaseModel):
         params: np.ndarray | None,
         limit: int,
         disable_collision_objects: Sequence[str] | None = None,
+        release_speed: float | None = None,
+        gripper_release_ms: int | None = None,
     ) -> ControllerRun:
         """Drive one upstream controller to termination, stepping the live simulator.
 
@@ -525,6 +527,11 @@ class KinderBackend(BaseModel):
         motion planners `assert plan is not None`) is reported through `error`. Both are
         ordinary outcomes of a skill whose continuous parameters do not work out, and the
         caller has to be able to keep going -- `take_action` must be total.
+
+        `disable_collision_objects` (only on `MoveToTargetGroundController.reset`),
+        `release_speed` and `gripper_release_ms` (only on `TossController.reset`) are
+        per-controller keywords, so each is forwarded only when supplied -- passing one to a
+        controller that does not declare it is a `TypeError`.
         """
         api = self.api()
         state = self._require_state()
@@ -540,13 +547,16 @@ class KinderBackend(BaseModel):
         objects = tuple(state.get_object_from_name(name) for name in object_names)
         controller = lifted[key].ground(objects)
 
+        reset_kwargs: dict[str, Any] = {}
+        if disable_collision_objects is not None:
+            reset_kwargs["disable_collision_objects"] = list(disable_collision_objects)
+        if release_speed is not None:
+            reset_kwargs["release_speed"] = release_speed
+        if gripper_release_ms is not None:
+            reset_kwargs["gripper_release_ms"] = gripper_release_ms
+
         try:
-            if disable_collision_objects is None:
-                controller.reset(state, params)
-            else:
-                controller.reset(
-                    state, params, disable_collision_objects=list(disable_collision_objects)
-                )
+            controller.reset(state, params, **reset_kwargs)
         except Exception as exc:  # noqa: BLE001  (any planner failure is a failed skill)
             return ControllerRun(steps=0, terminated=False, error=f"{type(exc).__name__}: {exc}")
 
@@ -594,7 +604,9 @@ class KinderBackend(BaseModel):
             disable_collision_objects=[self.cube_name],
         )
 
-    def run_toss(self) -> tuple[ControllerRun, ControllerRun]:
+    def run_toss(
+        self, *, release_speed_deg_s: float, gripper_release_ms: float
+    ) -> tuple[ControllerRun, ControllerRun]:
         """The windup and the swing, back to back -- upstream's `move_arm_to_conf` then `toss`.
 
         Two controllers, one skill. Upstream never demonstrates `toss` from anywhere but
@@ -603,6 +615,17 @@ class KinderBackend(BaseModel):
         windup is a posture the swing requires, not a skill anything could usefully
         select on its own. The swing is skipped if the windup did not land, since tossing
         from an unknown arm pose is not the thing that was measured.
+
+        **The one place in the domain where degrees become radians**: the dial is carried
+        in joint-path deg/s (`predicates.TOSS_SPEED_BOUNDS`) and `TossController.reset`
+        takes rad/s. A second or missing conversion is a silent 57x error either way.
+
+        Both parameters reach the **swing only** -- `move_arm_to_conf`'s `reset` declares
+        neither, so forwarding one there is a `TypeError`.
+
+        `gripper_release_ms` is milliseconds on both sides but is rounded to an `int` here:
+        upstream `divmod`s `int(gripper_release_ms)`, which truncates, so `722.9` would
+        otherwise schedule 722.
         """
         windup = self.run_controller(
             module="tossing",
@@ -620,6 +643,8 @@ class KinderBackend(BaseModel):
             object_names=(self.robot_name,),
             params=np.deg2rad(self.toss_conf_deg),
             limit=self.arm_step_limit,
+            release_speed=float(np.deg2rad(release_speed_deg_s)),
+            gripper_release_ms=int(round(gripper_release_ms)),
         )
         return windup, swing
 

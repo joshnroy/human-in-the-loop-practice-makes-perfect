@@ -14,6 +14,9 @@ from hitl_pmp.environments.tossing3d.predicates import (
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
+    TOSS_RELEASE_MS_BOUNDS,
+    TOSS_SPEED_BOUNDS,
+    UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
     WORST_BARRIER_COLLISION_STANDOFF,
     RobotAtSuccessfulThrowPoseClassifier,
 )
@@ -232,13 +235,13 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
     assert [step.skill.name for step in plan] == ["Pick", "MoveToThrowPose", "Toss"]
 
 
-def test_param_dims_put_the_only_learnable_dial_on_the_walk_not_the_throw() -> None:
-    """`Toss` has zero parameters on purpose: both arm configurations are upstream's own
-    and this package interpolates nothing. The standoff is the dial the scene's own sweep
-    actually resolves, so that is where the parameter lives."""
+def test_param_dims_give_the_throw_a_release_speed_of_its_own() -> None:
+    """`Toss`'s dials are upstream's own `TossController.reset` parameters rather than
+    quantities this package synthesised, so both arm configurations remain upstream's.
+    """
     assert _SKILLS.PICK.param_dim == 2
     assert _SKILLS.MOVE_TO_THROW_POSE.param_dim == 1
-    assert _SKILLS.TOSS.param_dim == 0
+    assert _SKILLS.TOSS.param_dim == 2
 
 
 def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
@@ -249,15 +252,15 @@ def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
         ground_skill=_move(), params=np.array([1.35]), state=state()
     ) == pytest.approx([Tossing3DEnvironment.move_to_throw_pose_id, 1.35, 0.0])
     assert Tossing3DSkills.compute_action(
-        ground_skill=_toss(), params=np.zeros(0), state=state()
-    ) == pytest.approx([Tossing3DEnvironment.toss_id, 0.0, 0.0])
+        ground_skill=_toss(), params=np.array([140.0, 720.0]), state=state()
+    ) == pytest.approx([Tossing3DEnvironment.toss_id, 140.0, 720.0])
 
 
 def test_every_action_matches_the_declared_action_space() -> None:
     for ground_skill, params in (
         (_pick(), np.array([0.55, 0.1])),
         (_move(), np.array([1.35])),
-        (_toss(), np.zeros(0)),
+        (_toss(), np.array([140.0, 720.0])),
     ):
         action = Tossing3DSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state()
@@ -361,10 +364,98 @@ def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:
     assert max(accepted) - min(accepted) < (high - low) / 2
 
 
-def test_toss_samples_no_parameters_at_all() -> None:
-    assert Tossing3DSkills.sample_params(
-        ground_skill=_toss(), rng=np.random.default_rng(0)
-    ).shape == (0,)
+def test_toss_samples_one_release_speed_inside_the_measured_bounds() -> None:
+    """The dial is in joint-path deg/s. `TOSS_SPEED_BOUNDS` stays inside PR #213's
+    measured grid, so a draw is never an extrapolation.
+    """
+    rng = np.random.default_rng(0)
+    draws = [
+        float(Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[0]) for _ in range(200)
+    ]
+    assert all(TOSS_SPEED_BOUNDS[0] <= speed <= TOSS_SPEED_BOUNDS[1] for speed in draws)
+    # A real draw, not a constant dressed as one.
+    assert max(draws) - min(draws) > (TOSS_SPEED_BOUNDS[1] - TOSS_SPEED_BOUNDS[0]) / 2
+
+
+def test_the_shipped_default_speed_is_the_upper_edge_of_the_samplers_range() -> None:
+    """140 deg/s is upstream's default and exactly the top of the sampler's range: it must
+    be reachable so the oracle's throw is learnable, but it is the edge rather than an
+    interior point because it is what the real TidyBot primitive commands
+    (`movej_primitive.execute(..., max_vel=140, ...)`).
+
+    Asserted as equality rather than containment, so widening the range fails here.
+    """
+    assert TOSS_SPEED_BOUNDS[0] < UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
+    assert TOSS_SPEED_BOUNDS[1] == UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
+
+
+def test_toss_samples_a_gripper_release_ms_inside_the_measured_bounds() -> None:
+    """The second dial, in milliseconds from the start of the swing. Slot 1 is drawn
+    separately and tested above.
+    """
+    rng = np.random.default_rng(0)
+    draws = [
+        float(Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[1]) for _ in range(200)
+    ]
+    assert all(TOSS_RELEASE_MS_BOUNDS[0] <= ms <= TOSS_RELEASE_MS_BOUNDS[1] for ms in draws)
+    # A real draw, not a constant dressed as one.
+    assert max(draws) - min(draws) > (TOSS_RELEASE_MS_BOUNDS[1] - TOSS_RELEASE_MS_BOUNDS[0]) / 2
+
+
+def test_the_two_toss_dials_are_drawn_independently() -> None:
+    """A sampler that wrote one draw into both slots, or drew the second from the first,
+    would pass each single-slot test above while collapsing the space onto a line. Pinned
+    as near-zero rank correlation.
+    """
+    rng = np.random.default_rng(0)
+    draws = np.array([
+        Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng) for _ in range(500)
+    ])
+    speeds, release_ms = draws[:, 0], draws[:, 1]
+    speed_ranks = np.argsort(np.argsort(speeds))
+    ms_ranks = np.argsort(np.argsort(release_ms))
+    assert abs(float(np.corrcoef(speed_ranks, ms_ranks)[0, 1])) < 0.15
+
+
+def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None:
+    """The bounds' upper edge is set by the *shortest* swing, not the longest.
+    `gripper_release_ms` is unclamped upstream: past the end of the swing the gripper
+    never opens and the cube is never thrown.
+
+    Recomputed from upstream's own profile rather than against a copied number, so it
+    fails if a pin bump changes the swing's timing.
+    """
+    kinder_models = pytest.importorskip("kinder_models")
+    del kinder_models
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        TOSS_RELEASE_ARM_CONF,
+        TOSS_SLICES_PER_CONTROL_STEP,
+        TOSS_WINDUP_ARM_CONF,
+        toss_profile_limits,
+    )
+    from kinder_models.dynamic3d.utils import _CONTROL_DT, _trapezoidal_motion_profile
+
+    s_total = float(np.linalg.norm(TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF))
+    shortest_ms = min(
+        (
+            len(
+                _trapezoidal_motion_profile(
+                    s_total,
+                    max_vel=limits[0],
+                    max_accel=limits[1],
+                    max_decel=limits[2],
+                    step_size=_CONTROL_DT,
+                )
+            )
+            - 1
+        )
+        * TOSS_SLICES_PER_CONTROL_STEP
+        for limits in (
+            toss_profile_limits(np.deg2rad(deg))
+            for deg in np.linspace(TOSS_SPEED_BOUNDS[0], TOSS_SPEED_BOUNDS[1], 37)
+        )
+    )
+    assert TOSS_RELEASE_MS_BOUNDS[1] <= shortest_ms
 
 
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:

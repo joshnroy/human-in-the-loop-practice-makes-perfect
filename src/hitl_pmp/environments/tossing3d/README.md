@@ -97,7 +97,17 @@ KINDER's own task JSON and fails loudly if `bin_init_region` ever comes off
 measured off the compiled MuJoCo model after inflation and sampling.
 
 At standoff 1.35, seed 125, on the shipped scene the cube comes to rest at x = 1.9902,
-z = 0.0444 — inside the bin, inside the goal box, `_check_goals()` **True**. z = 0.0444
+z = 0.0444 — inside the bin, inside the goal box, `_check_goals()` **True**.
+
+> **Staleness note, 2026-08-13.** 1.9902 is left as published and remains correct for the
+> throw it measured: the gripper opening on the first control step past path fraction 0.46.
+> The release is now *scheduled* on an absolute millisecond inside the physics substep loop
+> (`joshnroy/kinder-baselines` PR #12, `joshnroy/kindergarden` PR #2), and the same
+> standoff, seed and speed rest at **x = 2.0318** — +41.6 mm from the scheduling alone,
+> release fraction unchanged. The verdict does not change: still in the bin, still in the
+> goal box, still **True**. z is unchanged at 0.0444.
+
+z = 0.0444
 is the bin's interior floor (0.02 m bottom panel plus the cube's 0.025 m half-extent).
 On the pre-fix scene the same throw rested at x = 2.2197, also inside the bin, and scored
 **False**. **Never compare a number measured before PR #126 against one measured after**:

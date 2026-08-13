@@ -45,8 +45,8 @@ working around.
 
 | path | url | pinned at |
 | --- | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `3524010` |
-| `reference/kindergarden` | `joshnroy/kindergarden` | `98ad2c0` |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `88b5eb3` |
+| `reference/kindergarden` | `joshnroy/kindergarden` | `539c6b8` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
 **Two of the three point at forks on purpose.** `kinder-baselines` depends on commits that
@@ -213,15 +213,47 @@ were measured before PR #126 are left as published, with staleness notes beside 
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
-`reference/kinder-baselines` is pinned at `3524010`, the head of
-`josh/feature/tossing-throw-controllers`. That branch is the **Tossing3D port stack**'s
-second rung: `josh/feature/tossing-state-abstractions` → `-throw-controllers` →
-`-oracle-policy` → `-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92,
-which are all **closed**; it now lives on the fork as `joshnroy/kinder-baselines`
-**PRs #1–#4** (`#1` targets `main`, each later one targets its predecessor).
+`reference/kinder-baselines` is pinned at `88b5eb3`, the head of
+`josh/feature/toss-release-params`, which stacks four commits on top of `3524010`, the head
+of `josh/feature/tossing-throw-controllers`. The top commit gives `TossController.reset`
+a `gripper_release_ms` alongside `release_speed` -- exactly the two knobs the real TidyBot's
+`movej_primitive.execute()` takes -- and **deletes** `_release_fraction`, so there is only
+one way to say when the gripper opens. `reference/kindergarden` moves to `539c6b8`
+(`joshnroy/kindergarden` PR #2) in the same step, because that is where `MujocoEnv.step`
+learns to read a 2-D action as a per-substep control schedule, which is the mechanism the
+millisecond is scheduled through.
+
+> **This bump moves the canonical landing, and the default millisecond is 720 rather than
+> the obvious 723.** Both are settled; recorded here because both are easy to get wrong.
+>
+> Measured on the oracle's own rollout (seed 125, standoff 1.35, 140 deg/s), the cube's
+> resting x is **1.9901** at the old pins (10 Hz release, fraction 0.46), **2.0318** at
+> `0f8c554` + `539c6b8` (1 kHz release, fraction 0.46) and **2.0318** at these pins with
+> the shipped 720 ms default. So the **+41.6 mm shift belongs to the scheduling change, not
+> to the new parameter** -- `(140 deg/s, 720 ms)` reproduces the fraction rule's own release
+> point exactly. `test_kinder_fidelity.py` now asserts 2.0318 and keeps 1.9902 beside it as
+> `REST_X_PRE_1KHZ_RELEASE`; `THROW_RANGE` carries a provisional note for the same reason.
+>
+> **720, not 723, because the default is measured against the motion-planned path.**
+> `TossController.reset` profiles `||final_joint_angles - curr_joint_angles||` with both
+> endpoints from `run_motion_planning`, and the planner bends the path enough to move the
+> 0.46 crossing 3 ms earlier than the nominal
+> `TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF` difference predicts. Nominal arithmetic
+> gives 723, and 723 lands the cube **52 mm** further -- the arm is near peak speed at
+> release, so 3 ms is not a rounding detail. Re-derive by running the swing and finding the
+> crossing, never by recomputing from the two configurations.
+
+That branch stacks on `josh/feature/toss-release-speed` (`joshnroy/kinder-baselines`
+**PR #8**), which itself stacks three commits on top of `3524010`.
+That branch is the **Tossing3D port stack**'s second rung:
+`josh/feature/tossing-state-abstractions` → `-throw-controllers` → `-oracle-policy` →
+`-bilevel-model`. The stack was opened on the lab repo as PRs #89–#92, which are all
+**closed**; it now lives on the fork as `joshnroy/kinder-baselines` **PRs #1–#4** (`#1`
+targets `main`, each later one targets its predecessor).
 
 The pin is rung two rather than the top on purpose: **that is the only rung this repo
-imports.** `kinder_backend.py` and `scripts/tossing3d_oracle_demo.py` pull
+imports.** PR #8 sits on top of that rung rather than beside it, so the same statement
+still holds: `kinder_backend.py` and `scripts/tossing3d_oracle_demo.py` pull
 `kinder_models.dynamic3d.tossing.parameterized_skills` and
 `kinder_models.dynamic3d.shelf.parameterized_skills`, and nothing else from the stack.
 The oracle policy (#3) and the bilevel model (#4) are never imported — we carry our own
@@ -230,7 +262,28 @@ tree no longer carries either of them**; `docs/` prose that assumes they are on 
 wrong. `9512b9e` — the PyBullet leak fix, upstream PR #87 — is an ancestor of the pin, so
 that fix is present.
 
-**The pin moved `11eace5` → `3524010` on 2026-08-12**, a pure rebase of the same four
+**The pin moved `3524010` → `1b564a1` on 2026-08-12**, a clean fast-forward of +3
+commits (`3524010` is an ancestor of `1b564a1`, verified rather than assumed), all three
+in `kinder-models/dynamic3d/tossing/parameterized_skills.py`:
+
+- `cb95ca4` — corrects `MoveToThrowPoseController`'s base-collision docstring. Prose only.
+- `5a3a87d` — **makes the toss's release speed a parameter.** `TossController.reset` gains
+  `release_speed: float = TOSS_MAX_VEL`, and the `(140, 300, 200)` deg/s literals that were
+  inline in `reset` become the module constants `TOSS_MAX_VEL`/`TOSS_MAX_ACCEL`/
+  `TOSS_MAX_DECEL` behind a new `toss_profile_limits(release_speed)`. That helper scales
+  **all three** limits by one `effort = release_speed / TOSS_MAX_VEL`, with **no clamp** —
+  deliberately, because `_ARM_MAX_VEL` is kinder-baselines' own conservative constant and a
+  toss over-drives it on purpose.
+- `1b564a1` — strengthens that helper's own test to pin the profile's *shape* across scales.
+
+**The default path is byte-identical**: a caller passing no release speed gets exactly the
+motion the old inline literals produced, which `tests/environments/tossing3d/
+test_kinder_pin.py` asserts against the pinned checkout. So this bump does **not**
+invalidate any committed Tossing3D number — but note that **every Tossing3D number
+measured before this bump ran against the old pin**, where the release speed was not
+selectable at all, so none of them is evidence about any speed other than 140 deg/s.
+
+**The pin previously moved `11eace5` → `3524010` on 2026-08-12**, a pure rebase of the same four
 rungs onto upstream `main` at `4760956`: all 16/16 commits below the pin replayed
 byte-identical in content and message, so the *only* tree change is the two upstream
 commits the rebase picked up — `199cfe0` (sweep3D skills resample on infeasible sample,

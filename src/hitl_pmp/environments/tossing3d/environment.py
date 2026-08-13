@@ -408,7 +408,12 @@ class Tossing3DEnvironment(Environment):
             # and no measurement in this repo covers it.
             return [backend.run_move_to_throw_pose(standoff=float(action[1]), rotation=0.0)]
         if skill_id == self.toss_id:
-            windup, swing = backend.run_toss()
+            # Slot 1 is the release speed in joint-path deg/s; slot 2 is the millisecond
+            # from the start of the swing at which the gripper opens.
+            windup, swing = backend.run_toss(
+                release_speed_deg_s=float(action[1]),
+                gripper_release_ms=float(action[2]),
+            )
             return [windup, swing]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []
