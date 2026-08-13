@@ -154,13 +154,8 @@ def test_the_noop_id_is_not_a_real_skill_id() -> None:
 def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`_execute` is where an action vector becomes controller arguments, so it is where
-    a slot could be read from the wrong index. `Toss` took no parameters until kb#8, so
-    slot 1 was previously ignored entirely on this branch -- a dispatch that kept
-    ignoring it would leave the dial connected to nothing and every speed would throw
-    identically, which no test above this level would catch.
-
-    Offline: the backend is stubbed, so no simulator runs.
+    """`_execute` turns an action vector into controller arguments, so it is where a slot
+    could be read from the wrong index. Offline: the backend is stubbed.
     """
     from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
 
@@ -176,8 +171,8 @@ def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
     monkeypatch.setattr(KinderBackend, "run_toss", spy_run_toss)
 
     env = Tossing3DEnvironment()
-    # `backend()` builds one lazily and would resolve a task-config path; assigning the
-    # `PrivateAttr` it caches into skips that, so this stays a pure dispatch test.
+    # Assigning the cached `PrivateAttr` skips `backend()`'s lazy build, which would
+    # resolve a task-config path.
     env._backend = KinderBackend()  # noqa: SLF001
 
     env._execute(action=np.array([float(env.toss_id), 140.0, 0.0]))
@@ -189,16 +184,8 @@ def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
 def test_the_toss_dispatch_reads_its_gripper_release_ms_from_slot_two(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The sibling test above covers slot 1. This covers slot 2, and it is the more
-    dangerous of the two: slot 2 held a literal `0.0` on this branch for as long as
-    `Toss` existed, so a dispatch that kept passing the constant would compile, run, and
-    throw at a fixed release millisecond forever while the sampler dutifully drew a range
-    of values that reached nothing.
-
-    Asserted at two distinct values rather than one, so a hardcoded pass-through of the
-    *default* would fail here too.
-
-    Offline: the backend is stubbed, so no simulator runs.
+    """Asserted at two distinct values, so a hardcoded pass-through of the default fails
+    here too. Offline: the backend is stubbed.
     """
     from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
 

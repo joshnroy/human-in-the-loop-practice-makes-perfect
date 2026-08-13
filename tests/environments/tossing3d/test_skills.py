@@ -236,14 +236,8 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
 
 
 def test_param_dims_give_the_throw_a_release_speed_of_its_own() -> None:
-    """`Toss` used to have zero parameters, because the only dial this package could
-    offer without inventing one was an interpolation between upstream's two arm
-    configurations -- and that interpolation would have been ours.
-
-    It is a real dial now, and still not an invented one: upstream's `TossController.
-    reset` takes `release_speed` as of `joynroy/kinder-baselines` PR #8, so the throw's
-    energy is upstream's own parameter rather than a quantity this package synthesised.
-    Both arm configurations remain upstream's, untouched.
+    """`Toss`'s dials are upstream's own `TossController.reset` parameters rather than
+    quantities this package synthesised, so both arm configurations remain upstream's.
     """
     assert _SKILLS.PICK.param_dim == 2
     assert _SKILLS.MOVE_TO_THROW_POSE.param_dim == 1
@@ -371,45 +365,33 @@ def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:
 
 
 def test_toss_samples_one_release_speed_inside_the_measured_bounds() -> None:
-    """The dial is in **joint-path deg/s**, the same unit every measurement of it is in.
-
-    `TOSS_SPEED_BOUNDS` is `(60, 240)`, the span PR #213's grid actually drove, so a
-    draw is always a speed something has been observed at rather than an extrapolation.
+    """The dial is in joint-path deg/s. `TOSS_SPEED_BOUNDS` stays inside PR #213's
+    measured grid, so a draw is never an extrapolation.
     """
     rng = np.random.default_rng(0)
     draws = [
         float(Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[0]) for _ in range(200)
     ]
     assert all(TOSS_SPEED_BOUNDS[0] <= speed <= TOSS_SPEED_BOUNDS[1] for speed in draws)
-    # A real draw, not a constant dressed as one: the sampler has to be able to move the
-    # dial or `Toss` is back to having no learnable parameter.
+    # A real draw, not a constant dressed as one.
     assert max(draws) - min(draws) > (TOSS_SPEED_BOUNDS[1] - TOSS_SPEED_BOUNDS[0]) / 2
 
 
 def test_the_shipped_default_speed_is_the_upper_edge_of_the_samplers_range() -> None:
-    """140 deg/s is upstream's own default, the speed every committed Tossing3D number was
-    measured at, and **exactly the top of the sampler's range**.
+    """140 deg/s is upstream's default and exactly the top of the sampler's range: it must
+    be reachable so the oracle's throw is learnable, but it is the edge rather than an
+    interior point because it is what the real TidyBot primitive commands
+    (`movej_primitive.execute(..., max_vel=140, ...)`).
 
-    A sampler whose range excluded it would make the oracle's throw unreachable by
-    learning, which is the one thing this dial exists to allow -- so it must be reachable.
-    But it is the *edge* rather than an interior point, and that is deliberate rather than
-    an accident of rounding: 140 is what the real TidyBot primitive commands
-    (`movej_primitive.execute(..., max_vel=140, ...)`), so drawing above it would be asking
-    for a throw the hardware is never asked for.
-
-    Asserted as equality on the upper edge, not as strict containment, precisely so that
-    widening the range back to something like the old `(60, 240)` fails here and has to be
-    argued for rather than slipping through.
+    Asserted as equality rather than containment, so widening the range fails here.
     """
     assert TOSS_SPEED_BOUNDS[0] < UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
     assert TOSS_SPEED_BOUNDS[1] == UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
 
 
 def test_toss_samples_a_gripper_release_ms_inside_the_measured_bounds() -> None:
-    """The second dial, in milliseconds from the start of the swing.
-
-    Slot 1 is drawn separately and tested above; this pins slot 2, which is the one that
-    held a constant `0.0` until `Toss` gained a second parameter.
+    """The second dial, in milliseconds from the start of the swing. Slot 1 is drawn
+    separately and tested above.
     """
     rng = np.random.default_rng(0)
     draws = [
@@ -421,13 +403,9 @@ def test_toss_samples_a_gripper_release_ms_inside_the_measured_bounds() -> None:
 
 
 def test_the_two_toss_dials_are_drawn_independently() -> None:
-    """Both slots have to move, and they have to move *separately*.
-
-    A sampler that drew one value and wrote it into both slots, or that drew the second
-    from the first, would look correct in each single-slot test above while collapsing a
-    two-dimensional space onto a line -- which is exactly the degeneracy the
-    characterisation sweep exists to rule out. Pinned as near-zero rank correlation on
-    the raw draws.
+    """A sampler that wrote one draw into both slots, or drew the second from the first,
+    would pass each single-slot test above while collapsing the space onto a line. Pinned
+    as near-zero rank correlation.
     """
     rng = np.random.default_rng(0)
     draws = np.array([
@@ -441,15 +419,11 @@ def test_the_two_toss_dials_are_drawn_independently() -> None:
 
 def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None:
     """The bounds' upper edge is set by the *shortest* swing, not the longest.
+    `gripper_release_ms` is unclamped upstream: past the end of the swing the gripper
+    never opens and the cube is never thrown.
 
-    `gripper_release_ms` is deliberately unclamped upstream: past the end of the swing the
-    gripper never opens and the cube is never thrown. That corner is real and the sweep
-    has to be able to reach it, but a *sampler* drawing there would spend those draws on
-    throws that cannot score. The shortest swing over `TOSS_SPEED_BOUNDS` is 1300 ms, at
-    140 deg/s, so that is where the sampler's range has to stop.
-
-    Recomputed from upstream's own profile rather than asserted against a copied number,
-    so it fails if a pin bump changes the swing's timing.
+    Recomputed from upstream's own profile rather than against a copied number, so it
+    fails if a pin bump changes the swing's timing.
     """
     kinder_models = pytest.importorskip("kinder_models")
     del kinder_models

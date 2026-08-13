@@ -528,13 +528,10 @@ class KinderBackend(BaseModel):
         ordinary outcomes of a skill whose continuous parameters do not work out, and the
         caller has to be able to keep going -- `take_action` must be total.
 
-        `disable_collision_objects`, `release_speed` and `gripper_release_ms` are all
-        **per-controller** `reset` keywords, not universal ones: the first exists only on
-        tossing's `MoveToTargetGroundController.reset` and the other two only on
-        `TossController.reset`, and passing any of them to a controller that does not
-        declare it is a `TypeError`. So each is forwarded only when the caller actually
-        supplies it, and it is the `run_*` wrapper below -- which knows which controller
-        it is driving -- that decides to.
+        `disable_collision_objects` (only on `MoveToTargetGroundController.reset`),
+        `release_speed` and `gripper_release_ms` (only on `TossController.reset`) are
+        per-controller keywords, so each is forwarded only when supplied -- passing one to a
+        controller that does not declare it is a `TypeError`.
         """
         api = self.api()
         state = self._require_state()
@@ -619,24 +616,16 @@ class KinderBackend(BaseModel):
         select on its own. The swing is skipped if the windup did not land, since tossing
         from an unknown arm pose is not the thing that was measured.
 
-        **This is the one place in the domain where degrees become radians.** The dial is
-        carried in joint-path deg/s everywhere above here, because that is the unit every
-        measurement of it is written in (see `predicates.TOSS_SPEED_BOUNDS`); upstream's
-        `TossController.reset` takes rad/s. One conversion, here, pinned by
-        `test_run_toss_converts_the_release_speed_to_radians_exactly_once` -- a second
-        conversion or a missing one is a silent 57x error in either direction.
+        **The one place in the domain where degrees become radians**: the dial is carried
+        in joint-path deg/s (`predicates.TOSS_SPEED_BOUNDS`) and `TossController.reset`
+        takes rad/s. A second or missing conversion is a silent 57x error either way.
 
-        The speed reaches the **swing only**. The windup is `move_arm_to_conf`, which is
-        a posture change rather than a throw and whose `reset` takes no release speed at
-        all; forwarding one there is a `TypeError`.
+        Both parameters reach the **swing only** -- `move_arm_to_conf`'s `reset` declares
+        neither, so forwarding one there is a `TypeError`.
 
-        `gripper_release_ms` needs **no** unit conversion -- it is milliseconds on both
-        sides -- but it does need a *type* conversion, and that is the trap. Upstream
-        `divmod`s `int(gripper_release_ms)`, so handing it a float silently **truncates**:
-        a sampler drawing `722.9` would get 722 while `723.0` gets 723. We round at this
-        boundary instead and pass an `int`, so the value upstream schedules is the nearest
-        millisecond to the one that was drawn rather than the one below it. The timing is
-        still not clamped to the swing -- see `predicates.TOSS_RELEASE_MS_BOUNDS`.
+        `gripper_release_ms` is milliseconds on both sides but is rounded to an `int` here:
+        upstream `divmod`s `int(gripper_release_ms)`, which truncates, so `722.9` would
+        otherwise schedule 722.
         """
         windup = self.run_controller(
             module="tossing",

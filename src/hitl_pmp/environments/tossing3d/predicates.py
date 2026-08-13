@@ -164,95 +164,24 @@ WORST_BARRIER_COLLISION_STANDOFF = 1.00
 BARRIER_COLLISION_MARGIN = 0.10
 THROW_STANDOFF_BOUNDS = (WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MARGIN, 1.75)
 
-# `Toss`'s own dial: the release speed, in **joint-path deg/s**.
+# `Toss`'s release speed, in joint-path deg/s -- the rate along the path between upstream's
+# two arm configurations (L2 norm 148.8288 deg). `KinderBackend.run_toss` is the one site
+# that converts to upstream's rad/s.
 #
-# ## Why degrees per second, and why "joint-path"
-#
-# Every measurement of this quantity is written in deg/s -- PR #213's range fit, PR #221's
-# 660-cell grid, upstream's own `140` literal, and the real TidyBot primitive
-# (`yixuanhuang98/tidybot_real`, `robot/kinova.py:120-124`). Carrying the dial in the same
-# unit means a logged action vector reading `140.0` can be checked against those records
-# directly. Upstream's `TossController.reset` takes rad/s, so exactly one site converts --
-# `KinderBackend.run_toss` -- and `test_run_toss_converts_the_release_speed_to_radians_
-# exactly_once` pins it there. A missing conversion drives the arm 57x fast and a doubled
-# one 57x slow; neither raises.
-#
-# "Joint-path" because the speed is the rate along the *path* between upstream's two arm
-# configurations, not any single joint's rate and not a Cartesian speed. The path is
-# `TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF`, whose L2 norm is 148.8288 deg; joint 6
-# carries 0.8399 of it, so joint 6 turns at 0.8399x whatever this number says.
-#
-# **An m/s figure was considered and deliberately rejected.** Converting needs a Jacobian
-# gain, and that gain is not a constant over this range: measured at the realised release
-# configurations it runs 0.6156 to 0.6622 and *sawtooths* rather than drifting cleanly,
-# because the realised release fraction quantised to the 10 Hz control step. A
-# single-constant m/s label would therefore be wrong by several percent in a direction that
-# is not even monotone. Angular rate is exact and needs no constant at all.
-#
-# ## The range, and why the top is 140 rather than 240
-#
-# **140 deg/s is what the real controller commands.** The TidyBot primitive this ports
-# calls `movej_primitive.execute(..., max_vel=140, ...)`, so a draw above it is a throw the
-# hardware is never asked for, and a learner that found its optimum up there would have
-# learned something the real robot cannot do. The upper edge is that ceiling.
-#
-# An earlier iteration of this constant read `(60, 240)`, the span PR #213's grid drove.
-# That was a *measurement* range, not a command range: driving the sim past the real
-# controller's ceiling to see what happens is a legitimate probe, and adopting the same
-# interval as the sampler's range was the error. `240` is retained nowhere.
-#
-# The lower edge is 60, still the bottom of PR #213's grid, so every draw remains a speed
-# something has been observed at rather than an extrapolation.
-#
-# There is **no hardware-feasibility clamp below 140**, and that is deliberate:
-# `_ARM_MAX_VEL[5] = 70` deg/s is kinder-baselines' own conservative constant, *not* a
-# hardware limit -- the real primitive runs that joint at 140 deg/s, twice it. See PR #221,
-# which established that and retracted the "83.34 deg/s ceiling" an earlier design study
-# asserted.
-#
-# Note that `UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S` is now the **upper edge** of this
-# interval rather than interior to it, so the oracle throws at the fastest speed the
-# sampler can draw. That is a consequence of the cap, not a coincidence, and it means a
-# learner can only ever match the oracle's speed, never exceed it.
-#
-# ## The sawtooth artifact this range used to carry is gone
-#
-# Release used to fire on the first control step past `fraction_covered >= 0.46`, tested
-# once per `_CONTROL_DT = 0.1 s`, so the *realised* release fraction sawtoothed with speed:
-# measured paired on (standoff, seed), n = 110, `65 -> 70` deg/s made the throw land
-# **0.0329 m shorter**, paired t = +4.51, p = 1.6e-05. That was a fidelity defect of our
-# simulation rather than a property of the toss -- the real primitive runs at 1 kHz.
-#
-# `joshnroy/kinder-baselines` PR #12 replaced the fraction test with a scheduled release on
-# an absolute millisecond, so the trigger no longer quantises to 100 ms. The published
-# numbers above stand as what was measured; they are simply evidence about the old trigger.
-# What is **not** yet established is monotonicity under the new one -- do not read a draw
-# from this range as monotone in landing distance without checking.
+# 140 is what the real TidyBot primitive commands
+# (`movej_primitive.execute(..., max_vel=140, ...)`); 60 is the bottom of PR #213's grid.
+# No feasibility clamp below 140: `_ARM_MAX_VEL[5] = 70` deg/s is kinder-baselines' own
+# conservative constant, not a hardware limit (PR #221).
 TOSS_SPEED_BOUNDS = (60.0, 140.0)
 
-# `Toss`'s second dial: the wall-clock millisecond, measured from the start of the swing,
-# at which the gripper opens.
+# `Toss`'s second dial: the millisecond from the start of the swing at which the gripper
+# opens. Absolute rather than a swing fraction because that is what the real TidyBot's
+# `movej_primitive.execute()` takes. Its own 600 ms does not transfer -- it normalises on
+# the L-infinity norm and finishes in 1476 ms, so 600 is fraction 0.4107 of its swing
+# against 0.3449 of this one.
 #
-# ## Why an absolute millisecond rather than a fraction of the swing
-#
-# Because that is what the real robot takes. `movej_primitive.execute()` on the TidyBot
-# (`yixuanhuang98/tidybot_real`, `robot/kinova.py`) takes exactly `max_vel` and
-# `gripper_release_ms`, and kb#12 gave upstream's `TossController.reset` the same two, so
-# both of this skill's parameters are now upstream's knobs rather than quantities this
-# package synthesised. Carrying a fraction here would re-introduce a derived unit on our
-# side of the boundary.
-#
-# **The real robot's own literal 600 is deliberately not copied across.** That primitive
-# normalises its joint profile on the **L-infinity** norm (125.0 deg) and finishes in
-# 1476 ms, so its 600 ms is fraction 0.4107 of its swing; 600 ms here would be 0.3449 of
-# this one. The two swings are not the same length, so the literal does not transfer --
-# only the parameterisation does.
-#
-# ## The range
-#
-# **The swing's duration is itself a function of `release_speed`**, so the two dials are
-# coupled: the same millisecond is a different point in the swing at each end of
-# `TOSS_SPEED_BOUNDS`. Measured from `toss_profile_limits` + `_trapezoidal_motion_profile`:
+# Swing duration is a function of `release_speed`, so the two dials are coupled. Measured
+# from `toss_profile_limits` + `_trapezoidal_motion_profile`:
 #
 # | `release_speed` deg/s | 60 | 80 | 100 | 120 | 140 |
 # | --- | --- | --- | --- | --- | --- |
@@ -260,54 +189,23 @@ TOSS_SPEED_BOUNDS = (60.0, 140.0)
 # | path fraction at 720 ms | 0.196 | 0.262 | 0.327 | 0.392 | 0.458 |
 # | ms at path fraction 0.46 | 1375 | 1090 | 918 | 804 | 723 |
 #
-# The upper edge is set by the **shortest** swing in `TOSS_SPEED_BOUNDS` -- 1700 ms, at
-# 140 deg/s -- not the longest. `gripper_release_ms` is deliberately **not clamped**
-# upstream: a value at or past the end of the swing means the gripper never opens and the
-# cube is never thrown. That is a real and reachable corner of the space rather than an
-# error, and the characterisation sweep has to be able to land in it -- but a *sampler*
-# drawing there would spend those draws on throws that cannot score, so these bounds stop
-# short of it. At 1400 ms every speed in `(60, 140)` is still swinging, with 300 ms of
-# margin at the fast end.
-#
-# **1400 also clears the canonical release point at every speed**, which is the property
-# that makes an absolute-millisecond parameterisation workable here: fraction 0.46 falls at
-# 723 ms at 140 deg/s and at 1375 ms at 60 deg/s, and both are inside the range. So a
-# learner can reach the release point that every committed Tossing3D number was measured at
-# whatever speed it draws, rather than being starved at one end.
-#
-# > **A stronger claim was made here and is retracted.** An earlier revision of this
-# > constant asserted that *no* absolute interval could be both live at every speed and
-# > reach mid-swing at every speed, and recommended a speed-relative parameter instead.
-# > That was computed over `TOSS_SPEED_BOUNDS = (60, 240)`, where the shortest swing is
-# > 1300 ms and the slow end's 0.46 crossing is at 1375 ms -- genuinely incompatible. The
-# > incompatibility was an artifact of the 240, which is not a speed the real controller
-# > ever commands. At `(60, 140)` the shortest swing is 1700 ms and the conflict does not
-# > arise. Recorded rather than deleted because the arithmetic was right and only its
-# > input was wrong, and because the conflict returns immediately if the speed cap is ever
-# > raised again.
+# 1400 is set by the shortest swing (1700 ms, at 140 deg/s). `gripper_release_ms` is not
+# clamped upstream: at or past the end of the swing the gripper never opens. Raising
+# `TOSS_SPEED_BOUNDS` invalidates this interval -- at a 240 deg/s cap the shortest swing is
+# 1300 ms, below the slow end's 1375 ms crossing.
 TOSS_RELEASE_MS_BOUNDS = (300.0, 1400.0)
 
-# Upstream's own shipped default: the millisecond the retired 0.46 fraction fell at for the
-# shipped windup->release path at 140 deg/s.
+# Upstream's shipped default: the millisecond path fraction 0.46 falls at, for the shipped
+# windup->release path at 140 deg/s.
 #
-# **It is 720, measured against the motion-planned path -- not 723, which is what the
-# nominal `TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF` difference gives.** That
-# distinction is the entire reason this constant is not the obvious number, and it is
-# exactly the kind of thing the next person re-derives incorrectly. `TossController.reset`
-# profiles `||final_joint_angles - curr_joint_angles||` with both endpoints coming out of
-# `run_motion_planning`; the planner bends the path slightly, so the realised `s_total` is
-# not the nominal one and the crossing lands 3 ms earlier. Three milliseconds is not a
-# rounding detail here -- the arm is near peak speed at release, and measured on the live
-# oracle rollout 723 lands the cube **52 mm** further than 720 does.
-#
-# Not the real robot's 600 either; see `TOSS_RELEASE_MS_BOUNDS` for why that literal does
-# not transfer. Re-derive by running the swing and finding the crossing, never by
-# recomputing from the two arm configurations.
+# **720, not the 723 the nominal `TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF` difference
+# gives**: `TossController.reset` profiles both endpoints out of `run_motion_planning`, and
+# the bent path moves the crossing 3 ms earlier -- 52 mm of landing distance. Re-derive by
+# running the swing, never from the two arm configurations.
 UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS = 720.0
 
-# The speed every committed Tossing3D number was measured at, and still upstream's own
-# default: the literal that was inline in `TossController.reset` before kb#8 turned it into
-# a parameter, and what `toss_profile_limits()` returns when passed nothing.
+# Upstream's own default, and the speed every committed Tossing3D number was measured at:
+# what `toss_profile_limits()` returns when passed nothing.
 UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S = 140.0
 
 # **The one calibrated constant in this module, and the only thing the success band is not
@@ -316,20 +214,10 @@ UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S = 140.0
 # the same distance in the base's facing direction every time. That displacement is this
 # number, in metres.
 #
-# > **Scope note, 2026-08-12.** This constant is the impact range **at 140 deg/s only**.
-# > It was calibrated when `Toss` had no parameters and every throw was the same throw;
-# > `TOSS_SPEED_BOUNDS` now lets a caller ask for 60-240 deg/s, over which the range
-# > genuinely varies. Nothing below has been recomputed and the measurements it cites stand
-# > exactly as published -- they are simply evidence about one speed.
-# >
-# > **The consequence is live, not hypothetical**: `RobotAtSuccessfulThrowPoseClassifier`
-# > derives its acceptance band from this single number, so it currently answers "is this a
-# > pose a *140 deg/s* throw scores from", while `Toss` may be executed at any speed in the
-# > bounds. Reformulating that predicate as a union over the speed range is the next PR in
-# > this stack; until it lands, the predicate is correct only for the oracle's speed. This
-# > is recorded here rather than left implicit because a silently speed-conditional
-# > precondition is exactly the kind of thing
-# > `tests/environments/test_operator_dynamics_fidelity.py` exists to forbid.
+# > **Scope note, 2026-08-12.** This is the impact range at 140 deg/s only, and
+# > `TOSS_SPEED_BOUNDS` spans 60-140. `RobotAtSuccessfulThrowPoseClassifier` derives its
+# > acceptance band from it, so that predicate is correct only at the oracle's speed until
+# > it is reformulated as a union over the range.
 #
 # Because it is a property of the *controller* -- upstream's arm configurations and the
 # cube's 0.1 kg mass -- and not of the scene, the success band can be recomputed from live
@@ -359,22 +247,11 @@ UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S = 140.0
 # re-measures it against the real simulator, so upstream changing the toss controller, the
 # windup conf or the physics fails loudly rather than silently.
 #
-# > **Provisional as of 2026-08-13; left as published and NOT recomputed.** Every bracket
-# > above was measured with the gripper opening on the first control step past path
-# > fraction 0.46. The release is now scheduled on an absolute millisecond
-# > (`joshnroy/kinder-baselines` PR #12 + `joshnroy/kindergarden` PR #2), which moves the
-# > oracle's landing +41.6 mm at the same standoff, seed and speed, so the *impact* range
-# > this constant records has almost certainly moved too and 1.275 should be read as
-# > approximate rather than calibrated.
-# >
-# > It is not recomputed here for two reasons. The guard tests still pass on the current
-# > pins -- `test_throw_range_predicts_where_the_cube_lands` and
-# > `test_the_derived_band_agrees_with_whether_the_throw_actually_scores` at standoffs 1.15
-# > (`True`) and 1.45 (`False`) -- so the derived band still classifies correctly, which is
-# > all `RobotAtSuccessfulThrowPose` asks of it. And re-deriving it properly means redoing
-# > PR #105's 5-seed, 0.025 m sweep, which is a measurement task rather than an edit. Until
-# > that happens, treat this as a working value with a passing guard, not as a number to
-# > quote.
+# > **Provisional as of 2026-08-13; left as published, NOT recomputed.** The brackets above
+# > were measured with the gripper opening on the first control step past fraction 0.46.
+# > Scheduling on an absolute millisecond moves the oracle's landing +41.6 mm, so read
+# > 1.275 as approximate. The guard tests still pass on the current pins; re-deriving means
+# > redoing PR #105's 5-seed, 0.025 m sweep.
 THROW_RANGE = 1.275
 
 # Upstream's `WAYPOINT_TOL` (`kinder_models/dynamic3d/utils.py:54`), which is how close

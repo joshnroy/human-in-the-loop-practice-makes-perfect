@@ -116,29 +116,22 @@ def test_the_throw_standoff_is_upstreams_own_test_value() -> None:
 
 
 def test_the_oracle_release_speed_is_upstreams_own_shipped_default() -> None:
-    """140 deg/s is not a tuned number. It is the literal that was inline in
-    `TossController.reset` before kb#8 made it a parameter, it is what
-    `toss_profile_limits()` still returns by default, and it is the speed every committed
-    Tossing3D number -- including the `10/10` at standoff 1.35 -- was measured at.
-
-    Pinning it here is what keeps the oracle's throw *byte-identical* to the throw it
-    made before the dial existed. If this number ever has to move, that is a new
-    measurement, not a tweak.
+    """140 deg/s is not a tuned number: it is what `toss_profile_limits()` returns by
+    default, and the speed every committed Tossing3D number -- including the `10/10` at
+    standoff 1.35 -- was measured at. Moving it is a new measurement, not a tweak.
     """
     assert ORACLE_RELEASE_SPEED_DEG_S == 140.0
     assert ORACLE_RELEASE_SPEED_DEG_S == UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
 
 
 def test_the_oracle_gripper_release_ms_is_upstreams_own_shipped_default() -> None:
-    """720 ms is not a tuned number either. It is the millisecond the retired
-    `_release_fraction = 0.46` trigger fell at for the shipped windup->release path at
-    140 deg/s, which is `ORACLE_RELEASE_SPEED_DEG_S` -- so the *pair* reproduces the throw
-    every committed Tossing3D number was measured against.
+    """720 ms is the millisecond path fraction 0.46 falls at for the shipped
+    windup->release path at `ORACLE_RELEASE_SPEED_DEG_S`, so the *pair* reproduces the
+    throw every committed Tossing3D number was measured against.
 
-    Deliberately **not** the real robot's own literal 600: `movej_primitive` normalises on
-    the L-infinity norm and finishes in 1476 ms, so its 600 ms is fraction 0.4107 of its
-    swing while 600 ms here would be 0.3449 of this one. The parameterisation transfers;
-    the literal does not.
+    Not the real robot's 600: `movej_primitive` normalises on the L-infinity norm and
+    finishes in 1476 ms, so its 600 ms is fraction 0.4107 of its swing against 0.3449 of
+    this one.
     """
     assert ORACLE_GRIPPER_RELEASE_MS == 720.0
     assert ORACLE_GRIPPER_RELEASE_MS == UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS
@@ -153,11 +146,9 @@ def test_the_label_names_the_skill_its_objects_and_its_parameters() -> None:
     assert "params=[0.57, -0.7]" in label
 
 
-def test_the_toss_label_now_carries_its_release_speed() -> None:
-    """`Toss` used to be this domain's one parameterless skill, so its label had no
-    `params=` suffix. It has a dial now, and the renderer burns the label into the frame
-    -- a clip of a throw has to say how hard the throw was, or two clips at different
-    speeds are indistinguishable."""
+def test_the_toss_label_carries_its_release_speed_and_millisecond() -> None:
+    """The renderer burns the label into the frame, so a clip of a throw has to say how
+    hard it was -- otherwise two clips at different speeds are indistinguishable."""
     label = _act(
         gripper=GRASP_THRESHOLD + 0.5,
         cube_z=0.4,

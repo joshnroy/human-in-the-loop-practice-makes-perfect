@@ -409,11 +409,7 @@ class Tossing3DEnvironment(Environment):
             return [backend.run_move_to_throw_pose(standoff=float(action[1]), rotation=0.0)]
         if skill_id == self.toss_id:
             # Slot 1 is the release speed in joint-path deg/s; slot 2 is the millisecond
-            # from the start of the swing at which the gripper opens. This branch ignored
-            # both slots until `Toss` gained its dials, so a dispatch that kept ignoring
-            # either would leave that whole axis throwing identically --
-            # `test_the_toss_dispatch_reads_its_release_speed_from_slot_one` and
-            # `test_the_toss_dispatch_reads_its_gripper_release_ms_from_slot_two` pin it.
+            # from the start of the swing at which the gripper opens.
             windup, swing = backend.run_toss(
                 release_speed_deg_s=float(action[1]),
                 gripper_release_ms=float(action[2]),

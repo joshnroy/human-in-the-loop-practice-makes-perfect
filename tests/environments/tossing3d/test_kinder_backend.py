@@ -105,17 +105,9 @@ def test_move_to_throw_pose_disables_collision_against_the_held_cube(
 def test_run_toss_converts_the_release_speed_to_radians_exactly_once(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """**The one place degrees become radians.**
-
-    This domain carries the dial in joint-path deg/s, because that is the unit every
-    measurement of it is written in (#213's fit, #221's grid, upstream's own `140`
-    literal, and the real TidyBot primitive). Upstream's `TossController.reset` takes
-    rad/s. So exactly one site converts, and this test is what pins it: a second
-    conversion anywhere upstream of here would drive the arm at 1/57th of the commanded
-    speed, and a *missing* one would drive it at 57x -- neither of which raises, and both
-    of which would silently invalidate every number measured afterwards.
-
-    Offline: it spies on `run_controller`, so no simulator and no controller is involved.
+    """This domain carries the dial in joint-path deg/s and `TossController.reset` takes
+    rad/s, so exactly one site converts. A second or missing conversion is a silent 57x
+    error either way. Offline: it spies on `run_controller`.
     """
     calls: list[dict[str, Any]] = []
 
@@ -133,8 +125,7 @@ def test_run_toss_converts_the_release_speed_to_radians_exactly_once(
     backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=720.0)
 
     assert [call["key"] for call in calls] == ["move_arm_to_conf", "toss"]
-    # The windup is `move_arm_to_conf`, whose `reset` takes no release speed at all --
-    # passing one is a TypeError, so it must not be forwarded there.
+    # `move_arm_to_conf.reset` declares no release speed; passing one is a TypeError.
     assert "release_speed" not in calls[0]
     assert calls[1]["release_speed"] == pytest.approx(np.deg2rad(140.0))
 
@@ -142,18 +133,9 @@ def test_run_toss_converts_the_release_speed_to_radians_exactly_once(
 def test_run_toss_rounds_the_gripper_release_ms_to_an_int_rather_than_truncating(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The second dial needs no *unit* conversion -- milliseconds on both sides -- but it
-    does need a *type* one, and getting it wrong is silent.
-
-    Upstream `divmod`s `int(gripper_release_ms)`, and `int()` truncates toward zero. A
-    float handed straight through would therefore make `722.9` mean 722 while `723.0`
-    means 723: a systematic half-millisecond bias toward releasing *early*, applied to
-    every draw a continuous sampler ever makes, with nothing raising. Rounding at this
-    boundary is what makes the scheduled millisecond the nearest one to the drawn value.
-
-    The windup takes no release timing at all, so it must not be forwarded there.
-
-    Offline: it spies on `run_controller`, so no simulator and no controller is involved.
+    """Upstream `divmod`s `int(gripper_release_ms)`, and `int()` truncates toward zero, so
+    a float handed straight through would make `722.9` mean 722 -- a systematic bias toward
+    releasing early. Offline: it spies on `run_controller`.
     """
     calls: list[dict[str, Any]] = []
 
@@ -179,8 +161,7 @@ def test_run_toss_rounds_the_gripper_release_ms_to_an_int_rather_than_truncating
 def test_run_toss_skips_the_swing_when_the_windup_fails_whatever_the_speed(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Adding a parameter must not change the windup-failed short circuit: tossing from
-    an unknown arm pose is not the thing upstream measured, at any release speed."""
+    """Tossing from an unknown arm pose is not what upstream measured, at any speed."""
     calls: list[str] = []
 
     def spy_run_controller(  # noqa: PLR0917

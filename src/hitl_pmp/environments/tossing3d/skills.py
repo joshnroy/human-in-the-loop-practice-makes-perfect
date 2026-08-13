@@ -26,31 +26,16 @@ upstream's tossing test simply hardcodes `1.35` with no range at all. So the int
 below is this repo's, taken from the standoffs it has actually measured rather than
 invented.
 
-**`Toss` has exactly two continuous parameters, and both are upstream's, not ours.** An
-earlier iteration of this domain interpolated a `swing` dial between upstream's windup
-and full-power arm configurations. That interpolation was *ours*, and it made the dial a
-quantity no upstream measurement covered; it was removed, leaving `Toss` with no
-parameters at all.
+**`Toss`'s two continuous parameters are upstream's, not ours.** `TossController.reset`
+takes exactly the two knobs the real TidyBot's `movej_primitive.execute()` does --
+`release_speed` and `gripper_release_ms` -- so both arm configurations remain upstream's,
+untouched. The ranges are `predicates.TOSS_SPEED_BOUNDS`, `(60, 140)` joint-path deg/s,
+and `predicates.TOSS_RELEASE_MS_BOUNDS`, `(300, 1400)` ms from the start of the swing.
 
-The dials are back on a different footing. `joshnroy/kinder-baselines` PR #12 gives
-upstream's own `TossController.reset` exactly the two knobs the real TidyBot's
-`movej_primitive.execute()` takes -- `release_speed` and `gripper_release_ms` -- so the
-throw's energy *and* the moment the hand opens are upstream's parameters rather than
-quantities this package synthesised, and **both arm configurations remain upstream's,
-untouched**, which is the property the old `swing` dial gave up.
-
-The ranges are `predicates.TOSS_SPEED_BOUNDS`, `(60, 140)` joint-path deg/s, and
-`predicates.TOSS_RELEASE_MS_BOUNDS`, `(300, 1400)` ms from the start of the swing. The
-speed's upper edge is what the real TidyBot primitive actually commands
-(`movej_primitive.execute(..., max_vel=140, ...)`), so no draw asks for a throw the
-hardware is never asked for.
-
-**The two are drawn independently but are not independent in effect**: the swing lasts
+**They are drawn independently but are not independent in effect**: the swing lasts
 3100 ms at 60 deg/s and 1700 ms at 140, so a fixed millisecond is a fifth of the way
 through the slow swing and just under half way through the fast one. See
-`TOSS_RELEASE_MS_BOUNDS`'s own comment for the measured duration table, why the upper edge
-is the *shortest* swing rather than the longest, and a retracted claim about
-absolute-versus-relative parameterisation that was an artifact of the old 240 cap.
+`TOSS_RELEASE_MS_BOUNDS` for the measured duration table.
 
 ## The operator models, and the two choices that are load-bearing
 
@@ -215,9 +200,8 @@ class Tossing3DSkills:
         if skill == Tossing3DSkills.MOVE_TO_THROW_POSE:
             return np.array([rng.uniform(*THROW_STANDOFF_BOUNDS)])
         if skill == Tossing3DSkills.TOSS:
-            # Drawn independently, but *not* independent in effect: the swing's duration is
-            # a function of the speed, so the same millisecond is a different point in the
-            # swing at each end of `TOSS_SPEED_BOUNDS`. See `TOSS_RELEASE_MS_BOUNDS`.
+            # Drawn independently, but not independent in effect: the swing's duration is a
+            # function of the speed. See `TOSS_RELEASE_MS_BOUNDS`.
             return np.array([
                 rng.uniform(*TOSS_SPEED_BOUNDS),
                 rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
