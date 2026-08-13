@@ -254,6 +254,24 @@ UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S = 140.0
 # > redoing PR #105's 5-seed, 0.025 m sweep.
 THROW_RANGE = 1.275
 
+# The interval `RobotAtSuccessfulThrowPose` unions over: shortest and longest reach
+# across the toss parameter box, as distance covered before first ground contact (the
+# quantity `THROW_RANGE` is calibrated in, not resting x). Measured over 3359
+# unobstructed rows of PR #240's grid and this stack's standoff grid, envelopes
+# [0.3330, 1.3465] and [0.3386, 1.3552]. Resting x instead jumps 244 mm at ~710 ms on
+# bin contact, and dropping those rows censors the longest throws: the two grids then
+# disagree by 178 mm, against 8.7 mm on reach.
+#
+# Derived from the toss parameter box, never from `THROW_STANDOFF_BOUNDS` -- otherwise
+# the `NearBin` tautology returns by another door.
+THROW_RANGE_MIN = 0.333
+
+# Measured maximum 1.3552, trimmed 55.2 mm to put the accepted band's far edge on
+# standoff 1.400, the last observed to score (`0/1050` beyond it, `3/150` at it):
+# `1.400 - (bin_x - x_min - THROW_SHORTFALL_MARGIN)` = `1.400 - (2.0 - 1.85 - 0.05)`.
+# Scene-coupled: re-derive by re-running the standoff grid, not by editing the literal.
+THROW_RANGE_MAX = 1.300
+
 # Upstream's `WAYPOINT_TOL` (`kinder_models/dynamic3d/utils.py:54`), which is how close
 # `MoveToTargetGroundController.terminated()` requires the base to be to its own planned
 # waypoint. Using upstream's own number means the lateral conjunct admits exactly the poses
@@ -428,32 +446,43 @@ class RobotAtSuccessfulThrowPoseClassifier:
     classifier saw a single class, and the sampler fell back to uniform on every draw
     forever -- 16/16 attempts labelled success with 0/16 informed draws in a probe run,
     against 7/20 informed draws for `Pick` in the same run. A skill whose add effect cannot
-    fail is a skill whose sampler cannot learn, and this skill's standoff is the one
-    continuous parameter in the domain that decides the outcome: `Toss`, which does decide
-    it, has `param_dim = 0`.
+    fail is a skill whose sampler cannot learn.
 
-    **The standoff conjunct is derived from live state, not measured and pinned.** `Toss`
-    takes no parameters -- fixed windup conf, fixed toss conf -- so a throw displaces the
-    cube by the constant `THROW_RANGE` in the base's facing direction. `MoveToThrowPose`
-    pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base satisfying the lateral
-    conjunct faces `+x` and the cube's predicted resting place is `base_x + THROW_RANGE`.
-    `InBin` tests the cube's centre against the scored box, which the `State` already
-    carries on the bin as the live `Region.bbox`. So the test below is *that same box*,
-    read off *that same object*, trimmed by the two margins above and applied to the
-    predicted landing point -- and the accepted band of standoffs
+    **The standoff conjunct stays even though `Toss` has parameters of its own.**
+    Dropping it would hand `MoveToThrowPose` a constant-true label again.
 
-        [bin_x + THROW_RANGE - (x_max - THROW_OVERSHOOT_MARGIN),
-         bin_x + THROW_RANGE - (x_min + THROW_SHORTFALL_MARGIN)]
+    **The standoff conjunct is derived from live state, not measured and pinned.**
+    `MoveToThrowPose` pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base
+    satisfying the lateral conjunct faces `+x`. The box tested below is the same live
+    `Region.bbox` `InBin` reads off the bin, trimmed by the two margins above.
 
-    falls out rather than being written down. Move the bin, resize the scored box, or
-    change `ground_placement_threshold`, and the band follows on its own -- which matters,
-    because kindergarden#126 moves the bin. A hard-coded band would be silently wrong the
-    moment that lands. The two margins are fixed metres, not a fraction of the box, so they
-    do not move with it.
+    **The box is applied to an interval, not a point: that is the union.** The pose is
+    accepted iff `[base_x + THROW_RANGE_MIN, base_x + THROW_RANGE_MAX]` intersects the
+    trimmed box -- iff *some* toss parameterisation in bounds scores from here. The
+    accepted band of standoffs
+
+        [bin_x + THROW_RANGE_MIN - (x_max - THROW_OVERSHOOT_MARGIN),
+         bin_x + THROW_RANGE_MAX - (x_min + THROW_SHORTFALL_MARGIN)]
+
+    falls out rather than being written down.
+
+    The near edge lands at 0.209 m, below the sampler's 1.10 m floor, so inside
+    `THROW_STANDOFF_BOUNDS` this is a one-sided threshold at 1.400: 301/650 millimetre
+    standoffs accepted, 349/650 rejected.
+
+    The interval form assumes achievable range is contiguous over the toss parameter
+    box; the grids leave sampling gaps up to 93 mm, so that is argued, not measured.
+
+    Move the bin, resize the scored box, or change `ground_placement_threshold`, and the
+    band follows on its own -- which matters, because kindergarden#126 moves the bin. A
+    hard-coded band would be silently wrong the moment that lands. The two margins are
+    fixed metres, not a fraction of the box, so they do not move with it.
 
     That this predicate and `InBin` now read their box off the same object is what makes
     "the pose a throw succeeds from" and "the place a throw must land" provably the same
     geometry rather than two things kept in step by hand.
+
+    The two margins below were measured against a single fixed throw.
 
     On the coincident config the *geometric* band -- before the two margins below -- works
     out to `[1.125, 1.425]`: **0.300 m wide, which is exactly the scored box's own
@@ -493,10 +522,12 @@ class RobotAtSuccessfulThrowPoseClassifier:
         )
         if lateral_offset > THROW_POSE_LATERAL_TOLERANCE:
             return False
-        landing_x = state.get(obj=robot, feature_name="pos_base_x") + THROW_RANGE
+        base_x = state.get(obj=robot, feature_name="pos_base_x")
+        landing_min = base_x + THROW_RANGE_MIN
+        landing_max = base_x + THROW_RANGE_MAX
         x_min = state.get(obj=target, feature_name="x_min") + THROW_SHORTFALL_MARGIN
         x_max = state.get(obj=target, feature_name="x_max") - THROW_OVERSHOOT_MARGIN
-        return bool(x_min <= landing_x <= x_max)
+        return bool(landing_min <= x_max and x_min <= landing_max)
 
 
 # `Predicate.holds` is a positional `(state, objects)` callable per its interface contract

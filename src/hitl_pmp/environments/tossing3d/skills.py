@@ -39,9 +39,8 @@ through the slow swing and just under half way through the fast one. See
 
 ## The operator models, and the two choices that are load-bearing
 
-The hard rule this repo enforces (`tests/environments/test_operator_dynamics_fidelity.py`)
-is that an operator model must be *exactly as strong* as the dynamics guard it stands
-for -- a precondition weaker than reality yields plans that look valid and cannot
+The rule here is that an operator model must never permit *more* than the raw dynamics
+allow -- a precondition weaker than reality yields plans that look valid and cannot
 execute. Two of the declarations below exist only for that reason:
 
 1. **`Pick` requires `Reachable(?cube, ?barrier)`.** The base cannot cross the barrier,
@@ -58,6 +57,12 @@ And one on the other side:
    whether or not it lands in the bin. Declaring it unconditionally is what makes
    the planner's model of a *failed* toss honest -- the alternative, deleting it only on
    success, is a model in which a missed throw costs nothing.
+
+Nothing enforces that rule automatically: `test_operator_dynamics_fidelity.py` does not
+list this domain, and both it and this domain's `test_operator_fidelity.py` assert only
+that an applicable ground skill changes the real state -- which a missed throw does. An
+over-permissive `RobotAtSuccessfulThrowPose` is caught only by
+`test_no_toss_parameterisation_scores_from_beyond_the_accepted_band`.
 
 ## No operator takes a goal region
 

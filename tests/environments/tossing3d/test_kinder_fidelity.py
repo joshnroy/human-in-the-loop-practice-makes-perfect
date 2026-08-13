@@ -40,11 +40,18 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import LabeledAction
+from hitl_pmp.environments.tossing3d import predicates
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
+    THROW_OVERSHOOT_MARGIN,
     THROW_RANGE,
+    THROW_RANGE_MAX,
+    THROW_RANGE_MIN,
+    THROW_SHORTFALL_MARGIN,
     THROW_STANDOFF_BOUNDS,
+    TOSS_RELEASE_MS_BOUNDS,
+    TOSS_SPEED_BOUNDS,
     InBinClassifier,
     RobotAtSuccessfulThrowPoseClassifier,
 )
@@ -85,6 +92,11 @@ REST_X_PRE_1KHZ_RELEASE = 1.9902
 # `ORACLE_RELEASE_SPEED_DEG_S` and `ORACLE_GRIPPER_RELEASE_MS`.
 REST_X = 2.0318
 BIN_FLOOR_Z = 0.0444
+
+# `(release_speed, gripper_release_ms)` probes for "does *any* throw score from here".
+# The oracle's own pair leads because it is verified to score at standoff 1.15 on
+# `CANONICAL_SEED`; the others are the measured reach argmax (763 ms) and a slow throw.
+_UNION_PROBE_PARAMS = ((140.0, 720.0), (140.0, 763.0), (60.0, 850.0))
 
 
 def _env():
@@ -221,8 +233,17 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
     3/3 and 1.45 solves 0/3, so the predicate must say exactly the opposite of the wrong
     value at both points.
 
-    Asserted against the real episode outcome rather than against a recorded number, so
-    this is a check that the symbolic layer still describes the dynamics.
+    Asserted against real episode outcomes rather than a recorded number, so this is a
+    check that the symbolic layer still describes the dynamics.
+
+    `expected` means "*some* toss parameterisation scores from here", so the reality
+    half probes `_UNION_PROBE_PARAMS` rather than the oracle, whose release millisecond
+    is not an input to the predicate. The strong form of the `False` case is
+    `test_no_toss_parameterisation_scores_from_beyond_the_accepted_band`.
+
+    Resting x is not asserted: first contact here is the bin (`bin_0` in 17/18 committed
+    grid rows at 140 deg/s), and one cell's three seeds rest 216 mm apart while their
+    distances before first ground contact agree to 2.2 mm.
     """
     env = _env()
     try:
@@ -243,12 +264,24 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
             f"at standoff {standoff} the predicate says {predicted}, but it was measured "
             f"to be {expected}. THROW_RANGE = {THROW_RANGE} is no longer calibrated."
         )
-        assert env.is_solved() == expected, (
-            f"at standoff {standoff} the episode scored {env.is_solved()}, not {expected} "
-            "as measured -- the dynamics moved, so THROW_RANGE needs re-measuring."
-        )
     finally:
         env.close()
+
+    # Short-circuits on the first scoring pair, so the `True` case costs one sequence.
+    scored = next(
+        (
+            (speed, release_ms)
+            for speed, release_ms in _UNION_PROBE_PARAMS
+            if _throw_scores_from_standoff(standoff=standoff, speed=speed, release_ms=release_ms)
+        ),
+        None,
+    )
+    assert (scored is not None) == expected, (
+        f"at standoff {standoff} the predicate says {expected}, but of the "
+        f"{len(_UNION_PROBE_PARAMS)} toss parameterisations probed "
+        f"{'none scored' if scored is None else f'{scored} scored'}. The band and the "
+        "dynamics disagree about whether ANY parameterisation scores from this pose."
+    )
 
 
 def test_move_to_throw_pose_at_the_lower_standoff_bound_does_not_disturb_the_barrier() -> None:
@@ -576,3 +609,132 @@ def test_recording_does_not_change_where_the_cube_comes_to_rest() -> None:
 
     assert rest["plain"][0] == pytest.approx(REST_X, abs=1e-3)
     assert rest["recorded"] == pytest.approx(rest["plain"], abs=1e-6)
+
+
+# How far outside the accepted band to stand. Clears `move_to_target`'s own stopping
+# noise -- PR #196's closest miss at 1.375 was 0.1 mm.
+BAND_EDGE_PROBE_OFFSET = 0.05
+
+# A coarse sample of the toss parameter box, as (release_speed, gripper_release_ms)
+# fractions of their bounds. `(1.0, 0.42)` is the measured reach argmax: at 140 deg/s
+# the impact range peaks near 763 ms, not at either end of `TOSS_RELEASE_MS_BOUNDS`.
+_PARAM_GRID = (
+    (0.0, 0.5),
+    (1.0, 0.5),
+    (0.0, 0.0),
+    (1.0, 1.0),
+    (0.5, 0.5),
+    (1.0, 0.42),
+)
+
+
+def _lerp(*, bounds: tuple[float, float], fraction: float) -> float:
+    return bounds[0] + fraction * (bounds[1] - bounds[0])
+
+
+def _throw_scores_from_standoff(*, standoff: float, speed: float, release_ms: float) -> bool:
+    """Run one `Pick -> MoveToThrowPose(standoff) -> Toss(speed, release_ms)` and report
+    whether KINDER's own `_check_goals()` scored it. Raw action interface rather than
+    `SkillOraclePolicy`, which hard-codes the toss parameters callers choose here."""
+    env = _env()
+    try:
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        env.take_action(action=np.array([env.pick_id, ORACLE_PICK_DISTANCE, ORACLE_PICK_ROTATION]))
+        env.take_action(action=np.array([env.move_to_throw_pose_id, standoff, 0.0]))
+        env.take_action(action=np.array([env.toss_id, speed, release_ms]))
+        return bool(env.is_solved())
+    finally:
+        env.close()
+
+
+def _accepted_standoff_band() -> tuple[float, float]:
+    """The band `RobotAtSuccessfulThrowPose` accepts, read off a real scene rather than
+    recomputed, so it cannot drift from the predicate."""
+    env = _env()
+    try:
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        bin_x = state.get(obj=env.bin, feature_name="x")
+        lo = (
+            bin_x
+            + THROW_RANGE_MIN
+            - (state.get(obj=env.bin, feature_name="x_max") - THROW_OVERSHOOT_MARGIN)
+        )
+        hi = (
+            bin_x
+            + THROW_RANGE_MAX
+            - (state.get(obj=env.bin, feature_name="x_min") + THROW_SHORTFALL_MARGIN)
+        )
+        return (lo, hi)
+    finally:
+        env.close()
+
+
+def test_no_toss_parameterisation_scores_from_beyond_the_accepted_band() -> None:
+    """A pose past the band's far edge is unthrowable, by every toss parameterisation in
+    bounds. The converse of every other check on this predicate, which only ever visits
+    poses the band accepts -- so without this the band could widen arbitrarily.
+
+    Only the far edge is probed: the near edge sits at 0.21 m, below the sampler's
+    1.10 m floor, so `BAND_EDGE_PROBE_OFFSET` below it is not a pose `MoveToThrowPose`
+    can reach.
+
+    The pass is not vacuous. At the probe standoff of 1.450 every cell executes with no
+    skill error, the base arrives (`base_x` 0.5497 against the commanded 2.0 - 1.45),
+    and the cube flies 0.377 to 1.206 m over `_PARAM_GRID`. A wider manual check at the
+    same pose -- 6 release milliseconds bracketing the reach argmax, over 3 seeds --
+    scored `0/18`, the furthest resting at x = 1.8323, 68 mm short of the trimmed box's
+    1.900 near edge. `0/24` at this pose in total."""
+    lo, hi = _accepted_standoff_band()
+    standoff = hi + BAND_EDGE_PROBE_OFFSET
+
+    scored = [
+        (speed_fraction, ms_fraction)
+        for speed_fraction, ms_fraction in _PARAM_GRID
+        if _throw_scores_from_standoff(
+            standoff=standoff,
+            speed=_lerp(bounds=TOSS_SPEED_BOUNDS, fraction=speed_fraction),
+            release_ms=_lerp(bounds=TOSS_RELEASE_MS_BOUNDS, fraction=ms_fraction),
+        )
+    ]
+
+    assert not scored, (
+        f"standoff {standoff:.3f} is {BAND_EDGE_PROBE_OFFSET} m beyond the accepted band "
+        f"[{lo:.3f}, {hi:.3f}], so RobotAtSuccessfulThrowPose rejects it -- but "
+        f"{len(scored)}/{len(_PARAM_GRID)} toss parameterisations scored from it: {scored}. "
+        "The band is too NARROW: it rejects a pose that is genuinely throwable."
+    )
+
+
+def test_the_converse_guard_would_catch_a_widened_band(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Proves the guard above can fail: its negative assertion passes trivially if the
+    band it reads is not the band the predicate applies. A pose one metre past the far
+    edge is rejected at the shipped constants and accepted once `THROW_RANGE_MAX` is
+    widened past it. Executes no throw."""
+    _, hi_before = _accepted_standoff_band()
+
+    env = _env()
+    try:
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        # On the bin's axis, so the standoff conjunct is the only thing under test.
+        far_past_the_box = state.get(obj=env.bin, feature_name="x") - (hi_before + 1.0)
+        state.set(obj=env.robot, feature_name="pos_base_x", feature_val=far_past_the_box)
+        state.set(
+            obj=env.robot,
+            feature_name="pos_base_y",
+            feature_val=state.get(obj=env.bin, feature_name="y"),
+        )
+
+        assert not RobotAtSuccessfulThrowPoseClassifier.holds(
+            state=state, robot=env.robot, target=env.bin
+        ), "a pose 1 m beyond the band's far edge must be rejected at the shipped constants"
+
+        monkeypatch.setattr(predicates, "THROW_RANGE_MAX", THROW_RANGE_MAX + 1.5)
+        assert RobotAtSuccessfulThrowPoseClassifier.holds(
+            state=state, robot=env.robot, target=env.bin
+        ), (
+            "widening THROW_RANGE_MAX by 1.5 m must make the predicate accept that same "
+            "pose -- if it does not, the accepted band is not derived from this constant "
+            "and the converse guard is probing an edge the predicate does not have"
+        )
+    finally:
+        env.close()

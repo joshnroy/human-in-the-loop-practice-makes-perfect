@@ -21,6 +21,9 @@ from hitl_pmp.environments.tossing3d.predicates import (
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
     THROW_OVERSHOOT_MARGIN,
     THROW_POSE_LATERAL_TOLERANCE,
+    THROW_RANGE,
+    THROW_RANGE_MAX,
+    THROW_RANGE_MIN,
     THROW_SHORTFALL_MARGIN,
     THROW_STANDOFF_BOUNDS,
     HandEmptyClassifier,
@@ -257,33 +260,46 @@ def test_the_accepted_band_moves_when_the_goal_region_moves() -> None:
     assert there[1] == pytest.approx(here[1] + 0.30, abs=2e-3)
 
 
-def test_the_accepted_band_matches_the_measured_five_of_five_core() -> None:
-    """**The discriminating test.** PR #105's finer sweep (5 scene seeds, 0.025 m
-    resolution, bin on the goal region) found a 5/5 core of `[1.150, 1.375]`, narrower than the
-    geometric band `[1.125, 1.425]` on both ends -- 2/5 and 3/5 partial-solving at the old
-    edges, not the 3/3-or-nothing the coarser 48-episode grid implied. The predicate now
-    trims the goal box by `THROW_OVERSHOOT_MARGIN`/`THROW_SHORTFALL_MARGIN` to land exactly
-    on that measured core.
+def test_the_accepted_bands_upper_edge_is_the_last_standoff_measured_to_solve() -> None:
+    """The far edge sits on standoff 1.400, the last observed to score: `0/1050` beyond
+    it on this stack's standoff grid (`0/150` at each of 1.45 through 1.75), against
+    `3/150` at 1.400 itself. Left at the measured reach envelope it would sit at 1.455.
 
-    Landing-space and standoff-space run in *opposite* directions
-    (`landing_x = base_x + THROW_RANGE`, `base_x = bin_x - standoff`, so a larger standoff
-    gives a *smaller* landing_x), so it is easy to trim the wrong edge of the box and get a
-    band that is still 0.225 m wide but shifted the wrong way -- e.g. `[1.175, 1.400]`,
-    which would reject the reliable 1.150 endpoint and accept the partial-solving 1.400
-    one. This test catches that inversion; the width-only check below does not."""
-    assert _accepted_band() == pytest.approx((1.15, 1.375), abs=2e-3)
+    Landing-space and standoff-space run in *opposite* directions (`landing_x = base_x +
+    range`, `base_x = bin_x - standoff`), so trimming the wrong box edge moves the band
+    the wrong way. Pinning the far edge catches that; the width check below does not."""
+    assert _accepted_band()[1] == pytest.approx(1.400, abs=2e-3)
 
 
-def test_the_accepted_band_is_narrower_than_the_goal_regions_x_extent() -> None:
-    """The tightened band is the box's own width (0.300 m) minus both margins -- 0.225 m --
-    not the full extent any more. This is the arithmetic check that the derivation is
-    still a derivation and not a fit: it holds for any box at any bin position, unlike the
-    test above, which pins the one measured core."""
+def test_the_five_of_five_core_still_lies_inside_the_accepted_band() -> None:
+    """PR #105's measured 5/5 core -- `[1.150, 1.375]`, 5 scene seeds at 0.025 m
+    resolution -- lies inside the band. The two margins were tuned to it, so a change
+    that shifted the band rather than widening it would drop an endpoint."""
+    low, high = _accepted_band()
+    assert low <= 1.150
+    assert high >= 1.375
+
+
+def test_the_accepted_band_is_the_trimmed_box_widened_by_the_dials_own_reach() -> None:
+    """The arithmetic check that the derivation is a derivation and not a fit: unlike
+    the edge test above, it holds for any box at any bin position. The band is the box's
+    own extent minus both margins, plus `THROW_RANGE_MAX - THROW_RANGE_MIN` and nothing
+    else."""
     low, high = _accepted_band()
     full_extent = GOAL_REGION_BBOX[3] - GOAL_REGION_BBOX[0]
     assert high - low == pytest.approx(
-        full_extent - (THROW_OVERSHOOT_MARGIN + THROW_SHORTFALL_MARGIN), abs=2e-3
+        full_extent
+        - (THROW_OVERSHOOT_MARGIN + THROW_SHORTFALL_MARGIN)
+        + (THROW_RANGE_MAX - THROW_RANGE_MIN),
+        abs=2e-3,
     )
+
+
+def test_the_range_interval_brackets_the_calibrated_single_throw_range() -> None:
+    """`THROW_RANGE` is the impact range at the oracle's own `(140 deg/s, 720 ms)`
+    pair -- the same quantity the two endpoints are measured in -- so it has to fall
+    inside the interval the parameter box spans. Nothing forced that."""
+    assert THROW_RANGE_MIN < THROW_RANGE < THROW_RANGE_MAX
 
 
 def test_the_oracle_standoff_is_inside_the_accepted_band() -> None:
@@ -308,24 +324,44 @@ def test_the_band_accepts_every_standoff_measured_to_solve(*, standoff: float) -
     assert _at_throw_pose(standoff=standoff)
 
 
-@pytest.mark.parametrize(
-    "standoff", [0.45, 0.80, 1.00, 1.10, 1.125, 1.40, 1.425, 1.45, 1.55, 1.65, 1.75]
-)
-def test_the_band_rejects_every_standoff_measured_not_to_solve(*, standoff: float) -> None:
-    """`1.10`/`1.45` and beyond are the coarse 48-episode grid's 0/3 points. `1.125` and
-    `1.425` -- the old geometric band's own edges -- and `1.40` are PR #105's finer-grained
-    2/5, 2/5 and 3/5: not zero, but not the 5/5 this predicate now requires either.
+@pytest.mark.parametrize("standoff", [1.425, 1.45, 1.55, 1.65, 1.75])
+def test_the_band_rejects_every_standoff_no_toss_parameterisation_reaches(
+    *, standoff: float
+) -> None:
+    """`1.45` and beyond are the coarse 48-episode grid's 0/3 points, and this stack's
+    standoff grid agrees over the parameter box: `0/150` at each of 1.45 through 1.75,
+    so `0/1050` beyond 1.400. `1.425` is the geometric band's far edge, PR #105's 2/5.
 
     **This predicate is independent of `THROW_STANDOFF_BOUNDS`** -- it takes a raw
-    standoff and says nothing about whether the sampler could ever draw it -- so every
-    value below still belongs here regardless of where the sampler's own range sits.
-    That said, the sampler's range moved: `0.45` and `0.80` predate the barrier-collision
-    tightening and are no longer standoffs `MoveToThrowPose` can draw at all (the
-    sampler's floor is now 1.10 m; see `predicates.THROW_STANDOFF_BOUNDS`). `1.10`
-    happens to equal the *new* lower bound and correctly still rejects here -- the
-    predicate's own accepted band starts at 1.15, not 1.10 -- so it needs no removal.
-    `1.75` remains the upper bound both before and after that change."""
+    standoff and says nothing about what the sampler can draw. Rejecting `1.75`, the
+    sampler's upper bound, is what keeps the add effect two-class."""
     assert not _at_throw_pose(standoff=standoff)
+
+
+@pytest.mark.parametrize("standoff", [1.10, 1.125, 1.40])
+def test_the_band_accepts_short_standoffs_some_toss_parameterisation_reaches(
+    *, standoff: float
+) -> None:
+    """Over the toss parameter box this stack's standoff grid solves `37/150` at 1.10
+    and `3/150` at 1.40, so some parameterisation scores from all three.
+
+    All three were measured not to solve at a single fixed 140 deg/s throw -- `1.10` the
+    coarse grid's `0/3`, `1.125` and `1.40` PR #105's `2/5` and `3/5`. Those numbers
+    stand exactly as published; they are evidence about *one* throw."""
+    assert _at_throw_pose(standoff=standoff)
+
+
+@pytest.mark.parametrize("standoff", [0.45, 0.80, 1.00])
+def test_the_band_accepts_standoffs_below_the_samplers_floor_on_the_model_alone(
+    *, standoff: float
+) -> None:
+    """**Unmeasured, and labelled as such.** The sampler's floor is 1.10 m
+    (`predicates.THROW_STANDOFF_BOUNDS`) and both grids in this stack start there, so
+    nothing has been thrown from any of these three. The union interval's claim that a
+    short enough throw reaches the box from this close is a consequence of the model.
+
+    Asserted anyway, so it fails loudly if `THROW_RANGE_MIN` moves."""
+    assert _at_throw_pose(standoff=standoff)
 
 
 def test_the_predicate_rejects_standing_on_top_of_the_bin() -> None:
