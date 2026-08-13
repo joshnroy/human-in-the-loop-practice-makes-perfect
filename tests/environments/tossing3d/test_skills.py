@@ -428,14 +428,14 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
     kinder_models = pytest.importorskip("kinder_models")
     del kinder_models
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_RELEASE_ARM_CONF,
+        TOSS_RELEASE_ARM_CONFIGURATION,
         TOSS_SLICES_PER_CONTROL_STEP,
-        TOSS_WINDUP_ARM_CONF,
+        TOSS_WINDUP_ARM_CONFIGURATION,
         toss_profile_limits,
     )
-    from kinder_models.dynamic3d.utils import _CONTROL_DT, _trapezoidal_motion_profile
+    from kinder_models.dynamic3d.utils import _CONTROL_TIMESTEP, _trapezoidal_motion_profile
 
-    s_total = float(np.linalg.norm(TOSS_RELEASE_ARM_CONF - TOSS_WINDUP_ARM_CONF))
+    s_total = float(np.linalg.norm(TOSS_RELEASE_ARM_CONFIGURATION - TOSS_WINDUP_ARM_CONFIGURATION))
     shortest_ms = min(
         (
             len(
@@ -444,7 +444,7 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
                     max_vel=limits[0],
                     max_accel=limits[1],
                     max_decel=limits[2],
-                    step_size=_CONTROL_DT,
+                    step_size=_CONTROL_TIMESTEP,
                 )
             )
             - 1

@@ -34,11 +34,11 @@ def test_toss_profile_limits_exists_and_defaults_to_upstreams_literals() -> None
     so that passing no release speed leaves those numbers valid.
     """
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_MAX_VEL,
+        TOSS_MAX_VELOCITY,
         toss_profile_limits,
     )
 
-    assert np.rad2deg(TOSS_MAX_VEL) == pytest.approx(140.0)
+    assert np.rad2deg(TOSS_MAX_VELOCITY) == pytest.approx(140.0)
     assert np.rad2deg(toss_profile_limits()) == pytest.approx(UPSTREAM_TOSS_LIMITS_DEG)
 
 
@@ -48,35 +48,69 @@ def test_toss_profile_limits_scales_all_three_by_one_effort() -> None:
     the release point into the acceleration phase.
     """
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_MAX_VEL,
+        TOSS_MAX_VELOCITY,
         toss_profile_limits,
     )
 
     default_vel, default_accel, default_decel = toss_profile_limits()
-    for factor in (0.4286, 0.5953, 1.0, 1.7143):
-        vel, accel, decel = toss_profile_limits(TOSS_MAX_VEL * factor)
+    for factor in (0.4286, 0.5953, 1.0):
+        vel, accel, decel = toss_profile_limits(TOSS_MAX_VELOCITY * factor)
         assert vel == pytest.approx(default_vel * factor)
         assert accel / vel == pytest.approx(default_accel / default_vel)
         assert decel / vel == pytest.approx(default_decel / default_vel)
 
 
-def test_toss_profile_limits_does_not_clamp_above_the_default() -> None:
-    """No clamp, deliberately: `_ARM_MAX_VEL[5] = 70` deg/s is kinder-baselines' own
-    conservative constant, not a hardware limit -- the real TidyBot primitive runs that
-    joint at 140 deg/s.
+def test_toss_profile_limits_clamps_effort_at_the_default() -> None:
+    """`TOSS_MAX_VELOCITY` is a genuine ceiling: a release speed above it is clamped
+    rather than scaling the profile past the default.
 
-    `TOSS_SPEED_BOUNDS` caps at `TOSS_MAX_VEL`, so this checks upstream rather than our
-    range. A clamp introduced at or below the default would be invisible from inside our
-    own bounds, since every draw would hit it identically.
+    `TOSS_SPEED_BOUNDS` caps at `TOSS_MAX_VELOCITY`, so this probes above our own range
+    deliberately -- from inside our bounds the clamp is unreachable and so invisible.
     """
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_MAX_VEL,
+        TOSS_MAX_VELOCITY,
         toss_profile_limits,
     )
 
-    fast = toss_profile_limits(np.deg2rad(240.0))
-    assert np.rad2deg(fast[0]) == pytest.approx(240.0)
-    assert fast[0] > TOSS_MAX_VEL
+    assert toss_profile_limits(np.deg2rad(240.0)) == pytest.approx(toss_profile_limits())
+    assert toss_profile_limits(np.deg2rad(240.0))[0] == pytest.approx(TOSS_MAX_VELOCITY)
+
+
+def test_the_release_speed_our_sampler_can_draw_is_never_clamped() -> None:
+    """The clamp must sit at or above our own upper bound, so no draw the EES sampler
+    makes is silently rewritten. `TOSS_SPEED_BOUNDS`' top edge is the boundary case: it
+    is exactly `TOSS_MAX_VELOCITY`, so it must pass through unscaled rather than
+    tripping the clamp.
+    """
+    from kinder_models.dynamic3d.tossing.parameterized_skills import toss_profile_limits
+
+    from hitl_pmp.environments.tossing3d.predicates import TOSS_SPEED_BOUNDS
+
+    for deg in np.linspace(TOSS_SPEED_BOUNDS[0], TOSS_SPEED_BOUNDS[1], 37):
+        assert np.rad2deg(toss_profile_limits(np.deg2rad(deg))[0]) == pytest.approx(deg)
+
+
+def test_the_toss_schedule_is_exactly_as_wide_as_kinder_demands() -> None:
+    """The coupling between the two pins, which is otherwise silent until a throw runs.
+
+    `MujocoEnv.step` requires a control schedule to cover the period *exactly*; the
+    toss's mid-step gripper release is the only schedule this domain emits, and it is
+    `TOSS_SLICES_PER_CONTROL_STEP` rows wide. Both sides are re-derived from their own
+    constants rather than the shared literal, so bumping one pin without the other fails
+    here instead of deep inside a rollout.
+    """
+    from kinder.envs.dynamic3d.mujoco_utils import (
+        CONTROL_SCHEDULE_TIMESTEP,
+        SIMULATION_TIMESTEP,
+    )
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        TOSS_SLICES_PER_CONTROL_STEP,
+    )
+    from kinder_models.dynamic3d.utils import _CONTROL_TIMESTEP
+
+    num_sim_steps = int(_CONTROL_TIMESTEP / SIMULATION_TIMESTEP)
+    ticks_per_row = int(round(CONTROL_SCHEDULE_TIMESTEP / SIMULATION_TIMESTEP))
+    assert num_sim_steps // ticks_per_row == TOSS_SLICES_PER_CONTROL_STEP
 
 
 def test_toss_controller_reset_accepts_a_release_speed() -> None:
@@ -84,26 +118,26 @@ def test_toss_controller_reset_accepts_a_release_speed() -> None:
     constructing a `TossController` opens a PyBullet client.
     """
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_MAX_VEL,
+        TOSS_MAX_VELOCITY,
         TossController,
     )
 
     parameters = inspect.signature(TossController.reset).parameters
     assert "release_speed" in parameters
-    assert parameters["release_speed"].default == TOSS_MAX_VEL
+    assert parameters["release_speed"].default == TOSS_MAX_VELOCITY
 
 
 def test_toss_controller_reset_accepts_a_gripper_release_millisecond() -> None:
     """The second dial. Signature-only, for the same reason as the sibling test above."""
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_DEFAULT_GRIPPER_RELEASE_MS,
+        TOSS_DEFAULT_GRIPPER_RELEASE_MILLISECONDS,
         TossController,
     )
 
     parameters = inspect.signature(TossController.reset).parameters
     assert "gripper_release_ms" in parameters
-    assert parameters["gripper_release_ms"].default == TOSS_DEFAULT_GRIPPER_RELEASE_MS
-    assert TOSS_DEFAULT_GRIPPER_RELEASE_MS == 720
+    assert parameters["gripper_release_ms"].default == TOSS_DEFAULT_GRIPPER_RELEASE_MILLISECONDS
+    assert TOSS_DEFAULT_GRIPPER_RELEASE_MILLISECONDS == 720
 
 
 def test_the_release_fraction_trigger_is_gone_rather_than_kept_alongside() -> None:

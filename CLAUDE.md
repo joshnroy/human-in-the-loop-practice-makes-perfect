@@ -45,8 +45,8 @@ working around.
 
 | path | url | pinned at |
 | --- | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `88b5eb3` |
-| `reference/kindergarden` | `joshnroy/kindergarden` | `539c6b8` |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `9e88126` |
+| `reference/kindergarden` | `joshnroy/kindergarden` | `c9f00e8` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
 **Two of the three point at forks on purpose.** `kinder-baselines` depends on commits that
@@ -213,8 +213,42 @@ were measured before PR #126 are left as published, with staleness notes beside 
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
-`reference/kinder-baselines` is pinned at `88b5eb3`, the head of
-`josh/feature/toss-release-params`, which stacks four commits on top of `3524010`, the head
+**Both pins now also exist on the PRPL remote.** The port was landed on
+`Princeton-Robot-Planning-and-Learning` as a stacked pair of **draft** PRs, and each SHA
+below is the *same commit* on both remotes — the fork URLs stay as they are (see above),
+so this changes nothing operationally; it means a reviewer can read the PRs upstream.
+
+**The pins moved `539c6b8` → `c9f00e8` (kindergarden) and `88b5eb3` → `9e88126`
+(kinder-baselines) on 2026-08-13**, both rebases onto current upstream `main` rather than
+fast-forwards. The whole toss-release stack was collapsed onto
+`josh/feature/tossing-throw-controllers`, so that branch name once again names the rung
+this repo imports. Two things a later reader needs:
+
+- **A control schedule must now cover the period exactly.** At `539c6b8` `MujocoEnv.step`
+  accepted 1..`max_rows` rows and held the last row for the remainder; at `c9f00e8` it
+  asserts `len(schedule) == schedule_rows`. `TossController.step` emits the full
+  `TOSS_SLICES_PER_CONTROL_STEP` rows to match. The two motions are identical — the old
+  short schedule's implicit padding and the new explicit rows carry the same command — but
+  **each pin now requires the other**, which is why they bump together.
+  `test_the_toss_schedule_is_exactly_as_wide_as_kinder_demands` derives both sides from
+  their own constants so a one-sided bump fails there rather than inside a rollout.
+- **`toss_profile_limits` now clamps `effort` to `[0, 1]`**, making `TOSS_MAX_VELOCITY`
+  (140 deg/s) a genuine ceiling where it was previously a nominal scale. This is
+  **unreachable from inside this repo**: `TOSS_SPEED_BOUNDS` is `(60, 140)`, so the top of
+  our own sampling range is exactly the clamp point and passes through unscaled. No
+  committed Tossing3D number moves. The pin test that asserted the *absence* of a clamp is
+  inverted rather than deleted, and a second test pins the "our draws are never clamped"
+  property that actually protects the numbers.
+
+Upstream also renamed the constants this repo's tests import — `TOSS_MAX_VEL` →
+`TOSS_MAX_VELOCITY`, `TOSS_DEFAULT_GRIPPER_RELEASE_MS` →
+`TOSS_DEFAULT_GRIPPER_RELEASE_MILLISECONDS`, `TOSS_{WINDUP,RELEASE}_ARM_CONF` →
+`..._ARM_CONFIGURATION`, `_CONTROL_DT` → `_CONTROL_TIMESTEP`. Values are unchanged; only
+`tests/` referenced the old names, since `src/` imports nothing from these modules but
+`create_lifted_controllers`.
+
+`reference/kinder-baselines` was previously pinned at `88b5eb3`, the head of
+`josh/feature/toss-release-params`, which stacked four commits on top of `3524010`, the head
 of `josh/feature/tossing-throw-controllers`. The top commit gives `TossController.reset`
 a `gripper_release_ms` alongside `release_speed` -- exactly the two knobs the real TidyBot's
 `movej_primitive.execute()` takes -- and **deletes** `_release_fraction`, so there is only
@@ -295,7 +329,7 @@ collision-checking **off**, and `run_move_to_throw_pose` now genuinely needs the
 `disable_collision_objects=["cube_0"]` that PR #204 threaded through — without it the
 robot's own held cube becomes an obstacle to its own base plan.
 
-`reference/kindergarden` is pinned at `98ad2c0`, the head of the fork's **`main`** — which
+`reference/kindergarden` was pinned at `98ad2c0`, the head of the fork's **`main`** — which
 is upstream `main`, fast-forwarded. That commit is `kindergarden` PR #126, *"Move the
 Tossing3D-o1 bin back inside blocks_goal_region"*, **merged 2026-08-12**; the fork mirror
 of it, `joshnroy/kindergarden` PR #1, is closed as redundant.
