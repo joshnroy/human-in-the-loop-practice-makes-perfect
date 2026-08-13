@@ -1,6 +1,6 @@
 """Offline tests for Tossing3D's six predicates.
 
-`InGoalRegion` gets the most attention, including deliberate boundary probes, because it
+`InBin` gets the most attention, including deliberate boundary probes, because it
 *is* the success criterion and because a wrong goal box has already shipped once in this
 project's history. `test_kinder_fidelity.py` checks it against KINDER's own
 `_check_goals()` whenever the simulator is installed; these run everywhere.
@@ -15,7 +15,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     HAND_EMPTY,
     HANDEMPTY_TOL,
     HOLDING,
-    IN_GOAL_REGION,
+    IN_BIN,
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
@@ -25,7 +25,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     THROW_STANDOFF_BOUNDS,
     HandEmptyClassifier,
     HoldingClassifier,
-    InGoalRegionClassifier,
+    InBinClassifier,
     OnGroundClassifier,
     ReachableClassifier,
     RobotAtSuccessfulThrowPoseClassifier,
@@ -37,65 +37,100 @@ from .observations import BARRIER_X, BIN_X, CUBE_START_X, GOAL_REGION_BBOX, stat
 _ENV = Tossing3DEnvironment()
 
 
-def _in_goal_region(*, x: float, y: float = 0.0, z: float = 0.0444) -> bool:
-    return InGoalRegionClassifier.holds(
-        state=state(cube_x=x, cube_y=y, cube_z=z),
-        cube=_ENV.cube,
-        goal_region=_ENV.goal_region,
+def _in_bin(*, x: float, y: float = 0.0, z: float = 0.0444) -> bool:
+    return InBinClassifier.holds(
+        state=state(cube_x=x, cube_y=y, cube_z=z), cube=_ENV.cube, target=_ENV.bin
     )
 
 
-def test_in_goal_region_accepts_the_measured_landing() -> None:
+def test_in_bin_accepts_the_measured_landing() -> None:
     """x = 1.9902, z = 0.0444 is where the oracle's cube comes to rest on the shipped
     scene at standoff 1.35 -- inside the bin, and inside the goal box.
     `_check_goals()` says True there, so this must too."""
-    assert _in_goal_region(x=1.9902, y=0.0105, z=0.0444)
+    assert _in_bin(x=1.9902, y=0.0105, z=0.0444)
 
 
-def test_in_goal_region_rejects_a_landing_past_the_far_edge() -> None:
+def test_in_bin_rejects_a_landing_past_the_far_edge() -> None:
     """x = 2.2197 is past the goal box's 2.15 far edge, so this must be False. It is a
     measured point rather than an invented one: it is where this same throw came to rest
     on the scene KINDER shipped before `kindergarden` PR #126, whose bin sat 23 cm too
     far out -- a cube landing in that bin scored a failure, and `_check_goals()` agreed
     with this predicate that it was outside the region."""
-    assert not _in_goal_region(x=2.2197, y=0.0103, z=0.0444)
+    assert not _in_bin(x=2.2197, y=0.0103, z=0.0444)
 
 
 @pytest.mark.parametrize("x", [1.85, 2.15])
-def test_in_goal_region_is_inclusive_at_the_boundary(*, x: float) -> None:
+def test_in_bin_is_inclusive_at_the_boundary(*, x: float) -> None:
     """Upstream's `Region.check_in_region` uses `>=`/`<=`, so this does too. A strict
     comparison would disagree with `_check_goals()` on exactly the measure-zero set that
     is hardest to notice and easiest to argue about."""
-    assert _in_goal_region(x=x)
+    assert _in_bin(x=x)
 
 
 @pytest.mark.parametrize("x", [1.8499, 2.1501])
-def test_in_goal_region_rejects_just_outside_the_boundary(*, x: float) -> None:
-    assert not _in_goal_region(x=x)
+def test_in_bin_rejects_just_outside_the_boundary(*, x: float) -> None:
+    assert not _in_bin(x=x)
 
 
-def test_in_goal_region_tests_all_three_axes_not_just_x() -> None:
+def test_in_bin_tests_all_three_axes_not_just_x() -> None:
     """A toss controls x, so x is where attention goes -- but a cube that flew sideways
     or is still in the air is not in the region either, and upstream checks all three."""
-    assert not _in_goal_region(x=2.0, y=0.5)
-    assert not _in_goal_region(x=2.0, z=0.4)
+    assert not _in_bin(x=2.0, y=0.5)
+    assert not _in_bin(x=2.0, z=0.4)
 
 
-def test_in_goal_region_follows_the_box_it_is_given_rather_than_a_constant() -> None:
+def test_in_bin_follows_the_box_it_is_given_rather_than_a_constant() -> None:
     """The box is per-episode state, not a literal: if upstream ever moves
     `blocks_goal_region`, the predicate must move with it."""
     shifted = list(GOAL_REGION_BBOX)
     shifted[0], shifted[3] = 3.0, 3.3
-    assert not InGoalRegionClassifier.holds(
-        state=state(cube_x=2.0, goal_region=tuple(shifted)),
-        cube=_ENV.cube,
-        goal_region=_ENV.goal_region,
+    assert not InBinClassifier.holds(
+        state=state(cube_x=2.0, goal_region=tuple(shifted)), cube=_ENV.cube, target=_ENV.bin
     )
-    assert InGoalRegionClassifier.holds(
-        state=state(cube_x=3.1, goal_region=tuple(shifted)),
-        cube=_ENV.cube,
-        goal_region=_ENV.goal_region,
+    assert InBinClassifier.holds(
+        state=state(cube_x=3.1, goal_region=tuple(shifted)), cube=_ENV.cube, target=_ENV.bin
     )
+
+
+def test_in_bin_reads_the_scored_box_not_the_bins_pose() -> None:
+    """**The guard the bin-is-the-goal-region simplification makes necessary.**
+
+    The box now rides on the bin object, which makes "derive it from the bin's own x plus a
+    half-extent" look like a tidy simplification. It is not: KINDER scores against
+    `blocks_goal_region`, whose bbox is the task JSON's range inflated by
+    `ground_placement_threshold`, and a box re-derived from the bin's pose would disagree
+    with `_check_goals()` -- the exact defect that has already shipped once here.
+
+    Moving the bin's pose while holding the box still must therefore not move the verdict.
+    That the two *coincide* in the shipped scene is the domain's assumption; that the
+    predicate *reads* the box rather than the pose is what keeps it correct anyway."""
+    far = state(cube_x=2.0, bin_x=BIN_X + 5.0)
+    assert InBinClassifier.holds(state=far, cube=_ENV.cube, target=_ENV.bin)
+
+
+def test_in_bin_scores_a_bin_off_the_box_the_way_kinder_does() -> None:
+    """The honest consequence of the assumption, pinned so nobody "fixes" it later.
+
+    Where the bin and the scored region come apart, the bin object's own `x` falls outside
+    its own `x_max` and `InBin` is true exactly when the cube is *not* in the bin. The
+    **name** is wrong on such a scene; the **arithmetic** is not, and the arithmetic is
+    what `_check_goals()` agreement depends on. A future change that made `InBin` follow
+    the bin's pose would flip both of these and look like a bugfix.
+
+    That geometry is no longer one this domain can load -- #237 retired the task-config
+    enum, so the scene is whatever the installed KINDER registers, and there the two
+    coincide. The observation here is hand-built, so the case stays expressible, and it is
+    the one the assumption is weakest on: it is exactly the scene that shipped for months
+    before `kindergarden` PR #126, whose measured numbers are the ones used below."""
+    # The bin's measured x before PR #126 moved it back onto the box that scores. Local
+    # rather than in `observations.py`: no scene puts the bin here any more, so this is
+    # this test's own historical datum rather than the domain's geometry.
+    bin_off_the_box = 2.2305
+
+    in_the_bin = state(cube_x=2.2197, cube_z=0.0444, bin_x=bin_off_the_box)
+    assert not InBinClassifier.holds(state=in_the_bin, cube=_ENV.cube, target=_ENV.bin)
+    on_the_scored_box = state(cube_x=2.0, cube_z=0.0444, bin_x=bin_off_the_box)
+    assert InBinClassifier.holds(state=on_the_scored_box, cube=_ENV.cube, target=_ENV.bin)
 
 
 def test_hand_empty_holds_only_at_an_open_gripper() -> None:
@@ -164,7 +199,6 @@ def _at_throw_pose(*, standoff: float, base_y: float = 0.0, **kwargs) -> bool:
         state=state(base_x=bin_x - standoff, base_y=base_y, bin_x=bin_x, **kwargs),
         robot=_ENV.robot,
         target=_ENV.bin,
-        goal_region=_ENV.goal_region,
     )
 
 
@@ -326,7 +360,6 @@ def test_the_predicate_rejects_a_base_off_the_bins_axis() -> None:
         state=state(base_x=0.279, base_y=0.366),
         robot=_ENV.robot,
         target=_ENV.bin,
-        goal_region=_ENV.goal_region,
     )
 
 
@@ -338,7 +371,6 @@ def test_the_predicate_rejects_a_diagonal_approach_at_the_right_distance() -> No
         state=state(base_x=BIN_X - offset, base_y=offset),
         robot=_ENV.robot,
         target=_ENV.bin,
-        goal_region=_ENV.goal_region,
     )
 
 
@@ -355,9 +387,9 @@ def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
     """A `Predicate`'s `types` is what `SkillGrounder` enumerates over, so a wrong entry
     silently grounds a predicate onto objects it was never written for."""
     expected = {
-        IN_GOAL_REGION: (
+        IN_BIN: (
             Tossing3DEnvironment.cube_type,
-            Tossing3DEnvironment.goal_region_type,
+            Tossing3DEnvironment.bin_type,
         ),
         HAND_EMPTY: (Tossing3DEnvironment.robot_type,),
         HOLDING: (Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
@@ -366,7 +398,6 @@ def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
         ROBOT_AT_SUCCESSFUL_THROW_POSE: (
             Tossing3DEnvironment.robot_type,
             Tossing3DEnvironment.bin_type,
-            Tossing3DEnvironment.goal_region_type,
         ),
     }
     for predicate, types in expected.items():
@@ -380,4 +411,4 @@ def test_the_lambda_adapters_pass_objects_through_in_declaration_order() -> None
     airborne = state(gripper=0.9, cube_z=0.4)
     assert HOLDING.holds(airborne, (_ENV.robot, _ENV.cube))
     assert REACHABLE.holds(state(cube_x=CUBE_START_X), (_ENV.cube, _ENV.barrier))
-    assert IN_GOAL_REGION.holds(state(cube_x=1.99), (_ENV.cube, _ENV.goal_region))
+    assert IN_BIN.holds(state(cube_x=1.99), (_ENV.cube, _ENV.bin))

@@ -29,7 +29,7 @@ of its per-tick clip, where the numbers are likewise the clip's measured *outcom
 the caption describes the skill that is running and how it ended, and every number in it
 is still measured rather than restated.
 
-The caption reports the cube's position, the live goal box and the `InGoalRegion` verdict,
+The caption reports the cube's position, the live scored box and the `InBin` verdict,
 because "the cube landed in the bin and this scores a failure" is the single most
 misreadable thing about this domain and is illegible from pixels alone.
 """
@@ -46,7 +46,7 @@ from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.renderer.renderer import Renderer
 
 from .environment import Tossing3DEnvironment
-from .predicates import InGoalRegionClassifier
+from .predicates import InBinClassifier
 
 
 class Tossing3DRenderer(Renderer):
@@ -112,21 +112,19 @@ class Tossing3DRenderer(Renderer):
         being rendered, never restated from a doc.
         """
         x, y, z = (state.get(obj=env.cube, feature_name=name) for name in ("x", "y", "z"))
-        in_region = InGoalRegionClassifier.holds(
-            state=state, cube=env.cube, goal_region=env.goal_region
-        )
-        x_min = state.get(obj=env.goal_region, feature_name="x_min")
-        x_max = state.get(obj=env.goal_region, feature_name="x_max")
+        in_region = InBinClassifier.holds(state=state, cube=env.cube, target=env.bin)
+        x_min = state.get(obj=env.bin, feature_name="x_min")
+        x_max = state.get(obj=env.bin, feature_name="x_max")
         return [
             # The scene name used to be stamped here too, because the same throw scored
             # True on the coincident config and False on stock and a viewer could not
             # see which clip they were looking at. There is one scene now, so the token
             # would be a constant -- and a constant that reads like a choice is worse
-            # than none. `goal x in [...]` below is measured live and still distinguishes
+            # than none. `bin x in [...]` below is measured live and still distinguishes
             # a scene whose geometry moved.
             f"Tossing3D-{env.variant} | {label or 'initial state'}",
-            f"cube x={x:.4f} y={y:.4f} z={z:.4f} | goal x in [{x_min:.4f}, {x_max:.4f}] "
-            f"| InGoalRegion = {in_region}",
+            f"cube x={x:.4f} y={y:.4f} z={z:.4f} | bin x in [{x_min:.4f}, {x_max:.4f}] "
+            f"| InBin = {in_region}",
         ]
 
     @staticmethod

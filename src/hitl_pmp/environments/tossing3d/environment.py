@@ -65,10 +65,12 @@ class Tossing3DEnvironment(Environment):
     half of this domain's tests without the optional `tossing3d` extra.
 
     `Type`s and singleton `Object`s stay `ClassVar`s: the scene's cast is fixed by
-    upstream's task JSON and does not vary between two instances. Feature schemas are a
-    strict *subset* of KINDER's own -- every name below appears verbatim in
-    `kinder/envs/dynamic3d/object_types.py`, except `scene`, which is ours (see
-    `scene_type`).
+    upstream's task JSON and does not vary between two instances. Feature schemas are
+    mostly a *subset* of KINDER's own -- every name below appears verbatim in
+    `kinder/envs/dynamic3d/object_types.py` with two exceptions, both ours and both
+    flagged where they are declared: `scene` (see `scene_type`), and the bin's six bbox
+    features, which are the scored region's box rather than anything KINDER calls a bin
+    feature (see `bin_type`).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -86,19 +88,22 @@ class Tossing3DEnvironment(Environment):
     cube_type: ClassVar[Type] = Type(
         name="tossing3d_cube", feature_names=("x", "y", "z", "qx", "qy", "bb_z")
     )
-    # `bin_0` and `cuboid_barrier` are `MujocoObjectType`; x/y/z is all the symbolic layer
-    # needs from either.
-    bin_type: ClassVar[Type] = Type(name="tossing3d_bin", feature_names=("x", "y", "z"))
-    barrier_type: ClassVar[Type] = Type(name="tossing3d_barrier", feature_names=("x", "y", "z"))
-    # NOT a KINDER object: the live `Region.bbox` of `blocks_goal_region`, carried in the
-    # State so `InGoalRegion` is a pure function of `State` and still agrees with
-    # `_check_goals()` exactly. The alternative -- a module-level predicate reaching for a
-    # class attribute on the Environment -- is the late-bound-ClassVar pattern Tossing Room
-    # already moved away from.
-    goal_region_type: ClassVar[Type] = Type(
-        name="tossing3d_goal_region",
-        feature_names=("x_min", "y_min", "z_min", "x_max", "y_max", "z_max"),
+    # `bin_0` and `cuboid_barrier` are `MujocoObjectType`; x/y/z is what the symbolic layer
+    # needs of their poses.
+    #
+    # The bin carries six more, and they are **not** KINDER features: they are the live
+    # `Region.bbox` of `blocks_goal_region`, the box `_check_goals()` actually scores
+    # against. They ride on the bin because this domain assumes the bin's interior *is*
+    # that region -- see `predicates.py`'s module docstring for the assumption, the config
+    # that makes it true, and the config where it is false. Carrying the box in the `State`
+    # (rather than having a predicate reach for a class attribute on the Environment) is
+    # what keeps every classifier a pure function of `State` while still agreeing with
+    # `_check_goals()` exactly.
+    bin_type: ClassVar[Type] = Type(
+        name="tossing3d_bin",
+        feature_names=("x", "y", "z", "x_min", "y_min", "z_min", "x_max", "y_max", "z_max"),
     )
+    barrier_type: ClassVar[Type] = Type(name="tossing3d_barrier", feature_names=("x", "y", "z"))
     # Also ours, and also not a KINDER object: the two facts a flat State cannot otherwise
     # carry. `seed` is what `set_state` rebuilds the scene from; `steps_taken` is what
     # lets it refuse a state it cannot restore.
@@ -108,7 +113,6 @@ class Tossing3DEnvironment(Environment):
     cube: ClassVar[Object] = Object(name="cube_0", type=cube_type)
     bin: ClassVar[Object] = Object(name="bin_0", type=bin_type)
     barrier: ClassVar[Object] = Object(name="cuboid_barrier", type=barrier_type)
-    goal_region: ClassVar[Object] = Object(name="blocks_goal_region", type=goal_region_type)
     scene: ClassVar[Object] = Object(name="scene", type=scene_type)
 
     # Skill ids, as they appear in slot 0 of an Action. Fixed so a recorded action vector
@@ -221,11 +225,22 @@ class Tossing3DEnvironment(Environment):
                 self.cube: self._vector(
                     observation=observation, name=self.cube.name, obj=self.cube
                 ),
-                self.bin: self._vector(observation=observation, name=self.bin.name, obj=self.bin),
+                # Pose from KINDER, then the scored box appended: the bin is the one object
+                # whose features come from two sources, because the box is not KINDER's
+                # notion of the bin at all -- it is `blocks_goal_region`, which this domain
+                # assumes the bin's interior coincides with.
+                self.bin: np.concatenate([
+                    self._vector(
+                        observation=observation,
+                        name=self.bin.name,
+                        obj=self.bin,
+                        features=("x", "y", "z"),
+                    ),
+                    np.array(observation.goal_region, dtype=float),
+                ]),
                 self.barrier: self._vector(
                     observation=observation, name=self.barrier.name, obj=self.barrier
                 ),
-                self.goal_region: np.array(observation.goal_region, dtype=float),
                 self.scene: np.array([float(seed), float(steps_taken)], dtype=float),
             }
         )
@@ -366,7 +381,7 @@ class Tossing3DEnvironment(Environment):
     def is_solved(self) -> bool:
         """Upstream's own `_check_goals()`, straight through.
 
-        Used by the fidelity tests to check `predicates.IN_GOAL_REGION` against the thing
+        Used by the fidelity tests to check `predicates.IN_BIN` against the thing
         it is supposed to agree with. Not used to decide episode success -- that goes
         through `Goal.is_satisfied` like every other domain, so the symbolic layer is
         what is actually being trusted.
@@ -416,8 +431,23 @@ class Tossing3DEnvironment(Environment):
             f"the TidyBot robot: {sorted(observation.features)}"
         )
 
-    def _vector(self, *, observation: KinderObservation, name: str, obj: Object) -> np.ndarray:
+    def _vector(
+        self,
+        *,
+        observation: KinderObservation,
+        name: str,
+        obj: Object,
+        features: tuple[str, ...] | None = None,
+    ) -> np.ndarray:
+        """The named features of one observed object, in schema order.
+
+        `features` narrows the read to a prefix of the object's schema, for the one object
+        (the bin) whose remaining features do not come from KINDER at all.
+        """
         return np.array(
-            [observation.get(name=name, feature=feature) for feature in obj.type.feature_names],
+            [
+                observation.get(name=name, feature=feature)
+                for feature in (features if features is not None else obj.type.feature_names)
+            ],
             dtype=float,
         )

@@ -106,7 +106,7 @@ from hitl_pmp.core.metrics.metrics import Metrics  # noqa: E402
 # experiment is about. Post-#123 its add effect is RobotAtSuccessfulThrowPose, which can
 # fail -- which is the whole reason there is anything to measure.
 THROW_POSE_SKILL = "MoveToThrowPose"
-# The skill whose add effect is InGoalRegion -- the domain's actual success criterion --
+# The skill whose add effect is InBin -- the domain's actual success criterion --
 # and which has param_dim = 0, so no sampler is ever fitted for it.
 TOSS_SKILL = "Toss"
 # Not a control any more. Post-#123 Pick ties at 57/60 and falls back to 0/0 informed, so

@@ -14,7 +14,7 @@ and under a memory cap, because these tests execute real controllers:
 
 What these check that the offline tests structurally cannot:
 
-1. `predicates.IN_GOAL_REGION` agrees with KINDER's own `_check_goals()`. That is the
+1. `predicates.IN_BIN` agrees with KINDER's own `_check_goals()`. That is the
    whole basis for this domain trusting its own symbolic layer rather than the simulator.
 2. The goal box in the `State` is the live `Region.bbox`, element for element -- the only
    check that can catch a wrong box, which has shipped once already.
@@ -42,10 +42,10 @@ import pytest
 from hitl_pmp.core.method.types import LabeledAction
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
-    IN_GOAL_REGION,
+    IN_BIN,
     THROW_RANGE,
     THROW_STANDOFF_BOUNDS,
-    InGoalRegionClassifier,
+    InBinClassifier,
     RobotAtSuccessfulThrowPoseClassifier,
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
@@ -79,7 +79,7 @@ def _env():
     return Tossing3DEnvironment()
 
 
-def test_in_goal_region_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory() -> None:
+def test_in_bin_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory() -> None:
     """The differential test this domain's trust rests on, checked at every step of a real
     oracle episode.
 
@@ -98,11 +98,9 @@ def test_in_goal_region_agrees_with_kinders_own_goal_check_on_the_oracles_trajec
             goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
             state = env.reset_to_seed(seed=CANONICAL_SEED)
             for _ in range(3):
-                symbolic = InGoalRegionClassifier.holds(
-                    state=state, cube=env.cube, goal_region=env.goal_region
-                )
+                symbolic = InBinClassifier.holds(state=state, cube=env.cube, target=env.bin)
                 assert symbolic == env.is_solved(), (
-                    f"standoff {standoff}: InGoalRegion said {symbolic} while KINDER's "
+                    f"standoff {standoff}: InBin said {symbolic} while KINDER's "
                     f"own _check_goals() said {env.is_solved()}"
                 )
                 action = SkillOraclePolicy.get_labeled_action(
@@ -110,10 +108,7 @@ def test_in_goal_region_agrees_with_kinders_own_goal_check_on_the_oracles_trajec
                 )
                 state = env.take_action(action=action.action)
             assert (
-                InGoalRegionClassifier.holds(
-                    state=state, cube=env.cube, goal_region=env.goal_region
-                )
-                == env.is_solved()
+                InBinClassifier.holds(state=state, cube=env.cube, target=env.bin) == env.is_solved()
             )
         finally:
             env.close()
@@ -129,7 +124,7 @@ def test_the_goal_box_in_the_state_is_the_live_region_bbox_element_for_element()
         state = env.reset_to_seed(seed=CANONICAL_SEED)
         live = env.backend().goal_region_bbox()
         corners = ("x_min", "y_min", "z_min", "x_max", "y_max", "z_max")
-        in_state = tuple(state.get(obj=env.goal_region, feature_name=name) for name in corners)
+        in_state = tuple(state.get(obj=env.bin, feature_name=name) for name in corners)
         assert in_state == pytest.approx(live)
         # And it is the inflated box, not the JSON's [1.90, 2.10].
         assert live[0] == pytest.approx(1.85, abs=1e-6)
@@ -181,7 +176,7 @@ def test_the_oracle_reproduces_the_recorded_landing_and_step_counts() -> None:
         assert state.get(obj=env.cube, feature_name="x") == pytest.approx(REST_X, abs=1e-3)
         assert state.get(obj=env.cube, feature_name="z") == pytest.approx(BIN_FLOOR_Z, abs=1e-3)
         assert env.is_solved()
-        assert IN_GOAL_REGION.holds(state, (env.cube, env.goal_region))
+        assert IN_BIN.holds(state, (env.cube, env.bin))
     finally:
         env.close()
 
@@ -229,7 +224,7 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
             assert env.last_skill_error() is None, env.last_skill_error()
             if action.label.startswith("MoveToThrowPose("):
                 predicted = RobotAtSuccessfulThrowPoseClassifier.holds(
-                    state=state, robot=env.robot, target=env.bin, goal_region=env.goal_region
+                    state=state, robot=env.robot, target=env.bin
                 )
 
         assert predicted == expected, (
@@ -400,8 +395,11 @@ def test_the_bin_and_the_goal_region_coincide_in_the_shipped_scene() -> None:
     env = _env()
     try:
         state = env.reset_to_seed(seed=CANONICAL_SEED)
-        goal_min = state.get(obj=env.goal_region, feature_name="x_min")
-        goal_max = state.get(obj=env.goal_region, feature_name="x_max")
+        # The scored box rides on the bin object now that the goal region is not modelled
+        # separately, but it is still `blocks_goal_region`'s live bbox rather than the
+        # bin's own geometry -- so this stays a comparison of two independent sources.
+        goal_min = state.get(obj=env.bin, feature_name="x_min")
+        goal_max = state.get(obj=env.bin, feature_name="x_max")
         bin_x = state.get(obj=env.bin, feature_name="x")
         centre = (goal_min + goal_max) / 2
         gap = abs(bin_x - centre)
@@ -474,7 +472,7 @@ def test_task_sampling_draws_distinct_scenes_for_train_and_test() -> None:
         test_seed = Tossing3DTasks.draw_scene_seed(rng=tasks.test_rng)
         assert train_seed != test_seed
         task = tasks.build_task(scene_seed=train_seed)
-        assert task.goal.describe() == "InGoalRegion(cube_0, blocks_goal_region)"
+        assert task.goal.describe() == "InBin(cube_0, bin_0)"
         assert not task.goal.is_satisfied(state=task.initial_state)
     finally:
         env.close()

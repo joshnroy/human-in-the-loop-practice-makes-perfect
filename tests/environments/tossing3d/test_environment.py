@@ -43,7 +43,7 @@ def test_the_goal_box_travels_in_the_state_rather_than_being_re_derived() -> Non
     translated = state()
     env = Tossing3DEnvironment()
     corners = ("x_min", "y_min", "z_min", "x_max", "y_max", "z_max")
-    read_back = tuple(translated.get(obj=env.goal_region, feature_name=name) for name in corners)
+    read_back = tuple(translated.get(obj=env.bin, feature_name=name) for name in corners)
     assert read_back == pytest.approx(GOAL_REGION_BBOX)
 
 

@@ -16,7 +16,7 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
     HAND_EMPTY,
     HOLDING,
-    IN_GOAL_REGION,
+    IN_BIN,
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
@@ -60,7 +60,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         Tossing3DSkills.TOSS,
     )
     assert set(provider.predicates()) == {
-        IN_GOAL_REGION,
+        IN_BIN,
         HAND_EMPTY,
         HOLDING,
         ON_GROUND,
@@ -126,7 +126,7 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() 
     provider = Tossing3DSkillProvider(env=env)
     ground_skill = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_THROW_POSE,
-        objects=(env.robot, env.cube, env.bin, env.goal_region),
+        objects=(env.robot, env.cube, env.bin),
     )
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
     action = provider.compute_action(ground_skill=ground_skill, params=params, state=state())
@@ -170,11 +170,9 @@ class _CannedEnvironment(Tossing3DEnvironment):
 
 
 def _unreachable_goal(*, env: Tossing3DEnvironment) -> Goal:
-    """`InGoalRegion(cube)`, which the initial scene does not satisfy -- so the episode
+    """`InBin(cube, bin)`, which the initial scene does not satisfy -- so the episode
     runs its whole horizon instead of returning on the first check."""
-    return Goal(
-        atoms=frozenset({GroundAtom(predicate=IN_GOAL_REGION, objects=(env.cube, env.goal_region))})
-    )
+    return Goal(atoms=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}))
 
 
 def _canned_episode(*, renderer):

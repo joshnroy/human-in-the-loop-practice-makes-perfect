@@ -11,7 +11,7 @@ from .environment import Tossing3DEnvironment
 from .predicates import (
     HAND_EMPTY,
     HOLDING,
-    IN_GOAL_REGION,
+    IN_BIN,
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
@@ -23,10 +23,13 @@ from .skills import Tossing3DSkills
 class Tossing3DSkillProvider(SkillProvider):
     """Tossing3D's `SkillProvider`, mirroring `TossingRoomSkillProvider`.
 
-    `objects()` is a fixed five: upstream's task JSON names exactly one cube, one bin and
-    one barrier, plus the robot, plus the goal-region box this domain carries in the
-    `State`. There is no configuration that changes the cast -- `o2` would add a second
-    cube, and this domain does not support it (see the README).
+    `objects()` is a fixed four: upstream's task JSON names exactly one cube, one bin and
+    one barrier, plus the robot. There is no configuration that changes the cast -- `o2`
+    would add a second cube, and this domain does not support it (see the README).
+
+    It was five until the goal region stopped being a symbolic object. The scored box is
+    still in the `State`, carried on the bin (see `predicates.py`'s module docstring); it
+    is simply not something a planner binds a variable to, because no skill can act on it.
     """
 
     env: Tossing3DEnvironment
@@ -40,7 +43,7 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def predicates(self) -> tuple[Predicate, ...]:
         return (
-            IN_GOAL_REGION,
+            IN_BIN,
             HAND_EMPTY,
             HOLDING,
             ON_GROUND,
@@ -54,12 +57,11 @@ class Tossing3DSkillProvider(SkillProvider):
             Tossing3DEnvironment.cube_type,
             Tossing3DEnvironment.bin_type,
             Tossing3DEnvironment.barrier_type,
-            Tossing3DEnvironment.goal_region_type,
         )
 
     def objects(self) -> tuple[Object, ...]:
         env = self.env
-        return (env.robot, env.cube, env.bin, env.barrier, env.goal_region)
+        return (env.robot, env.cube, env.bin, env.barrier)
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)

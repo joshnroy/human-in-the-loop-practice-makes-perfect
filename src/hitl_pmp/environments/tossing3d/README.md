@@ -22,7 +22,7 @@ Everything in the left column is upstream's code or upstream's number, used unmo
 | `kinder_models.dynamic3d.shelf.parameterized_skills`' `pick_shelf` | the grasp |
 | `kinder_models.dynamic3d.tossing.parameterized_skills`' `move_to_target`, `move_arm_to_conf`, `toss` | the walk and the throw |
 | `_check_goals()` | the success criterion this domain's own predicate is checked against |
-| `Region.bbox` on `blocks_goal_region` | the goal box, read live and carried in the `State` |
+| `Region.bbox` on `blocks_goal_region` | the scored box, read live and carried in the `State` **on the bin** |
 | `MOVE_TO_TARGET_DISTANCE_BOUNDS` / `MOVE_TO_TARGET_ROT_BOUNDS` | the `Pick` sampler's range |
 | the windup conf `(0, 50, 180, -110, 0, -100, 90)°` and toss conf `(0, 20, 180, -35, 0, 25, 90)°` | `Toss`, verbatim — nothing is interpolated |
 | the `o1` and `o2` task JSONs, the `task_view` camera, `render_fps` | the scene and the clip |
@@ -35,7 +35,7 @@ Ours, and therefore ours to defend:
   thresholds included, with **one documented deviation**: upstream's `Holding` also
   requires a forward-kinematics end-effector check through a live `PyBulletSim`, which a
   pure-`State` predicate cannot do, so that conjunct is dropped and the predicate is
-  correspondingly *weaker* than upstream's. `InGoalRegion` reproduces `_check_goals()`
+  correspondingly *weaker* than upstream's. `InBin` reproduces `_check_goals()`
   exactly and is differentially tested against it. `Reachable` and `RobotAtSuccessfulThrowPose` are new.
 - **The three lifted skills and their operator models** (`skills.py`). KINDER ships
   symbolic models for `Shelf3D`, `Sweep3D` and base motion, but **none for Tossing3D**,
@@ -159,9 +159,36 @@ in `THROW_STANDOFF_BOUNDS` — the interval the sampler draws from. `MoveToThrow
 add effect was therefore constant-true, EES's per-skill success classifier saw a single
 class, and every draw fell back to uniform: 16/16 attempts labelled success with 0/16
 informed draws in a probe run. The standoff conjunct now tests whether the *predicted
-landing point* `base_x + THROW_RANGE` falls inside the goal region's own live box, so the
-accepted band `[bin_x + THROW_RANGE − x_max, bin_x + THROW_RANGE − x_min]` is derived per
-call and tracks the bin and the goal region wherever they move.
+landing point* `base_x + THROW_RANGE` falls inside the scored box's own live extent, so
+the accepted band `[bin_x + THROW_RANGE − x_max, bin_x + THROW_RANGE − x_min]` is derived
+per call and tracks the box wherever it moves.
+
+## The goal region is not a symbolic object
+
+**The symbolic layer assumes the bin's interior *is* the scored region**, so no predicate
+and no operator takes a goal region as an argument: `InBin(cube, bin)`,
+`RobotAtSuccessfulThrowPose(robot, bin)`, `Pick(robot, cube, barrier, bin)`,
+`MoveToThrowPose(robot, cube, bin)`, `Toss(robot, cube, bin, barrier)`.
+
+That is a modelling choice and it is **false in general** — under stock the two are 23 cm
+apart, which is exactly the trap the section above describes. What it does *not* change is
+fidelity: the box these classifiers test against is still the live `Region.bbox` of
+`blocks_goal_region`, carried in the `State` as six extra features on the bin object, so
+`InBin` agrees with `_check_goals()` on **both** configs. Only the *symbolic* dependence
+went away — an object a planner had to bind and no skill could act on.
+
+Two consequences worth knowing before reading a trace:
+
+- **Under `--task-config stock` the name lies.** The bin's own `x` (2.2305) sits outside
+  its own `x_max` (2.15), so `InBin` is true exactly when the cube is *not* in the bin.
+  The arithmetic still scores what KINDER scores.
+- **Wherever the bin is taken to be movable, moving it moves the goal.** kindergarden#126
+  moves the bin, and under this assumption the scored target follows it — "put the cube in
+  the bin, wherever the bin is", which is the intended reading of a move-the-bin task
+  rather than a problem to work around. The stock config implements the opposite reading:
+  a fixed goal the bin merely decorates.
+
+`predicates.py`'s module docstring carries the same statement at source.
 
 ## Running it
 
@@ -181,7 +208,7 @@ systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=conti
 
 `--output-dir` writes `episode.mp4` (a four-frame storyboard: initial scene, then one
 frame after each of `Pick`, `MoveToThrowPose`, `Toss`, each captioned with the cube's
-measured position and the `InGoalRegion` verdict), plus `stats.json` and
+measured position and the `InBin` verdict), plus `stats.json` and
 `config_snapshot.json`. For a *smooth* per-tick clip use
 `scripts/tossing3d_oracle_demo.py`, which stays separate — one frame per transition is a
 property of `core.Renderer`, not of this domain.
@@ -199,7 +226,7 @@ scripts/with_env.sh python -m pytest tests/environments/tossing3d/ -q
   cube genuinely requires someone to walk over and pick it up — and
   `Metrics.num_human_interventions()` reports `(0.0, 0)` because none is *representable*,
   not because none was needed.
-- **`o2` is not supported.** It needs two cubes in the goal region; the symbolic layer
+- **`o2` is not supported.** It needs two cubes in the scored region; the symbolic layer
   here is single-cube. `Tossing3DEnvironment.backend()` refuses `--variant o2` outright
   rather than running an under-specified goal.
 - **The oracle's weak link is the grasp, not the throw.** `pick_shelf` is marginal on

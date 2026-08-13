@@ -159,8 +159,8 @@ class SamplerDrawRecorder(BaseModel):
         Deliberately the whole feature vector rather than a curated subset: which
         features matter is a per-domain question, and a recorder that knew the answer
         would need a branch per domain. On Tossing3D's `MoveToThrowPose(robot, cube,
-        bin, goal_region)` this yields the base pose *and* the bin position, which is
-        exactly what an achieved standoff is computed from.
+        bin)` this yields the base pose *and* the bin position, which is exactly what an
+        achieved standoff is computed from.
         """
         return {
             f"{obj.name}.{feature_name}": float(state.get(obj=obj, feature_name=feature_name))
