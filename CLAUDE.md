@@ -45,7 +45,7 @@ working around.
 
 | path | url | pinned at |
 | --- | --- | --- |
-| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `9c64308` |
+| `reference/kinder-baselines` | `joshnroy/kinder-baselines` | `88b5eb3` |
 | `reference/kindergarden` | `joshnroy/kindergarden` | `539c6b8` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` | `5bd3f5b` |
 
@@ -213,7 +213,7 @@ were measured before PR #126 are left as published, with staleness notes beside 
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
-`reference/kinder-baselines` is pinned at `9c64308`, the head of
+`reference/kinder-baselines` is pinned at `88b5eb3`, the head of
 `josh/feature/toss-release-params`, which stacks four commits on top of `3524010`, the head
 of `josh/feature/tossing-throw-controllers`. The top commit gives `TossController.reset`
 a `gripper_release_ms` alongside `release_speed` -- exactly the two knobs the real TidyBot's
