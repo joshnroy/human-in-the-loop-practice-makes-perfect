@@ -6,7 +6,7 @@ predicates, the skills, the oracle -- is testable with no MuJoCo, and therefore 
 which never installs the optional `tossing3d` extra.
 
 The numbers here are not invented: they are the scene as measured at upstream's own seed
-125 on the coincident config, recorded in `docs/kinder-environment-validation.md` and
+125, recorded in `docs/kinder-environment-validation.md` and
 reproduced by `scripts/tossing3d_oracle_demo.py`. Using the real geometry means an
 offline test and a simulator-backed one are talking about the same scene.
 """
@@ -16,16 +16,17 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderObservation
 
 # The live `Region.bbox` of `blocks_goal_region`: the task JSON's [1.90, 2.10] x
 # [-0.10, 0.10] x [0, 0.10] inflated by ground_placement_threshold = 0.05 per side, z
-# clamped at 0. Identical on both task configs -- only the bin moves.
+# clamped at 0.
 GOAL_REGION_BBOX = (1.85, -0.15, 0.0, 2.15, 0.15, 0.15)
 
 # The cube's own half-extent (`size: 0.025` in the task JSON), doubled: `bb_z`.
 CUBE_BB_Z = 0.05
 
-# Where the bin sits under each config, measured live. Stock is upstream's o1 at x = 2.23;
-# coincident puts it back at 2.0, which is what `Tossing3D-o2.json` already ships.
-STOCK_BIN_X = 2.2305
-COINCIDENT_BIN_X = 2.0001
+# Where the bin sits in the shipped scene, measured live: `bin_init_region` is a 1 mm
+# sampling range about x = 2.0, so the bin lands on the goal region rather than past it.
+# It sat at x = 2.2305 before upstream's fix (`kindergarden` PR #126), 23 cm off the box
+# that scores -- which is why a cube landing IN the bin used to be a scored failure.
+BIN_X = 2.0001
 
 # `barrier_init_region` places the barrier at x = 1.3.
 BARRIER_X = 1.3
@@ -47,7 +48,7 @@ def observation(
     base_x: float = 0.0,
     base_y: float = 0.0,
     base_rot: float = 0.0,
-    bin_x: float = COINCIDENT_BIN_X,
+    bin_x: float = BIN_X,
     goal_region: tuple[float, float, float, float, float, float] = GOAL_REGION_BBOX,
     solved: bool = False,
 ) -> KinderObservation:

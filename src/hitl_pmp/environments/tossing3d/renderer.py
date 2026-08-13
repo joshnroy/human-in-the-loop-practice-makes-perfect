@@ -118,7 +118,13 @@ class Tossing3DRenderer(Renderer):
         x_min = state.get(obj=env.goal_region, feature_name="x_min")
         x_max = state.get(obj=env.goal_region, feature_name="x_max")
         return [
-            f"Tossing3D-{env.variant} [{env.task_config.value}] | {label or 'initial state'}",
+            # The scene name used to be stamped here too, because the same throw scored
+            # True on the coincident config and False on stock and a viewer could not
+            # see which clip they were looking at. There is one scene now, so the token
+            # would be a constant -- and a constant that reads like a choice is worse
+            # than none. `goal x in [...]` below is measured live and still distinguishes
+            # a scene whose geometry moved.
+            f"Tossing3D-{env.variant} | {label or 'initial state'}",
             f"cube x={x:.4f} y={y:.4f} z={z:.4f} | goal x in [{x_min:.4f}, {x_max:.4f}] "
             f"| InGoalRegion = {in_region}",
         ]

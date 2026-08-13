@@ -7,7 +7,7 @@ Everything here runs without MuJoCo. The simulator-backed half is
 import numpy as np
 import pytest
 
-from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment, Tossing3DTaskConfig
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 
 from .observations import GOAL_REGION_BBOX, observation, state
 
@@ -19,7 +19,7 @@ def test_constructing_the_environment_imports_no_simulator() -> None:
     import sys
 
     env = Tossing3DEnvironment()
-    assert env.task_config is Tossing3DTaskConfig.COINCIDENT
+    assert env.variant == "o1"
     assert "mujoco" not in sys.modules
 
 
@@ -101,28 +101,26 @@ def test_the_action_space_has_one_id_slot_and_two_parameter_slots() -> None:
     assert Tossing3DEnvironment.action_space.shape == (3,)
 
 
-def test_the_coincident_config_resolves_to_the_file_the_demo_script_shares() -> None:
-    """One copy of the scene, not two. Two copies of a scene definition is exactly how a
-    measurement ends up attributed to the wrong geometry."""
-    path = Tossing3DEnvironment(task_config=Tossing3DTaskConfig.COINCIDENT).task_config_path()
-    assert path is not None
-    assert path.name == "Tossing3D-o1-coincident.json"
-    assert path.parent.name == "task_configs"
-    assert path.is_file()
+def test_the_backend_overrides_no_task_config_so_the_scene_is_upstreams() -> None:
+    """**The retired choice, pinned as an absence.** This domain used to select between
+    upstream's `Tossing3D-o1.json` and a copy of it committed here; passing no
+    `task_config_path` is what "run whatever the installed KINDER ships" means at the
+    seam, and a future change that reintroduced an override would silently reintroduce
+    the fork this removed. Reads the backend rather than the simulator, so it stays
+    offline."""
+    backend = Tossing3DEnvironment().backend()
+    assert not hasattr(backend, "task_config_path")
+    assert backend.env_id == "kinder/Tossing3D-o1-v0"
 
 
-def test_the_stock_config_overrides_nothing() -> None:
-    """`None` rather than a path to upstream's own file: a stock run must pass exactly
-    what a run from before this domain existed passed, so it cannot drift from it."""
-    assert Tossing3DEnvironment(task_config=Tossing3DTaskConfig.STOCK).task_config_path() is None
-
-
-def test_the_coincident_config_is_refused_for_a_variant_it_does_not_describe() -> None:
-    """It is upstream's o1 with one line changed, so it *is* o1's scene. Running it under
-    o2's env id would label o1's geometry as o2 -- worse than not running at all."""
-    env = Tossing3DEnvironment(task_config=Tossing3DTaskConfig.COINCIDENT, variant="o2")
+def test_a_variant_this_domains_symbolic_layer_cannot_describe_is_refused() -> None:
+    """`o2` needs two cubes in the goal region and the symbolic layer here is single-cube,
+    so a run labelled `o2` would be measuring something this package cannot describe.
+    Raised rather than silently no-oped, and raised from `backend()` so it costs a
+    construction rather than a simulator build."""
+    env = Tossing3DEnvironment(variant="o2")
     with pytest.raises(ValueError, match="o1 scene"):
-        env.task_config_path()
+        env.backend()
 
 
 def test_a_non_finite_action_is_recorded_as_a_no_op_rather_than_raising() -> None:

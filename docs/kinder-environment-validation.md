@@ -27,6 +27,21 @@ number.
 > published; only the pointer is out of date. `scripts/update_reference_repos.sh --check`
 > prints the current pins.
 >
+> **Note, 2026-08-12 — the bin has moved, so every scoring verdict below is about a
+> scene that no longer exists.** Everything on this page was measured against upstream
+> `Tossing3D-o1.json` with `bin_init_region` at **x = 2.23**, 23 cm past the inflated
+> `blocks_goal_region` at x ∈ [1.85, 2.15]. That is the geometry behind this page's most
+> quoted finding — a cube landing *in* the bin scoring `_check_goals() = False`, and
+> standoff 1.35 resting at `x=2.2197` with a **False** verdict while 1.55 rested short of
+> the bin with a **True** one. `kindergarden` PR #126 moved `bin_init_region` back to
+> x = 2.0, **editing `Tossing3D-o1.json` itself rather than adding a variant**, and
+> `reference/kindergarden` is pinned at that fix. On the scene this repo runs today the
+> bin sits on the box that scores, so landing in the bin is exactly what succeeds and the
+> in-bin-scores-a-failure finding is **historical, not current**. Nothing below has been
+> recomputed or edited; treat every verdict on this page as describing the pre-#126
+> scene. `src/hitl_pmp/environments/tossing3d/README.md` describes the scene as it is
+> now.
+>
 > **Note, 2026-08-12.** The `kinder-baselines` pin has since moved `11eace5` → `3524010`
 > (a rebase of the same branch onto upstream `main` @ `4760956`). That is not only a
 > pointer change: `4760956` is upstream PR #103, which **turns base-motion
@@ -300,6 +315,11 @@ $ diff Tossing3D-o1.json Tossing3D-o2.json
 region that is character-for-character the same. The pairing "bin at 2.0, goal region at
 1.90–2.10" is therefore something upstream itself still ships, not an invention — which
 was the basis of the earlier argument, and it holds at `main`.
+
+> **Note, 2026-08-12.** That argument was accepted upstream: `kindergarden` PR #126 moved
+> `o1`'s `bin_init_region` to x = 2.0 as well, so the diff above no longer differs on that
+> line at the commit `reference/kindergarden` is pinned to. The measurement is left as
+> published; only the state of upstream has changed.
 
 ---
 

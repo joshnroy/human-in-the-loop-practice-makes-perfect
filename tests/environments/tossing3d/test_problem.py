@@ -28,7 +28,7 @@ from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import COINCIDENT_BIN_X, state
+from .observations import BIN_X, state
 
 
 def _problem() -> Tossing3DProblem:
@@ -101,7 +101,7 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
 
     assert applicable() == {"Pick"}
     assert applicable(gripper=0.9, cube_z=0.4) == {"MoveToThrowPose"}
-    assert applicable(gripper=0.9, cube_z=0.4, base_x=COINCIDENT_BIN_X - 1.35) == {
+    assert applicable(gripper=0.9, cube_z=0.4, base_x=BIN_X - 1.35) == {
         "MoveToThrowPose",
         "Toss",
     }
@@ -112,7 +112,7 @@ def test_nothing_is_applicable_once_the_cube_is_past_the_barrier() -> None:
     the barrier, `Reachable` is false, `Pick` is inapplicable, and no skill remains. A
     planner asked to recover from here correctly finds no plan."""
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
-    landed = state(cube_x=2.6, cube_z=0.025, gripper=0.0, base_x=COINCIDENT_BIN_X - 1.35)
+    landed = state(cube_x=2.6, cube_z=0.025, gripper=0.0, base_x=BIN_X - 1.35)
     atoms = SkillGrounder.abstract_state(
         state=landed, objects=provider.objects(), predicates=provider.predicates()
     )

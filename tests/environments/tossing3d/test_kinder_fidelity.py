@@ -21,15 +21,26 @@ What these check that the offline tests structurally cannot:
 3. The oracle's pick parameters really are what upstream's own sampler draws.
 4. The oracle reproduces the rest positions and step counts recorded in
    `docs/kinder-environment-validation.md`.
+5. The `Tossing3D-o1.json` the installed KINDER ships still puts the bin on the box that
+   scores. That one is new. This domain no longer commits a scene of its own, so the
+   scene moves with the `reference/kindergarden` pin -- and that check is what makes a
+   pin bump a **loud** event rather than a silent change of geometry under every number
+   already measured.
+
+**Several tests here used to run twice, once per `Tossing3DTaskConfig` member.** That
+enum is gone -- upstream's bin fix (`kindergarden` PR #126) landed on `Tossing3D-o1.json`
+itself rather than as a new variant, so `STOCK` and `COINCIDENT` came to load the same
+scene. See `Tossing3DEnvironment.backend` for the full history.
 """
 
 import importlib.util
+from pathlib import Path
 
 import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import LabeledAction
-from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment, Tossing3DTaskConfig
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
     IN_GOAL_REGION,
     THROW_RANGE,
@@ -58,26 +69,28 @@ pytestmark = needs_kinder
 # `docs/kinder-environment-validation.md` was measured at.
 CANONICAL_SEED = 125
 
-# The measured landings at standoff 1.35, from that same record, reproduced by
+# The measured landing at standoff 1.35, from that same record, reproduced by
 # `scripts/tossing3d_oracle_demo.py` on this machine.
-COINCIDENT_REST_X = 1.9902
-STOCK_REST_X = 2.2197
+REST_X = 1.9902
 BIN_FLOOR_Z = 0.0444
 
 
-def _env(*, task_config: Tossing3DTaskConfig = Tossing3DTaskConfig.COINCIDENT):
-    return Tossing3DEnvironment(task_config=task_config)
+def _env():
+    return Tossing3DEnvironment()
 
 
 def test_in_goal_region_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory() -> None:
-    """The differential test this domain's trust rests on. Checked at every step of a
-    real oracle episode on both configs, because the two disagree about the verdict and a
-    predicate that got the box wrong would be right on one and wrong on the other."""
-    for task_config, standoff in (
-        (Tossing3DTaskConfig.COINCIDENT, 1.35),
-        (Tossing3DTaskConfig.STOCK, 1.35),
-    ):
-        env = _env(task_config=task_config)
+    """The differential test this domain's trust rests on, checked at every step of a real
+    oracle episode.
+
+    Both verdicts flip during the episode -- `False` while the cube is on the floor and in
+    the gripper, `True` once it lands -- so agreeing at every step is a real constraint and
+    not something a predicate hardwired to `True` would pass. The two standoffs come from
+    `test_the_derived_band_agrees_with_whether_the_throw_actually_scores`: one solves the
+    scene and one does not, so the pair also exercises agreement on a `False` final
+    verdict, which is what the retired stock arm used to provide."""
+    for standoff in (1.15, 1.45):
+        env = _env()
         try:
             # Built ONCE, before the rollout. `build_task` rebuilds the scene (see
             # `Tossing3DTasks`' docstring), so building it inside the loop would silently
@@ -89,7 +102,7 @@ def test_in_goal_region_agrees_with_kinders_own_goal_check_on_the_oracles_trajec
                     state=state, cube=env.cube, goal_region=env.goal_region
                 )
                 assert symbolic == env.is_solved(), (
-                    f"{task_config.value}: InGoalRegion said {symbolic} while KINDER's "
+                    f"standoff {standoff}: InGoalRegion said {symbolic} while KINDER's "
                     f"own _check_goals() said {env.is_solved()}"
                 )
                 action = SkillOraclePolicy.get_labeled_action(
@@ -148,7 +161,7 @@ def test_oracle_pick_parameters_match_upstreams_own_sampler() -> None:
         env.close()
 
 
-def test_the_oracle_reproduces_the_recorded_coincident_landing_and_step_counts() -> None:
+def test_the_oracle_reproduces_the_recorded_landing_and_step_counts() -> None:
     """The reference numbers: cube at rest x = 1.9902, z = 0.0444 (the bin's interior
     floor, i.e. the cube is *in* the bin), `_check_goals()` True, and the four controller
     executions terminating in 71 / 23 / 16 / 18 steps."""
@@ -165,9 +178,7 @@ def test_the_oracle_reproduces_the_recorded_coincident_landing_and_step_counts()
             assert env.last_skill_error() is None, env.last_skill_error()
 
         assert steps == [71, 23, 16, 18]
-        assert state.get(obj=env.cube, feature_name="x") == pytest.approx(
-            COINCIDENT_REST_X, abs=1e-3
-        )
+        assert state.get(obj=env.cube, feature_name="x") == pytest.approx(REST_X, abs=1e-3)
         assert state.get(obj=env.cube, feature_name="z") == pytest.approx(BIN_FLOOR_Z, abs=1e-3)
         assert env.is_solved()
         assert IN_GOAL_REGION.holds(state, (env.cube, env.goal_region))
@@ -287,49 +298,119 @@ def test_move_to_throw_pose_at_the_lower_standoff_bound_does_not_disturb_the_bar
         env.close()
 
 
-def test_the_same_standoff_on_stock_lands_in_the_bin_and_scores_a_failure() -> None:
-    """The contrast that makes the default non-negotiable. Same seed, same skills, same
-    standoff -- only the task JSON differs -- and the cube lands *in* the bin at
-    x = 2.2197 with `_check_goals()` False, because on stock the bin sits 23 cm past the
-    goal region. Training against this scene would reward missing the bin."""
-    env = _env(task_config=Tossing3DTaskConfig.STOCK)
+def test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores() -> None:
+    """**The guard that makes a `reference/kindergarden` pin bump loud instead of silent.**
+
+    This domain no longer commits a scene of its own: it runs whatever
+    `Tossing3D-o1.json` the installed KINDER registers. That is the decision, and it has
+    a cost worth naming rather than leaving implicit -- **the scene now moves with the
+    pin.** That coupling is precisely the defect that produced this test's existence: the
+    retired `Tossing3DTaskConfig.STOCK` meant "whatever the submodule ships", so its
+    meaning moved when the pin moved, and two tests broke with nobody having edited them.
+
+    Accepting the coupling therefore requires making it observable, which is this test.
+    It reads the task JSON out of the KINDER that is actually **installed** -- located
+    through the import system rather than a hardcoded path, so it is the tree that is
+    *run*, not a second checkout that might sit at a different commit -- and pins the one
+    property the domain cannot survive losing: `bin_init_region` is centred on
+    `blocks_goal_region`'s centre, i.e. the bin sits on the box that scores.
+
+    **Why that property and not the file's bytes.** A byte or hash comparison would fail
+    on every pin bump, including ones that change nothing about the geometry, and a test
+    that cries wolf gets deleted. The form this refuses is the one that broke the domain:
+    upstream `1183de7` moved the bin to x = 2.23 and left the region behind, putting the
+    two centres 230 mm apart.
+
+    **Why the tolerance is 5 mm rather than exact, measured rather than chosen.** The two
+    known-good forms are not identical, and the difference is instructive. The pin this
+    repo currently records (`4113237`) declares `[[2.0, -0.0005, 2.001, 0.0005]]` -- a
+    1 mm-wide sampling range running from 2.0 to 2.001, whose **mean is 2.0005**, i.e.
+    0.5 mm past the goal region's centre. kg#126 as **merged** to the lab repo
+    (`98ad2c0`) tightened it to `[[2.0, 0.0, 2.0, 0.0]]`, zero-width and exactly on
+    centre. So bumping the pin onto the merged commit shifts the bin's mean position by
+    0.5 mm: tiny, but a real dynamics change rather than a formatting one, and worth
+    saying out loud because numbers in this file were measured under the jitter form.
+    5 mm admits both, matches
+    `test_the_bin_and_the_goal_region_coincide_in_the_shipped_scene`'s live tolerance,
+    and excludes 230 mm by a factor of 46.
+
+    The width bound is a second, independent thing worth pinning: it keeps the bin's
+    placement effectively deterministic, which is what lets a single scene seed reproduce
+    a landing position. Both known forms are <= 1 mm wide.
+
+    Offline as far as the geometry goes -- it reads the JSON, not a compiled model --
+    but it needs KINDER installed to find the file, so it lives here with the rest of the
+    simulator-gated tests. `test_the_bin_and_the_goal_region_coincide_in_the_shipped_scene`
+    is the live counterpart, measured off MuJoCo after inflation and sampling.
+    """
+    import json
+
+    import kinder
+
+    task_json = (
+        Path(kinder.__file__).resolve().parent
+        / "envs"
+        / "dynamic3d"
+        / "tasks"
+        / "Tossing3D"
+        / "Tossing3D-o1.json"
+    )
+    assert task_json.is_file(), f"the installed KINDER has no o1 task JSON at {task_json}"
+    regions = json.loads(task_json.read_text())["regions"]
+
+    (bin_range,) = regions["bin_init_region"]["ranges"]
+    bin_x_start, bin_x_end = bin_range[0], bin_range[2]
+    bin_centre = (bin_x_start + bin_x_end) / 2
+
+    (goal_range,) = regions["blocks_goal_region"]["ranges"]
+    goal_centre = (goal_range[0] + goal_range[3]) / 2
+
+    assert bin_centre == pytest.approx(goal_centre, abs=0.005), (
+        f"{task_json} declares bin_init_region centred at x = {bin_centre} against "
+        f"blocks_goal_region centred at x = {goal_centre}. The bin has come off the box "
+        "that scores, which is the pre-PR-126 defect: a cube landing IN the bin would "
+        "score a FAILURE, and training on this scene would reward missing it. The pin "
+        "moved the scene -- decide whether that is wanted before trusting any number "
+        "measured after this point."
+    )
+    assert bin_x_end - bin_x_start <= 0.001, (
+        f"{task_json} samples the bin over {bin_x_end - bin_x_start} m on x. Above about "
+        "a millimetre the bin's position stops being effectively determined by the scene "
+        "seed, and per-seed landing positions recorded in this file stop reproducing."
+    )
+
+
+def test_the_bin_and_the_goal_region_coincide_in_the_shipped_scene() -> None:
+    """**The invariant the whole domain rests on, re-measured live rather than asserted
+    about JSON:** the bin sits on the box that scores, so "the cube is in the bin" and
+    "the cube is in the goal region" are the same event.
+
+    Measured rather than read off the file because neither box is where the file says it
+    is -- `blocks_goal_region` is inflated by 0.05 m per side before it becomes a region,
+    and the bin's placement is sampled from a 1 mm-wide range.
+
+    **This is the fixed state of a scene that used to be broken, and the gap is the whole
+    story.** Upstream commit `1183de7` moved `bin_init_region` to x = 2.23 and left
+    `blocks_goal_region` behind, putting the bin ~230 mm off the region: a cube landing
+    *in* the bin scored a **failure**, and training against it would have rewarded
+    missing. `kindergarden` PR #126 put the bin back to x = 2.0. The tolerance below is
+    5 mm against a measured ~0.1 mm, and 230 mm is the value it exists to exclude -- so
+    this test is red on the pre-fix scene without needing one to compare against.
+    """
+    env = _env()
     try:
         state = env.reset_to_seed(seed=CANONICAL_SEED)
-        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
-        for _ in range(3):
-            action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
-            state = env.take_action(action=action.action)
-        assert state.get(obj=env.cube, feature_name="x") == pytest.approx(STOCK_REST_X, abs=1e-3)
-        assert state.get(obj=env.cube, feature_name="z") == pytest.approx(BIN_FLOOR_Z, abs=1e-3)
-        assert not env.is_solved()
-        assert not IN_GOAL_REGION.holds(state, (env.cube, env.goal_region))
+        goal_min = state.get(obj=env.goal_region, feature_name="x_min")
+        goal_max = state.get(obj=env.goal_region, feature_name="x_max")
+        bin_x = state.get(obj=env.bin, feature_name="x")
+        centre = (goal_min + goal_max) / 2
+        gap = abs(bin_x - centre)
+        assert gap < 0.005, (
+            f"the bin is {gap} m off the goal region's centre. At ~0.23 m this is the "
+            "pre-PR-126 scene, in which a cube landing in the bin scores a failure."
+        )
     finally:
         env.close()
-
-
-def test_the_bin_and_the_goal_region_coincide_under_the_default_config() -> None:
-    """The claim the default rests on, re-measured live rather than asserted about JSON:
-    neither box is where the file says it is (the region is inflated; the bin's placement
-    is sampled from a 1 mm-wide range). Worst-edge disagreement is ~0.1 mm on coincident
-    against ~230 mm on stock."""
-    for task_config, expected_gap in (
-        (Tossing3DTaskConfig.COINCIDENT, 0.005),
-        (Tossing3DTaskConfig.STOCK, None),
-    ):
-        env = _env(task_config=task_config)
-        try:
-            state = env.reset_to_seed(seed=CANONICAL_SEED)
-            goal_min = state.get(obj=env.goal_region, feature_name="x_min")
-            goal_max = state.get(obj=env.goal_region, feature_name="x_max")
-            bin_x = state.get(obj=env.bin, feature_name="x")
-            centre = (goal_min + goal_max) / 2
-            gap = abs(bin_x - centre)
-            if expected_gap is None:
-                assert gap > 0.2, f"stock's bin should be ~23 cm off the region, got {gap}"
-            else:
-                assert gap < expected_gap, f"coincident's bin is {gap} m off the region"
-        finally:
-            env.close()
 
 
 def test_a_full_episode_through_the_problem_solves_the_default_scene() -> None:
@@ -483,5 +564,5 @@ def test_recording_does_not_change_where_the_cube_comes_to_rest() -> None:
         finally:
             env.close()
 
-    assert rest["plain"][0] == pytest.approx(COINCIDENT_REST_X, abs=1e-3)
+    assert rest["plain"][0] == pytest.approx(REST_X, abs=1e-3)
     assert rest["recorded"] == pytest.approx(rest["plain"], abs=1e-6)

@@ -32,9 +32,22 @@ then #90, both moving `ees_method.py`'s `PlanningFailure` sites). If a line does
 where it says, `grep` the symbol — the claim is probably still true.
 
 **Every measurement in §5 was taken on the closed branches**, whose adapter differs from
-`main`'s in ways that matter — `main` has no `swing` dial, no `ORACLE_SWING`, no
-`_release`, and defaults to the coincident scene. Do not read a number here as a number
-about `main`.
+`main`'s in ways that matter — `main` has no `swing` dial, no `ORACLE_SWING` and no
+`_release`. Do not read a number here as a number about `main`.
+
+> **Note, 2026-08-12 — the stock/coincident contrast this file is largely organised
+> around no longer exists.** Every "stock `o1`" number below was measured against upstream
+> `bin_init_region` at **x = 2.23**, 23 cm past the inflated `blocks_goal_region`, which
+> is why a cube landing *in* the bin scored a failure (§5.3) and why this repo shipped a
+> scene of its own (§5.8). `kindergarden` PR #126 has since moved the bin back to x = 2.0
+> **by editing `Tossing3D-o1.json` itself rather than adding a variant**, and
+> `reference/kindergarden` is pinned at that fix. So upstream's `o1` and the "coincident"
+> scene became the same scene: `main`'s `Tossing3DTaskConfig` enum, its `--task-config`
+> flag and `scripts/task_configs/Tossing3D-o1-coincident.json` are all retired, and the
+> domain now runs whatever the installed KINDER ships. **Nothing on this page has been
+> recomputed or edited** — read every "stock" column as the pre-#126 scene and every
+> "coincident" column as the scene that is now simply the scene.
+> `src/hitl_pmp/environments/tossing3d/README.md` describes it as it is today.
 
 ---
 
@@ -175,8 +188,10 @@ Specifically **ours**, and therefore ours to defend:
   `main`: the leak was fixed upstream, and a `close()` on top of that finalizer would
   double-disconnect.
 - **`task_configs/tossing3d-o1-coincident-bin.json`**, the one scene here that is not
-  upstream's (§5.8). `main` ships the same idea at a different path,
-  `scripts/task_configs/Tossing3D-o1-coincident.json`, and defaults to it.
+  upstream's (§5.8). `main` shipped the same idea at a different path,
+  `scripts/task_configs/Tossing3D-o1-coincident.json`, and defaulted to it. **Both are
+  retired as of 2026-08-12**: upstream landed the same fix on `Tossing3D-o1.json` itself
+  (`kindergarden` PR #126), so `main` now carries no scene of its own.
 - The decision to **ignore KINDER's `terminated`**: an interaction period runs its full
   length regardless, because a solved state is absorbing and ending early would make a
   solved period cheaper in transitions than a failed one, biasing the x-axis of every
@@ -424,6 +439,11 @@ history. The defensible version is that a re-run was *required* because the pred
 
 ### 5.3 The bin is scenery
 
+> **Note, 2026-08-12.** True of the scene measured here and **no longer true of the scene
+> this repo runs.** `kindergarden` PR #126 moved `bin_init_region` back to x = 2.0, onto
+> the box that scores, so landing in the bin is now exactly what succeeds. The three
+> checks below are left exactly as published; they document why the bin *was* scenery.
+
 The single most misreadable thing about this domain. **A cube that lands in the bin is a
 scored failure, every time.** Three independent checks against upstream:
 
@@ -642,6 +662,19 @@ This caps what the oracle can measure and was left unfixed. **(inferred: the rec
 the fact and calls it out of scope, but does not propose a remedy.)**
 
 ### 5.8 The coincident-bin task config
+
+> **Note, 2026-08-12 — retired, because upstream adopted it.** `kindergarden` PR #126
+> moved `bin_init_region` to x = 2.0 in `Tossing3D-o1.json` itself rather than adding a
+> variant, which is the same geometry this section argues for. Upstream's `o1` and this
+> config therefore became the same scene, `main`'s two-member `Tossing3DTaskConfig` broke
+> two tests by claiming a contrast that no longer existed, and the enum, the flag and the
+> vendored JSON are all gone. Two claims below are worth reading as *superseded* rather
+> than wrong: "stock `o1` remained the default" and "`--task-config stock` still
+> selectable" describe branches that no longer exist, and the closing sentence about a
+> KINDER bump "failing loudly rather than silently widening the diff" turned out to be the
+> exact opposite of what happened — the provenance pin was not on `main`, and the bump
+> collapsed the distinction in silence. That is the defect this note exists to record.
+> Nothing below has been recomputed.
 
 Ours, not upstream's. On the closed stack it was
 `src/hitl_pmp/environments/tossing3d/task_configs/tossing3d-o1-coincident-bin.json`,

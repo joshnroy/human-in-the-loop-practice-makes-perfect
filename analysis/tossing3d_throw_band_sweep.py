@@ -32,8 +32,16 @@ Not a literal "4 corners": standoff is the domain's one continuous throw paramet
   size=3)` -- fixed, never drawn ad hoc -- standing in for "a random sampling from the
   middle".
 
-Ten fixed scene seeds (`0`-`9`) per standoff, all `--task-config coincident-bin-goal`
-(the config every number in `predicates.py`'s docstring is measured on).
+Ten fixed scene seeds (`0`-`9`) per standoff, all run with `--task-config
+coincident-bin-goal` (the config every number in `predicates.py`'s docstring is measured
+on).
+
+**Note, 2026-08-12: that flag no longer exists, and its scene is now the only scene.**
+`kindergarden` PR #126 moved `bin_init_region` back to x = 2.0 in `Tossing3D-o1.json`
+itself, so upstream's `o1` became the geometry this sweep was run against and the
+stock/coincident choice was retired. The numbers below are **not** recomputed and are not
+stale on that account -- they were taken on the same bin position the domain runs today.
+What changed is only how you would ask for it: there is no flag to pass.
 """
 
 import argparse

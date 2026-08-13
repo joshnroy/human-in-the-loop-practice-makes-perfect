@@ -19,7 +19,7 @@ from hitl_pmp.environments.tossing3d.skills import (
     THROW_STANDOFF_BOUNDS,
 )
 
-from .observations import COINCIDENT_BIN_X, state
+from .observations import BIN_X, state
 
 _ENV = Tossing3DEnvironment()
 _EMPTY_GOAL = Goal(atoms=frozenset())
@@ -46,7 +46,7 @@ def test_the_oracle_throws_once_it_is_holding_the_cube_and_near_the_bin() -> Non
     action = _act(
         gripper=GRASP_THRESHOLD + 0.5,
         cube_z=0.4,
-        base_x=COINCIDENT_BIN_X - ORACLE_THROW_STANDOFF,
+        base_x=BIN_X - ORACLE_THROW_STANDOFF,
     )
     assert action.action[0] == pytest.approx(Tossing3DEnvironment.toss_id)
 
@@ -60,7 +60,7 @@ def test_the_oracle_solves_the_domain_in_exactly_three_skills() -> None:
         _act(
             gripper=GRASP_THRESHOLD + 0.5,
             cube_z=0.4,
-            base_x=COINCIDENT_BIN_X - ORACLE_THROW_STANDOFF,
+            base_x=BIN_X - ORACLE_THROW_STANDOFF,
         ).action[0],
     ]
     assert ids == pytest.approx([
@@ -115,14 +115,15 @@ def test_a_parameterless_skill_gets_no_params_suffix() -> None:
     label = _act(
         gripper=GRASP_THRESHOLD + 0.5,
         cube_z=0.4,
-        base_x=COINCIDENT_BIN_X - ORACLE_THROW_STANDOFF,
+        base_x=BIN_X - ORACLE_THROW_STANDOFF,
     ).label
     assert "params=" not in label
 
 
 def test_the_provider_forwards_its_configured_standoff() -> None:
-    """The standoff that solves depends on which scene is loaded -- 1.35 on the
-    coincident config, 1.55 on stock -- so it is a constructor field, not a constant."""
+    """Which standoff solves is a property of the scene's geometry rather than a constant
+    of this domain -- 1.35 on the scene as shipped today, 1.55 on the pre-#126 one whose
+    bin sat 23 cm further out -- so it is a constructor field, not a constant."""
     oracle = Tossing3DOracle(env=_ENV, throw_standoff=1.55)
     action = oracle.get_labeled_action(
         state=state(gripper=GRASP_THRESHOLD + 0.5, cube_z=0.4), goal=_EMPTY_GOAL

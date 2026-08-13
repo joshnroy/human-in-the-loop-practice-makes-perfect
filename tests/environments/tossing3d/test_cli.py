@@ -10,7 +10,7 @@ import pytest
 
 from hitl_pmp.cli import ENVIRONMENTS, Cli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
-from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment, Tossing3DTaskConfig
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 
@@ -41,7 +41,6 @@ def test_registering_it_does_not_pull_a_simulator_into_the_global_cli() -> None:
 def test_the_defaults_are_read_off_the_models_rather_than_re_literalled() -> None:
     args = _build_parser().parse_args([])
     fields = Tossing3DEnvironment.model_fields
-    assert args.task_config == fields["task_config"].default.value
     assert args.variant == fields["variant"].default
     assert args.canonical_seed == fields["canonical_seed"].default
     assert args.scene_bg is True
@@ -49,38 +48,31 @@ def test_the_defaults_are_read_off_the_models_rather_than_re_literalled() -> Non
     assert args.oracle_throw_standoff == ORACLE_THROW_STANDOFF
 
 
-def test_the_default_scene_is_the_coincident_one() -> None:
-    """The default matters more here than defaults usually do: under stock, a cube that
-    lands in the bin is a scored FAILURE, so a run that defaulted to stock would be
-    rewarding the throw for missing."""
-    args = _build_parser().parse_args([])
-    assert Tossing3DTaskConfig(args.task_config) is Tossing3DTaskConfig.COINCIDENT
-
-
-def test_stock_stays_selectable() -> None:
-    args = _build_parser().parse_args(["--task-config", "stock"])
-    assert Tossing3DTaskConfig(args.task_config) is Tossing3DTaskConfig.STOCK
-
-
-def test_an_unknown_task_config_is_rejected_rather_than_falling_back_to_stock() -> None:
-    """Silently falling back would produce a stock run labelled as the coincident one --
-    the exact class of mistake this domain's default exists to remove."""
+def test_there_is_no_scene_selection_flag() -> None:
+    """**The retired choice, pinned as an absence.** `--task-config` offered `stock`
+    against `coincident`; once upstream's bin fix landed on `Tossing3D-o1.json` itself
+    the two loaded the same scene, so the flag claimed a distinction that no longer
+    existed. Asserted rather than merely deleted, because a flag that silently came back
+    would bring the fork back with it -- and argparse rejecting the string is what stops
+    an old command line from being read as a scene choice that was honoured."""
     with pytest.raises(SystemExit):
-        _build_parser().parse_args(["--task-config", "made-up"])
+        _build_parser().parse_args(["--task-config", "stock"])
 
 
-def test_the_oracle_standoff_is_overridable_for_the_stock_scene() -> None:
-    """1.35 solves the coincident scene and fails on stock, where the bin sits 23 cm
-    further out; 1.55 is the measured value that solves stock."""
+def test_the_oracle_standoff_is_overridable() -> None:
+    """1.35 is upstream's own value and solves the shipped scene. It stays overridable
+    because the band-calibration tests drive standoff directly, and because the value
+    that solves is a property of the scene's geometry rather than a constant of the
+    domain."""
     args = _build_parser().parse_args(["--oracle-throw-standoff", "1.55"])
     assert args.oracle_throw_standoff == pytest.approx(1.55)
 
 
 def test_the_global_cli_registers_this_domains_flags_when_env_is_tossing3d() -> None:
     args = Cli.parse_args(
-        argv=["--env", "tossing3d", "--method", "skill-oracle", "--task-config", "stock"]
+        argv=["--env", "tossing3d", "--method", "skill-oracle", "--canonical-seed", "7"]
     )
-    assert args.task_config == "stock"
+    assert args.canonical_seed == 7
     assert args.num_test_tasks == 10
 
 
