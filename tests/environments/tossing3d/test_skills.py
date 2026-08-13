@@ -29,7 +29,7 @@ from hitl_pmp.environments.tossing3d.skills import (
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import COINCIDENT_BIN_X, state
+from .observations import BIN_X, state
 
 _ENV = Tossing3DEnvironment()
 _SKILLS = Tossing3DSkills
@@ -200,8 +200,8 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
 
 def test_param_dims_put_the_only_learnable_dial_on_the_walk_not_the_throw() -> None:
     """`Toss` has zero parameters on purpose: both arm configurations are upstream's own
-    and this package interpolates nothing. The standoff is the dial the coincident
-    scene's own sweep actually resolves, so that is where the parameter lives."""
+    and this package interpolates nothing. The standoff is the dial the scene's own sweep
+    actually resolves, so that is where the parameter lives."""
     assert _SKILLS.PICK.param_dim == 2
     assert _SKILLS.MOVE_TO_THROW_POSE.param_dim == 1
     assert _SKILLS.TOSS.param_dim == 0
@@ -257,7 +257,7 @@ def test_the_sampler_draws_both_satisfying_and_unsatisfying_standoffs() -> None:
         assert THROW_STANDOFF_BOUNDS[0] <= standoff <= THROW_STANDOFF_BOUNDS[1]
         outcomes.append(
             RobotAtSuccessfulThrowPoseClassifier.holds(
-                state=state(base_x=COINCIDENT_BIN_X - standoff),
+                state=state(base_x=BIN_X - standoff),
                 robot=_ENV.robot,
                 target=_ENV.bin,
                 goal_region=_ENV.goal_region,
@@ -319,7 +319,7 @@ def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:
         standoff / 1000
         for standoff in range(int(low * 1000), int(high * 1000))
         if RobotAtSuccessfulThrowPoseClassifier.holds(
-            state=state(base_x=COINCIDENT_BIN_X - standoff / 1000),
+            state=state(base_x=BIN_X - standoff / 1000),
             robot=_ENV.robot,
             target=_ENV.bin,
             goal_region=_ENV.goal_region,

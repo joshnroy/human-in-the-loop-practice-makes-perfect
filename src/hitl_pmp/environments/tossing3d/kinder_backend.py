@@ -80,12 +80,11 @@ renderer for.
 
 import os
 from collections.abc import Mapping, MutableMapping, Sequence
-from pathlib import Path
 from types import ModuleType
 from typing import Any, ClassVar
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 # A DISPLAY only has to *exist* -- nothing is ever drawn to it. See the module docstring.
 FALLBACK_DISPLAY = ":0"
@@ -214,7 +213,6 @@ class KinderBackend(BaseModel):
     arm_step_limit: ClassVar[int] = 200
 
     env_id: str = "kinder/Tossing3D-o1-v0"
-    task_config_path: Path | None = None
     scene_bg: bool = True
     camera: str = DEFAULT_CAMERA
     render_mode: str = "rgb_array"
@@ -311,15 +309,16 @@ class KinderBackend(BaseModel):
         """
         api = self.api()
         if self._raw_env is None:
-            overrides: dict[str, Any] = {}
-            if self.task_config_path is not None:
-                overrides["task_config_path"] = str(self.task_config_path)
+            # No `task_config_path` override: this domain runs whatever scene the
+            # installed KINDER registers for `env_id`. See
+            # `Tossing3DEnvironment.backend` for why the choice was retired, and
+            # `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` for
+            # what stops a pin bump changing that scene silently.
             self._raw_env = api.kinder.make(
                 self.env_id,
                 render_mode=self.render_mode,
                 scene_bg=self.scene_bg,
                 allow_state_access=self.allow_state_access,
-                **overrides,
             )
             object_centric = self._object_centric()
             available = list(getattr(object_centric, "camera_names", []))
@@ -631,31 +630,3 @@ class KinderBackend(BaseModel):
         if self._state is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no state.")
         return self._state
-
-
-class Tossing3DSceneFiles(BaseModel):
-    """Where this repo's own task JSON lives, resolved from the package.
-
-    `scripts/task_configs/Tossing3D-o1-coincident.json` is *not* duplicated into the
-    package: it landed on `main` in #69 as the file `scripts/tossing3d_oracle_demo.py`
-    drives, and two copies of a scene definition is exactly how a measurement ends up
-    attributed to the wrong geometry. The path is walked from `__file__` instead, and a
-    miss raises with the resolved path rather than falling back to stock -- silently
-    running the stock scene under the coincident scene's name is the one failure mode
-    this whole domain exists to avoid.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    # src/hitl_pmp/environments/tossing3d/kinder_backend.py -> repo root is 5 up.
-    repo_root: Path = Field(default_factory=lambda: Path(__file__).resolve().parents[4])
-
-    def coincident_task_config(self) -> Path:
-        path = self.repo_root / "scripts" / "task_configs" / "Tossing3D-o1-coincident.json"
-        if not path.is_file():
-            raise FileNotFoundError(
-                f"the coincident Tossing3D task config is missing: {path}. It ships in "
-                "this repo at scripts/task_configs/ and is shared with "
-                "scripts/tossing3d_oracle_demo.py; this domain does not keep a second copy."
-            )
-        return path

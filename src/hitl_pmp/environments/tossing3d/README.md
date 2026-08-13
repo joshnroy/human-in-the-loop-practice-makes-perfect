@@ -57,42 +57,52 @@ Ours, and therefore ours to defend:
   from live state instead of pinned to one bin position.
 - **The `[skill_id, param_0, param_1]` action encoding**, the `State` schema, and the
   `scene` object that carries the episode seed.
-- **The default of the coincident task config** (see below).
+- **Nothing about the scene itself.** This domain used to ship its own task JSON; it
+  no longer does (see below).
 - `H_eval = 3 + 2` (`problem.py`).
 
-## The single most misreadable thing about this domain
+## The scene, and the defect it used to have
 
-**On upstream's stock `o1`, a cube that lands in the bin is a scored failure.** The goal
-predicate is `["on", "cube_0", "blocks_goal_region"]` — a *ground region* that the bin
-merely sits near. Upstream commit `1183de7` moved `bin_init_region` from x = 2.0 to
-x = 2.23 and left `blocks_goal_region` behind, so the bin now sits past the box that
-scores. Upstream's own prose (`docs/envs/Tossing3D.md:8`, "must toss the object into a
-bin") describes the pre-`1183de7` scene.
+This domain runs whatever `Tossing3D-o1.json` the installed KINDER registers. It selects
+**no** scene of its own and passes no `task_config_path`. That is a deliberate decision
+with a real cost, and both halves are worth knowing before touching anything here.
 
-So the default here is **`--task-config coincident`**:
-`scripts/task_configs/Tossing3D-o1-coincident.json`, upstream's own `o1` with
-`bin_init_region` put back to x = 2.0 and `blocks_goal_region` left byte-identical.
-x = 2.0 is a pairing upstream itself still ships (`Tossing3D-o2.json`), so this is not an
-invented scene; and it reverts the edit that caused the drift rather than compensating
-for it. Measured live, the two boxes then agree to 0.1 mm.
+**The defect.** The goal predicate is `["on", "cube_0", "blocks_goal_region"]` — a
+*ground region* that the bin merely sits near, never the bin itself. Upstream commit
+`1183de7` moved `bin_init_region` from x = 2.0 to x = 2.23 and left `blocks_goal_region`
+behind, so the bin came to sit 23 cm past the box that scores. **A cube that landed in
+the bin was a scored failure**, and only a throw that missed the bin scored at all;
+training against that scene would have rewarded missing. Upstream's own prose
+(`docs/envs/Tossing3D.md:8`, "must toss the object into a bin") describes the
+pre-`1183de7` scene, and was correct when it was written.
 
-Training against stock would reward the throw for **missing the bin**, which is why the
-default is not merely a preference.
+**The fix, and why the workaround it replaced is gone.** This repo used to ship its own
+`scripts/task_configs/Tossing3D-o1-coincident.json` — upstream's `o1` with the bin put
+back to x = 2.0 — selectable against upstream's through a two-member `Tossing3DTaskConfig`
+enum (`STOCK` / `COINCIDENT`). Upstream then fixed it for real, `kindergarden` PR #126,
+**by editing `Tossing3D-o1.json` itself rather than adding a variant**. Both enum members
+therefore came to load the same scene, and two tests asserting the contrast between them
+broke with nobody having edited them. Josh's call was to take upstream's config as the
+config rather than vendor a pre-fix scene to keep the comparison alive, so the enum, the
+`--task-config` flag and this repo's copy of the scene are all retired.
 
-`--task-config stock` stays selectable, and is what every number in
-`docs/kinder-environment-validation.md` was measured against. **Never compare a number
-taken under one config against one taken under the other**: moving the bin 23 cm nearer
-puts it in the flight path, so it changes the physics, not only the scoring. Concretely,
-at standoff 1.35, seed 125:
+**The cost, stated rather than left implicit.** `STOCK` meant "whatever the submodule
+ships", so its meaning moved with the `reference/kindergarden` pin — which is exactly how
+this collapsed unnoticed. Taking upstream's config accepts that coupling for the whole
+domain: a pin bump can now change the geometry every measured number was taken under.
+`test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` reads the installed
+KINDER's own task JSON and fails loudly if `bin_init_region` ever comes off
+`blocks_goal_region`'s centre again, so the coupling is observable rather than silent.
+`test_the_bin_and_the_goal_region_coincide_in_the_shipped_scene` is the live counterpart,
+measured off the compiled MuJoCo model after inflation and sampling.
 
-| | coincident (default) | stock |
-| --- | --- | --- |
-| cube at rest | x = 1.9902, z = 0.0444 | x = 2.2197, z = 0.0444 |
-| where that is | inside the bin, inside the goal box | inside the bin, 7 cm past the goal box |
-| `_check_goals()` | **True** | **False** |
-
-z = 0.0444 in both cases is the bin's interior floor (0.02 m bottom panel plus the cube's
-0.025 m half-extent), i.e. the cube is *in* the bin either way. Only the verdict differs.
+At standoff 1.35, seed 125, on the shipped scene the cube comes to rest at x = 1.9902,
+z = 0.0444 — inside the bin, inside the goal box, `_check_goals()` **True**. z = 0.0444
+is the bin's interior floor (0.02 m bottom panel plus the cube's 0.025 m half-extent).
+On the pre-fix scene the same throw rested at x = 2.2197, also inside the bin, and scored
+**False**. **Never compare a number measured before PR #126 against one measured after**:
+moving the bin 23 cm changes the flight path, so it changed the physics and not only the
+scoring.
 
 ## Rewinding: `set_state` versus `snapshot`/`restore`
 
@@ -190,8 +200,8 @@ scripts/with_env.sh python -m pytest tests/environments/tossing3d/ -q
   `Metrics.num_human_interventions()` reports `(0.0, 0)` because none is *representable*,
   not because none was needed.
 - **`o2` is not supported.** It needs two cubes in the goal region; the symbolic layer
-  here is single-cube. The CLI accepts `--variant o2` because the backend does, but the
-  goal would be under-specified, and `--task-config coincident` refuses it outright.
+  here is single-cube. `Tossing3DEnvironment.backend()` refuses `--variant o2` outright
+  rather than running an under-specified goal.
 - **The oracle's weak link is the grasp, not the throw.** `pick_shelf` is marginal on
   some scene seeds — a previously recorded pair, seed 1 losing the cube during the base
   move and seed 3 never releasing it. Per-seed solve counts should be read with that in

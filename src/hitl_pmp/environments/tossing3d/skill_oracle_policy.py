@@ -19,13 +19,15 @@ publishes:
   test, and is the standoff every measured number in `docs/kinder-environment-validation.md`
   and `docs/tossing3d-integration-status.md` was taken at.
 
-**1.35 does not solve the stock scene, and that is the point of the domain rather than a
-defect in the oracle.** Under `--task-config stock` the bin sits 23 cm further out, the
-cube lands *in* it at x = 2.2197, and `_check_goals()` is `False` -- landing in the bin is
-a scored failure there. Under the default coincident config the same standoff lands at
-x = 1.9902 and scores `True`. The oracle is tuned for the default; running it on stock is
-expected to fail, and `Tossing3DCli` exposes `--oracle-throw-standoff` so the stock scene
-can be driven at a standoff that does solve it (1.55, measured).
+**1.35 lands the cube at x = 1.9902, inside the bin and inside the goal box, and scores
+`True`.** That used to be a contrast: on the scene KINDER shipped before the upstream bin
+fix (`kindergarden` PR #126, now carried on this repo's `reference/kindergarden` pin) the
+bin sat 23 cm further out, the same standoff put the cube *in* it at x = 2.2197, and
+`_check_goals()` was `False` -- landing in the bin was a scored failure. There is one
+scene now and no way to select the pre-fix one, so 1.35 simply solves it; see
+`Tossing3DEnvironment.backend` for why the choice was retired rather than
+preserved. `Tossing3DCli` still exposes `--oracle-throw-standoff`, which is what the
+band-calibration tests drive off it.
 """
 
 import numpy as np

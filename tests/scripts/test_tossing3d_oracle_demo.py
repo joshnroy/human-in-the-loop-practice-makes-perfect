@@ -25,13 +25,9 @@ import pytest
 
 from scripts.tossing3d_oracle_demo import (
     COINCIDENCE_TOLERANCE_M,
-    COINCIDENT_TASK_CONFIG,
-    CONTRAST_LINES,
-    DEFAULT_ENV_ID,
+    CONTRAST_LINE,
     DEFAULT_STANDOFFS,
     GOAL_REGION_RGBA,
-    STOCK_TASK_CONFIG,
-    TASK_CONFIGS,
     Coincidence,
     Footprint,
     GoalRegion,
@@ -41,7 +37,6 @@ from scripts.tossing3d_oracle_demo import (
     bin_footprint,
     caption_lines,
     configure_headless_rendering,
-    contrast_line,
     find_goal_region_site,
     footprint_from_extents,
     fps_from_metadata,
@@ -50,8 +45,6 @@ from scripts.tossing3d_oracle_demo import (
     import_kinder,
     parse_args,
     print_and_write_grid,
-    require_task_config_applies,
-    resolve_task_config,
     reveal_goal_region,
     should_keep_frame,
     site_names,
@@ -66,9 +59,15 @@ SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "tossing3d_oracl
 # a 1 mm-wide `bin_init_region`, so its footprint shifts by a fraction of a millimetre
 # per seed. Both seeds are recorded rather than one, because a single constant here
 # would misrepresent a quantity that genuinely varies.
+#
+# `PRE_FIX_BIN_X` is the geometry `kindergarden` PR #126 removed -- the bin sitting
+# 23 cm off the region that scores. It is kept, under its own name, because it is the
+# non-vacuity check for `verify_coincidence`: a verifier that accepted it would be
+# asserting nothing. `LIVE_BIN_X` is the same measurement taken with the bin on the goal
+# region, which is what the installed KINDER now ships.
 LIVE_GOAL_X = (1.8500, 2.1500)
-LIVE_STOCK_BIN_X = {0: (2.080813, 2.380813), 125: (2.080101, 2.380101)}
-LIVE_COINCIDENT_BIN_X = {0: (1.850813, 2.150813), 125: (1.850101, 2.150101)}
+PRE_FIX_BIN_X = {0: (2.080813, 2.380813), 125: (2.080101, 2.380101)}
+LIVE_BIN_X = {0: (1.850813, 2.150813), 125: (1.850101, 2.150101)}
 
 
 def _frames(*, count: int = 3, width: int = 8, height: int = 6) -> list[np.ndarray]:
@@ -264,9 +263,12 @@ def test_should_keep_frame_keeps_every_nth_starting_at_the_first() -> None:
 # --- argument parsing -------------------------------------------------------------
 
 
-def test_the_default_run_is_the_contrasting_pair() -> None:
-    """The two clips exist because the contrast is the finding; rendering only one
-    of them by default would lose it."""
+def test_the_default_standoffs_are_the_inherited_pair() -> None:
+    """Pinned as-is, deliberately. This pair was chosen on the pre-fix scene, where
+    1.35 landed the cube in the bin and scored `False` while 1.55 missed the bin and
+    scored `True` -- a contrast the fixed scene no longer produces. Retiring the
+    `--task-config` flag did not re-measure them, so the defaults are inherited rather
+    than justified and this test says so instead of asserting a reason that is gone."""
     args = parse_args(argv=[])
     assert args.standoffs == [1.35, 1.55]
 
@@ -453,8 +455,8 @@ def test_revealing_the_region_touches_no_other_site() -> None:
 
 
 def test_revealing_the_region_reports_its_measured_x_extent() -> None:
-    """`x in [1.85, 2.15]` is the number that makes the clip legible -- the cube
-    rests at x=2.2197, outside it, while visibly inside the bin."""
+    """`x in [1.85, 2.15]` is the number that makes the clip legible: it is where the
+    bin now sits, so a cube seen coming to rest inside the bin is a cube seen scoring."""
     region = reveal_goal_region(model=_tossing3d_model(), rgba=GOAL_REGION_RGBA)
     assert (round(region.x_min, 4), round(region.x_max, 4)) == (1.85, 2.15)
 
@@ -468,8 +470,8 @@ def test_revealing_the_region_reports_the_site_it_changed() -> None:
 
 
 def test_the_goal_region_overlay_is_on_by_default() -> None:
-    """The committed clips carry it: the whole point is that "lands in the bin but
-    scores a failure" reads without the caption."""
+    """The clips carry it: where the cube came to rest only means anything once the
+    box that scores is visible in the same frame."""
     assert parse_args(argv=[]).goal_region is True
 
 
@@ -526,17 +528,18 @@ def test_the_caption_reports_check_goals_verbatim() -> None:
     assert "_check_goals() = False" in missed
 
 
-def test_both_clips_carry_the_same_line_stating_the_contrast() -> None:
-    """A reader who opens only one of the two clips still has to be able to tell
-    that the throw which scores is the one that misses the bin."""
+def test_every_clip_carries_the_one_line_stating_the_mechanism() -> None:
+    """There is one scene, so there is one such line, and it holds whichever way the
+    verdict went: a reader who opens a single clip still learns what scoring means
+    here, rather than having to infer it from one rollout."""
     solved = caption_lines(
         standoff=1.55, rest=(2.0268, 0.0105, 0.0249), start_z=0.0249, bin_x=2.25, solved=True
     )
     missed = caption_lines(
         standoff=1.35, rest=(2.2197, 0.0103, 0.0444), start_z=0.0249, bin_x=2.25, solved=False
     )
-    assert contrast_line(task_config=STOCK_TASK_CONFIG) in solved
-    assert contrast_line(task_config=STOCK_TASK_CONFIG) in missed
+    assert CONTRAST_LINE in solved
+    assert CONTRAST_LINE in missed
 
 
 def test_the_caption_names_the_shaded_box_when_the_overlay_is_on() -> None:
@@ -572,117 +575,34 @@ def test_the_caption_says_nothing_about_a_region_that_is_not_drawn() -> None:
     assert without == with_overlay[: len(without)]
 
 
-# --- the coincident task config: provenance ---------------------------------------
+# --- there is one scene, so there is nothing to select ----------------------------
 #
-# The whole change is one number. `bin_init_region` moves from x = 2.23 to x = 2.0,
-# which is not a value invented here: upstream's own `Tossing3D-o2.json` already ships
-# the bin there, alongside a `blocks_goal_region` byte-identical to o1's. So this is a
-# pairing upstream publishes, and the tests below pin exactly that -- the goal region
-# untouched, the bin moved, and nothing else different.
+# This script used to carry a `--task-config` flag choosing between the KINDER-registered
+# `Tossing3D-o1.json` and a copy of it, committed here, that moved `bin_init_region` back
+# onto the region that scores. Upstream fixed the defect on the stock file itself
+# (`kindergarden` PR #126, carried by the `reference/kindergarden` pin), the committed
+# copy was retired, and the flag went with it. What is worth pinning now is that the
+# retirement is complete: no scene selection at all, and an old command line that still
+# passes the flag fails loudly rather than silently rendering something else.
 
 
-def test_the_shipped_task_config_exists_and_is_json() -> None:
-    path = TASK_CONFIGS[COINCIDENT_TASK_CONFIG]
-    assert path is not None
-    assert json.loads(path.read_text())["regions"]
+def test_the_demo_no_longer_selects_a_scene() -> None:
+    """It renders whatever the installed KINDER ships, so there is no config to name."""
+    assert not hasattr(parse_args(argv=[]), "task_config")
 
 
-def test_the_shipped_config_puts_the_bin_where_upstreams_own_o2_puts_it() -> None:
-    """x = 2.0 is upstream's number, from `Tossing3D-o2.json`, not one invented here."""
-    path = TASK_CONFIGS[COINCIDENT_TASK_CONFIG]
-    assert path is not None
-    config = json.loads(path.read_text())
-    assert config["regions"]["bin_init_region"]["ranges"] == [[2.0, -0.0005, 2.001, 0.0005]]
-
-
-def test_the_shipped_config_leaves_the_goal_region_exactly_as_upstream_has_it() -> None:
-    """The bin moves; the scoring region does not. Changing the goal region instead
-    would move the defect rather than fix it, and would also make every number ever
-    measured against this domain incomparable."""
-    path = TASK_CONFIGS[COINCIDENT_TASK_CONFIG]
-    assert path is not None
-    goal = json.loads(path.read_text())["regions"]["blocks_goal_region"]
-    assert goal == {
-        "target": "ground",
-        "ranges": [[1.90, -0.10, 0.0, 2.10, 0.10, 0.10]],
-        "yaw_ranges": [[-360, 360]],
-        "rgba": [0.2, 0.6, 0.2, 0.0],
-    }
-
-
-def test_the_shipped_config_keeps_the_single_cube_goal_predicate() -> None:
-    """`o2`'s bin position, but not `o2`'s task: this is still one-cube `o1`."""
-    path = TASK_CONFIGS[COINCIDENT_TASK_CONFIG]
-    assert path is not None
-    config = json.loads(path.read_text())
-    assert config["goal_state"] == [["on", "cube_0", "blocks_goal_region"]]
-    assert list(config["objects"]["cube"]) == ["cube_0"]
-
-
-# --- selecting a task config ------------------------------------------------------
-
-
-def test_the_stock_config_is_the_default_and_selects_no_override() -> None:
-    """`None` means "let KINDER use the path it registered", so the stock run stays
-    byte-identical to one that had never heard of this flag."""
-    assert parse_args(argv=[]).task_config == STOCK_TASK_CONFIG
-    assert resolve_task_config(name=STOCK_TASK_CONFIG) is None
-
-
-def test_the_coincident_config_resolves_to_a_file_that_is_really_there() -> None:
-    path = resolve_task_config(name=COINCIDENT_TASK_CONFIG)
-    assert path is not None
-    assert path.is_file()
-
-
-def test_an_unknown_task_config_raises_rather_than_silently_using_stock() -> None:
-    """A typo must not quietly produce a stock run labelled as the fixed one -- that
-    is precisely the failure this whole PR is about."""
-    with pytest.raises(ValueError, match="coincident-bin-goal"):
-        resolve_task_config(name="coincident")
-
-
-def test_the_task_config_choice_is_constrained_at_parse_time() -> None:
+def test_the_retired_flag_is_rejected_rather_than_quietly_ignored() -> None:
+    """A command line copied out of an old experiment log must fail at parse time. The
+    alternative -- accepting and ignoring it -- would render the shipped scene under a
+    caption and a filename claiming a config that no longer exists."""
     with pytest.raises(SystemExit):
-        parse_args(argv=["--task-config", "not-a-config"])
+        parse_args(argv=["--task-config", "coincident-bin-goal"])
 
 
-def test_the_coincident_config_is_only_offered_for_the_variant_it_was_measured_on() -> None:
-    """It is o1 with o2's bin. Pointing it at another env id would run o1's scene under
-    another variant's name, so it raises instead of quietly doing that."""
-    with pytest.raises(ValueError, match="kinder/Tossing3D-o2-v0"):
-        require_task_config_applies(name=COINCIDENT_TASK_CONFIG, env_id="kinder/Tossing3D-o2-v0")
-
-
-def test_the_coincident_config_is_accepted_for_the_variant_it_targets() -> None:
-    require_task_config_applies(name=COINCIDENT_TASK_CONFIG, env_id=DEFAULT_ENV_ID)
-
-
-def test_the_stock_config_places_no_constraint_on_the_env_id() -> None:
-    """Stock overrides nothing, so it cannot disagree with anything."""
-    require_task_config_applies(name=STOCK_TASK_CONFIG, env_id="kinder/Tossing3D-o2-v0")
-
-
-def test_each_config_writes_to_its_own_clip_so_neither_clobbers_the_other() -> None:
-    """The contrast this PR exists to show is the same standoff on both configs, so
-    both clips have to survive in the same directory."""
-    assert gif_filename(standoff=1.35, task_config=STOCK_TASK_CONFIG) != gif_filename(
-        standoff=1.35, task_config=COINCIDENT_TASK_CONFIG
-    )
-
-
-def test_the_stock_filename_is_unchanged_so_the_existing_clips_stay_regenerable() -> None:
-    assert (
-        gif_filename(standoff=1.35, task_config=STOCK_TASK_CONFIG)
-        == "tossing3d_oracle_standoff_1p35.gif"
-    )
-
-
-def test_the_coincident_filename_names_the_config_it_came_from() -> None:
-    assert (
-        gif_filename(standoff=1.35, task_config=COINCIDENT_TASK_CONFIG)
-        == "tossing3d_oracle_coincident_standoff_1p35.gif"
-    )
+def test_the_filename_is_a_function_of_the_standoff_and_nothing_else() -> None:
+    """The config token is gone from the name, which is what keeps the clips already
+    committed under these names regenerable by this script."""
+    assert list(inspect.signature(gif_filename).parameters) == ["standoff"]
 
 
 # --- live geometry: is the bin actually where the goal region is? -----------------
@@ -730,7 +650,7 @@ class _FakeGeomModel:
 
 
 def _bin_model() -> _FakeGeomModel:
-    """The real seed-0 coincident bin: a 0.3 m base plus four walls, centred on 2.000813."""
+    """The real seed-0 bin: a 0.3 m base plus four walls, centred on 2.000813."""
     return _FakeGeomModel(
         bodies=["floor", "bin_0", "bin_0", "bin_0", "bin_0", "bin_0", "cube_0"],
         centers=[0.0, 2.000813, 2.000813, 2.000813, 1.860813, 2.140813, 0.625],
@@ -743,7 +663,7 @@ def test_the_bin_footprint_is_read_off_the_geoms_of_the_bin_body() -> None:
     on the body is what keeps them out of the answer."""
     model = _bin_model()
     footprint = bin_footprint(model=model, data=model, body_name="bin_0")
-    assert (round(footprint.x_min, 6), round(footprint.x_max, 6)) == LIVE_COINCIDENT_BIN_X[0]
+    assert (round(footprint.x_min, 6), round(footprint.x_max, 6)) == LIVE_BIN_X[0]
 
 
 def test_a_missing_bin_body_raises_rather_than_reporting_an_empty_footprint() -> None:
@@ -807,41 +727,40 @@ def _coincidence(*, goal: tuple[float, float], bin_x: tuple[float, float]) -> Co
     )
 
 
-def test_the_stock_config_overlaps_only_partly_and_that_is_the_whole_defect() -> None:
-    """7.0 cm of a 30 cm box, at seed 0. The two boxes are not disjoint -- they just
-    have no sliver a cube can be in that is both in the bin and in the goal."""
-    coincidence = _coincidence(goal=LIVE_GOAL_X, bin_x=LIVE_STOCK_BIN_X[0])
+def test_the_pre_fix_geometry_overlapped_only_partly_and_that_was_the_defect() -> None:
+    """7.0 cm of a 30 cm box, at seed 0. The two boxes were not disjoint -- they just
+    had no sliver a cube could be in that was both in the bin and in the goal."""
+    coincidence = _coincidence(goal=LIVE_GOAL_X, bin_x=PRE_FIX_BIN_X[0])
     assert coincidence.overlap == pytest.approx(0.069187, abs=1e-6)
 
 
-def test_the_stock_geometry_is_rejected_by_the_coincidence_check() -> None:
-    """The non-vacuity check for everything below it: a verifier that passed on stock
-    would be asserting nothing at all."""
-    for seed, bin_x in LIVE_STOCK_BIN_X.items():
+def test_the_pre_fix_geometry_is_rejected_by_the_coincidence_check() -> None:
+    """The non-vacuity check for everything below it: a verifier that passed on the
+    geometry upstream's fix removed would be asserting nothing at all."""
+    for seed, bin_x in PRE_FIX_BIN_X.items():
         with pytest.raises(ValueError, match="do not coincide"):
             verify_coincidence(coincidence=_coincidence(goal=LIVE_GOAL_X, bin_x=bin_x))
-        assert seed in LIVE_STOCK_BIN_X
+        assert seed in PRE_FIX_BIN_X
 
 
-def test_the_coincident_geometry_passes_at_every_seed_measured() -> None:
-    for bin_x in LIVE_COINCIDENT_BIN_X.values():
+def test_the_shipped_geometry_passes_at_every_seed_measured() -> None:
+    for bin_x in LIVE_BIN_X.values():
         verify_coincidence(coincidence=_coincidence(goal=LIVE_GOAL_X, bin_x=bin_x))
 
 
 def test_the_measured_coincidence_gap_is_well_under_the_tolerance() -> None:
     """Not a threshold that had to be tuned to let the answer through: the worst
-    measured gap is 0.8 mm against a 5 mm tolerance, and stock misses by 231 mm."""
-    gaps = [
-        _coincidence(goal=LIVE_GOAL_X, bin_x=bin_x).gap for bin_x in LIVE_COINCIDENT_BIN_X.values()
-    ]
+    measured gap is 0.8 mm against a 5 mm tolerance, and the pre-fix bin missed by
+    231 mm."""
+    gaps = [_coincidence(goal=LIVE_GOAL_X, bin_x=bin_x).gap for bin_x in LIVE_BIN_X.values()]
     assert max(gaps) < COINCIDENCE_TOLERANCE_M / 5
-    assert min(_coincidence(goal=LIVE_GOAL_X, bin_x=b).gap for b in LIVE_STOCK_BIN_X.values()) > 0.2
+    assert min(_coincidence(goal=LIVE_GOAL_X, bin_x=b).gap for b in PRE_FIX_BIN_X.values()) > 0.2
 
 
 def test_the_coincidence_error_names_both_boxes_it_compared() -> None:
     """The message has to be enough to diagnose from, since this fires mid-run."""
     with pytest.raises(ValueError, match=r"2\.3808"):
-        verify_coincidence(coincidence=_coincidence(goal=LIVE_GOAL_X, bin_x=LIVE_STOCK_BIN_X[0]))
+        verify_coincidence(coincidence=_coincidence(goal=LIVE_GOAL_X, bin_x=PRE_FIX_BIN_X[0]))
 
 
 def test_a_bin_offset_by_more_than_the_tolerance_is_rejected() -> None:
@@ -850,56 +769,18 @@ def test_a_bin_offset_by_more_than_the_tolerance_is_rejected() -> None:
         verify_coincidence(coincidence=_coincidence(goal=(1.85, 2.15), bin_x=(1.86, 2.16)))
 
 
-# --- the caption, once there are two configs --------------------------------------
-
-
-def test_each_config_gets_its_own_contrast_line() -> None:
-    """The stock line says the toss that lands in the bin does *not* score. Reusing it
-    on the fixed config would caption the clip with the exact opposite of what it
-    shows."""
-    assert contrast_line(task_config=STOCK_TASK_CONFIG) != contrast_line(
-        task_config=COINCIDENT_TASK_CONFIG
-    )
-    assert set(CONTRAST_LINES) == set(TASK_CONFIGS)
-
-
-def test_the_caption_names_the_config_the_clip_was_rendered_on() -> None:
-    """Two clips of the same standoff with opposite verdicts are only readable if each
-    says which config it is."""
-    stock = " ".join(
-        caption_lines(
-            standoff=1.35,
-            rest=(2.2197, 0.0103, 0.0444),
-            start_z=0.0249,
-            bin_x=2.2301,
-            solved=False,
-            task_config=STOCK_TASK_CONFIG,
-        )
-    )
-    fixed = " ".join(
-        caption_lines(
-            standoff=1.35,
-            rest=(2.0, 0.0, 0.0444),
-            start_z=0.0249,
-            bin_x=2.0008,
-            solved=True,
-            task_config=COINCIDENT_TASK_CONFIG,
-        )
-    )
-    assert STOCK_TASK_CONFIG in stock
-    assert COINCIDENT_TASK_CONFIG in fixed
+# --- the caption's fixed line -----------------------------------------------------
 
 
 def test_the_caption_reports_the_bin_footprint_beside_the_goal_box() -> None:
     """Putting both bracketed ranges on one line is what lets a viewer read the
-    coincidence -- or, on stock, read that there isn't one."""
+    coincidence off the frame rather than take it on trust."""
     lines = caption_lines(
         standoff=1.35,
         rest=(2.0, 0.0, 0.0444),
         start_z=0.0249,
         bin_x=2.0008,
         solved=True,
-        task_config=COINCIDENT_TASK_CONFIG,
         goal_region=GoalRegion(name="ground_blocks_goal_region_region_0", x_min=1.85, x_max=2.15),
         bin_x_range=Footprint(x_min=1.850813, x_max=2.150813),
     )

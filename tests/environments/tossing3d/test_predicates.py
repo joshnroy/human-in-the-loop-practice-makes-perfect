@@ -32,7 +32,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
 )
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
 
-from .observations import BARRIER_X, COINCIDENT_BIN_X, CUBE_START_X, GOAL_REGION_BBOX, state
+from .observations import BARRIER_X, BIN_X, CUBE_START_X, GOAL_REGION_BBOX, state
 
 _ENV = Tossing3DEnvironment()
 
@@ -45,16 +45,19 @@ def _in_goal_region(*, x: float, y: float = 0.0, z: float = 0.0444) -> bool:
     )
 
 
-def test_in_goal_region_accepts_the_measured_coincident_landing() -> None:
-    """x = 1.9902, z = 0.0444 is where the oracle's cube comes to rest on the coincident
-    config at standoff 1.35 -- inside the bin, and inside the goal box. `_check_goals()`
-    says True there, so this must too."""
+def test_in_goal_region_accepts_the_measured_landing() -> None:
+    """x = 1.9902, z = 0.0444 is where the oracle's cube comes to rest on the shipped
+    scene at standoff 1.35 -- inside the bin, and inside the goal box.
+    `_check_goals()` says True there, so this must too."""
     assert _in_goal_region(x=1.9902, y=0.0105, z=0.0444)
 
 
-def test_in_goal_region_rejects_the_measured_stock_landing() -> None:
-    """The same throw on stock rests at x = 2.2197, past the goal box's 2.15 far edge,
-    and `_check_goals()` says False. Landing in the bin is a scored failure there."""
+def test_in_goal_region_rejects_a_landing_past_the_far_edge() -> None:
+    """x = 2.2197 is past the goal box's 2.15 far edge, so this must be False. It is a
+    measured point rather than an invented one: it is where this same throw came to rest
+    on the scene KINDER shipped before `kindergarden` PR #126, whose bin sat 23 cm too
+    far out -- a cube landing in that bin scored a failure, and `_check_goals()` agreed
+    with this predicate that it was outside the region."""
     assert not _in_goal_region(x=2.2197, y=0.0103, z=0.0444)
 
 
@@ -156,7 +159,7 @@ def test_reachable_reads_the_barriers_live_x_rather_than_a_constant() -> None:
 
 def _at_throw_pose(*, standoff: float, base_y: float = 0.0, **kwargs) -> bool:
     """Does the predicate hold for a base placed `standoff` metres in front of the bin?"""
-    bin_x = kwargs.pop("bin_x", COINCIDENT_BIN_X)
+    bin_x = kwargs.pop("bin_x", BIN_X)
     return RobotAtSuccessfulThrowPoseClassifier.holds(
         state=state(base_x=bin_x - standoff, base_y=base_y, bin_x=bin_x, **kwargs),
         robot=_ENV.robot,
@@ -199,11 +202,12 @@ def test_the_accepted_band_moves_when_the_bin_moves() -> None:
     The band is derived from live scene geometry plus two fixed margins, so shifting the
     bin shifts the whole band by exactly the same amount. A predicate that instead
     hard-coded `[1.15, 1.375]` -- the *value* the derivation happens to produce on the
-    coincident config -- would hold the band still and be silently wrong the moment
-    kindergarden#126 lands."""
+    scene as shipped -- would hold the band still and be silently wrong the moment the bin
+    moves. That is not hypothetical: kindergarden#126 has since moved it, which is exactly
+    the event this test was written against."""
     shift = 0.25
     here = _accepted_band()
-    there = _accepted_band(bin_x=COINCIDENT_BIN_X + shift)
+    there = _accepted_band(bin_x=BIN_X + shift)
     assert there[0] == pytest.approx(here[0] + shift, abs=2e-3)
     assert there[1] == pytest.approx(here[1] + shift, abs=2e-3)
 
@@ -221,7 +225,7 @@ def test_the_accepted_band_moves_when_the_goal_region_moves() -> None:
 
 def test_the_accepted_band_matches_the_measured_five_of_five_core() -> None:
     """**The discriminating test.** PR #105's finer sweep (5 scene seeds, 0.025 m
-    resolution, coincident config) found a 5/5 core of `[1.150, 1.375]`, narrower than the
+    resolution, bin on the goal region) found a 5/5 core of `[1.150, 1.375]`, narrower than the
     geometric band `[1.125, 1.425]` on both ends -- 2/5 and 3/5 partial-solving at the old
     edges, not the 3/3-or-nothing the coarser 48-episode grid implied. The predicate now
     trims the goal box by `THROW_OVERSHOOT_MARGIN`/`THROW_SHORTFALL_MARGIN` to land exactly
@@ -262,7 +266,7 @@ def test_the_oracle_standoff_is_inside_the_accepted_band() -> None:
 def test_the_band_accepts_every_standoff_measured_to_solve(*, standoff: float) -> None:
     """PR #105's finer sweep (5 scene seeds, 0.025 m resolution) solved 5/5 at every point
     from 1.150 through 1.375. These four sit safely inside that 5/5 core -- a millimetre or
-    more clear of both edges, so this test is not sensitive to `COINCIDENT_BIN_X`'s own
+    more clear of both edges, so this test is not sensitive to `BIN_X`'s own
     0.1 mm offset from a round 2.0 -- while `test_the_accepted_band_matches_the_measured_
     five_of_five_core` pins the edges themselves via a fine scan. A predicate rejecting one
     of these four would be calling a pose a failure that demonstrably scores on every seed
@@ -331,7 +335,7 @@ def test_the_predicate_rejects_a_diagonal_approach_at_the_right_distance() -> No
     `MoveToThrowPose` pins `rot = 0` and therefore always ends on the bin's axis."""
     offset = 1.35 / np.sqrt(2)
     assert not RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state(base_x=COINCIDENT_BIN_X - offset, base_y=offset),
+        state=state(base_x=BIN_X - offset, base_y=offset),
         robot=_ENV.robot,
         target=_ENV.bin,
         goal_region=_ENV.goal_region,

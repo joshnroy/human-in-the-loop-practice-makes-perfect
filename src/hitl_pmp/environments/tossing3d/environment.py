@@ -30,8 +30,6 @@ restorable case, and anything that wants a general rewind is asking for somethin
 domain cannot do.
 """
 
-from enum import Enum
-from pathlib import Path
 from typing import Any, ClassVar
 
 import numpy as np
@@ -41,38 +39,7 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
-from .kinder_backend import (
-    ControllerRun,
-    KinderBackend,
-    KinderObservation,
-    Tossing3DSceneFiles,
-)
-
-
-class Tossing3DTaskConfig(Enum):
-    """Which scene JSON KINDER loads.
-
-    `COINCIDENT` is the default, and the reason is not a preference. Under `STOCK`, the
-    bin sits at x = 2.23 while `blocks_goal_region` inflates to x in [1.85, 2.15], so a
-    cube that lands **in the bin scores a failure** and only a cube that misses the bin
-    and lands on bare floor scores a success. Training against that would reward missing.
-
-    `COINCIDENT` is `scripts/task_configs/Tossing3D-o1-coincident.json`: upstream's own
-    `Tossing3D-o1.json` with `bin_init_region` put back to x = 2.0 and
-    `blocks_goal_region` left byte-identical. x = 2.0 is a pairing upstream itself still
-    ships (`Tossing3D-o2.json`), not an invention here, and it reverts the edit that
-    caused the drift (upstream `1183de7` moved the bin and left the region behind) rather
-    than compensating for it. Measured live, the two boxes then agree to 0.1 mm.
-
-    `STOCK` stays selectable, and is what every number in
-    `docs/kinder-environment-validation.md` was measured against. **Never compare a
-    number taken under one config against one taken under the other**: moving the bin
-    23 cm nearer puts it in the flight path, so it changes the physics, not only the
-    scoring.
-    """
-
-    STOCK = "stock"
-    COINCIDENT = "coincident"
+from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
 
 
 class Tossing3DSnapshot(BaseModel):
@@ -159,7 +126,6 @@ class Tossing3DEnvironment(Environment):
     # unused slots are ignored rather than validated, exactly as Tossing Room does.
     action_space: ClassVar[Box] = Box(-np.inf, np.inf, (3,))
 
-    task_config: Tossing3DTaskConfig = Tossing3DTaskConfig.COINCIDENT
     variant: str = "o1"
     scene_bg: bool = True
     # Upstream's own `test_pick_ground_toss` seed, and the one every number in this
@@ -174,37 +140,50 @@ class Tossing3DEnvironment(Environment):
         """The live simulator handle, built on first use.
 
         Built lazily rather than in `model_post_init` so that constructing a
-        `Tossing3DEnvironment` -- which every offline test does -- neither imports KINDER
-        nor resolves a task-config path.
+        `Tossing3DEnvironment` -- which every offline test does -- does not import KINDER.
+
+        **This domain runs the scene the installed KINDER ships, and no longer selects
+        one.** There used to be a `Tossing3DTaskConfig` enum here, and no `task_config_path`
+        is passed now because there is nothing left to choose:
+
+        - Upstream commit `1183de7` had moved `bin_init_region` from x = 2.0 to x = 2.23
+          and left `blocks_goal_region` behind, so the bin sat 23 cm past the box that
+          scores and **a cube landing in the bin was a scored failure**. Training against
+          that scene would have rewarded missing the bin.
+        - This repo shipped `scripts/task_configs/Tossing3D-o1-coincident.json` to put the
+          bin back, and the enum's `COINCIDENT` selected it against `STOCK`, which passed
+          nothing and let KINDER load its own registered `Tossing3D-o1.json`.
+        - The fix then landed upstream -- `kindergarden` PR #126 -- **as an edit to
+          `Tossing3D-o1.json` itself rather than as a new variant**. Both enum members
+          therefore came to load the same scene, and two tests asserting the contrast
+          broke with nobody having edited them.
+
+        Josh's call was to keep it that way and to take upstream's file as the file, so
+        neither the enum nor this repo's copy of the scene survives.
+
+        **The cost of that, stated rather than implicit: the scene now moves with the
+        `reference/kindergarden` pin.** That coupling is exactly what made `STOCK`'s
+        meaning drift, and it is accepted here rather than unnoticed --
+        `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` pins the
+        property that matters (bin centred on the goal region) directly against the JSON
+        the installed KINDER ships, so a pin bump that moves the bin off the region again
+        fails loudly instead of silently re-breaking the domain.
+
+        `o2` is refused rather than silently run: its scene needs two cubes in the goal
+        region and this domain's symbolic layer is single-cube, so a run labelled `o2`
+        would be measuring something this package cannot describe.
         """
         if self._backend is None:
+            if self.variant != "o1":
+                raise ValueError(
+                    f"this domain's symbolic layer describes the o1 scene, not "
+                    f"{self.variant!r}; use --variant o1"
+                )
             self._backend = KinderBackend(
                 env_id=f"kinder/Tossing3D-{self.variant}-v0",
-                task_config_path=self.task_config_path(),
                 scene_bg=self.scene_bg,
             )
         return self._backend
-
-    def task_config_path(self) -> Path | None:
-        """The scene JSON to hand KINDER, or `None` to let it use the one it registered.
-
-        `STOCK` overrides nothing, so a stock run passes exactly what a run from before
-        this domain existed passed and cannot drift from it.
-
-        `COINCIDENT` is refused for any variant but `o1`, rather than silently no-oping:
-        the file is upstream's `o1` with one line changed, so it *describes* o1's scene,
-        and running it under `o2`'s env id would produce results labelled `o2` from o1's
-        geometry. (`o2` already ships its bin at x = 2.0 in any case.)
-        """
-        if self.task_config is Tossing3DTaskConfig.STOCK:
-            return None
-        if self.variant != "o1":
-            raise ValueError(
-                f"task config {self.task_config.value!r} describes the o1 scene, not "
-                f"{self.variant!r}; use --variant o1, or --task-config "
-                f"{Tossing3DTaskConfig.STOCK.value}"
-            )
-        return Tossing3DSceneFiles().coincident_task_config()
 
     def last_skill_error(self) -> str | None:
         """Why the most recent `take_action` was a no-op, or `None` if it was not one.

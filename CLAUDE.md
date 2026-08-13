@@ -182,8 +182,30 @@ Four traps, each of which costs an hour:
   the checkout. Automatic and idempotent, but it needs network and a few minutes.
 
 `docs/kinder-environment-validation.md` records what was actually measured at
-upstream `main` — including that a cube landing **in** the bin scores a **failure**,
-which is the single most misreadable thing about `Tossing3D`.
+upstream `main` — including that a cube landing **in** the bin scored a **failure**,
+which was for months the single most misreadable thing about `Tossing3D`.
+
+**That is no longer true at the pin this repo runs, and the way it stopped being true
+is the part worth remembering.** `Tossing3D-o1`'s goal is `["on", "cube_0",
+"blocks_goal_region"]` — a *ground region*, which the bin merely sits near — and upstream
+commit `1183de7` moved `bin_init_region` from x = 2.0 to x = 2.23 while leaving
+`blocks_goal_region` at x ∈ [1.85, 2.15] after inflation. The bin therefore sat 23 cm
+past the box that scores, and only a throw that **missed** the bin scored. This repo
+shipped its own scene to put the bin back, selectable against upstream's through a
+`Tossing3DTaskConfig` enum. Upstream then fixed it — `kindergarden` PR #126 — **by
+editing `Tossing3D-o1.json` itself rather than adding a variant**, so both enum members
+came to load the same scene and two tests asserting the contrast broke with nobody
+having edited them. The enum and this repo's copy of the scene are both gone: upstream's
+config is the config, and `--task-config` no longer exists.
+
+**The consequence, which is a real cost and not a footnote: the scene now moves with the
+`reference/kindergarden` pin.** A pin bump can change the geometry every measured number
+was taken under. `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores`
+(`tests/environments/tossing3d/test_kinder_fidelity.py`) reads the installed KINDER's own
+task JSON and fails loudly if the bin ever comes off the scoring box again, so that
+coupling is observable rather than silent. Numbers in
+`docs/kinder-environment-validation.md` and `docs/tossing3d-integration-status.md` that
+were measured before PR #126 are left as published, with staleness notes beside them.
 
 **Where the two KINDER pins come from, and what they deliberately leave out.**
 
@@ -800,11 +822,13 @@ Silver's own term for Step 2.5 of the recipe it implements.
   the single module allowed to import KINDER, and only lazily. Three consequences worth
   knowing before touching it: one `take_action` is a whole *skill* (hundreds of MuJoCo
   ticks), `set_state` can only restore an **episode-initial** state and raises otherwise
-  (a flat `State` cannot carry MuJoCo's `qpos`/`qvel`), and it defaults to *our*
-  `scripts/task_configs/Tossing3D-o1-coincident.json` rather than upstream's stock `o1`,
-  under which a cube landing **in** the bin is a scored failure. Its simulator-backed
-  tests gate on `importlib.util.find_spec("kinder")` — the *import* package name; the
-  distribution is `kindergarden` — so they skip cleanly on CI.
+  (a flat `State` cannot carry MuJoCo's `qpos`/`qvel`), and it runs whatever
+  `Tossing3D-o1.json` the installed KINDER registers — it selects **no** scene of its own
+  and passes no `task_config_path`, so the geometry moves with the `reference/kindergarden`
+  pin (see the `Tossing3D` note in the `reference/` section above for why, and for what
+  makes a pin bump loud). Its simulator-backed tests gate on
+  `importlib.util.find_spec("kinder")` — the *import* package name; the distribution is
+  `kindergarden` — so they skip cleanly on CI.
 - `humans/` — will hold concrete `HumanOracle` implementations, the v0 (unconditional) →
   v3 (natural-language, capability-aware) axis from the design doc. Domain-agnostic:
   a `HumanOracle` knows nothing about any specific `Environment`'s dynamics. **None

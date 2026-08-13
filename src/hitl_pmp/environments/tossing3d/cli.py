@@ -16,7 +16,7 @@ from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.method_runner import MethodRunner
 
-from .environment import Tossing3DEnvironment, Tossing3DTaskConfig
+from .environment import Tossing3DEnvironment
 from .problem import Tossing3DProblem
 from .renderer import Tossing3DRenderer
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF
@@ -56,16 +56,10 @@ class Tossing3DCli:
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         """--env/--seed/--num-test-tasks/--method/--output-dir are global flags added by
         hitl_pmp/cli.py, not here -- everything below is specific to this domain."""
+        # There is deliberately no --task-config flag. It offered 'stock' against
+        # 'coincident', which came to load the same scene once the upstream bin fix landed
+        # on `Tossing3D-o1.json` itself; see `Tossing3DEnvironment.backend`.
         fields = Tossing3DEnvironment.model_fields
-        parser.add_argument(
-            "--task-config",
-            choices=[config.value for config in Tossing3DTaskConfig],
-            default=fields["task_config"].default.value,
-            help="Which scene JSON to load. 'coincident' (the default) is upstream's o1 "
-            "with the bin put back onto the goal region, so landing IN the bin is what "
-            "scores. 'stock' is upstream's own o1, where a cube landing in the bin is a "
-            "scored FAILURE. Never compare a number taken under one against the other.",
-        )
         parser.add_argument(
             "--variant",
             default=fields["variant"].default,
@@ -100,9 +94,9 @@ class Tossing3DCli:
             type=float,
             default=ORACLE_THROW_STANDOFF,
             help="How far from the bin the oracle stops before throwing, in metres. The "
-            "default is upstream's own test value and solves the coincident scene; the "
-            "stock scene needs a larger one (1.55, measured) because its bin sits 23 cm "
-            "further out.",
+            "default is upstream's own test value and solves the shipped scene. Which "
+            "standoffs solve is a property of the scene's geometry, not a constant of "
+            "this domain, so it stays overridable.",
         )
         parser.set_defaults(scene_bg=True)
 
@@ -197,7 +191,6 @@ class Tossing3DCli:
         what lets the tests above run on CI without the optional KINDER extra.
         """
         env = Tossing3DEnvironment(
-            task_config=Tossing3DTaskConfig(args.task_config),
             variant=args.variant,
             scene_bg=args.scene_bg,
             canonical_seed=args.canonical_seed,

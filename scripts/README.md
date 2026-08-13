@@ -252,13 +252,25 @@ unseeded global would break reproducibility without breaking a narrower test.
 ## `tossing3d_oracle_demo.py`
 
 Renders KINDER's Tossing3D oracle rollout to a GIF, one per toss standoff, and
-writes them to `docs/`. The two stock-config clips —
+writes them to `docs/`:
 [`docs/tossing3d_oracle_standoff_1p35.gif`](../docs/tossing3d_oracle_standoff_1p35.gif)
 and
 [`docs/tossing3d_oracle_standoff_1p55.gif`](../docs/tossing3d_oracle_standoff_1p55.gif)
-— are exactly what its defaults produce; a third,
+are what its defaults produce. A third,
 [`docs/tossing3d_oracle_coincident_standoff_1p35.gif`](../docs/tossing3d_oracle_coincident_standoff_1p35.gif),
-comes from `--task-config coincident-bin-goal` and is described further down.
+came from the retired `--task-config coincident-bin-goal`; see the history section
+below for what that flag was and why it is gone.
+
+> **Stale as of 2026-08-12 — the table below, and the three committed clips.** Every
+> number in this section was measured on the **pre-fix** `Tossing3D-o1` scene, where
+> the bin sat 23 cm past the region that scores. Upstream fixed that
+> (`kindergarden` PR #126, carried by the `reference/kindergarden` pin) and the fix
+> is in the scene this script now renders, so the `1.35 → False` / `1.55 → True`
+> contrast this section is built around **no longer holds**, and
+> `tossing3d_oracle_coincident_standoff_1p35.gif` depicts a stock-versus-coincident
+> distinction that no longer exists. Nothing has been re-measured and no clip has
+> been regenerated; the numbers are left exactly as published, with this note beside
+> them, and both the standoffs and the clips need a measured regeneration pass.
 
 | standoff | cube comes to rest | `_check_goals()` |
 | --- | --- | --- |
@@ -266,12 +278,13 @@ comes from `--task-config coincident-bin-goal` and is described further down.
 | 1.55 | `x=2.0268 y=0.0105 z=0.0249` — bare floor, short of the bin | `True` |
 
 Same seed, same skills, same parameters; only `move_to_target`'s standoff differs,
-and every skill terminates on its own (71 / 23 / 16 / 18 steps in both). **The
-throw that lands in the bin scores nothing and the one that misses scores**, because
-`Tossing3D-o1`'s goal predicate is `["on", "cube_0", "blocks_goal_region"]` — a
-ground region the bin merely sits near. The clips draw that region, so this reads
-without the caption; each also carries its own measured numbers burned into the
-frame, so one clip on its own still makes the point.
+and every skill terminates on its own (71 / 23 / 16 / 18 steps in both). On that
+pre-fix scene **the throw that landed in the bin scored nothing and the one that
+missed scored**, because `Tossing3D-o1`'s goal predicate is
+`["on", "cube_0", "blocks_goal_region"]` — a ground region the bin merely sat near.
+The clips draw that region, so this reads without the caption; each also carries its
+own measured numbers burned into the frame, so one clip on its own still makes the
+point it was rendered to make.
 
 It drives a simulator, so it is here and not in `analysis/`. Unlike `run_sweep.py`
 it does not shell out to `hitl_pmp.cli`: there is no CLI surface for KINDER at all
@@ -305,18 +318,20 @@ Three things about running it are easy to get wrong, and each costs an hour:
 
 ### The goal region is drawn, using KINDER's own mechanism
 
-The clips shade `blocks_goal_region` in translucent blue. Without it the central
-finding is invisible: you watch a cube land squarely in a bin and are told that
-scored a failure, with nothing on screen to show where the goal actually was. With
-it, the goal box (`x ∈ [1.8500, 2.1500]`) and the bin footprint (`x ∈ [2.0801,
-2.3801]` at seed 125) are both in frame, their **7.0 cm overlap on x** is visible,
-and so is the fact that the cube comes to rest at `x = 2.2197` — past the far edge
-of the goal box, inside the bin. On the coincident config the same overlay reads the
-opposite way: the blue box *fills* the bin. `--no-goal-region` renders clean.
+The clips shade `blocks_goal_region` in translucent blue. Without it, where the cube
+came to rest says nothing: you watch a cube land in a bin and are told what that
+scored, with nothing on screen to show where the goal actually was. With it, the goal
+box and the bin footprint are both in frame and can be read against each other. On the
+scene KINDER ships today the blue box *fills* the bin, so a cube seen coming to rest
+inside the bin is a cube seen scoring. On the pre-fix scene the committed clips were
+rendered on, it read the other way: the goal box (`x ∈ [1.8500, 2.1500]`) and the bin
+footprint (`x ∈ [2.0801, 2.3801]` at seed 125) overlapped by only **7.0 cm on x**, and
+the cube came to rest at `x = 2.2197` — past the far edge of the goal box, inside the
+bin. `--no-goal-region` renders clean.
 
 The caption's legend line carries both measured brackets — the goal box and the bin
-footprint — so the two clips of standoff 1.35 can be compared number for number
-without leaving the frame.
+footprint — so a viewer can check the coincidence off the frame rather than take it
+on trust.
 
 **This is not an overlay painted onto the image.** KINDER creates a box *site* for
 every region at construction and calls `visualize_regions()` unconditionally
@@ -343,38 +358,41 @@ the caption's `x ∈ […]` bracket is read off that same site's `pos`/`size`, s
 shaded box and the printed numbers cannot drift apart. Zero matches, or more than
 one, raises with every site name listed.
 
-### `--task-config coincident-bin-goal`: put the bin back on the goal region
+### There is one scene: what `--task-config` was, and why it is gone
 
-`--task-config` picks the scene. `stock` (the default) overrides nothing — KINDER
-loads the task JSON it registered, so a stock run is byte-identical to one from
-before the flag existed, which is what keeps the two committed stock clips
-regenerable. `coincident-bin-goal` points KINDER at
-[`scripts/task_configs/Tossing3D-o1-coincident.json`](task_configs/Tossing3D-o1-coincident.json)
-through `ObjectCentricRobotEnv`'s own `task_config_path` parameter
-(`envs.py:79`, which takes an absolute path verbatim at `:101-105`). Nothing under
-`reference/` is modified.
+This script used to take a `--task-config` flag choosing between two scenes, and it
+no longer does. The history is worth keeping, because every number above and below
+was measured under one of them.
 
-The file is upstream's `Tossing3D-o1.json` with **exactly one line different**:
+**The defect.** `Tossing3D-o1`'s goal is `["on", "cube_0", "blocks_goal_region"]` — a
+*ground region*, which the bin merely sits near. Upstream commit `1183de7` moved
+`bin_init_region` from `x = 2.0` to `x = 2.23` and left `blocks_goal_region` where it
+was, at `x ∈ [1.85, 2.15]` once inflated. The bin then sat 23 cm past the box that
+scores, so a cube thrown neatly **into the bin** scored a **failure** and only a throw
+that missed the bin scored.
 
-```
-bin_init_region.ranges:  [[2.23, -0.0005, 2.231, 0.0005]]  ->  [[2.0, -0.0005, 2.001, 0.0005]]
-blocks_goal_region:      byte-identical, untouched
-```
+**The workaround.** This repo committed its own copy of the task JSON, upstream's
+`Tossing3D-o1.json` with exactly one line different (`bin_init_region` back at
+`x = 2.0`; `blocks_goal_region` byte-identical), handed to KINDER through
+`ObjectCentricRobotEnv`'s own `task_config_path` parameter. `--task-config
+coincident-bin-goal` selected it, `stock` was the default, and nothing under
+`reference/` was modified. `x = 2.0` was not invented here — upstream's own
+`Tossing3D-o2.json` already shipped the bin there beside a byte-identical
+`blocks_goal_region`.
 
-**x = 2.0 is upstream's own number.** `Tossing3D-o2.json` already ships the bin
-there, beside a `blocks_goal_region` byte-identical to o1's — the two files'
-`blocks_goal_region` entries hash to the same
-`53219d0f7a5b54781668539a848a27a2c8ae5fce9c69aed385f7f93987fe2735`. So this is a
-pairing upstream publishes, not one invented here; the bin drifted away from the goal
-region in upstream commit `1183de7` and o2 never followed it. Moving the *bin* rather
-than the *goal region* also leaves the region that scores untouched, so every number
-ever measured against this domain stays comparable.
+**The fix, and the decision.** Upstream fixed the defect in `kindergarden` PR #126 —
+**by editing `Tossing3D-o1.json` itself rather than adding a variant** — and the
+`reference/kindergarden` pin carries it. Both choices therefore came to load the same
+scene. Josh's decision was to take upstream's config as *the* config rather than keep
+a divergent copy, so the committed copy, the flag and all its plumbing are gone. The
+script renders whatever scene the installed KINDER ships; an old command line that
+still passes `--task-config` fails at parse time rather than quietly rendering
+something else.
 
-It is **opt-in and constrained**. An unknown `--task-config` value is rejected by
-`argparse` at parse time; `resolve_task_config` raises on one anyway; and
-`require_task_config_applies` raises if the config is paired with an `--env-id` it
-was not measured on, rather than silently doing nothing. There is exactly one
-non-stock config and it is the one with provenance.
+What survives is the **check**. `verify_coincidence` runs on every rollout now,
+not only on the config that made it true, and the scene moves with the
+`reference/kindergarden` pin — so a pin bump that undid the fix would otherwise be
+silent.
 
 #### It is verified against live geometry, not JSON literals
 
@@ -393,20 +411,28 @@ names, so they can only be found through the body):
 | coincident | 0 | [1.850000, 2.150000] | **[1.850813, 2.150813]** | 0.2999 m | **0.0008 m** |
 | coincident | 125 | [1.850000, 2.150000] | **[1.850101, 2.150101]** | 0.2999 m | **0.0001 m** |
 
+> **Row labels as of 2026-08-12.** These are left exactly as measured. `stock` is the
+> **pre-fix** scene, which upstream no longer ships; `coincident` is the geometry the
+> shipped scene now has, since PR #126 put the bin back where this repo's retired copy
+> had it. Neither row has been re-measured against the current pin.
+
 The goal region is fixed, so it does not move with the seed; the bin does, which is
 why both seeds are recorded rather than one constant. `verify_coincidence` re-checks
-this on every coincident run and **raises** if the worst edge ever exceeds 5 mm — a
-bound the measurements clear by a factor of 6, and that stock misses by 46×.
+this on **every** run and **raises** if the worst edge ever exceeds 5 mm — a bound the
+coincident measurements clear by a factor of 6, and that the pre-fix geometry misses
+by 46×.
 
-#### `--sweep`, and the standoff that shows the fix
+#### `--sweep`, and how a standoff gets chosen
 
-Moving the bin changes the **physics**, not only the scoring: the bin now sits where
-the cube used to land, so it is an obstacle in the flight path and the standoffs that
-solved before are not the ones that solve now. `--sweep` runs the identical physics
-but records no frames and writes no file, which is how a standoff gets chosen —
-rendering dominates the per-rollout cost and a search discards every frame anyway.
+Where the bin is changes the **physics**, not only the scoring: with the bin on the
+goal region it sits where the cube used to land, so it is an obstacle in the flight
+path and the standoffs that solved on the pre-fix scene are not the ones that solve
+now. `--sweep` runs the identical physics but records no frames and writes no file,
+which is how a standoff gets chosen — rendering dominates the per-rollout cost and a
+search discards every frame anyway.
 
-Over 11 standoffs on the coincident config, **6/11 solve**:
+Over 11 standoffs on the coincident config — the same bin position the shipped scene
+now has, though measured before PR #126 and not re-run since — **6/11 solve**:
 
 | standoff | cube at rest | where | `_check_goals()` |
 | --- | --- | --- | --- |
@@ -428,29 +454,36 @@ config, **11/11 rollouts agree — every cube that came to rest in the bin score
 every one that did not, did not.** The five failures all bounce off the bin's near
 wall (now at `x ≈ 1.8601`) and land short of it.
 
-Standoff **1.35** is the committed one, because it lands the cube in the bin on *both*
-configs and so renders the whole finding as one pair of clips:
+Standoff **1.35** was the committed one, because it landed the cube in the bin on
+*both* configs and so rendered the whole finding as one pair of clips:
 
 | config | cube at rest | `_check_goals()` | clip |
 | --- | --- | --- | --- |
 | stock | `x=2.2197 y=0.0103 z=0.0444` (bin at `x=2.2301`) | `False` | `tossing3d_oracle_standoff_1p35.gif` |
 | coincident | `x=1.9902 y=0.0105 z=0.0444` (bin at `x=2.0001`) | `True` | `tossing3d_oracle_coincident_standoff_1p35.gif` |
 
+> **Stale as of 2026-08-12.** This pair of rows *is* the stock-versus-coincident
+> distinction, and PR #126 removed it: one task JSON ships now, so there is no second
+> config for a second row to describe.
+> `tossing3d_oracle_coincident_standoff_1p35.gif` therefore depicts a distinction that
+> no longer exists. The numbers are left as published and have not been re-measured;
+> the clips have not been regenerated.
+
 In both the cube lands about a centimetre short of the bin's own centre, on the bin's
 interior floor (`z = 0.0444` against a `0.0249` start height, in both). Same skills,
-same parameters, same seed, same 71 / 23 / 16 / 18 step counts. The only difference is
-which task JSON was loaded — and the verdict flips.
+same parameters, same seed, same 71 / 23 / 16 / 18 step counts. The only difference
+was which task JSON was loaded — and the verdict flipped.
 
 ```bash
 # sweep (no rendering, no output files)
 systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue \
     scripts/with_kinder_env.sh python scripts/tossing3d_oracle_demo.py \
-    --sweep --task-config coincident-bin-goal --standoffs 1.20 1.25 1.30 1.35 1.40 1.425
+    --sweep --standoffs 1.20 1.25 1.30 1.35 1.40 1.425
 
-# the committed coincident clip
+# one clip at one standoff
 systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 -p OOMPolicy=continue \
     scripts/with_kinder_env.sh python scripts/tossing3d_oracle_demo.py \
-    --output-dir docs --task-config coincident-bin-goal --standoffs 1.35
+    --output-dir docs --standoffs 1.35
 ```
 
 ### `--camera task_view`, not `agentview_1`

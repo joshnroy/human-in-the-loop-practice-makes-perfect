@@ -1,60 +1,48 @@
 """Render KINDER's Tossing3D oracle rollout to a GIF, once per toss standoff.
 
-The default run renders the stock scene at two standoffs, and the point is the
-**contrast between them**:
+One rollout per standoff -- `pick_shelf -> move_to_target(standoff) -> move_arm_to_conf
+-> toss` -- against whatever `Tossing3D` scene the installed KINDER ships. Each clip is
+captioned with its own measured rest position, the bin's measured footprint, the goal
+region's measured bracket and the `_check_goals()` verdict, so a reader who opens one
+clip on its own still sees what happened and where the scoring box was.
 
-| standoff | cube comes to rest | `_check_goals()` |
-| --- | --- | --- |
-| 1.35 | *in the bin* (z sits above its start height) | `False` |
-| 1.55 | on bare floor, short of the bin | `True` |
+## There is one scene, and there did not used to be
 
-Same skill sequence, same seed, same parameters -- only the `move_to_target` standoff
-differs. The throw that lands in the bin scores nothing; the one that misses the bin
-scores. That is not a bug in this script: KINDER's goal predicate for `Tossing3D-o1`
-is `["on", "cube_0", "blocks_goal_region"]`, a ground region that the bin merely sits
-near. Each clip is captioned with its own measured rest position and
-`_check_goals()` value so a reader who opens only one of them still sees the point.
+`Tossing3D-o1`'s goal is `["on", "cube_0", "blocks_goal_region"]` -- a *ground region*,
+which the bin merely sits near. Upstream commit `1183de7` moved `bin_init_region` from
+x = 2.0 to x = 2.23 and left `blocks_goal_region` where it was, at x in [1.85, 2.15]
+once inflated. The bin then sat 23 cm past the box that scores, overlapping it by 7 cm
+of its 30 cm width with no sliver a 5 cm cube could occupy that was inside both -- so a
+cube thrown neatly **into the bin** scored a **failure**, and only a throw that missed
+the bin scored. That is the single most misreadable thing about this domain
+(`docs/kinder-environment-validation.md`).
 
-## `--task-config coincident-bin-goal`: put the bin back on the goal region
+This repo worked around it by committing its own copy of the task JSON with the bin put
+back, and this script grew a `--task-config` flag to pick between the two scenes.
+Upstream then fixed the defect -- `kindergarden` PR #126, carried by the
+`reference/kindergarden` pin -- **by editing `Tossing3D-o1.json` itself rather than
+adding a variant**, so both choices came to load the same scene. Josh's decision was to
+take upstream's config as *the* config rather than keep a divergent copy, so the copy
+and the flag are both gone and this script no longer selects anything.
 
-`--task-config` selects the scene. `stock` (the default) overrides nothing, so KINDER
-loads the task JSON it registered and the run is byte-identical to one from before
-this flag existed. `coincident-bin-goal` points KINDER at
-`scripts/task_configs/Tossing3D-o1-coincident.json`, which is upstream's own
-`Tossing3D-o1.json` with **exactly one line changed**: `bin_init_region` moves from
-x = 2.23 back to x = 2.0. `blocks_goal_region` is left byte-identical.
+What survives that removal is the check: `verify_coincidence` re-measures the bin and
+the goal region off the compiled model on **every** run and raises if they ever stop
+being the same box. It was the evidence for a claim about one config; it is now an
+invariant of the only scene there is, which makes it worth more rather than less --
+the scene moves with the `reference/kindergarden` pin, and a pin bump that undid the
+fix would otherwise be silent.
 
-**x = 2.0 is not a number invented here.** Upstream's own `Tossing3D-o2.json` already
-ships the bin there, next to a `blocks_goal_region` byte-identical to o1's, so this is
-a pairing upstream publishes rather than one we made up. The bin drifted away from the
-goal region in upstream commit `1183de7`; o2 never followed it.
+## Stale as of 2026-08-12: the committed clips, and the standoff pair
 
-Moving the *bin* rather than the *goal region* also keeps every number ever measured
-against this domain comparable, since the region that scores is untouched -- and it
-avoids inventing a region upstream has never shipped. (Translating the goal region
-onto the stock bin instead would land on the same geometry by a different route: o1's
-range shifted to the bin's centre inflates to x in [2.0805, 2.3805], which is the
-stock bin's footprint. So the alternative is not *wrong* geometrically -- it is just
-strictly less well-sourced.)
-
-With the bin moved, the two boxes are the same box: goal x in [1.8500, 2.1500] against
-a bin footprint of x in [1.8501, 2.1501] at seed 125, i.e. a worst-edge disagreement
-of 0.1 mm, against 230.1 mm on stock. `verify_coincidence` re-measures that from the
-compiled model on every run and **raises** if it ever stops holding.
-
-That changes the *physics*, not only the scoring: the bin now sits where the cube used
-to land, so it is an obstacle in the flight path and the standoffs that solve are not
-the ones that solved before. `--sweep` runs the physics with no rendering and no
-output file, which is how a standoff for a new config gets chosen. Measured over 11
-standoffs from 1.20 to 1.65, 6/11 solve, all of them in the contiguous band
-[1.20, 1.425]; every one of those 6 comes to rest *in the bin*, and all 5 failures
-come to rest on bare floor short of it, having bounced off the bin's near wall.
-
-Standoff 1.35 therefore renders the whole finding as one pair of clips: it lands the
-cube in the bin on **both** configs -- at x = 2.2197 on stock and x = 1.9902 on the
-fixed one, in each case within about a centimetre of the bin's own centre -- and
-`_check_goals()` is `False` on stock and `True` on the fixed config. One throw, two
-verdicts, and nothing changed but which task JSON was loaded.
+`DEFAULT_STANDOFFS` is `(1.35, 1.55)`, and the clips under `docs/` were rendered on the
+**pre-fix** scene. The pair was chosen there precisely because its verdicts disagreed --
+1.35 landed the cube in the bin and scored `False`, 1.55 missed the bin and scored
+`True` -- which is a contrast the fixed scene does not produce. Retiring the flag did
+**not** re-measure either standoff and did **not** regenerate any clip, so: the
+committed clips depict geometry the installed KINDER no longer ships, and the default
+pair is inherited rather than justified. Both need a measured regeneration pass --
+`--sweep` runs the physics with no rendering and no output file, which is how a standoff
+gets chosen -- and nothing here has done it.
 
 Nothing here is a reimplementation. The rollout drives upstream's own controllers
 (`pick_shelf` from `kinder_models.dynamic3d.shelf`; `move_to_target`,
@@ -102,9 +90,11 @@ those at the wrong speed.
 
 ## The goal region is shaded in, using KINDER's own mechanism
 
-The default clips draw `blocks_goal_region` as a translucent blue box, because
-"the cube lands in the bin and this scores a **failure**" is only legible once you
-can see where the goal actually is. `--no-goal-region` renders clean.
+The default clips draw `blocks_goal_region` as a translucent blue box, because where
+the cube came to rest only means anything once the box that scores is visible in the
+same frame -- and, on the fixed scene, seeing the blue box *fill* the bin is what makes
+"landing in the bin and scoring are the same event" a thing you watch rather than a
+thing you are told. `--no-goal-region` renders clean.
 
 This is not an overlay drawn on top of the image. KINDER creates a box **site** for
 every region at construction and calls `visualize_regions()` unconditionally
@@ -153,23 +143,6 @@ WINDUP_CONF_DEG = (0, 50, 180, -110, 0, -100, 90)
 FULL_TOSS_CONF_DEG = (0, 20, 180, -35, 0, 25, 90)
 FILENAME_PREFIX = "tossing3d_oracle"
 
-# The two scenes this script can render. `stock` overrides nothing -- KINDER uses the
-# task JSON it registered -- so a stock run is byte-identical to one from before this
-# flag existed, which is what keeps the committed stock clips regenerable. See the
-# module docstring for why the *bin* is what moves in the other one.
-STOCK_TASK_CONFIG = "stock"
-COINCIDENT_TASK_CONFIG = "coincident-bin-goal"
-TASK_CONFIG_DIR = Path(__file__).resolve().parent / "task_configs"
-TASK_CONFIGS: dict[str, Path | None] = {
-    STOCK_TASK_CONFIG: None,
-    COINCIDENT_TASK_CONFIG: TASK_CONFIG_DIR / "Tossing3D-o1-coincident.json",
-}
-
-# Our config is upstream's `Tossing3D-o1.json` with one line changed, so it describes
-# o1's scene and no other. Running it under another variant's env id would produce a
-# clip labelled `o2` showing `o1`'s scene, which is worse than not running at all.
-TASK_CONFIG_ENV_IDS: dict[str, str] = {COINCIDENT_TASK_CONFIG: DEFAULT_ENV_ID}
-
 # These three exist because the clips are **committed**, so their size is a review
 # concern rather than a preference. The rollout is 128 simulator steps of a
 # wood-textured lab floor, so essentially every pixel changes every frame and GIF's
@@ -185,16 +158,16 @@ DEFAULT_LOSSY = 100
 # A DISPLAY only has to *exist*; nothing is drawn to it. See configure_headless_rendering.
 FALLBACK_DISPLAY = ":0"
 
-# One line per config, because the finding *inverts* between them. Captioning the fixed
-# clip with the stock line would state the exact opposite of what the clip shows.
-CONTRAST_LINES: dict[str, str] = {
-    STOCK_TASK_CONFIG: (
-        "the toss that lands IN the bin does not score; the one that misses it does"
-    ),
-    COINCIDENT_TASK_CONFIG: (
-        "bin moved onto the goal region: the toss that lands IN the bin is the one that scores"
-    ),
-}
+# The one fixed line of the caption: the mechanism, not a verdict. It states what
+# scoring *is* on this scene -- the bin sits on the goal region, so the two events
+# coincide -- and deliberately says nothing about whether any particular standoff
+# achieves it, which is what the measured numbers on the other caption lines are for.
+# There was one of these per config while there were two configs, and the version that
+# went with the pre-fix scene ("the toss that lands IN the bin does not score") is not
+# merely unused now, it is false.
+CONTRAST_LINE = (
+    "the bin sits on the goal region, so the toss that lands IN the bin is the one that scores"
+)
 
 # The bin is a body of five unnamed box geoms (upstream's `Bin` builder never sets a
 # geom name), so its footprint can only be found through the body it hangs off.
@@ -203,8 +176,8 @@ GOAL_REGION_NAME = "blocks_goal_region"
 
 # How far either box's edge may stick out of the other before they stop counting as the
 # same box. Not a tuned threshold: `bin_init_region` is a 1 mm-wide sampling range, so
-# the measured gap is 0.1-0.8 mm depending on the seed, while stock misses by 231 mm.
-# Any tolerance between about 1 mm and 20 cm would separate those two cases identically.
+# the measured gap is 0.1-0.8 mm depending on the seed, while the pre-fix scene missed
+# by 231 mm. Any tolerance between about 1 mm and 20 cm separates those two identically.
 COINCIDENCE_TOLERANCE_M = 0.005
 
 # The goal region is what the clip is *about*, so it is drawn. KINDER already creates a
@@ -268,9 +241,10 @@ class GoalRegion(BaseModel):
 class Footprint(BaseModel):
     """An interval on the world x axis, in metres.
 
-    Only x is carried because x is the only axis on which the stock scene's bin and
-    goal region disagree: both span y in [-0.15, 0.15], and the goal region's z bracket
-    ([0, 0.15]) contains the whole interior of a 0.2 m bin a 5 cm cube can rest in.
+    Only x is carried because x is the only axis on which the bin and the goal region
+    can disagree at all: both span y in [-0.15, 0.15], and the goal region's z bracket
+    ([0, 0.15]) contains the whole interior of a 0.2 m bin a 5 cm cube can rest in. It
+    is also the axis they disagreed on by 23 cm before `kindergarden` PR #126.
     """
 
     x_min: float
@@ -284,10 +258,10 @@ class Footprint(BaseModel):
 class Coincidence(BaseModel):
     """The goal box and the bin footprint, measured off one compiled model together.
 
-    This is the claim the whole change rests on, so it is a measurement rather than an
-    assertion about JSON: the JSON range is inflated by `ground_placement_threshold`
-    (0.05 m per side) before it becomes a region, and the bin's placement is *sampled*
-    from a 1 mm-wide `bin_init_region`, so neither box is where the file says it is.
+    A measurement rather than an assertion about JSON, because neither box is where the
+    file says it is: the JSON range is inflated by `ground_placement_threshold` (0.05 m
+    per side) before it becomes a region, and the bin's placement is *sampled* from a
+    1 mm-wide `bin_init_region`.
     """
 
     goal: Footprint
@@ -324,7 +298,6 @@ class ClipResult(BaseModel):
     """
 
     standoff: float
-    task_config: str
     path: Path | None
     rest: tuple[float, float, float]
     bin_x: float
@@ -354,7 +327,6 @@ def run_standoff_seed_grid(
     standoffs: Sequence[float],
     seeds: Sequence[int],
     env_id: str,
-    task_config: str,
 ) -> list[StandoffSeedResult]:
     """`Pick -> MoveToThrowPose(standoff) -> Toss`, oracle-style, once per `(standoff,
     seed)` pair -- the same methodology PR #105 and the 48-episode grid behind
@@ -377,7 +349,6 @@ def run_standoff_seed_grid(
                 lossy=DEFAULT_LOSSY,
                 goal_region=False,
                 output_dir=DEFAULT_OUTPUT_DIR,
-                task_config=task_config,
                 sweep=True,
             )
             results.append(
@@ -516,46 +487,19 @@ def reveal_goal_region(*, model: Any, rgba: Sequence[float]) -> GoalRegion:
     return GoalRegion(name=name, x_min=center_x - half_x, x_max=center_x + half_x)
 
 
-def resolve_task_config(*, name: str) -> Path | None:
-    """The task JSON to hand KINDER, or `None` to let it use the one it registered.
+def gif_filename(*, standoff: float) -> str:
+    """`1.35` -> `tossing3d_oracle_standoff_1p35.gif`, one name per standoff.
 
-    Raising on an unknown name is the point rather than politeness: silently falling
-    back to stock would produce a stock clip labelled as the fixed one, which is the
-    exact class of mistake this whole change exists to remove.
-    """
-    if name not in TASK_CONFIGS:
-        raise ValueError(f"unknown task config {name!r}; known: {sorted(TASK_CONFIGS)}")
-    return TASK_CONFIGS[name]
-
-
-def require_task_config_applies(*, name: str, env_id: str) -> None:
-    """Refuse a config/env-id pairing that was never measured, instead of no-oping.
-
-    Our config is upstream's `o1` with one line changed, so it *is* o1's scene. Handing
-    it to another variant's env id would render o1 under o2's name.
-    """
-    expected = TASK_CONFIG_ENV_IDS.get(name)
-    if expected is not None and env_id != expected:
-        raise ValueError(
-            f"task config {name!r} describes {expected}, not {env_id}; "
-            f"re-run with --env-id {expected}, or --task-config {STOCK_TASK_CONFIG}"
-        )
-
-
-def gif_filename(*, standoff: float, task_config: str = STOCK_TASK_CONFIG) -> str:
-    """`1.35` -> `tossing3d_oracle_standoff_1p35.gif`, one name per (config, standoff).
-
-    The stock name is deliberately unchanged, so the clips already committed under it
-    stay regenerable by this script rather than becoming orphans. Every other config
-    gets its own token, because the contrast this exists to show is the *same* standoff
-    rendered on two configs -- both clips have to survive in one directory.
+    The standoff is the only thing in the name. It once carried a config token as well,
+    for the second scene this script could render; there is one scene now, so the token
+    is gone -- which is also what the stock branch already produced, so the clips
+    already committed under these names stay regenerable rather than becoming orphans.
 
     The decimal point becomes `p` so the stem carries exactly one dot: these files get
     linked by raw URL from a PR body, and a second dot is the kind of thing that
     quietly breaks a link or a downstream tool.
     """
-    token = "" if task_config == STOCK_TASK_CONFIG else f"_{task_config.split('-')[0]}"
-    return f"{FILENAME_PREFIX}{token}_standoff_{standoff:.2f}".replace(".", "p") + ".gif"
+    return f"{FILENAME_PREFIX}_standoff_{standoff:.2f}".replace(".", "p") + ".gif"
 
 
 def footprint_from_extents(
@@ -632,10 +576,12 @@ def verify_coincidence(
 ) -> None:
     """Fail the run if the bin is not, in fact, sitting on the goal region.
 
-    Checked against live geometry every time the fixed config is used, because the
-    thing being claimed -- "landing in the bin and satisfying the goal are now the same
-    event" -- is exactly the kind of claim that is easy to state and easy to have
-    silently stopped being true.
+    Checked against live geometry on **every** run, because "landing in the bin and
+    satisfying the goal are the same event" is exactly the kind of claim that is easy to
+    state and easy to have silently stopped being true. It once verified the one config
+    that made it true; since `kindergarden` PR #126 it is an invariant of the only scene
+    there is, and the scene moves with the `reference/kindergarden` pin -- so a pin bump
+    that undid the fix is precisely what this is here to make loud.
     """
     if coincidence.gap > tolerance:
         raise ValueError(
@@ -644,13 +590,6 @@ def verify_coincidence(
             f"[{coincidence.bin_footprint.x_min:.4f}, {coincidence.bin_footprint.x_max:.4f}] "
             f"(worst edge off by {coincidence.gap:.4f} m > {tolerance} m)"
         )
-
-
-def contrast_line(*, task_config: str) -> str:
-    """The one fixed line of the caption, which inverts between the two configs."""
-    if task_config not in CONTRAST_LINES:
-        raise ValueError(f"no contrast line for {task_config!r}; known: {sorted(CONTRAST_LINES)}")
-    return CONTRAST_LINES[task_config]
 
 
 def fps_from_metadata(*, metadata: Mapping[str, Any], every: int) -> float:
@@ -678,7 +617,6 @@ def caption_lines(
     start_z: float,
     bin_x: float,
     solved: bool,
-    task_config: str = STOCK_TASK_CONFIG,
     goal_region: GoalRegion | None = None,
     bin_x_range: Footprint | None = None,
     tolerance: float = RESTING_TOLERANCE_M,
@@ -686,17 +624,13 @@ def caption_lines(
     """The caption burned into every frame of one clip.
 
     Every number in it is measured in the run that produced the clip; the only fixed
-    text is the config's `contrast_line`, which is what makes a single clip
+    text is `CONTRAST_LINE`, which states the mechanism and is what makes a single clip
     self-explanatory.
-
-    The config is named on the first line because the strongest thing here is the
-    *same* standoff rendered on both configs, reaching opposite verdicts. Two clips
-    that differ only in a number a viewer cannot see would be unreadable.
 
     The legend line is appended only when the region is actually drawn (`--no-goal-
     region` renders clean), so the caption never describes something absent from the
-    frame, and it carries the bin's measured footprint beside the goal box: on stock
-    those two brackets barely overlap, and on the fixed config they are the same box.
+    frame, and it carries the bin's measured footprint beside the goal box -- two
+    brackets a viewer can read against each other rather than take on trust.
     """
     x, y, z = rest
     lift = z - start_z
@@ -706,11 +640,10 @@ def caption_lines(
     else:
         height = f"z is {lift:+.4f} m off its start height: {place.value}"
     lines = [
-        f"Tossing3D-o1 skill oracle [{task_config}] | toss standoff {standoff:g}"
-        f" | _check_goals() = {solved}",
+        f"Tossing3D-o1 skill oracle | toss standoff {standoff:g} | _check_goals() = {solved}",
         f"cube at rest x={x:.4f} y={y:.4f} z={z:.4f}   (bin_0 at x={bin_x:.4f})",
         height,
-        contrast_line(task_config=task_config),
+        CONTRAST_LINE,
     ]
     if goal_region is not None:
         legend = (
@@ -856,7 +789,6 @@ def render_clip(
     lossy: int,
     goal_region: bool,
     output_dir: Path,
-    task_config: str = STOCK_TASK_CONFIG,
     sweep: bool = False,
 ) -> ClipResult:
     """Run the oracle skill sequence once at `standoff`, and write its captioned GIF.
@@ -864,16 +796,10 @@ def render_clip(
     `sweep=True` runs the identical physics but records no frames and writes no file --
     what a standoff search needs, since it throws every frame away regardless.
     """
-    print(f"standoff {standoff} [{task_config}]", flush=True)
-    require_task_config_applies(name=task_config, env_id=env_id)
-    config_path = resolve_task_config(name=task_config)
-    # An override dict rather than a `task_config_path=None` kwarg, so that a stock run
-    # passes exactly what it passed before this flag existed and cannot drift from it.
-    overrides: dict[str, Any] = {}
-    if config_path is not None:
-        overrides["task_config_path"] = str(config_path)
-        print(f"  task config: {config_path}", flush=True)
-    env = api.kinder.make(env_id, render_mode="rgb_array", scene_bg=scene_bg, **overrides)
+    print(f"standoff {standoff}", flush=True)
+    # No `task_config_path` override: this renders whatever scene the installed KINDER
+    # registered for `env_id`, which is the whole point of retiring the flag.
+    env = api.kinder.make(env_id, render_mode="rgb_array", scene_bg=scene_bg)
     object_centric = env.unwrapped._object_centric_env  # noqa: SLF001
     available = list(getattr(object_centric, "camera_names", []))
     if available and camera not in available:
@@ -885,8 +811,8 @@ def render_clip(
     observation, _ = env.reset(seed=seed)
     robot_env = object_centric._robot_env  # noqa: SLF001
 
-    # Measured off the compiled model, every run, for both configs -- never inferred
-    # from the JSON, which states neither box's real extent (see `Coincidence`).
+    # Measured off the compiled model, every run -- never inferred from the JSON, which
+    # states neither box's real extent (see `Coincidence`).
     coincidence = Coincidence(
         goal=goal_region_footprint(
             ground_fixture=object_centric._ground_fixture,  # noqa: SLF001
@@ -903,8 +829,7 @@ def render_clip(
         f"(overlap {coincidence.overlap:.6f} m, worst edge off by {coincidence.gap:.6f} m)",
         flush=True,
     )
-    if task_config == COINCIDENT_TASK_CONFIG:
-        verify_coincidence(coincidence=coincidence)
+    verify_coincidence(coincidence=coincidence)
 
     # After reset, never before: reset rebuilds the scene XML and recompiles the model,
     # so an rgba written earlier would be thrown away along with the model it was on.
@@ -975,11 +900,10 @@ def render_clip(
             start_z=start_z,
             bin_x=bin_x,
             solved=solved,
-            task_config=task_config,
             goal_region=region,
             bin_x_range=coincidence.bin_footprint,
         )
-        path = output_dir / gif_filename(standoff=standoff, task_config=task_config)
+        path = output_dir / gif_filename(standoff=standoff)
         before, after = write_gif(
             frames=annotate(frames=rollout.frames, lines=lines),
             path=path,
@@ -992,7 +916,6 @@ def render_clip(
     env.close()
     return ClipResult(
         standoff=standoff,
-        task_config=task_config,
         path=path,
         rest=rest,
         bin_x=bin_x,
@@ -1021,27 +944,18 @@ def parse_args(*, argv: Sequence[str]) -> argparse.Namespace:
         nargs="+",
         default=list(DEFAULT_STANDOFFS),
         help="move_to_target standoffs to render, one clip each (default: 1.35 1.55 -- "
-        "the pair whose contrast is the finding)",
+        "inherited from the pre-fix scene, not re-measured; see the staleness note in "
+        "the module docstring)",
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--env-id", default=DEFAULT_ENV_ID)
     parser.add_argument(
-        "--task-config",
-        choices=sorted(TASK_CONFIGS),
-        default=STOCK_TASK_CONFIG,
-        help="which task JSON to run. 'stock' (default) overrides nothing, so KINDER "
-        f"uses the file it registered; '{COINCIDENT_TASK_CONFIG}' is upstream's o1 "
-        "with the bin put back on the goal region. Opt-in, and constrained to the one "
-        "provenance-tested file: an unknown name is rejected here, and a name that "
-        "does not match --env-id raises rather than silently doing nothing.",
-    )
-    parser.add_argument(
         "--sweep",
         action="store_true",
         help="run the physics for each standoff but record no frames and write no "
-        "clip, printing rest position and _check_goals() only. This is how the "
-        "standoff for a new config is chosen; rendering dominates the per-rollout cost "
-        "and a search discards every frame anyway.",
+        "clip, printing rest position and _check_goals() only. This is how a standoff "
+        "is chosen; rendering dominates the per-rollout cost and a search discards "
+        "every frame anyway.",
     )
     parser.add_argument(
         "--seed",
@@ -1089,8 +1003,8 @@ def parse_args(*, argv: Sequence[str]) -> argparse.Namespace:
         dest="goal_region",
         action="store_false",
         help="render clean, without the goal region shaded in. On by default, because "
-        "the committed clips exist to show that the cube lands in the bin and *outside* "
-        "the goal region, which is unreadable when the region is invisible.",
+        "where the cube came to rest says nothing about whether it scored unless the "
+        "box that scores is visible in the same frame.",
     )
     parser.add_argument(
         "--every",
@@ -1124,7 +1038,6 @@ def main(*, argv: Sequence[str] | None = None) -> None:
             standoffs=args.standoffs,
             seeds=args.seeds,
             env_id=args.env_id,
-            task_config=args.task_config,
         )
         print_and_write_grid(results=grid, results_json=args.results_json)
         return
@@ -1141,7 +1054,6 @@ def main(*, argv: Sequence[str] | None = None) -> None:
             lossy=args.lossy,
             goal_region=args.goal_region,
             output_dir=args.output_dir,
-            task_config=args.task_config,
             sweep=args.sweep,
         )
         for standoff in args.standoffs

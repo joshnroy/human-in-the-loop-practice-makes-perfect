@@ -3,15 +3,16 @@
 
 import numpy as np
 
-from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment, Tossing3DTaskConfig
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
 
 from .observations import state
 
 
 def test_the_caption_reports_the_cube_position_the_goal_box_and_the_verdict() -> None:
-    """ "The cube landed in the bin and this scores a failure" is the single most
-    misreadable thing about this domain, and it is illegible from pixels alone."""
+    """Whether a landing scored is illegible from pixels alone -- the goal region is a
+    ground box the bin sits on, not something a viewer can see -- so the verdict and the
+    numbers it was derived from are burned under every frame."""
     env = Tossing3DEnvironment()
     lines = Tossing3DRenderer.caption(
         state=state(cube_x=1.9902, cube_y=0.0105, cube_z=0.0444), env=env, label="Toss(...)"
@@ -21,19 +22,22 @@ def test_the_caption_reports_the_cube_position_the_goal_box_and_the_verdict() ->
     assert "InGoalRegion = True" in lines[1]
 
 
-def test_the_caption_names_the_scene_because_the_verdict_inverts_between_them() -> None:
-    """The same throw scores True on the coincident config and False on stock. Two clips
-    that differ only in a number a viewer cannot see would be unreadable."""
-    coincident = Tossing3DRenderer.caption(state=state(), env=Tossing3DEnvironment())[0]
-    stock = Tossing3DRenderer.caption(
-        state=state(), env=Tossing3DEnvironment(task_config=Tossing3DTaskConfig.STOCK)
-    )[0]
-    assert "coincident" in coincident
-    assert "stock" in stock
+def test_the_caption_names_the_variant_but_no_longer_a_scene_choice() -> None:
+    """The first line used to carry a `[stock]`/`[coincident]` token, because the same
+    throw scored `True` on one and `False` on the other and a viewer could not see which
+    clip they were looking at. There is one scene now, so a token there would be a
+    constant that reads like a choice. The live goal box on line 2 is what still tells a
+    reader the geometry, and it is measured rather than named."""
+    header = Tossing3DRenderer.caption(state=state(), env=Tossing3DEnvironment())[0]
+    assert "Tossing3D-o1" in header
+    assert "stock" not in header
+    assert "coincident" not in header
 
 
-def test_the_stock_landing_is_captioned_as_outside_the_goal_region() -> None:
-    """x = 2.2197 is where the same throw rests on stock: in the bin, past the goal box."""
+def test_a_landing_past_the_goal_box_is_captioned_as_outside_it() -> None:
+    """The caption has to report a miss as a miss. x = 2.2197 is past the box's 2.15 far
+    edge -- historically it is where this same throw came to rest on the pre-fix scene,
+    inside a bin that sat 23 cm too far out and therefore scored nothing."""
     lines = Tossing3DRenderer.caption(
         state=state(cube_x=2.2197, cube_z=0.0444), env=Tossing3DEnvironment()
     )
