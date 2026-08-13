@@ -39,9 +39,9 @@ through the slow swing and just under half way through the fast one. See
 
 ## The operator models, and the two choices that are load-bearing
 
-The rule this repo enforces is that an operator model must never permit *more* than the
-raw dynamics allow -- a precondition weaker than reality yields plans that look valid and
-cannot execute. Two of the declarations below exist only for that reason:
+The rule here is that an operator model must never permit *more* than the raw dynamics
+allow -- a precondition weaker than reality yields plans that look valid and cannot
+execute. Two of the declarations below exist only for that reason:
 
 1. **`Pick` requires `Reachable(?cube, ?barrier)`.** The base cannot cross the barrier,
    so a cube past it can never be grasped. Without this precondition a planner emits
@@ -58,20 +58,11 @@ And one on the other side:
    the planner's model of a *failed* toss honest -- the alternative, deleting it only on
    success, is a model in which a missed throw costs nothing.
 
-**The half of that rule nothing enforces.** This used to say the rule was "exactly as
-strong" and cite `tests/environments/test_operator_dynamics_fidelity.py` as enforcing it.
-Both halves were wrong. That file's invariant is one-directional -- an applicable ground
-skill must, when executed, *change the real state* -- and its own docstring is explicit
-that it does not assert a skill *achieves* its add effects, because that is competence,
-which EES exists to learn. Nor does it cover this domain: its `_DOMAINS` are `lightswitch`,
-`ballring` and `tossingroom`, and the stand-in
-(`tests/environments/tossing3d/test_operator_fidelity.py`) applies the same one-directional
-invariant along the oracle's trajectory.
-
-So a `Toss` from a pose `RobotAtSuccessfulThrowPose` wrongly accepts still hurls the cube
-and still changes the state, satisfying both tests while the throw misses. What does
-constrain it is `test_no_toss_parameterisation_scores_from_beyond_the_accepted_band` in
-`test_kinder_fidelity.py`.
+Nothing enforces that rule automatically: `test_operator_dynamics_fidelity.py` does not
+list this domain, and both it and this domain's `test_operator_fidelity.py` assert only
+that an applicable ground skill changes the real state -- which a missed throw does. An
+over-permissive `RobotAtSuccessfulThrowPose` is caught only by
+`test_no_toss_parameterisation_scores_from_beyond_the_accepted_band`.
 
 ## No operator takes a goal region
 
