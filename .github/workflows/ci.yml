@@ -33,13 +33,25 @@ jobs:
     # package needs the submodules on disk before pip can install them: both `-e` paths
     # below are empty directories in a fresh checkout and pip fails outright.
     env: &kinder_env
-      # `register_all_environments()` rewrites MUJOCO_GL to `osmesa` when DISPLAY is
-      # unset, and `import mujoco` then raises into an exception handler that swallows
-      # it -- so every Dynamic3D environment vanishes silently and the failure surfaces
-      # much later as a `NameNotFound`. DISPLAY only has to exist; nothing is drawn.
-      DISPLAY: ":0"
-      MUJOCO_GL: egl
-      PYOPENGL_PLATFORM: egl
+      # **CI renders through OSMesa; the workstation stays on EGL.** That divergence is
+      # deliberate. `ubuntu-latest` has no EGL driver, so anything that opens a MuJoCo GL
+      # context under `MUJOCO_GL=egl` dies with
+      # `AttributeError: 'NoneType' object has no attribute 'eglQueryString'`. These two
+      # values are kinder-baselines' own CI verbatim -- its `unit-tests` job sets exactly
+      # this pair on its Pytest step -- which is the reference implementation for running
+      # KINDER headlessly.
+      #
+      # `PYOPENGL_PLATFORM` is the **empty string**, not `osmesa` and not merely unset:
+      # `mujoco/osmesa/__init__.py` sets it to `osmesa` itself when it is falsy, but
+      # *raises* if it is already set to anything that is not `osmesa`.
+      #
+      # No `DISPLAY` here, also matching kinder-baselines. `register_all_environments()`
+      # rewrites both variables to `osmesa` when DISPLAY is unset -- which is now exactly
+      # what this job wants, so its headless detection agrees with the choice above
+      # instead of being suppressed by a display that does not exist. A `DISPLAY: ":0"`
+      # was set here while CI wanted EGL, for precisely the opposite reason.
+      MUJOCO_GL: "osmesa"
+      PYOPENGL_PLATFORM: ""
       # kindergarden fetches ~2 GB of MimicLabs scene assets from Google Drive on
       # `kinder.make()`. Its own CI sets this; ours must too, or every job pays for a
       # download that no test in this repo needs.
@@ -92,6 +104,17 @@ jobs:
     runs-on: ubuntu-latest
     env: *kinder_env
     steps:
+      # Selecting OSMesa above is only half of it -- `libosmesa6-dev` is what makes the
+      # backend exist. Without it MuJoCo raises on import and `kinder`'s `_check_deps`
+      # swallows the exception, so every Dynamic3D environment vanishes *silently* and
+      # the failure resurfaces much later as a `NameNotFound`. Copied from
+      # kinder-baselines' own CI, whose `unit-tests` job runs this same step verbatim;
+      # BLAS/LAPACK are in it because `pybullet_helpers` compiles IKFast against them.
+      # Before checkout, as it is there: it touches nothing in the workspace.
+      - name: Install LAPACK BLAS, and OSMESA
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
       - uses: actions/checkout@v4
         with:
           submodules: recursive

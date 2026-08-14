@@ -108,6 +108,10 @@ sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf 
   `kinder.envs.dynamic3d.envs`, *not* the `kinder.envs.dynamic3d` package, which does not
   pull in `mujoco`) before that call, and set both variables back to `egl` after it.
   `scripts/with_env.sh` exports both; the import ordering is still yours to get right.
+  **CI diverges and renders through OSMesa**: an `ubuntu-latest` runner has no EGL
+  driver, so `ci.yml`'s `test` job installs `libosmesa6-dev` and sets `MUJOCO_GL=osmesa`
+  with `PYOPENGL_PLATFORM` empty — kinder-baselines' own recipe — while the workstation
+  stays on `egl`.
 - **Memory.** The unbounded PyBullet leak is fixed upstream (`PyBulletSim` disconnects
   from a `weakref.finalize`), but a planner grounds a fresh sim per sampling attempt, so
   holding many alive at once is still expensive — measured **~2.23 GiB per Tossing3D
