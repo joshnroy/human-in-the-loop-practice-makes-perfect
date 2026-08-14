@@ -317,6 +317,11 @@ pointed at each arm directory rather than at the sweep root, which is one level 
 was off, and the `episode*.mp4` files these runs wrote are *evaluation* episodes. A clip of
 the shut-gripper deadlock would need a re-run, which this task deliberately did not do.
 
+TODO: add one. Re-run a single stranded seed with `--record-full-loop` and commit the clip
+beside this page. The shut-gripper deadlock is the finding here and it is the one thing on
+this page nobody can see: `4/10` seeds end holding nothing with the gripper commanded shut,
+and a still frame cannot show that the robot then does nothing for ninety-nine cycles.
+
 ## Recommendation
 
 **Keep citing the 2026-08-08 page as the motivating measurement, and cite this one for the
