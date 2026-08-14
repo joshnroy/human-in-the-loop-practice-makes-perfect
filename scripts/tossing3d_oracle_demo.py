@@ -119,9 +119,8 @@ cannot drift apart.
 import argparse
 import functools
 import json
-import os
 import sys
-from collections.abc import Callable, Mapping, MutableMapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from enum import Enum
 from pathlib import Path
 from types import ModuleType
@@ -131,6 +130,8 @@ import imageio.v2 as imageio
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ConfigDict, Field
+
+from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
 # Upstream's own test parameters -- see the module docstring.
 DEFAULT_ENV_ID = "kinder/Tossing3D-o1-v0"
@@ -154,9 +155,6 @@ FILENAME_PREFIX = "tossing3d_oracle"
 DEFAULT_EVERY = 2
 DEFAULT_COLORS = 128
 DEFAULT_LOSSY = 100
-
-# A DISPLAY only has to *exist*; nothing is drawn to it. See configure_headless_rendering.
-FALLBACK_DISPLAY = ":0"
 
 # The one fixed line of the caption: the mechanism, not a verdict. It states what
 # scoring *is* on this scene -- the bin sits on the goal region, so the two events
@@ -386,24 +384,13 @@ def print_and_write_grid(
         print(f"\nwrote {results_json}")
 
 
-def configure_headless_rendering(
-    *, environ: MutableMapping[str, str] | None = None
-) -> dict[str, str]:
-    """Point MuJoCo at EGL, and make sure a DISPLAY exists, before KINDER is imported.
-
-    This is the trap that costs an hour. `kinder.register_all_environments()` rewrites
-    `MUJOCO_GL` to `osmesa` when `DISPLAY` is unset; `import mujoco` then raises;
-    `_check_deps` **swallows** that exception; and every Dynamic3D environment
-    silently vanishes into a `NameNotFound` from `kinder.make`. Nothing reports the
-    real cause. Setting `DISPLAY` skips the rewrite entirely, and forcing
-    `MUJOCO_GL`/`PYOPENGL_PLATFORM` to `egl` overrides an inherited `osmesa` -- the
-    one value known to break the import -- rather than respecting it.
-    """
-    target = os.environ if environ is None else environ
-    target.setdefault("DISPLAY", FALLBACK_DISPLAY)
-    target["MUJOCO_GL"] = "egl"
-    target["PYOPENGL_PLATFORM"] = "egl"
-    return {key: target[key] for key in ("DISPLAY", "MUJOCO_GL", "PYOPENGL_PLATFORM")}
+# One implementation, aliased rather than copied. This script and `KinderBackend` were
+# separate copies of the same eight lines, and they drifted exactly as a duplicate does:
+# the fix that made the backend inheritable had to be written twice or it would have been
+# written once and silently missed here. The alias keeps the bare name this module's own
+# tests import and `import_kinder` calls, while the behaviour has a single home. See
+# `KinderBackend.configure_headless_rendering` for the snapshot rule and why it exists.
+configure_headless_rendering = KinderBackend.configure_headless_rendering
 
 
 def import_kinder() -> KinderApi:

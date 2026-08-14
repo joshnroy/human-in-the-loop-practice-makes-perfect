@@ -15,16 +15,17 @@ becomes a `KinderObservation` of plain floats, and a whole *skill* becomes one c
 ## The import dance, which is the trap that costs an hour
 
 `kinder.register_all_environments()` rewrites `MUJOCO_GL` to `osmesa` whenever `DISPLAY`
-is unset (`src/kinder/__init__.py:67-74`). Under `osmesa`, `import mujoco` raises on this
-machine -- and `_check_deps` swallows *every* exception, so the entire `Dynamic3D`
-category is skipped in silence and the failure surfaces much later as
+is unset (`src/kinder/__init__.py:67-74`). Under a backend that is selected but not
+installed, `import mujoco` raises -- and `_check_deps` swallows *every* exception, so the
+entire `Dynamic3D` category is skipped in silence and the failure surfaces much later as
 
     gymnasium.error.NameNotFound: Environment `Tossing3D-o1` doesn't exist in namespace kinder.
 
 Three things together avoid it, and all three are load-bearing:
 
 1. `DISPLAY` is set (to `:0`; nothing is ever drawn to it) so the rewrite never fires.
-2. `MUJOCO_GL`/`PYOPENGL_PLATFORM` are forced to `egl`, overriding an inherited `osmesa`.
+2. `MUJOCO_GL`/`PYOPENGL_PLATFORM` are re-asserted from `REQUESTED_GL_BACKEND`, the
+   snapshot this module takes at import, overriding whatever the rewrite left behind.
 3. A *module* inside `kinder.envs.dynamic3d` is imported -- `kinder.envs.dynamic3d.envs`,
    not the package `kinder.envs.dynamic3d`, which does not pull in `mujoco` -- so
    `mujoco` is already in `sys.modules` before `register_all_environments()` runs.
@@ -32,6 +33,16 @@ Three things together avoid it, and all three are load-bearing:
 `register_all_environments()` leaves `MUJOCO_GL` reading `osmesa` afterwards even when
 it worked, so the environment is re-asserted immediately after the call rather than left
 to a caller who might forget.
+
+**Point 2 used to read "are forced to `egl`", and that was wrong in a way worth
+recording.** The premise was that `osmesa` is the value that breaks the import -- but that
+is a property of a workstation with an EGL driver and no OSMesa, not of `osmesa`. On a
+headless `ubuntu-latest` runner it is the reverse: there is no EGL driver, `libosmesa6-dev`
+is installed, and hardcoding `egl` here made every Tossing3D test fail with
+`AttributeError: 'NoneType' object has no attribute 'eglQueryString'` -- unreachable from
+the workflow, because this line overrode the job environment in-process. The backend is
+now inheritable, and the two `osmesa`s are told apart by *when* they arrive: see
+`REQUESTED_GL_BACKEND`.
 
 ## The PyBullet client leak is fixed upstream, not worked around here
 
@@ -88,6 +99,22 @@ from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 # A DISPLAY only has to *exist* -- nothing is ever drawn to it. See the module docstring.
 FALLBACK_DISPLAY = ":0"
+
+# The GL backend, **snapshotted here at import time**, which is the whole design.
+#
+# `register_all_environments()` writes `MUJOCO_GL` itself, so after it has run an `osmesa`
+# in the environment is ambiguous: it may be what an operator asked for, or it may be what
+# upstream just put there. Reading the request *before* KINDER can be imported -- and this
+# module is necessarily imported first, since importing KINDER is a method on the class
+# below -- tells the two apart by construction rather than by heuristic. What is here at
+# import is a request and is honoured; anything appearing later is a rewrite and is undone.
+#
+# An empty string counts as unset, because that is how CI passes `PYOPENGL_PLATFORM`:
+# `mujoco/osmesa/__init__.py` fills a falsy one in itself but *raises* on any non-`osmesa`
+# value, so the empty string is the one setting that asks for nothing and forbids nothing.
+DEFAULT_GL_BACKEND = "egl"
+REQUESTED_GL_BACKEND = os.environ.get("MUJOCO_GL") or DEFAULT_GL_BACKEND
+REQUESTED_GL_PLATFORM = os.environ.get("PYOPENGL_PLATFORM") or REQUESTED_GL_BACKEND
 
 # `task_view` is the camera this scene's own task config defines, and the only one that
 # shows the throw. `agentview_1` (what upstream's demo script sets, but only
@@ -242,18 +269,29 @@ class KinderBackend(BaseModel):
 
     @staticmethod
     def configure_headless_rendering(
-        *, environ: MutableMapping[str, str] | None = None
+        *,
+        environ: MutableMapping[str, str] | None = None,
+        backend: str | None = None,
+        platform: str | None = None,
     ) -> dict[str, str]:
-        """Point MuJoCo at EGL and make sure a `DISPLAY` exists, before KINDER is imported.
+        """Re-assert the requested GL backend, and make sure a `DISPLAY` exists, before
+        KINDER is imported.
 
-        `DISPLAY` is `setdefault`, so a real display wins; `MUJOCO_GL`/`PYOPENGL_PLATFORM`
-        are forced, because the one inherited value known to break the import is exactly
-        the one `register_all_environments()` writes.
+        `DISPLAY` is `setdefault`, so a real display wins. `MUJOCO_GL`/`PYOPENGL_PLATFORM`
+        are *written*, because the value in the environment after
+        `register_all_environments()` is upstream's rewrite rather than anyone's choice --
+        but what gets written is `REQUESTED_GL_BACKEND`, the snapshot taken at import,
+        rather than a hardcoded `egl`. So a job that genuinely asks for `osmesa` -- CI,
+        which has no EGL driver -- gets it, while the rewrite is still undone.
+
+        `backend`/`platform` override the snapshot; they exist for tests, which cannot
+        re-import the module per case. A `backend` alone carries `platform` with it, since
+        the two are one choice and CI deliberately leaves `PYOPENGL_PLATFORM` empty.
         """
         target = os.environ if environ is None else environ
         target.setdefault("DISPLAY", FALLBACK_DISPLAY)
-        target["MUJOCO_GL"] = "egl"
-        target["PYOPENGL_PLATFORM"] = "egl"
+        target["MUJOCO_GL"] = backend or REQUESTED_GL_BACKEND
+        target["PYOPENGL_PLATFORM"] = platform or backend or REQUESTED_GL_PLATFORM
         return {key: target[key] for key in ("DISPLAY", "MUJOCO_GL", "PYOPENGL_PLATFORM")}
 
     def api(self) -> KinderApi:

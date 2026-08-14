@@ -112,6 +112,10 @@ sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf 
   driver, so `ci.yml`'s `test` job installs `libosmesa6-dev` and sets `MUJOCO_GL=osmesa`
   with `PYOPENGL_PLATFORM` empty — kinder-baselines' own recipe — while the workstation
   stays on `egl`.
+  **The backend is inheritable, not hardcoded**: `configure_headless_rendering` snapshots
+  `MUJOCO_GL`/`PYOPENGL_PLATFORM` at module import and re-asserts *that*, defaulting to
+  `egl`. A value set before KINDER is imported is honoured; the `osmesa`
+  `register_all_environments()` writes afterwards is still undone.
 - **Memory.** The unbounded PyBullet leak is fixed upstream (`PyBulletSim` disconnects
   from a `weakref.finalize`), but a planner grounds a fresh sim per sampling attempt, so
   holding many alive at once is still expensive — measured **~2.23 GiB per Tossing3D
