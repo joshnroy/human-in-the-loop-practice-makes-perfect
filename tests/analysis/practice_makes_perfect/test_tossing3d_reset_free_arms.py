@@ -19,6 +19,8 @@ import pytest
 
 from analysis.practice_makes_perfect.paired_tests import PairedTests
 from analysis.practice_makes_perfect.tossing3d_reset_free_arms import (
+    _DASHED,
+    _SOLID,
     NEVER,
     SCHEDULED,
     WINDOW,
@@ -364,3 +366,114 @@ def test_render_practice_with_outcomes_annotates_without_raising(*, tmp_path: Pa
             )
             == expected_index
         )
+
+
+# --- the stuck/non-stuck split -------------------------------------------------------
+#
+# Post-OpenGripper the `never` population is expected to be bimodal: kb#118 measured
+# stranding on 4/10 seeds, of which OpenGripper recovers 1/4, the other 3/4 being a
+# `pick_shelf` IK limitation no operator fixes. Every earlier Tossing3D measurement had
+# 10/10 stranding, so the arm never split and the module never needed to -- a single bold
+# mean over a bimodal arm describes none of its seeds.
+
+
+def _write_split_never_arm(*, root: Path, stuck_seeds: list[int], acting_seeds: list[int]) -> None:
+    """A `never` arm where some seeds strand and some keep acting, plus a scheduled arm
+    that never strands. Transitions, not scores, decide the split."""
+    for seed in stuck_seeds:
+        _write_run(
+            run_dir=root / NEVER / "ees" / str(seed),
+            solved_per_sweep=_settled(level=1),
+            transitions_per_cycle=[6] + [0] * (NUM_SWEEPS - 2),
+        )
+    for seed in acting_seeds:
+        _write_run(run_dir=root / NEVER / "ees" / str(seed), solved_per_sweep=_settled(level=5))
+    for seed in stuck_seeds + acting_seeds:
+        _write_run(run_dir=root / SCHEDULED / "ees" / str(seed), solved_per_sweep=_settled(level=8))
+
+
+def test_the_split_is_stranding_onset_seed_for_seed(*, tmp_path: Path) -> None:
+    """The partition must BE `stranding_onset`, not merely correlate with it. A second,
+    subtly different definition is how two figures of one domain come to disagree -- and
+    Tossing Room's `pickup_weight_stranding.py` already uses this one."""
+    _write_split_never_arm(root=tmp_path, stuck_seeds=[0, 2], acting_seeds=[1])
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+
+    stuck, non_stuck = Tossing3DResetFree.stuck_split(curves=arms[NEVER])
+
+    assert stuck == [0, 2]
+    assert non_stuck == [1]
+    for seed in stuck:
+        transitions = Tossing3DResetFree.transitions_per_cycle(evaluations=arms[NEVER][seed])
+        assert Tossing3DResetFree.stranding_onset(transitions=transitions) is not None
+    for seed in non_stuck:
+        transitions = Tossing3DResetFree.transitions_per_cycle(evaluations=arms[NEVER][seed])
+        assert Tossing3DResetFree.stranding_onset(transitions=transitions) is None
+
+
+def test_a_split_never_arm_is_solid_non_stuck_plus_dashed_stuck(*, tmp_path: Path) -> None:
+    _write_split_never_arm(root=tmp_path, stuck_seeds=[0], acting_seeds=[1, 2])
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+
+    assert Tossing3DResetFree.subgroups(curves=arms[NEVER], arm=NEVER) == [
+        ("non-stuck", [1, 2], _SOLID),
+        ("stuck", [0], _DASHED),
+    ]
+
+
+def test_an_all_stranded_never_arm_gets_one_solid_line_that_says_so(*, tmp_path: Path) -> None:
+    """The pre-OpenGripper case, which every committed Tossing3D number sits on. An arm
+    with no split says so rather than silently having one line where its sibling has
+    two."""
+    _write_split_never_arm(root=tmp_path, stuck_seeds=[0, 1], acting_seeds=[])
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+
+    assert Tossing3DResetFree.subgroups(curves=arms[NEVER], arm=NEVER) == [
+        ("no split here", [0, 1], _SOLID)
+    ]
+
+
+def test_the_scheduled_arm_never_splits_and_says_no_stranding_here(*, tmp_path: Path) -> None:
+    _write_split_never_arm(root=tmp_path, stuck_seeds=[0], acting_seeds=[1])
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+
+    assert Tossing3DResetFree.subgroups(curves=arms[SCHEDULED], arm=SCHEDULED) == [
+        ("no stranding here", [0, 1], _SOLID)
+    ]
+
+
+def test_the_linestyles_are_exactly_the_project_spec() -> None:
+    """Solid main population, dashed `(0, (4, 2))` secondary subgroup -- the same two
+    values `reset_policy_control.py` uses on Tossing Room, so the domains read alike."""
+    assert _SOLID == "-"
+    assert _DASHED == (0, (4, 2))
+
+
+def test_legend_entries_carry_the_exact_subgroup_count() -> None:
+    """A reader must be able to check `n` sums to the seed total without re-deriving it
+    from the plot."""
+    assert (
+        Tossing3DResetFree.subgroup_label(arm=NEVER, subgroup="stuck", num_seeds=3)
+        == "never reset — stuck mean, n=3"
+    )
+
+
+def test_an_unsplit_arms_legend_keeps_the_plain_form_and_parenthesises_the_reason() -> None:
+    """`env resets — mean, n=10` is CLAUDE.md's own example; the reason there is one line
+    rather than two is appended, not spliced into the middle where it garbles."""
+    assert (
+        Tossing3DResetFree.subgroup_label(arm=SCHEDULED, subgroup="no stranding here", num_seeds=10)
+        == "env resets — mean, n=10 (no stranding here)"
+    )
+
+
+def test_render_curves_draws_a_bimodal_never_arm_as_two_lines(*, tmp_path: Path) -> None:
+    """The whole point of the split: a bimodal arm must not be drawn as one line."""
+    _write_split_never_arm(root=tmp_path, stuck_seeds=[0], acting_seeds=[1, 2])
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    output = tmp_path / "curves.png"
+
+    Tossing3DResetFree.render_curves(arms=arms, output=output)
+
+    assert output.stat().st_size > 0
+    assert len(Tossing3DResetFree.subgroups(curves=arms[NEVER], arm=NEVER)) == 2

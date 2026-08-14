@@ -77,6 +77,25 @@ _ARM_COLOURS = {SCHEDULED: "#0072B2", NEVER: "#D55E00"}
 # green `#1a9850` dashed and purple `#762a83` dotted.
 _REFERENCE_COLOUR = "#666666"
 
+# Linestyle carries the WITHIN-arm subgroup, never the arm and never the budget (colour
+# already carries the arm's role). Solid is the main population -- or an arm's only line
+# where it does not split; dashed is the stuck/stranded subgroup. Same two values as
+# `reset_policy_control.py` on Tossing Room, so the two domains' figures read alike.
+_SOLID = "-"
+_DASHED = (0, (4, 2))
+
+# Faint per-seed traces are drawn FIRST, underneath the bold subgroup means. They are the
+# point rather than decoration: a bold mean over a bimodal population describes none of
+# its seeds, and these are what make that visible instead of asserted in prose.
+_SEED_ALPHA = 0.16
+_SEED_WIDTH = 0.8
+_MEAN_WIDTH = 2.3
+
+_POLICY_DISPLAY = {SCHEDULED: "env resets", NEVER: "never reset"}
+# The two genuine within-arm subgroups. Anything else `subgroups` returns is an
+# unsplit-arm fallback and is labelled parenthetically -- see `subgroup_label`.
+_SUBGROUP_NAMES = ("stuck", "non-stuck")
+
 
 class Tossing3DResetFree:
     """A static-method container, never instantiated, same as every other business-logic
@@ -209,6 +228,77 @@ class Tossing3DResetFree:
         return onset
 
     @staticmethod
+    def stuck_split(
+        *, curves: dict[int, list[tuple[int, int, int]]]
+    ) -> tuple[list[int], list[int]]:
+        """`(stuck, non_stuck)` seeds, partitioned by `stranding_onset`.
+
+        **Derived, never assumed from the arm's name.** Every Tossing3D measurement before
+        OpenGripper had `10/10` seeds stranding, so this returned an empty `non_stuck` and
+        the arm drew as one line. Post-OpenGripper the population is expected to be
+        bimodal -- kb#118 measured stranding on `4/10` seeds, of which OpenGripper recovers
+        `1/4`, the other `3/4` being a `pick_shelf` IK limitation no operator fixes -- and
+        a pooled mean over that describes none of its seeds.
+
+        The predicate is `stranding_onset` itself rather than a second, similar rule: that
+        is the same definition `pickup_weight_stranding.py` uses on Tossing Room, and two
+        subtly different definitions is exactly how two figures of one domain come to
+        disagree. `None` means the run was still acting in its last period.
+        """
+        stuck: list[int] = []
+        non_stuck: list[int] = []
+        for seed in sorted(curves):
+            transitions = Tossing3DResetFree.transitions_per_cycle(evaluations=curves[seed])
+            onset = Tossing3DResetFree.stranding_onset(transitions=transitions)
+            (stuck if onset is not None else non_stuck).append(seed)
+        return stuck, non_stuck
+
+    @staticmethod
+    def subgroup_label(*, arm: str, subgroup: str, num_seeds: int) -> str:
+        """A legend entry carrying the exact seed count, e.g.
+        `never reset — stuck mean, n=3`.
+
+        The count is in the legend so a reader can check `n` sums to the seed total
+        without re-deriving it from the plot. Counts are `x/y` or a bare `n=` everywhere;
+        never a percentage.
+
+        A real subgroup names itself (`— stuck mean, n=3`). The unsplit fallbacks are
+        parenthesised instead (`— mean, n=10 (no stranding here)`), which keeps the
+        CLAUDE.md form `env resets — mean, n=10` intact while still stating why there is
+        one line rather than two -- `— no stranding here mean` reads as a garble.
+        """
+        if subgroup in _SUBGROUP_NAMES:
+            return f"{_POLICY_DISPLAY[arm]} — {subgroup} mean, n={num_seeds}"
+        return f"{_POLICY_DISPLAY[arm]} — mean, n={num_seeds} ({subgroup})"
+
+    @staticmethod
+    def subgroups(
+        *, curves: dict[int, list[tuple[int, int, int]]], arm: str
+    ) -> list[tuple[str, list[int], object]]:
+        """`(label, seeds, linestyle)` for one arm.
+
+        The scheduled arm is never split -- it has a reset every period, so it cannot
+        strand -- and says `no stranding here` rather than silently having one line where
+        its sibling has two. A `never` arm that turns out not to split says `no split
+        here` for the same reason. Both fallbacks are deliberate: an absent second line
+        must be legible as a measured fact, not as an oversight.
+        """
+        seeds = sorted(curves)
+        if arm == SCHEDULED:
+            return [("no stranding here", seeds, _SOLID)]
+        stuck, non_stuck = Tossing3DResetFree.stuck_split(curves=curves)
+        if not stuck or not non_stuck:
+            return [("no split here", seeds, _SOLID)]
+        return [("non-stuck", non_stuck, _SOLID), ("stuck", stuck, _DASHED)]
+
+    @staticmethod
+    def subgroup_mean(
+        *, curves: dict[int, list[tuple[int, int, int]]], seeds: list[int], cycles: list[int]
+    ) -> list[float]:
+        """The mean solved count at each checkpoint, over one subgroup's seeds."""
+        return [statistics.fmean(curves[seed][i][1] for seed in seeds) for i in cycles]
+
+    @staticmethod
     def late_scores(*, curves: dict[int, list[tuple[int, int, int]]]) -> dict[int, float]:
         """Each seed's mean solved count over the last `WINDOW` sweeps.
 
@@ -337,25 +427,39 @@ class Tossing3DResetFree:
             curves = arms[arm]
             cycles = list(range(min(len(c) for c in curves.values())))
             colour = _ARM_COLOURS[arm]
+            # Faint per-seed traces FIRST, so every bold mean sits on top of the spread it
+            # summarises rather than hiding it.
             for seed in sorted(curves):
                 axes.plot(
                     cycles,
                     [curves[seed][i][1] for i in cycles],
                     color=colour,
-                    alpha=0.18,
-                    linewidth=0.9,
+                    alpha=_SEED_ALPHA,
+                    linewidth=_SEED_WIDTH,
                 )
-            pooled_curve = [statistics.fmean(curves[seed][i][1] for seed in curves) for i in cycles]
-            x, y = Tossing3DResetFree.pooled(
-                scores=Tossing3DResetFree.late_scores(curves=curves), num_total=num_total
-            )
-            axes.plot(
-                cycles,
-                pooled_curve,
-                color=colour,
-                linewidth=2.4,
-                label=f"{arm} — last {WINDOW} sweeps {x:.1f}/{y}",
-            )
+            # Then one bold mean per within-arm subgroup, distinguished by LINESTYLE only.
+            # Colour still carries the arm's role and nothing else, so a split arm reads as
+            # two lines of one hue rather than as two arms.
+            for subgroup, seeds, linestyle in Tossing3DResetFree.subgroups(curves=curves, arm=arm):
+                x, y = Tossing3DResetFree.pooled(
+                    scores={
+                        seed: score
+                        for seed, score in Tossing3DResetFree.late_scores(curves=curves).items()
+                        if seed in seeds
+                    },
+                    num_total=num_total,
+                )
+                label = Tossing3DResetFree.subgroup_label(
+                    arm=arm, subgroup=subgroup, num_seeds=len(seeds)
+                )
+                axes.plot(
+                    cycles,
+                    Tossing3DResetFree.subgroup_mean(curves=curves, seeds=seeds, cycles=cycles),
+                    color=colour,
+                    linestyle=linestyle,
+                    linewidth=_MEAN_WIDTH,
+                    label=f"{label} — last {WINDOW} sweeps {x:.1f}/{y}",
+                )
         axes.axhline(
             ORACLE_PER_SEED,
             color=_REFERENCE_COLOUR,
@@ -377,7 +481,7 @@ class Tossing3DResetFree:
         axes.set_ylabel("test tasks solved per seed")
         axes.set_title(
             f"Reset-free against scheduled practice on Tossing3D (of {num_total} test tasks) — "
-            "bold pooled mean over faint per-seed lines",
+            "bold subgroup means over faint per-seed lines",
             fontsize=10.5,
         )
         axes.legend(fontsize=8.5, loc="lower right", framealpha=0.95)
