@@ -53,8 +53,13 @@ jobs:
       MUJOCO_GL: "osmesa"
       PYOPENGL_PLATFORM: ""
       # kindergarden fetches ~2 GB of MimicLabs scene assets from Google Drive on
-      # `kinder.make()`. Its own CI sets this; ours must too, or every job pays for a
-      # download that no test in this repo needs.
+      # `kinder.make()`. This suppresses that *implicit* fetch; the `test` job below
+      # instead restores them from a cache and downloads them explicitly on a miss.
+      #
+      # **This does not mean no test needs them**, which is what this comment used to say.
+      # Every simulator-backed Tossing3D test builds a scene and therefore reads them; 23
+      # tests failed on a missing `.msh` when the variable was set with nothing to supply
+      # them. It is correct in kindergarden's own CI, whose tests do not build these scenes.
       DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
@@ -137,7 +142,43 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/aibasel/downward.git
           cd downward && ./build.py
+      # The MimicLabs scene assets, cached exactly as Fast Downward is above: restore by
+      # key, and a conditional step that fetches them only on a miss.
+      #
+      # They are a genuine runtime dependency of every simulator-backed Tossing3D test --
+      # `Tossing3D-o1.json` declares `"scene": "lab2"`, and building it opens
+      # `meshes/lab2/.../wall_decoration_vis.msh`. Without them 23 tests fail on a missing
+      # file, which is what they did before this step existed.
+      #
+      # **Keyed on the `reference/kindergarden` gitlink**, because that is what the assets
+      # move with. Deliberately no `restore-keys`: a prefix fallback would serve the
+      # previous pin's geometry after a bump, which is precisely the silent scene change
+      # `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` exists to catch.
+      # A bump therefore pays one slow download and reseeds the key.
+      - name: Resolve the kindergarden pin
+        id: kinder-pin
+        run: echo "sha=$(git rev-parse HEAD:reference/kindergarden)" >> "$GITHUB_OUTPUT"
+      - name: Cache MimicLabs scene assets
+        id: cache-assets
+        uses: actions/cache@v4
+        with:
+          path: reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
+          key: mimiclabs-scenes-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      # After the install, because it imports `kinder`. Fetching here rather than letting
+      # `kinder.make()` do it means `DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD` stays set for
+      # pytest: the assets are either in place before any test runs, or this step fails
+      # loudly -- instead of one test quietly pulling 2 GB mid-suite.
+      #
+      # The whole 2.0 GB tree, because upstream's downloader takes no scene argument: it
+      # fetches one `assets.zip` from one Drive URL and unpacks all seven lab scenes.
+      # Tossing3D reads ~25 MB of that (`meshes/lab2` 14 M, `textures/lab2` 7.5 M, plus
+      # 3.7 M of shared top-level textures `lab2.xml` also references). Scoping the fetch
+      # would need an upstream `kindergarden` change, so the cache pays the 2 GB once per
+      # pin instead.
+      - name: Download MimicLabs scene assets
+        if: steps.cache-assets.outputs.cache-hit != 'true'
+        run: python -c "from kinder.utils import download_mimiclabs_assets as d; d(non_interactive=True)"
       - name: Verify KINDER resolves under reference/
         run: |
           python - <<'PY'

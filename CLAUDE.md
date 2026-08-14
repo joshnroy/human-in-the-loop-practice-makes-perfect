@@ -91,6 +91,14 @@ IKFast from C++ the first time a controller asks for inverse kinematics — on T
 that means `pick_shelf`, not the toss sequence. Without these the build fails; do not
 substitute wheel-internal libraries.
 
+**CI pays for the MimicLabs assets.** `Tossing3D-o1.json` declares `"scene": "lab2"`, so
+every simulator-backed test builds a MimicLabs scene — setting
+`DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD` with nothing to supply them just failed `23/1925`
+tests on a missing `.msh`. CI restores the tree from an `actions/cache` keyed on the
+`reference/kindergarden` gitlink, so a pin bump reseeds it rather than serving the previous
+pin's geometry. The 2.0 GB buys the ~25 MB Tossing3D actually reads; scoping the download
+is an upstream `kindergarden` change, not ours.
+
 ```bash
 sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf only
 ```
