@@ -302,6 +302,14 @@ def report(*, results_root: Path, ees_root: Path | None, output_prefix: Path | N
         print()
         print(Tossing3DReferenceArms.describe(label=label, comparison=comparison))
 
+    print("\nper-seed LATE (the numbers every pooled x/y above is the column sum of):")
+    columns = [key for key in present]
+    print("  seed | " + " | ".join(f"{m}/{p}"[:22].rjust(22) for p, m in columns))
+    shared = sorted(set.intersection(*(set(present[key]) for key in columns)))
+    for seed in shared:
+        print(f"  {seed:>4} | " + " | ".join(f"{present[key][seed]:>22.1f}" for key in columns))
+    print("   SUM | " + " | ".join(f"{sum(present[key].values()):>22.1f}" for key in columns))
+
     print("\npractice actually taken (transitions per cycle):")
     for key, seed_curves in curves.items():
         if not seed_curves:
@@ -340,6 +348,99 @@ def report(*, results_root: Path, ees_root: Path | None, output_prefix: Path | N
         render_paired(
             late=present, output=output_prefix.with_name(output_prefix.name + "-paired.png")
         )
+        render_practice(
+            curves=curves, output=output_prefix.with_name(output_prefix.name + "-practice.png")
+        )
+
+
+def render_practice(
+    *,
+    curves: dict[tuple[str, str], dict[int, list[tuple[int, int, int]]]],
+    output: Path,
+) -> None:
+    """Cumulative practice transitions per cycle, one panel per method.
+
+    This is the figure that carries the domain claim. A robot that keeps practising is a
+    line that keeps rising; a stranded one goes flat and stays flat. Putting EES and
+    `random-skills` in adjacent panels on a shared y axis is the whole argument that
+    stranding belongs to the *domain* rather than to the learner: two methods with nothing
+    in common but the operators collapse to the same handful of transitions.
+
+    `skill-oracle` is absent rather than empty-panelled -- it runs `num_cycles=0`, so it
+    has no practice to plot and a blank panel would suggest it practised and did nothing.
+    """
+    panels = [
+        ("ees", "EES"),
+        ("random-skills", "random-skills"),
+    ]
+    drawable = [
+        (method, title)
+        for method, title in panels
+        if any(
+            (policy, method) in curves and curves[(policy, method)]
+            for policy in ("scheduled", "never")
+        )
+    ]
+    if not drawable:
+        return
+    figure, axes_list = plt.subplots(
+        1, len(drawable), figsize=(5.4 * len(drawable), 4.8), sharey=True
+    )
+    if len(drawable) == 1:
+        axes_list = [axes_list]
+    for axes, (method, title) in zip(axes_list, drawable, strict=True):
+        for policy, colour in (("scheduled", _SCHEDULED_COLOUR), ("never", _NEVER_COLOUR)):
+            key = (policy, method)
+            if key not in curves or not curves[key]:
+                continue
+            seed_curves = curves[key]
+            totals = []
+            for evaluations in seed_curves.values():
+                steps = Tossing3DReferenceArms.transitions_per_cycle(evaluations=evaluations)
+                cumulative = []
+                running = 0
+                for step in steps:
+                    running += step
+                    cumulative.append(running)
+                totals.append(running)
+                axes.plot(
+                    range(1, len(cumulative) + 1),
+                    cumulative,
+                    color=colour,
+                    alpha=_SEED_ALPHA * 2.2,
+                    linewidth=_SEED_WIDTH,
+                )
+            stranded = sum(
+                1
+                for evaluations in seed_curves.values()
+                if Tossing3DReferenceArms.stranding_onset(
+                    transitions=Tossing3DReferenceArms.transitions_per_cycle(
+                        evaluations=evaluations
+                    )
+                )
+                is not None
+            )
+            label = "env resets" if policy == "scheduled" else "never reset"
+            axes.plot(
+                [],
+                [],
+                color=colour,
+                linewidth=_MEAN_WIDTH,
+                label=(
+                    f"{label} — {sum(totals)} transitions over {len(seed_curves)} seeds, "
+                    f"{stranded}/{len(seed_curves)} stranded"
+                ),
+            )
+        axes.set_yscale("symlog", linthresh=10)
+        axes.set_xlabel("practice cycle")
+        axes.set_title(f"{title} (100 cycles x 10 seeds)", fontsize=10)
+        axes.legend(fontsize=8, loc="upper left")
+        axes.grid(alpha=0.25)
+    axes_list[0].set_ylabel("cumulative practice transitions")
+    figure.tight_layout()
+    figure.savefig(output, dpi=150)
+    plt.close(figure)
+    print(f"wrote {output}")
 
 
 def render_curves(
@@ -429,38 +530,55 @@ def render_paired(*, late: dict[tuple[str, str], dict[int, float]], output: Path
         (
             ("never", "random-skills"),
             ("never", "ees"),
-            "reset-free:\nrandom-skills → EES",
+            "The question this experiment was run to answer",
+            ("random-skills\n(never reset)", "EES\n(never reset)"),
         ),
         (
             ("scheduled", "random-skills"),
             ("never", "random-skills"),
-            "random-skills:\nenv resets → never",
+            "The control: does random-skills collapse too?",
+            ("random-skills\n(env resets)", "random-skills\n(never reset)"),
         ),
     ]
     drawable = [p for p in pairs if p[0] in late and p[1] in late]
     if not drawable:
         return
-    figure, axes_list = plt.subplots(1, len(drawable), figsize=(4.6 * len(drawable), 5.0))
+    figure, axes_list = plt.subplots(1, len(drawable), figsize=(5.0 * len(drawable), 5.2))
     if len(drawable) == 1:
         axes_list = [axes_list]
-    for axes, (left_key, right_key, title) in zip(axes_list, drawable, strict=True):
+    for axes, (left_key, right_key, title, ticks) in zip(axes_list, drawable, strict=True):
         seeds = sorted(set(late[left_key]) & set(late[right_key]))
+        comparison = Tossing3DReferenceArms.compare(left=late[left_key], right=late[right_key])
         for seed in seeds:
             axes.plot(
                 [0, 1],
                 [late[left_key][seed], late[right_key][seed]],
+                # Orange wherever the reset-free arm is the subject, blue where the
+                # comparison spans the reset policy itself -- the same role rule the
+                # curves figure uses, so the two read as one report.
                 color=_NEVER_COLOUR if left_key[0] == "never" else _SCHEDULED_COLOUR,
                 alpha=0.55,
                 linewidth=1.2,
                 marker="o",
                 markersize=3.5,
             )
+        verdict = (
+            f"null result, p = {comparison.p_value:.3g}"
+            if comparison.is_null
+            else f"p = {comparison.p_value:.3g}"
+        )
         axes.set_xticks([0, 1])
-        axes.set_xticklabels(["left arm", "right arm"], fontsize=9)
-        axes.set_xlim(-0.25, 1.25)
+        axes.set_xticklabels(list(ticks), fontsize=9)
+        axes.set_xlim(-0.3, 1.3)
         axes.set_ylim(bottom=0)
         axes.set_ylabel("solved per seed")
-        axes.set_title(f"{title}\n(of 10 test tasks, n={len(seeds)})", fontsize=10)
+        axes.set_title(
+            f"{title}\n(of 10 test tasks, n={len(seeds)})\n"
+            f"higher on {comparison.num_right_higher}/{len(seeds)}, "
+            f"lower on {comparison.num_right_lower}/{len(seeds)}, "
+            f"tied on {comparison.num_tied}/{len(seeds)} — {verdict}",
+            fontsize=9,
+        )
         axes.grid(alpha=0.25, axis="y")
     figure.tight_layout()
     figure.savefig(output, dpi=150)
