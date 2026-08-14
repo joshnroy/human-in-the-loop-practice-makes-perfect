@@ -1,5 +1,24 @@
 # A reset-free robot on Tossing3D does not practise less — it stops practising, on 10/10 seeds after one cycle
 
+> **Staleness note (2026-08-13): the headline reproduced at the current KINDER pins; one
+> sentence of the mechanism did not.** These runs' own `config_snapshot.json` files record
+> `kindergarden 4113237` and `kinder_models 11eace5`, before PR #246 moved the 1 kHz release
+> scheduling and with it the canonical rollout's resting *x* by +41.6 mm. A paired re-run
+> at the current pins —
+> [`2026-08-13-tossing3d-reset-policy-new-pin.md`](2026-08-13-tossing3d-reset-policy-new-pin.md)
+> — reproduces `10/10` seeds stranding from cycle `1`, `990/1000` idle cycles, and a
+> saturated `p = 0.001953`. **Nothing on this page is recomputed or edited**, and every
+> number below stands as what was measured then.
+>
+> What did not carry over is the claim that the stranding *is* the toss. At the current
+> pins only `6/10` never-arm seeds attempt a `Toss` at all; the other `4/10` end with the
+> gripper shut on nothing (`HandEmpty` false, `Holding` false), a dead end reached with no
+> irreversible physical act. So read this page's "Quote the domain fact, not the idle
+> count" recommendation as naming the cleanest example of a dead end rather than the only
+> one. That the toss route was universal *here* is checked from these committed runs' own
+> `stats.json`, not merely from this prose: `10/10` of them ended their last active cycle
+> on a `Toss`.
+
 > **Staleness note (2026-08-10).** This page's per-skill counts — `Pick 1/1`,
 > `MoveToThrowPose 1/5`, `Toss 1/1`, the `3`–`13` transition-index range where the toss
 > happens, and any other figure that traces back to how many `MoveToThrowPose` draws the

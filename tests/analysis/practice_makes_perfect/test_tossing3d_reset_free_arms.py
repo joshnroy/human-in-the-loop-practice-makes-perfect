@@ -24,6 +24,7 @@ from analysis.practice_makes_perfect.tossing3d_reset_free_arms import (
     WINDOW,
     Tossing3DResetFree,
 )
+from hitl_pmp.sampler_draws import SAMPLER_DRAWS_FILENAME
 
 NUM_SWEEPS = 101
 NUM_TASKS = 10
@@ -62,6 +63,55 @@ def _outcomes_cycle(
         "Pick": {"num_attempts": pick_attempts, "num_successes": min(pick_attempts, 1)},
         "MoveToThrowPose": {"num_attempts": move_attempts, "num_successes": min(move_attempts, 1)},
         "Toss": {"num_attempts": toss_attempts, "num_successes": min(toss_attempts, 1)},
+    }
+
+
+def _write_draws(*, run_dir: Path, draws: list[dict[str, object]]) -> None:
+    """One run's `sampler_draws.jsonl`, real shape but only the fields the stranding
+    readers touch. Every line stands alone, exactly as the recorder flushes them."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / SAMPLER_DRAWS_FILENAME).write_text(
+        "".join(
+            json.dumps({
+                "cycle": 0,
+                "consultation": "uninformative",
+                "success": False,
+                "params": [],
+                **draw,
+            })
+            + "\n"
+            for draw in draws
+        )
+    )
+
+
+def _features(*, gripper: float, cube_x: float, cube_z: float) -> dict[str, float]:
+    """A whole Tossing3D-o1 feature vector, varying only the three numbers every test on
+    this page turns on. The bin box is upstream's own inflated `blocks_goal_region`; the
+    barrier sits at the sampled 1.30 every seed of the real sweep recorded."""
+    return {
+        "robot.pos_base_x": 0.0,
+        "robot.pos_base_y": 0.0,
+        "robot.pos_base_rot": 0.0,
+        "robot.pos_gripper": gripper,
+        "cube_0.x": cube_x,
+        "cube_0.y": 0.0,
+        "cube_0.z": cube_z,
+        "cube_0.qx": 0.0,
+        "cube_0.qy": 0.0,
+        "cube_0.bb_z": 0.05,
+        "cuboid_barrier.x": 1.3,
+        "cuboid_barrier.y": 0.0,
+        "cuboid_barrier.z": 0.1,
+        "bin_0.x": 2.0,
+        "bin_0.y": 0.0,
+        "bin_0.z": 0.0,
+        "bin_0.x_min": 1.85,
+        "bin_0.y_min": -0.15,
+        "bin_0.z_min": 0.0,
+        "bin_0.x_max": 2.15,
+        "bin_0.y_max": 0.15,
+        "bin_0.z_max": 0.15,
     }
 
 
@@ -327,6 +377,190 @@ def test_load_practice_outcomes_reads_both_directory_layouts(*, tmp_path: Path) 
     )
     outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
     assert outcomes[NEVER][0][0]["Toss"]["num_attempts"] == 1
+
+
+# --- the stranding *route*, and the abstract state it leaves behind ---
+#
+# `toss_transition_index` above assumes the last active cycle contained a Toss. At the
+# 2026-08-08 pins that held on 10/10 never-arm seeds, so the assumption was invisible.
+# It is not a safe assumption in general, and the guard raising is how that was found --
+# so the route is measured rather than assumed, and the resulting abstract state is read
+# off the run's own recorded features through the domain's own classifiers.
+
+
+def test_a_last_active_cycle_without_a_toss_is_not_called_a_toss(*, tmp_path: Path) -> None:
+    """The distinction `toss_transition_index` can only express by raising. A seed whose
+    only practice period ended on a failed `Pick` stranded for a different reason than one
+    that threw the cube past the barrier, and collapsing the two would restate a
+    mechanism the record does not support."""
+    _write_run(
+        run_dir=tmp_path / NEVER / "ees" / "0",
+        solved_per_sweep=[0, 0, 0],
+        transitions_per_cycle=[7, 0],
+        practice_outcomes_per_cycle=[
+            _outcomes_cycle(pick_attempts=1, move_attempts=5, toss_attempts=1),
+            _outcomes_cycle(),
+        ],
+    )
+    _write_run(
+        run_dir=tmp_path / NEVER / "ees" / "1",
+        solved_per_sweep=[0, 0, 0],
+        transitions_per_cycle=[1, 0],
+        practice_outcomes_per_cycle=[_outcomes_cycle(pick_attempts=1), _outcomes_cycle()],
+    )
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+
+    assert Tossing3DResetFree.ended_on_a_toss(
+        evaluations=arms[NEVER][0], outcomes=outcomes[NEVER][0]
+    )
+    assert not Tossing3DResetFree.ended_on_a_toss(
+        evaluations=arms[NEVER][1], outcomes=outcomes[NEVER][1]
+    )
+
+
+def test_last_practice_action_reports_the_skills_of_the_last_active_cycle(
+    *, tmp_path: Path
+) -> None:
+    """`render_practice`'s annotation, generalised off `Toss`. The transition index is the
+    same cumulative count `toss_transition_index` returns; the skill set is whatever that
+    cycle actually attempted, so a seed that never threw is labelled for what it did do."""
+    _write_run(
+        run_dir=tmp_path / NEVER / "ees" / "0",
+        solved_per_sweep=[0, 0, 0],
+        transitions_per_cycle=[2, 0],
+        practice_outcomes_per_cycle=[
+            _outcomes_cycle(pick_attempts=1, move_attempts=1),
+            _outcomes_cycle(),
+        ],
+    )
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+
+    skills, index = Tossing3DResetFree.last_practice_action(
+        evaluations=arms[NEVER][0], outcomes=outcomes[NEVER][0]
+    )
+
+    assert index == 2
+    assert skills == ("MoveToThrowPose", "Pick")
+
+
+def test_load_final_practice_features_keeps_the_most_recent_value_of_each_feature(
+    *, tmp_path: Path
+) -> None:
+    """A draw records only the objects its own ground skill binds, so `MoveToThrowPose`
+    carries no barrier. Merging forward is exact here rather than convenient: the barrier
+    and the bin are immovable within an episode, and a reset-free run is one episode, so
+    the newest recorded value of every feature *is* the final state."""
+    _write_draws(
+        run_dir=tmp_path / NEVER / "ees" / "0",
+        draws=[
+            {"skill": "Pick", "achieved": {"cuboid_barrier.x": 1.3, "cube_0.x": 0.4}},
+            {"skill": "MoveToThrowPose", "achieved": {"cube_0.x": 0.9}},
+        ],
+    )
+    features = Tossing3DResetFree.load_final_practice_features(results_root=tmp_path)
+
+    assert features[NEVER][0] == {"cuboid_barrier.x": 1.3, "cube_0.x": 0.9}
+
+
+def test_a_state_the_robot_can_still_pick_from_is_not_called_stranded() -> None:
+    """The positive control. Without it a classifier that returned "nothing applicable"
+    unconditionally would pass every other test on this page."""
+    applicable = Tossing3DResetFree.applicable_skills(
+        features=_features(gripper=0.0, cube_x=0.4, cube_z=0.025)
+    )
+    assert applicable["Pick"]
+
+
+def test_a_cube_thrown_past_the_barrier_leaves_no_skill_applicable() -> None:
+    """The published mechanism: `Toss` puts the cube past a wall the base cannot cross,
+    so `Reachable` is gone and `Pick` -- the only skill that starts from an empty hand --
+    can never fire again."""
+    applicable = Tossing3DResetFree.applicable_skills(
+        features=_features(gripper=0.0, cube_x=1.8, cube_z=0.025)
+    )
+    assert applicable == {"Pick": False, "MoveToThrowPose": False, "Toss": False}
+
+
+def test_a_closed_gripper_holding_nothing_leaves_no_skill_applicable() -> None:
+    """The *other* way to strand this domain, and the one the published mechanism does not
+    cover: the cube is back on the floor on the robot's own side of the barrier, so it is
+    `Reachable`, but the gripper stayed shut. `HandEmpty` is false, so `Pick` cannot fire;
+    `Holding` is false, so neither can `MoveToThrowPose` or `Toss`."""
+    features = _features(gripper=1.0, cube_x=0.73, cube_z=0.025)
+    held = Tossing3DResetFree.held_predicates(features=features)
+
+    assert held["Reachable"]
+    assert not held["HandEmpty"]
+    assert not held["Holding"]
+    assert Tossing3DResetFree.applicable_skills(features=features) == {
+        "Pick": False,
+        "MoveToThrowPose": False,
+        "Toss": False,
+    }
+
+
+def test_render_stranding_is_written(*, tmp_path: Path) -> None:
+    """The figure carrying the route split, so it is part of the deliverable rather than
+    a manual step."""
+    for seed, toss_attempts in enumerate([1, 0]):
+        _write_run(
+            run_dir=tmp_path / NEVER / "ees" / str(seed),
+            solved_per_sweep=[0, 0, 0],
+            transitions_per_cycle=[3, 0],
+            practice_outcomes_per_cycle=[
+                _outcomes_cycle(pick_attempts=1, move_attempts=1, toss_attempts=toss_attempts),
+                _outcomes_cycle(),
+            ],
+        )
+        _write_draws(
+            run_dir=tmp_path / NEVER / "ees" / str(seed),
+            draws=[{"skill": "Pick", "achieved": _features(gripper=1.0, cube_x=0.7, cube_z=0.025)}],
+        )
+        _write_run(
+            run_dir=tmp_path / SCHEDULED / "ees" / str(seed),
+            solved_per_sweep=[0, 0, 0],
+            transitions_per_cycle=[3, 3],
+        )
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+    features = Tossing3DResetFree.load_final_practice_features(results_root=tmp_path)
+    output = tmp_path / "stranding.png"
+
+    Tossing3DResetFree.render_stranding(
+        arms=arms, outcomes=outcomes, features=features, output=output
+    )
+
+    assert output.stat().st_size > 0
+
+
+def test_render_practice_annotates_a_seed_that_never_threw(*, tmp_path: Path) -> None:
+    """The regression this whole section exists for: at the new KINDER pins 4/10 never-arm
+    seeds stranded without ever attempting a `Toss`, and the figure must describe them
+    rather than raise."""
+    for seed, toss_attempts in enumerate([1, 0]):
+        _write_run(
+            run_dir=tmp_path / NEVER / "ees" / str(seed),
+            solved_per_sweep=[0, 0, 0],
+            transitions_per_cycle=[3, 0],
+            practice_outcomes_per_cycle=[
+                _outcomes_cycle(pick_attempts=1, move_attempts=1, toss_attempts=toss_attempts),
+                _outcomes_cycle(),
+            ],
+        )
+        _write_run(
+            run_dir=tmp_path / SCHEDULED / "ees" / str(seed),
+            solved_per_sweep=[0, 0, 0],
+            transitions_per_cycle=[3, 3],
+        )
+    arms = Tossing3DResetFree.load_arms(results_root=tmp_path)
+    outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=tmp_path)
+    output = tmp_path / "practice.png"
+
+    Tossing3DResetFree.render_practice(arms=arms, output=output, outcomes=outcomes, annotate_seed=1)
+
+    assert output.stat().st_size > 0
 
 
 def test_render_practice_with_outcomes_annotates_without_raising(*, tmp_path: Path) -> None:

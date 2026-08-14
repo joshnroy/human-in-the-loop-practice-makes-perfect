@@ -44,11 +44,16 @@ import statistics
 from pathlib import Path
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from analysis.practice_makes_perfect.paired_tests import PairedTests  # noqa: E402
+from hitl_pmp.core.problem.environment.types import Object, State  # noqa: E402
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment  # noqa: E402
+from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills  # noqa: E402
+from hitl_pmp.sampler_draws import SAMPLER_DRAWS_FILENAME  # noqa: E402
 
 # Same window as #178, for the same reason: wide enough to damp the measured
 # sweep-to-sweep volatility, and the two experiments stay comparable.
@@ -76,6 +81,23 @@ _ARM_COLOURS = {SCHEDULED: "#0072B2", NEVER: "#D55E00"}
 # distinguished from each other only by legend label/y-level, never by hue -- previously
 # green `#1a9850` dashed and purple `#762a83` dotted.
 _REFERENCE_COLOUR = "#666666"
+
+# The four objects a `Tossing3D-o1` episode binds, named exactly as `KinderBackend` names
+# them -- which is how a `sampler_draws.jsonl` `achieved` key (`"<object>.<feature>"`)
+# parses back into a `State`. Constructing these imports no simulator: `Tossing3DEnvironment`
+# is pure pydantic until its first `reset()`, so this module (and its tests) run on CI,
+# which never installs the `tossing3d` extra.
+_OBJECTS: tuple[Object, ...] = (
+    Object(name="robot", type=Tossing3DEnvironment.robot_type),
+    Object(name="cube_0", type=Tossing3DEnvironment.cube_type),
+    Object(name="cuboid_barrier", type=Tossing3DEnvironment.barrier_type),
+    Object(name="bin_0", type=Tossing3DEnvironment.bin_type),
+)
+# One object per type in this domain, so a skill's variables bind unambiguously by type.
+# Derived rather than written out per skill: the preconditions themselves are then the
+# only statement of what each skill needs, and this cannot drift from `skills.py`.
+_OBJECT_BY_TYPE = {obj.type: obj for obj in _OBJECTS}
+_SKILLS = (Tossing3DSkills.PICK, Tossing3DSkills.MOVE_TO_THROW_POSE, Tossing3DSkills.TOSS)
 
 
 class Tossing3DResetFree:
@@ -177,18 +199,161 @@ class Tossing3DResetFree:
         transition count as of the end of that cycle -- exactly where a `render_practice`
         curve elbows from rising to flat.
         """
+        skills, index = Tossing3DResetFree.last_practice_action(
+            evaluations=evaluations, outcomes=outcomes
+        )
+        if "Toss" not in skills:
+            onset = Tossing3DResetFree.stranding_onset(
+                transitions=Tossing3DResetFree.transitions_per_cycle(evaluations=evaluations)
+            )
+            raise ValueError(
+                f"cycle {onset if onset is None else onset - 1} (the last active cycle "
+                "before stranding) recorded no Toss attempt -- the stranding is not "
+                "attributable to a toss on this run, so annotating it as one would "
+                "misdescribe the mechanism"
+            )
+        return index
+
+    @staticmethod
+    def last_practice_action(
+        *,
+        evaluations: list[tuple[int, int, int]],
+        outcomes: list[dict[str, dict[str, int]]],
+    ) -> tuple[tuple[str, ...], int]:
+        """`(skills attempted in the last active cycle, cumulative transition index at its
+        end)` -- `toss_transition_index` with the `Toss` assumption removed.
+
+        The assumption was invisible while it held. At the 2026-08-08 pins every one of
+        the ten never-arm seeds ended its single practice period on a `Toss`, so a
+        derivation that required one described the data exactly. At the 2026-08-13 pins it
+        does not: some seeds strand after a failed `Pick` or a dropped cube, having never
+        thrown. `toss_transition_index` still raises on those, deliberately -- naming an
+        event that did not happen is worse than refusing -- and this is what the figure
+        annotates with instead, so a seed is labelled for what it actually did.
+
+        Skill names come back sorted, so the label is stable across runs rather than
+        inheriting `stats.json`'s dict order.
+        """
         transitions = Tossing3DResetFree.transitions_per_cycle(evaluations=evaluations)
         onset = Tossing3DResetFree.stranding_onset(transitions=transitions)
         if onset is None:
-            raise ValueError("run never stranded -- no terminal toss to locate")
+            raise ValueError("run never stranded -- no terminal action to locate")
         last_active_cycle = onset - 1
-        if outcomes[last_active_cycle].get("Toss", {}).get("num_attempts", 0) < 1:
-            raise ValueError(
-                f"cycle {last_active_cycle} (the last active cycle before stranding) "
-                "recorded no Toss attempt -- the stranding is not attributable to a toss "
-                "on this run, so annotating it as one would misdescribe the mechanism"
+        attempted = tuple(
+            sorted(
+                name
+                for name, tally in outcomes[last_active_cycle].items()
+                if tally.get("num_attempts", 0) >= 1
             )
-        return sum(transitions[: last_active_cycle + 1])
+        )
+        return attempted, sum(transitions[: last_active_cycle + 1])
+
+    @staticmethod
+    def ended_on_a_toss(
+        *,
+        evaluations: list[tuple[int, int, int]],
+        outcomes: list[dict[str, dict[str, int]]],
+    ) -> bool:
+        """Did this run's last active practice cycle contain a `Toss` attempt?
+
+        The **route** into stranding, which the score cannot see and the transition count
+        cannot separate. A seed that threw the cube past the barrier and a seed that never
+        got the cube off the floor both end at zero transitions per cycle forever, and
+        only this tells them apart. Read from `stats.json` alone, so it is directly
+        comparable against the committed 2026-08-08 runs.
+        """
+        _skills, _index = Tossing3DResetFree.last_practice_action(
+            evaluations=evaluations, outcomes=outcomes
+        )
+        return "Toss" in _skills
+
+    @staticmethod
+    def load_final_practice_features(
+        *, results_root: Path
+    ) -> dict[str, dict[int, dict[str, float]]]:
+        """`{arm: {seed: features}}` -- the newest recorded value of every environment
+        feature, merged forward over that run's `sampler_draws.jsonl`.
+
+        **Why merging forward is exact here rather than convenient.** A draw's `achieved`
+        carries only the objects its own ground skill binds, so a `MoveToThrowPose` draw
+        has no barrier in it. The robot and the cube are bound by all three skills and so
+        always come from the newest draw; the barrier and the bin are immovable within an
+        episode, and a reset-free run is a single episode from `hard_reset` to the end. So
+        the merge is the final state, not an approximation of it.
+
+        Runs without the file (the flag is opt-in) are absent rather than empty, for the
+        same reason `load_arms` skips a run with no `stats.json`: an empty feature dict
+        would abstract to "nothing holds", which reads as a stranded robot.
+        """
+        features: dict[str, dict[int, dict[str, float]]] = {}
+        for arm in (SCHEDULED, NEVER):
+            per_seed: dict[int, dict[str, float]] = {}
+            for path in sorted((results_root / arm).rglob(SAMPLER_DRAWS_FILENAME)):
+                if not path.parent.name.isdigit():
+                    continue
+                merged: dict[str, float] = {}
+                for line in path.read_text().splitlines():
+                    if line.strip():
+                        merged.update(json.loads(line)["achieved"])
+                if merged:
+                    per_seed[int(path.parent.name)] = merged
+            if per_seed:
+                features[arm] = per_seed
+        return features
+
+    @staticmethod
+    def build_state(*, features: dict[str, float]) -> State:
+        """A `State` over this domain's four objects from a flat `"<object>.<feature>"`
+        mapping -- `SamplerDrawRecorder.read_features` run backwards."""
+        return State(
+            data={
+                obj: np.array([features[f"{obj.name}.{name}"] for name in obj.type.feature_names])
+                for obj in _OBJECTS
+            }
+        )
+
+    @staticmethod
+    def held_predicates(*, features: dict[str, float]) -> dict[str, bool]:
+        """Which of this domain's predicates hold in that state, evaluated with the
+        domain's **own** classifiers rather than a copy of their arithmetic.
+
+        That matters more than it looks: `HandEmpty` is `gripper ~ 0`, `Holding` needs
+        `gripper > GRASP_THRESHOLD` **and** the cube above `HOLDING_HEIGHT`, and the gap
+        between them -- a shut gripper with nothing in it -- is exactly the state this
+        analysis exists to name. Re-deriving those thresholds here would put the finding
+        at the mercy of a transcription error.
+
+        Keyed by predicate *name*, which is only safe because this domain grounds each
+        predicate exactly one way: one robot, one cube, one barrier, one bin. A domain
+        with two cubes would need the whole ground atom as the key.
+        """
+        state = Tossing3DResetFree.build_state(features=features)
+        held: dict[str, bool] = {}
+        for skill in _SKILLS:
+            for atom in skill.preconditions:
+                ground = atom.ground(
+                    substitution={
+                        variable: _OBJECT_BY_TYPE[variable.type] for variable in atom.variables
+                    }
+                )
+                held[ground.predicate.name] = bool(ground.predicate.holds(state, ground.objects))
+        return held
+
+    @staticmethod
+    def applicable_skills(*, features: dict[str, float]) -> dict[str, bool]:
+        """Which of the three skills the robot could still execute -- every precondition
+        satisfied -- in that state.
+
+        The preconditions are read off `Tossing3DSkills` itself, so this cannot drift from
+        the operators a `Method` actually plans with. All three false is the domain fact
+        the reset-free arm dies of: there is no action left, and nothing in this domain
+        brings the world back.
+        """
+        held = Tossing3DResetFree.held_predicates(features=features)
+        return {
+            skill.name: all(held[atom.predicate.name] for atom in skill.preconditions)
+            for skill in _SKILLS
+        }
 
     @staticmethod
     def stranding_onset(*, transitions: list[int]) -> int | None:
@@ -354,7 +519,11 @@ class Tossing3DResetFree:
                 pooled_curve,
                 color=colour,
                 linewidth=2.4,
-                label=f"{arm} — last {WINDOW} sweeps {x:.1f}/{y}",
+                # `n=` per #188: neither arm splits into subgroups here -- every seed in
+                # each arm behaves the same way -- so each gets one bold line and the
+                # legend states the seed count rather than leaving it to be counted off
+                # the haze.
+                label=f"{arm} — mean, n={len(curves)}; last {WINDOW} sweeps {x:.1f}/{y}",
             )
         axes.axhline(
             ORACLE_PER_SEED,
@@ -476,16 +645,19 @@ class Tossing3DResetFree:
         with different onsets describes no seed.
 
         **Annotated when `outcomes` is given** (the CLI always supplies it): a marker on
-        `annotate_seed`'s `never`-arm curve at its one real action -- a `Toss` attempt, its
-        transition index from `toss_transition_index`, i.e. from the per-cycle transition
-        and skill-attempt record, never from where this curve visually goes flat -- plus a
-        shaded region for every cycle after it, during which every `never`-arm seed sharing
-        that onset recorded zero skill attempts. A second, small panel plots every
-        `never`-arm seed's own toss-transition index, so the one seed singled out on the
-        left is not mistaken for a universal number: it varies (3-13 across the ten real
-        seeds), because it depends on how many `MoveToThrowPose` draws the sampler needed
-        before succeeding -- unlike the *cycle* of stranding, which is uniform across seeds
-        and is what the shaded region's count reports.
+        `annotate_seed`'s `never`-arm curve at its last real action, its transition index
+        from `last_practice_action` -- i.e. from the per-cycle transition and skill-attempt
+        record, never from where this curve visually goes flat -- plus a shaded region for
+        every cycle after it, during which every `never`-arm seed sharing that onset
+        recorded zero skill attempts. A second, small panel plots every `never`-arm seed's
+        own last-action index, so the one seed singled out on the left is not mistaken for
+        a universal number: it varies across seeds, because it depends on how many
+        `MoveToThrowPose` draws the sampler needed -- unlike the *cycle* of stranding,
+        which is uniform across seeds and is what the shaded region's count reports.
+
+        **The annotation names the skills that cycle actually attempted, rather than
+        assuming a `Toss`.** It assumed one until the 2026-08-13 pin bump, where 4/10
+        never-arm seeds stranded having never thrown; see `last_practice_action`.
         """
         if outcomes is None:
             fig, axes = plt.subplots(1, 1, figsize=(9.0, 6.0))
@@ -510,12 +682,13 @@ class Tossing3DResetFree:
 
         if outcomes is not None:
             never_curves = arms[NEVER]
-            toss_indices = {
-                seed: Tossing3DResetFree.toss_transition_index(
+            last_actions = {
+                seed: Tossing3DResetFree.last_practice_action(
                     evaluations=never_curves[seed], outcomes=outcomes[NEVER][seed]
                 )
                 for seed in sorted(never_curves)
             }
+            toss_indices = {seed: index for seed, (_skills, index) in last_actions.items()}
             onsets = {
                 seed: Tossing3DResetFree.stranding_onset(
                     transitions=Tossing3DResetFree.transitions_per_cycle(
@@ -526,8 +699,10 @@ class Tossing3DResetFree:
             }
             marked_onset = onsets[annotate_seed]
             marked_index = toss_indices[annotate_seed]
+            marked_skills = "+".join(last_actions[annotate_seed][0])
             same_onset = sum(1 for o in onsets.values() if o == marked_onset)
             total_seeds = len(onsets)
+            tossed = sum(1 for skills, _index in last_actions.values() if "Toss" in skills)
 
             # This purple (`#762a83`) deliberately stays -- decided, not left by omission.
             # Before this change it was a real instance of "one hue meaning two different
@@ -564,10 +739,13 @@ class Tossing3DResetFree:
                 markeredgewidth=1.2,
                 linestyle="none",
                 zorder=5,
-                label=f"seed {annotate_seed}: last action (Toss) at transition {marked_index}",
+                label=(
+                    f"seed {annotate_seed}: last action ({marked_skills}) "
+                    f"at transition {marked_index}"
+                ),
             )
             axes.annotate(
-                f"seed {annotate_seed}: Toss,\ntransition {marked_index}",
+                f"seed {annotate_seed}: {marked_skills},\ntransition {marked_index}",
                 xy=(marked_onset, marked_index),
                 xytext=(marked_onset + 7, marked_index + 30),
                 fontsize=8,
@@ -586,11 +764,17 @@ class Tossing3DResetFree:
             dist_axes.scatter(xs, ys, c=dot_colours, s=42, zorder=3, edgecolors="none")
             dist_axes.axvline(median_index, color="#666666", linestyle=":", linewidth=1.0)
             dist_axes.set_yticks(ys)
-            dist_axes.set_yticklabels([f"seed {seed}" for seed in ordered_seeds], fontsize=7.5)
-            dist_axes.set_xlabel("toss transition index", fontsize=8.5)
+            # The skill set, not just the seed number: whether a seed ever threw is the
+            # thing that changed between pins, and a bare seed label would hide it.
+            dist_axes.set_yticklabels(
+                [f"seed {seed}: {'+'.join(last_actions[seed][0])}" for seed in ordered_seeds],
+                fontsize=7.0,
+            )
+            dist_axes.set_xlabel("last-action transition index", fontsize=8.5)
             dist_axes.set_title(
-                f"toss transition index, every\nnever-arm seed (min {min(xs)}, "
-                f"max {max(xs)},\nmedian {median_index:.1f}; seed {annotate_seed} marked)",
+                f"last practice action, every\nnever-arm seed (min {min(xs)}, "
+                f"max {max(xs)},\nmedian {median_index:.1f}; "
+                f"Toss on {tossed}/{total_seeds})",
                 fontsize=8.2,
             )
             dist_axes.grid(alpha=0.2, linewidth=0.5, axis="x")
@@ -610,6 +794,128 @@ class Tossing3DResetFree:
         plt.close(fig)
         print(f"wrote {output}")
 
+    @staticmethod
+    def render_stranding(
+        *,
+        arms: dict[str, dict[int, list[tuple[int, int, int]]]],
+        outcomes: dict[str, dict[int, list[dict[str, dict[str, int]]]]],
+        features: dict[str, dict[int, dict[str, float]]],
+        output: Path,
+    ) -> None:
+        """*Why* each never-arm seed stopped: the route in, and the abstract state it
+        stopped in.
+
+        The left panel is one row per seed, ticked for every predicate that holds in the
+        run's final recorded state; the right panel is the same seeds' applicable skills,
+        which is what "stranded" actually means. Rows are ordered by route -- ended on a
+        `Toss` first -- because the split between the routes is the finding this figure
+        exists for, and a seed-ordered strip would scatter it.
+
+        Not a curve, so the training-curve style's line rules do not apply; the two arm
+        hues still do, and only `NEVER` appears here because the `SCHEDULED` arm never
+        strands.
+        """
+        seeds = sorted(arms[NEVER])
+        routes = {
+            seed: Tossing3DResetFree.ended_on_a_toss(
+                evaluations=arms[NEVER][seed], outcomes=outcomes[NEVER][seed]
+            )
+            for seed in seeds
+        }
+        ordered = sorted(seeds, key=lambda seed: (not routes[seed], seed))
+        held = {
+            seed: Tossing3DResetFree.held_predicates(features=features[NEVER][seed])
+            for seed in ordered
+        }
+        applicable = {
+            seed: Tossing3DResetFree.applicable_skills(features=features[NEVER][seed])
+            for seed in ordered
+        }
+        predicate_names = sorted(next(iter(held.values())))
+        skill_names = [skill.name for skill in _SKILLS]
+
+        fig, (left, right) = plt.subplots(
+            1, 2, figsize=(12.4, 5.4), gridspec_kw={"width_ratios": [2.1, 1]}
+        )
+        for axes, columns, table, title in (
+            (left, predicate_names, held, "predicates holding in the final recorded state"),
+            (right, skill_names, applicable, "skills still applicable"),
+        ):
+            for row, seed in enumerate(ordered):
+                for column, name in enumerate(columns):
+                    value = table[seed][name]
+                    axes.scatter(
+                        [column],
+                        [row],
+                        s=150,
+                        marker="o" if value else "x",
+                        color=_ARM_COLOURS[NEVER] if value else "#999999",
+                        linewidths=1.6,
+                        zorder=3,
+                    )
+            axes.set_xticks(range(len(columns)))
+            axes.set_xticklabels(columns, rotation=30, ha="right", fontsize=8.5)
+            axes.set_yticks(range(len(ordered)))
+            axes.set_yticklabels(
+                [
+                    f"seed {seed} — {'ended on Toss' if routes[seed] else 'never threw'}"
+                    for seed in ordered
+                ],
+                fontsize=8.0,
+            )
+            axes.set_xlim(-0.6, len(columns) - 0.4)
+            axes.set_ylim(-0.6, len(ordered) - 0.4)
+            axes.grid(alpha=0.25, linewidth=0.6)
+            axes.set_title(title, fontsize=9.5)
+
+        tossed = sum(1 for value in routes.values() if value)
+        stuck = sum(1 for seed in ordered if not any(applicable[seed].values()))
+        fig.suptitle(
+            "Why the reset-free arm stops: two routes into the same dead end "
+            f"(Toss on {tossed}/{len(ordered)} seeds, "
+            f"no skill applicable on {stuck}/{len(ordered)})",
+            fontsize=11,
+        )
+        fig.tight_layout()
+        fig.savefig(output, dpi=150)
+        plt.close(fig)
+        print(f"wrote {output}")
+
+    @staticmethod
+    def report_stranding_routes(
+        *,
+        arms: dict[str, dict[int, list[tuple[int, int, int]]]],
+        outcomes: dict[str, dict[int, list[dict[str, dict[str, int]]]]],
+        features: dict[str, dict[int, dict[str, float]]],
+    ) -> None:
+        """The route split and the final abstract state, per never-arm seed."""
+        seeds = sorted(arms[NEVER])
+        tossed = 0
+        stuck = 0
+        print("\nhow the never arm stopped (route, then final abstract state):")
+        for seed in seeds:
+            route = Tossing3DResetFree.ended_on_a_toss(
+                evaluations=arms[NEVER][seed], outcomes=outcomes[NEVER][seed]
+            )
+            tossed += route
+            skills, index = Tossing3DResetFree.last_practice_action(
+                evaluations=arms[NEVER][seed], outcomes=outcomes[NEVER][seed]
+            )
+            held = Tossing3DResetFree.held_predicates(features=features[NEVER][seed])
+            applicable = Tossing3DResetFree.applicable_skills(features=features[NEVER][seed])
+            stuck += not any(applicable.values())
+            print(
+                f"  seed {seed}: last cycle attempted {'+'.join(skills)} "
+                f"(transition {index}), ended on Toss = {route}"
+            )
+            print(f"      holds:      {sorted(name for name, value in held.items() if value)}")
+            print(
+                f"      applicable: "
+                f"{sorted(name for name, value in applicable.items() if value) or 'nothing'}"
+            )
+        print(f"  ended on a Toss on {tossed}/{len(seeds)} seeds")
+        print(f"  no skill applicable in the final recorded state on {stuck}/{len(seeds)} seeds")
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -618,16 +924,24 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--paired-output", type=Path, default=None)
     parser.add_argument("--practice-output", type=Path, default=None)
     parser.add_argument(
+        "--stranding-output",
+        type=Path,
+        default=None,
+        help=(
+            "Why each never-arm seed stopped: its route in (did the last active cycle "
+            "contain a Toss?) and the abstract state it stopped in, read off that run's "
+            "own sampler_draws.jsonl. Needs --record-sampler-draws to have been passed."
+        ),
+    )
+    parser.add_argument(
         "--annotate-seed",
         type=int,
         default=0,
         help=(
-            "Which never-arm seed's toss/stranding point --practice-output annotates "
-            "with actual transition numbers. Default 0: its toss-transition index (7) "
-            "is tied for closest to the median across all ten never-arm seeds (6.0), "
-            "and it is the seed already used as the worked example in this experiment's "
-            "log, so annotating it keeps one seed consistent throughout rather than "
-            "introducing a second arbitrary pick."
+            "Which never-arm seed's last-action/stranding point --practice-output "
+            "annotates with actual transition numbers. Default 0, the seed used as the "
+            "worked example in this experiment's log, so annotating it keeps one seed "
+            "consistent throughout rather than introducing a second arbitrary pick."
         ),
     )
     return parser.parse_args()
@@ -636,7 +950,12 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     Tossing3DResetFree.report(results_root=args.results_root)
-    outputs = (args.curves_output, args.paired_output, args.practice_output)
+    outputs = (
+        args.curves_output,
+        args.paired_output,
+        args.practice_output,
+        args.stranding_output,
+    )
     if any(output is not None for output in outputs):
         arms = Tossing3DResetFree.load_arms(results_root=args.results_root)
         if args.curves_output is not None:
@@ -650,6 +969,17 @@ def main() -> None:
                 output=args.practice_output,
                 outcomes=outcomes,
                 annotate_seed=args.annotate_seed,
+            )
+        if args.stranding_output is not None:
+            outcomes = Tossing3DResetFree.load_practice_outcomes(results_root=args.results_root)
+            features = Tossing3DResetFree.load_final_practice_features(
+                results_root=args.results_root
+            )
+            Tossing3DResetFree.report_stranding_routes(
+                arms=arms, outcomes=outcomes, features=features
+            )
+            Tossing3DResetFree.render_stranding(
+                arms=arms, outcomes=outcomes, features=features, output=args.stranding_output
             )
 
 
