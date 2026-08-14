@@ -135,7 +135,12 @@ preview = true
 # Ruff's `respect-gitignore` does not cover this. The parent repo records each submodule
 # as a gitlink, so the files inside it are neither tracked nor ignored by this repo, and
 # nothing stops the walk without saying so explicitly.
-extend-exclude = ["reference"]
+#
+# `downward` is the same problem from the other direction: CI caches its Fast Downward
+# checkout *inside* the repo root, where `ruff check .` walks 1,444 errors of upstream
+# `src/translate/`, while a local checkout keeps it as a sibling directory and never
+# sees it -- so this one fails only on CI, exactly inverting `reference/`.
+extend-exclude = ["reference", "downward"]
 
 [tool.ruff.lint]
 # N999 bans non-lower_case.py module/file names.

@@ -18,6 +18,13 @@ already scoped by construction. Ruff alone is invoked as `.`.
 This is a behavioural test, not a config-string assertion: it asks ruff itself which
 files it would check, so it keeps passing if the exclusion is expressed some other way
 and fails if `reference/` ever becomes visible again.
+
+**`downward/` is the same problem arriving from the other direction.** Fast Downward is
+a third-party checkout too, but it is found by a sibling-directory convention, so on a
+workstation it sits *beside* this repo and ruff never sees it. CI caches it at
+`downward/` **inside the repo root**, where `ruff check .` walks 1,444 errors of
+upstream `src/translate/` code -- so this one fails only on CI, exactly inverting
+`reference/`, which is populated only locally.
 """
 
 import shutil
@@ -28,6 +35,7 @@ import pytest
 
 _REPO = Path(__file__).resolve().parents[1]
 _REFERENCE = _REPO / "reference"
+_DOWNWARD = _REPO / "downward"
 
 # A populated submodule is the only state in which this is testable at all. A fresh clone
 # and CI both leave `reference/` as empty directories, exactly as `CLAUDE.md` describes,
@@ -37,6 +45,39 @@ _NEEDS_SUBMODULES = pytest.mark.skipif(
     not _POPULATED, reason="reference/ submodules are not populated"
 )
 _NEEDS_RUFF = pytest.mark.skipif(shutil.which("ruff") is None, reason="ruff is not on PATH")
+
+# Same reasoning as `_POPULATED`, mirrored: a checkout that keeps Fast Downward as a
+# sibling directory -- every local worktree -- has nothing here for ruff to walk, so the
+# assertion is only meaningful where CI puts it.
+_NEEDS_DOWNWARD = pytest.mark.skipif(
+    not any(_DOWNWARD.glob("**/*.py")) if _DOWNWARD.is_dir() else True,
+    reason="Fast Downward is not checked out inside the repo root",
+)
+
+
+@_NEEDS_RUFF
+@_NEEDS_DOWNWARD
+def test_ruff_check_does_not_walk_a_fast_downward_checkout_inside_the_repo() -> None:
+    """Ask ruff for the file list it would lint, as above -- CI caches Fast Downward at
+    `downward/` in the workspace, and its `src/translate/` is upstream code this repo
+    neither owns nor can fix."""
+    result = subprocess.run(
+        ["ruff", "check", "--show-files", "."],
+        cwd=_REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    walked = [
+        line
+        for line in result.stdout.splitlines()
+        if line.strip() and Path(line.strip()).is_relative_to(_DOWNWARD)
+    ]
+    assert not walked, (
+        f"ruff would lint {len(walked)} file(s) inside downward/, e.g. {walked[:3]}. "
+        "Fast Downward must stay excluded or the documented gate cannot be run where CI "
+        "checks it out inside the repo root."
+    )
 
 
 @_NEEDS_RUFF
