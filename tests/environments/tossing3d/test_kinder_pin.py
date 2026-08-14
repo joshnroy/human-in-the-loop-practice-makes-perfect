@@ -106,9 +106,9 @@ def test_the_toss_schedule_is_exactly_as_wide_as_kinder_demands() -> None:
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
         TOSS_SLICES_PER_CONTROL_STEP,
     )
-    from kinder_models.dynamic3d.utils import _CONTROL_TIMESTEP
+    from kinder_models.dynamic3d.utils import CONTROL_TIMESTEP
 
-    num_sim_steps = int(_CONTROL_TIMESTEP / SIMULATION_TIMESTEP)
+    num_sim_steps = int(CONTROL_TIMESTEP / SIMULATION_TIMESTEP)
     ticks_per_row = int(round(CONTROL_SCHEDULE_TIMESTEP / SIMULATION_TIMESTEP))
     assert num_sim_steps // ticks_per_row == TOSS_SLICES_PER_CONTROL_STEP
 
