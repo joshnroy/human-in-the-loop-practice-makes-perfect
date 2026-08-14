@@ -433,7 +433,7 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
         TOSS_WINDUP_ARM_CONFIGURATION,
         toss_profile_limits,
     )
-    from kinder_models.dynamic3d.utils import _CONTROL_TIMESTEP, _trapezoidal_motion_profile
+    from kinder_models.dynamic3d.utils import CONTROL_TIMESTEP, _trapezoidal_motion_profile
 
     s_total = float(np.linalg.norm(TOSS_RELEASE_ARM_CONFIGURATION - TOSS_WINDUP_ARM_CONFIGURATION))
     shortest_ms = min(
@@ -444,7 +444,7 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
                     max_vel=limits[0],
                     max_accel=limits[1],
                     max_decel=limits[2],
-                    step_size=_CONTROL_TIMESTEP,
+                    step_size=CONTROL_TIMESTEP,
                 )
             )
             - 1
