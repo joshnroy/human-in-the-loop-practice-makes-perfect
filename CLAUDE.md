@@ -188,6 +188,12 @@ resolves `hitl_pmp` to the *main* checkout, and `FD_EXEC_PATH=<path-to>/downward
 Fast Downward is found by a sibling-directory convention that does not resolve from inside
 `.claude/worktrees/`. `scripts/with_env.sh` sets both.
 
+**CI's `test` job runs `pytest` twice** — `tests/environments/tossing3d` alone, then
+`--ignore` of it — because MuJoCo's OSMesa and torch's bundled triton each load their own
+LLVM and segfault when they share one. The workstation renders through EGL, which links no
+LLVM, so **the local gate stays a single `pytest`**. kinder-baselines avoids the same
+collision the same way.
+
 **Run the gate locally; do not block on GitHub CI.** Local is ~1 minute against CI's ~10,
 and it is the same commands. Open the PR, report whatever state CI is in, and finish. If
 CI later fails on something local passed, *that divergence* is the bug worth reporting.

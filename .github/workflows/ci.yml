@@ -148,8 +148,38 @@ jobs:
               assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
               print(f"{mod.__name__}: {path}")
           PY
-      - run: pytest -q
+      # **Two pytest processes, because MuJoCo and torch cannot share one.**
+      #
+      # `libOSMesa.so.8` links `libLLVM.so.20.1` dynamically; `libtriton.so` statically
+      # bundles 16,740 exported LLVM symbols and declares no dynamic LLVM dependency. Once
+      # a Tossing3D test has loaded OSMesa, the `import triton` that `torch.optim.Adam`
+      # triggers (via `torch._compile` -> `torch._dynamo`) puts a second LLVM in the same
+      # address space, and symbol interposition kills the interpreter outright -- a bare
+      # `Fatal Python error: Segmentation fault`, with no test summary and therefore no
+      # report of anything that failed before it. This does not bite the workstation, whose
+      # EGL is NVIDIA's driver and links no LLVM.
+      #
+      # kinder-baselines never hits it because its CI is one pytest per package
+      # (`run_in_affected_packages.sh`), so `kinder-models` and the torch packages never
+      # share an interpreter. This is the same shape, at the granularity we have.
+      #
+      # `tests/environments/tossing3d/` is the split point because it is the *only* path
+      # that pulls `mujoco` into the pytest process -- measured per candidate file, not
+      # assumed from names. `tests/scripts/test_reproducibility.py` drives Tossing3D
+      # through the CLI in subprocesses, so it stays on the other side.
+      #
+      # `--ignore` is the complement of the first step's path, so every test still runs in
+      # exactly one of the two: 180 + 1745 = 1925, the same total as the single run.
+      - name: Pytest — Tossing3D (loads MuJoCo/OSMesa; own process)
+        run: pytest -q tests/environments/tossing3d
         env:
           # `downward/` is checked out inside the workspace here rather than
           # beside the repo, so point the planner at it explicitly.
+          FD_EXEC_PATH: ${{ github.workspace }}/downward
+      # `!cancelled()` rather than the default, so a failure in the step above cannot hide
+      # this one's results -- both always report, and the job fails if either did.
+      - name: Pytest — everything else (loads torch; own process)
+        if: ${{ !cancelled() }}
+        run: pytest -q --ignore=tests/environments/tossing3d
+        env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
