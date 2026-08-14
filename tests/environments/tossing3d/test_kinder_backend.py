@@ -7,8 +7,7 @@ frame per physics tick is a question only a simulator can answer, and lives in
 `test_kinder_fidelity.py`.
 """
 
-import importlib
-import os
+import importlib.util
 import sys
 from typing import Any
 
@@ -69,32 +68,43 @@ def test_kinders_own_rewrite_is_still_undone() -> None:
     assert resolved["PYOPENGL_PLATFORM"] == "egl"
 
 
-def test_a_backend_written_after_import_is_ignored() -> None:
+def test_a_backend_written_after_import_is_ignored(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """The distinction itself. A value that appears in the environment *after* import is
     exactly what `register_all_environments()` produces, so it must not be mistaken for a
-    request -- whatever this machine happens to have asked for."""
+    request -- whatever this machine happens to have asked for.
+
+    `monkeypatch` rather than a hand-rolled `os.environ` edit: an earlier draft popped the
+    variable in a `finally` instead of restoring it, which left the *process* with no
+    `MUJOCO_GL` and made every later Tossing3D test in the run render through the wrong
+    backend. It passed locally, where the ambient value is `egl` either way, and failed
+    only on CI.
+    """
     late = "osmesa" if kinder_backend.REQUESTED_GL_BACKEND != "osmesa" else "egl"
-    os.environ["MUJOCO_GL"] = late
-    try:
-        resolved = KinderBackend.configure_headless_rendering(environ={})
-    finally:
-        os.environ.pop("MUJOCO_GL", None)
+    monkeypatch.setenv("MUJOCO_GL", late)
+    resolved = KinderBackend.configure_headless_rendering(environ={})
     assert resolved["MUJOCO_GL"] == kinder_backend.REQUESTED_GL_BACKEND != late
 
 
 def test_the_request_is_snapshotted_at_import(*, monkeypatch: pytest.MonkeyPatch) -> None:
     """Where the line is drawn, pinned directly: the snapshot is taken when the module is
-    imported, which is necessarily before anything of ours can call into KINDER."""
+    imported, which is necessarily before anything of ours can call into KINDER.
+
+    A **private copy** of the module, not `importlib.reload`. Reloading rebinds the
+    snapshot that every other test in the process shares, so it is only as correct as the
+    environment at reload time -- and one earlier test leaving `MUJOCO_GL` unset was enough
+    to pin the whole run to the wrong backend. Loading a second copy asks the same question
+    and cannot answer it for anybody else.
+    """
     before = kinder_backend.REQUESTED_GL_BACKEND
     monkeypatch.setenv("MUJOCO_GL", "osmesa")
     monkeypatch.delenv("PYOPENGL_PLATFORM", raising=False)
-    try:
-        reloaded = importlib.reload(kinder_backend)
-        assert reloaded.REQUESTED_GL_BACKEND == "osmesa"
-        assert reloaded.REQUESTED_GL_PLATFORM == "osmesa"
-    finally:
-        monkeypatch.undo()
-        importlib.reload(kinder_backend)
+    spec = importlib.util.spec_from_file_location("_gl_snapshot_probe", kinder_backend.__file__)
+    assert spec is not None and spec.loader is not None
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+
+    assert fresh.REQUESTED_GL_BACKEND == "osmesa"
+    assert fresh.REQUESTED_GL_PLATFORM == "osmesa"
     assert before == kinder_backend.REQUESTED_GL_BACKEND
 
 
