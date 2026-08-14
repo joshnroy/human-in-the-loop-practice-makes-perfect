@@ -29,8 +29,25 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-latest
+    # KINDER is a required dependency as of 2026-08-14, so every job that imports the
+    # package needs the submodules on disk before pip can install them: both `-e` paths
+    # below are empty directories in a fresh checkout and pip fails outright.
+    env: &kinder_env
+      # `register_all_environments()` rewrites MUJOCO_GL to `osmesa` when DISPLAY is
+      # unset, and `import mujoco` then raises into an exception handler that swallows
+      # it -- so every Dynamic3D environment vanishes silently and the failure surfaces
+      # much later as a `NameNotFound`. DISPLAY only has to exist; nothing is drawn.
+      DISPLAY: ":0"
+      MUJOCO_GL: egl
+      PYOPENGL_PLATFORM: egl
+      # kindergarden fetches ~2 GB of MimicLabs scene assets from Google Drive on
+      # `kinder.make()`. Its own CI sets this; ours must too, or every job pays for a
+      # download that no test in this repo needs.
+      DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -42,7 +59,20 @@ jobs:
       # gate on `importlib.util.find_spec`, exactly as `tossing3d` does for KINDER. A
       # regression that made the package need wandb at import or annotation time would
       # only ever be caught here.
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      # Both must resolve under `reference/`, so the tree that is read is the tree that
+      # is run. A skew between two checkouts at different commits has already caused a
+      # wrong SHA to be stated as fact.
+      - name: Verify KINDER resolves under reference/
+        run: |
+          python - <<'PY'
+          import pathlib, kinder, kinder_models
+          root = pathlib.Path.cwd() / "reference"
+          for mod in (kinder, kinder_models):
+              path = pathlib.Path(mod.__file__).resolve()
+              assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
+              print(f"{mod.__name__}: {path}")
+          PY
       - run: mypy src
       # With it: `ignore_missing_imports = true` means that with no wandb package to
       # read, `wandb.init` is `Any` and *every* argument to it type-checks. So the pass
@@ -55,13 +85,16 @@ jobs:
       # second full install, for a job that already runs in under two minutes. Order
       # matters and is not arbitrary -- installing the extra is additive, so the
       # wandb-free condition can only be tested before it, never after.
-      - run: pip install -e ".[dev,wandb]"
+      - run: pip install -e ".[dev,tossing3d,wandb]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - run: mypy src
 
   test:
     runs-on: ubuntu-latest
+    env: *kinder_env
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -81,7 +114,17 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/aibasel/downward.git
           cd downward && ./build.py
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      - name: Verify KINDER resolves under reference/
+        run: |
+          python - <<'PY'
+          import pathlib, kinder, kinder_models
+          root = pathlib.Path.cwd() / "reference"
+          for mod in (kinder, kinder_models):
+              path = pathlib.Path(mod.__file__).resolve()
+              assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
+              print(f"{mod.__name__}: {path}")
+          PY
       - run: pytest -q
         env:
           # `downward/` is checked out inside the workspace here rather than
