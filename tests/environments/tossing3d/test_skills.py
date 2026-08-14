@@ -1,4 +1,4 @@
-"""Offline tests for the three lifted skills, their operator models and their samplers."""
+"""Offline tests for the four lifted skills, their operator models and their samplers."""
 
 import importlib.util
 
@@ -10,6 +10,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
     BARRIER_COLLISION_MARGIN,
+    GRIPPER_COMMANDED_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -30,10 +31,10 @@ from hitl_pmp.environments.tossing3d.skills import (
     THROW_STANDOFF_BOUNDS,
     Tossing3DSkills,
 )
-from hitl_pmp.planning.fast_downward import FastDownwardPlanner
+from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import INITIAL_ATOMS, state
+from .observations import CLOSED_ON_NOTHING_ATOMS, INITIAL_ATOMS, state
 
 # The two sampler-versus-band tests below call upstream's own `RobotAtThrowPose`
 # classifier, which lives in `kinder_models`. It is a `@staticmethod` so it needs no
@@ -63,7 +64,17 @@ _EXPECTED_PARAMETERS = {
     "Pick": ("robot", "cube", "barrier", "bin"),
     "MoveToThrowPose": ("robot", "cube", "bin"),
     "Toss": ("robot", "cube", "bin", "barrier"),
+    "OpenGripper": ("robot", "held"),
 }
+
+# Every lifted skill this domain declares. `OpenGripper` is the recovery operator; the
+# other three are the solve.
+_ALL_SKILLS = (
+    Tossing3DSkills.PICK,
+    Tossing3DSkills.MOVE_TO_THROW_POSE,
+    Tossing3DSkills.TOSS,
+    Tossing3DSkills.OPEN_GRIPPER,
+)
 
 
 def test_no_operator_names_a_goal_region_object() -> None:
@@ -71,7 +82,7 @@ def test_no_operator_names_a_goal_region_object() -> None:
 
     Checked by *type* rather than by variable name, so renaming the variable cannot smuggle
     the dependency back in."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _ALL_SKILLS:
         declared = [variable.type.name for variable in skill.parameters]
         assert "tossing3d_goal_region" not in declared, (
             f"{skill.name} still takes a goal-region parameter: {declared}"
@@ -83,8 +94,7 @@ def test_each_operator_declares_exactly_the_objects_it_acts_on() -> None:
     disturbed the objects that remain, nor their order (`GroundSkill.objects` is
     positional, and the oracle builds its groundings by hand)."""
     actual = {
-        skill.name: tuple(variable.name for variable in skill.parameters)
-        for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS)
+        skill.name: tuple(variable.name for variable in skill.parameters) for skill in _ALL_SKILLS
     }
     assert actual == _EXPECTED_PARAMETERS
 
@@ -107,6 +117,13 @@ def _toss() -> GroundSkill:
     return GroundSkill(
         skill=_SKILLS.TOSS,
         objects=(_ENV.robot, _ENV.cube, _ENV.bin, _ENV.barrier),
+    )
+
+
+def _open_gripper() -> GroundSkill:
+    return GroundSkill(
+        skill=_SKILLS.OPEN_GRIPPER,
+        objects=(_ENV.robot, _ENV.cube),
     )
 
 
@@ -192,11 +209,140 @@ def test_the_three_operator_models_are_exactly_as_declared() -> None:
     })
 
 
+def test_the_open_gripper_operator_model_is_exactly_as_declared() -> None:
+    """The recovery operator, pinned the same way as the other three.
+
+    `OnGround(?held)` is a precondition, following upstream's own design in kb#118: it
+    confines the operator to the case where the cube is *already* down, so opening the
+    gripper asserts nothing about where a released cube lands. Without it the operator
+    would have to model dropping a held cube, which needs a conditional effect this
+    project's `Skill` cannot express -- preconditions, adds and deletes are flat
+    frozensets, with no `when`.
+    """
+    assert _SKILLS.OPEN_GRIPPER.preconditions == frozenset({
+        LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._held,)),
+    })
+    assert _SKILLS.OPEN_GRIPPER.add_effects == frozenset({
+        LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,))
+    })
+    assert _SKILLS.OPEN_GRIPPER.delete_effects == frozenset({
+        LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_SKILLS._robot,))
+    })
+    assert _SKILLS.OPEN_GRIPPER.param_dim == 0
+
+
+def test_open_gripper_and_hand_empty_are_never_both_preconditions() -> None:
+    """The operator exists because `HandEmpty` is *false* in the state it recovers from.
+    Requiring it would make the recovery inapplicable in exactly the case it is for."""
+    assert (
+        LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,))
+        not in _SKILLS.OPEN_GRIPPER.preconditions
+    )
+
+
+def test_integration_no_plan_escapes_closed_on_nothing_without_open_gripper() -> None:
+    """The defect itself, stated as a test: with only the original three operators, the
+    absorbing state has an empty applicable set and Fast Downward proves no plan exists.
+
+    `Pick` needs `HandEmpty`; `MoveToThrowPose` and `Toss` need `Holding`. A grasp that
+    closed on nothing satisfies neither, so nothing is applicable and nothing ever will
+    be -- the state is absorbing rather than merely bad."""
+    env = Tossing3DEnvironment()
+    objects = (env.robot, env.cube, env.bin, env.barrier)
+    predicates = (
+        IN_BIN,
+        HAND_EMPTY,
+        HOLDING,
+        ON_GROUND,
+        REACHABLE,
+        ROBOT_AT_SUCCESSFUL_THROW_POSE,
+        GRIPPER_COMMANDED_CLOSED,
+    )
+    init_atoms = SkillGrounder.abstract_state(
+        state=state(abstract_atoms=CLOSED_ON_NOTHING_ATOMS),
+        objects=objects,
+        predicates=predicates,
+    )
+    with pytest.raises(PlanningFailure):
+        FastDownwardPlanner.plan(
+            skills=(_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS),
+            predicates=predicates,
+            types=(env.robot_type, env.cube_type, env.bin_type, env.barrier_type),
+            objects=objects,
+            init_atoms=init_atoms,
+            goal=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}),
+        )
+
+
+def test_integration_open_gripper_restores_a_plan_out_of_closed_on_nothing() -> None:
+    """The fix, against a real Fast Downward: adding `OpenGripper` to the same problem
+    turns "no plan exists" into a four-step recovery-then-solve."""
+    env = Tossing3DEnvironment()
+    objects = (env.robot, env.cube, env.bin, env.barrier)
+    predicates = (
+        IN_BIN,
+        HAND_EMPTY,
+        HOLDING,
+        ON_GROUND,
+        REACHABLE,
+        ROBOT_AT_SUCCESSFUL_THROW_POSE,
+        GRIPPER_COMMANDED_CLOSED,
+    )
+    init_atoms = SkillGrounder.abstract_state(
+        state=state(abstract_atoms=CLOSED_ON_NOTHING_ATOMS),
+        objects=objects,
+        predicates=predicates,
+    )
+    plan = FastDownwardPlanner.plan(
+        skills=_ALL_SKILLS,
+        predicates=predicates,
+        types=(env.robot_type, env.cube_type, env.bin_type, env.barrier_type),
+        objects=objects,
+        init_atoms=init_atoms,
+        goal=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}),
+    )
+    assert [step.skill.name for step in plan] == [
+        "OpenGripper",
+        "Pick",
+        "MoveToThrowPose",
+        "Toss",
+    ]
+
+
+def test_integration_open_gripper_does_not_disturb_the_ordinary_three_skill_solve() -> None:
+    """The recovery operator must not become a free extra step on a healthy initial
+    state: from an open gripper the plan is still exactly the original three."""
+    env = Tossing3DEnvironment()
+    objects = (env.robot, env.cube, env.bin, env.barrier)
+    predicates = (
+        IN_BIN,
+        HAND_EMPTY,
+        HOLDING,
+        ON_GROUND,
+        REACHABLE,
+        ROBOT_AT_SUCCESSFUL_THROW_POSE,
+        GRIPPER_COMMANDED_CLOSED,
+    )
+    init_atoms = SkillGrounder.abstract_state(
+        state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
+    )
+    plan = FastDownwardPlanner.plan(
+        skills=_ALL_SKILLS,
+        predicates=predicates,
+        types=(env.robot_type, env.cube_type, env.bin_type, env.barrier_type),
+        objects=objects,
+        init_atoms=init_atoms,
+        goal=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}),
+    )
+    assert [step.skill.name for step in plan] == ["Pick", "MoveToThrowPose", "Toss"]
+
+
 def test_no_skill_declares_ignore_effects() -> None:
     """Unlike Ball-Ring's navigations and Tossing Room's Press, nothing here wipes a whole
     predicate: there is one cube, one bin and one region, so every effect is expressible
     as a plain add or delete."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _ALL_SKILLS:
         assert skill.ignore_effects == frozenset(), skill.name
 
 
@@ -209,7 +355,7 @@ def test_no_variable_carries_the_question_mark_the_pddl_writer_adds() -> None:
     `EesMethod._next_plan` catches `PlanningFailure` and degrades to a no-op. So this is
     checked structurally as well as end-to-end below: a run can otherwise exit 0 and
     write a full `stats.json` in which the method never took a single action."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _ALL_SKILLS:
         for variable in skill.parameters:
             assert not variable.name.startswith("?"), f"{skill.name}: {variable.name}"
 
@@ -255,6 +401,18 @@ def test_param_dims_give_the_throw_a_release_speed_of_its_own() -> None:
     assert _SKILLS.PICK.param_dim == 2
     assert _SKILLS.MOVE_TO_THROW_POSE.param_dim == 1
     assert _SKILLS.TOSS.param_dim == 2
+    # Upstream's `OpenGripperController.sample_parameters` raises `NotImplementedError`:
+    # there is nothing to choose, the controller simply commands the gripper open. So the
+    # recovery is unparameterized, and `Metrics` will record its attempts in the
+    # *unparameterized* pool rather than as a sampler that could not discriminate.
+    assert _SKILLS.OPEN_GRIPPER.param_dim == 0
+
+
+def test_open_gripper_samples_no_parameters_at_all() -> None:
+    params = Tossing3DSkills.sample_params(
+        ground_skill=_open_gripper(), rng=np.random.default_rng(0)
+    )
+    assert params.shape == (0,)
 
 
 def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
@@ -267,6 +425,21 @@ def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
     assert Tossing3DSkills.compute_action(
         ground_skill=_toss(), params=np.array([140.0, 720.0]), state=state()
     ) == pytest.approx([Tossing3DEnvironment.toss_id, 140.0, 720.0])
+    assert Tossing3DSkills.compute_action(
+        ground_skill=_open_gripper(), params=np.array([]), state=state()
+    ) == pytest.approx([Tossing3DEnvironment.open_gripper_id, 0.0, 0.0])
+
+
+def test_the_open_gripper_id_is_not_the_noop_id() -> None:
+    """`noop_id` is negative precisely so that adding a fourth controller cannot silently
+    turn every no-op into it (see `environment.py`). This is that check, now that the
+    fourth controller exists."""
+    assert Tossing3DEnvironment.open_gripper_id != Tossing3DEnvironment.noop_id
+    assert Tossing3DEnvironment.open_gripper_id not in (
+        Tossing3DEnvironment.pick_id,
+        Tossing3DEnvironment.move_to_throw_pose_id,
+        Tossing3DEnvironment.toss_id,
+    )
 
 
 def test_every_action_matches_the_declared_action_space() -> None:
@@ -274,6 +447,7 @@ def test_every_action_matches_the_declared_action_space() -> None:
         (_pick(), np.array([0.55, 0.1])),
         (_move(), np.array([1.35])),
         (_toss(), np.array([140.0, 720.0])),
+        (_open_gripper(), np.array([])),
     ):
         action = Tossing3DSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state()
