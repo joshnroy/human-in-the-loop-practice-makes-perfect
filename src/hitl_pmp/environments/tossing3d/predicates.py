@@ -272,52 +272,54 @@ THROW_RANGE_MIN = 0.333
 # Scene-coupled: re-derive by re-running the standoff grid, not by editing the literal.
 THROW_RANGE_MAX = 1.300
 
-# Upstream's `WAYPOINT_TOL` (`kinder_models/dynamic3d/utils.py:54`), which is how close
+# Upstream's `WAYPOINT_TOLERANCE` (`kinder_models/dynamic3d/utils.py`), which is how close
 # `MoveToTargetGroundController.terminated()` requires the base to be to its own planned
-# waypoint. Using upstream's own number means the lateral conjunct admits exactly the poses
-# that controller is willing to stop at, rather than a tolerance invented here.
-THROW_POSE_LATERAL_TOLERANCE = 4 * 1e-2
+# waypoint.
+WAYPOINT_TOLERANCE = 4 * 1e-2
 
-# The two margins that tighten `RobotAtSuccessfulThrowPoseClassifier`'s standoff band from
-# the full geometric prediction to the band PR #105's finer sweep (5 scene seeds, 0.025 m
-# resolution, coincident config) actually found reliable. Its per-point solving table:
+# Upstream's own `THROW_POSE_TOLERANCE`, restated: twice the waypoint tolerance, on
+# upstream's stated grounds that "the sampler already spends half of it off-axis". It
+# bounds both the lateral offset and the heading error below.
+#
+# **Restated rather than imported.** Every classifier in this module is a pure function of
+# `core.State` with no simulator handle, and importing anything from `kinder_models` here
+# would make this module -- and through `tasks.py`, the whole `--env tossing3d`
+# registration -- require MuJoCo. `test_kinder_pin.py` asserts these constants still equal
+# upstream's, so a drift fails loudly wherever KINDER is installed while CI keeps running
+# the offline predicate tests.
+THROW_POSE_TOLERANCE = 2 * WAYPOINT_TOLERANCE
+
+# The band of **achieved** standoffs `RobotAtSuccessfulThrowPose` accepts, in metres.
+#
+# **Not `THROW_STANDOFF_BOUNDS` above, and the two must never become one symbol again.**
+# That one is the interval the sampler *draws* from; this one is what the predicate
+# *accepts*. Their identity is what made `MoveToThrowPose`'s add effect constant-true and
+# its sampler unlearnable. Inside the sampler's (1.10, 1.75) the band below covers
+# 0.300/0.650 of the range, so the label stays two-class.
+#
+# The near edge is upstream's own measured 1.09. **The far edge is 1.400, this repo's,
+# where upstream's is 1.375** -- see `RobotAtSuccessfulThrowPoseClassifier`'s docstring
+# for why, and for the question that was deliberately left open when it moved.
+ACCEPTED_THROW_STANDOFF_BOUNDS = (1.09, 1.400)
+
+# PR #105's finer sweep (5 scene seeds, 0.025 m resolution) measured this per-point
+# solving table, which the band above still has to contain:
 #
 #     standoff   <=1.100   1.125   1.150-1.375   1.400   1.425   >=1.450
 #     solved       0/5      2/5     5/5 (every)    3/5     2/5      0/5
 #
-# The 5/5 core is `[1.150, 1.375]` -- narrower than the geometric band `[1.125, 1.425]` on
-# *both* ends, and not symmetrically: "short standoffs overshoot [the goal box] ... long
-# ones fall short" (PR #105's own wording). Overshoot happens at the box's far edge
-# (`x_max`), so the margin that excludes it trims `x_max`; falling short happens at the
-# near edge (`x_min`), so the margin that excludes it enlarges `x_min`.
-#
-# **The two spaces run in opposite directions, and that is the trap.** `landing_x =
-# base_x + THROW_RANGE` and `base_x = bin_x - standoff`, so a *larger* standoff produces a
-# *smaller* `landing_x`. Recovering the standoff band `[1.150, 1.375]` from the box
-# therefore means: `x_max` shrinks by `1.150 - 1.125 = 0.025` (this is the short-standoff/
-# overshoot margin, even though it is the *upper* box edge), and `x_min` grows by
-# `1.425 - 1.375 = 0.050` (the long-standoff/shortfall margin, on the *lower* box edge).
-# Naming the margins by which standoff failure mode they exclude, rather than by which box
-# edge they touch, is deliberate -- the box-edge framing is exactly what inverts under the
-# sign flip. `test_the_accepted_band_matches_the_measured_five_of_five_core` pins the
-# resulting band directly so a reintroduced inversion fails loudly.
-#
-# **A further tightening to roughly `[1.150, 1.325]` was investigated and rejected.** A
-# later, wider grid over `MoveToThrowPose`'s standoff (PR #196) labelled by this classifier
-# alone -- `Toss` never executed -- found only 8/12 solving at 1.350 and 2/12 at 1.375,
-# suggesting the band above 1.325 was over-permissive. A fresh oracle-driven sweep that
-# *does* execute `Toss` and reads the real episode outcome (`docs/experiment-logs/
-# 2026-08-10-tossing3d-throw-band-retightening-sweep.md`, same methodology as the sweep
-# above) found 10/10 at every standoff up to and including 1.375 on an independent seed
-# set -- no real degradation. The two disagree because PR #196's grid measured whether the
-# achieved `landing_x` clears this classifier's own fixed threshold, and at 1.350/1.375 that
-# threshold sits inside `move_to_target`'s own several-millimetre stopping noise (closest
-# miss at 1.375: 0.1 mm), so ordinary seed-to-seed pose variance flips the *label* without
-# the *throw* ever becoming less reliable. Tightening to 1.325 would also have pushed
-# `ORACLE_THROW_STANDOFF` (1.35, below) outside the accepted band, rejecting a pose the
-# committed oracle arm throws from on every episode. The margins below are unchanged.
-THROW_OVERSHOOT_MARGIN = 0.025
-THROW_SHORTFALL_MARGIN = 0.05
+# **A further tightening to roughly `[1.150, 1.325]` was investigated and rejected**, and
+# the reason is the same one that keeps the far edge at 1.400 today. A wider grid over
+# `MoveToThrowPose`'s standoff (PR #196) labelled by this classifier alone -- `Toss` never
+# executed -- found only 8/12 solving at 1.350 and 2/12 at 1.375. A fresh oracle-driven
+# sweep that *does* execute `Toss` (`docs/experiment-logs/
+# 2026-08-10-tossing3d-throw-band-retightening-sweep.md`) found 10/10 at every standoff up
+# to and including 1.375 on an independent seed set. The two disagree because PR #196
+# measured whether the achieved pose clears the classifier's own threshold, and at
+# 1.350/1.375 that threshold sits inside `move_to_target`'s own stopping noise, so ordinary
+# seed-to-seed pose variance flips the *label* without the *throw* becoming less reliable.
+# Tightening to 1.325 would also have pushed `ORACLE_THROW_STANDOFF` (1.35) outside the
+# band, rejecting a pose the committed oracle arm throws from on every episode.
 
 
 class InBinClassifier:
@@ -451,83 +453,108 @@ class RobotAtSuccessfulThrowPoseClassifier:
     **The standoff conjunct stays even though `Toss` has parameters of its own.**
     Dropping it would hand `MoveToThrowPose` a constant-true label again.
 
-    **The standoff conjunct is derived from live state, not measured and pinned.**
-    `MoveToThrowPose` pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base
-    satisfying the lateral conjunct faces `+x`. The box tested below is the same live
-    `Region.bbox` `InBin` reads off the bin, trimmed by the two margins above.
+    ## Converged onto kinder-baselines' `RobotAtThrowPose`, with one edge moved
 
-    **The box is applied to an interval, not a point: that is the union.** The pose is
-    accepted iff `[base_x + THROW_RANGE_MIN, base_x + THROW_RANGE_MAX]` intersects the
-    trimmed box -- iff *some* toss parameterisation in bounds scores from here. The
-    accepted band of standoffs
+    The three conjuncts below are upstream's, in upstream's own formulation: the standoff
+    is `dx = target.x - pos_base_x` tested against a **literal** band, the lateral offset
+    and the heading error share one tolerance, and the heading error is the shortest signed
+    angle between the bearing to the target and the base's own yaw.
 
-        [bin_x + THROW_RANGE_MIN - (x_max - THROW_OVERSHOOT_MARGIN),
-         bin_x + THROW_RANGE_MAX - (x_min + THROW_SHORTFALL_MARGIN)]
+    **The classifier is reimplemented here rather than imported, and that is deliberate.**
+    Upstream's lives on a `Tossing3DStateAbstractor` that needs a live
+    `ObjectCentricTidyBot3DEnv` and reads `relational_structs.ObjectCentricState`. A
+    `core.Predicate.holds` is a pure function of `core.State` with no simulator handle,
+    which is what lets ~900 lines of offline predicate and skill tests run on CI, where
+    KINDER is never installed. Converging the *definition* keeps that; converging the
+    *call path* would not. An audit measured the two agreeing on `12/12` real rollout
+    states for four of the six predicates before this one was reconciled.
 
-    falls out rather than being written down.
+    **What converging cost: the band no longer follows the scored region.** The previous
+    band was derived per call from the live `Region.bbox` plus a calibrated throw range, so
+    retargeting the throw in the task JSON needed no change here -- written that way
+    precisely because kindergarden#126 moves the bin. Upstream's is a literal, and its own
+    comment concedes the consequence: "A literal, not a live read of the region, so a scene
+    whose bin or goal region moves needs remeasuring." The band is still coupled to the
+    bin's own pose, since `dx` is measured from it;
+    `test_the_accepted_band_no_longer_follows_the_goal_region` asserts the half that was
+    given up, so it reads as a decision rather than a regression.
 
-    The near edge lands at 0.209 m, below the sampler's 1.10 m floor, so inside
-    `THROW_STANDOFF_BOUNDS` this is a one-sided threshold at 1.400: 301/650 millimetre
-    standoffs accepted, 349/650 rejected.
+    ## The far edge is 1.400, not upstream's 1.375
 
-    The interval form assumes achievable range is contiguous over the toss parameter
-    box; the grids leave sampling gaps up to 93 mm, so that is argued, not measured.
+    `move_to_target` stops long of its commanded standoff by a per-seed constant, measured
+    at 0.7-27.7 mm across 5 scene seeds, so the oracle's commanded 1.35 arrives at an
+    *achieved* `dx` of up to 1.3777. Upstream's 1.375 edge falls inside that spread.
+    `SkillOraclePolicy` branches directly on this predicate, so at 1.375 the oracle would
+    find itself not-at-a-throw-pose after a `MoveToThrowPose` that did exactly what it was
+    asked, and would re-issue it forever rather than throw -- `2/5` seeds, deterministically.
 
-    Move the bin, resize the scored box, or change `ground_placement_threshold`, and the
-    band follows on its own -- which matters, because kindergarden#126 moves the bin. A
-    hard-coded band would be silently wrong the moment that lands. The two margins are
-    fixed metres, not a fraction of the box, so they do not move with it.
+    That alone does not say which side is wrong, so it was measured: 40 oracle rollouts
+    (8 scene seeds x commanded standoffs 1.325-1.425), run through to the throw, reading
+    KINDER's own `_check_goals()`. **Every throw from an achieved `dx` up to and including
+    1.4462 scored; the first miss is at 1.4464.** Throws from 1.3777 therefore score, so
+    upstream's band rejects poses that demonstrably work -- its own comment claims both
+    edges move "~9 mm across seeds", and eight seeds show 28 mm of stopping error alone.
 
-    That this predicate and `InBin` now read their box off the same object is what makes
-    "the pose a throw succeeds from" and "the place a throw must land" provably the same
-    geometry rather than two things kept in step by hand.
+    **1.400 is deliberately conservative rather than fitted to that measurement.** It is
+    this repo's own previous far edge -- the last standoff observed to score on the
+    committed standoff grid (`3/150` at 1.400, `0/1050` beyond) -- and it clears the worst
+    measured achieved `dx` at the oracle standoff by 22.3 mm. The open question it leaves
+    is the opposite of the one it closes: the band could be widened towards ~1.446 and is
+    not, so the predicate still calls some genuinely-scoring poses a failure. That is the
+    safe direction for a precondition, and widening it should be its own change with its own
+    sweep. Note the committed grid's `0/1050` was measured under the pre-1 kHz release
+    scheduling, which lands the cube ~41.6 mm shorter, so the two are not in conflict.
 
-    The two margins below were measured against a single fixed throw.
+    **The lateral conjunct was measured against a real failure.** An earlier version
+    tested only `1.0 <= hypot(dx, dy) <= 1.8`. After `Pick` -- which drives the base to the
+    *cube*, off to one side -- the base sat at 1.76 m from the bin, inside that band, so
+    the predicate was already true, the oracle skipped `MoveToThrowPose` entirely and threw
+    from a pose facing 40 degrees away from the bin: the cube landed at `(0.9969, -0.7196)`
+    and the episode scored a failure. `test_widening_the_lateral_conjunct_does_not_readmit_
+    the_recorded_failure` asserts that pose stays rejected under the widened tolerance --
+    it fails both conjuncts, `|dy| = 0.366` against 0.08 and `dx = 1.721` against a band
+    topping out at 1.400.
 
-    On the coincident config the *geometric* band -- before the two margins below -- works
-    out to `[1.125, 1.425]`: **0.300 m wide, which is exactly the scored box's own
-    x-extent**, as it must be for a constant-displacement throw. That geometric band is
-    over-permissive: PR #105's finer sweep (5 scene seeds, 0.025 m resolution) found the
-    band solving on *every* seed is `[1.150, 1.375]`, 0.225 m wide, with the geometric
-    band's own edges only partially solving (2/5 at 1.125, 3/5 at 1.400, 2/5 at 1.425).
-    `THROW_OVERSHOOT_MARGIN`/`THROW_SHORTFALL_MARGIN` trim the box used below by exactly
-    that 0.025 m / 0.050 m so the accepted standoff band matches the measured 5/5 core
-    instead of the wider, partially-reliable geometric prediction. Training `MoveToThrowPose`'s
-    sampler against the untrimmed band taught it that the outer ~0.075 m sliver on each
-    side was as good as the centre, when empirically it is not -- a plausible mechanistic
-    account of `Toss`'s own residual failures at the trained EES plateau (`#178`).
-
-    **The lateral conjunct is unchanged, and was measured.** An earlier version tested only
-    `1.0 <= hypot(dx, dy) <= 1.8`. After `Pick` -- which drives the base to the *cube*, off
-    to one side -- the base sat at 1.76 m from the bin, inside that band, so the predicate
-    was already true, the oracle skipped `MoveToThrowPose` entirely and threw from a pose
-    facing 40 degrees away from the bin: the cube landed at `(0.9969, -0.7196)` and the
-    episode scored a failure. The lateral conjunct rules that out by 0.72 m rather than by
-    the 7 cm the distance test had to spare. This is exactly the over-permissive-operator-
-    model defect class that `tests/environments/test_operator_dynamics_fidelity.py` exists
-    for, caught here by
-    `test_the_oracle_reproduces_the_recorded_coincident_landing_and_step_counts`.
-
-    The standoff conjunct now independently excludes those poses too -- the post-`Pick`
-    base is far enough back that its predicted landing falls short of the box -- but the
-    lateral conjunct stays, because it is the one measured against the real failure, and
-    because a base off the axis does not throw along `+x` at all.
+    **What the heading conjunct adds, stated at the strength it was measured.**
+    `MoveToThrowPose` pins `rot = 0`, so a base it placed always faces the bin. Measured
+    over 75 real states: `pos_base_rot` ranges 0.0003-1.3919 rad, and after `Pick` the
+    heading error is 0.29-0.92 rad against the 0.08 tolerance -- so this is a genuine
+    function of a free state variable, not a tautology. But it was **never** the conjunct
+    that decided an observed state (`0/75` where lateral and standoff pass while heading
+    fails), and at post-`MoveToThrowPose` states -- the ones that label the sampler --
+    heading and lateral both pass `25/25` while only the standoff conjunct varies
+    (`13/25`). It is kept because it is upstream's, and because it costs nothing.
     """
 
     @staticmethod
+    def _signed_angle_distance(*, target: float, source: float) -> float:
+        """The shortest signed angle `d` with `source + d = target`.
+
+        Upstream's `prpl_utils.utils.get_signed_angle_distance`, restated for the same
+        reason the constants above are -- see `THROW_POSE_TOLERANCE`. Reproducing the wrap
+        rather than subtracting matters: a base facing `+x` reported as `-pi` instead of
+        `+pi` is the same heading, and a naive difference makes it `2*pi` wrong.
+        """
+        return float((target - source + np.pi) % (2 * np.pi) - np.pi)
+
+    @staticmethod
     def holds(*, state: State, robot: Object, target: Object) -> bool:
-        lateral_offset = abs(
-            state.get(obj=robot, feature_name="pos_base_y")
-            - state.get(obj=target, feature_name="y")
+        dx = state.get(obj=target, feature_name="x") - state.get(
+            obj=robot, feature_name="pos_base_x"
         )
-        if lateral_offset > THROW_POSE_LATERAL_TOLERANCE:
+        dy = state.get(obj=target, feature_name="y") - state.get(
+            obj=robot, feature_name="pos_base_y"
+        )
+        heading_error = abs(
+            RobotAtSuccessfulThrowPoseClassifier._signed_angle_distance(
+                target=float(np.arctan2(dy, dx)),
+                source=float(state.get(obj=robot, feature_name="pos_base_rot")),
+            )
+        )
+        if abs(dy) > THROW_POSE_TOLERANCE or heading_error > THROW_POSE_TOLERANCE:
             return False
-        base_x = state.get(obj=robot, feature_name="pos_base_x")
-        landing_min = base_x + THROW_RANGE_MIN
-        landing_max = base_x + THROW_RANGE_MAX
-        x_min = state.get(obj=target, feature_name="x_min") + THROW_SHORTFALL_MARGIN
-        x_max = state.get(obj=target, feature_name="x_max") - THROW_OVERSHOOT_MARGIN
-        return bool(landing_min <= x_max and x_min <= landing_max)
+        low, high = ACCEPTED_THROW_STANDOFF_BOUNDS
+        return bool(low <= dx <= high)
 
 
 # `Predicate.holds` is a positional `(state, objects)` callable per its interface contract

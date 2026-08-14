@@ -43,12 +43,9 @@ from hitl_pmp.core.method.types import LabeledAction
 from hitl_pmp.environments.tossing3d import predicates
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    ACCEPTED_THROW_STANDOFF_BOUNDS,
     IN_BIN,
-    THROW_OVERSHOOT_MARGIN,
     THROW_RANGE,
-    THROW_RANGE_MAX,
-    THROW_RANGE_MIN,
-    THROW_SHORTFALL_MARGIN,
     THROW_STANDOFF_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
     TOSS_SPEED_BOUNDS,
@@ -229,29 +226,26 @@ def test_the_oracle_reproduces_the_recorded_landing_and_step_counts() -> None:
 def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
     *, standoff: float, expected: bool
 ) -> None:
-    """**The calibration guard for `THROW_RANGE`.**
+    """**The guard that the accepted band still describes the real dynamics.**
 
-    `RobotAtSuccessfulThrowPose` derives its acceptance band from live scene geometry plus
-    one calibrated constant: the distance a throw displaces the cube. Everything else is
-    read from the `State`, so this constant is the only thing that can go stale -- and it
-    goes stale silently, because a wrong value still yields a plausible-looking band. If
-    upstream changes the toss controller, the windup configuration, the cube's mass or the
-    physics step, this is what fails.
+    `RobotAtSuccessfulThrowPose` no longer derives its band -- since converging onto
+    kinder-baselines' definition the band is the literal `ACCEPTED_THROW_STANDOFF_BOUNDS`.
+    A literal cannot drift on its own, which is exactly why it needs this: if upstream
+    changes the toss controller, the windup configuration, the cube's mass or the physics
+    step, the *dynamics* move underneath a constant that stays put, and nothing else would
+    notice. Asserted against real episode outcomes rather than a recorded number.
 
     **The two standoffs are chosen to catch the specific wrong value.** `THROW_RANGE` is
     the *impact* range, 1.275 m. The tempting mismeasurement is the free-floor rest
     displacement, 1.3499 m, which is 0.075 m longer because it includes post-impact roll;
     the cube only rolls when it misses, since on this config the bin sits on the goal
-    region and catches anything that lands inside. Under that wrong value the band shifts
-    from `[1.150, 1.375]` -- the tightened band `THROW_OVERSHOOT_MARGIN`/
-    `THROW_SHORTFALL_MARGIN` derive (see `predicates.py`) -- to `[1.225, 1.450]`, and
-    **both** of these standoffs still flip: 1.15 would be predicted a miss under the wrong
-    constant, and 1.45 a hit. Re-run live against a real KINDER install as part of the
-    band-tightening change (both parametrised cases still pass: `predicted == expected`
-    at both 1.15 and 1.45), so this is confirmed against the simulator, not only argued
-    from the derivation above. Measured over three scene seeds, 1.15 solves
-    3/3 and 1.45 solves 0/3, so the predicate must say exactly the opposite of the wrong
-    value at both points.
+    region and catches anything that lands inside. Measured over three scene seeds, 1.15
+    solves 3/3 and 1.45 solves 0/3, so these two points straddle the real boundary and the
+    predicate has to agree with the simulator at both.
+
+    They still straddle the band's far edge after the convergence: 1.15 sits well inside
+    `[1.09, 1.400]` and 1.45 well outside, so this test kept both its cases and its meaning
+    when the derivation was replaced by a literal.
 
     Asserted against real episode outcomes rather than against a recorded number, so this
     is a check that the symbolic layer still describes the dynamics.
@@ -704,26 +698,13 @@ def _throw_scores_from_standoff(*, standoff: float, speed: float, release_ms: fl
 
 
 def _accepted_standoff_band() -> tuple[float, float]:
-    """The band `RobotAtSuccessfulThrowPose` currently accepts, read back from a real
-    scene rather than recomputed here -- so this test cannot drift from the predicate by
-    duplicating its arithmetic."""
-    env = _env()
-    try:
-        state = env.reset_to_seed(seed=CANONICAL_SEED)
-        bin_x = state.get(obj=env.bin, feature_name="x")
-        lo = (
-            bin_x
-            + THROW_RANGE_MIN
-            - (state.get(obj=env.bin, feature_name="x_max") - THROW_OVERSHOOT_MARGIN)
-        )
-        hi = (
-            bin_x
-            + THROW_RANGE_MAX
-            - (state.get(obj=env.bin, feature_name="x_min") + THROW_SHORTFALL_MARGIN)
-        )
-        return (lo, hi)
-    finally:
-        env.close()
+    """The band `RobotAtSuccessfulThrowPose` currently accepts.
+
+    Since the predicate converged onto kinder-baselines' definition this is simply the
+    literal, in standoff space, with no scene read at all -- the band is a distance from
+    the bin rather than a function of the scored box. Kept as a helper so the guards below
+    read the same symbol the classifier does instead of restating `(1.09, 1.400)`."""
+    return ACCEPTED_THROW_STANDOFF_BOUNDS
 
 
 def test_no_toss_parameterisation_scores_from_beyond_the_accepted_band() -> None:
@@ -776,9 +757,9 @@ def test_the_converse_guard_would_catch_a_widened_band(*, monkeypatch: pytest.Mo
     The guard asserts a *negative* -- no parameterisation scores from outside the band --
     and a negative passes trivially if the band it reads is not the band the predicate
     applies. This pins the two together: a pose one metre past the far edge is rejected
-    now, and accepted once `THROW_RANGE_MAX` is widened past it. So the edge the guard
-    probes is a live boundary derived from these constants, and a widened band really would
-    push a throwable-looking pose into the guard's probe region.
+    now, and accepted once `ACCEPTED_THROW_STANDOFF_BOUNDS` is widened past it. So the edge
+    the guard probes is a live boundary read from that constant, and a widened band really
+    would push a throwable-looking pose into the guard's probe region.
 
     It deliberately executes no throw: the expensive half of the argument is the guard's
     own, and this half is about which numbers the predicate actually reads."""
@@ -801,12 +782,13 @@ def test_the_converse_guard_would_catch_a_widened_band(*, monkeypatch: pytest.Mo
             state=state, robot=env.robot, target=env.bin
         ), "a pose 1 m beyond the band's far edge must be rejected at the shipped constants"
 
-        monkeypatch.setattr(predicates, "THROW_RANGE_MAX", THROW_RANGE_MAX + 1.5)
+        low, high = ACCEPTED_THROW_STANDOFF_BOUNDS
+        monkeypatch.setattr(predicates, "ACCEPTED_THROW_STANDOFF_BOUNDS", (low, high + 1.5))
         assert RobotAtSuccessfulThrowPoseClassifier.holds(
             state=state, robot=env.robot, target=env.bin
         ), (
-            "widening THROW_RANGE_MAX by 1.5 m must make the predicate accept that same "
-            "pose -- if it does not, the accepted band is not derived from this constant "
+            "widening the band's far edge by 1.5 m must make the predicate accept that "
+            "same pose -- if it does not, the accepted band is not read from this constant "
             "and the converse guard is probing an edge the predicate does not have"
         )
     finally:

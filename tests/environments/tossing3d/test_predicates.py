@@ -11,6 +11,7 @@ import pytest
 
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    ACCEPTED_THROW_STANDOFF_BOUNDS,
     GRASP_THRESHOLD,
     HAND_EMPTY,
     HANDEMPTY_TOL,
@@ -19,13 +20,12 @@ from hitl_pmp.environments.tossing3d.predicates import (
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
-    THROW_OVERSHOOT_MARGIN,
-    THROW_POSE_LATERAL_TOLERANCE,
+    THROW_POSE_TOLERANCE,
     THROW_RANGE,
     THROW_RANGE_MAX,
     THROW_RANGE_MIN,
-    THROW_SHORTFALL_MARGIN,
     THROW_STANDOFF_BOUNDS,
+    WAYPOINT_TOLERANCE,
     HandEmptyClassifier,
     HoldingClassifier,
     InBinClassifier,
@@ -233,66 +233,117 @@ def test_the_accepted_band_is_strictly_narrower_than_the_range_the_sampler_draws
     )
 
 
-def test_the_accepted_band_moves_when_the_bin_moves() -> None:
-    """**The test that catches someone reintroducing a measured literal.**
+def test_the_accepted_base_position_follows_the_bin_while_the_standoff_band_does_not() -> None:
+    """Upstream's band is on `dx = bin_x - pos_base_x`, a distance measured *from the
+    bin*, so the two spaces behave differently and it is worth pinning which is which.
 
-    The band is derived from live scene geometry plus two fixed margins, so shifting the
-    bin shifts the whole band by exactly the same amount. A predicate that instead
-    hard-coded `[1.15, 1.375]` -- the *value* the derivation happens to produce on the
-    scene as shipped -- would hold the band still and be silently wrong the moment the bin
-    moves. That is not hypothetical: kindergarden#126 has since moved it, which is exactly
-    the event this test was written against."""
-    shift = 0.25
-    here = _accepted_band()
-    there = _accepted_band(bin_x=BIN_X + shift)
-    assert there[0] == pytest.approx(here[0] + shift, abs=2e-3)
-    assert there[1] == pytest.approx(here[1] + shift, abs=2e-3)
+    In **standoff** space the band is invariant: 1.09 to 1.400 from the bin, wherever the
+    bin is. In **world** space the accepted base positions therefore slide by exactly the
+    bin's own shift. The previous derived band moved in *both* spaces, because it was a
+    function of the scored box rather than of the bin, so this is a real change of
+    behaviour and not a restatement."""
+    # Large enough that every standoff below lands clear of the band once the bin moves.
+    shift = 0.40
+    assert _accepted_band(bin_x=BIN_X + shift) == pytest.approx(_accepted_band(), abs=2e-3)
+    for standoff in (1.10, ORACLE_THROW_STANDOFF, 1.39):
+        base_x = BIN_X - standoff
+        assert RobotAtSuccessfulThrowPoseClassifier.holds(
+            state=state(base_x=base_x), robot=_ENV.robot, target=_ENV.bin
+        )
+        assert not RobotAtSuccessfulThrowPoseClassifier.holds(
+            state=state(base_x=base_x, bin_x=BIN_X + shift), robot=_ENV.robot, target=_ENV.bin
+        )
 
 
-def test_the_accepted_band_moves_when_the_goal_region_moves() -> None:
-    """The other half of "derived, not pinned": the band tracks the goal box too, so a
-    task JSON that retargets the throw needs no change here."""
+def test_the_accepted_band_no_longer_follows_the_goal_region() -> None:
+    """**A capability deliberately given up, asserted so nobody assumes otherwise.**
+
+    hitl's previous band was *derived* from the live scored box, so retargeting the
+    throw in the task JSON needed no change here. kinder-baselines' band is a literal on
+    `dx`, and its own comment concedes the cost: "A literal, not a live read of the
+    region, so a scene whose bin or goal region moves needs remeasuring."
+
+    Moving the goal region 0.30 m therefore leaves the band exactly where it was. That
+    is the trade accepted when this predicate converged onto upstream's definition, and
+    it is asserted rather than merely noted, so a reader who expects the old behaviour
+    finds this test instead of a silent wrong answer."""
     x_min, y_min, z_min, x_max, y_max, z_max = GOAL_REGION_BBOX
     shifted = (x_min - 0.30, y_min, z_min, x_max - 0.30, y_max, z_max)
-    here = _accepted_band()
-    there = _accepted_band(goal_region=shifted)
-    assert there[0] == pytest.approx(here[0] + 0.30, abs=2e-3)
-    assert there[1] == pytest.approx(here[1] + 0.30, abs=2e-3)
+    assert _accepted_band(goal_region=shifted) == pytest.approx(_accepted_band(), abs=2e-3)
 
 
-def test_the_accepted_bands_upper_edge_is_the_last_standoff_measured_to_solve() -> None:
-    """The far edge sits on standoff 1.400, the last observed to score: `0/1050` beyond
-    it on this stack's standoff grid (`0/150` at each of 1.45 through 1.75), against
-    `3/150` at 1.400 itself. Left at the measured reach envelope it would sit at 1.455.
+def test_the_accepted_band_is_upstreams_measured_band_with_a_widened_far_edge() -> None:
+    """The band is upstream's literal, not a derivation, and its far edge is this
+    repo's own 1.400 rather than kinder-baselines' 1.375.
 
-    Landing-space and standoff-space run in *opposite* directions (`landing_x = base_x +
-    range`, `base_x = bin_x - standoff`), so trimming the wrong box edge moves the band
-    the wrong way. Pinning the far edge catches that; the width check below does not."""
-    assert _accepted_band()[1] == pytest.approx(1.400, abs=2e-3)
+    **The near edge is upstream's unchanged.** It sits below the sampler's 1.10 m floor,
+    so inside `THROW_STANDOFF_BOUNDS` this is a one-sided threshold at the far edge.
+
+    See `RobotAtSuccessfulThrowPoseClassifier`'s docstring for why the far edge moved
+    and for the question that was left open when it did."""
+    assert ACCEPTED_THROW_STANDOFF_BOUNDS == (1.09, 1.400)
+    low, high = _accepted_band()
+    assert (low, high) == pytest.approx(ACCEPTED_THROW_STANDOFF_BOUNDS, abs=2e-3)
+
+
+def test_the_far_edge_clears_the_worst_measured_overshoot_at_the_oracle_standoff() -> None:
+    """**The reason the far edge is 1.400 and not upstream's 1.375.**
+
+    `move_to_target` stops long of its commanded standoff by a per-seed constant
+    measured at 0.7-27.7 mm over 5 scene seeds, so the oracle's commanded 1.35 lands at
+    an *achieved* `dx` of up to 1.3777. Upstream's 1.375 edge falls inside that spread,
+    which would make this predicate false at a pose the oracle has just correctly moved
+    to -- and `SkillOraclePolicy` branches on it, so the oracle would re-issue
+    `MoveToThrowPose` forever instead of throwing.
+
+    1.3777 is the worst achieved value measured; this pins the margin that protects it.
+    That the pose genuinely scores was measured rather than assumed -- 40 oracle rollouts
+    over 8 scene seeds put the first miss at an achieved `dx` of 1.4464."""
+    worst_achieved_dx_at_the_oracle_standoff = 1.3777
+    assert ACCEPTED_THROW_STANDOFF_BOUNDS[1] > worst_achieved_dx_at_the_oracle_standoff
+    assert _at_throw_pose(standoff=worst_achieved_dx_at_the_oracle_standoff)
+
+
+def test_the_far_edge_stays_inside_the_measured_scoring_range() -> None:
+    """The other side of the same measurement: the band must not promise a throw that
+    misses. The first achieved `dx` measured to miss is 1.4464, so a far edge at or above
+    it would accept a pose no toss parameterisation rescues.
+
+    The gap is deliberate -- 1.400 is conservative by 46 mm against the measured edge, so
+    this predicate calls some genuinely-scoring poses a failure. Safe direction for a
+    precondition; widening it belongs in its own change with its own sweep."""
+    first_achieved_dx_measured_to_miss = 1.4464
+    assert ACCEPTED_THROW_STANDOFF_BOUNDS[1] < first_achieved_dx_measured_to_miss
+    assert not _at_throw_pose(standoff=first_achieved_dx_measured_to_miss)
 
 
 def test_the_five_of_five_core_still_lies_inside_the_accepted_band() -> None:
     """PR #105's measured 5/5 core -- `[1.150, 1.375]`, 5 scene seeds at 0.025 m
-    resolution -- lies inside the band. The two margins were tuned to it, so a change
-    that shifted the band rather than widening it would drop an endpoint."""
+    resolution -- lies inside the band, as it did before the convergence."""
     low, high = _accepted_band()
     assert low <= 1.150
     assert high >= 1.375
 
 
-def test_the_accepted_band_is_the_trimmed_box_widened_by_the_dials_own_reach() -> None:
-    """The arithmetic check that the derivation is a derivation and not a fit: unlike
-    the edge test above, it holds for any box at any bin position. The band is the box's
-    own extent minus both margins, plus `THROW_RANGE_MAX - THROW_RANGE_MIN` and nothing
-    else."""
-    low, high = _accepted_band()
-    full_extent = GOAL_REGION_BBOX[3] - GOAL_REGION_BBOX[0]
-    assert high - low == pytest.approx(
-        full_extent
-        - (THROW_OVERSHOOT_MARGIN + THROW_SHORTFALL_MARGIN)
-        + (THROW_RANGE_MAX - THROW_RANGE_MIN),
-        abs=2e-3,
-    )
+def test_a_base_facing_away_from_the_bin_is_not_at_a_throw_pose() -> None:
+    """**The conjunct this predicate gained from kinder-baselines.**
+
+    `MoveToThrowPose` pins `rot = 0`, so a base it placed always faces the bin and this
+    conjunct passes -- but `pos_base_rot` is a free state variable, and after `Pick` it
+    was measured across 25 real states at 0.39-1.39 rad, with heading errors of
+    0.29-0.92 rad against a tolerance of 0.08. So the conjunct is a genuine function of
+    the state rather than a tautology, even though it was measured never to be the
+    conjunct that decides an observed state (`0/75`)."""
+    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_rot=0.0)
+    assert not _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_rot=np.pi / 2)
+    assert not _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_rot=np.pi)
+
+
+def test_the_heading_conjunct_uses_the_shortest_signed_angle() -> None:
+    """A base facing `+x` reported as `-pi` rather than `+pi` is the same heading, so
+    the wrap has to go the short way round. A naive subtraction makes this 2*pi off."""
+    assert not _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_rot=-np.pi)
+    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_rot=-1e-9)
 
 
 def test_the_range_interval_brackets_the_calibrated_single_throw_range() -> None:
@@ -352,16 +403,21 @@ def test_the_band_accepts_short_standoffs_some_toss_parameterisation_reaches(
 
 
 @pytest.mark.parametrize("standoff", [0.45, 0.80, 1.00])
-def test_the_band_accepts_standoffs_below_the_samplers_floor_on_the_model_alone(
-    *, standoff: float
-) -> None:
-    """**Unmeasured, and labelled as such.** The sampler's floor is 1.10 m
-    (`predicates.THROW_STANDOFF_BOUNDS`) and both grids in this stack start there, so
-    nothing has been thrown from any of these three. The union interval's claim that a
-    short enough throw reaches the box from this close is a consequence of the model.
+def test_the_band_rejects_standoffs_below_the_samplers_floor(*, standoff: float) -> None:
+    """**This flipped when the predicate converged onto upstream's band, and the flip is
+    a narrowing rather than a correction.**
 
-    Asserted anyway, so it fails loudly if `THROW_RANGE_MIN` moves."""
-    assert _at_throw_pose(standoff=standoff)
+    The previous band was a union over the toss parameter box, so it accepted down to
+    0.209 m on the model's claim that *some* parameterisation reaches the box from that
+    close. Nothing was ever thrown from there -- the sampler's floor is 1.10 m
+    (`THROW_STANDOFF_BOUNDS`) and every grid in this stack starts there -- so the old
+    acceptance was unmeasured model output, and its replacement by upstream's measured
+    1.09 m near edge loses no evidence.
+
+    Both edges sit below the sampler's floor either way, so inside the range the sampler
+    can actually draw this predicate is a one-sided threshold at the far edge, exactly as
+    it was before."""
+    assert not _at_throw_pose(standoff=standoff)
 
 
 def test_the_predicate_rejects_standing_on_top_of_the_bin() -> None:
@@ -410,12 +466,31 @@ def test_the_predicate_rejects_a_diagonal_approach_at_the_right_distance() -> No
     )
 
 
-def test_the_lateral_conjunct_still_tolerates_exactly_what_the_controller_tolerates() -> None:
-    """`move_to_target` stops once the base is within `WAYPOINT_TOL` of its own planned
-    waypoint, so a pose that far off the axis still has to count."""
-    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_LATERAL_TOLERANCE * 0.9)
-    assert not _at_throw_pose(
-        standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_LATERAL_TOLERANCE * 1.1
+def test_the_lateral_conjunct_is_upstreams_doubled_waypoint_tolerance() -> None:
+    """`move_to_target` stops once the base is within `WAYPOINT_TOLERANCE` of its own
+    planned waypoint; kinder-baselines allows twice that, on the grounds that its own
+    sampler already spends half of it off-axis. Converging on upstream's number widens
+    this conjunct from 0.04 to 0.08."""
+    assert THROW_POSE_TOLERANCE == 2 * WAYPOINT_TOLERANCE
+    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_TOLERANCE * 0.9)
+    assert not _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_TOLERANCE * 1.1)
+
+
+def test_widening_the_lateral_conjunct_does_not_readmit_the_recorded_failure() -> None:
+    """**The check that had to pass before the tolerance could be widened at all.**
+
+    The 0.04 m tolerance was measured against a real failure: the oracle once threw from
+    a pose facing 40 degrees off the bin and the cube landed at (0.9969, -0.7196).
+    Doubling a tolerance that was set by a recorded failure is exactly the kind of change
+    that quietly re-admits it, so the pose is asserted directly rather than argued about.
+
+    It is rejected twice over -- `|dy| = 0.366` against a 0.08 tolerance, and
+    `dx = 1.721` against a band topping out at 1.400 -- so the widening has 4.6x of
+    margin on the conjunct it touches."""
+    assert not RobotAtSuccessfulThrowPoseClassifier.holds(
+        state=state(base_x=0.279, base_y=0.366),
+        robot=_ENV.robot,
+        target=_ENV.bin,
     )
 
 

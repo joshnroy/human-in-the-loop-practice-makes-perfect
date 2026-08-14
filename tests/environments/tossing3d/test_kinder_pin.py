@@ -150,3 +150,56 @@ def test_the_release_fraction_trigger_is_gone_rather_than_kept_alongside() -> No
     source = inspect.getsource(parameterized_skills)
     assert "_release_fraction" not in source
     assert "gripper_release_ms" in source
+
+
+def test_the_restated_throw_pose_constants_still_equal_upstreams() -> None:
+    """`predicates.py` restates upstream's throw-pose tolerances rather than importing
+    them, because importing anything from `kinder_models` there would make the whole
+    `--env tossing3d` registration require MuJoCo and take ~900 lines of offline predicate
+    and skill tests off CI with it.
+
+    Restating buys that at the cost of a silent-drift risk, and this is what pays for it:
+    wherever KINDER *is* installed, a tolerance upstream retunes fails here instead of
+    quietly leaving the two definitions disagreeing.
+
+    The band's **far edge is deliberately not** asserted equal -- this repo ships 1.400
+    where upstream ships 1.375, so that its own oracle standoff clears
+    `move_to_target`'s stopping error. See `RobotAtSuccessfulThrowPoseClassifier`'s
+    docstring. The near edge is upstream's unchanged, and is asserted.
+    """
+    from kinder_models.dynamic3d.tossing.state_abstractions import (
+        THROW_POSE_TOLERANCE as UPSTREAM_THROW_POSE_TOLERANCE,
+    )
+    from kinder_models.dynamic3d.tossing.state_abstractions import (
+        THROW_STANDOFF_BOUNDS as UPSTREAM_ACCEPTED_BAND,
+    )
+    from kinder_models.dynamic3d.utils import WAYPOINT_TOLERANCE as UPSTREAM_WAYPOINT_TOLERANCE
+
+    from hitl_pmp.environments.tossing3d.predicates import (
+        ACCEPTED_THROW_STANDOFF_BOUNDS,
+        THROW_POSE_TOLERANCE,
+        WAYPOINT_TOLERANCE,
+    )
+
+    assert WAYPOINT_TOLERANCE == UPSTREAM_WAYPOINT_TOLERANCE
+    assert THROW_POSE_TOLERANCE == UPSTREAM_THROW_POSE_TOLERANCE
+    assert ACCEPTED_THROW_STANDOFF_BOUNDS[0] == UPSTREAM_ACCEPTED_BAND[0]
+    assert ACCEPTED_THROW_STANDOFF_BOUNDS[1] > UPSTREAM_ACCEPTED_BAND[1]
+
+
+def test_the_restated_signed_angle_distance_matches_upstreams() -> None:
+    """The heading conjunct's wrap, checked against `prpl_utils`' own implementation over
+    the full circle rather than at a handful of points -- a naive difference agrees
+    everywhere except across the branch cut, which is exactly where it matters."""
+    from prpl_utils.utils import get_signed_angle_distance
+
+    from hitl_pmp.environments.tossing3d.predicates import (
+        RobotAtSuccessfulThrowPoseClassifier as Classifier,
+    )
+
+    angles = np.linspace(-np.pi, np.pi, 73)
+    for target in angles:
+        for source in angles:
+            assert Classifier._signed_angle_distance(  # noqa: SLF001
+                target=float(target), source=float(source)
+            ) == pytest.approx(get_signed_angle_distance(float(target), float(source)), abs=1e-12)
