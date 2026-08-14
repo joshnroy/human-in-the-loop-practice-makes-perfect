@@ -1,9 +1,9 @@
 [submodule "reference/kinder-baselines"]
 	path = reference/kinder-baselines
-	url = https://github.com/joshnroy/kinder-baselines.git
+	url = https://github.com/Princeton-Robot-Planning-and-Learning/kinder-baselines.git
 [submodule "reference/predicators"]
 	path = reference/predicators
 	url = https://github.com/Learning-and-Intelligent-Systems/predicators.git
 [submodule "reference/kindergarden"]
 	path = reference/kindergarden
-	url = https://github.com/joshnroy/kindergarden.git
+	url = https://github.com/Princeton-Robot-Planning-and-Learning/kindergarden.git

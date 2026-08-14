@@ -288,11 +288,15 @@ def test_the_recorded_pins_are_the_three_reference_repos() -> None:
     gitmodules = (REPO_ROOT / ".gitmodules").read_text(encoding="utf-8")
     for path in ("reference/kindergarden", "reference/kinder-baselines", "reference/predicators"):
         assert f"path = {path}" in gitmodules
-    # Two of the three are forks on purpose: the commits this repo depends on live on
-    # unmerged branches, and a submodule hard-fails when a pinned SHA is force-pushed
-    # away. A fork Josh controls cannot be force-pushed under us.
-    assert "joshnroy/kindergarden" in gitmodules
-    assert "joshnroy/kinder-baselines" in gitmodules
+    # Every URL is now the canonical upstream remote. The two KINDER rows pointed at
+    # forks Josh controls until this changed, because a submodule *hard-fails* when a
+    # pinned SHA is force-pushed away and a fork cannot be force-pushed under us. That
+    # protection is deliberately given up -- see CLAUDE.md's `reference/` section for the
+    # hazard that buys and for which of the two rows actually carries it.
+    assert "Princeton-Robot-Planning-and-Learning/kindergarden" in gitmodules
+    assert "Princeton-Robot-Planning-and-Learning/kinder-baselines" in gitmodules
+    assert "Learning-and-Intelligent-Systems/predicators" in gitmodules
+    assert "joshnroy/" not in gitmodules
 
 
 def test_kindergarden_is_initialised_blobless_by_default() -> None:
