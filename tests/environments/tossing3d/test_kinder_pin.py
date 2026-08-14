@@ -16,6 +16,8 @@ import inspect
 import numpy as np
 import pytest
 
+from .kinder_symbols import RenamedKinderSymbol
+
 needs_kinder = pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None or importlib.util.find_spec("kinder_models") is None,
     reason="KINDER is an optional extra (`kindergarden` + `kinder_models`); CI never installs it",
@@ -103,12 +105,17 @@ def test_the_toss_schedule_is_exactly_as_wide_as_kinder_demands() -> None:
         CONTROL_SCHEDULE_TIMESTEP,
         SIMULATION_TIMESTEP,
     )
+    from kinder_models.dynamic3d import utils
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
         TOSS_SLICES_PER_CONTROL_STEP,
     )
-    from kinder_models.dynamic3d.utils import _CONTROL_TIMESTEP
 
-    num_sim_steps = int(_CONTROL_TIMESTEP / SIMULATION_TIMESTEP)
+    control_timestep = RenamedKinderSymbol.resolve(
+        module=utils, names=("CONTROL_TIMESTEP", "_CONTROL_TIMESTEP")
+    )
+    assert isinstance(control_timestep, float)
+
+    num_sim_steps = int(control_timestep / SIMULATION_TIMESTEP)
     ticks_per_row = int(round(CONTROL_SCHEDULE_TIMESTEP / SIMULATION_TIMESTEP))
     assert num_sim_steps // ticks_per_row == TOSS_SLICES_PER_CONTROL_STEP
 
