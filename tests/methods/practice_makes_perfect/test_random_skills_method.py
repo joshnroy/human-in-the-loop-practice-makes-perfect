@@ -8,6 +8,7 @@ from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.practice_makes_perfect.random_skills_method import RandomSkillsMethod
+from tests.environments.tossing3d.observations import MISSED_TOSS_ATOMS
 from tests.environments.tossing3d.observations import state as tossing3d_state
 
 
@@ -122,10 +123,24 @@ def _missed_toss_dead_end() -> tuple[Tossing3DEnvironment, RandomSkillsMethod, S
     the episode before ever calling the policy), and the base at x = 0.65 is a real
     post-toss pose, so `RobotAtSuccessfulThrowPose` genuinely holds and the dead end is
     not an artifact of the robot standing somewhere it could never be.
+
+    The abstraction is passed in rather than derived, because this domain's predicates are
+    upstream's classifiers now and two of the six need a live scene to evaluate (see
+    `environments/tossing3d/predicates.py`). `MISSED_TOSS_ATOMS` states the same situation
+    the feature values do: hand empty, cube resting past the one-way barrier, base at a
+    throw pose. A hand-built state with no abstraction raises here rather than silently
+    answering `False` to every predicate -- which would have made this dead end look like a
+    dead end for the wrong reason.
     """
     env = Tossing3DEnvironment()
     method = RandomSkillsMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)
-    state = tossing3d_state(env=env, cube_x=2.86, base_x=0.65, steps_taken=3)
+    state = tossing3d_state(
+        env=env,
+        cube_x=2.86,
+        base_x=0.65,
+        steps_taken=3,
+        abstract_atoms=MISSED_TOSS_ATOMS,
+    )
     assert method.applicable_ground_skills(state=state) == []
     return env, method, state
 

@@ -1,5 +1,7 @@
 """Offline tests for the three lifted skills, their operator models and their samplers."""
 
+import importlib.util
+
 import numpy as np
 import pytest
 
@@ -18,7 +20,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     TOSS_SPEED_BOUNDS,
     UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
     WORST_BARRIER_COLLISION_STANDOFF,
-    RobotAtSuccessfulThrowPoseClassifier,
 )
 from hitl_pmp.environments.tossing3d.predicates import (
     THROW_STANDOFF_BOUNDS as PREDICATE_THROW_STANDOFF_BOUNDS,
@@ -32,7 +33,17 @@ from hitl_pmp.environments.tossing3d.skills import (
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import BIN_X, state
+from .observations import INITIAL_ATOMS, state
+
+# The two sampler-versus-band tests below call upstream's own `RobotAtThrowPose`
+# classifier, which lives in `kinder_models`. It is a `@staticmethod` so it needs no
+# simulator *process*, but it does need the package importable -- hence the gate, which
+# keeps a checkout with unpopulated `reference/` from failing wholesale. Defined after the
+# imports rather than before them: nothing above it is conditional on KINDER, and ruff's
+# `E402` rejects a module-level statement wedged in among the imports.
+_needs_kinder = pytest.mark.skipif(
+    importlib.util.find_spec("kinder") is None, reason="requires the tossing3d extra"
+)
 
 _ENV = Tossing3DEnvironment()
 _SKILLS = Tossing3DSkills
@@ -223,7 +234,9 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
         REACHABLE,
         ROBOT_AT_SUCCESSFUL_THROW_POSE,
     )
-    init_atoms = SkillGrounder.abstract_state(state=state(), objects=objects, predicates=predicates)
+    init_atoms = SkillGrounder.abstract_state(
+        state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
+    )
     plan = FastDownwardPlanner.plan(
         skills=(_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS),
         predicates=predicates,
@@ -279,6 +292,7 @@ def test_sample_params_draws_pick_parameters_inside_upstreams_own_bounds() -> No
         assert PICK_ROTATION_BOUNDS[0] <= rotation <= PICK_ROTATION_BOUNDS[1]
 
 
+@_needs_kinder
 def test_the_sampler_draws_both_satisfying_and_unsatisfying_standoffs() -> None:
     """**The sampler must be able to miss.** `MoveToThrowPose`'s only add effect is
     `RobotAtSuccessfulThrowPose`, and EES trains that skill's success classifier on
@@ -287,18 +301,14 @@ def test_the_sampler_draws_both_satisfying_and_unsatisfying_standoffs() -> None:
     it holds precisely when the label is constant-true and the sampler cannot learn.
 
     Both outcomes must occur, and every draw must still be in bounds."""
+    from .object_centric import at_throw_pose
+
     rng = np.random.default_rng(0)
     outcomes = []
     for _ in range(200):
         (standoff,) = Tossing3DSkills.sample_params(ground_skill=_move(), rng=rng)
         assert THROW_STANDOFF_BOUNDS[0] <= standoff <= THROW_STANDOFF_BOUNDS[1]
-        outcomes.append(
-            RobotAtSuccessfulThrowPoseClassifier.holds(
-                state=state(base_x=BIN_X - standoff),
-                robot=_ENV.robot,
-                target=_ENV.bin,
-            )
-        )
+        outcomes.append(at_throw_pose(standoff=standoff))
     assert any(outcomes), "no draw ever succeeds: the skill could never achieve its effect"
     assert not all(outcomes), (
         "every draw succeeds: the add effect is constant-true and no sampler can learn"
@@ -342,23 +352,27 @@ def test_the_sampler_range_excludes_the_measured_barrier_collision_range() -> No
     assert THROW_STANDOFF_BOUNDS[0] >= WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MARGIN
 
 
+@_needs_kinder
 def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:
     """The defect this whole change exists to fix, pinned as a property.
 
     `predicates.py` used to hand `THROW_STANDOFF_BOUNDS` straight to the classifier as its
     acceptance interval, so widening the sampler's range widened the acceptance region in
-    lockstep and the add effect stayed constant-true. The acceptance band is now derived
-    from the live goal region and `THROW_RANGE`, and is strictly narrower than the range
-    the sampler draws from."""
+    lockstep and the add effect stayed constant-true. The acceptance band is now
+    upstream's own measured `THROW_STANDOFF_BOUNDS` -- a different constant that happens
+    to share the name, see `predicates.py` -- and is strictly narrower than the range the
+    sampler draws from.
+
+    Upstream keeps the same separation for the same reason: its sampler draws from
+    `TOSS_TARGET_DISTANCE_BOUNDS` = (1.25, 1.45), not from the band its predicate
+    accepts."""
+    from .object_centric import at_throw_pose
+
     low, high = THROW_STANDOFF_BOUNDS
     accepted = [
         standoff / 1000
         for standoff in range(int(low * 1000), int(high * 1000))
-        if RobotAtSuccessfulThrowPoseClassifier.holds(
-            state=state(base_x=BIN_X - standoff / 1000),
-            robot=_ENV.robot,
-            target=_ENV.bin,
-        )
+        if at_throw_pose(standoff=standoff / 1000)
     ]
     assert accepted
     assert max(accepted) - min(accepted) < (high - low) / 2

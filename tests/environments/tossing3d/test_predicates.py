@@ -1,432 +1,58 @@
-"""Offline tests for Tossing3D's six predicates.
+"""Offline tests for Tossing3D's six predicate *wrappers*.
 
-`InBin` gets the most attention, including deliberate boundary probes, because it
-*is* the success criterion and because a wrong goal box has already shipped once in this
-project's history. `test_kinder_fidelity.py` checks it against KINDER's own
-`_check_goals()` whenever the simulator is installed; these run everywhere.
+The classifiers themselves are upstream's now, and their semantics are
+`test_kb_predicate_parity.py`'s subject. What is left here is the wiring, which is
+entirely ours and entirely capable of being wrong in ways upstream cannot catch: which
+`Type`s each predicate is declared over, which object goes in which slot, and what
+happens when a state carries no abstraction at all.
+
+**This file used to be 450 lines of boundary probes**, most of them for `InBin` and for
+the throw-pose band this domain derived from live scene geometry. Both moved:
+
+- The four *pure* upstream classifiers (`HandEmpty`, `OnGround`, `MovableIsDownX`,
+  `RobotAtThrowPose`) are `@staticmethod`s over an `ObjectCentricState`, which is
+  constructible with no MuJoCo, so their probes live in `test_kb_predicate_parity.py`
+  and still run offline.
+- `Holding`'s forward-kinematics conjunct and `MovableInGoalRegion`'s ground-fixture
+  read genuinely need a simulator, so their probes moved to `test_kinder_fidelity.py`.
+  That is a real reduction in defence-in-depth for `InBin` -- this domain's success
+  criterion, and the one a wrong goal box has already shipped against once -- and it is
+  the price of the classifier no longer being ours to test in isolation.
 """
 
 import numpy as np
 import pytest
 
+from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
-    GRASP_THRESHOLD,
     HAND_EMPTY,
-    HANDEMPTY_TOL,
     HOLDING,
     IN_BIN,
+    KB_AT_THROW_POSE,
+    KB_HAND_EMPTY,
+    KB_HOLDING,
+    KB_IN_GOAL_REGION,
+    KB_IS_DOWN_X,
+    KB_ON_GROUND,
     ON_GROUND,
     REACHABLE,
     ROBOT_AT_SUCCESSFUL_THROW_POSE,
-    THROW_OVERSHOOT_MARGIN,
-    THROW_POSE_LATERAL_TOLERANCE,
-    THROW_RANGE,
-    THROW_RANGE_MAX,
-    THROW_RANGE_MIN,
-    THROW_SHORTFALL_MARGIN,
-    THROW_STANDOFF_BOUNDS,
-    HandEmptyClassifier,
-    HoldingClassifier,
-    InBinClassifier,
-    OnGroundClassifier,
-    ReachableClassifier,
-    RobotAtSuccessfulThrowPoseClassifier,
 )
-from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
+from hitl_pmp.environments.tossing3d.types import Tossing3DState
 
-from .observations import BARRIER_X, BIN_X, CUBE_START_X, GOAL_REGION_BBOX, state
+from .observations import AT_THROW_POSE_ATOMS, HOLDING_ATOMS, INITIAL_ATOMS, state
 
 _ENV = Tossing3DEnvironment()
 
-
-def _in_bin(*, x: float, y: float = 0.0, z: float = 0.0444) -> bool:
-    return InBinClassifier.holds(
-        state=state(cube_x=x, cube_y=y, cube_z=z), cube=_ENV.cube, target=_ENV.bin
-    )
-
-
-def test_in_bin_accepts_the_measured_landing() -> None:
-    """x = 1.9902, z = 0.0444 is where the oracle's cube comes to rest on the shipped
-    scene at standoff 1.35 -- inside the bin, and inside the goal box.
-    `_check_goals()` says True there, so this must too."""
-    assert _in_bin(x=1.9902, y=0.0105, z=0.0444)
-
-
-def test_in_bin_rejects_a_landing_past_the_far_edge() -> None:
-    """x = 2.2197 is past the goal box's 2.15 far edge, so this must be False. It is a
-    measured point rather than an invented one: it is where this same throw came to rest
-    on the scene KINDER shipped before `kindergarden` PR #126, whose bin sat 23 cm too
-    far out -- a cube landing in that bin scored a failure, and `_check_goals()` agreed
-    with this predicate that it was outside the region."""
-    assert not _in_bin(x=2.2197, y=0.0103, z=0.0444)
-
-
-@pytest.mark.parametrize("x", [1.85, 2.15])
-def test_in_bin_is_inclusive_at_the_boundary(*, x: float) -> None:
-    """Upstream's `Region.check_in_region` uses `>=`/`<=`, so this does too. A strict
-    comparison would disagree with `_check_goals()` on exactly the measure-zero set that
-    is hardest to notice and easiest to argue about."""
-    assert _in_bin(x=x)
-
-
-@pytest.mark.parametrize("x", [1.8499, 2.1501])
-def test_in_bin_rejects_just_outside_the_boundary(*, x: float) -> None:
-    assert not _in_bin(x=x)
-
-
-def test_in_bin_tests_all_three_axes_not_just_x() -> None:
-    """A toss controls x, so x is where attention goes -- but a cube that flew sideways
-    or is still in the air is not in the region either, and upstream checks all three."""
-    assert not _in_bin(x=2.0, y=0.5)
-    assert not _in_bin(x=2.0, z=0.4)
-
-
-def test_in_bin_follows_the_box_it_is_given_rather_than_a_constant() -> None:
-    """The box is per-episode state, not a literal: if upstream ever moves
-    `blocks_goal_region`, the predicate must move with it."""
-    shifted = list(GOAL_REGION_BBOX)
-    shifted[0], shifted[3] = 3.0, 3.3
-    assert not InBinClassifier.holds(
-        state=state(cube_x=2.0, goal_region=tuple(shifted)), cube=_ENV.cube, target=_ENV.bin
-    )
-    assert InBinClassifier.holds(
-        state=state(cube_x=3.1, goal_region=tuple(shifted)), cube=_ENV.cube, target=_ENV.bin
-    )
-
-
-def test_in_bin_reads_the_scored_box_not_the_bins_pose() -> None:
-    """**The guard the bin-is-the-goal-region simplification makes necessary.**
-
-    The box now rides on the bin object, which makes "derive it from the bin's own x plus a
-    half-extent" look like a tidy simplification. It is not: KINDER scores against
-    `blocks_goal_region`, whose bbox is the task JSON's range inflated by
-    `ground_placement_threshold`, and a box re-derived from the bin's pose would disagree
-    with `_check_goals()` -- the exact defect that has already shipped once here.
-
-    Moving the bin's pose while holding the box still must therefore not move the verdict.
-    That the two *coincide* in the shipped scene is the domain's assumption; that the
-    predicate *reads* the box rather than the pose is what keeps it correct anyway."""
-    far = state(cube_x=2.0, bin_x=BIN_X + 5.0)
-    assert InBinClassifier.holds(state=far, cube=_ENV.cube, target=_ENV.bin)
-
-
-def test_in_bin_scores_a_bin_off_the_box_the_way_kinder_does() -> None:
-    """The honest consequence of the assumption, pinned so nobody "fixes" it later.
-
-    Where the bin and the scored region come apart, the bin object's own `x` falls outside
-    its own `x_max` and `InBin` is true exactly when the cube is *not* in the bin. The
-    **name** is wrong on such a scene; the **arithmetic** is not, and the arithmetic is
-    what `_check_goals()` agreement depends on. A future change that made `InBin` follow
-    the bin's pose would flip both of these and look like a bugfix.
-
-    That geometry is no longer one this domain can load -- #237 retired the task-config
-    enum, so the scene is whatever the installed KINDER registers, and there the two
-    coincide. The observation here is hand-built, so the case stays expressible, and it is
-    the one the assumption is weakest on: it is exactly the scene that shipped for months
-    before `kindergarden` PR #126, whose measured numbers are the ones used below."""
-    # The bin's measured x before PR #126 moved it back onto the box that scores. Local
-    # rather than in `observations.py`: no scene puts the bin here any more, so this is
-    # this test's own historical datum rather than the domain's geometry.
-    bin_off_the_box = 2.2305
-
-    in_the_bin = state(cube_x=2.2197, cube_z=0.0444, bin_x=bin_off_the_box)
-    assert not InBinClassifier.holds(state=in_the_bin, cube=_ENV.cube, target=_ENV.bin)
-    on_the_scored_box = state(cube_x=2.0, cube_z=0.0444, bin_x=bin_off_the_box)
-    assert InBinClassifier.holds(state=on_the_scored_box, cube=_ENV.cube, target=_ENV.bin)
-
-
-def test_hand_empty_holds_only_at_an_open_gripper() -> None:
-    assert HandEmptyClassifier.holds(state=state(gripper=0.0), robot=_ENV.robot)
-    assert HandEmptyClassifier.holds(state=state(gripper=HANDEMPTY_TOL / 2), robot=_ENV.robot)
-    assert not HandEmptyClassifier.holds(state=state(gripper=0.5), robot=_ENV.robot)
-
-
-def test_holding_needs_both_a_closed_gripper_and_a_lifted_cube() -> None:
-    """Upstream's own two conjuncts. Either alone is not enough: a closed gripper with the
-    cube still on the floor is a failed grasp, and a cube in the air with an open gripper
-    is a cube in flight."""
-    assert HoldingClassifier.holds(
-        state=state(gripper=GRASP_THRESHOLD + 0.5, cube_z=0.4), robot=_ENV.robot, cube=_ENV.cube
-    )
-    assert not HoldingClassifier.holds(
-        state=state(gripper=GRASP_THRESHOLD + 0.5, cube_z=0.025),
-        robot=_ENV.robot,
-        cube=_ENV.cube,
-    )
-    assert not HoldingClassifier.holds(
-        state=state(gripper=0.0, cube_z=0.4), robot=_ENV.robot, cube=_ENV.cube
-    )
-
-
-def test_on_ground_holds_for_a_cube_resting_flat_on_the_floor() -> None:
-    """z - bb_z/2 == 0 is the floor: the cube's centre sits one half-extent up."""
-    assert OnGroundClassifier.holds(state=state(cube_z=0.025), cube=_ENV.cube)
-
-
-def test_on_ground_rejects_a_cube_in_the_air() -> None:
-    assert not OnGroundClassifier.holds(state=state(cube_z=0.4), cube=_ENV.cube)
-
-
-def test_on_ground_rejects_a_cube_resting_on_a_corner() -> None:
-    """Upstream's flatness conjunct, and it is load-bearing rather than decorative:
-    `pick_shelf` builds its grasp pose from the object's orientation."""
-    assert not OnGroundClassifier.holds(state=state(cube_z=0.025, cube_qx=0.7), cube=_ENV.cube)
-    assert not OnGroundClassifier.holds(state=state(cube_z=0.025, cube_qy=0.7), cube=_ENV.cube)
-
-
-def test_reachable_is_a_one_way_door_across_the_barrier() -> None:
-    """This is the domain's whole point in one predicate: the base cannot cross the
-    barrier, so a cube past it can never be picked up again."""
-    assert ReachableClassifier.holds(
-        state=state(cube_x=CUBE_START_X), cube=_ENV.cube, barrier=_ENV.barrier
-    )
-    assert not ReachableClassifier.holds(
-        state=state(cube_x=1.99), cube=_ENV.cube, barrier=_ENV.barrier
-    )
-
-
-def test_reachable_reads_the_barriers_live_x_rather_than_a_constant() -> None:
-    """The barrier's pose is sampled from `barrier_init_region` per episode, so a literal
-    would be right for one seed and quietly wrong for the next."""
-    beyond_default = state(cube_x=BARRIER_X + 0.5)
-    assert not ReachableClassifier.holds(state=beyond_default, cube=_ENV.cube, barrier=_ENV.barrier)
-    beyond_default.set(obj=_ENV.barrier, feature_name="x", feature_val=BARRIER_X + 1.0)
-    assert ReachableClassifier.holds(state=beyond_default, cube=_ENV.cube, barrier=_ENV.barrier)
-
-
-def _at_throw_pose(*, standoff: float, base_y: float = 0.0, **kwargs) -> bool:
-    """Does the predicate hold for a base placed `standoff` metres in front of the bin?"""
-    bin_x = kwargs.pop("bin_x", BIN_X)
-    return RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state(base_x=bin_x - standoff, base_y=base_y, bin_x=bin_x, **kwargs),
-        robot=_ENV.robot,
-        target=_ENV.bin,
-    )
-
-
-def _accepted_band(**kwargs) -> tuple[float, float]:
-    """The interval of standoffs the predicate accepts, found by scanning at 1 mm."""
-    accepted = [
-        standoff / 1000
-        for standoff in range(0, 3000)
-        if _at_throw_pose(standoff=standoff / 1000, **kwargs)
-    ]
-    return (min(accepted), max(accepted))
-
-
-def test_the_accepted_band_is_strictly_narrower_than_the_range_the_sampler_draws_from() -> None:
-    """**The property whose absence is the whole reason this predicate was rewritten.**
-
-    `MoveToThrowPose`'s only add effect is this predicate, and EES trains that skill's
-    success classifier on exactly that label. While the predicate accepted every standoff
-    in `THROW_STANDOFF_BOUNDS` -- the interval the sampler draws from -- the label was
-    constant-true, the classifier saw one class, and every draw fell back to uniform. If
-    this ever fails again, the sampler has silently stopped being able to learn."""
-    rng = np.random.default_rng(0)
-    draws = [float(rng.uniform(*THROW_STANDOFF_BOUNDS)) for _ in range(200)]
-    accepted = [d for d in draws if _at_throw_pose(standoff=d)]
-    assert accepted, "no sampled standoff is accepted: the skill could never succeed"
-    assert len(accepted) < len(draws), (
-        "every sampled standoff is accepted: the add effect is constant-true and no "
-        "sampler can learn from it"
-    )
-
-
-def test_the_accepted_band_moves_when_the_bin_moves() -> None:
-    """**The test that catches someone reintroducing a measured literal.**
-
-    The band is derived from live scene geometry plus two fixed margins, so shifting the
-    bin shifts the whole band by exactly the same amount. A predicate that instead
-    hard-coded `[1.15, 1.375]` -- the *value* the derivation happens to produce on the
-    scene as shipped -- would hold the band still and be silently wrong the moment the bin
-    moves. That is not hypothetical: kindergarden#126 has since moved it, which is exactly
-    the event this test was written against."""
-    shift = 0.25
-    here = _accepted_band()
-    there = _accepted_band(bin_x=BIN_X + shift)
-    assert there[0] == pytest.approx(here[0] + shift, abs=2e-3)
-    assert there[1] == pytest.approx(here[1] + shift, abs=2e-3)
-
-
-def test_the_accepted_band_moves_when_the_goal_region_moves() -> None:
-    """The other half of "derived, not pinned": the band tracks the goal box too, so a
-    task JSON that retargets the throw needs no change here."""
-    x_min, y_min, z_min, x_max, y_max, z_max = GOAL_REGION_BBOX
-    shifted = (x_min - 0.30, y_min, z_min, x_max - 0.30, y_max, z_max)
-    here = _accepted_band()
-    there = _accepted_band(goal_region=shifted)
-    assert there[0] == pytest.approx(here[0] + 0.30, abs=2e-3)
-    assert there[1] == pytest.approx(here[1] + 0.30, abs=2e-3)
-
-
-def test_the_accepted_bands_upper_edge_is_the_last_standoff_measured_to_solve() -> None:
-    """The far edge sits on standoff 1.400, the last observed to score: `0/1050` beyond
-    it on this stack's standoff grid (`0/150` at each of 1.45 through 1.75), against
-    `3/150` at 1.400 itself. Left at the measured reach envelope it would sit at 1.455.
-
-    Landing-space and standoff-space run in *opposite* directions (`landing_x = base_x +
-    range`, `base_x = bin_x - standoff`), so trimming the wrong box edge moves the band
-    the wrong way. Pinning the far edge catches that; the width check below does not."""
-    assert _accepted_band()[1] == pytest.approx(1.400, abs=2e-3)
-
-
-def test_the_five_of_five_core_still_lies_inside_the_accepted_band() -> None:
-    """PR #105's measured 5/5 core -- `[1.150, 1.375]`, 5 scene seeds at 0.025 m
-    resolution -- lies inside the band. The two margins were tuned to it, so a change
-    that shifted the band rather than widening it would drop an endpoint."""
-    low, high = _accepted_band()
-    assert low <= 1.150
-    assert high >= 1.375
-
-
-def test_the_accepted_band_is_the_trimmed_box_widened_by_the_dials_own_reach() -> None:
-    """The arithmetic check that the derivation is a derivation and not a fit: unlike
-    the edge test above, it holds for any box at any bin position. The band is the box's
-    own extent minus both margins, plus `THROW_RANGE_MAX - THROW_RANGE_MIN` and nothing
-    else."""
-    low, high = _accepted_band()
-    full_extent = GOAL_REGION_BBOX[3] - GOAL_REGION_BBOX[0]
-    assert high - low == pytest.approx(
-        full_extent
-        - (THROW_OVERSHOOT_MARGIN + THROW_SHORTFALL_MARGIN)
-        + (THROW_RANGE_MAX - THROW_RANGE_MIN),
-        abs=2e-3,
-    )
-
-
-def test_the_range_interval_brackets_the_calibrated_single_throw_range() -> None:
-    """`THROW_RANGE` is the impact range at the oracle's own `(140 deg/s, 720 ms)`
-    pair -- the same quantity the two endpoints are measured in -- so it has to fall
-    inside the interval the parameter box spans. Nothing forced that."""
-    assert THROW_RANGE_MIN < THROW_RANGE < THROW_RANGE_MAX
-
-
-def test_the_oracle_standoff_is_inside_the_accepted_band() -> None:
-    """`SkillOraclePolicy` throws from 1.35 and scores 99/100. If tightening the predicate
-    ever excluded that standoff the oracle would stop planning a throw at all, and every
-    EES number on this domain is measured against that ceiling. This is one of the two
-    reasons a further tightening to `[1.150, 1.325]` (proposed by PR #196, investigated and
-    rejected in `docs/experiment-logs/2026-08-10-tossing3d-throw-band-retightening-sweep.md`)
-    was not landed: 1.35 would fail this assertion."""
-    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF)
-
-
-@pytest.mark.parametrize("standoff", [1.16, 1.25, 1.35, 1.37])
-def test_the_band_accepts_every_standoff_measured_to_solve(*, standoff: float) -> None:
-    """PR #105's finer sweep (5 scene seeds, 0.025 m resolution) solved 5/5 at every point
-    from 1.150 through 1.375. These four sit safely inside that 5/5 core -- a millimetre or
-    more clear of both edges, so this test is not sensitive to `BIN_X`'s own
-    0.1 mm offset from a round 2.0 -- while `test_the_accepted_band_matches_the_measured_
-    five_of_five_core` pins the edges themselves via a fine scan. A predicate rejecting one
-    of these four would be calling a pose a failure that demonstrably scores on every seed
-    tested, not just most of them."""
-    assert _at_throw_pose(standoff=standoff)
-
-
-@pytest.mark.parametrize("standoff", [1.425, 1.45, 1.55, 1.65, 1.75])
-def test_the_band_rejects_every_standoff_no_toss_parameterisation_reaches(
-    *, standoff: float
-) -> None:
-    """`1.45` and beyond are the coarse 48-episode grid's 0/3 points, and this stack's
-    standoff grid agrees over the parameter box: `0/150` at each of 1.45 through 1.75,
-    so `0/1050` beyond 1.400. `1.425` is the geometric band's far edge, PR #105's 2/5.
-
-    **This predicate is independent of `THROW_STANDOFF_BOUNDS`** -- it takes a raw
-    standoff and says nothing about what the sampler can draw. Rejecting `1.75`, the
-    sampler's upper bound, is what keeps the add effect two-class."""
-    assert not _at_throw_pose(standoff=standoff)
-
-
-@pytest.mark.parametrize("standoff", [1.10, 1.125, 1.40])
-def test_the_band_accepts_short_standoffs_some_toss_parameterisation_reaches(
-    *, standoff: float
-) -> None:
-    """Over the toss parameter box this stack's standoff grid solves `37/150` at 1.10
-    and `3/150` at 1.40, so some parameterisation scores from all three.
-
-    All three were measured not to solve at a single fixed 140 deg/s throw -- `1.10` the
-    coarse grid's `0/3`, `1.125` and `1.40` PR #105's `2/5` and `3/5`. Those numbers
-    stand exactly as published; they are evidence about *one* throw."""
-    assert _at_throw_pose(standoff=standoff)
-
-
-@pytest.mark.parametrize("standoff", [0.45, 0.80, 1.00])
-def test_the_band_accepts_standoffs_below_the_samplers_floor_on_the_model_alone(
-    *, standoff: float
-) -> None:
-    """**Unmeasured, and labelled as such.** The sampler's floor is 1.10 m
-    (`predicates.THROW_STANDOFF_BOUNDS`) and both grids in this stack start there, so
-    nothing has been thrown from any of these three. The union interval's claim that a
-    short enough throw reaches the box from this close is a consequence of the model.
-
-    Asserted anyway, so it fails loudly if `THROW_RANGE_MIN` moves."""
-    assert _at_throw_pose(standoff=standoff)
-
-
-def test_the_predicate_rejects_standing_on_top_of_the_bin() -> None:
-    """A base at the bin's own position throws the cube clean over it -- 1.275 m past a
-    box whose far edge is 0.15 m away."""
-    assert not _at_throw_pose(standoff=0.0)
-
-
-def test_the_predicate_rejects_the_far_side_of_the_room() -> None:
-    assert not _at_throw_pose(standoff=THROW_STANDOFF_BOUNDS[1] + 0.2)
-
-
-def test_the_predicate_rejects_the_worst_measured_pose_that_pick_leaves_the_base_in() -> None:
-    """`Pick` drives the base to the *cube*, and if the predicate held there the oracle
-    would skip `MoveToThrowPose` and throw from wherever it stood. Over 30 scene seeds
-    exactly one leaves the base inside the 0.04 m lateral tolerance: seed 14, at 1.8592 m
-    from the bin and 0.0074 m off its axis. The lateral conjunct cannot save that one, so
-    the standoff conjunct has to -- and now does so on its own terms, because a throw from
-    1.8592 m back lands at x = 1.42, well short of the box."""
-    assert not _at_throw_pose(standoff=1.8592, base_y=0.0074)
-
-
-def test_the_predicate_rejects_a_base_off_the_bins_axis() -> None:
-    """The conjunct a plain distance test does not have, and the one that was measured.
-
-    `pick_shelf` drives the base to the *cube*, off to one side. On the canonical scene
-    that leaves the base 1.76 m from the bin and 0.37 m off its axis -- a distance a loose
-    band happily admits. The predicate was briefly written that way, and the oracle
-    skipped `MoveToThrowPose` and threw facing 40 degrees off: the cube landed at
-    (0.9969, -0.7196) and the episode failed."""
-    assert not RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state(base_x=0.279, base_y=0.366),
-        robot=_ENV.robot,
-        target=_ENV.bin,
-    )
-
-
-def test_the_predicate_rejects_a_diagonal_approach_at_the_right_distance() -> None:
-    """The general form of the case above: the right distance is not enough, because
-    `MoveToThrowPose` pins `rot = 0` and therefore always ends on the bin's axis."""
-    offset = 1.35 / np.sqrt(2)
-    assert not RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state(base_x=BIN_X - offset, base_y=offset),
-        robot=_ENV.robot,
-        target=_ENV.bin,
-    )
-
-
-def test_the_lateral_conjunct_still_tolerates_exactly_what_the_controller_tolerates() -> None:
-    """`move_to_target` stops once the base is within `WAYPOINT_TOL` of its own planned
-    waypoint, so a pose that far off the axis still has to count."""
-    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_LATERAL_TOLERANCE * 0.9)
-    assert not _at_throw_pose(
-        standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_LATERAL_TOLERANCE * 1.1
-    )
+_ALL = (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE, ROBOT_AT_SUCCESSFUL_THROW_POSE)
 
 
 def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
     """A `Predicate`'s `types` is what `SkillGrounder` enumerates over, so a wrong entry
     silently grounds a predicate onto objects it was never written for."""
     expected = {
-        IN_BIN: (
-            Tossing3DEnvironment.cube_type,
-            Tossing3DEnvironment.bin_type,
-        ),
+        IN_BIN: (Tossing3DEnvironment.cube_type, Tossing3DEnvironment.bin_type),
         HAND_EMPTY: (Tossing3DEnvironment.robot_type,),
         HOLDING: (Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
         ON_GROUND: (Tossing3DEnvironment.cube_type,),
@@ -440,11 +66,114 @@ def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
         assert predicate.types == types, predicate.name
 
 
+def test_this_domains_predicate_names_are_unchanged_by_the_swap() -> None:
+    """Upstream's classifiers, this domain's vocabulary. The names appear in the PDDL
+    `skills.py` emits, in the operator model and in `Tossing3DTasks`' goal, so renaming
+    them to upstream's would have been an operator-model change rather than a predicate
+    one -- deliberately out of scope here."""
+    assert [p.name for p in _ALL] == [
+        "InBin",
+        "HandEmpty",
+        "Holding",
+        "OnGround",
+        "Reachable",
+        "RobotAtSuccessfulThrowPose",
+    ]
+
+
+def test_each_predicate_reads_the_upstream_atom_it_is_backed_by() -> None:
+    """The mapping from this domain's vocabulary to upstream's, one predicate at a time.
+
+    Each case supplies *only* the atom that predicate should be reading, so a wrapper
+    wired to the wrong upstream name fails here rather than agreeing by coincidence with
+    whatever else happened to be true.
+    """
+    cases = [
+        (IN_BIN, (_ENV.cube, _ENV.bin), (KB_IN_GOAL_REGION, ("cube_0",))),
+        (HAND_EMPTY, (_ENV.robot,), (KB_HAND_EMPTY, ("robot",))),
+        (HOLDING, (_ENV.robot, _ENV.cube), (KB_HOLDING, ("robot", "cube_0"))),
+        (ON_GROUND, (_ENV.cube,), (KB_ON_GROUND, ("cube_0",))),
+        (REACHABLE, (_ENV.cube, _ENV.barrier), (KB_IS_DOWN_X, ("cube_0", "cuboid_barrier"))),
+        (
+            ROBOT_AT_SUCCESSFUL_THROW_POSE,
+            (_ENV.robot, _ENV.bin),
+            (KB_AT_THROW_POSE, ("robot", "bin_0")),
+        ),
+    ]
+    for predicate, objects, atom in cases:
+        assert predicate.holds(state(abstract_atoms=frozenset({atom})), objects), predicate.name
+        assert not predicate.holds(state(abstract_atoms=frozenset()), objects), predicate.name
+
+
 def test_the_lambda_adapters_pass_objects_through_in_declaration_order() -> None:
     """`Predicate.holds` is a positional `(state, objects)` callable, and each predicate
-    here adapts that to a keyword-only classifier. A transposed pair would typecheck and
-    then silently ask whether the barrier is left of the cube."""
-    airborne = state(gripper=0.9, cube_z=0.4)
-    assert HOLDING.holds(airborne, (_ENV.robot, _ENV.cube))
-    assert REACHABLE.holds(state(cube_x=CUBE_START_X), (_ENV.cube, _ENV.barrier))
-    assert IN_BIN.holds(state(cube_x=1.99), (_ENV.cube, _ENV.bin))
+    here adapts that to a keyword-only lookup. A transposed pair would typecheck and then
+    silently ask whether the barrier is left of the cube."""
+    reachable = state(abstract_atoms=frozenset({(KB_IS_DOWN_X, ("cube_0", "cuboid_barrier"))}))
+    assert REACHABLE.holds(reachable, (_ENV.cube, _ENV.barrier))
+    assert not REACHABLE.holds(reachable, (_ENV.barrier, _ENV.cube))
+
+    holding = state(abstract_atoms=HOLDING_ATOMS)
+    assert HOLDING.holds(holding, (_ENV.robot, _ENV.cube))
+    assert not HOLDING.holds(holding, (_ENV.cube, _ENV.robot))
+
+
+def test_in_bin_drops_its_second_argument_because_upstreams_is_unary() -> None:
+    """`MovableInGoalRegion` takes only the movable: it reads the scored region off the
+    live scene rather than off a target object. This domain keeps the binary shape --
+    it is what the goal and the operators are written against -- so the bin argument is
+    accepted and ignored, which means a second bin would be indistinguishable from the
+    first. Pinned here so that is a documented property rather than a surprise."""
+    in_region = state(abstract_atoms=frozenset({(KB_IN_GOAL_REGION, ("cube_0",))}))
+    assert IN_BIN.holds(in_region, (_ENV.cube, _ENV.bin))
+    # The barrier is not a bin, and the predicate cannot tell.
+    assert IN_BIN.holds(in_region, (_ENV.cube, _ENV.barrier))
+
+
+def test_a_state_with_no_abstraction_raises_rather_than_answering_false() -> None:
+    """The quiet-wrongness guard.
+
+    A `core.State` built for a translation test carries no atoms, and every predicate
+    would then be vacuously `False` -- which reads exactly like "the cube is not in the
+    bin" and would let a broken pipeline score a plausible zero. Raising makes the
+    missing abstraction a loud failure instead.
+    """
+    bare = state()
+    assert bare.abstract_atoms is None
+    for predicate in _ALL:
+        with pytest.raises(ValueError, match="no abstraction attached"):
+            predicate.holds(bare, (_ENV.robot, _ENV.cube, _ENV.bin, _ENV.barrier))
+
+
+def test_an_empty_abstraction_is_not_the_same_as_a_missing_one() -> None:
+    """`frozenset()` means "upstream said nothing holds here", which is a real answer and
+    must not raise. `None` means "nobody asked upstream", which must."""
+    empty = state(abstract_atoms=frozenset())
+    assert not HAND_EMPTY.holds(empty, (_ENV.robot,))
+
+
+def test_the_state_subclass_is_still_a_core_state() -> None:
+    """`Tossing3DState` has to satisfy everything a `core.State` does -- the feature-dim
+    validator included -- or every consumer above `environments/` breaks."""
+    built = state(abstract_atoms=INITIAL_ATOMS)
+    assert isinstance(built, Tossing3DState)
+    assert built.get(obj=_ENV.cube, feature_name="x") == pytest.approx(0.7129)
+    with pytest.raises(ValueError, match="declares"):
+        Tossing3DState(data={_ENV.cube: np.zeros(2)})
+
+
+def test_the_abstraction_survives_the_deep_copy_the_environment_does() -> None:
+    """`Tossing3DEnvironment.snapshot`/`restore` round-trip a state through
+    `model_copy(deep=True)`. An abstraction that did not survive that would leave a
+    restored state unable to answer its own predicates."""
+    original = state(abstract_atoms=AT_THROW_POSE_ATOMS)
+    copied = original.model_copy(deep=True)
+    assert copied.abstract_atoms == AT_THROW_POSE_ATOMS
+    assert ROBOT_AT_SUCCESSFUL_THROW_POSE.holds(copied, (_ENV.robot, _ENV.bin))
+
+
+def test_all_six_predicates_are_predicates() -> None:
+    """Cheap, but it is what stops a refactor leaving a bare lambda where a `Predicate`
+    is expected -- `SkillGrounder` and `PddlWriter` both read `.name` and `.types`."""
+    assert all(isinstance(predicate, Predicate) for predicate in _ALL)
+    assert len({predicate.name for predicate in _ALL}) == len(_ALL)

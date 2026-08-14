@@ -8,6 +8,7 @@ frame per physics tick is a question only a simulator can answer, and lives in
 """
 
 import importlib.util
+import subprocess
 import sys
 from typing import Any
 
@@ -94,11 +95,20 @@ def test_the_request_is_snapshotted_at_import(*, monkeypatch: pytest.MonkeyPatch
     environment at reload time -- and one earlier test leaving `MUJOCO_GL` unset was enough
     to pin the whole run to the wrong backend. Loading a second copy asks the same question
     and cannot answer it for anybody else.
+
+    The probe's name is **package-qualified**, which is load-bearing rather than tidy:
+    `kinder_backend` imports `from .types import AbstractAtom`, and a relative import is
+    resolved against `__package__`, which `module_from_spec` derives from the spec's own
+    name. Under a bare `"_gl_snapshot_probe"` there is no parent package and the copy
+    fails to execute at all. The name still differs from the real module's, so the copy is
+    never registered in `sys.modules` and no other test sees it.
     """
     before = kinder_backend.REQUESTED_GL_BACKEND
     monkeypatch.setenv("MUJOCO_GL", "osmesa")
     monkeypatch.delenv("PYOPENGL_PLATFORM", raising=False)
-    spec = importlib.util.spec_from_file_location("_gl_snapshot_probe", kinder_backend.__file__)
+    spec = importlib.util.spec_from_file_location(
+        f"{kinder_backend.__package__}._gl_snapshot_probe", kinder_backend.__file__
+    )
     assert spec is not None and spec.loader is not None
     fresh = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(fresh)
@@ -121,12 +131,34 @@ def test_substep_recording_is_off_by_default() -> None:
 def test_toggling_substep_recording_imports_no_simulator() -> None:
     """`KinderBackend` is lazy by construction and the switch must not break that: it is
     flipped by `Tossing3DProblem.run_task_episode`, which a test may reach without ever
-    intending to build a scene."""
+    intending to build a scene.
+
+    **In a subprocess, because an in-process `sys.modules` check stopped meaning this.**
+    The predicates are upstream's now, so `test_kb_predicate_parity.py` genuinely imports
+    `kinder_models` -- and therefore MuJoCo -- inside its own tests. It sorts before this
+    file, so a same-interpreter assertion here was reading *another module's* import and
+    failing for a reason that has nothing to do with `KinderBackend`. A fresh interpreter
+    asks the question this test is actually about.
+    """
     backend = KinderBackend()
     backend.set_substep_recording(enabled=True)
-
     assert backend.record_substeps is True
-    assert "mujoco" not in sys.modules
+
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys\n"
+            "from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend\n"
+            "KinderBackend().set_substep_recording(enabled=True)\n"
+            "print('mujoco' in sys.modules)\n",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert probe.stdout.strip() == "False", probe.stdout + probe.stderr
 
 
 def test_draining_before_any_scene_exists_is_empty_rather_than_an_error() -> None:

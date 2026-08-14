@@ -26,8 +26,8 @@ so the constraint is gone -- but the self-containment is still the right default
 script whose question does not need this package's own classifiers.
 
 This script needs the real thing instead: the task this sweep exists for is "does a
-cell's outcome match the classifier `HoldingClassifier`/`RobotAtSuccessfulThrowPose
-Classifier` labels EES's training data with", so re-deriving an equivalent check would
+cell's outcome match the labels `Holding`/`RobotAtSuccessfulThrowPose` tag EES's
+training data with", so re-deriving an equivalent check would
 not answer that question, it would answer a different one. `KinderBackend` (the only
 module in `hitl_pmp` that imports KINDER) imports it lazily, so nothing MuJoCo-shaped
 loads until the first `env.reset_to_seed(...)`, which happens after this module's own
@@ -67,7 +67,7 @@ work" with "did the grasp even land this attempt". A `pick_success`/`pick_error`
 is still recorded per cell so a reader can check how often the fixed point itself held.
 
 **The classifier is arithmetic in the commanded standoff, and the pilot for this script
-already showed it**: `RobotAtSuccessfulThrowPoseClassifier` reads `pos_base_x` after
+already showed it**: `RobotAtSuccessfulThrowPose` reads `pos_base_x` after
 `move_to_target` terminates, and that controller lands the base within `WAYPOINT_TOL`
 of its commanded pose, so the *labelled* outcome is close to a step function of
 `standoff` alone. That is a real, reportable finding -- it is exactly why the classifier
@@ -113,8 +113,8 @@ from pydantic import BaseModel  # noqa: E402
 
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment  # noqa: E402
 from hitl_pmp.environments.tossing3d.predicates import (  # noqa: E402
-    HoldingClassifier,
-    RobotAtSuccessfulThrowPoseClassifier,
+    HOLDING,
+    ROBOT_AT_SUCCESSFUL_THROW_POSE,
 )
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (  # noqa: E402
     ORACLE_PICK_DISTANCE,
@@ -153,7 +153,7 @@ _MOVE_JSON_NAME = "2026-08-10-tossing3d-skill-parameter-sweep-movetothrowpose.js
 class PickCellResult(BaseModel):
     """One `(distance, rotation, seed)` cell of the `Pick` grid.
 
-    `success` is `HoldingClassifier` on the state right after `Pick` -- the same label
+    `success` is `Holding` on the state right after `Pick` -- the same label
     EES's own practice data is tagged with. The rest are diagnostics: `pick_error`/
     `pick_terminated` distinguish "the grasp planned and executed but did not hold" from
     "the controller never terminated/raised", and the position fields let a reader
@@ -179,7 +179,7 @@ class MoveCellResult(BaseModel):
     """One `(standoff, seed)` cell of the `MoveToThrowPose` grid, `Pick` fixed at the
     oracle's point.
 
-    `success` is `RobotAtSuccessfulThrowPoseClassifier` on the state right after
+    `success` is `RobotAtSuccessfulThrowPose` on the state right after
     `MoveToThrowPose` -- the label EES trains against. `pick_success` records whether
     the fixed-oracle-point `Pick` itself held in this cell (it is not the thing being
     swept, but a `MoveToThrowPose` run from a dropped cube is not a real measurement of
@@ -251,7 +251,7 @@ def run_pick_grid(
                 env.reset_to_seed(seed=int(seed))
                 action = np.array([Tossing3DEnvironment.pick_id, float(distance), float(rotation)])
                 state = env.take_action(action=action)
-                success = HoldingClassifier.holds(state=state, robot=env.robot, cube=env.cube)
+                success = HOLDING.holds(state, (env.robot, env.cube))
                 steps = env.last_controller_steps()
                 results.append(
                     PickCellResult(
@@ -311,7 +311,7 @@ def run_move_grid(
                 ORACLE_PICK_ROTATION,
             ])
             state1 = env.take_action(action=pick_action)
-            pick_success = HoldingClassifier.holds(state=state1, robot=env.robot, cube=env.cube)
+            pick_success = HOLDING.holds(state1, (env.robot, env.cube))
             pick_error = env.last_skill_error()
 
             move_action = np.array([
@@ -321,9 +321,7 @@ def run_move_grid(
             ])
             state2 = env.take_action(action=move_action)
             move_error = env.last_skill_error()
-            success = RobotAtSuccessfulThrowPoseClassifier.holds(
-                state=state2, robot=env.robot, target=env.bin
-            )
+            success = ROBOT_AT_SUCCESSFUL_THROW_POSE.holds(state2, (env.robot, env.bin))
             robot_base_y = float(state2.get(obj=env.robot, feature_name="pos_base_y"))
             target_y = float(state2.get(obj=env.bin, feature_name="y"))
             results.append(

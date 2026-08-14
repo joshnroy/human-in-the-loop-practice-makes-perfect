@@ -142,6 +142,15 @@ geometry every measured number was taken under.
 KINDER's own task JSON and fails loudly if the bin comes off the scoring box, so the
 coupling is observable rather than silent.
 
+**`environments/tossing3d/predicates.py` implements nothing.** All six classifiers are
+`kinder_models.dynamic3d.tossing.state_abstractions`', evaluated once per state by
+`KinderBackend.abstract_atoms` and carried on a `Tossing3DState`; each `Predicate` is a
+lookup into that set, so a hand-built `core.State` **raises** rather than quietly answering
+`False` six times. The *operator* model stays ours on purpose — upstream's `pick_cube` has
+no `MovableIsDownX` precondition and no `RobotAtThrowPose` delete effect, and puts the
+one-way-door constraint on the toss where this domain puts it on the pick.
+`test_kb_predicate_parity.py` pins where the two agree and where they diverge.
+
 ### Contributing upstream to `kindergarden` / `kinder-baselines`
 
 Neither repo has a `CONTRIBUTING.md`, and both `.gitignore` `CLAUDE.md`, so their

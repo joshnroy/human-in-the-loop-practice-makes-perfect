@@ -1,83 +1,72 @@
-"""Tossing3D's symbolic layer: six predicates, all pure arithmetic over `core.State`.
+"""Tossing3D's symbolic layer: six predicates, all of them upstream's.
 
-**KINDER ships no symbolic model for Tossing3D.** `kinder_bilevel_planning.env_models.
-dynamic3d` has one for base motion, one for `Shelf3D` and one for `Sweep3D`, and that is
-all -- so unlike the controllers, which are upstream's verbatim, these are ours. The
-shape they follow is `tidybot3d_shelf3D.py`'s: a small set of `Predicate`s over the
-scene's objects, consumed by `LiftedOperator`s that are paired to upstream's controllers
-(there, `LiftedSkill(PickTargetOperator, LiftedPickShelfController)`; here, `skills.py`'s
-`Skill`s plus `skill_provider.py`).
+**These are kinder-baselines' classifiers, not ours.** Every predicate below is a lookup
+into the atom set upstream's own `Tossing3DStateAbstractor`
+(`kinder_models.dynamic3d.tossing.state_abstractions`) derived from the state being
+asked about. Nothing here re-implements a threshold, so nothing here can drift out of
+agreement with upstream.
 
-Three of the six are ported from upstream's own `kinder_models.dynamic3d.shelf.
-state_abstractions`, whose `HandEmpty`/`Holding`/`OnGround` classify the same TidyBot
-state this domain reads -- thresholds included, so they are upstream's numbers rather
-than ours. Two are genuinely new, and are called out below.
+That is the change this module records. It previously carried six classifiers of its own,
+three of them ported from upstream's `shelf` abstractions with thresholds copied across,
+and three written here. Keeping them in agreement with upstream was a *testing*
+obligation rather than a structural guarantee, and an audit found it had already failed
+on one of the six.
 
-## The stated assumption: the bin's interior **is** the scored region
+## What the swap changed, measured
 
-Every predicate below that needs a landing box reads it off the **bin**, and no predicate
-and no operator takes a goal region as an argument. That is an assumption this domain
-makes, deliberately, and it is **false in general**.
+| this domain's | upstream's | agreed before the swap? |
+| --- | --- | --- |
+| `HAND_EMPTY` | `HandEmpty` | yes -- 2000/2001 grid points; the miss is a |
+| | | float32 artifact at the tolerance edge |
+| `HOLDING` | `Holding` | upstream strictly stronger (an FK conjunct we |
+| | | could not evaluate); 12/12 on real states |
+| `ON_GROUND` | `OnGround` | yes -- 755/755 |
+| `IN_BIN` | `MovableInGoalRegion` | yes -- 12/12, and both match KINDER's |
+| | | own `_check_goals()` 12/12 |
+| `REACHABLE` | `MovableIsDownX` | yes -- 201/201; both are literally |
+| | | `cube.x < barrier.x` |
+| `ROBOT_AT_SUCCESSFUL_THROW_POSE` | `RobotAtThrowPose` | **no -- 478/1805 disagreed** |
 
-What is true in general is that KINDER scores `["on", "cube_0", "blocks_goal_region"]` --
-a ground *region*, which is a box in the scene, entirely independent of where the bin is.
-Under upstream's stock `Tossing3D-o1` the two are 23 cm apart: the bin sits at x = 2.2305
-while `blocks_goal_region` inflates to x in [1.85, 2.15], so **a cube that lands in the bin
-scores a failure** and only one that misses the bin and lands on bare floor scores a
-success. There is a commit in this repo's history titled "Tossing3D: the bin is scenery"
-for exactly that reason. Our default `scripts/task_configs/Tossing3D-o1-coincident.json`
-is *named* for putting the bin back at x = 2.0 so that the two coincide -- measured live,
-they then agree to 0.1 mm.
+So five of six were already equivalent and the swap is structural for them. The sixth
+genuinely moves behaviour: our band accepted achieved standoffs [0.210, 1.400] against
+upstream's measured [1.09, 1.375], our lateral tolerance was 0.04 against upstream's
+0.08, and upstream has a heading conjunct we had none of.
 
-So this is a modelling choice, not an observation. Three consequences, stated rather than
-left to be discovered:
+## Where the classifiers actually run
 
-1. **Fidelity is preserved, because the number is unchanged.** The box these classifiers
-   read is still the live `Region.bbox` of `blocks_goal_region`
-   (`KinderBackend.goal_region_bbox`), carried in the `State` on the bin object. Nothing is
-   re-derived from the bin's pose or from a literal, so `InBin` still agrees with
-   `_check_goals()` exactly, on **both** task configs. What was dropped is the *symbolic*
-   dependence -- an object a planner had to bind and no skill could act on -- not the
-   classifier's access to scene geometry.
-2. **Under `Tossing3DTaskConfig.STOCK` the name lies, and the bin object is internally
-   inconsistent.** Its own `x` (2.2305) sits outside its own `x_max` (2.15). `InBin` is then
-   true exactly when the cube is *not* in the bin. The predicate remains *correct* -- it
-   still scores what KINDER scores -- but it is misnamed there, and any reading of a stock
-   run's symbolic trace has to account for that. Stock stays selectable because every
-   number in `docs/kinder-environment-validation.md` was measured on it.
-3. **Wherever the bin is taken to be movable, moving it moves the goal.** kindergarden#126
-   moves the bin, and the rest of this module is written so the accepted band follows live
-   scene geometry rather than a literal; under this assumption the scored box is *part of*
-   that geometry, so relocating the bin retargets the throw rather than leaving a stale
-   target behind. That is the intended reading of a move-the-bin task -- "put the cube in
-   the bin, wherever the bin is" -- rather than a problem to work around. It is worth
-   stating because the opposite reading, a fixed goal the bin merely decorates, is exactly
-   what the stock config implements.
+Not here. `core.Predicate.holds` is a positional `(state, objects)` callable with no
+simulator handle, and two of upstream's six classifiers need one -- `Holding` does
+forward kinematics through a `PyBulletSim`, and `MovableInGoalRegion` reads the scored
+region off the live env's ground fixture. So the whole abstraction is computed **once per
+state, at the boundary**, by `KinderBackend.abstract_atoms`, and travels on the state.
+See `types.py` for the design and for the measurement showing a stale state still yields
+its own answers.
 
-Where the port deviates from upstream, once, and deliberately: upstream's `Holding` also
-requires the end-effector to be within 5 cm of the object, computed by forward kinematics
-through a live `PyBulletSim`. A `core.Predicate.holds` is a pure function of `State` with
-no simulator handle -- that is the whole reason planning can happen off-simulator -- so
-that third conjunct is dropped, leaving upstream's other two (gripper closed past
-`GRASP_THRESHOLD`, object lifted past `HOLDING_HEIGHT`). The result is *weaker* than
-upstream's: it can call a cube "held" that is closed-gripper and airborne without being
-grasped. With one cube and a grasp that either works or drops it on the floor, no
-observed state distinguishes them, but it is a real difference and not a restatement.
+One consequence worth stating: a hand-built `core.State` can no longer answer a predicate
+here. It raises rather than quietly returning `False` for everything. Upstream's four
+*pure* classifiers are `@staticmethod`s over an `ObjectCentricState`, which is
+constructible with no MuJoCo, so the offline boundary probes moved to calling those
+directly -- see `tests/environments/tossing3d/object_centric.py`.
+
+## What this module still owns
+
+The constants below, which are **sampler** and **controller** parameters rather than
+classifier thresholds. They were never upstream's and are not part of the swap.
+
+> **`THROW_STANDOFF_BOUNDS` here is not upstream's constant of the same name.** Ours is
+> the interval `MoveToThrowPose`'s sampler *draws from*, (1.10, 1.75). Upstream's, in
+> `state_abstractions.py`, is the band `RobotAtThrowPose` *accepts*, (1.09, 1.375).
+> Upstream keeps the same separation under different names -- its sampler draws from
+> `TOSS_TARGET_DISTANCE_BOUNDS` = (1.25, 1.45) -- and for the same reason: a predicate
+> that accepts exactly what the sampler can draw is a predicate whose add effect can
+> never fail, which is what made this domain's sampler unlearnable once already. **Do not
+> couple them, and do not "reconcile" the two same-named constants.**
 """
-
-import numpy as np
 
 from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 
 from .environment import Tossing3DEnvironment
-
-# Upstream's own thresholds, from `kinder_models/dynamic3d/shelf/state_abstractions.py`.
-# Named here rather than inlined so a future upstream bump has one place to check.
-HANDEMPTY_TOL = 1e-3  # `handempty_tol`
-GRASP_THRESHOLD = 0.1  # `GraspThreshold`
-HOLDING_HEIGHT = 0.1  # the `state.get(target, "z") > 0.1` conjunct
-ON_GROUND_TOL = 0.05  # `on_ground_tol`
 
 # Ours: the range of throw standoffs, in metres -- the interval the `MoveToThrowPose`
 # sampler draws from. There is no upstream number to borrow: upstream simply hardcodes
@@ -208,371 +197,123 @@ UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS = 720.0
 # what `toss_profile_limits()` returns when passed nothing.
 UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S = 140.0
 
-# **The one calibrated constant in this module, and the only thing the success band is not
-# derived from.** `run_toss` executes `move_arm_to_conf(windup_conf_deg)` and then
-# `toss(toss_conf_deg)`, both fixed joint configurations, so a throw displaces the cube by
-# the same distance in the base's facing direction every time. That displacement is this
-# number, in metres.
-#
-# > **Scope note, 2026-08-12.** This is the impact range at 140 deg/s only, and
-# > `TOSS_SPEED_BOUNDS` spans 60-140. `RobotAtSuccessfulThrowPoseClassifier` derives its
-# > acceptance band from it, so that predicate is correct only at the oracle's speed until
-# > it is reformulated as a union over the range.
-#
-# Because it is a property of the *controller* -- upstream's arm configurations and the
-# cube's 0.1 kg mass -- and not of the scene, the success band can be recomputed from live
-# state on every call and stays correct when the bin or the goal region moves. That is the
-# whole point: kindergarden#126 moves the bin, and nothing here needs to change.
-#
-# **Calibrated against where success breaks, not measured in free flight, and the
-# difference is a trap.** The obvious measurement -- throw onto open floor and record where
-# the cube comes to rest -- gives **1.3499 m** (sd 0.0024, n = 12, standoffs 0.45-1.00 over
-# 3 seeds) and is **wrong for this purpose**: it includes post-impact roll along the floor.
-# What the goal-region test needs is the *impact* range, because on the coincident config
-# the bin sits on the goal region and a cube that impacts inside it is caught by the bin
-# walls instead of rolling on. The two differ by the ~0.075 m of roll.
-#
-# Two independent sweeps agree on the impact range:
-#
-# - A 48-episode grid (16 standoffs x 3 scene seeds, coincident config, Pick ->
-#   MoveToThrowPose(d) -> Toss): solved 0/3 at d = 1.10, 3/3 at 1.15, 3/3 through 1.35,
-#   2/3 at 1.40, 0/3 at 1.45. Reading the *measured* base poses against the goal box's own
-#   edges brackets the constant to (1.2608, 1.3090).
-# - PR #105's finer sweep (5 seeds, 0.025 m resolution) put the edges of partial solving at
-#   1.125 and 1.425. Those two edges imply **1.2749 from each end independently** -- which
-#   is the strongest evidence here that the constant-displacement model is right at all,
-#   since nothing forced the two ends to agree.
-#
-# 1.275 sits inside both brackets. `test_throw_range_predicts_where_the_cube_lands`
-# re-measures it against the real simulator, so upstream changing the toss controller, the
-# windup conf or the physics fails loudly rather than silently.
-#
-# > **Provisional as of 2026-08-13; left as published, NOT recomputed.** The brackets above
-# > were measured with the gripper opening on the first control step past fraction 0.46.
-# > Scheduling on an absolute millisecond moves the oracle's landing +41.6 mm, so read
-# > 1.275 as approximate. The guard tests still pass on the current pins; re-deriving means
-# > redoing PR #105's 5-seed, 0.025 m sweep.
-THROW_RANGE = 1.275
 
-# The interval `RobotAtSuccessfulThrowPose` unions over: shortest and longest reach
-# across the toss parameter box, as distance covered before first ground contact (the
-# quantity `THROW_RANGE` is calibrated in, not resting x). Measured over 3359
-# unobstructed rows of PR #240's grid and this stack's standoff grid, envelopes
-# [0.3330, 1.3465] and [0.3386, 1.3552]. Resting x instead jumps 244 mm at ~710 ms on
-# bin contact, and dropping those rows censors the longest throws: the two grids then
-# disagree by 178 mm, against 8.7 mm on reach.
-#
-# Derived from the toss parameter box, never from `THROW_STANDOFF_BOUNDS` -- otherwise
-# the `NearBin` tautology returns by another door.
-THROW_RANGE_MIN = 0.333
+class Tossing3DAtoms:
+    """Looks one of upstream's abstract atoms up on a `Tossing3DState`.
 
-# Measured maximum 1.3552, trimmed 55.2 mm to put the accepted band's far edge on
-# standoff 1.400, the last observed to score (`0/1050` beyond it, `3/150` at it):
-# `1.400 - (bin_x - x_min - THROW_SHORTFALL_MARGIN)` = `1.400 - (2.0 - 1.85 - 0.05)`.
-# Scene-coupled: re-derive by re-running the standoff grid, not by editing the literal.
-THROW_RANGE_MAX = 1.300
+    Every predicate below is this and nothing else. The classifiers themselves are
+    upstream's -- `kinder_models.dynamic3d.tossing.state_abstractions` -- and are
+    evaluated once per state, at the boundary, by `KinderBackend.abstract_atoms`. See
+    `types.py` for why the abstraction travels on the state rather than being computed
+    here, and for the measurement showing that is honest rather than a stale cache.
 
-# Upstream's `WAYPOINT_TOL` (`kinder_models/dynamic3d/utils.py:54`), which is how close
-# `MoveToTargetGroundController.terminated()` requires the base to be to its own planned
-# waypoint. Using upstream's own number means the lateral conjunct admits exactly the poses
-# that controller is willing to stop at, rather than a tolerance invented here.
-THROW_POSE_LATERAL_TOLERANCE = 4 * 1e-2
-
-# The two margins that tighten `RobotAtSuccessfulThrowPoseClassifier`'s standoff band from
-# the full geometric prediction to the band PR #105's finer sweep (5 scene seeds, 0.025 m
-# resolution, coincident config) actually found reliable. Its per-point solving table:
-#
-#     standoff   <=1.100   1.125   1.150-1.375   1.400   1.425   >=1.450
-#     solved       0/5      2/5     5/5 (every)    3/5     2/5      0/5
-#
-# The 5/5 core is `[1.150, 1.375]` -- narrower than the geometric band `[1.125, 1.425]` on
-# *both* ends, and not symmetrically: "short standoffs overshoot [the goal box] ... long
-# ones fall short" (PR #105's own wording). Overshoot happens at the box's far edge
-# (`x_max`), so the margin that excludes it trims `x_max`; falling short happens at the
-# near edge (`x_min`), so the margin that excludes it enlarges `x_min`.
-#
-# **The two spaces run in opposite directions, and that is the trap.** `landing_x =
-# base_x + THROW_RANGE` and `base_x = bin_x - standoff`, so a *larger* standoff produces a
-# *smaller* `landing_x`. Recovering the standoff band `[1.150, 1.375]` from the box
-# therefore means: `x_max` shrinks by `1.150 - 1.125 = 0.025` (this is the short-standoff/
-# overshoot margin, even though it is the *upper* box edge), and `x_min` grows by
-# `1.425 - 1.375 = 0.050` (the long-standoff/shortfall margin, on the *lower* box edge).
-# Naming the margins by which standoff failure mode they exclude, rather than by which box
-# edge they touch, is deliberate -- the box-edge framing is exactly what inverts under the
-# sign flip. `test_the_accepted_band_matches_the_measured_five_of_five_core` pins the
-# resulting band directly so a reintroduced inversion fails loudly.
-#
-# **A further tightening to roughly `[1.150, 1.325]` was investigated and rejected.** A
-# later, wider grid over `MoveToThrowPose`'s standoff (PR #196) labelled by this classifier
-# alone -- `Toss` never executed -- found only 8/12 solving at 1.350 and 2/12 at 1.375,
-# suggesting the band above 1.325 was over-permissive. A fresh oracle-driven sweep that
-# *does* execute `Toss` and reads the real episode outcome (`docs/experiment-logs/
-# 2026-08-10-tossing3d-throw-band-retightening-sweep.md`, same methodology as the sweep
-# above) found 10/10 at every standoff up to and including 1.375 on an independent seed
-# set -- no real degradation. The two disagree because PR #196's grid measured whether the
-# achieved `landing_x` clears this classifier's own fixed threshold, and at 1.350/1.375 that
-# threshold sits inside `move_to_target`'s own several-millimetre stopping noise (closest
-# miss at 1.375: 0.1 mm), so ordinary seed-to-seed pose variance flips the *label* without
-# the *throw* ever becoming less reliable. Tightening to 1.325 would also have pushed
-# `ORACLE_THROW_STANDOFF` (1.35, below) outside the accepted band, rejecting a pose the
-# committed oracle arm throws from on every episode. The margins below are unchanged.
-THROW_OVERSHOOT_MARGIN = 0.025
-THROW_SHORTFALL_MARGIN = 0.05
-
-
-class InBinClassifier:
-    """The cube's centre lies inside the bin's interior.
-
-    This is the domain's success criterion, and it is written to agree with KINDER's own
-    `_check_goals()` **exactly**, not approximately. That is checkable rather than
-    aspirational: for `["on", "cube_0", "blocks_goal_region"]` on a ground region,
-    `_check_goals` (`envs.py:1053-1167`) builds `[x, y, z]` from the object's own state
-    features and hands it to `Region.check_in_region`, which is a plain inclusive
-    point-in-box test against `Region.bbox` (`objects/base.py:148-185`). Both halves are
-    reproduced here: the box arrives in the `State` as the live `bbox`
-    (`KinderBackend.goal_region_bbox`), carried on the bin, and the comparison below is the
-    same six inclusive bounds.
-
-    **"The bin's interior" is this domain's assumption, not KINDER's arrangement** -- see
-    this module's docstring for what it buys, and for the stock config where the name is
-    wrong while the arithmetic stays right. The name is chosen to read honestly under the
-    default config every committed number on this domain is measured at, where the bin and
-    the scored region coincide to 0.1 mm and "the cube is in the bin" is exactly what
-    KINDER scores. The alternative -- keeping `InGoalRegion` -- would name a thing that no
-    longer exists as an object anywhere in the domain, which is worse: it would invite a
-    reader to look for a goal-region argument that is gone.
-
-    Inclusive on purpose (`<=`, not `<`), because upstream's is.
-
-    The box is read from the state rather than re-derived from the task JSON, and *never*
-    from the bin's own pose. The JSON's range is inflated by `ground_placement_threshold`
-    (0.05 m per side, z clamped at 0) before it becomes a region, so the literal in the
-    file is 2/3 of the true width on x -- the axis a toss controls -- and a predicate
-    written against it scores KINDER successes as failures. That defect has already shipped
-    once in this project's history. Deriving the box from the bin's pose plus a half-extent
-    would be the same defect in a new costume.
+    A static-method container, never instantiated, same as every other business-logic
+    class in this project.
     """
 
     @staticmethod
-    def holds(*, state: State, cube: Object, target: Object) -> bool:
-        position = [state.get(obj=cube, feature_name=name) for name in ("x", "y", "z")]
-        lower = [state.get(obj=target, feature_name=name) for name in ("x_min", "y_min", "z_min")]
-        upper = [state.get(obj=target, feature_name=name) for name in ("x_max", "y_max", "z_max")]
-        return all(
-            low <= value <= high for value, low, high in zip(position, lower, upper, strict=True)
-        )
+    def holds(*, state: State, name: str, objects: tuple[Object, ...]) -> bool:
+        """Whether upstream's abstractor said `name(objects)` held, for this state."""
+        atoms = getattr(state, "abstract_atoms", None)
+        if atoms is None:
+            raise ValueError(
+                f"cannot evaluate {name} on a state with no abstraction attached. "
+                "Tossing3D's predicates are upstream's classifiers, which need a live "
+                "scene to evaluate (forward kinematics for Holding, the ground fixture "
+                "for MovableInGoalRegion), so they are computed once by "
+                "KinderBackend.abstract_atoms when the state is built. A hand-built "
+                "core.State cannot answer them; build one through "
+                "Tossing3DEnvironment.take_action/reset_to_seed, or test upstream's "
+                "classifiers directly (see tests/environments/tossing3d/object_centric.py)."
+            )
+        return (name, tuple(obj.name for obj in objects)) in atoms
 
 
-class HandEmptyClassifier:
-    """The gripper is open. Upstream's `HandEmpty`, verbatim including `handempty_tol`."""
-
-    @staticmethod
-    def holds(*, state: State, robot: Object) -> bool:
-        gripper = state.get(obj=robot, feature_name="pos_gripper")
-        return bool(np.isclose(gripper, 0.0, atol=HANDEMPTY_TOL))
-
-
-class HoldingClassifier:
-    """The gripper is closed and the cube is off the floor.
-
-    Upstream's `Holding` minus its forward-kinematics conjunct -- see this module's
-    docstring for why that one cannot be evaluated here and what it costs.
-    """
-
-    @staticmethod
-    def holds(*, state: State, robot: Object, cube: Object) -> bool:
-        gripper = state.get(obj=robot, feature_name="pos_gripper")
-        return bool(
-            gripper > GRASP_THRESHOLD and state.get(obj=cube, feature_name="z") > HOLDING_HEIGHT
-        )
-
-
-class OnGroundClassifier:
-    """The cube is resting flat on the floor. Upstream's `OnGround`, verbatim.
-
-    Flatness (`qx`/`qy` near zero) is upstream's own condition and is load-bearing rather
-    than decorative: `pick_shelf` builds its grasp pose from the object's orientation, so
-    a cube that came to rest on a corner is not a cube this grasp is modelled on.
-    """
-
-    @staticmethod
-    def holds(*, state: State, cube: Object) -> bool:
-        z = state.get(obj=cube, feature_name="z")
-        bb_z = state.get(obj=cube, feature_name="bb_z")
-        return bool(
-            np.isclose(z - bb_z / 2, 0.0, atol=ON_GROUND_TOL)
-            and np.isclose(state.get(obj=cube, feature_name="qx"), 0.0, atol=ON_GROUND_TOL)
-            and np.isclose(state.get(obj=cube, feature_name="qy"), 0.0, atol=ON_GROUND_TOL)
-        )
-
-
-class ReachableClassifier:
-    """The cube is on the robot's side of the barrier.
-
-    **Ours, and the one that carries this domain's whole point.** The barrier is a 5 m
-    immovable wall the base cannot pass, so a cube past it can never be picked up again --
-    the irreversibility that makes this domain interesting is exactly "`Reachable` is a
-    one-way door". Making `Pick` require it, and `Toss` delete it, is what stops a planner
-    emitting the retrieve-and-retry plan the dynamics can never execute.
-
-    Compared against the barrier's own live x rather than a constant: the barrier's pose
-    is sampled from `barrier_init_region` per episode, so a literal would be right for one
-    seed and quietly wrong for the next.
-    """
-
-    @staticmethod
-    def holds(*, state: State, cube: Object, barrier: Object) -> bool:
-        return bool(
-            state.get(obj=cube, feature_name="x") < state.get(obj=barrier, feature_name="x")
-        )
-
-
-class RobotAtSuccessfulThrowPoseClassifier:
-    """The base is standing somewhere a throw from here lands the cube in the bin: on the
-    bin's axis, and at a standoff from which the throw's fixed displacement carries the
-    cube into the scored box.
-
-    **Ours.** `move_to_target` has no symbolic model upstream, and its own termination
-    condition (`_robot_is_close_to_pose`) is about the base having reached *its own
-    planned waypoint*, which says nothing about where that waypoint was. So the effect a
-    planner needs has to be stated here.
-
-    **Why this is a success test and not a reachability test.** This was previously
-    `NearBin`, whose docstring called it "an exact characterisation of what
-    `MoveToThrowPose` produces" -- and that is exactly what was wrong with it. It accepted
-    every standoff in `THROW_STANDOFF_BOUNDS`, the interval the sampler draws from, so
-    `MoveToThrowPose`'s only add effect held after *every* attempt. EES trains one success
-    classifier per skill on precisely that label, so the label was constant-true, the
-    classifier saw a single class, and the sampler fell back to uniform on every draw
-    forever -- 16/16 attempts labelled success with 0/16 informed draws in a probe run,
-    against 7/20 informed draws for `Pick` in the same run. A skill whose add effect cannot
-    fail is a skill whose sampler cannot learn.
-
-    **The standoff conjunct stays even though `Toss` has parameters of its own.**
-    Dropping it would hand `MoveToThrowPose` a constant-true label again.
-
-    **The standoff conjunct is derived from live state, not measured and pinned.**
-    `MoveToThrowPose` pins `rot = 0` and the bin's yaw range is `[[0, 0]]`, so a base
-    satisfying the lateral conjunct faces `+x`. The box tested below is the same live
-    `Region.bbox` `InBin` reads off the bin, trimmed by the two margins above.
-
-    **The box is applied to an interval, not a point: that is the union.** The pose is
-    accepted iff `[base_x + THROW_RANGE_MIN, base_x + THROW_RANGE_MAX]` intersects the
-    trimmed box -- iff *some* toss parameterisation in bounds scores from here. The
-    accepted band of standoffs
-
-        [bin_x + THROW_RANGE_MIN - (x_max - THROW_OVERSHOOT_MARGIN),
-         bin_x + THROW_RANGE_MAX - (x_min + THROW_SHORTFALL_MARGIN)]
-
-    falls out rather than being written down.
-
-    The near edge lands at 0.209 m, below the sampler's 1.10 m floor, so inside
-    `THROW_STANDOFF_BOUNDS` this is a one-sided threshold at 1.400: 301/650 millimetre
-    standoffs accepted, 349/650 rejected.
-
-    The interval form assumes achievable range is contiguous over the toss parameter
-    box; the grids leave sampling gaps up to 93 mm, so that is argued, not measured.
-
-    Move the bin, resize the scored box, or change `ground_placement_threshold`, and the
-    band follows on its own -- which matters, because kindergarden#126 moves the bin. A
-    hard-coded band would be silently wrong the moment that lands. The two margins are
-    fixed metres, not a fraction of the box, so they do not move with it.
-
-    That this predicate and `InBin` now read their box off the same object is what makes
-    "the pose a throw succeeds from" and "the place a throw must land" provably the same
-    geometry rather than two things kept in step by hand.
-
-    The two margins below were measured against a single fixed throw.
-
-    On the coincident config the *geometric* band -- before the two margins below -- works
-    out to `[1.125, 1.425]`: **0.300 m wide, which is exactly the scored box's own
-    x-extent**, as it must be for a constant-displacement throw. That geometric band is
-    over-permissive: PR #105's finer sweep (5 scene seeds, 0.025 m resolution) found the
-    band solving on *every* seed is `[1.150, 1.375]`, 0.225 m wide, with the geometric
-    band's own edges only partially solving (2/5 at 1.125, 3/5 at 1.400, 2/5 at 1.425).
-    `THROW_OVERSHOOT_MARGIN`/`THROW_SHORTFALL_MARGIN` trim the box used below by exactly
-    that 0.025 m / 0.050 m so the accepted standoff band matches the measured 5/5 core
-    instead of the wider, partially-reliable geometric prediction. Training `MoveToThrowPose`'s
-    sampler against the untrimmed band taught it that the outer ~0.075 m sliver on each
-    side was as good as the centre, when empirically it is not -- a plausible mechanistic
-    account of `Toss`'s own residual failures at the trained EES plateau (`#178`).
-
-    **The lateral conjunct is unchanged, and was measured.** An earlier version tested only
-    `1.0 <= hypot(dx, dy) <= 1.8`. After `Pick` -- which drives the base to the *cube*, off
-    to one side -- the base sat at 1.76 m from the bin, inside that band, so the predicate
-    was already true, the oracle skipped `MoveToThrowPose` entirely and threw from a pose
-    facing 40 degrees away from the bin: the cube landed at `(0.9969, -0.7196)` and the
-    episode scored a failure. The lateral conjunct rules that out by 0.72 m rather than by
-    the 7 cm the distance test had to spare. This is exactly the over-permissive-operator-
-    model defect class that `tests/environments/test_operator_dynamics_fidelity.py` exists
-    for, caught here by
-    `test_the_oracle_reproduces_the_recorded_coincident_landing_and_step_counts`.
-
-    The standoff conjunct now independently excludes those poses too -- the post-`Pick`
-    base is far enough back that its predicted landing falls short of the box -- but the
-    lateral conjunct stays, because it is the one measured against the real failure, and
-    because a base off the axis does not throw along `+x` at all.
-    """
-
-    @staticmethod
-    def holds(*, state: State, robot: Object, target: Object) -> bool:
-        lateral_offset = abs(
-            state.get(obj=robot, feature_name="pos_base_y")
-            - state.get(obj=target, feature_name="y")
-        )
-        if lateral_offset > THROW_POSE_LATERAL_TOLERANCE:
-            return False
-        base_x = state.get(obj=robot, feature_name="pos_base_x")
-        landing_min = base_x + THROW_RANGE_MIN
-        landing_max = base_x + THROW_RANGE_MAX
-        x_min = state.get(obj=target, feature_name="x_min") + THROW_SHORTFALL_MARGIN
-        x_max = state.get(obj=target, feature_name="x_max") - THROW_OVERSHOOT_MARGIN
-        return bool(landing_min <= x_max and x_min <= landing_max)
+# Upstream's own predicate names, which are what `KinderBackend.abstract_atoms` keys the
+# atom set by. Named here so the mapping from this domain's vocabulary to upstream's is
+# in one readable place rather than spread across six lambdas.
+KB_IN_GOAL_REGION = "MovableInGoalRegion"
+KB_HAND_EMPTY = "HandEmpty"
+KB_HOLDING = "Holding"
+KB_ON_GROUND = "OnGround"
+KB_IS_DOWN_X = "MovableIsDownX"
+KB_AT_THROW_POSE = "RobotAtThrowPose"
 
 
 # `Predicate.holds` is a positional `(state, objects)` callable per its interface contract
 # (`Goal.is_satisfied` calls it that way), so each lambda below adapts that into a call to
-# the relevant class's keyword-only `holds` -- exactly as Light Switch and Tossing Room do.
+# the keyword-only lookup above -- exactly as Light Switch and Tossing Room do.
+#
+# **This domain's predicate names are kept, and upstream's classifiers are what now backs
+# them.** The names are this domain's symbolic vocabulary: they appear in the PDDL
+# `skills.py` emits, in the operator model, and in `Tossing3DTasks`' goal. Renaming them
+# to upstream's would be an operator-model change, which this is deliberately not.
 IN_BIN = Predicate(
     name="InBin",
     types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.bin_type),
-    holds=lambda state, objects: InBinClassifier.holds(
-        state=state, cube=objects[0], target=objects[1]
+    # **Upstream's is unary and this is binary, so the bin argument is dropped.**
+    # `MovableInGoalRegion(cube)` reads the scored region off the live scene's ground
+    # fixture, so it takes no target object at all. The binary shape is kept because it
+    # is what `Tossing3DTasks`' goal and this domain's operators are written against, and
+    # because "the cube is in *the bin*" is the sentence this domain means. The dropped
+    # argument is real, though: under this predicate a second bin would be
+    # indistinguishable from the first.
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_IN_GOAL_REGION, objects=(objects[0],)
     ),
 )
 
 HAND_EMPTY = Predicate(
     name="HandEmpty",
     types=(Tossing3DEnvironment.robot_type,),
-    holds=lambda state, objects: HandEmptyClassifier.holds(state=state, robot=objects[0]),
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_HAND_EMPTY, objects=(objects[0],)
+    ),
 )
 
 HOLDING = Predicate(
     name="Holding",
     types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
-    holds=lambda state, objects: HoldingClassifier.holds(
-        state=state, robot=objects[0], cube=objects[1]
+    # Strictly stronger than what this domain carried before: upstream adds a
+    # forward-kinematics conjunct (the end effector within
+    # `END_EFFECTOR_TO_OBJECT_HOLDING_TOLERANCE` of the object) that a pure function of a
+    # flat `core.State` could not evaluate, and which our own version therefore dropped.
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_HOLDING, objects=(objects[0], objects[1])
     ),
 )
 
 ON_GROUND = Predicate(
     name="OnGround",
     types=(Tossing3DEnvironment.cube_type,),
-    holds=lambda state, objects: OnGroundClassifier.holds(state=state, cube=objects[0]),
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_ON_GROUND, objects=(objects[0],)
+    ),
 )
 
 REACHABLE = Predicate(
     name="Reachable",
     types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.barrier_type),
-    holds=lambda state, objects: ReachableClassifier.holds(
-        state=state, cube=objects[0], barrier=objects[1]
+    # Upstream's `MovableIsDownX(cube, barrier)` is literally `cube.x < barrier.x`, which
+    # is what this domain's `Reachable` always was -- the one-way door that makes the
+    # domain interesting. Audited at 201/201 agreement before the swap.
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_IS_DOWN_X, objects=(objects[0], objects[1])
     ),
 )
 
 ROBOT_AT_SUCCESSFUL_THROW_POSE = Predicate(
     name="RobotAtSuccessfulThrowPose",
     types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.bin_type),
-    holds=lambda state, objects: RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state, robot=objects[0], target=objects[1]
+    # **The one predicate whose behaviour actually moves.** Upstream accepts an achieved
+    # standoff in its own measured `THROW_STANDOFF_BOUNDS` = (1.09, 1.375), against the
+    # [0.210, 1.400] this domain accepted; its lateral tolerance is
+    # `2 * WAYPOINT_TOLERANCE` = 0.08 against our 0.04; and it adds a heading conjunct we
+    # had none of, so the base must *face* the bin rather than merely sit on its axis.
+    # An audit over 1805 poses found 478 disagreements. Everything downstream of this --
+    # including `skill_oracle_policy.py`'s branch -- has to hold against upstream's band,
+    # not ours.
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_AT_THROW_POSE, objects=(objects[0], objects[1])
     ),
 )
