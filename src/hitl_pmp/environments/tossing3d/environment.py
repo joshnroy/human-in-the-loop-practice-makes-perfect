@@ -120,6 +120,7 @@ class Tossing3DEnvironment(Environment):
     pick_id: ClassVar[int] = 0
     move_to_throw_pose_id: ClassVar[int] = 1
     toss_id: ClassVar[int] = 2
+    open_gripper_id: ClassVar[int] = 3
     # Not a skill: the id `noop_action` carries, chosen outside the real ids so
     # `_execute` falls through every branch. Negative rather than 3 so that adding a
     # fourth controller can never silently turn every no-op into it.
@@ -415,6 +416,8 @@ class Tossing3DEnvironment(Environment):
                 gripper_release_ms=float(action[2]),
             )
             return [windup, swing]
+        if skill_id == self.open_gripper_id:
+            return [backend.run_open_gripper()]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []
 

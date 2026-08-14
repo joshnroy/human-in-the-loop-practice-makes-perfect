@@ -1,4 +1,4 @@
-"""Offline tests for the three lifted skills, their operator models and their samplers."""
+"""Offline tests for the four lifted skills, their operator models and their samplers."""
 
 import numpy as np
 import pytest
@@ -8,6 +8,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
     BARRIER_COLLISION_MARGIN,
+    GRIPPER_COMMANDED_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -23,6 +24,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
 from hitl_pmp.environments.tossing3d.predicates import (
     THROW_STANDOFF_BOUNDS as PREDICATE_THROW_STANDOFF_BOUNDS,
 )
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import (
     PICK_DISTANCE_BOUNDS,
     PICK_ROTATION_BOUNDS,
@@ -52,7 +54,11 @@ _EXPECTED_PARAMETERS = {
     "Pick": ("robot", "cube", "barrier", "bin"),
     "MoveToThrowPose": ("robot", "cube", "bin"),
     "Toss": ("robot", "cube", "bin", "barrier"),
+    # `?cube` only so the operator can require `OnGround`; the controller takes the robot.
+    "OpenGripper": ("robot", "cube"),
 }
+
+_ALL_SKILLS = (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS, _SKILLS.OPEN_GRIPPER)
 
 
 def test_no_operator_names_a_goal_region_object() -> None:
@@ -60,7 +66,7 @@ def test_no_operator_names_a_goal_region_object() -> None:
 
     Checked by *type* rather than by variable name, so renaming the variable cannot smuggle
     the dependency back in."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _ALL_SKILLS:
         declared = [variable.type.name for variable in skill.parameters]
         assert "tossing3d_goal_region" not in declared, (
             f"{skill.name} still takes a goal-region parameter: {declared}"
@@ -72,8 +78,7 @@ def test_each_operator_declares_exactly_the_objects_it_acts_on() -> None:
     disturbed the objects that remain, nor their order (`GroundSkill.objects` is
     positional, and the oracle builds its groundings by hand)."""
     actual = {
-        skill.name: tuple(variable.name for variable in skill.parameters)
-        for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS)
+        skill.name: tuple(variable.name for variable in skill.parameters) for skill in _ALL_SKILLS
     }
     assert actual == _EXPECTED_PARAMETERS
 
@@ -133,7 +138,7 @@ def test_toss_deletes_reachable_unconditionally_hit_or_miss() -> None:
     )
 
 
-def test_the_three_operator_models_are_exactly_as_declared() -> None:
+def test_the_four_operator_models_are_exactly_as_declared() -> None:
     """Pinned field by field, so a change to the symbolic layer is a deliberate edit to
     this list rather than a silent drift."""
     assert _SKILLS.PICK.preconditions == frozenset({
@@ -142,7 +147,8 @@ def test_the_three_operator_models_are_exactly_as_declared() -> None:
         LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier)),
     })
     assert _SKILLS.PICK.add_effects == frozenset({
-        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
+        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_SKILLS._robot,)),
     })
     assert _SKILLS.PICK.delete_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
@@ -177,16 +183,86 @@ def test_the_three_operator_models_are_exactly_as_declared() -> None:
     })
     assert _SKILLS.TOSS.delete_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_SKILLS._robot,)),
         LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier)),
     })
+
+    assert _SKILLS.OPEN_GRIPPER.preconditions == frozenset({
+        LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
+    })
+    assert _SKILLS.OPEN_GRIPPER.add_effects == frozenset({
+        LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,))
+    })
+    assert _SKILLS.OPEN_GRIPPER.delete_effects == frozenset({
+        LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_SKILLS._robot,))
+    })
+
+
+@pytest.mark.parametrize("cube_z", [0.0, 0.025, 0.075])
+def test_on_ground_and_holding_cannot_both_hold_of_this_scenes_cube(*, cube_z: float) -> None:
+    """What licenses `OpenGripper` to omit a `Holding` delete effect, and therefore what
+    keeps it free of the conditional effect `seq-opt-lmcut` refuses.
+
+    Arithmetic rather than convention: `OnGround` admits `z <= bb_z/2 + ON_GROUND_TOL`,
+    which for a 0.05 m cube is 0.075, strictly below `Holding`'s `z > 0.1`. A cube whose
+    `bb_z` exceeded 0.1 would break this, which is why it is checked against the scene's
+    own cube."""
+    on_ground = state(cube_z=cube_z, gripper=1.0)
+    assert ON_GROUND.holds(on_ground, (_ENV.cube,))
+    assert not HOLDING.holds(on_ground, (_ENV.robot, _ENV.cube))
 
 
 def test_no_skill_declares_ignore_effects() -> None:
     """Unlike Ball-Ring's navigations and Tossing Room's Press, nothing here wipes a whole
     predicate: there is one cube, one bin and one region, so every effect is expressible
     as a plain add or delete."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _ALL_SKILLS:
         assert skill.ignore_effects == frozenset(), skill.name
+
+
+# A grasp that closes on nothing, as recorded on 4/10 `never`-reset EES seeds. `Pick`
+# leaves the gripper *commanded* shut while the cube is still on the floor, and
+# `pos_gripper` is that command rather than the finger configuration, so `HandEmpty` and
+# `Holding` are both false at once.
+_SHUT_ON_NOTHING = {"gripper": 1.0, "cube_z": 0.0249}
+
+
+def _applicable_in_the_shut_gripper_state() -> set[str]:
+    env = Tossing3DEnvironment()
+    provider = Tossing3DSkillProvider(env=env)
+    shut = state(env=env, **_SHUT_ON_NOTHING)
+    atoms = SkillGrounder.abstract_state(
+        state=shut, objects=provider.objects(), predicates=provider.predicates()
+    )
+    return {
+        ground_skill.skill.name
+        for ground_skill in SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
+        )
+    }
+
+
+def test_a_gripper_shut_on_nothing_is_neither_hand_empty_nor_holding() -> None:
+    """The state that strands the robot, characterised at the predicate level."""
+    shut = state(**_SHUT_ON_NOTHING)
+    assert not HAND_EMPTY.holds(shut, (_ENV.robot,))
+    assert not HOLDING.holds(shut, (_ENV.robot, _ENV.cube))
+
+
+def test_the_grasping_and_throwing_skills_are_all_inapplicable_with_a_shut_gripper() -> None:
+    """`Pick` needs `HandEmpty`; `MoveToThrowPose` and `Toss` both need `Holding`. Neither
+    holds here, so none of the three can recover -- which is the defect, not the fix."""
+    assert not {"Pick", "MoveToThrowPose", "Toss"} & _applicable_in_the_shut_gripper_state()
+
+
+def test_some_ground_skill_is_applicable_with_a_gripper_shut_on_nothing() -> None:
+    """THE property: no reachable state may leave the robot with nothing to do.
+
+    The cube is still on the robot's side of the barrier and still resting flat, so
+    nothing about the world is unrecoverable -- only the symbolic model was. A real
+    TidyBot reopens its fingers, and `open_gripper` is a controller upstream ships."""
+    assert _applicable_in_the_shut_gripper_state()
 
 
 def test_no_variable_carries_the_question_mark_the_pddl_writer_adds() -> None:
@@ -198,7 +274,7 @@ def test_no_variable_carries_the_question_mark_the_pddl_writer_adds() -> None:
     `EesMethod._next_plan` catches `PlanningFailure` and degrades to a no-op. So this is
     checked structurally as well as end-to-end below: a run can otherwise exit 0 and
     write a full `stats.json` in which the method never took a single action."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _ALL_SKILLS:
         for variable in skill.parameters:
             assert not variable.name.startswith("?"), f"{skill.name}: {variable.name}"
 
@@ -214,20 +290,17 @@ def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
     PDDL; this one catches any of them, and is the check that was missing when
     `--env tossing3d --method ees` ran to completion planning nothing."""
     env = Tossing3DEnvironment()
-    objects = (env.robot, env.cube, env.bin, env.barrier)
-    predicates = (
-        IN_BIN,
-        HAND_EMPTY,
-        HOLDING,
-        ON_GROUND,
-        REACHABLE,
-        ROBOT_AT_SUCCESSFUL_THROW_POSE,
-    )
+    # Read off the provider rather than restated here, so a predicate that reaches an
+    # operator without reaching the domain declaration fails as an unparseable domain
+    # rather than passing against a list that quietly matches.
+    provider = Tossing3DSkillProvider(env=env)
+    objects = provider.objects()
+    predicates = provider.predicates()
     init_atoms = SkillGrounder.abstract_state(state=state(), objects=objects, predicates=predicates)
     plan = FastDownwardPlanner.plan(
-        skills=(_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS),
+        skills=provider.skills(),
         predicates=predicates,
-        types=(env.robot_type, env.cube_type, env.bin_type, env.barrier_type),
+        types=provider.types(),
         objects=objects,
         init_atoms=init_atoms,
         goal=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}),
@@ -242,6 +315,8 @@ def test_param_dims_give_the_throw_a_release_speed_of_its_own() -> None:
     assert _SKILLS.PICK.param_dim == 2
     assert _SKILLS.MOVE_TO_THROW_POSE.param_dim == 1
     assert _SKILLS.TOSS.param_dim == 2
+    # Nothing to draw: `OpenGripperController.sample_parameters` raises.
+    assert _SKILLS.OPEN_GRIPPER.param_dim == 0
 
 
 def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:

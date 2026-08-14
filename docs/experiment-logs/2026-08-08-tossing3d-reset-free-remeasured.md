@@ -1,5 +1,19 @@
 # A reset-free robot on Tossing3D does not practise less — it stops practising, on 10/10 seeds after one cycle
 
+> **Staleness note (2026-08-13): this domain now has a fourth skill, and every number on
+> this page was measured with three.** `OpenGripper` was added to break a *different* dead
+> end — a grasp that closes on nothing leaves `pos_gripper` commanded shut while the cube
+> stays on the floor, so `HandEmpty` and `Holding` are false at once and none of the three
+> skills applies. **This page's stranding finding is unaffected, and that is checked rather
+> than asserted**: `OpenGripper` requires the gripper to be commanded shut, which is false
+> after a toss releases it, so the post-toss state this page is about still has no
+> applicable skill (`test_nothing_is_applicable_once_the_cube_is_past_the_barrier`). What
+> *is* provisional is comparability: a method here selects from four skills rather than
+> three, so the practice-transition counts (`77`, `3350`), the `990/1000` idle-cycle count
+> and the two late-window scores are no longer numbers a re-run of this experiment would be
+> expected to reproduce. The `skill-oracle` arm is unaffected — its policy never selects the
+> new skill. Nothing on this page is recomputed or edited.
+
 > **Staleness note (2026-08-10).** This page's per-skill counts — `Pick 1/1`,
 > `MoveToThrowPose 1/5`, `Toss 1/1`, the `3`–`13` transition-index range where the toss
 > happens, and any other figure that traces back to how many `MoveToThrowPose` draws the
@@ -281,6 +295,14 @@ So the reset-free robot's *entire* experience for a 100-cycle run is one practic
 
 `990/1000` is a property of **(this domain × EES)**, not of the domain alone, and the two
 halves should not be quoted as one.
+
+> **Note (2026-08-13), where a mid-page reader lands.** "None of the three skills" was
+> exhaustive when this was written; the domain has a fourth, `OpenGripper`, added to break
+> a shut-gripper dead end that is *not* the one described below. The paragraph's conclusion
+> survives unchanged — `OpenGripper` needs the gripper commanded shut, and a toss has
+> already released it — so a cube past the barrier is still unrecoverable and this remains a
+> method-independent domain fact. See the staleness note at the top of this page for what
+> the fourth skill does make provisional.
 
 **The domain fact — checked against the operators, not inferred from prose.** `Toss`
 deletes both `Holding(?robot, ?cube)` and `Reachable(?cube, ?barrier)`

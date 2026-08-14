@@ -1,4 +1,4 @@
-"""Tossing3D's three lifted skills: `Pick`, `MoveToThrowPose`, `Toss`.
+"""Tossing3D's four lifted skills: `Pick`, `MoveToThrowPose`, `Toss`, `OpenGripper`.
 
 Each one is a `core.method.types.Skill` -- an operator model -- paired to an upstream
 KINDER controller that actually executes it. That pairing is the shape
@@ -19,6 +19,7 @@ upstream's own bounds:
 | `Pick` | `pick_shelf` | distance, rotation | upstream's `MOVE_TO_TARGET_{DISTANCE,ROT}_BOUNDS` |
 | `MoveToThrowPose` | `move_to_target` | standoff | **ours** -- see `THROW_STANDOFF_BOUNDS` |
 | `Toss` | `move_arm_to_conf`, then `toss` | speed, release ms | upstream's own two knobs |
+| `OpenGripper` | `open_gripper` | none | upstream refuses to sample any |
 
 The one genuinely new range is the throw standoff, and it has to be: upstream's own
 `MOVE_TO_TARGET_DISTANCE_BOUNDS` is `(0.5, 0.6)`, which is a *grasping* standoff, and
@@ -58,6 +59,28 @@ And one on the other side:
    the planner's model of a *failed* toss honest -- the alternative, deleting it only on
    success, is a model in which a missed throw costs nothing.
 
+## `OpenGripper`, and the state it exists to escape
+
+The rule above has a converse that is easy to miss: a model that permits *less* than the
+dynamics allow can strand the robot in a state the world would let it leave. That happened
+here. `pos_gripper` is the gripper's **command**, not its finger configuration -- KINDER
+writes it as `ctrl["gripper"][0] / 255.0` -- so after a `Pick` whose grasp closes on
+nothing, the command reads 1.0 while the cube is still on the floor. `HandEmpty` (command
+at zero) is false and `Holding` (command closed *and* cube lifted) is false at the same
+time, so `Pick`, `MoveToThrowPose` and `Toss` are all inapplicable, permanently, in a state
+the robot could trivially leave by opening its fingers.
+
+`OpenGripper` is that escape, and it invents nothing: `open_gripper` is a controller
+`create_lifted_controllers()` already returns, and its `terminated()` tests
+`pos_gripper < GRIPPER_OPEN_COMMAND_TOLERANCE`, a constant equal to `HANDEMPTY_TOL` --
+so the controller stops on exactly the condition this skill's add effect asserts.
+
+**It is not the "irreversibility escape hatch".** A cube past the barrier stays past it:
+`OpenGripper` requires the gripper commanded shut, which a `Toss` has already released. The
+domain's one-way door is untouched.
+
+See `OPEN_GRIPPER`'s own docstring for why its second precondition is `OnGround`.
+
 Nothing enforces that rule automatically: `test_operator_dynamics_fidelity.py` does not
 list this domain, and both it and this domain's `test_operator_fidelity.py` assert only
 that an applicable ground skill changes the real state -- which a missed throw does. An
@@ -87,6 +110,7 @@ from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
 from .predicates import (
+    GRIPPER_COMMANDED_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -145,7 +169,10 @@ class Tossing3DSkills:
             # The barrier is one-way: see this module's docstring, choice 1.
             LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
         }),
-        add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
+        add_effects=frozenset({
+            LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
+            LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_robot,)),
+        }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
@@ -183,11 +210,53 @@ class Tossing3DSkills:
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
+            LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_robot,)),
             # Unconditionally, hit or miss: see this module's docstring, choice 3.
             LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
         }),
         param_dim=2,
     )
+
+    OPEN_GRIPPER: ClassVar[Skill] = Skill(
+        name="OpenGripper",
+        parameters=(_robot, _cube),
+        preconditions=frozenset({
+            LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_robot,)),
+            LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
+        }),
+        add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
+        delete_effects=frozenset({
+            LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_robot,))
+        }),
+        param_dim=0,
+    )
+    """`OpenGripper`'s two preconditions, and why neither is the obvious one.
+
+
+    `GripperCommandedClosed` is the fidelity rule's other edge: an already-open gripper is
+    where `OpenGripperController` terminates, so declaring this skill applicable there
+    would claim an effect the dynamics do not produce, and would also destroy "nothing is
+    applicable once the cube is past the barrier".
+
+    `OnGround(?cube)` is the surprising one, and it is what makes this operator *sound*
+    rather than what makes it strong. `OnGround` and `Holding` are mutually exclusive by
+    arithmetic -- `OnGround` admits `z <= bb_z/2 + 0.05`, which for this scene's 0.05 m
+    cube is `z <= 0.075`, below `Holding`'s `z > 0.1` -- so requiring it is exactly
+    "the gripper is shut and the cube is not in it", the shut-on-nothing state. With
+    `Holding` impossible here, this skill needs no `Holding` delete effect, and that is
+    load-bearing: Fast Downward's translator groups `Holding`/`InBin`/`OnGround` into one
+    four-valued "where the cube is" variable, so an operator that deletes `Holding`
+    without requiring it compiles to a **conditional effect**, which `seq-opt-lmcut`
+    refuses outright (`Tried to use unsupported feature`). `Toss` escapes that only
+    because `Holding` is one of its own preconditions.
+
+    The cost, stated rather than left to be found: this models the *recovery*, not a
+    deliberate put-down. A robot that is genuinely holding the cube can still open its
+    fingers, and this operator does not offer that -- modelling it needs an honest account
+    of where a dropped cube comes to rest, which is not predictable (a cube released in
+    mid-air can settle on any of its six faces, and `OnGround` wants a near-identity
+    quaternion). Under-permissive is the safe direction; see this module's docstring.
+    """
 
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
@@ -211,6 +280,8 @@ class Tossing3DSkills:
                 rng.uniform(*TOSS_SPEED_BOUNDS),
                 rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
             ])
+        if skill == Tossing3DSkills.OPEN_GRIPPER:
+            return np.array([])
         raise ValueError(f"Unknown skill: {skill.name}")
 
     @staticmethod
@@ -236,4 +307,6 @@ class Tossing3DSkills:
             return np.array(
                 [Tossing3DEnvironment.toss_id, float(params[0]), float(params[1])], dtype=float
             )
+        if skill == Tossing3DSkills.OPEN_GRIPPER:
+            return np.array([Tossing3DEnvironment.open_gripper_id, 0.0, 0.0], dtype=float)
         raise ValueError(f"Unknown skill: {skill.name}")

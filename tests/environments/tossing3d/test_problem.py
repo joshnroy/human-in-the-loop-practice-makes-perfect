@@ -14,6 +14,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
+    GRIPPER_COMMANDED_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -58,10 +59,12 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         Tossing3DSkills.PICK,
         Tossing3DSkills.MOVE_TO_THROW_POSE,
         Tossing3DSkills.TOSS,
+        Tossing3DSkills.OPEN_GRIPPER,
     )
     assert set(provider.predicates()) == {
         IN_BIN,
         HAND_EMPTY,
+        GRIPPER_COMMANDED_CLOSED,
         HOLDING,
         ON_GROUND,
         REACHABLE,
@@ -99,12 +102,30 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
             )
         }
 
+    # `OpenGripper` appears nowhere along the oracle's own plan: it needs the gripper shut
+    # *and* the cube on the floor, which is the failed-grasp state and not one a solve
+    # passes through. See `test_open_gripper_recovers_the_shut_gripper_state` below.
     assert applicable() == {"Pick"}
     assert applicable(gripper=0.9, cube_z=0.4) == {"MoveToThrowPose"}
     assert applicable(gripper=0.9, cube_z=0.4, base_x=BIN_X - 1.35) == {
         "MoveToThrowPose",
         "Toss",
     }
+
+
+def test_open_gripper_recovers_the_shut_gripper_state() -> None:
+    """The state `Pick` leaves behind when its grasp closes on nothing: the gripper is
+    commanded shut, so `HandEmpty` is false, but the cube never left the floor, so
+    `Holding` is false too. Before `OpenGripper` this stranded the robot permanently."""
+    provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
+    stranded = state(gripper=1.0, cube_z=0.0249)
+    atoms = SkillGrounder.abstract_state(
+        state=stranded, objects=provider.objects(), predicates=provider.predicates()
+    )
+    applicable = SkillGrounder.applicable_ground_skills(
+        skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
+    )
+    assert [ground.skill.name for ground in applicable] == ["OpenGripper"]
 
 
 def test_nothing_is_applicable_once_the_cube_is_past_the_barrier() -> None:

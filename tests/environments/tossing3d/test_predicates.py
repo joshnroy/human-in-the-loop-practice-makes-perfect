@@ -1,4 +1,4 @@
-"""Offline tests for Tossing3D's six predicates.
+"""Offline tests for Tossing3D's seven predicates.
 
 `InBin` gets the most attention, including deliberate boundary probes, because it
 *is* the success criterion and because a wrong goal box has already shipped once in this

@@ -213,6 +213,10 @@ class KinderBackend(BaseModel):
     pick_step_limit: ClassVar[int] = 400
     move_step_limit: ClassVar[int] = 200
     arm_step_limit: ClassVar[int] = 200
+    # `OpenGripperController` commands `action[-1] = 0` and terminates as soon as the
+    # command reads back below 1e-3, so this is generous rather than tuned; upstream
+    # demonstrates no budget for it.
+    gripper_step_limit: ClassVar[int] = 50
 
     env_id: str = "kinder/Tossing3D-o1-v0"
     scene_bg: bool = True
@@ -602,6 +606,23 @@ class KinderBackend(BaseModel):
             params=np.array([standoff, rotation]),
             limit=self.move_step_limit,
             disable_collision_objects=[self.cube_name],
+        )
+
+    def run_open_gripper(self) -> ControllerRun:
+        """`open_gripper` -- upstream's own release, the recovery from a shut gripper.
+
+        Its `terminated()` is `pos_gripper < GRIPPER_OPEN_COMMAND_TOLERANCE`, and that
+        constant is `1e-3`, so it stops on exactly the condition
+        `predicates.HandEmptyClassifier` tests. `params=None` because
+        `OpenGripperController.sample_parameters` raises `NotImplementedError`: there is
+        nothing to draw, the gripper only opens one way.
+        """
+        return self.run_controller(
+            module="tossing",
+            key="open_gripper",
+            object_names=(self.robot_name,),
+            params=None,
+            limit=self.gripper_step_limit,
         )
 
     def run_toss(

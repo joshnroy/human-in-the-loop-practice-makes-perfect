@@ -1,4 +1,4 @@
-"""Tossing3D's symbolic layer: six predicates, all pure arithmetic over `core.State`.
+"""Tossing3D's symbolic layer: seven predicates, all pure arithmetic over `core.State`.
 
 **KINDER ships no symbolic model for Tossing3D.** `kinder_bilevel_planning.env_models.
 dynamic3d` has one for base motion, one for `Shelf3D` and one for `Sweep3D`, and that is
@@ -8,10 +8,10 @@ scene's objects, consumed by `LiftedOperator`s that are paired to upstream's con
 (there, `LiftedSkill(PickTargetOperator, LiftedPickShelfController)`; here, `skills.py`'s
 `Skill`s plus `skill_provider.py`).
 
-Three of the six are ported from upstream's own `kinder_models.dynamic3d.shelf.
+Three of the seven are ported from upstream's own `kinder_models.dynamic3d.shelf.
 state_abstractions`, whose `HandEmpty`/`Holding`/`OnGround` classify the same TidyBot
 state this domain reads -- thresholds included, so they are upstream's numbers rather
-than ours. Two are genuinely new, and are called out below.
+than ours. Four are genuinely new, and are called out below.
 
 ## The stated assumption: the bin's interior **is** the scored region
 
@@ -372,6 +372,32 @@ class HandEmptyClassifier:
         return bool(np.isclose(gripper, 0.0, atol=HANDEMPTY_TOL))
 
 
+class GripperCommandedClosedClassifier:
+    """The gripper's *command* is not zero. The exact negation of `HandEmpty`.
+
+    **Ours, and named for what `pos_gripper` actually is.** KINDER writes that feature as
+    `self._robot_env.ctrl["gripper"][0] / 255.0` (`envs.py`,
+    `_get_arm_and_gripper_pos_data`), so it records what the controller last asked for and
+    never where the fingers are. `HandEmpty` -- upstream's, and kept verbatim -- therefore
+    means "the gripper was last commanded open", not "the hand is free"; the long name
+    here is the one place that distinction is written into an identifier rather than a
+    comment.
+
+    It exists so `OpenGripper` is applicable exactly where `OpenGripperController` does
+    something. That controller's `terminated()` is
+    `pos_gripper < GRIPPER_OPEN_COMMAND_TOLERANCE`, and that constant is `1e-3` --
+    `HANDEMPTY_TOL`. The two agree except at exactly `1e-3`, where `HandEmpty`'s `isclose`
+    is inclusive and the controller's `<` is not; nothing samples that point.
+
+    Defined as the literal negation rather than as its own comparison, so the two can
+    never drift apart under a threshold change.
+    """
+
+    @staticmethod
+    def holds(*, state: State, robot: Object) -> bool:
+        return not HandEmptyClassifier.holds(state=state, robot=robot)
+
+
 class HoldingClassifier:
     """The gripper is closed and the cube is off the floor.
 
@@ -545,6 +571,14 @@ HAND_EMPTY = Predicate(
     name="HandEmpty",
     types=(Tossing3DEnvironment.robot_type,),
     holds=lambda state, objects: HandEmptyClassifier.holds(state=state, robot=objects[0]),
+)
+
+GRIPPER_COMMANDED_CLOSED = Predicate(
+    name="GripperCommandedClosed",
+    types=(Tossing3DEnvironment.robot_type,),
+    holds=lambda state, objects: GripperCommandedClosedClassifier.holds(
+        state=state, robot=objects[0]
+    ),
 )
 
 HOLDING = Predicate(

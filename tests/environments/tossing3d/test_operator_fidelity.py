@@ -36,6 +36,7 @@ import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import GRASP_THRESHOLD, HAND_EMPTY
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import SkillOraclePolicy
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
@@ -53,6 +54,13 @@ CANONICAL_SEED = 125
 # miss, `MoveToThrowPose` moves the base for every draw in its range, and `Toss` has no
 # parameters at all. A skill counts as silently ignored only if *every* draw is a no-op.
 _PARAM_DRAWS = 3
+
+# `OpenGripper` is deliberately outside the coverage floor below. It requires the gripper
+# commanded shut *and* the cube on the floor -- the state a failed grasp leaves -- and the
+# oracle's trajectory is a solve, so it never passes through one. That is a real narrowing
+# of what this walk proves, and the reason the skill gets its own simulator-backed check
+# below rather than being covered here.
+_RECOVERY_ONLY = "OpenGripper"
 
 
 def _describe(*, ground_skill: GroundSkill) -> str:
@@ -117,12 +125,40 @@ def test_no_applicable_ground_skill_is_silently_ignored_along_the_oracles_trajec
 
         assert not violations, "\n".join(f"  - {v}" for v in sorted(set(violations)))
         # Coverage floor, so the property above cannot pass vacuously: the oracle's own
-        # trajectory reaches a state where each of the three skills is applicable.
-        assert exercised == {skill.name for skill in provider.skills()}, (
-            f"the walk never reached a state where "
-            f"{sorted({s.name for s in provider.skills()} - exercised)} was applicable, so "
-            f"this file proves nothing about those skills"
+        # trajectory reaches a state where each of the plan-shape skills is applicable.
+        expected = {skill.name for skill in provider.skills()} - {_RECOVERY_ONLY}
+        assert exercised == expected, (
+            f"the walk never reached a state where {sorted(expected - exercised)} was "
+            f"applicable, so this file proves nothing about those skills"
         )
+    finally:
+        env.close()
+
+
+def test_open_gripper_really_drives_the_gripper_command_back_to_zero() -> None:
+    """`OpenGripper`'s whole add effect is `HandEmpty`, and `HandEmpty` reads
+    `pos_gripper` -- which KINDER writes from `ctrl["gripper"]`, i.e. the *command*, never
+    the finger configuration. So the operator's claim is precisely "this controller drives
+    that command to zero", and this is the only test that checks it against the simulator
+    rather than against a hand-built observation.
+
+    Driven from the post-`Pick` state because that is the one this domain can reach
+    cheaply with the gripper commanded shut; `Pick` closing on nothing produces the same
+    command and is what the operator exists for."""
+    env = Tossing3DEnvironment()
+    try:
+        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        state = env.take_action(
+            action=SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal).action
+        )
+        assert state.get(obj=env.robot, feature_name="pos_gripper") > GRASP_THRESHOLD
+
+        after = env.take_action(
+            action=np.array([float(env.open_gripper_id), 0.0, 0.0], dtype=float)
+        )
+        assert env.last_skill_error() is None
+        assert HAND_EMPTY.holds(after, (env.robot,))
     finally:
         env.close()
 

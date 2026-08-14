@@ -30,14 +30,14 @@ Everything in the left column is upstream's code or upstream's number, used unmo
 
 Ours, and therefore ours to defend:
 
-- **The six predicates** (`predicates.py`). Three — `HandEmpty`, `Holding`, `OnGround` —
+- **The seven predicates** (`predicates.py`). Three — `HandEmpty`, `Holding`, `OnGround` —
   are ported from upstream's own `kinder_models.dynamic3d.shelf.state_abstractions`,
   thresholds included, with **one documented deviation**: upstream's `Holding` also
   requires a forward-kinematics end-effector check through a live `PyBulletSim`, which a
   pure-`State` predicate cannot do, so that conjunct is dropped and the predicate is
   correspondingly *weaker* than upstream's. `InBin` reproduces `_check_goals()`
   exactly and is differentially tested against it. `Reachable` and `RobotAtSuccessfulThrowPose` are new.
-- **The three lifted skills and their operator models** (`skills.py`). KINDER ships
+- **The four lifted skills and their operator models** (`skills.py`). KINDER ships
   symbolic models for `Shelf3D`, `Sweep3D` and base motion, but **none for Tossing3D**,
   so the operator layer is written here — following `tidybot3d_shelf3D.py`'s shape, where
   a `LiftedOperator` is paired to one of upstream's controllers.
