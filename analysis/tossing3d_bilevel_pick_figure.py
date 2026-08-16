@@ -8,7 +8,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
-
 from tossing3d_bilevel_pick_summary import load  # noqa: E402
 
 # Blue is the arm that has a search mechanism available; orange the arms that have
@@ -66,11 +65,11 @@ def main() -> None:
     print(f"wrote {args.output}")
 
 
-def _scored(records) -> int:
+def _scored(records) -> int:  # noqa: PLR0917
     return sum(1 for r in records if r["outcome"] == "scored")
 
 
-def _plot_counts(ax, data) -> None:
+def _plot_counts(ax, data) -> None:  # noqa: PLR0917
     """Seeds scored per arm, the two sampling budgets side by side."""
     labels, heights, colours, hatches = [], [], [], []
     for group, arms in (("spt=5", ARMS_S5), ("spt=25", ARMS_S25)):
@@ -90,9 +89,9 @@ def _plot_counts(ax, data) -> None:
 
     positions = np.arange(len(heights))
     bars = ax.bar(positions, heights, 0.72, color=colours, edgecolor="white")
-    for bar, hatch in zip(bars, hatches):
+    for bar, hatch in zip(bars, hatches, strict=True):
         bar.set_hatch(hatch)
-    for bar, height in zip(bars, heights):
+    for bar, height in zip(bars, heights, strict=True):
         if height:
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
@@ -108,7 +107,7 @@ def _plot_counts(ax, data) -> None:
     ax.set_title("Seeds that scored (of 40)")
 
 
-def _plot_seed_grid(ax, data) -> None:
+def _plot_seed_grid(ax, data) -> None:  # noqa: PLR0917
     """Per-seed outcome, so the residual seed set is visible rather than asserted."""
     rows = []
     for group, arms in (("spt=5", ARMS_S5), ("spt=25", ARMS_S25)):
@@ -132,15 +131,13 @@ def _plot_seed_grid(ax, data) -> None:
     ax.set_title("Per-seed outcome — faint circles scored")
     ax.grid(axis="x", alpha=0.2)
     handles = [
-        plt.Line2D(
-            [], [], marker=marker, linestyle="none", color="k", label=outcome, ms=7
-        )
+        plt.Line2D([], [], marker=marker, linestyle="none", color="k", label=outcome, ms=7)
         for outcome, marker in OUTCOME_MARKER.items()
     ]
     ax.legend(handles=handles, fontsize=7.5, loc="center left")
 
 
-def _plot_cost(ax, data) -> None:
+def _plot_cost(ax, data) -> None:  # noqa: PLR0917
     """Per-seed wall clock: faint per-seed points under the bold arm mean."""
     rng = np.random.default_rng(0)
     positions, labels = [], []
@@ -167,7 +164,7 @@ def _plot_cost(ax, data) -> None:
     ax.set_xticklabels(labels, fontsize=6.2, rotation=30, ha="right")
     ax.set_yscale("log")
     ax.set_ylabel("wall clock per seed (s, log)")
-    ax.set_title("Cost per seed — faint points are seeds, bold bar the mean")
+    ax.set_title("Cost per seed — points are seeds, bar the mean")
 
 
 if __name__ == "__main__":

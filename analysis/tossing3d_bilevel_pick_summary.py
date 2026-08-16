@@ -8,7 +8,7 @@ from collections import Counter
 from typing import Any
 
 
-def load(results_dir: str) -> list[dict[str, Any]]:
+def load(results_dir: str) -> list[dict[str, Any]]:  # noqa: PLR0917
     """Read every seed_*.json in a sweep directory, seed-ordered."""
     records = []
     for path in sorted(glob.glob(os.path.join(results_dir, "seed_*.json"))):
@@ -17,7 +17,7 @@ def load(results_dir: str) -> list[dict[str, Any]]:
     return sorted(records, key=lambda r: r["seed"])
 
 
-def summarise(records: list[dict[str, Any]]) -> dict[str, Any]:
+def summarise(records: list[dict[str, Any]]) -> dict[str, Any]:  # noqa: PLR0917
     """Outcome counts, per-outcome seed lists, and sampler cost."""
     counts = Counter(r["outcome"] for r in records)
     total = len(records)
@@ -36,12 +36,8 @@ def summarise(records: list[dict[str, Any]]) -> dict[str, Any]:
         "sampler_calls": len(attempts),
         "pick_sampler_calls": len(pick_attempts),
         "toss_sampler_calls": len(toss_attempts),
-        "pick_rejections": sum(
-            1 for a in pick_attempts if not a["reached_target_abstract_state"]
-        ),
-        "toss_rejections": sum(
-            1 for a in toss_attempts if not a["reached_target_abstract_state"]
-        ),
+        "pick_rejections": sum(1 for a in pick_attempts if not a["reached_target_abstract_state"]),
+        "toss_rejections": sum(1 for a in toss_attempts if not a["reached_target_abstract_state"]),
         "pick_sampler_seconds": sum(a["seconds"] for a in pick_attempts),
         "toss_sampler_seconds": sum(a["seconds"] for a in toss_attempts),
     }

@@ -69,7 +69,7 @@ def main() -> None:
         json.dump(record, f, indent=2)
 
 
-def _run(args: argparse.Namespace) -> dict[str, Any]:
+def _run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0917
     """Plan and execute one episode, returning everything measured about it."""
     # Imported here so the module still imports where KINDER is absent.
     import kinder  # noqa: PLC0415
@@ -91,7 +91,8 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
     original_sample = parameterized_skills.PickCubeController.sample_parameters
 
-    def recording_sample(self, x, rng):  # type: ignore[no-untyped-def]
+    # Signature is the third-party method's, so keyword-only does not apply.
+    def recording_sample(self, x, rng):  # type: ignore[no-untyped-def]  # noqa: PLR0917
         if args.pick_mode == "sampled":
             params = original_sample(self, x, rng)
         else:
@@ -108,32 +109,29 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
     original_call = ParameterizedControllerTrajectorySampler.__call__
 
-    def recording_call(self, x, s, a, ns, bpg, rng):  # type: ignore[no-untyped-def]
+    # Signature is the third-party method's, so keyword-only does not apply.
+    def recording_call(self, x, s, a, ns, bpg, rng):  # type: ignore[no-untyped-def]  # noqa: PLR0917
         name = getattr(a, "name", None) or str(a)
         drawn.pop("pick_cube", None)
         began = time.perf_counter()
         try:
             result = original_call(self, x, s, a, ns, bpg, rng)
         except BaseException as exc:  # TrajectorySamplingFailure is not an Exception
-            attempts.append(
-                {
-                    "skill": name,
-                    "reached_target_abstract_state": False,
-                    "raised": type(exc).__name__,
-                    "seconds": time.perf_counter() - began,
-                    "pick_params": drawn.get("pick_cube"),
-                }
-            )
-            raise
-        attempts.append(
-            {
+            attempts.append({
                 "skill": name,
-                "reached_target_abstract_state": True,
-                "raised": None,
+                "reached_target_abstract_state": False,
+                "raised": type(exc).__name__,
                 "seconds": time.perf_counter() - began,
                 "pick_params": drawn.get("pick_cube"),
-            }
-        )
+            })
+            raise
+        attempts.append({
+            "skill": name,
+            "reached_target_abstract_state": True,
+            "raised": None,
+            "seconds": time.perf_counter() - began,
+            "pick_params": drawn.get("pick_cube"),
+        })
         return result
 
     ParameterizedControllerTrajectorySampler.__call__ = recording_call  # type: ignore[method-assign]
