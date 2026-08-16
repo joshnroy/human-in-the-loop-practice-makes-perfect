@@ -19,8 +19,12 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderObservation
 # clamped at 0.
 GOAL_REGION_BBOX = (1.85, -0.15, 0.0, 2.15, 0.15, 0.15)
 
-# The cube's own half-extent (`size: 0.025` in the task JSON), doubled: `bb_z`.
+# The cube's own half-extent (`size: 0.025` in the task JSON), doubled. All three
+# extents are equal, which is what makes `OnGround`'s face-interchangeable branch the
+# one this scene takes -- see `predicates.OnGroundClassifier`.
 CUBE_BB_Z = 0.05
+CUBE_BB_X = 0.05
+CUBE_BB_Y = 0.05
 
 # Where the bin sits in the shipped scene, measured live: `bin_init_region` is a 1 mm
 # sampling range about x = 2.0, so the bin lands on the goal region rather than past it.
@@ -44,6 +48,8 @@ def observation(
     cube_z: float = 0.025,
     cube_qx: float = 0.0,
     cube_qy: float = 0.0,
+    cube_qz: float = 0.0,
+    cube_qw: float = 1.0,
     gripper: float = 0.0,
     base_x: float = 0.0,
     base_y: float = 0.0,
@@ -68,6 +74,10 @@ def observation(
                 "z": cube_z,
                 "qx": cube_qx,
                 "qy": cube_qy,
+                "qz": cube_qz,
+                "qw": cube_qw,
+                "bb_x": CUBE_BB_X,
+                "bb_y": CUBE_BB_Y,
                 "bb_z": CUBE_BB_Z,
             },
             "bin_0": {"x": bin_x, "y": 0.0, "z": 0.1},

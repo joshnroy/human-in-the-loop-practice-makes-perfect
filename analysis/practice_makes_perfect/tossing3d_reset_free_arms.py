@@ -1,5 +1,16 @@
 """What does a genuinely reset-free arm cost on Tossing3D?
 
+> **WRITTEN FOR THE THREE-SKILL DOMAIN, AND IT FAILS QUIETLY ON A TWO-SKILL RUN.** The
+> skill names this module keys on -- `Pick`, `MoveToThrowPose`, `Toss` -- no longer exist:
+> the domain is now `PickCube` (no continuous parameters, so no sampler and no informed
+> draws at all) and `MoveToTossLocationAndToss`. The per-skill tallies are read with
+> `.get(skill_name)`, so a two-skill `stats.json` yields `0/0` everywhere and this module
+> reports "never practiced" rather than raising. Do not run it against a two-skill sweep
+> and read the output as a finding. Repointing the names is not enough -- this module's
+> whole argument is about `MoveToThrowPose`'s informed draws against a `Pick` control, and
+> neither side of that comparison survives -- so it is left as the record of what it
+> measured. Its published results stand: see `docs/experiment-logs/`.
+
 Post-run analysis only; it reads `--results-root` back in and never drives a `Method`.
 
 ## Why this measurement did not exist before

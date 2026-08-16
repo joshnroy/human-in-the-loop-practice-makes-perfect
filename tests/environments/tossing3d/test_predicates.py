@@ -1,9 +1,17 @@
-"""Offline tests for Tossing3D's six predicates.
+"""Offline tests for Tossing3D's five predicates.
 
 `InBin` gets the most attention, including deliberate boundary probes, because it
 *is* the success criterion and because a wrong goal box has already shipped once in this
 project's history. `test_kinder_fidelity.py` checks it against KINDER's own
 `_check_goals()` whenever the simulator is installed; these run everywhere.
+
+**It was six.** `RobotAtSuccessfulThrowPose` named the pose between `MoveToThrowPose` and
+`Toss`, and upstream composed those two controllers into one -- so there is no longer a
+state between them for a predicate to describe. Its whole calibration block went with it
+(`THROW_RANGE`, the overshoot/shortfall margins, `THROW_STANDOFF_BOUNDS`,
+`THROW_POSE_LATERAL_TOLERANCE`), and so did the roughly two dozen band tests that lived
+in the second half of this file. Those numbers are not wrong; they describe a
+decomposition this domain no longer runs.
 """
 
 import numpy as np
@@ -17,27 +25,50 @@ from hitl_pmp.environments.tossing3d.predicates import (
     HOLDING,
     IN_BIN,
     ON_GROUND,
+    ON_GROUND_TOL,
     REACHABLE,
-    ROBOT_AT_SUCCESSFUL_THROW_POSE,
-    THROW_OVERSHOOT_MARGIN,
-    THROW_POSE_LATERAL_TOLERANCE,
-    THROW_RANGE,
-    THROW_RANGE_MAX,
-    THROW_RANGE_MIN,
-    THROW_SHORTFALL_MARGIN,
-    THROW_STANDOFF_BOUNDS,
+    CubeSymmetry,
     HandEmptyClassifier,
     HoldingClassifier,
     InBinClassifier,
     OnGroundClassifier,
     ReachableClassifier,
-    RobotAtSuccessfulThrowPoseClassifier,
 )
-from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
 
 from .observations import BARRIER_X, BIN_X, CUBE_START_X, GOAL_REGION_BBOX, state
 
 _ENV = Tossing3DEnvironment()
+
+
+def _axis_angle(*, axis: tuple[float, float, float], angle: float) -> tuple[float, ...]:
+    """One rotation as MuJoCo's `(qx, qy, qz, qw)`, so the cases below read as poses."""
+    unit = np.asarray(axis, dtype=float) / np.linalg.norm(axis)
+    return (*(unit * np.sin(angle / 2)), float(np.cos(angle / 2)))
+
+
+def _compose(*, first: tuple[float, ...], then: tuple[float, ...]) -> tuple[float, ...]:
+    """`then * first` in `(x, y, z, w)` order -- `first` applied, then `then`."""
+    x1, y1, z1, w1 = first
+    x2, y2, z2, w2 = then
+    return (
+        w2 * x1 + x2 * w1 + y2 * z1 - z2 * y1,
+        w2 * y1 - x2 * z1 + y2 * w1 + z2 * x1,
+        w2 * z1 + x2 * y1 - y2 * x1 + z2 * w1,
+        w2 * w1 - x2 * x1 - y2 * y1 - z2 * z1,
+    )
+
+
+# The six face-down rests, as the rotation that puts each face on the floor. Upright and
+# upside-down are the ones a hand-written `qx ~ 0 and qy ~ 0` test also accepts; the four
+# side faces are exactly the ones it rejects, and exactly the ones a thrown cube lands on.
+_FACE_DOWN_ROTATIONS = {
+    "upright": _axis_angle(axis=(0.0, 0.0, 1.0), angle=0.0),
+    "upside-down": _axis_angle(axis=(1.0, 0.0, 0.0), angle=np.pi),
+    "+x face": _axis_angle(axis=(0.0, 1.0, 0.0), angle=np.pi / 2),
+    "-x face": _axis_angle(axis=(0.0, 1.0, 0.0), angle=-np.pi / 2),
+    "+y face": _axis_angle(axis=(1.0, 0.0, 0.0), angle=np.pi / 2),
+    "-y face": _axis_angle(axis=(1.0, 0.0, 0.0), angle=-np.pi / 2),
+}
 
 
 def _in_bin(*, x: float, y: float = 0.0, z: float = 0.0444) -> bool:
@@ -168,11 +199,96 @@ def test_on_ground_rejects_a_cube_in_the_air() -> None:
     assert not OnGroundClassifier.holds(state=state(cube_z=0.4), cube=_ENV.cube)
 
 
-def test_on_ground_rejects_a_cube_resting_on_a_corner() -> None:
-    """Upstream's flatness conjunct, and it is load-bearing rather than decorative:
-    `pick_shelf` builds its grasp pose from the object's orientation."""
-    assert not OnGroundClassifier.holds(state=state(cube_z=0.025, cube_qx=0.7), cube=_ENV.cube)
-    assert not OnGroundClassifier.holds(state=state(cube_z=0.025, cube_qy=0.7), cube=_ENV.cube)
+@pytest.mark.parametrize("face", sorted(_FACE_DOWN_ROTATIONS))
+def test_on_ground_accepts_a_cube_resting_on_any_one_of_its_six_faces(*, face: str) -> None:
+    """**The change the composed toss forced, stated as `6/6` faces rather than `1/6`.**
+
+    `MoveToTossLocationAndToss` *adds* `OnGround`, and a thrown cube lands on whichever
+    face it likes. The test this classifier used to run -- `qx` and `qy` both near zero --
+    is "resting on the face it started on", and measured against these six rotations it
+    accepts `1/6`: only `upright`. Even `upside-down` fails it, since that rotation is
+    `qx = 1`. Under it the add effect would read false on most scoring throws and EES
+    would label a throw that scored a failure.
+
+    Written face by face rather than as one loop so a regression names which faces broke.
+    """
+    qx, qy, qz, qw = _FACE_DOWN_ROTATIONS[face]
+    assert OnGroundClassifier.holds(
+        state=state(cube_z=0.025, cube_qx=qx, cube_qy=qy, cube_qz=qz, cube_qw=qw),
+        cube=_ENV.cube,
+    )
+
+
+@pytest.mark.parametrize("face", sorted(_FACE_DOWN_ROTATIONS))
+@pytest.mark.parametrize("yaw_degrees", [17.0, 45.0, 123.0, -88.0])
+def test_on_ground_ignores_yaw_entirely_once_a_face_is_down(
+    *, face: str, yaw_degrees: float
+) -> None:
+    """A cube on a face is four-fold symmetric about the vertical, so its yaw carries no
+    information about whether it is resting. Deliberately awkward yaws rather than
+    multiples of 90 degrees, which the symmetry group would map back onto the face
+    rotations above and so could not distinguish a real derivation from a lookup."""
+    rotation = _compose(
+        first=_FACE_DOWN_ROTATIONS[face],
+        then=_axis_angle(axis=(0.0, 0.0, 1.0), angle=np.deg2rad(yaw_degrees)),
+    )
+    qx, qy, qz, qw = rotation
+    assert OnGroundClassifier.holds(
+        state=state(cube_z=0.025, cube_qx=qx, cube_qy=qy, cube_qz=qz, cube_qw=qw),
+        cube=_ENV.cube,
+    )
+
+
+def test_on_ground_rejects_a_cube_balanced_on_a_corner() -> None:
+    """A body diagonal pointing straight up is the furthest a cube gets from any face.
+
+    The rotation is derived rather than typed: it is the one taking the body diagonal
+    `(1, 1, 1)/sqrt(3)` onto `+z`, so this is a genuine corner balance and not a
+    quaternion chosen for being far from the identity."""
+    diagonal = np.array([1.0, 1.0, 1.0]) / np.sqrt(3.0)
+    rotation = _axis_angle(
+        axis=tuple(np.cross(diagonal, [0.0, 0.0, 1.0])), angle=float(np.arccos(diagonal[2]))
+    )
+    qx, qy, qz, qw = rotation
+    # Not merely outside the tolerance -- as far outside as the geometry allows.
+    assert CubeSymmetry.tilt_from_upright(rotation=rotation) > 4 * ON_GROUND_TOL
+    assert not OnGroundClassifier.holds(
+        state=state(cube_z=0.025, cube_qx=qx, cube_qy=qy, cube_qz=qz, cube_qw=qw),
+        cube=_ENV.cube,
+    )
+
+
+def test_on_ground_rejects_a_cube_balanced_on_an_edge() -> None:
+    """The intermediate case, and the one a face-interchangeable test could plausibly
+    have swallowed: 45 degrees about `x` puts an edge down, which is a rest position no
+    grasp derived from a face can use."""
+    rotation = _axis_angle(axis=(1.0, 0.0, 0.0), angle=np.pi / 4)
+    qx, qy, qz, qw = rotation
+    assert not OnGroundClassifier.holds(
+        state=state(cube_z=0.025, cube_qx=qx, cube_qy=qy, cube_qz=qz, cube_qw=qw),
+        cube=_ENV.cube,
+    )
+
+
+def test_on_ground_rejects_a_cube_that_is_face_down_but_still_in_the_air() -> None:
+    """The two conjuncts are independent, so the height one has to be checked at a
+    rotation the flatness one accepts -- otherwise a classifier that had dropped the
+    height test entirely would still pass every case above."""
+    qx, qy, qz, qw = _FACE_DOWN_ROTATIONS["+x face"]
+    assert not OnGroundClassifier.holds(
+        state=state(cube_z=0.4, cube_qx=qx, cube_qy=qy, cube_qz=qz, cube_qw=qw),
+        cube=_ENV.cube,
+    )
+
+
+def test_a_non_cube_keeps_the_strict_face_it_started_on_test() -> None:
+    """Only a cube's faces are interchangeable. The branch is taken on the measured
+    bounding box rather than on the object's name, so an object whose extents differ must
+    still be rejected on its side -- which is exactly where the cube branch accepts."""
+    qx, qy, qz, qw = _FACE_DOWN_ROTATIONS["+x face"]
+    oblong = state(cube_z=0.025, cube_qx=qx, cube_qy=qy, cube_qz=qz, cube_qw=qw)
+    oblong.set(obj=_ENV.cube, feature_name="bb_x", feature_val=0.12)
+    assert not OnGroundClassifier.holds(state=oblong, cube=_ENV.cube)
 
 
 def test_reachable_is_a_one_way_door_across_the_barrier() -> None:
@@ -195,228 +311,15 @@ def test_reachable_reads_the_barriers_live_x_rather_than_a_constant() -> None:
     assert ReachableClassifier.holds(state=beyond_default, cube=_ENV.cube, barrier=_ENV.barrier)
 
 
-def _at_throw_pose(*, standoff: float, base_y: float = 0.0, **kwargs) -> bool:
-    """Does the predicate hold for a base placed `standoff` metres in front of the bin?"""
-    bin_x = kwargs.pop("bin_x", BIN_X)
-    return RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state(base_x=bin_x - standoff, base_y=base_y, bin_x=bin_x, **kwargs),
-        robot=_ENV.robot,
-        target=_ENV.bin,
-    )
-
-
-def _accepted_band(**kwargs) -> tuple[float, float]:
-    """The interval of standoffs the predicate accepts, found by scanning at 1 mm."""
-    accepted = [
-        standoff / 1000
-        for standoff in range(0, 3000)
-        if _at_throw_pose(standoff=standoff / 1000, **kwargs)
-    ]
-    return (min(accepted), max(accepted))
-
-
-def test_the_accepted_band_is_strictly_narrower_than_the_range_the_sampler_draws_from() -> None:
-    """**The property whose absence is the whole reason this predicate was rewritten.**
-
-    `MoveToThrowPose`'s only add effect is this predicate, and EES trains that skill's
-    success classifier on exactly that label. While the predicate accepted every standoff
-    in `THROW_STANDOFF_BOUNDS` -- the interval the sampler draws from -- the label was
-    constant-true, the classifier saw one class, and every draw fell back to uniform. If
-    this ever fails again, the sampler has silently stopped being able to learn."""
-    rng = np.random.default_rng(0)
-    draws = [float(rng.uniform(*THROW_STANDOFF_BOUNDS)) for _ in range(200)]
-    accepted = [d for d in draws if _at_throw_pose(standoff=d)]
-    assert accepted, "no sampled standoff is accepted: the skill could never succeed"
-    assert len(accepted) < len(draws), (
-        "every sampled standoff is accepted: the add effect is constant-true and no "
-        "sampler can learn from it"
-    )
-
-
-def test_the_accepted_band_moves_when_the_bin_moves() -> None:
-    """**The test that catches someone reintroducing a measured literal.**
-
-    The band is derived from live scene geometry plus two fixed margins, so shifting the
-    bin shifts the whole band by exactly the same amount. A predicate that instead
-    hard-coded `[1.15, 1.375]` -- the *value* the derivation happens to produce on the
-    scene as shipped -- would hold the band still and be silently wrong the moment the bin
-    moves. That is not hypothetical: kindergarden#126 has since moved it, which is exactly
-    the event this test was written against."""
-    shift = 0.25
-    here = _accepted_band()
-    there = _accepted_band(bin_x=BIN_X + shift)
-    assert there[0] == pytest.approx(here[0] + shift, abs=2e-3)
-    assert there[1] == pytest.approx(here[1] + shift, abs=2e-3)
-
-
-def test_the_accepted_band_moves_when_the_goal_region_moves() -> None:
-    """The other half of "derived, not pinned": the band tracks the goal box too, so a
-    task JSON that retargets the throw needs no change here."""
-    x_min, y_min, z_min, x_max, y_max, z_max = GOAL_REGION_BBOX
-    shifted = (x_min - 0.30, y_min, z_min, x_max - 0.30, y_max, z_max)
-    here = _accepted_band()
-    there = _accepted_band(goal_region=shifted)
-    assert there[0] == pytest.approx(here[0] + 0.30, abs=2e-3)
-    assert there[1] == pytest.approx(here[1] + 0.30, abs=2e-3)
-
-
-def test_the_accepted_bands_upper_edge_is_the_last_standoff_measured_to_solve() -> None:
-    """The far edge sits on standoff 1.400, the last observed to score: `0/1050` beyond
-    it on this stack's standoff grid (`0/150` at each of 1.45 through 1.75), against
-    `3/150` at 1.400 itself. Left at the measured reach envelope it would sit at 1.455.
-
-    Landing-space and standoff-space run in *opposite* directions (`landing_x = base_x +
-    range`, `base_x = bin_x - standoff`), so trimming the wrong box edge moves the band
-    the wrong way. Pinning the far edge catches that; the width check below does not."""
-    assert _accepted_band()[1] == pytest.approx(1.400, abs=2e-3)
-
-
-def test_the_five_of_five_core_still_lies_inside_the_accepted_band() -> None:
-    """PR #105's measured 5/5 core -- `[1.150, 1.375]`, 5 scene seeds at 0.025 m
-    resolution -- lies inside the band. The two margins were tuned to it, so a change
-    that shifted the band rather than widening it would drop an endpoint."""
-    low, high = _accepted_band()
-    assert low <= 1.150
-    assert high >= 1.375
-
-
-def test_the_accepted_band_is_the_trimmed_box_widened_by_the_dials_own_reach() -> None:
-    """The arithmetic check that the derivation is a derivation and not a fit: unlike
-    the edge test above, it holds for any box at any bin position. The band is the box's
-    own extent minus both margins, plus `THROW_RANGE_MAX - THROW_RANGE_MIN` and nothing
-    else."""
-    low, high = _accepted_band()
-    full_extent = GOAL_REGION_BBOX[3] - GOAL_REGION_BBOX[0]
-    assert high - low == pytest.approx(
-        full_extent
-        - (THROW_OVERSHOOT_MARGIN + THROW_SHORTFALL_MARGIN)
-        + (THROW_RANGE_MAX - THROW_RANGE_MIN),
-        abs=2e-3,
-    )
-
-
-def test_the_range_interval_brackets_the_calibrated_single_throw_range() -> None:
-    """`THROW_RANGE` is the impact range at the oracle's own `(140 deg/s, 720 ms)`
-    pair -- the same quantity the two endpoints are measured in -- so it has to fall
-    inside the interval the parameter box spans. Nothing forced that."""
-    assert THROW_RANGE_MIN < THROW_RANGE < THROW_RANGE_MAX
-
-
-def test_the_oracle_standoff_is_inside_the_accepted_band() -> None:
-    """`SkillOraclePolicy` throws from 1.35 and scores 99/100. If tightening the predicate
-    ever excluded that standoff the oracle would stop planning a throw at all, and every
-    EES number on this domain is measured against that ceiling. This is one of the two
-    reasons a further tightening to `[1.150, 1.325]` (proposed by PR #196, investigated and
-    rejected in `docs/experiment-logs/2026-08-10-tossing3d-throw-band-retightening-sweep.md`)
-    was not landed: 1.35 would fail this assertion."""
-    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF)
-
-
-@pytest.mark.parametrize("standoff", [1.16, 1.25, 1.35, 1.37])
-def test_the_band_accepts_every_standoff_measured_to_solve(*, standoff: float) -> None:
-    """PR #105's finer sweep (5 scene seeds, 0.025 m resolution) solved 5/5 at every point
-    from 1.150 through 1.375. These four sit safely inside that 5/5 core -- a millimetre or
-    more clear of both edges, so this test is not sensitive to `BIN_X`'s own
-    0.1 mm offset from a round 2.0 -- while `test_the_accepted_band_matches_the_measured_
-    five_of_five_core` pins the edges themselves via a fine scan. A predicate rejecting one
-    of these four would be calling a pose a failure that demonstrably scores on every seed
-    tested, not just most of them."""
-    assert _at_throw_pose(standoff=standoff)
-
-
-@pytest.mark.parametrize("standoff", [1.425, 1.45, 1.55, 1.65, 1.75])
-def test_the_band_rejects_every_standoff_no_toss_parameterisation_reaches(
-    *, standoff: float
-) -> None:
-    """`1.45` and beyond are the coarse 48-episode grid's 0/3 points, and this stack's
-    standoff grid agrees over the parameter box: `0/150` at each of 1.45 through 1.75,
-    so `0/1050` beyond 1.400. `1.425` is the geometric band's far edge, PR #105's 2/5.
-
-    **This predicate is independent of `THROW_STANDOFF_BOUNDS`** -- it takes a raw
-    standoff and says nothing about what the sampler can draw. Rejecting `1.75`, the
-    sampler's upper bound, is what keeps the add effect two-class."""
-    assert not _at_throw_pose(standoff=standoff)
-
-
-@pytest.mark.parametrize("standoff", [1.10, 1.125, 1.40])
-def test_the_band_accepts_short_standoffs_some_toss_parameterisation_reaches(
-    *, standoff: float
-) -> None:
-    """Over the toss parameter box this stack's standoff grid solves `37/150` at 1.10
-    and `3/150` at 1.40, so some parameterisation scores from all three.
-
-    All three were measured not to solve at a single fixed 140 deg/s throw -- `1.10` the
-    coarse grid's `0/3`, `1.125` and `1.40` PR #105's `2/5` and `3/5`. Those numbers
-    stand exactly as published; they are evidence about *one* throw."""
-    assert _at_throw_pose(standoff=standoff)
-
-
-@pytest.mark.parametrize("standoff", [0.45, 0.80, 1.00])
-def test_the_band_accepts_standoffs_below_the_samplers_floor_on_the_model_alone(
-    *, standoff: float
-) -> None:
-    """**Unmeasured, and labelled as such.** The sampler's floor is 1.10 m
-    (`predicates.THROW_STANDOFF_BOUNDS`) and both grids in this stack start there, so
-    nothing has been thrown from any of these three. The union interval's claim that a
-    short enough throw reaches the box from this close is a consequence of the model.
-
-    Asserted anyway, so it fails loudly if `THROW_RANGE_MIN` moves."""
-    assert _at_throw_pose(standoff=standoff)
-
-
-def test_the_predicate_rejects_standing_on_top_of_the_bin() -> None:
-    """A base at the bin's own position throws the cube clean over it -- 1.275 m past a
-    box whose far edge is 0.15 m away."""
-    assert not _at_throw_pose(standoff=0.0)
-
-
-def test_the_predicate_rejects_the_far_side_of_the_room() -> None:
-    assert not _at_throw_pose(standoff=THROW_STANDOFF_BOUNDS[1] + 0.2)
-
-
-def test_the_predicate_rejects_the_worst_measured_pose_that_pick_leaves_the_base_in() -> None:
-    """`Pick` drives the base to the *cube*, and if the predicate held there the oracle
-    would skip `MoveToThrowPose` and throw from wherever it stood. Over 30 scene seeds
-    exactly one leaves the base inside the 0.04 m lateral tolerance: seed 14, at 1.8592 m
-    from the bin and 0.0074 m off its axis. The lateral conjunct cannot save that one, so
-    the standoff conjunct has to -- and now does so on its own terms, because a throw from
-    1.8592 m back lands at x = 1.42, well short of the box."""
-    assert not _at_throw_pose(standoff=1.8592, base_y=0.0074)
-
-
-def test_the_predicate_rejects_a_base_off_the_bins_axis() -> None:
-    """The conjunct a plain distance test does not have, and the one that was measured.
-
-    `pick_shelf` drives the base to the *cube*, off to one side. On the canonical scene
-    that leaves the base 1.76 m from the bin and 0.37 m off its axis -- a distance a loose
-    band happily admits. The predicate was briefly written that way, and the oracle
-    skipped `MoveToThrowPose` and threw facing 40 degrees off: the cube landed at
-    (0.9969, -0.7196) and the episode failed."""
-    assert not RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state(base_x=0.279, base_y=0.366),
-        robot=_ENV.robot,
-        target=_ENV.bin,
-    )
-
-
-def test_the_predicate_rejects_a_diagonal_approach_at_the_right_distance() -> None:
-    """The general form of the case above: the right distance is not enough, because
-    `MoveToThrowPose` pins `rot = 0` and therefore always ends on the bin's axis."""
-    offset = 1.35 / np.sqrt(2)
-    assert not RobotAtSuccessfulThrowPoseClassifier.holds(
-        state=state(base_x=BIN_X - offset, base_y=offset),
-        robot=_ENV.robot,
-        target=_ENV.bin,
-    )
-
-
-def test_the_lateral_conjunct_still_tolerates_exactly_what_the_controller_tolerates() -> None:
-    """`move_to_target` stops once the base is within `WAYPOINT_TOL` of its own planned
-    waypoint, so a pose that far off the axis still has to count."""
-    assert _at_throw_pose(standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_LATERAL_TOLERANCE * 0.9)
-    assert not _at_throw_pose(
-        standoff=ORACLE_THROW_STANDOFF, base_y=THROW_POSE_LATERAL_TOLERANCE * 1.1
-    )
+# **The `RobotAtSuccessfulThrowPose` band tests lived here, and are deleted rather than
+# ported.** Roughly two dozen of them pinned the interval of standoffs the predicate
+# accepted: that it was strictly narrower than `THROW_STANDOFF_BOUNDS` (so EES's success
+# classifier saw two classes), that it tracked the bin and the goal region rather than a
+# literal, that its far edge sat on 1.400, that PR #105's `5/5` core `[1.150, 1.375]` fell
+# inside it, and that it rejected the pose `Pick` leaves the base in. None of them is
+# wrong; all of them describe a state between two controllers that upstream has since
+# composed into one, so there is no pose left for any predicate to accept or reject. The
+# numbers stay readable in git history and in the experiment logs that cite them.
 
 
 def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
@@ -431,10 +334,6 @@ def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
         HOLDING: (Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
         ON_GROUND: (Tossing3DEnvironment.cube_type,),
         REACHABLE: (Tossing3DEnvironment.cube_type, Tossing3DEnvironment.barrier_type),
-        ROBOT_AT_SUCCESSFUL_THROW_POSE: (
-            Tossing3DEnvironment.robot_type,
-            Tossing3DEnvironment.bin_type,
-        ),
     }
     for predicate, types in expected.items():
         assert predicate.types == types, predicate.name

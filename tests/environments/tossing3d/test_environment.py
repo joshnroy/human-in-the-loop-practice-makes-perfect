@@ -97,8 +97,24 @@ def test_get_valid_actions_is_empty_because_the_parameters_are_continuous() -> N
     assert Tossing3DEnvironment().get_valid_actions() == []
 
 
-def test_the_action_space_has_one_id_slot_and_two_parameter_slots() -> None:
-    assert Tossing3DEnvironment.action_space.shape == (3,)
+def test_the_action_space_has_one_id_slot_and_four_parameter_slots() -> None:
+    """Four, because the composed toss carries all four dials that the retired
+    `MoveToThrowPose` and `Toss` split between them. The pick uses none of them."""
+    assert Tossing3DEnvironment.action_space.shape == (5,)
+
+
+def test_the_cube_carries_the_full_rotation_and_bounding_box_the_symmetry_test_needs() -> None:
+    """`OnGroundClassifier` decides whether an object *is* a cube by comparing its three
+    bounding-box extents, and then reads all four quaternion components. Both are new:
+    the old classifier needed `qx`/`qy`/`bb_z` alone, so a translation that stopped at
+    those would leave the symmetry branch reading zeros."""
+    translated = state(cube_qz=0.25, cube_qw=0.9682)
+    env = Tossing3DEnvironment()
+
+    assert translated.get(obj=env.cube, feature_name="qz") == pytest.approx(0.25)
+    assert translated.get(obj=env.cube, feature_name="qw") == pytest.approx(0.9682)
+    extents = [translated.get(obj=env.cube, feature_name=name) for name in ("bb_x", "bb_y", "bb_z")]
+    assert extents == pytest.approx([0.05, 0.05, 0.05])
 
 
 def test_the_backend_overrides_no_task_config_so_the_scene_is_upstreams() -> None:
@@ -126,84 +142,109 @@ def test_a_variant_this_domains_symbolic_layer_cannot_describe_is_refused() -> N
 def test_a_non_finite_action_is_recorded_as_a_no_op_rather_than_raising() -> None:
     """`take_action` must be total over its Box action space, and `round(inf)` raises."""
     env = Tossing3DEnvironment()
-    assert env._execute(action=np.array([np.inf, 0.0, 0.0])) == []
+    assert env._execute(action=np.array([np.inf, 0.0, 0.0, 0.0, 0.0])) == []
     assert env.last_skill_error() is not None
     assert "non-finite" in env.last_skill_error()
 
 
 def test_an_unknown_skill_id_is_recorded_as_a_no_op_rather_than_raising() -> None:
     env = Tossing3DEnvironment()
-    assert env._execute(action=np.array([7.0, 0.0, 0.0])) == []
+    assert env._execute(action=np.array([7.0, 0.0, 0.0, 0.0, 0.0])) == []
     assert "unknown skill id: 7" in str(env.last_skill_error())
 
 
 def test_the_noop_action_runs_no_controller_at_all() -> None:
-    """The defect this domain surfaced: `pick_id == 0`, so the `np.zeros(3)` that
-    `EesMethod` used to emit when it could not plan was a real `pick_shelf` at
-    distance 0.0. `_execute` returning no runs is exactly "no controller ran"."""
+    """The defect this domain surfaced: `pick_cube_id == 0`, so the `np.zeros(5)` that
+    `EesMethod` used to emit when it could not plan is a real `pick_cube`. `_execute`
+    returning no runs is exactly "no controller ran"."""
     env = Tossing3DEnvironment()
     assert env._execute(action=env.noop_action()) == []
     assert "unknown skill id" in str(env.last_skill_error())
 
 
+def test_the_noop_action_is_as_wide_as_the_action_space() -> None:
+    """It is handed straight to `_execute`, which indexes slots 1 through 4 for a toss,
+    so a no-op left at its old three slots would be an `IndexError` waiting for the first
+    time a method emitted one."""
+    assert Tossing3DEnvironment().noop_action().shape == Tossing3DEnvironment.action_space.shape
+
+
 def test_the_noop_id_is_not_a_real_skill_id() -> None:
     env = Tossing3DEnvironment()
-    assert env.noop_id not in {env.pick_id, env.move_to_throw_pose_id, env.toss_id}
+    assert env.noop_id not in {env.pick_cube_id, env.move_to_toss_location_and_toss_id}
 
 
-def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`_execute` turns an action vector into controller arguments, so it is where a slot
-    could be read from the wrong index. Offline: the backend is stubbed.
+def _spy_backend(*, monkeypatch: pytest.MonkeyPatch) -> tuple[Tossing3DEnvironment, list[dict]]:
+    """A `Tossing3DEnvironment` whose backend records the toss arguments it is handed.
+
+    Offline: nothing behind it builds a scene, so this exercises the dispatch alone.
     """
     from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
 
-    seen: list[float] = []
+    calls: list[dict] = []
 
-    def spy_run_toss(  # noqa: PLR0917, ANN202
-        self: KinderBackend, *, release_speed_deg_s: float, gripper_release_ms: float
+    def spy_toss(  # noqa: PLR0917, ANN202
+        self: KinderBackend,
+        *,
+        distance: float,
+        rotation: float,
+        release_speed_deg_s: float,
+        gripper_release_ms: float,
     ):
-        del gripper_release_ms
-        seen.append(release_speed_deg_s)
-        return ControllerRun(steps=1, terminated=True), ControllerRun(steps=1, terminated=True)
+        calls.append({
+            "distance": distance,
+            "rotation": rotation,
+            "release_speed_deg_s": release_speed_deg_s,
+            "gripper_release_ms": gripper_release_ms,
+        })
+        return ControllerRun(steps=1, terminated=True)
 
-    monkeypatch.setattr(KinderBackend, "run_toss", spy_run_toss)
+    def spy_pick(self: KinderBackend):  # noqa: PLR0917, ANN202
+        calls.append({"pick_cube": True})
+        return ControllerRun(steps=1, terminated=True)
+
+    monkeypatch.setattr(KinderBackend, "run_move_to_toss_location_and_toss", spy_toss)
+    monkeypatch.setattr(KinderBackend, "run_pick_cube", spy_pick)
 
     env = Tossing3DEnvironment()
     # Assigning the cached `PrivateAttr` skips `backend()`'s lazy build, which would
-    # resolve a task-config path.
+    # import KINDER.
     env._backend = KinderBackend()  # noqa: SLF001
-
-    env._execute(action=np.array([float(env.toss_id), 140.0, 0.0]))
-    env._execute(action=np.array([float(env.toss_id), 60.0, 0.0]))
-
-    assert seen == [140.0, 60.0]
+    return env, calls
 
 
-def test_the_toss_dispatch_reads_its_gripper_release_ms_from_slot_two(
+def test_the_toss_dispatch_reads_all_four_dials_from_slots_one_through_four(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Asserted at two distinct values, so a hardcoded pass-through of the default fails
-    here too. Offline: the backend is stubbed.
+    """`_execute` turns an action vector into controller keyword arguments, so it is
+    where a slot could be read from the wrong index -- and with four dials rather than
+    the old two there are four ways to get it wrong. Every value is distinct, so any
+    permutation fails, and none of them is a default the controller would supply anyway.
     """
-    from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+    env, calls = _spy_backend(monkeypatch=monkeypatch)
 
-    seen: list[float] = []
+    env._execute(
+        action=np.array([float(env.move_to_toss_location_and_toss_id), 1.31, -0.007, 128.5, 733.0])
+    )
 
-    def spy_run_toss(  # noqa: PLR0917, ANN202
-        self: KinderBackend, *, release_speed_deg_s: float, gripper_release_ms: float
-    ):
-        del release_speed_deg_s
-        seen.append(gripper_release_ms)
-        return ControllerRun(steps=1, terminated=True), ControllerRun(steps=1, terminated=True)
+    assert calls == [
+        {
+            "distance": 1.31,
+            "rotation": -0.007,
+            "release_speed_deg_s": 128.5,
+            "gripper_release_ms": 733.0,
+        }
+    ]
 
-    monkeypatch.setattr(KinderBackend, "run_toss", spy_run_toss)
 
-    env = Tossing3DEnvironment()
-    env._backend = KinderBackend()  # noqa: SLF001
+def test_the_pick_dispatch_ignores_every_parameter_slot(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """`pick_cube` derives its standoff and grasp rotation internally, so `_execute` must
+    hand it nothing at all. Driven at two different parameter vectors, so a dispatch that
+    quietly forwarded a slot would show up as two distinct calls rather than two
+    identical ones."""
+    env, calls = _spy_backend(monkeypatch=monkeypatch)
 
-    env._execute(action=np.array([float(env.toss_id), 140.0, 300.0]))
-    env._execute(action=np.array([float(env.toss_id), 140.0, 1300.0]))
+    env._execute(action=np.array([float(env.pick_cube_id), 0.0, 0.0, 0.0, 0.0]))
+    env._execute(action=np.array([float(env.pick_cube_id), 9.9, -3.0, 1.0, 500.0]))
 
-    assert seen == [300.0, 1300.0]
+    assert calls == [{"pick_cube": True}, {"pick_cube": True}]

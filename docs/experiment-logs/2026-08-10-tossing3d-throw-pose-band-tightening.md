@@ -1,5 +1,25 @@
 # Tossing3D: tightening `RobotAtSuccessfulThrowPose` to the band PR #105 actually measured
 
+> **STALENESS NOTE (added 2026-08-16, at the two-skill migration).** Every Tossing3D
+> number on this page was measured on the **three-skill** decomposition: `Pick`
+> (sampling distance and rotation) -> `MoveToThrowPose` (sampling a standoff) -> `Toss`
+> (sampling release speed and gripper release millisecond), over six predicates
+> including `RobotAtSuccessfulThrowPose`. That domain no longer exists. Upstream replaced
+> it with two skills -- a parameterless `pick_cube` and a composed
+> `move_to_toss_location_and_toss` taking four parameters -- and this repo followed, so:
+> the pick has **no** continuous parameters and therefore no sampler at all; the standoff
+> is now the composed toss's first parameter, drawn from upstream's `(1.25, 1.45)` rather
+> than this repo's `(1.10, 1.75)`; release speed is drawn from `(115, 140)` deg/s rather
+> than `(60, 140)`; the gripper release millisecond from `(700, 840)` rather than
+> `(300, 1400)`; `RobotAtSuccessfulThrowPose` and the whole `THROW_RANGE` calibration are
+> deleted; and `OnGround` now accepts a cube resting on any face rather than only the one
+> it started on. Two measured grasp fixes (centre grasp, approach settling) also reach the
+> pick for the first time.
+>
+> **Nothing on this page is edited or recomputed.** It is a correct description of the
+> domain that was actually in effect when these runs happened. It is simply not evidence
+> about the two-skill domain, and no count here is directly comparable to a re-run on it.
+
 ## Question / goal
 
 `RobotAtSuccessfulThrowPoseClassifier`'s accepted standoff band was the full geometric

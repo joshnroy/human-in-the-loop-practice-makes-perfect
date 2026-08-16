@@ -6,6 +6,7 @@ and that is precisely where a rendering regression would otherwise go unseen.
 """
 
 import numpy as np
+import pytest
 from pydantic import PrivateAttr
 
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction
@@ -19,7 +20,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     ON_GROUND,
     REACHABLE,
-    ROBOT_AT_SUCCESSFUL_THROW_POSE,
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
@@ -37,11 +37,16 @@ def _problem() -> Tossing3DProblem:
 
 
 def test_the_horizon_is_the_shortest_solve_plus_two() -> None:
-    """Three skills is the shortest solve and there is no shorter route: `Toss` requires
-    both `Holding` and `RobotAtSuccessfulThrowPose`, and nothing else grants either. The
+    """Two skills is the shortest solve and there is no shorter route:
+    `MoveToTossLocationAndToss` requires `Holding`, and only `PickCube` grants it. The
     `+ 2` buys one recovery from a failed grasp -- and no more, because after a toss there
-    is nothing to recover from anyway."""
-    assert _problem().max_episode_steps() == 5
+    is nothing to recover from anyway.
+
+    It was `3 + 2 = 5` under the three-skill decomposition. Leaving it at 5 would have
+    given this domain a horizon one step more generous than the convention it claims, and
+    more generous than the one every published Tossing3D baseline ran under.
+    """
+    assert _problem().max_episode_steps() == 4
 
 
 def test_the_problem_has_no_human_oracle_yet() -> None:
@@ -55,9 +60,8 @@ def test_the_problem_has_no_human_oracle_yet() -> None:
 def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
     assert provider.skills() == (
-        Tossing3DSkills.PICK,
-        Tossing3DSkills.MOVE_TO_THROW_POSE,
-        Tossing3DSkills.TOSS,
+        Tossing3DSkills.PICK_CUBE,
+        Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
     )
     assert set(provider.predicates()) == {
         IN_BIN,
@@ -65,7 +69,6 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         HOLDING,
         ON_GROUND,
         REACHABLE,
-        ROBOT_AT_SUCCESSFUL_THROW_POSE,
     }
     assert {obj.type for obj in provider.objects()} == set(provider.types())
 
@@ -83,8 +86,14 @@ def test_every_predicate_a_skill_references_is_one_the_provider_publishes() -> N
 
 def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
     """Walked with the real grounder rather than by hand: from the initial abstract state
-    only `Pick` is applicable; holding the cube unlocks `MoveToThrowPose`; standing near
-    the bin while holding unlocks `Toss`."""
+    only `PickCube` is applicable, and holding the cube unlocks the composed toss and
+    nothing else.
+
+    **There is no third rung any more.** Where the robot stands used to decide between
+    `MoveToThrowPose` and `Toss`; the composed controller drives itself to the standoff,
+    so the base pose is not part of any precondition and the same skill set is applicable
+    whether the robot is next to the bin or across the room. That is asserted below rather
+    than left implicit, because it is exactly the state the retired predicate named."""
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
 
     def applicable(**kwargs) -> set[str]:
@@ -99,12 +108,11 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
             )
         }
 
-    assert applicable() == {"Pick"}
-    assert applicable(gripper=0.9, cube_z=0.4) == {"MoveToThrowPose"}
-    assert applicable(gripper=0.9, cube_z=0.4, base_x=BIN_X - 1.35) == {
-        "MoveToThrowPose",
-        "Toss",
-    }
+    assert applicable() == {"PickCube"}
+    assert applicable(gripper=0.9, cube_z=0.4) == {"MoveToTossLocationAndToss"}
+    # Standing at the old throw standoff changes nothing: the composed skill drives there
+    # itself, so no precondition reads the base pose.
+    assert applicable(gripper=0.9, cube_z=0.4, base_x=BIN_X - 1.35) == {"MoveToTossLocationAndToss"}
 
 
 def test_nothing_is_applicable_once_the_cube_is_past_the_barrier() -> None:
@@ -125,12 +133,14 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() 
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
     ground_skill = GroundSkill(
-        skill=Tossing3DSkills.MOVE_TO_THROW_POSE,
-        objects=(env.robot, env.cube, env.bin),
+        skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+        objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
+    assert params.shape == (4,)
     action = provider.compute_action(ground_skill=ground_skill, params=params, state=state())
-    assert action[0] == Tossing3DEnvironment.move_to_throw_pose_id
+    assert action[0] == Tossing3DEnvironment.move_to_toss_location_and_toss_id
+    assert list(action[1:]) == pytest.approx(list(params))
 
 
 class _CannedBackend(KinderBackend):
@@ -181,7 +191,7 @@ def _canned_episode(*, renderer):
     task = Task(initial_state=state(), goal=_unreachable_goal(env=env))
 
     def policy(observed) -> LabeledAction:  # noqa: PLR0917  (core.Policy is positional)
-        return LabeledAction(action=np.zeros(3), label="Pick(robot, cube)")
+        return LabeledAction(action=np.zeros(5), label="PickCube(robot, cube_0, cuboid_barrier)")
 
     return problem.run_task_episode(task=task, policy=policy, renderer=renderer)
 
@@ -193,8 +203,11 @@ def test_a_rendered_episode_is_physics_rate_rather_than_one_frame_per_skill() ->
     backend collected has to reach the returned list."""
     _, frames, _ = _canned_episode(renderer=Tossing3DRenderer)
 
-    # One captioned initial frame, then five skills x three canned sub-step frames.
-    assert len(frames) == 1 + 5 * _CannedBackend().frames_per_skill
+    # One captioned initial frame, then one skill's worth of canned sub-step frames per
+    # step of the horizon. Derived from the horizon rather than pinned as a literal: the
+    # claim here is about frames per skill, and `max_episode_steps` is pinned above.
+    horizon = _problem().max_episode_steps()
+    assert len(frames) == 1 + horizon * _CannedBackend().frames_per_skill
 
 
 def test_an_unrendered_episode_records_nothing_and_turns_recording_back_off() -> None:
@@ -205,7 +218,7 @@ def test_an_unrendered_episode_records_nothing_and_turns_recording_back_off() ->
     task = Task(initial_state=state(), goal=_unreachable_goal(env=env))
 
     def policy(observed) -> LabeledAction:  # noqa: PLR0917
-        return LabeledAction(action=np.zeros(3), label="Pick(robot, cube)")
+        return LabeledAction(action=np.zeros(5), label="PickCube(robot, cube_0, cuboid_barrier)")
 
     solved, frames, _ = problem.run_task_episode(task=task, policy=policy, renderer=None)
 
