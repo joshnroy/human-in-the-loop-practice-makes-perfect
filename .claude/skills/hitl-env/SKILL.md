@@ -192,6 +192,36 @@ Drive runs through `scripts/run_sweep.py` (fixed seeds, the
 shell loop. `analysis/` scripts are post-run only: they read `--output-dir` output back
 in and never drive a `Method` themselves.
 
+### Always isolate a sweep's dependencies into its own worktree
+
+**A sweep must not read any dependency out of the shared checkout.** `git worktree add`
+gives you isolated `src/`, but it does **not** populate submodules, and the editable
+installs resolve by absolute path — so `import kinder` and `import kinder_models` in a
+worktree still load the **main** checkout's `reference/` trees. A sweep launched that way
+is running code nobody promised to hold still.
+
+Before launching, populate the worktree's own `reference/` and point `PYTHONPATH` at it:
+
+```bash
+scripts/update_reference_repos.sh          # inside the worktree
+scripts/with_env.sh python -c "import kinder, kinder_models
+print(kinder.__file__); print(kinder_models.__file__)"
+```
+
+Both printed paths **must** be under the worktree. If either names the main checkout,
+stop and fix it — otherwise anyone who checks out a branch, bumps a pin, or edits a
+controller in the shared tree silently changes the experiment mid-run, and the results
+are measured under two different code versions with no record of the split.
+
+This is not hypothetical. On 2026-08-13 a 14,000-cell Tossing3D sweep ran for over an
+hour against the shared `reference/kindergarden`, which blocked an unrelated branch
+checkout the whole time: the new code required full-length control schedules while the
+sweep's controller still emitted short ones, so the checkout would have failed every
+remaining throw. The sweep was correct; its isolation was not.
+
+The cost is real — populating `reference/` is ~1.1 GB per worktree — so it buys
+isolation only for the runs that need it. A sweep needs it. A unit-test run does not.
+
 ### Always run a sweep in a memory-capped cgroup
 
 ```bash

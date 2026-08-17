@@ -85,10 +85,11 @@ that way unless someone runs that script *inside it*, so kindergarden's 912 MB i
 opt-in per worktree (measured 2026-08-07: 1.1 GB for all three — kindergarden 912 MB,
 predicators 147 MB, kinder-baselines 5.0 MB). Nothing breaks without them: the
 KINDER-backed tests gate on `importlib.util.find_spec`, so a worktree with an empty
-`reference/` **skips** those tests rather than failing — exactly what CI does, since CI
-never installs the optional extra either. Most worktrees should therefore never
-populate `reference/` at all; `--check` answers "am I in sync?" without paying for the
-clone to find out.
+`reference/` **skips** those tests rather than failing. **This is no longer what CI does** —
+since 2026-08-14 CI installs KINDER and runs them (see the CI note below) — so an empty
+worktree is now *weaker* than CI rather than equivalent to it. A worktree that will run the
+Tossing3D tests must populate `reference/`; `--check` answers "am I in sync?" without paying
+for the clone to find out.
 
 **KINDER** (the `Tossing3D` benchmark and its parameterized controllers) is two of
 those repos, and it installs **into `hitl-pmp` itself**, as the optional `tossing3d`
@@ -138,10 +139,37 @@ way (`MoveToThrowPose` gained a `?goal_region` parameter in PR #123; the fidelit
 still passed three objects and nobody saw it fail until unification). Now those tests
 run locally by default.
 
-**CI still does not install KINDER**, exactly as it does not install `wandb`. Unification
-improves *local* coverage only; CI pulling MuJoCo, PyBullet and ~1–2 GB of MimicLabs
-assets is what the `find_spec` gating deliberately avoids. Please do not "complete" this
-by wiring the extra into CI.
+**KINDER is a required dependency, and CI installs it.** This reverses a rule that stood
+until 2026-08-14, which read *"CI still does not install KINDER… please do not 'complete'
+this by wiring the extra into CI."* The reversal is deliberate, and the reasoning is worth
+keeping because the old rule was not wrong when it was written.
+
+What changed is what the rule was costing. `environments/tossing3d/` needs KINDER's
+symbolic layer, not just its controllers, and the only way to import it is to import a
+module that pulls MuJoCo and PyBullet at module scope (see below). Keeping the simulator
+optional therefore meant hitl re-implementing every predicate it wanted — six classifiers
+kept in agreement with upstream's by test rather than by construction, which is a
+duplication this project explicitly does not want.
+
+The old rule's stated cost was CI pulling MuJoCo, PyBullet and 1–2 GB of MimicLabs assets.
+Measured on 2026-08-14: the wheels are ~500 MB (`pybullet_helpers` 329 MB, `pybullet_data`
+142 MB, `mujoco` 22 MB), and the asset download is suppressed by
+`DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD`, which is what `kindergarden`'s own CI sets. CI
+must also clone `reference/kindergarden` (912 MB as a git checkout).
+
+**The version ceilings were already ours** and this does not tighten them: the environments
+were unified long before this, so `hitl-pmp` already runs `numpy 1.26.4`, `scipy 1.14.0`
+(an exact pin) and `pillow 11.3.0`. Requiring KINDER in CI makes CI match local rather than
+constraining anything new.
+
+**What it buys, beyond removing the duplication:** Tossing3D was previously *untested in CI
+at all* — 50 tests across `test_skills.py`, `test_kinder_fidelity.py`, `test_kinder_pin.py`
+and `test_operator_fidelity.py` are `find_spec`-gated and skipped on every CI run. They now
+execute.
+
+**The `find_spec` gating stays in place.** It is no longer load-bearing for CI, but it keeps
+a checkout without populated submodules from failing wholesale, and removing it would be a
+large unrelated diff. Do not tear it out as cleanup.
 
 **Only if you need IKFast**, install system BLAS/LAPACK once. `pybullet_helpers`
 compiles IKFast from C++ the first time a controller asks for inverse kinematics —
@@ -470,8 +498,9 @@ referenced from *committed* files are repo-relative links and are immune to both
 same five commands, and it runs in ~1 minute against CI's ~10. Once it passes, open the PR, report
 whatever state CI happens to be in, and finish. Polling GitHub until every check goes green wastes
 minutes per PR and tells you nothing the local run did not. Two caveats worth knowing rather than
-waiting for: CI does **not** install the optional `tossing3d` extra, so KINDER-backed tests must skip
-cleanly there (gate on `importlib.util.find_spec`), and CI *does* have Fast Downward while a fresh
+waiting for: CI **does** install the `tossing3d` extra as of 2026-08-14, so KINDER-backed tests
+run there rather than skipping — a local run with an empty `reference/` is now weaker than CI,
+not equivalent. CI *does* have Fast Downward while a fresh
 worktree may not — see `FD_EXEC_PATH` below. If CI later fails on something local passed, that
 divergence is itself the bug worth reporting.
 
