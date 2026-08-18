@@ -1,9 +1,39 @@
 # adapters
 
-This folder holds the bidirectional bridge between `core.Environment` and
-Gym/Gymnasium's `Env` interface. It is glue, not a third fixed ABC — the five
-core interfaces (`Environment`, `HumanOracle`, `Problem`, `Method`, `Metrics`)
-are unaffected.
+This folder holds bridges to **external frameworks** — code that translates
+between this project's `core` vocabulary and somebody else's. It is glue, not a
+third fixed ABC — the five core interfaces (`Environment`, `HumanOracle`,
+`Problem`, `Method`, `Metrics`) are unaffected.
+
+The import-linter contract puts this layer directly above `core` and below
+`environments`, depending only on `core`. That is exactly the shape a bridge
+wants: a domain under `environments/` can reach one, and `core` never learns
+that the external framework exists.
+
+Two bridges live here, to two different things:
+
+- **`kinder/`** — KINDER's symbolic layer and its parameterized controllers, as
+  `core` `Predicate`s and `Skill`s. Implemented; see below and its own README.
+- The Gym/Gymnasium `Env` bridge (`from_gym.py` / `to_gym.py`). Not implemented;
+  the rest of this file describes its intended shape.
+
+## `kinder/` — KINDER environments, without reimplementing them
+
+Every KINDER environment exposes the same two entry points, which is what makes
+one generic bridge possible rather than one integration per domain:
+
+- `create_lifted_controllers(action_space, ...) -> dict[str, LiftedParameterizedController]`
+- `<Env>StateAbstractor(sim).state_abstractor(state) -> RelationalAbstractState`
+
+`adapters/kinder/` turns those into `core.Skill`s and `core.Predicate`s **by
+delegation**: a skill's parameters are drawn by the controller's own
+`sample_parameters`, and a predicate's `holds` is a membership test in the atom
+set the abstractor computed. Nothing here re-derives a bound or re-writes a
+classifier, so there is no second copy to keep in agreement with upstream by
+test. Nothing in it mentions any particular KINDER environment.
+
+See `kinder/README.md` for the four modules, the abstractor's non-purity and the
+cache invalidation it forces, and the two translation traps.
 
 ## Why `core.Environment` isn't just `gym.Env`
 
@@ -38,8 +68,8 @@ The two adapters are not mirror images of each other: `from_gym` is an
 import path into the symbolic/reset-cost framework, while `to_gym` is an
 export path that discards that structure for a flat vector.
 
-Neither adapter is implemented yet — this README documents the intended
-shape of the folder before any code lands.
+Neither Gym adapter is implemented yet — that section documents the intended
+shape before any code lands. `kinder/` is implemented.
 
 ## Precedent
 
