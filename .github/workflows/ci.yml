@@ -14,6 +14,13 @@ jobs:
         with:
           python-version: "3.10"
           cache: "pip"
+      - name: Cache ruff
+        uses: actions/cache@v4
+        with:
+          path: .ruff_cache
+          key: ruff-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ruff-${{ runner.os }}-
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
@@ -70,6 +77,13 @@ jobs:
         with:
           python-version: "3.10"
           cache: "pip"
+      - name: Cache mypy
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: mypy-${{ runner.os }}-${{ hashFiles('src/**/*.py', 'pyproject.toml') }}
+          restore-keys: |
+            mypy-${{ runner.os }}-
       # Two passes, in this order, because the two conditions catch different bugs and
       # neither subsumes the other.
       #
@@ -130,6 +144,13 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/aibasel/downward.git
           cd downward && ./build.py
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — Unit & Core tests
         run: |
@@ -170,6 +191,13 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/aibasel/downward.git
           cd downward && ./build.py
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — TossingRoom
         run: |
@@ -227,6 +255,13 @@ jobs:
         with:
           path: reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
           key: mimiclabs-scenes-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Download MimicLabs scene assets
         if: steps.cache-assets.outputs.cache-hit != 'true'
@@ -293,6 +328,13 @@ jobs:
         with:
           path: reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
           key: mimiclabs-scenes-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Download MimicLabs scene assets
         if: steps.cache-assets.outputs.cache-hit != 'true'
