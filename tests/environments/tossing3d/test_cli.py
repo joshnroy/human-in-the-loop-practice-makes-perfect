@@ -7,7 +7,6 @@ KINDER at all. `run_method` drives a real simulator and lives in `test_kinder_fi
 """
 
 import argparse
-import sys
 from pathlib import Path
 
 import pytest
@@ -32,12 +31,12 @@ def test_the_environment_is_registered_under_tossing3d() -> None:
     assert ENVIRONMENTS["tossing3d"] is Tossing3DCli
 
 
-def test_registering_it_does_not_pull_a_simulator_into_the_global_cli() -> None:
+def test_registering_it_does_not_pull_a_simulator_into_the_global_cli(*, no_kinder_import) -> None:
     """`hitl_pmp.cli` imports every registered environment's CLI. If this domain's import
     chain reached MuJoCo, `--env lightswitch` would stop working on a machine without the
     optional extra."""
     Cli.parse_args(argv=["--env", "lightswitch", "--method", "skill-oracle"])
-    assert "mujoco" not in sys.modules
+    del no_kinder_import  # the fixture is the assertion; see conftest
 
 
 def test_the_defaults_are_read_off_the_models_rather_than_re_literalled() -> None:
@@ -94,14 +93,16 @@ def test_the_global_cli_registers_this_domains_flags_when_env_is_tossing3d() -> 
     assert args.num_test_tasks == 10
 
 
-def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator() -> None:
+def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator(
+    *, no_kinder_import
+) -> None:
     """`render_fps` is only ever read when a clip is written, and a run without
     `--output-dir` gets no renderer. Building a MuJoCo scene just to fill in a number
     nothing plays at would make every headless run pay for the one that does not."""
     assert Tossing3DCli.resolve_render_fps(env=Tossing3DEnvironment(), renderer=None) == (
         Tossing3DCli.unrendered_render_fps
     )
-    assert "mujoco" not in sys.modules
+    del no_kinder_import  # the fixture is the assertion; see conftest
 
 
 # --- the separate evaluation Problem, and the reset-free arm it unlocks -----------
@@ -154,9 +155,9 @@ def test_both_problems_draw_the_same_test_scene_seeds() -> None:
     assert len(set(drawn)) > 1
 
 
-def test_building_a_problem_still_builds_no_simulator() -> None:
+def test_building_a_problem_still_builds_no_simulator(*, no_kinder_import) -> None:
     """The property every offline test in this file rests on, asserted once directly
     rather than only relied upon."""
     args = _build_parser().parse_args([])
     Tossing3DCli.build_problem(args=args)
-    assert "mujoco" not in sys.modules
+    del no_kinder_import  # the fixture is the assertion; see conftest

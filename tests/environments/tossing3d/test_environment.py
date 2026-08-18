@@ -12,8 +12,6 @@ MuJoCo, `hitl_pmp.cli` would stop importing on a machine without it, and a test 
 a simulator to notice could not say so.
 """
 
-import sys
-
 import numpy as np
 import pytest
 
@@ -25,13 +23,13 @@ from .conftest import CANONICAL_SEED, requires_kinder
 # --- genuinely offline: no simulator is built, and that is the property ----------------
 
 
-def test_constructing_the_environment_imports_no_simulator() -> None:
+def test_constructing_the_environment_imports_no_simulator(*, no_kinder_import) -> None:
     """The whole reason `KinderBackend` is lazy. `hitl_pmp.cli` imports every registered
     environment's CLI, so if constructing one of these reached MuJoCo then `--env
     lightswitch` would stop working on a machine without the optional extra."""
     env = Tossing3DEnvironment()
     assert env.variant == "o1"
-    assert "mujoco" not in sys.modules
+    del no_kinder_import  # the fixture is the assertion; see conftest
 
 
 def test_get_valid_actions_is_empty_because_the_parameters_are_continuous() -> None:

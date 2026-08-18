@@ -30,7 +30,6 @@ The last one is a real behaviour that still has to hold, so it did not simply ev
 it moved to `test_kinder_pin.py`, which is where "upstream still does this for us" belongs.
 """
 
-import sys
 from typing import Any
 
 import numpy as np
@@ -47,7 +46,7 @@ def test_substep_recording_is_off_by_default() -> None:
     assert KinderBackend().record_substeps is False
 
 
-def test_toggling_substep_recording_imports_no_simulator() -> None:
+def test_toggling_substep_recording_imports_no_simulator(*, no_kinder_import) -> None:
     """`KinderBackend` is lazy by construction and the switch must not break that: it is
     flipped by `Tossing3DProblem.run_task_episode`, which a test may reach without ever
     intending to build a scene."""
@@ -55,7 +54,7 @@ def test_toggling_substep_recording_imports_no_simulator() -> None:
     backend.set_substep_recording(enabled=True)
 
     assert backend.record_substeps is True
-    assert "mujoco" not in sys.modules
+    del no_kinder_import  # the fixture is the assertion; see conftest
 
 
 def test_draining_before_any_scene_exists_is_empty_rather_than_an_error() -> None:

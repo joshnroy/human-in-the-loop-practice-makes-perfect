@@ -62,6 +62,34 @@ requires_kinder = pytest.mark.skipif(
 )
 
 
+@pytest.fixture
+def no_kinder_import(*, monkeypatch: pytest.MonkeyPatch):
+    """Fail loudly if the code under test imports KINDER at all.
+
+    Several tests assert that some operation stays lazy -- constructing an environment,
+    registering the CLI, resolving an unrendered fps. They used to say so with
+    `assert "mujoco" not in sys.modules`, which is a **session-global** proxy: it holds
+    only while nothing earlier in the whole run has built a scene. That was safe when this
+    package's tests were mostly offline. It is not safe now that every one of them builds
+    a simulator, and it duly broke the moment the files were reordered -- a test failing
+    for a reason that has nothing to do with the property it names.
+
+    This asserts the property directly instead, by making the one door into KINDER
+    (`KinderBootstrap.register_environments`, which every KINDER import in this package
+    goes through) raise. Order-independent, and it names the offender when it trips.
+    """
+    from hitl_pmp.adapters.kinder.bootstrap import KinderBootstrap
+
+    def refuse() -> None:
+        raise AssertionError(
+            "this operation imported KINDER; it is supposed to stay lazy so that a "
+            "machine without the optional extra can still use the rest of the CLI"
+        )
+
+    monkeypatch.setattr(KinderBootstrap, "register_environments", staticmethod(refuse))
+    return refuse
+
+
 @pytest.fixture(scope="session")
 def _shared_scene():
     """The one live scene for the whole session. Never depend on this directly."""

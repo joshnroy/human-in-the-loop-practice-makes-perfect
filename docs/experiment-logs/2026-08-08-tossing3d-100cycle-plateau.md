@@ -1,5 +1,42 @@
 # Tossing3D at five times the budget: EES plateaus at 80/100, and it got there before #133's budget ran out
 
+
+> **STALE as of 2026-08-17 — every number below was measured under a decomposition the
+> code no longer has.** Nothing here has been edited, restated or recomputed; this note
+> sits beside the original so both what was reported and why it is now provisional stay
+> visible.
+>
+> `environments/tossing3d/` now imports KINDER's own lifted controllers and state
+> abstractions (`kinder-baselines` PR #113). Three changes invalidate the conditions
+> these runs were taken under:
+>
+> 1. **Three skills became two.** `Pick -> MoveToThrowPose(standoff) -> Toss(speed, ms)`
+>    is now `pick_cube -> move_to_toss_location_and_toss(standoff, rotation, speed, ms)`.
+>    The base move and the throw execute together, so **the standoff and the two toss
+>    dials can no longer be varied as separate axes** — one `sample_parameters` call draws
+>    all four jointly. Any grid, sweep or surface over those axes describes a control
+>    interface that no longer exists.
+> 2. **The sampling bounds changed, and the old ones were wrong.** hitl declared
+>    `TOSS_RELEASE_MS_BOUNDS = (300, 1400)` beside a controller whose own measured band is
+>    `(700, 840)` — a window about nine times too wide, most of whose draws could not
+>    score. Draws now come from the controller's own sampler.
+> 3. **The scored region moved.** `blocks_goal_region` was tightened to x ∈ [2.00, 2.05],
+>    which inflates to a live scoring window of x ∈ [1.95, 2.10]. Runs below were measured
+>    against the earlier, wider region.
+>
+> `RobotAtSuccessfulThrowPose`, `THROW_RANGE`, `THROW_STANDOFF_BOUNDS` and
+> `ORACLE_THROW_STANDOFF` no longer exist: no predicate names the pose between a move and
+> a throw, so there is no band left to calibrate. **This is obsolete work, not pending
+> work — the throw band does not need re-deriving.**
+
+> **What this does and does not still support.** The learning-curve shape and the
+> reset-policy comparison were measured through the CLI on arms that still exist by name,
+> so the *experimental design* carries over. The absolute task-success numbers do not: they
+> were produced by a robot selecting among three skills with hitl's own sampling bounds,
+> against the wider scored region. Treat every count below as a record of that
+> configuration, not a baseline for the current one.
+
+
 **Answer: it plateaus.** Late window `80.8/100` against a reference window of `78.5/100`
 taken immediately after #133's entire budget — `+0.23` tasks per seed, rose on `7/10`
 seeds, exact paired sign-flip **`p = 0.3379`**. That is a **null result** on continued

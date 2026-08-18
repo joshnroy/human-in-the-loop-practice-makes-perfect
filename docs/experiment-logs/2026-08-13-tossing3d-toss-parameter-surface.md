@@ -1,5 +1,45 @@
 # Tossing3D's `(release_speed, gripper_release_ms)` surface — 20 x 20 x 5 seeds
 
+
+> **STALE as of 2026-08-17 — every number below was measured under a decomposition the
+> code no longer has.** Nothing here has been edited, restated or recomputed; this note
+> sits beside the original so both what was reported and why it is now provisional stay
+> visible.
+>
+> `environments/tossing3d/` now imports KINDER's own lifted controllers and state
+> abstractions (`kinder-baselines` PR #113). Three changes invalidate the conditions
+> these runs were taken under:
+>
+> 1. **Three skills became two.** `Pick -> MoveToThrowPose(standoff) -> Toss(speed, ms)`
+>    is now `pick_cube -> move_to_toss_location_and_toss(standoff, rotation, speed, ms)`.
+>    The base move and the throw execute together, so **the standoff and the two toss
+>    dials can no longer be varied as separate axes** — one `sample_parameters` call draws
+>    all four jointly. Any grid, sweep or surface over those axes describes a control
+>    interface that no longer exists.
+> 2. **The sampling bounds changed, and the old ones were wrong.** hitl declared
+>    `TOSS_RELEASE_MS_BOUNDS = (300, 1400)` beside a controller whose own measured band is
+>    `(700, 840)` — a window about nine times too wide, most of whose draws could not
+>    score. Draws now come from the controller's own sampler.
+> 3. **The scored region moved.** `blocks_goal_region` was tightened to x ∈ [2.00, 2.05],
+>    which inflates to a live scoring window of x ∈ [1.95, 2.10]. Runs below were measured
+>    against the earlier, wider region.
+>
+> `RobotAtSuccessfulThrowPose`, `THROW_RANGE`, `THROW_STANDOFF_BOUNDS` and
+> `ORACLE_THROW_STANDOFF` no longer exist: no predicate names the pose between a move and
+> a throw, so there is no band left to calibrate. **This is obsolete work, not pending
+> work — the throw band does not need re-deriving.**
+
+> **Directly superseded.** This entry's whole subject is the calibration of
+> `RobotAtSuccessfulThrowPose`'s accepted band. That predicate and every constant behind it
+> are deleted, and the driver scripts that produced these numbers
+> (`scripts/tossing3d_skill_parameter_sweep.py`, `scripts/tossing3d_toss_parameter_grid.py`,
+> `scripts/tossing3d_release_angle_probe.py`, `scripts/tossing3d_release_speed_clips.py`,
+> `scripts/tossing3d_oracle_demo.py`, `analysis/tossing3d_throw_band_sweep.py`) are deleted
+> with them. The measurements remain a true record of what the three-skill decomposition
+> did; they are not evidence about anything the code does now, and they are **not
+> reproducible** — nothing left in the tree can re-run them.
+
+
 **2026-08-13.** 2000 cells. Standoff fixed at 1.35 m. Primary criterion: **ballistic
 distance** (the free-flight parabola extrapolated to a resting cube's centre height),
 reported from the robot base. Resting position recorded alongside.

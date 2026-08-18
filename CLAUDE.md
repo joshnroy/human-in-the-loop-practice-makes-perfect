@@ -230,12 +230,29 @@ came to load the same scene and two tests asserting the contrast broke with nobo
 having edited them. The enum and this repo's copy of the scene are both gone: upstream's
 config is the config, and `--task-config` no longer exists.
 
+> **Note added 2026-08-17 — the `x ∈ [1.85, 2.15]` above is history, not the current
+> geometry, and the difference now matters.** That figure is correct for what the
+> paragraph describes: the inflated region as it stood at `1183de7`. The region has since
+> been tightened twice and is now declared `[2.00, 2.05]` on x, inflating to a live
+> scoring window of **x ∈ [1.95, 2.10]**, measured by driving `MovableInGoalRegion` itself
+> rather than by reading the JSON. The original figure is left in place rather than
+> restated, per this file's own rule on published numbers.
+>
+> The consequence is worth carrying, because prose elsewhere in this repo still assumes
+> otherwise: the bin's footprint is 0.30 m across (x ∈ [1.85, 2.15]), so the scored box is
+> now strictly **inside** the bin rather than coincident with it. **"The cube is in the
+> bin" and "the cube scores" are no longer the same event** — a cube resting at x = 1.90
+> is in the bin and does not score. What survives is the one-way implication, scoring
+> implies in-bin, which is what the two goal-region tests now assert.
+
 **The consequence, which is a real cost and not a footnote: the scene now moves with the
 `reference/kindergarden` pin.** A pin bump can change the geometry every measured number
-was taken under. `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores`
-(`tests/environments/tossing3d/test_kinder_fidelity.py`) reads the installed KINDER's own
-task JSON and fails loudly if the bin ever comes off the scoring box again, so that
-coupling is observable rather than silent. Numbers in
+was taken under. `test_the_shipped_scenes_scoring_box_lies_inside_the_bin_with_margin`
+and `test_the_live_scoring_window_lies_inside_the_bins_live_footprint`
+(`tests/environments/tossing3d/test_kinder_fidelity.py`) derive the geometry from the
+installed KINDER's own task JSON and from the live simulator, and fail loudly if the bin
+ever comes off the scoring box again, so that coupling is observable rather than silent.
+Numbers in
 `docs/kinder-environment-validation.md` and `docs/tossing3d-integration-status.md` that
 were measured before PR #126 are left as published, with staleness notes beside them.
 
