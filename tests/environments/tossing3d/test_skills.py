@@ -32,7 +32,7 @@ from hitl_pmp.environments.tossing3d.skills import (
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .kinder_symbols import RenamedKinderSymbol
+from .kinder_symbols import MovedKinderSymbol, RenamedKinderSymbol
 from .observations import BIN_X, state
 
 _ENV = Tossing3DEnvironment()
@@ -431,12 +431,23 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
     from kinder_models.dynamic3d import utils
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
         TOSS_RELEASE_ARM_CONFIGURATION,
-        TOSS_SLICES_PER_CONTROL_STEP,
         TOSS_WINDUP_ARM_CONFIGURATION,
-        toss_profile_limits,
     )
     from kinder_models.dynamic3d.utils import _trapezoidal_motion_profile
 
+    # `toss_swing.py` is a split-out of `parameterized_skills.py`, and only these two of
+    # the moved names are absent from the re-export list the old module keeps -- see
+    # `kinder_symbols.MovedKinderSymbol`.
+    toss_swing_modules = (
+        "kinder_models.dynamic3d.tossing.toss_swing",
+        "kinder_models.dynamic3d.tossing.parameterized_skills",
+    )
+    toss_profile_limits = MovedKinderSymbol.resolve(
+        modules=toss_swing_modules, names=("toss_profile_limits",)
+    )
+    slices_per_control_step = MovedKinderSymbol.resolve(
+        modules=toss_swing_modules, names=("TOSS_SLICES_PER_CONTROL_STEP",)
+    )
     control_timestep = RenamedKinderSymbol.resolve(
         module=utils, names=("CONTROL_TIMESTEP", "_CONTROL_TIMESTEP")
     )
@@ -456,7 +467,7 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
             )
             - 1
         )
-        * TOSS_SLICES_PER_CONTROL_STEP
+        * slices_per_control_step
         for limits in (
             toss_profile_limits(np.deg2rad(deg))
             for deg in np.linspace(TOSS_SPEED_BOUNDS[0], TOSS_SPEED_BOUNDS[1], 37)

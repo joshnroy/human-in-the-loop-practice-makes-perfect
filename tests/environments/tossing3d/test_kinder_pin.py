@@ -16,7 +16,7 @@ import inspect
 import numpy as np
 import pytest
 
-from .kinder_symbols import RenamedKinderSymbol
+from .kinder_symbols import MovedKinderSymbol, RenamedKinderSymbol
 
 needs_kinder = pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None or importlib.util.find_spec("kinder_models") is None,
@@ -30,15 +30,29 @@ pytestmark = needs_kinder
 # `robot/kinova.py:120-124`).
 UPSTREAM_TOSS_LIMITS_DEG = (140.0, 300.0, 200.0)
 
+# Where the swing lives, newest-first. `toss_swing.py` is a split-out of
+# `parameterized_skills.py`, and it is only a partial one: `parameterized_skills`
+# re-exports most of the moved names for its own use, but not `toss_profile_limits` or
+# `TOSS_SLICES_PER_CONTROL_STEP`. Those two are therefore the only ones resolved through
+# `MovedKinderSymbol`; everything else imports directly and resolves on both lines.
+TOSS_SWING_MODULES = (
+    "kinder_models.dynamic3d.tossing.toss_swing",
+    "kinder_models.dynamic3d.tossing.parameterized_skills",
+)
+
+
+def _toss_profile_limits():
+    """Upstream's `(max_vel, max_accel, max_decel)` helper, wherever it currently lives."""
+    return MovedKinderSymbol.resolve(modules=TOSS_SWING_MODULES, names=("toss_profile_limits",))
+
 
 def test_toss_profile_limits_exists_and_defaults_to_upstreams_literals() -> None:
     """The default triple must be what every committed Tossing3D number was measured at,
     so that passing no release speed leaves those numbers valid.
     """
-    from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_MAX_VELOCITY,
-        toss_profile_limits,
-    )
+    from kinder_models.dynamic3d.tossing.parameterized_skills import TOSS_MAX_VELOCITY
+
+    toss_profile_limits = _toss_profile_limits()
 
     assert np.rad2deg(TOSS_MAX_VELOCITY) == pytest.approx(140.0)
     assert np.rad2deg(toss_profile_limits()) == pytest.approx(UPSTREAM_TOSS_LIMITS_DEG)
@@ -49,10 +63,9 @@ def test_toss_profile_limits_scales_all_three_by_one_effort() -> None:
     stretched clock -- an *effort*, not a speed cap. Scaling `max_vel` alone would push
     the release point into the acceleration phase.
     """
-    from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_MAX_VELOCITY,
-        toss_profile_limits,
-    )
+    from kinder_models.dynamic3d.tossing.parameterized_skills import TOSS_MAX_VELOCITY
+
+    toss_profile_limits = _toss_profile_limits()
 
     default_vel, default_accel, default_decel = toss_profile_limits()
     for factor in (0.4286, 0.5953, 1.0):
@@ -69,10 +82,9 @@ def test_toss_profile_limits_clamps_effort_at_the_default() -> None:
     `TOSS_SPEED_BOUNDS` caps at `TOSS_MAX_VELOCITY`, so this probes above our own range
     deliberately -- from inside our bounds the clamp is unreachable and so invisible.
     """
-    from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_MAX_VELOCITY,
-        toss_profile_limits,
-    )
+    from kinder_models.dynamic3d.tossing.parameterized_skills import TOSS_MAX_VELOCITY
+
+    toss_profile_limits = _toss_profile_limits()
 
     assert toss_profile_limits(np.deg2rad(240.0)) == pytest.approx(toss_profile_limits())
     assert toss_profile_limits(np.deg2rad(240.0))[0] == pytest.approx(TOSS_MAX_VELOCITY)
@@ -84,9 +96,9 @@ def test_the_release_speed_our_sampler_can_draw_is_never_clamped() -> None:
     is exactly `TOSS_MAX_VELOCITY`, so it must pass through unscaled rather than
     tripping the clamp.
     """
-    from kinder_models.dynamic3d.tossing.parameterized_skills import toss_profile_limits
-
     from hitl_pmp.environments.tossing3d.predicates import TOSS_SPEED_BOUNDS
+
+    toss_profile_limits = _toss_profile_limits()
 
     for deg in np.linspace(TOSS_SPEED_BOUNDS[0], TOSS_SPEED_BOUNDS[1], 37):
         assert np.rad2deg(toss_profile_limits(np.deg2rad(deg))[0]) == pytest.approx(deg)
@@ -106,10 +118,10 @@ def test_the_toss_schedule_is_exactly_as_wide_as_kinder_demands() -> None:
         SIMULATION_TIMESTEP,
     )
     from kinder_models.dynamic3d import utils
-    from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_SLICES_PER_CONTROL_STEP,
-    )
 
+    slices_per_control_step = MovedKinderSymbol.resolve(
+        modules=TOSS_SWING_MODULES, names=("TOSS_SLICES_PER_CONTROL_STEP",)
+    )
     control_timestep = RenamedKinderSymbol.resolve(
         module=utils, names=("CONTROL_TIMESTEP", "_CONTROL_TIMESTEP")
     )
@@ -117,7 +129,7 @@ def test_the_toss_schedule_is_exactly_as_wide_as_kinder_demands() -> None:
 
     num_sim_steps = int(control_timestep / SIMULATION_TIMESTEP)
     ticks_per_row = int(round(CONTROL_SCHEDULE_TIMESTEP / SIMULATION_TIMESTEP))
-    assert num_sim_steps // ticks_per_row == TOSS_SLICES_PER_CONTROL_STEP
+    assert num_sim_steps // ticks_per_row == slices_per_control_step
 
 
 def test_toss_controller_reset_accepts_a_release_speed() -> None:
