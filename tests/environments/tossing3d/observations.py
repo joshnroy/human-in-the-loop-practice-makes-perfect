@@ -78,15 +78,64 @@ def observation(
     )
 
 
+# The abstraction of the initial scene: gripper open, cube flat on the floor on the
+# robot's side of the barrier. Written out rather than computed because the predicates
+# are upstream's now and two of the six need a live simulator to evaluate (see
+# `predicates.py`), while what a symbolic-layer test wants is simply *an* abstract state
+# to plan from. Anything asserting the classifiers' own semantics belongs in
+# `test_kb_predicate_parity.py`, which calls upstream's classifiers directly.
+INITIAL_ATOMS = frozenset({
+    ("HandEmpty", ("robot",)),
+    ("OnGround", ("cube_0",)),
+    ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
+})
+
+# Mid-episode: the cube is grasped and lifted, still on the robot's side of the barrier.
+HOLDING_ATOMS = frozenset({
+    ("Holding", ("robot", "cube_0")),
+    ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
+})
+
+# After a scoring throw: the cube is at rest inside the region and the hand is empty.
+LANDED_IN_REGION_ATOMS = frozenset({
+    ("HandEmpty", ("robot",)),
+    ("OnGround", ("cube_0",)),
+    ("MovableInGoalRegion", ("cube_0",)),
+})
+
+# Holding, and standing somewhere upstream's `RobotAtThrowPose` accepts.
+AT_THROW_POSE_ATOMS = HOLDING_ATOMS | frozenset({("RobotAtThrowPose", ("robot", "bin_0"))})
+
+# After a throw that *missed*: the cube is at rest past the one-way barrier and outside the
+# goal region, the hand is empty, and the base is still at the pose it threw from. The
+# domain's dead end -- no `MovableIsDownX` means `Pick` is inapplicable, and an empty hand
+# means neither `MoveToThrowPose` nor `Toss` is either.
+MISSED_TOSS_ATOMS = frozenset({
+    ("HandEmpty", ("robot",)),
+    ("OnGround", ("cube_0",)),
+    ("RobotAtThrowPose", ("robot", "bin_0")),
+})
+
+
 def state(
     *,
     env: Tossing3DEnvironment | None = None,
     seed: int = 125,
     steps_taken: int = 0,
+    abstract_atoms=None,
     **kwargs,
 ):
-    """The translated `core.State` for one scene snapshot."""
+    """The translated `core.State` for one scene snapshot.
+
+    `abstract_atoms` defaults to absent, which is what a *translation* test wants: the
+    resulting state carries the flat features and refuses to answer a predicate, rather
+    than silently answering `False` to all six. Pass `INITIAL_ATOMS` (or a set of your
+    own) when the test needs a symbolic layer.
+    """
     environment = env if env is not None else Tossing3DEnvironment()
     return environment.build_state(
-        observation=observation(**kwargs), seed=seed, steps_taken=steps_taken
+        observation=observation(**kwargs),
+        seed=seed,
+        steps_taken=steps_taken,
+        abstract_atoms=abstract_atoms,
     )

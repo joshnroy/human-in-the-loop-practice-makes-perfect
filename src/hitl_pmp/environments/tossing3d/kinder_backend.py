@@ -97,6 +97,8 @@ from typing import Any, ClassVar
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from .types import AbstractAtom
+
 # A DISPLAY only has to *exist* -- nothing is ever drawn to it. See the module docstring.
 FALLBACK_DISPLAY = ":0"
 
@@ -228,6 +230,10 @@ class KinderBackend(BaseModel):
     bin_name: ClassVar[str] = "bin_0"
     barrier_name: ClassVar[str] = "cuboid_barrier"
     goal_region_name: ClassVar[str] = "blocks_goal_region"
+    # What *this domain's* `Object` calls the robot. KINDER's own name for it comes from
+    # the robot config and is resolved at reset (`robot_name`), so `abstract_atoms`
+    # translates one to the other rather than assuming they coincide.
+    robot_atom_name: ClassVar[str] = "robot"
 
     # Upstream's own arm configurations, in degrees, copied verbatim from
     # `test_pick_ground_toss`. The windup is the posture upstream's toss is demonstrated
@@ -266,6 +272,11 @@ class KinderBackend(BaseModel):
     _env: Any = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
     _robot_name: str = PrivateAttr(default="")
+    # Upstream's `Tossing3DStateAbstractor`: the six predicates' actual implementation.
+    # Held here for the backend's whole lifetime rather than on a `State`, because
+    # `Tossing3DEnvironment` deep-copies states and deep-copying this would clone the
+    # PyBullet client it does forward kinematics through.
+    _abstractor: Any = PrivateAttr(default=None)
 
     @staticmethod
     def configure_headless_rendering(
@@ -367,6 +378,16 @@ class KinderBackend(BaseModel):
             # Before any wrapper goes on, as upstream's own `test_pick_ground_toss` does:
             # a recording made through the wrong camera is a silent shot of a wall.
             object_centric.set_render_camera(self.camera)
+            # Strictly before the seeded reset below, and only ever once.
+            # `Tossing3DStateAbstractor.__init__` calls `sim.reset()` with **no seed**,
+            # so building it after a seeded reset would silently re-randomise the scene
+            # out from under the episode. Building it here means the unseeded reset it
+            # performs is immediately overwritten by the seeded one.
+            from kinder_models.dynamic3d.tossing.state_abstractions import (
+                Tossing3DStateAbstractor,
+            )
+
+            self._abstractor = Tossing3DStateAbstractor(object_centric)
         self._sync_recording_wrapper()
         observation, _ = self._env.reset(seed=seed)
         self._state = self._env.observation_space.devectorize(observation)
@@ -380,6 +401,10 @@ class KinderBackend(BaseModel):
             self._raw_env = None
             self._env = None
             self._state = None
+            # Dropping the reference is the whole release: `PyBulletSim` disconnects its
+            # client from a `weakref.finalize` when it is collected. An explicit
+            # disconnect here would double-disconnect against a reused client id.
+            self._abstractor = None
 
     def set_substep_recording(self, *, enabled: bool) -> None:
         """Turn per-physics-tick frame collection on or off, effective immediately.
@@ -472,6 +497,46 @@ class KinderBackend(BaseModel):
             features=features,
             goal_region=self.goal_region_bbox(),
             solved=self.check_goals(),
+        )
+
+    def abstract_atoms(self, *, state: Any = None) -> frozenset[AbstractAtom]:
+        """Upstream's own symbolic abstraction of `state` (default: the live state).
+
+        This is where all six of this domain's predicates are actually evaluated --
+        `predicates.py` only looks the answers up. Calling upstream's `state_abstractor`
+        once per state, rather than once per predicate, also means the six answers are
+        guaranteed mutually consistent: they describe one instant, not six.
+
+        **Pure in its argument, which is the property the whole seam rests on.**
+        `state_abstractor` opens with `self._pybullet_sim.set_state(state)`, re-pointing
+        the kinematics sim at whatever it was handed before doing any forward kinematics.
+        Verified rather than assumed: abstracting a captured state, resetting the live
+        simulator to a different episode, and re-abstracting that same captured state
+        gives an identical atom set.
+
+        The one exception is `MovableInGoalRegion`, whose scored region comes off the
+        live env's ground fixture rather than off `state` -- upstream says so in
+        `state_abstractor`'s own comment. That region is a static scene fixture (measured
+        identical across seeds), so it does not vary in practice, but it does mean this
+        call needs a live scene.
+
+        Object names are translated to *this domain's* on the way out. KINDER resolves
+        the robot's name from the robot config at reset; this domain's `Object` is the
+        literal `"robot"`. Everything else already agrees.
+        """
+        if self._abstractor is None:
+            raise RuntimeError("KinderBackend.reset() has not run yet; there is no abstractor.")
+        subject = self._require_state() if state is None else state
+        abstract = self._abstractor.state_abstractor(subject)
+        kinder_robot = self.robot_name
+        return frozenset(
+            (
+                atom.predicate.name,
+                tuple(
+                    self.robot_atom_name if o.name == kinder_robot else o.name for o in atom.objects
+                ),
+            )
+            for atom in abstract.atoms
         )
 
     def check_goals(self) -> bool:

@@ -28,7 +28,14 @@ from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .observations import BIN_X, state
+from .observations import (
+    AT_THROW_POSE_ATOMS,
+    BIN_X,
+    HOLDING_ATOMS,
+    INITIAL_ATOMS,
+    LANDED_IN_REGION_ATOMS,
+    state,
+)
 
 
 def _problem() -> Tossing3DProblem:
@@ -87,8 +94,8 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
     the bin while holding unlocks `Toss`."""
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
 
-    def applicable(**kwargs) -> set[str]:
-        current = state(**kwargs)
+    def applicable(*, atoms=INITIAL_ATOMS, **kwargs) -> set[str]:
+        current = state(abstract_atoms=atoms, **kwargs)
         atoms = SkillGrounder.abstract_state(
             state=current, objects=provider.objects(), predicates=provider.predicates()
         )
@@ -100,8 +107,8 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
         }
 
     assert applicable() == {"Pick"}
-    assert applicable(gripper=0.9, cube_z=0.4) == {"MoveToThrowPose"}
-    assert applicable(gripper=0.9, cube_z=0.4, base_x=BIN_X - 1.35) == {
+    assert applicable(atoms=HOLDING_ATOMS, cube_z=0.4) == {"MoveToThrowPose"}
+    assert applicable(atoms=AT_THROW_POSE_ATOMS, cube_z=0.4, base_x=BIN_X - 1.35) == {
         "MoveToThrowPose",
         "Toss",
     }
@@ -112,7 +119,13 @@ def test_nothing_is_applicable_once_the_cube_is_past_the_barrier() -> None:
     the barrier, `Reachable` is false, `Pick` is inapplicable, and no skill remains. A
     planner asked to recover from here correctly finds no plan."""
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
-    landed = state(cube_x=2.6, cube_z=0.025, gripper=0.0, base_x=BIN_X - 1.35)
+    landed = state(
+        cube_x=2.6,
+        cube_z=0.025,
+        gripper=0.0,
+        base_x=BIN_X - 1.35,
+        abstract_atoms=LANDED_IN_REGION_ATOMS,
+    )
     atoms = SkillGrounder.abstract_state(
         state=landed, objects=provider.objects(), predicates=provider.predicates()
     )
@@ -129,7 +142,9 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() 
         objects=(env.robot, env.cube, env.bin),
     )
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
-    action = provider.compute_action(ground_skill=ground_skill, params=params, state=state())
+    action = provider.compute_action(
+        ground_skill=ground_skill, params=params, state=state(abstract_atoms=INITIAL_ATOMS)
+    )
     assert action[0] == Tossing3DEnvironment.move_to_throw_pose_id
 
 
@@ -178,7 +193,7 @@ def _unreachable_goal(*, env: Tossing3DEnvironment) -> Goal:
 def _canned_episode(*, renderer):
     env = _CannedEnvironment()
     problem = Tossing3DProblem(env=env, tasks=Tossing3DTasks(env=env, seed=0))
-    task = Task(initial_state=state(), goal=_unreachable_goal(env=env))
+    task = Task(initial_state=state(abstract_atoms=INITIAL_ATOMS), goal=_unreachable_goal(env=env))
 
     def policy(observed) -> LabeledAction:  # noqa: PLR0917  (core.Policy is positional)
         return LabeledAction(action=np.zeros(3), label="Pick(robot, cube)")
@@ -202,7 +217,7 @@ def test_an_unrendered_episode_records_nothing_and_turns_recording_back_off() ->
     pay for hundreds of MuJoCo renders per skill, nor be left recording afterwards."""
     env = _CannedEnvironment()
     problem = Tossing3DProblem(env=env, tasks=Tossing3DTasks(env=env, seed=0))
-    task = Task(initial_state=state(), goal=_unreachable_goal(env=env))
+    task = Task(initial_state=state(abstract_atoms=INITIAL_ATOMS), goal=_unreachable_goal(env=env))
 
     def policy(observed) -> LabeledAction:  # noqa: PLR0917
         return LabeledAction(action=np.zeros(3), label="Pick(robot, cube)")

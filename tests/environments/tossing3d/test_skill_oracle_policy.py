@@ -9,13 +9,13 @@ import pytest
 from hitl_pmp.core.problem.tasks.types import Goal
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
-    GRASP_THRESHOLD,
     TOSS_RELEASE_MS_BOUNDS,
     TOSS_SPEED_BOUNDS,
     UPSTREAM_DEFAULT_GRIPPER_RELEASE_MS,
     UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
 )
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
+    MOVE_CONVERGENCE_TOLERANCE,
     ORACLE_GRIPPER_RELEASE_MS,
     ORACLE_PICK_DISTANCE,
     ORACLE_PICK_ROTATION,
@@ -30,14 +30,24 @@ from hitl_pmp.environments.tossing3d.skills import (
     THROW_STANDOFF_BOUNDS,
 )
 
-from .observations import BIN_X, state
+from .observations import AT_THROW_POSE_ATOMS, BIN_X, HOLDING_ATOMS, INITIAL_ATOMS, state
 
 _ENV = Tossing3DEnvironment()
 _EMPTY_GOAL = Goal(atoms=frozenset())
 
 
-def _act(**kwargs):
-    return SkillOraclePolicy.get_labeled_action(state=state(**kwargs), env=_ENV, goal=_EMPTY_GOAL)
+def _act(*, atoms=INITIAL_ATOMS, **kwargs):
+    """The oracle's choice for one symbolic situation.
+
+    The situation is now stated as an atom set rather than implied by a gripper value,
+    because the predicates are upstream's and two of the six need a live simulator to
+    evaluate (see `predicates.py`). That is a clarification as much as a workaround:
+    these tests are about the oracle's *branch*, and always were -- the classifiers'
+    own semantics are `test_kb_predicate_parity.py`'s subject.
+    """
+    return SkillOraclePolicy.get_labeled_action(
+        state=state(abstract_atoms=atoms, **kwargs), env=_ENV, goal=_EMPTY_GOAL
+    )
 
 
 def test_the_oracle_picks_when_the_cube_is_on_the_ground() -> None:
@@ -48,14 +58,14 @@ def test_the_oracle_picks_when_the_cube_is_on_the_ground() -> None:
 
 
 def test_the_oracle_walks_to_the_throw_pose_once_it_is_holding_the_cube() -> None:
-    action = _act(gripper=GRASP_THRESHOLD + 0.5, cube_z=0.4)
+    action = _act(atoms=HOLDING_ATOMS, cube_z=0.4)
     assert action.action[0] == pytest.approx(Tossing3DEnvironment.move_to_throw_pose_id)
     assert action.action[1] == pytest.approx(ORACLE_THROW_STANDOFF)
 
 
 def test_the_oracle_throws_once_it_is_holding_the_cube_and_near_the_bin() -> None:
     action = _act(
-        gripper=GRASP_THRESHOLD + 0.5,
+        atoms=AT_THROW_POSE_ATOMS,
         cube_z=0.4,
         base_x=BIN_X - ORACLE_THROW_STANDOFF,
     )
@@ -69,9 +79,9 @@ def test_the_oracle_solves_the_domain_in_exactly_three_skills() -> None:
     would mean `Tossing3DProblem.max_episode_steps` is under-budgeted."""
     ids = [
         _act().action[0],
-        _act(gripper=GRASP_THRESHOLD + 0.5, cube_z=0.4).action[0],
+        _act(atoms=HOLDING_ATOMS, cube_z=0.4).action[0],
         _act(
-            gripper=GRASP_THRESHOLD + 0.5,
+            atoms=AT_THROW_POSE_ATOMS,
             cube_z=0.4,
             base_x=BIN_X - ORACLE_THROW_STANDOFF,
         ).action[0],
@@ -195,7 +205,7 @@ def test_the_toss_label_now_carries_its_release_speed() -> None:
     -- a clip of a throw has to say how hard the throw was, or two clips at different
     speeds are indistinguishable."""
     label = _act(
-        gripper=GRASP_THRESHOLD + 0.5,
+        atoms=AT_THROW_POSE_ATOMS,
         cube_z=0.4,
         base_x=BIN_X - ORACLE_THROW_STANDOFF,
     ).label
@@ -209,6 +219,76 @@ def test_the_provider_forwards_its_configured_standoff() -> None:
     bin sat 23 cm further out -- so it is a constructor field, not a constant."""
     oracle = Tossing3DOracle(env=_ENV, throw_standoff=1.55)
     action = oracle.get_labeled_action(
-        state=state(gripper=GRASP_THRESHOLD + 0.5, cube_z=0.4), goal=_EMPTY_GOAL
+        state=state(abstract_atoms=HOLDING_ATOMS, cube_z=0.4), goal=_EMPTY_GOAL
     )
     assert action.action[1] == pytest.approx(1.55)
+
+
+def test_the_oracle_throws_from_a_converged_pose_the_band_rejects() -> None:
+    """The infinite loop this check exists to close.
+
+    `move_to_target` overshoots its commanded standoff by a per-seed constant of up to
+    27.7 mm, so a commanded 1.35 can arrive at an achieved 1.3777 -- past the 1.375 upper
+    edge of upstream's accepted band. The pose is then *converged* (the controller did
+    exactly what it was told) but *unaccepted*, and an oracle that branches on the
+    predicate alone re-issues the identical `MoveToThrowPose` forever and never throws.
+
+    Note the atoms deliberately do **not** contain `RobotAtThrowPose`: this is the case
+    where upstream's classifier says no and the oracle must make progress anyway.
+    """
+    action = _act(
+        atoms=HOLDING_ATOMS,
+        cube_z=0.4,
+        base_x=BIN_X - (ORACLE_THROW_STANDOFF + 0.0277),
+    )
+    assert action.action[0] == pytest.approx(Tossing3DEnvironment.toss_id)
+
+
+def test_the_oracle_still_walks_when_the_move_has_not_converged() -> None:
+    """The other half of the same branch: an unconverged base really does need moving.
+
+    A `MoveToThrowPose` that failed to motion-plan leaves the base where `Pick` left it,
+    1.36-1.97 m from the bin, which is hundreds of millimetres from the command -- nowhere
+    near `MOVE_CONVERGENCE_TOLERANCE`, so the two cases cannot be confused.
+    """
+    action = _act(atoms=HOLDING_ATOMS, cube_z=0.4, base_x=BIN_X - 1.90)
+    assert action.action[0] == pytest.approx(Tossing3DEnvironment.move_to_throw_pose_id)
+    assert action.action[1] == pytest.approx(ORACLE_THROW_STANDOFF)
+
+
+def test_the_oracle_walks_from_the_pick_pose_even_when_its_standoff_matches() -> None:
+    """The hazard a standoff-only convergence check reintroduces.
+
+    `predicates.py`'s `THROW_STANDOFF_BOUNDS` comment records it in the predicate's own
+    terms: the post-`Pick` base sits 1.364-1.971 m from the bin, so any test that reads
+    only the standoff cannot tell "the move ran and converged" from "the move never ran"
+    for a command anywhere in that interval. The pose below is seed 125's real post-`Pick`
+    pose, measured -- standoff 1.4912, 0.5269 m off the bin's axis, heading 0.8645 rad
+    away from it -- against a commanded 1.45, which the standoff alone accepts to within
+    41 mm.
+
+    A standoff-only check makes the oracle skip `MoveToThrowPose` entirely and toss from
+    the shelf. The alignment conjuncts are what stop it: `MoveToThrowPose` puts the base
+    on the bin's axis facing the bin, and `Pick` does neither.
+    """
+    action = SkillOraclePolicy.get_labeled_action(
+        state=state(
+            abstract_atoms=HOLDING_ATOMS,
+            cube_z=0.4,
+            base_x=BIN_X - 1.4912,
+            base_y=-0.5269,
+            base_rot=-0.5250,
+        ),
+        env=_ENV,
+        goal=_EMPTY_GOAL,
+        throw_standoff=1.45,
+    )
+    assert action.action[0] == pytest.approx(Tossing3DEnvironment.move_to_throw_pose_id)
+    assert action.action[1] == pytest.approx(1.45)
+
+
+def test_the_convergence_tolerance_covers_the_measured_overshoot() -> None:
+    """`MOVE_CONVERGENCE_TOLERANCE` has to exceed the overshoot envelope, or the loop
+    returns for whichever seed overshoots most. Measured 0.7-27.7 mm over 8 scene seeds.
+    """
+    assert MOVE_CONVERGENCE_TOLERANCE > 0.0277

@@ -46,7 +46,7 @@ from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.renderer.renderer import Renderer
 
 from .environment import Tossing3DEnvironment
-from .predicates import InBinClassifier
+from .predicates import IN_BIN
 
 
 class Tossing3DRenderer(Renderer):
@@ -112,7 +112,7 @@ class Tossing3DRenderer(Renderer):
         being rendered, never restated from a doc.
         """
         x, y, z = (state.get(obj=env.cube, feature_name=name) for name in ("x", "y", "z"))
-        in_region = InBinClassifier.holds(state=state, cube=env.cube, target=env.bin)
+        in_region = IN_BIN.holds(state, (env.cube, env.bin))
         x_min = state.get(obj=env.bin, feature_name="x_min")
         x_max = state.get(obj=env.bin, feature_name="x_max")
         return [

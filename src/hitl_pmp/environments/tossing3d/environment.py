@@ -40,6 +40,7 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
 from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
+from .types import AbstractAtom, Tossing3DState
 
 
 class Tossing3DSnapshot(BaseModel):
@@ -209,13 +210,29 @@ class Tossing3DEnvironment(Environment):
         """
         return self._last_controller_steps
 
-    def build_state(self, *, observation: KinderObservation, seed: int, steps_taken: int) -> State:
+    def build_state(
+        self,
+        *,
+        observation: KinderObservation,
+        seed: int,
+        steps_taken: int,
+        object_centric: Any = None,
+        abstract_atoms: frozenset[AbstractAtom] | None = None,
+    ) -> Tossing3DState:
         """Translate one `KinderObservation` into this domain's `core.State`.
 
         Pure, and free of KINDER: it reads named features out of plain dicts, so a test
         can hand it a hand-built observation and check the translation with no simulator.
+
+        `object_centric` and `abstract_atoms` are the symbolic half, and default to
+        absent precisely so that purity survives -- a caller checking the *translation*
+        needs no simulator, and gets a state that says so rather than one that silently
+        answers `False` to every predicate. `_observed_state` is what fills them in on
+        the live path; see `types.py` for why they travel on the state at all.
         """
-        return State(
+        return Tossing3DState(
+            object_centric=object_centric,
+            abstract_atoms=abstract_atoms,
             data={
                 self.robot: self._vector(
                     observation=observation,
@@ -242,7 +259,25 @@ class Tossing3DEnvironment(Environment):
                     observation=observation, name=self.barrier.name, obj=self.barrier
                 ),
                 self.scene: np.array([float(seed), float(steps_taken)], dtype=float),
-            }
+            },
+        )
+
+    def _observed_state(self, *, seed: int, steps_taken: int) -> Tossing3DState:
+        """The live simulator's current state, translated *and* abstracted.
+
+        One place, so the flat features and the symbolic atoms are always read from the
+        same instant. `abstract_atoms` runs upstream's own classifiers against the
+        KINDER state being captured here, which is what makes the resulting `State`
+        self-contained: it answers its own predicates later without consulting the
+        simulator again.
+        """
+        backend = self.backend()
+        return self.build_state(
+            observation=backend.observe(),
+            seed=seed,
+            steps_taken=steps_taken,
+            object_centric=backend.snapshot(),
+            abstract_atoms=backend.abstract_atoms(),
         )
 
     def take_action(self, *, action: Action) -> State:
@@ -267,9 +302,7 @@ class Tossing3DEnvironment(Environment):
         if errors:
             self._last_skill_error = "; ".join(errors)
 
-        next_state = self.build_state(
-            observation=self.backend().observe(), seed=seed, steps_taken=steps_taken + 1
-        )
+        next_state = self._observed_state(seed=seed, steps_taken=steps_taken + 1)
         # `_adopt`, deliberately not `set_state`: the simulator has already advanced by
         # this skill, so there is nothing to restore, and `set_state` would refuse a
         # `steps_taken > 0` state anyway. `set_state`'s job is the privileged *external*
@@ -346,8 +379,8 @@ class Tossing3DEnvironment(Environment):
         immediately afterwards; `hard_reset` and `set_state` both go through here, so
         there is exactly one place that puts this domain into a known state.
         """
-        observation = self.backend().reset(seed=seed)
-        state = self.build_state(observation=observation, seed=seed, steps_taken=0)
+        self.backend().reset(seed=seed)
+        state = self._observed_state(seed=seed, steps_taken=0)
         self._adopt(state=state)
         return state
 

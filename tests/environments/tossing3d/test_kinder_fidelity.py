@@ -40,20 +40,14 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import LabeledAction
-from hitl_pmp.environments.tossing3d import predicates
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    HOLDING,
     IN_BIN,
-    THROW_OVERSHOOT_MARGIN,
-    THROW_RANGE,
-    THROW_RANGE_MAX,
-    THROW_RANGE_MIN,
-    THROW_SHORTFALL_MARGIN,
+    ROBOT_AT_SUCCESSFUL_THROW_POSE,
     THROW_STANDOFF_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
     TOSS_SPEED_BOUNDS,
-    InBinClassifier,
-    RobotAtSuccessfulThrowPoseClassifier,
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
@@ -141,7 +135,7 @@ def test_in_bin_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory() -
             goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
             state = env.reset_to_seed(seed=CANONICAL_SEED)
             for _ in range(3):
-                symbolic = InBinClassifier.holds(state=state, cube=env.cube, target=env.bin)
+                symbolic = IN_BIN.holds(state, (env.cube, env.bin))
                 assert symbolic == env.is_solved(), (
                     f"standoff {standoff}: InBin said {symbolic} while KINDER's "
                     f"own _check_goals() said {env.is_solved()}"
@@ -150,9 +144,7 @@ def test_in_bin_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory() -
                     state=state, env=env, goal=goal, throw_standoff=standoff
                 )
                 state = env.take_action(action=action.action)
-            assert (
-                InBinClassifier.holds(state=state, cube=env.cube, target=env.bin) == env.is_solved()
-            )
+            assert IN_BIN.holds(state, (env.cube, env.bin)) == env.is_solved()
         finally:
             env.close()
 
@@ -229,29 +221,26 @@ def test_the_oracle_reproduces_the_recorded_landing_and_step_counts() -> None:
 def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
     *, standoff: float, expected: bool
 ) -> None:
-    """**The calibration guard for `THROW_RANGE`.**
+    """**The guard that the accepted band still matches reality.**
 
-    `RobotAtSuccessfulThrowPose` derives its acceptance band from live scene geometry plus
-    one calibrated constant: the distance a throw displaces the cube. Everything else is
-    read from the `State`, so this constant is the only thing that can go stale -- and it
-    goes stale silently, because a wrong value still yields a plausible-looking band. If
-    upstream changes the toss controller, the windup configuration, the cube's mass or the
-    physics step, this is what fails.
+    `RobotAtSuccessfulThrowPose` is upstream's `RobotAtThrowPose`, whose band is a
+    literal upstream measured by bisecting `_check_goals()` over real rollouts. A literal
+    goes stale silently: a wrong value still yields a plausible-looking band. If upstream
+    changes the toss controller, the windup configuration, the cube's mass or the physics
+    step -- or if a `reference/kindergarden` pin bump moves the scene -- this is what
+    fails.
 
-    **The two standoffs are chosen to catch the specific wrong value.** `THROW_RANGE` is
-    the *impact* range, 1.275 m. The tempting mismeasurement is the free-floor rest
-    displacement, 1.3499 m, which is 0.075 m longer because it includes post-impact roll;
-    the cube only rolls when it misses, since on this config the bin sits on the goal
-    region and catches anything that lands inside. Under that wrong value the band shifts
-    from `[1.150, 1.375]` -- the tightened band `THROW_OVERSHOOT_MARGIN`/
-    `THROW_SHORTFALL_MARGIN` derive (see `predicates.py`) -- to `[1.225, 1.450]`, and
-    **both** of these standoffs still flip: 1.15 would be predicted a miss under the wrong
-    constant, and 1.45 a hit. Re-run live against a real KINDER install as part of the
-    band-tightening change (both parametrised cases still pass: `predicted == expected`
-    at both 1.15 and 1.45), so this is confirmed against the simulator, not only argued
-    from the derivation above. Measured over three scene seeds, 1.15 solves
-    3/3 and 1.45 solves 0/3, so the predicate must say exactly the opposite of the wrong
-    value at both points.
+    **The two standoffs straddle the band's far edge**, which is the edge that moves. 1.15
+    is comfortably inside upstream's `(1.09, 1.375)` and 1.45 is outside it, so the pair
+    exercises agreement on a `True` and a `False` verdict rather than only the happy path.
+    Measured over three scene seeds, 1.15 solves 3/3 and 1.45 solves 0/3.
+
+    These two points were originally chosen to catch a specific mismeasurement of this
+    domain's own `THROW_RANGE` -- the *impact* range, 1.275 m, against the tempting
+    free-floor rest displacement of 1.3499 m, 0.075 m longer because it includes
+    post-impact roll. That constant is gone with the derivation it fed, but the two
+    standoffs remain well-chosen for what this test now checks, so they are kept rather
+    than re-picked.
 
     Asserted against real episode outcomes rather than against a recorded number, so this
     is a check that the symbolic layer still describes the dynamics.
@@ -295,13 +284,12 @@ def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
             state = env.take_action(action=action.action)
             assert env.last_skill_error() is None, env.last_skill_error()
             if action.label.startswith("MoveToThrowPose("):
-                predicted = RobotAtSuccessfulThrowPoseClassifier.holds(
-                    state=state, robot=env.robot, target=env.bin
-                )
+                predicted = ROBOT_AT_SUCCESSFUL_THROW_POSE.holds(state, (env.robot, env.bin))
 
         assert predicted == expected, (
             f"at standoff {standoff} the predicate says {predicted}, but it was measured "
-            f"to be {expected}. THROW_RANGE = {THROW_RANGE} is no longer calibrated."
+            f"to be {expected}. Upstream's THROW_STANDOFF_BOUNDS is no longer calibrated "
+            f"against this scene."
         )
     finally:
         env.close()
@@ -665,7 +653,19 @@ def test_recording_does_not_change_where_the_cube_comes_to_rest() -> None:
 # How far outside the accepted band to stand. Large enough to clear `move_to_target`'s own
 # several-millimetre stopping noise -- PR #196's closest miss at 1.375 was 0.1 mm, and a
 # guard placed inside that noise would flake rather than fail.
-BAND_EDGE_PROBE_OFFSET = 0.05
+#
+# **0.075 rather than the 0.05 this was while the band was ours.** The offset is chosen so
+# that `hi + BAND_EDGE_PROBE_OFFSET` stays at 1.450, which is the standoff the docstring
+# below carries `0/24` measured evidence for. Our own far edge was 1.400 and upstream's is
+# 1.375, so keeping 0.05 would have silently moved the probe to an unmeasured 1.425 -- and
+# 1.425 is throwable: it scored, so the old offset now fails. That failure is a real
+# finding rather than a broken guard, and it is stated here rather than tuned away:
+# **upstream's band is conservative at its far edge**, rejecting poses a toss genuinely
+# scores from over [1.375, 1.425]. That is the safe direction for a planner to be wrong in
+# -- promised less than the dynamics deliver -- and it is upstream's constant to change,
+# not ours. What this guard exists to catch is the dangerous direction, a band so wide it
+# promises throws no parameter draw can deliver, and it still catches that from 1.450.
+BAND_EDGE_PROBE_OFFSET = 0.075
 
 # A coarse sample of the toss parameter box, as (release_speed, gripper_release_ms)
 # fractions of their bounds. `(1.0, 0.42)` is the measured reach argmax -- at 140 deg/s the
@@ -704,26 +704,25 @@ def _throw_scores_from_standoff(*, standoff: float, speed: float, release_ms: fl
 
 
 def _accepted_standoff_band() -> tuple[float, float]:
-    """The band `RobotAtSuccessfulThrowPose` currently accepts, read back from a real
-    scene rather than recomputed here -- so this test cannot drift from the predicate by
-    duplicating its arithmetic."""
-    env = _env()
-    try:
-        state = env.reset_to_seed(seed=CANONICAL_SEED)
-        bin_x = state.get(obj=env.bin, feature_name="x")
-        lo = (
-            bin_x
-            + THROW_RANGE_MIN
-            - (state.get(obj=env.bin, feature_name="x_max") - THROW_OVERSHOOT_MARGIN)
-        )
-        hi = (
-            bin_x
-            + THROW_RANGE_MAX
-            - (state.get(obj=env.bin, feature_name="x_min") + THROW_SHORTFALL_MARGIN)
-        )
-        return (lo, hi)
-    finally:
-        env.close()
+    """The band `RobotAtSuccessfulThrowPose` accepts: upstream's own constant.
+
+    It used to be recomputed here from live scene geometry plus `THROW_RANGE`, because
+    the band this domain applied was *derived* -- move the bin and the band followed. It
+    is now upstream's literal `THROW_STANDOFF_BOUNDS`, and upstream says so in its own
+    comment: "A literal, not a live read of the region, so a scene whose bin or goal
+    region moves needs remeasuring."
+
+    **That is a real reduction in robustness, recorded rather than hidden.** This repo's
+    scene moves with the `reference/kindergarden` pin, so a pin bump that relocates the
+    bin now silently invalidates this band instead of being followed automatically.
+    `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` is what makes such
+    a move loud.
+    """
+    from kinder_models.dynamic3d.tossing.state_abstractions import (
+        THROW_STANDOFF_BOUNDS as KB_BOUNDS,
+    )
+
+    return (float(KB_BOUNDS[0]), float(KB_BOUNDS[1]))
 
 
 def test_no_toss_parameterisation_scores_from_beyond_the_accepted_band() -> None:
@@ -736,10 +735,11 @@ def test_no_toss_parameterisation_scores_from_beyond_the_accepted_band() -> None
     make the label constant-true, it makes it constant-true *on the wrong side*, promising
     the planner a throw that no parameter draw can deliver.
 
-    **Only the far edge is probed.** The near edge sits at 0.21 m, far below both the
-    sampler's 1.10 m floor and the standoff at which the base starts shoving the bin, so a
-    probe `BAND_EDGE_PROBE_OFFSET` below it is not a pose `MoveToThrowPose` can reach and
-    the sequence would fail for reasons that have nothing to do with the band.
+    **Only the far edge is probed.** The near edge is upstream's 1.09 m, which already sits
+    below the sampler's own 1.10 m floor, so a probe `BAND_EDGE_PROBE_OFFSET` below it is
+    not a pose `MoveToThrowPose` can be asked for at all and the sequence would fail for
+    reasons that have nothing to do with the band. (While this domain carried its own
+    classifier the near edge was 0.21 m and the same argument held with more room.)
 
     **The pass is not vacuous, which for a negative assertion has to be checked separately
     from the assertion.** At the probe standoff of 1.450 every cell executes with no skill
@@ -770,44 +770,126 @@ def test_no_toss_parameterisation_scores_from_beyond_the_accepted_band() -> None
     )
 
 
-def test_the_converse_guard_would_catch_a_widened_band(*, monkeypatch: pytest.MonkeyPatch) -> None:
-    """**Proves the guard above can fail.** A test that only ever passes is not evidence.
+def test_the_accepted_band_end_to_end_is_upstreams_own_constant() -> None:
+    """**Proves the guard above probes a live boundary.** A negative-only test passes
+    trivially if the band it reads is not the band the predicate applies.
 
-    The guard asserts a *negative* -- no parameterisation scores from outside the band --
-    and a negative passes trivially if the band it reads is not the band the predicate
-    applies. This pins the two together: a pose one metre past the far edge is rejected
-    now, and accepted once `THROW_RANGE_MAX` is widened past it. So the edge the guard
-    probes is a live boundary derived from these constants, and a widened band really would
-    push a throwable-looking pose into the guard's probe region.
+    This sweeps the base along the bin's axis on a *real* scene and reads the verdict back
+    through the whole production path -- `KinderBackend.abstract_atoms`, which runs
+    upstream's own `Tossing3DStateAbstractor` against a mutated `ObjectCentricState`, then
+    this domain's own `Predicate`. The band that comes back must be upstream's constant,
+    to the millimetre.
 
     It deliberately executes no throw: the expensive half of the argument is the guard's
-    own, and this half is about which numbers the predicate actually reads."""
-    _, hi_before = _accepted_standoff_band()
-
+    own, and this half is about which numbers the predicate actually reads.
+    """
+    lo, hi = _accepted_standoff_band()
     env = _env()
     try:
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        backend = env.backend()
+        snapshot = backend.snapshot()
+        robot = snapshot.get_object_from_name(backend.robot_name)
+        target_bin = snapshot.get_object_from_name(backend.bin_name)
+        bin_x = float(snapshot.get(target_bin, "x"))
+        # On the bin's axis, so the lateral and heading conjuncts pass and the standoff
+        # conjunct is the only thing under test.
+        snapshot.set(robot, "pos_base_y", float(snapshot.get(target_bin, "y")))
+        snapshot.set(robot, "pos_base_rot", 0.0)
+
+        accepted = []
+        for millimetre in range(1000, 1500):
+            standoff = millimetre / 1000.0
+            snapshot.set(robot, "pos_base_x", bin_x - standoff)
+            atoms = backend.abstract_atoms(state=snapshot)
+            if ("RobotAtThrowPose", ("robot", "bin_0")) in atoms:
+                accepted.append(standoff)
+
+        assert accepted, "no standoff accepted at all through the production path"
+        # To the millimetre, not exactly: an `ObjectCentricState` is float32, and the
+        # standoff here is a *difference* of two float32 positions rather than a literal,
+        # so the low edge reads back as 1.091 against upstream's 1.09. That is this
+        # sweep's own resolution, not a disagreement about the band.
+        assert min(accepted) == pytest.approx(lo, abs=1e-3), (
+            f"the band's near edge read back end-to-end is {min(accepted)}, but "
+            f"upstream's constant is {lo}"
+        )
+        assert max(accepted) == pytest.approx(hi, abs=1e-3), (
+            f"the band's far edge read back end-to-end is {max(accepted)}, but "
+            f"upstream's constant is {hi}"
+        )
+    finally:
+        env.close()
+
+
+def test_holding_uses_upstreams_forward_kinematics_conjunct() -> None:
+    """The conjunct this domain could not evaluate before, and therefore dropped.
+
+    Upstream's `Holding` requires the end effector to be within
+    `END_EFFECTOR_TO_OBJECT_HOLDING_TOLERANCE` of the object, computed by forward
+    kinematics through a live `PyBulletSim`. Our own version had a closed gripper and a
+    lifted cube and nothing else, so it could call a cube "held" that was airborne
+    without being grasped.
+
+    Teleporting the cube two metres away while leaving the gripper closed separates the
+    two: the weaker version still says held, upstream's does not. This is a
+    simulator-backed test because that is exactly what the conjunct needs -- it is one of
+    the two probes that could not stay offline after the swap.
+    """
+    env = _env()
+    try:
+        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
         state = env.reset_to_seed(seed=CANONICAL_SEED)
-        # A metre beyond the far edge, on the bin's axis so the lateral conjunct passes and
-        # the standoff conjunct is the only thing under test.
-        far_past_the_box = state.get(obj=env.bin, feature_name="x") - (hi_before + 1.0)
-        state.set(obj=env.robot, feature_name="pos_base_x", feature_val=far_past_the_box)
-        state.set(
-            obj=env.robot,
-            feature_name="pos_base_y",
-            feature_val=state.get(obj=env.bin, feature_name="y"),
-        )
+        action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
+        state = env.take_action(action=action.action)
+        assert HOLDING.holds(state, (env.robot, env.cube)), "the oracle's Pick should grasp"
 
-        assert not RobotAtSuccessfulThrowPoseClassifier.holds(
-            state=state, robot=env.robot, target=env.bin
-        ), "a pose 1 m beyond the band's far edge must be rejected at the shipped constants"
+        backend = env.backend()
+        snapshot = backend.snapshot()
+        cube = snapshot.get_object_from_name(backend.cube_name)
+        # Still closed on *something*, still well above the floor, but nowhere near the
+        # gripper. Only the FK conjunct can tell the difference.
+        snapshot.set(cube, "x", float(snapshot.get(cube, "x")) + 2.0)
+        atoms = backend.abstract_atoms(state=snapshot)
+        assert ("Holding", ("robot", "cube_0")) not in atoms
+    finally:
+        env.close()
 
-        monkeypatch.setattr(predicates, "THROW_RANGE_MAX", THROW_RANGE_MAX + 1.5)
-        assert RobotAtSuccessfulThrowPoseClassifier.holds(
-            state=state, robot=env.robot, target=env.bin
-        ), (
-            "widening THROW_RANGE_MAX by 1.5 m must make the predicate accept that same "
-            "pose -- if it does not, the accepted band is not derived from this constant "
-            "and the converse guard is probing an edge the predicate does not have"
-        )
+
+def test_in_bin_agrees_with_kinders_own_goal_check_at_the_boundary() -> None:
+    """`InBin`'s boundary probes, which used to be offline.
+
+    `MovableInGoalRegion` reads the scored region off the live env's ground fixture, so
+    it cannot be evaluated from a hand-built state any more -- these moved here from
+    `test_predicates.py` rather than being deleted. The check is the one that matters:
+    upstream's classifier and KINDER's own `_check_goals()` must agree at every point,
+    including just inside and just outside the far edge.
+    """
+    env = _env()
+    try:
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        backend = env.backend()
+        x_min, _, _, x_max, _, _ = backend.goal_region_bbox()
+        snapshot = backend.snapshot()
+        cube = snapshot.get_object_from_name(backend.cube_name)
+        snapshot.set(cube, "y", 0.0)
+        snapshot.set(cube, "z", 0.0444)
+
+        for x, expected in (
+            (x_min - 0.01, False),
+            (x_min + 0.01, True),
+            ((x_min + x_max) / 2, True),
+            (x_max - 0.01, True),
+            (x_max + 0.01, False),
+        ):
+            snapshot.set(cube, "x", float(x))
+            backend.restore(snapshot=snapshot)
+            atoms = backend.abstract_atoms()
+            symbolic = ("MovableInGoalRegion", ("cube_0",)) in atoms
+            assert symbolic is expected, f"x={x}: upstream said {symbolic}, expected {expected}"
+            assert symbolic == backend.check_goals(), (
+                f"x={x}: MovableInGoalRegion said {symbolic} while KINDER's own "
+                f"_check_goals() said {backend.check_goals()}"
+            )
     finally:
         env.close()
