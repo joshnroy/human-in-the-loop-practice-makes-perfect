@@ -149,13 +149,23 @@ def test_configure_keeps_a_display_that_is_already_set() -> None:
     assert environ["DISPLAY"] == ":7"
 
 
-def test_configure_forces_egl_over_a_preset_osmesa() -> None:
-    """osmesa is the value that breaks the import, so an inherited one is overridden
-    rather than respected."""
-    environ = {"MUJOCO_GL": "osmesa", "PYOPENGL_PLATFORM": "osmesa"}
-    configure_headless_rendering(environ=environ)
-    assert environ["MUJOCO_GL"] == "egl"
-    assert environ["PYOPENGL_PLATFORM"] == "egl"
+def test_configure_undoes_kinders_rewrite_but_keeps_a_requested_backend() -> None:
+    """**This inverts a decision that stood until 2026-08-14.** The function used to force
+    `egl` unconditionally, on the premise that "osmesa is the value that breaks the
+    import". That premise is a property of this workstation, not of osmesa: with
+    `libosmesa6-dev` installed it is the backend that *works*, and a headless CI runner
+    has no EGL driver at all. So the two cases are now told apart by *when* the value
+    arrived -- see `KinderBackend.configure_headless_rendering`, which this name is an
+    alias of -- and only the rewrite is undone."""
+    from_kinders_rewrite = {"MUJOCO_GL": "osmesa", "PYOPENGL_PLATFORM": "osmesa"}
+    configure_headless_rendering(environ=from_kinders_rewrite, backend="egl")
+    assert from_kinders_rewrite["MUJOCO_GL"] == "egl"
+    assert from_kinders_rewrite["PYOPENGL_PLATFORM"] == "egl"
+
+    requested = {"MUJOCO_GL": "osmesa", "PYOPENGL_PLATFORM": ""}
+    configure_headless_rendering(environ=requested, backend="osmesa")
+    assert requested["MUJOCO_GL"] == "osmesa"
+    assert requested["PYOPENGL_PLATFORM"] == "osmesa"
 
 
 def test_configure_reports_what_it_resolved() -> None:

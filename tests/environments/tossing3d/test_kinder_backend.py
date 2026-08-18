@@ -1,4 +1,4 @@
-"""Offline tests for `KinderBackend`'s sub-step recording switch.
+"""Offline tests for `KinderBackend`'s sub-step recording switch and GL backend.
 
 Everything here runs without MuJoCo, which is the point: the switch and the drain are
 plain Python, and CI -- which never installs the optional extra -- is exactly where a
@@ -7,13 +7,108 @@ frame per physics tick is a question only a simulator can answer, and lives in
 `test_kinder_fidelity.py`.
 """
 
+import importlib.util
 import sys
 from typing import Any
 
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.tossing3d import kinder_backend
 from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+
+# --- the GL backend --------------------------------------------------------------
+#
+# `register_all_environments()` rewrites MUJOCO_GL to `osmesa` when DISPLAY is unset, and
+# under a backend that is selected but not installed `import mujoco` raises into a handler
+# that swallows every exception -- so the Dynamic3D category vanishes in silence. Undoing
+# that rewrite is why this function exists. It used to undo it by hardcoding `egl`, which
+# also silently overrode an operator who had *asked* for osmesa: on a headless CI runner
+# with no EGL driver every Tossing3D test then failed with
+# `AttributeError: 'NoneType' object has no attribute 'eglQueryString'`, and no workflow
+# env could reach it. The snapshot is what separates the two cases -- it is read before
+# KINDER can write anything, so what it holds is a request rather than a rewrite.
+
+
+def test_an_explicitly_requested_backend_is_reasserted_rather_than_overridden() -> None:
+    """The reversal: a deliberately-requested backend now survives, where it used to be
+    replaced by `egl` on every call."""
+    environ = {"MUJOCO_GL": "osmesa", "PYOPENGL_PLATFORM": ""}
+    resolved = KinderBackend.configure_headless_rendering(
+        environ=environ, backend="osmesa", platform="osmesa"
+    )
+    assert resolved["MUJOCO_GL"] == "osmesa"
+    assert resolved["PYOPENGL_PLATFORM"] == "osmesa"
+    assert environ["MUJOCO_GL"] == "osmesa"
+
+
+def test_the_platform_follows_the_backend_when_only_a_backend_is_requested() -> None:
+    """CI passes `PYOPENGL_PLATFORM=""` deliberately, so the pair must stay consistent
+    without the caller restating it."""
+    resolved = KinderBackend.configure_headless_rendering(environ={}, backend="osmesa")
+    assert resolved["PYOPENGL_PLATFORM"] == "osmesa"
+
+
+def test_nothing_requested_still_means_egl() -> None:
+    """The workstation path, unchanged: no request, so the default stands."""
+    resolved = KinderBackend.configure_headless_rendering(
+        environ={}, backend=kinder_backend.DEFAULT_GL_BACKEND
+    )
+    assert resolved["MUJOCO_GL"] == "egl"
+    assert resolved["PYOPENGL_PLATFORM"] == "egl"
+    assert resolved["DISPLAY"] == kinder_backend.FALLBACK_DISPLAY
+
+
+def test_kinders_own_rewrite_is_still_undone() -> None:
+    """The property the hardcoded `egl` was protecting, kept: an `osmesa` that arrived
+    from upstream's rewrite rather than from a request is still replaced."""
+    environ = {"MUJOCO_GL": "osmesa", "PYOPENGL_PLATFORM": "osmesa", "DISPLAY": ":0"}
+    resolved = KinderBackend.configure_headless_rendering(environ=environ, backend="egl")
+    assert resolved["MUJOCO_GL"] == "egl"
+    assert resolved["PYOPENGL_PLATFORM"] == "egl"
+
+
+def test_a_backend_written_after_import_is_ignored(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The distinction itself. A value that appears in the environment *after* import is
+    exactly what `register_all_environments()` produces, so it must not be mistaken for a
+    request -- whatever this machine happens to have asked for.
+
+    `monkeypatch` rather than a hand-rolled `os.environ` edit: an earlier draft popped the
+    variable in a `finally` instead of restoring it, which left the *process* with no
+    `MUJOCO_GL` and made every later Tossing3D test in the run render through the wrong
+    backend. It passed locally, where the ambient value is `egl` either way, and failed
+    only on CI.
+    """
+    late = "osmesa" if kinder_backend.REQUESTED_GL_BACKEND != "osmesa" else "egl"
+    monkeypatch.setenv("MUJOCO_GL", late)
+    resolved = KinderBackend.configure_headless_rendering(environ={})
+    assert resolved["MUJOCO_GL"] == kinder_backend.REQUESTED_GL_BACKEND != late
+
+
+def test_the_request_is_snapshotted_at_import(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Where the line is drawn, pinned directly: the snapshot is taken when the module is
+    imported, which is necessarily before anything of ours can call into KINDER.
+
+    A **private copy** of the module, not `importlib.reload`. Reloading rebinds the
+    snapshot that every other test in the process shares, so it is only as correct as the
+    environment at reload time -- and one earlier test leaving `MUJOCO_GL` unset was enough
+    to pin the whole run to the wrong backend. Loading a second copy asks the same question
+    and cannot answer it for anybody else.
+    """
+    before = kinder_backend.REQUESTED_GL_BACKEND
+    monkeypatch.setenv("MUJOCO_GL", "osmesa")
+    monkeypatch.delenv("PYOPENGL_PLATFORM", raising=False)
+    spec = importlib.util.spec_from_file_location("_gl_snapshot_probe", kinder_backend.__file__)
+    assert spec is not None and spec.loader is not None
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+
+    assert fresh.REQUESTED_GL_BACKEND == "osmesa"
+    assert fresh.REQUESTED_GL_PLATFORM == "osmesa"
+    assert before == kinder_backend.REQUESTED_GL_BACKEND
+
+
+# --- sub-step recording ------------------------------------------------------------
 
 
 def test_substep_recording_is_off_by_default() -> None:

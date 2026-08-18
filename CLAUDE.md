@@ -91,6 +91,14 @@ IKFast from C++ the first time a controller asks for inverse kinematics — on T
 that means `pick_shelf`, not the toss sequence. Without these the build fails; do not
 substitute wheel-internal libraries.
 
+**CI pays for the MimicLabs assets.** `Tossing3D-o1.json` declares `"scene": "lab2"`, so
+every simulator-backed test builds a MimicLabs scene — setting
+`DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD` with nothing to supply them just failed `23/1925`
+tests on a missing `.msh`. CI restores the tree from an `actions/cache` keyed on the
+`reference/kindergarden` gitlink, so a pin bump reseeds it rather than serving the previous
+pin's geometry. The 2.0 GB buys the ~25 MB Tossing3D actually reads; scoping the download
+is an upstream `kindergarden` change, not ours.
+
 ```bash
 sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf only
 ```
@@ -108,6 +116,14 @@ sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf 
   `kinder.envs.dynamic3d.envs`, *not* the `kinder.envs.dynamic3d` package, which does not
   pull in `mujoco`) before that call, and set both variables back to `egl` after it.
   `scripts/with_env.sh` exports both; the import ordering is still yours to get right.
+  **CI diverges and renders through OSMesa**: an `ubuntu-latest` runner has no EGL
+  driver, so `ci.yml`'s `test` job installs `libosmesa6-dev` and sets `MUJOCO_GL=osmesa`
+  with `PYOPENGL_PLATFORM` empty — kinder-baselines' own recipe — while the workstation
+  stays on `egl`.
+  **The backend is inheritable, not hardcoded**: `configure_headless_rendering` snapshots
+  `MUJOCO_GL`/`PYOPENGL_PLATFORM` at module import and re-asserts *that*, defaulting to
+  `egl`. A value set before KINDER is imported is honoured; the `osmesa`
+  `register_all_environments()` writes afterwards is still undone.
 - **Memory.** The unbounded PyBullet leak is fixed upstream (`PyBulletSim` disconnects
   from a `weakref.finalize`), but a planner grounds a fresh sim per sampling attempt, so
   holding many alive at once is still expensive — measured **~2.23 GiB per Tossing3D
@@ -179,6 +195,12 @@ fail for unrelated reasons: `PYTHONPATH=<worktree>/src`, because the editable in
 resolves `hitl_pmp` to the *main* checkout, and `FD_EXEC_PATH=<path-to>/downward`, because
 Fast Downward is found by a sibling-directory convention that does not resolve from inside
 `.claude/worktrees/`. `scripts/with_env.sh` sets both.
+
+**CI's `test` job runs `pytest` twice** — `tests/environments/tossing3d` alone, then
+`--ignore` of it — because MuJoCo's OSMesa and torch's bundled triton each load their own
+LLVM and segfault when they share one. The workstation renders through EGL, which links no
+LLVM, so **the local gate stays a single `pytest`**. kinder-baselines avoids the same
+collision the same way.
 
 **Run the gate locally; do not block on GitHub CI.** Local is ~1 minute against CI's ~10,
 and it is the same commands. Open the PR, report whatever state CI is in, and finish. If

@@ -29,8 +29,42 @@ jobs:
 
   typecheck:
     runs-on: ubuntu-latest
+    # KINDER is a required dependency as of 2026-08-14, so every job that imports the
+    # package needs the submodules on disk before pip can install them: both `-e` paths
+    # below are empty directories in a fresh checkout and pip fails outright.
+    env: &kinder_env
+      # **CI renders through OSMesa; the workstation stays on EGL.** That divergence is
+      # deliberate. `ubuntu-latest` has no EGL driver, so anything that opens a MuJoCo GL
+      # context under `MUJOCO_GL=egl` dies with
+      # `AttributeError: 'NoneType' object has no attribute 'eglQueryString'`. These two
+      # values are kinder-baselines' own CI verbatim -- its `unit-tests` job sets exactly
+      # this pair on its Pytest step -- which is the reference implementation for running
+      # KINDER headlessly.
+      #
+      # `PYOPENGL_PLATFORM` is the **empty string**, not `osmesa` and not merely unset:
+      # `mujoco/osmesa/__init__.py` sets it to `osmesa` itself when it is falsy, but
+      # *raises* if it is already set to anything that is not `osmesa`.
+      #
+      # No `DISPLAY` here, also matching kinder-baselines. `register_all_environments()`
+      # rewrites both variables to `osmesa` when DISPLAY is unset -- which is now exactly
+      # what this job wants, so its headless detection agrees with the choice above
+      # instead of being suppressed by a display that does not exist. A `DISPLAY: ":0"`
+      # was set here while CI wanted EGL, for precisely the opposite reason.
+      MUJOCO_GL: "osmesa"
+      PYOPENGL_PLATFORM: ""
+      # kindergarden fetches ~2 GB of MimicLabs scene assets from Google Drive on
+      # `kinder.make()`. This suppresses that *implicit* fetch; the `test` job below
+      # instead restores them from a cache and downloads them explicitly on a miss.
+      #
+      # **This does not mean no test needs them**, which is what this comment used to say.
+      # Every simulator-backed Tossing3D test builds a scene and therefore reads them; 23
+      # tests failed on a missing `.msh` when the variable was set with nothing to supply
+      # them. It is correct in kindergarden's own CI, whose tests do not build these scenes.
+      DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -42,7 +76,20 @@ jobs:
       # gate on `importlib.util.find_spec`, exactly as `tossing3d` does for KINDER. A
       # regression that made the package need wandb at import or annotation time would
       # only ever be caught here.
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      # Both must resolve under `reference/`, so the tree that is read is the tree that
+      # is run. A skew between two checkouts at different commits has already caused a
+      # wrong SHA to be stated as fact.
+      - name: Verify KINDER resolves under reference/
+        run: |
+          python - <<'PY'
+          import pathlib, kinder, kinder_models
+          root = pathlib.Path.cwd() / "reference"
+          for mod in (kinder, kinder_models):
+              path = pathlib.Path(mod.__file__).resolve()
+              assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
+              print(f"{mod.__name__}: {path}")
+          PY
       - run: mypy src
       # With it: `ignore_missing_imports = true` means that with no wandb package to
       # read, `wandb.init` is `Any` and *every* argument to it type-checks. So the pass
@@ -55,13 +102,27 @@ jobs:
       # second full install, for a job that already runs in under two minutes. Order
       # matters and is not arbitrary -- installing the extra is additive, so the
       # wandb-free condition can only be tested before it, never after.
-      - run: pip install -e ".[dev,wandb]"
+      - run: pip install -e ".[dev,tossing3d,wandb]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - run: mypy src
 
   test:
     runs-on: ubuntu-latest
+    env: *kinder_env
     steps:
+      # Selecting OSMesa above is only half of it -- `libosmesa6-dev` is what makes the
+      # backend exist. Without it MuJoCo raises on import and `kinder`'s `_check_deps`
+      # swallows the exception, so every Dynamic3D environment vanishes *silently* and
+      # the failure resurfaces much later as a `NameNotFound`. Copied from
+      # kinder-baselines' own CI, whose `unit-tests` job runs this same step verbatim;
+      # BLAS/LAPACK are in it because `pybullet_helpers` compiles IKFast against them.
+      # Before checkout, as it is there: it touches nothing in the workspace.
+      - name: Install LAPACK BLAS, and OSMESA
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -81,9 +142,85 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/aibasel/downward.git
           cd downward && ./build.py
-      - run: pip install -e ".[dev]"
-      - run: pytest -q
+      # The MimicLabs scene assets, cached exactly as Fast Downward is above: restore by
+      # key, and a conditional step that fetches them only on a miss.
+      #
+      # They are a genuine runtime dependency of every simulator-backed Tossing3D test --
+      # `Tossing3D-o1.json` declares `"scene": "lab2"`, and building it opens
+      # `meshes/lab2/.../wall_decoration_vis.msh`. Without them 23 tests fail on a missing
+      # file, which is what they did before this step existed.
+      #
+      # **Keyed on the `reference/kindergarden` gitlink**, because that is what the assets
+      # move with. Deliberately no `restore-keys`: a prefix fallback would serve the
+      # previous pin's geometry after a bump, which is precisely the silent scene change
+      # `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` exists to catch.
+      # A bump therefore pays one slow download and reseeds the key.
+      - name: Resolve the kindergarden pin
+        id: kinder-pin
+        run: echo "sha=$(git rev-parse HEAD:reference/kindergarden)" >> "$GITHUB_OUTPUT"
+      - name: Cache MimicLabs scene assets
+        id: cache-assets
+        uses: actions/cache@v4
+        with:
+          path: reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
+          key: mimiclabs-scenes-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      # After the install, because it imports `kinder`. Fetching here rather than letting
+      # `kinder.make()` do it means `DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD` stays set for
+      # pytest: the assets are either in place before any test runs, or this step fails
+      # loudly -- instead of one test quietly pulling 2 GB mid-suite.
+      #
+      # The whole 2.0 GB tree, because upstream's downloader takes no scene argument: it
+      # fetches one `assets.zip` from one Drive URL and unpacks all seven lab scenes.
+      # Tossing3D reads ~25 MB of that (`meshes/lab2` 14 M, `textures/lab2` 7.5 M, plus
+      # 3.7 M of shared top-level textures `lab2.xml` also references). Scoping the fetch
+      # would need an upstream `kindergarden` change, so the cache pays the 2 GB once per
+      # pin instead.
+      - name: Download MimicLabs scene assets
+        if: steps.cache-assets.outputs.cache-hit != 'true'
+        run: python -c "from kinder.utils import download_mimiclabs_assets as d; d(non_interactive=True)"
+      - name: Verify KINDER resolves under reference/
+        run: |
+          python - <<'PY'
+          import pathlib, kinder, kinder_models
+          root = pathlib.Path.cwd() / "reference"
+          for mod in (kinder, kinder_models):
+              path = pathlib.Path(mod.__file__).resolve()
+              assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
+              print(f"{mod.__name__}: {path}")
+          PY
+      # **Two pytest processes, because MuJoCo and torch cannot share one.**
+      #
+      # `libOSMesa.so.8` links `libLLVM.so.20.1` dynamically; `libtriton.so` statically
+      # bundles 16,740 exported LLVM symbols and declares no dynamic LLVM dependency. Once
+      # a Tossing3D test has loaded OSMesa, the `import triton` that `torch.optim.Adam`
+      # triggers (via `torch._compile` -> `torch._dynamo`) puts a second LLVM in the same
+      # address space, and symbol interposition kills the interpreter outright -- a bare
+      # `Fatal Python error: Segmentation fault`, with no test summary and therefore no
+      # report of anything that failed before it. This does not bite the workstation, whose
+      # EGL is NVIDIA's driver and links no LLVM.
+      #
+      # kinder-baselines never hits it because its CI is one pytest per package
+      # (`run_in_affected_packages.sh`), so `kinder-models` and the torch packages never
+      # share an interpreter. This is the same shape, at the granularity we have.
+      #
+      # `tests/environments/tossing3d/` is the split point because it is the *only* path
+      # that pulls `mujoco` into the pytest process -- measured per candidate file, not
+      # assumed from names. `tests/scripts/test_reproducibility.py` drives Tossing3D
+      # through the CLI in subprocesses, so it stays on the other side.
+      #
+      # `--ignore` is the complement of the first step's path, so every test still runs in
+      # exactly one of the two: 180 + 1745 = 1925, the same total as the single run.
+      - name: Pytest — Tossing3D (loads MuJoCo/OSMesa; own process)
+        run: pytest -q tests/environments/tossing3d
         env:
           # `downward/` is checked out inside the workspace here rather than
           # beside the repo, so point the planner at it explicitly.
+          FD_EXEC_PATH: ${{ github.workspace }}/downward
+      # `!cancelled()` rather than the default, so a failure in the step above cannot hide
+      # this one's results -- both always report, and the job fails if either did.
+      - name: Pytest — everything else (loads torch; own process)
+        if: ${{ !cancelled() }}
+        run: pytest -q --ignore=tests/environments/tossing3d
+        env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
