@@ -2,8 +2,8 @@
 
 ## Why the state carries its own symbolic abstraction
 
-Tossing3D's six predicates are kinder-baselines', not ours (see `predicates.py`). Four
-of upstream's six classifiers are pure functions of a KINDER `ObjectCentricState`, but
+Tossing3D's five predicates are kinder-baselines', not ours (see `predicates.py`). Three
+of upstream's five classifiers are pure functions of a KINDER `ObjectCentricState`, but
 two are not:
 
 - `Holding` adds a forward-kinematics conjunct, evaluated through a live `PyBulletSim`.

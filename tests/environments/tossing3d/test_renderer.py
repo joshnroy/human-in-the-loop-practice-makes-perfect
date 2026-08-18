@@ -22,7 +22,9 @@ def test_the_caption_reports_the_cube_position_the_goal_box_and_the_verdict() ->
         label="Toss(...)",
     )
     assert "1.9902" in lines[1]
-    assert "[1.8500, 2.1500]" in lines[1]
+    # The scored box, not the bin: `[1.95, 2.10]` at the `reference/kindergarden` pin
+    # this branch carries, where it used to be the bin-wide `[1.85, 2.15]`.
+    assert "[1.9500, 2.1000]" in lines[1]
     assert "InBin = True" in lines[1]
 
 

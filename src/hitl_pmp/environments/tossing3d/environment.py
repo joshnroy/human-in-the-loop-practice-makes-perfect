@@ -10,9 +10,17 @@ irreversibility is why this domain is here.
 
 KINDER steps at `control_frequency = 10 Hz` over a `0.0005 s` simulation timestep, i.e.
 200 physics substeps per env step, and a single grasp takes ~70 of those env steps.
-`core.Environment.take_action` therefore takes a *skill*: `[skill_id, param_0, param_1]`.
-The controllers that turn that into hundreds of 11- or 18-dimensional joint commands are
-upstream's, unmodified, behind `KinderBackend`.
+`core.Environment.take_action` therefore takes a *skill*:
+`[skill_id, param_0, param_1, param_2, param_3]`. The controllers that turn that into
+hundreds of 11- or 18-dimensional joint commands are upstream's, unmodified, behind
+`KinderBackend`.
+
+## Two skills, not three
+
+`pick_cube` and `move_to_toss_location_and_toss` are the whole domain. The base move and
+the throw used to be separate skills (`MoveToThrowPose`, `Toss`) with a predicate --
+`RobotAtSuccessfulThrowPose` -- naming the pose between them; upstream composed them, so
+that predicate has no skill to be the effect of and is gone. See `skills.py`.
 
 ## `set_state` can only restore an episode-initial state, and says so
 
@@ -85,9 +93,18 @@ class Tossing3DEnvironment(Environment):
     )
     # A subset of `MujocoMovableObjectType`'s 16. `bb_z` is the cube's own bounding-box
     # height, which upstream's `OnGround` uses to decide "resting on the floor" without a
-    # hardcoded cube size; `qx`/`qy` are its flatness check.
+    # hardcoded cube size.
+    #
+    # The full quaternion and all three extents are carried because upstream's `OnGround`
+    # is a face-interchangeable test rather than the old `qx`/`qy`-near-zero one: it
+    # composes the measured rotation with the cube's 24-element symmetry group, and it
+    # decides whether an object *is* a cube by comparing `bb_x`/`bb_y`/`bb_z`. The
+    # classifier itself runs upstream, on the `ObjectCentricState` (see `predicates.py`);
+    # these features are what let a test -- and a reader -- see the same rest pose the
+    # classifier judged, rather than having to take its verdict on trust.
     cube_type: ClassVar[Type] = Type(
-        name="tossing3d_cube", feature_names=("x", "y", "z", "qx", "qy", "bb_z")
+        name="tossing3d_cube",
+        feature_names=("x", "y", "z", "qx", "qy", "qz", "qw", "bb_x", "bb_y", "bb_z"),
     )
     # `bin_0` and `cuboid_barrier` are `MujocoObjectType`; x/y/z is what the symbolic layer
     # needs of their poses.
@@ -118,18 +135,23 @@ class Tossing3DEnvironment(Environment):
 
     # Skill ids, as they appear in slot 0 of an Action. Fixed so a recorded action vector
     # keeps its meaning.
-    pick_id: ClassVar[int] = 0
-    move_to_throw_pose_id: ClassVar[int] = 1
-    toss_id: ClassVar[int] = 2
+    #
+    # **These do not mean what they meant before the two-skill migration.** Id 1 was
+    # `MoveToThrowPose` and id 2 was `Toss`; both are now one composed skill at id 1, and
+    # id 2 is unused. An action vector recorded before that migration is not readable
+    # here -- the parameter slots widened too.
+    pick_cube_id: ClassVar[int] = 0
+    move_to_toss_location_and_toss_id: ClassVar[int] = 1
     # Not a skill: the id `noop_action` carries, chosen outside the real ids so
-    # `_execute` falls through every branch. Negative rather than 3 so that adding a
-    # fourth controller can never silently turn every no-op into it.
+    # `_execute` falls through every branch. Negative rather than 2 so that adding a
+    # third controller can never silently turn every no-op into it.
     noop_id: ClassVar[int] = -1
 
-    # [skill_id, param_0, param_1]. Two parameter slots because `Pick` is the widest
-    # skill (distance, rotation); `MoveToThrowPose` uses one and `Toss` none, and the
-    # unused slots are ignored rather than validated, exactly as Tossing Room does.
-    action_space: ClassVar[Box] = Box(-np.inf, np.inf, (3,))
+    # [skill_id, param_0, param_1, param_2, param_3]. Four parameter slots because the
+    # composed toss is the widest skill (distance, rotation, release speed, gripper
+    # release ms); `PickCube` uses none at all, and the unused slots are ignored rather
+    # than validated, exactly as Tossing Room does.
+    action_space: ClassVar[Box] = Box(-np.inf, np.inf, (5,))
 
     variant: str = "o1"
     scene_bg: bool = True
@@ -204,9 +226,11 @@ class Tossing3DEnvironment(Environment):
     def last_controller_steps(self) -> tuple[int, ...]:
         """`env.step` counts for the controller executions the last skill ran.
 
-        One entry per upstream controller, so `Toss` reports two (windup, swing). This is
-        the quantity `docs/kinder-environment-validation.md` reports as `71 / 23 / 16 / 18`
-        for the oracle's four controller executions, which is why it is kept.
+        One entry per upstream controller. Both skills are now a single controller each --
+        the composed toss drives base motion, windup and swing through one `step()` -- so
+        this is a one-tuple either way. It used to report the oracle's four executions as
+        `71 / 23 / 16 / 18` in `docs/kinder-environment-validation.md`; that breakdown is
+        no longer observable from here, because the phases are inside one controller.
         """
         return self._last_controller_steps
 
@@ -319,16 +343,16 @@ class Tossing3DEnvironment(Environment):
     def noop_action(self) -> Action:
         """`noop_id` in slot 0, which `_execute` falls through as an unrecognised skill.
 
-        Emphatically not a zero vector: `pick_id == 0`, so `np.zeros(3)` is a real
-        `pick_shelf` at distance 0.0 -- a whole arm trajectory, and the concrete bug
-        this method exists to close. This is the one domain here where a wrong no-op
-        costs seconds of simulator time as well as a wrong state.
+        Emphatically not a zero vector: `pick_cube_id == 0`, so `np.zeros(5)` is a real
+        `pick_cube` -- a whole arm trajectory, and the concrete bug this method exists to
+        close. This is the one domain here where a wrong no-op costs seconds of simulator
+        time as well as a wrong state.
 
         `take_action` still advances the scene's `steps_taken`, as it does for any
         unrecognised action. That is the interface's contract, not a violation of it:
         the world does not move, but the transition is still charged.
         """
-        return np.array([float(self.noop_id), 0.0, 0.0])
+        return np.array([float(self.noop_id), 0.0, 0.0, 0.0, 0.0])
 
     def set_state(self, *, state: State) -> None:
         """Adopt `state`, rebuilding the simulator from its seed when it is an initial one.
@@ -433,21 +457,19 @@ class Tossing3DEnvironment(Environment):
             self._last_skill_error = f"non-finite action: {action!r}"
             return []
         skill_id = int(round(float(action[0])))
-        if skill_id == self.pick_id:
-            return [backend.run_pick(distance=float(action[1]), rotation=float(action[2]))]
-        if skill_id == self.move_to_throw_pose_id:
-            # Rotation is pinned at upstream's own test value rather than exposed: 1.35 m
-            # of standoff at a nonzero yaw aims the throw off the goal region entirely,
-            # and no measurement in this repo covers it.
-            return [backend.run_move_to_throw_pose(standoff=float(action[1]), rotation=0.0)]
-        if skill_id == self.toss_id:
-            # Slot 1 is the release speed in joint-path deg/s; slot 2 is the millisecond
-            # from the start of the swing at which the gripper opens.
-            windup, swing = backend.run_toss(
-                release_speed_deg_s=float(action[1]),
-                gripper_release_ms=float(action[2]),
-            )
-            return [windup, swing]
+        if skill_id == self.pick_cube_id:
+            # No parameters at all: upstream derives the standoff and the grasp rotation
+            # internally, so every slot is ignored here rather than read and discarded.
+            return [backend.run_pick_cube()]
+        if skill_id == self.move_to_toss_location_and_toss_id:
+            return [
+                backend.run_move_to_toss_location_and_toss(
+                    distance=float(action[1]),
+                    rotation=float(action[2]),
+                    release_speed_deg_s=float(action[3]),
+                    gripper_release_ms=float(action[4]),
+                )
+            ]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []
 

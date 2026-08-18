@@ -29,17 +29,23 @@ class Tossing3DProblem(Problem):
     def max_episode_steps(self) -> int:
         """The shortest solve plus two.
 
-        The shortest solve is exactly three skills -- `Pick`, `MoveToThrowPose`, `Toss` --
-        and there is no shorter route, since `Toss` requires both `Holding` and
-        `RobotAtSuccessfulThrowPose`, and nothing else grants either. The `+ 2` is this
-        repo's standing convention and is deliberately small here: a generous horizon in a
-        domain whose skills are stochastic quietly becomes a retry dial, and in *this*
-        domain a retry is not even available -- after a toss the cube is past the barrier,
-        `Reachable` is false, and
-        no further skill applies. So the extra budget buys one recovery from a failed
-        grasp and nothing more, which is the honest amount.
+        The shortest solve is exactly two skills -- `PickCube`, then
+        `MoveToTossLocationAndToss` -- and there is no shorter route, since the toss
+        requires `Holding` and nothing but the pick grants it. The `+ 2` is this repo's
+        standing convention and is deliberately small here: a generous horizon in a domain
+        whose skills are stochastic quietly becomes a retry dial, and in *this* domain a
+        retry is not even available -- after a toss the cube is past the barrier,
+        `Reachable` is false, and no further skill applies. So the extra budget buys one
+        recovery from a failed grasp and nothing more, which is the honest amount.
+
+        **This was `3 + 2` under the three-skill decomposition and is `2 + 2` now.** The
+        shortest solve lost a step when upstream composed the base move into the toss, so
+        leaving the literal at 5 would have kept a horizon one step more generous than the
+        convention it claims -- and more generous than the horizon every published
+        Tossing3D baseline was measured under, which would confound a comparison against
+        them in the new domain's favour.
         """
-        return 3 + 2
+        return 2 + 2
 
     def run_task_episode(
         self, *, task: Task, policy: Policy, renderer: type[Renderer] | None = None
@@ -48,7 +54,7 @@ class Tossing3DProblem(Problem):
 
         The loop is the standard one. What is domain-specific is *how many frames a
         transition is worth*: one `take_action` here runs a whole KINDER controller, so
-        rendering only at transition boundaries produced a four-frame `episode.mp4` of a
+        rendering only at transition boundaries produced a three-frame `episode.mp4` of a
         domain whose entire point is a throw. When a renderer is given, the backend
         collects every physics tick (`gymnasium.wrappers.RenderCollection`; see
         `kinder_backend.py`) and each skill contributes that whole burst instead.

@@ -6,6 +6,17 @@ captioned with its own measured rest position, the bin's measured footprint, the
 region's measured bracket and the `_check_goals()` verdict, so a reader who opens one
 clip on its own still sees what happened and where the scoring box was.
 
+## This script drives upstream's controllers directly, and still drives the old four
+
+`environments/tossing3d/` migrated to upstream's two-skill decomposition (`pick_cube`,
+`move_to_toss_location_and_toss`); **this script did not**, because it never went through
+this package's skills in the first place -- it grounds upstream's lifted controllers by
+name. All four it names still exist at the pinned `reference/kinder-baselines`, so it
+still runs, and it is still a faithful picture of *those controllers*. It is no longer a
+picture of what `--env tossing3d` executes. Bringing the two back into line means routing
+this through `SkillOraclePolicy`, which is a separate change and not one the pin bump
+forces.
+
 ## There is one scene, and there did not used to be
 
 `Tossing3D-o1`'s goal is `["on", "cube_0", "blocks_goal_region"]` -- a *ground region*,
@@ -25,12 +36,29 @@ adding a variant**, so both choices came to load the same scene. Josh's decision
 take upstream's config as *the* config rather than keep a divergent copy, so the copy
 and the flag are both gone and this script no longer selects anything.
 
-What survives that removal is the check: `verify_coincidence` re-measures the bin and
-the goal region off the compiled model on **every** run and raises if they ever stop
-being the same box. It was the evidence for a claim about one config; it is now an
+What survives that removal is the check: `verify_containment` re-measures the bin and
+the goal region off the compiled model on **every** run and raises if the box that scores
+ever leaves the bin. It was the evidence for a claim about one config; it is now an
 invariant of the only scene there is, which makes it worth more rather than less --
 the scene moves with the `reference/kindergarden` pin, and a pin bump that undid the
 fix would otherwise be silent.
+
+## The two boxes no longer coincide, and the check changed shape with them
+
+This used to demand that the bin footprint and the scored box be *the same box* to within
+5 mm, which they were: `blocks_goal_region` was `[1.90, 2.10]` on x and inflated to exactly
+the bin's own 0.30 m footprint. Upstream `270fdb6` narrowed the region to `[2.00, 2.05]`,
+which inflates to `[1.95, 2.10]` -- strictly **inside** the bin on every edge. Measured
+live at the current pin, that is a 100 mm inset at the near edge and 50 mm at the far one,
+so the old equality check is **red on a correct scene** by a factor of twenty against its
+own tolerance.
+
+So the invariant is now the one-way one: **scoring implies in-bin.** The scored box must
+lie inside the bin footprint, and a cube that scores is therefore necessarily in the bin.
+The converse has stopped being true -- a cube resting at x = 1.90 is in the bin and does
+not score -- and no check here asserts it any more. `tests/environments/tossing3d/
+test_kinder_fidelity.py` pins the same invariant from both the task JSON and the compiled
+model.
 
 ## Stale as of 2026-08-12: the committed clips, and the standoff pair
 
@@ -172,11 +200,14 @@ CONTRAST_LINE = (
 BIN_BODY_NAME = "bin_0"
 GOAL_REGION_NAME = "blocks_goal_region"
 
-# How far either box's edge may stick out of the other before they stop counting as the
-# same box. Not a tuned threshold: `bin_init_region` is a 1 mm-wide sampling range, so
-# the measured gap is 0.1-0.8 mm depending on the seed, while the pre-fix scene missed
-# by 231 mm. Any tolerance between about 1 mm and 20 cm separates those two identically.
-COINCIDENCE_TOLERANCE_M = 0.005
+# How far the scored box may stick out of the bin before containment is called broken.
+# Not a tuned threshold, and deliberately *not* a margin: before `blocks_goal_region` was
+# narrowed the two boxes were exactly coincident, which is a correct scene with zero
+# clearance on every edge, so requiring positive clearance would reject it. All this
+# absorbs is the float noise of subtracting equal numbers reached by two different
+# routes -- order 1e-16 -- which is why it is nine orders below the smallest real inset
+# at the current pin (50 mm) rather than a millimetre-scale figure.
+CONTAINMENT_TOLERANCE_M = 1e-9
 
 # The goal region is what the clip is *about*, so it is drawn. KINDER already creates a
 # box site for every region and already calls `visualize_regions()` unconditionally
@@ -253,13 +284,13 @@ class Footprint(BaseModel):
         return self.x_max - self.x_min
 
 
-class Coincidence(BaseModel):
+class ScoringGeometry(BaseModel):
     """The goal box and the bin footprint, measured off one compiled model together.
 
     A measurement rather than an assertion about JSON, because neither box is where the
     file says it is: the JSON range is inflated by `ground_placement_threshold` (0.05 m
-    per side) before it becomes a region, and the bin's placement is *sampled* from a
-    1 mm-wide `bin_init_region`.
+    per side) before it becomes a region, and the bin's placement is sampled from
+    `bin_init_region` (now zero-width, so no longer per-seed, but still sampled).
     """
 
     goal: Footprint
@@ -275,16 +306,20 @@ class Coincidence(BaseModel):
         )
 
     @property
-    def gap(self) -> float:
-        """The larger of the two edge displacements -- 0.0 iff the boxes are identical.
+    def overhang(self) -> float:
+        """How far the scored box sticks out of the bin on its worst edge.
 
-        Overlap alone is not enough: a bin nested well inside a much wider goal box
-        would overlap perfectly and still not be the same region. Comparing both edges
-        rules that out.
+        **Signed, and negative is the good case**: 0.0 when the two boxes share an edge,
+        negative when the scored box is inset from the bin, positive when it spills out.
+        Reported rather than a bare boolean so the printed line says by how much.
+
+        Overlap alone would not do: a scored box overlapping the bin perfectly while
+        extending well past it on one side would still admit a scoring position outside
+        the bin, which is exactly the failure this exists to catch.
         """
         return max(
-            abs(self.goal.x_min - self.bin_footprint.x_min),
-            abs(self.goal.x_max - self.bin_footprint.x_max),
+            self.bin_footprint.x_min - self.goal.x_min,
+            self.goal.x_max - self.bin_footprint.x_max,
         )
 
 
@@ -305,7 +340,7 @@ class ClipResult(BaseModel):
     bytes_after: int
     steps: dict[str, int]
     goal_region: GoalRegion | None
-    coincidence: Coincidence | None
+    geometry: ScoringGeometry | None
 
 
 class StandoffSeedResult(BaseModel):
@@ -495,7 +530,7 @@ def footprint_from_extents(
     """The x-interval spanned by a set of axis-aligned boxes.
 
     Empty input raises rather than returning a zero-width box, which would sail through
-    the coincidence check below as a perfect match against nothing.
+    the containment check below as a box contained in everything.
     """
     if not centers_x:
         raise ValueError("cannot take a footprint of no geoms")
@@ -558,24 +593,28 @@ def goal_region_footprint(
     return Footprint(x_min=float(bbox[0]), x_max=float(bbox[3]))
 
 
-def verify_coincidence(
-    *, coincidence: Coincidence, tolerance: float = COINCIDENCE_TOLERANCE_M
+def verify_containment(
+    *, geometry: ScoringGeometry, tolerance: float = CONTAINMENT_TOLERANCE_M
 ) -> None:
-    """Fail the run if the bin is not, in fact, sitting on the goal region.
+    """Fail the run if the box that scores is not inside the bin.
 
-    Checked against live geometry on **every** run, because "landing in the bin and
-    satisfying the goal are the same event" is exactly the kind of claim that is easy to
-    state and easy to have silently stopped being true. It once verified the one config
-    that made it true; since `kindergarden` PR #126 it is an invariant of the only scene
+    Checked against live geometry on **every** run, because "a cube that scores is a cube
+    in the bin" is exactly the kind of claim that is easy to state and easy to have
+    silently stopped being true. It once verified the one config that made the two boxes
+    coincide; since `kindergarden` PR #126 containment is an invariant of the only scene
     there is, and the scene moves with the `reference/kindergarden` pin -- so a pin bump
-    that undid the fix is precisely what this is here to make loud.
+    that put the scored box back outside the bin is precisely what this makes loud.
+
+    **Note the direction.** This does not assert the converse, that a cube in the bin
+    scores. That was true while the boxes coincided and is false now; see this module's
+    docstring.
     """
-    if coincidence.gap > tolerance:
+    if geometry.overhang > tolerance:
         raise ValueError(
-            f"bin and goal region do not coincide: goal x in "
-            f"[{coincidence.goal.x_min:.4f}, {coincidence.goal.x_max:.4f}], bin x in "
-            f"[{coincidence.bin_footprint.x_min:.4f}, {coincidence.bin_footprint.x_max:.4f}] "
-            f"(worst edge off by {coincidence.gap:.4f} m > {tolerance} m)"
+            f"the scored box is not inside the bin: goal x in "
+            f"[{geometry.goal.x_min:.4f}, {geometry.goal.x_max:.4f}], bin x in "
+            f"[{geometry.bin_footprint.x_min:.4f}, {geometry.bin_footprint.x_max:.4f}] "
+            f"(worst edge spills out by {geometry.overhang:.4f} m > {tolerance} m)"
         )
 
 
@@ -799,8 +838,8 @@ def render_clip(
     robot_env = object_centric._robot_env  # noqa: SLF001
 
     # Measured off the compiled model, every run -- never inferred from the JSON, which
-    # states neither box's real extent (see `Coincidence`).
-    coincidence = Coincidence(
+    # states neither box's real extent (see `ScoringGeometry`).
+    geometry = ScoringGeometry(
         goal=goal_region_footprint(
             ground_fixture=object_centric._ground_fixture,  # noqa: SLF001
             robot_env=robot_env,
@@ -810,13 +849,14 @@ def render_clip(
         ),
     )
     print(
-        f"  goal x in [{coincidence.goal.x_min:.6f}, {coincidence.goal.x_max:.6f}], "
-        f"bin x in [{coincidence.bin_footprint.x_min:.6f}, "
-        f"{coincidence.bin_footprint.x_max:.6f}] "
-        f"(overlap {coincidence.overlap:.6f} m, worst edge off by {coincidence.gap:.6f} m)",
+        f"  goal x in [{geometry.goal.x_min:.6f}, {geometry.goal.x_max:.6f}], "
+        f"bin x in [{geometry.bin_footprint.x_min:.6f}, "
+        f"{geometry.bin_footprint.x_max:.6f}] "
+        f"(overlap {geometry.overlap:.6f} m, worst edge spills out by "
+        f"{geometry.overhang:.6f} m)",
         flush=True,
     )
-    verify_coincidence(coincidence=coincidence)
+    verify_containment(geometry=geometry)
 
     # After reset, never before: reset rebuilds the scene XML and recompiles the model,
     # so an rgba written earlier would be thrown away along with the model it was on.
@@ -888,7 +928,7 @@ def render_clip(
             bin_x=bin_x,
             solved=solved,
             goal_region=region,
-            bin_x_range=coincidence.bin_footprint,
+            bin_x_range=geometry.bin_footprint,
         )
         path = output_dir / gif_filename(standoff=standoff)
         before, after = write_gif(
@@ -912,7 +952,7 @@ def render_clip(
         bytes_after=after,
         steps=steps,
         goal_region=region,
-        coincidence=coincidence,
+        geometry=geometry,
     )
 
 
