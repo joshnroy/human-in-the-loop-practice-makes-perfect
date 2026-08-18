@@ -327,3 +327,84 @@ def test_the_release_fraction_trigger_is_gone_rather_than_kept_alongside() -> No
     source = inspect.getsource(parameterized_skills)
     assert "_release_fraction" not in source
     assert "gripper_release_ms" in source
+
+
+def test_no_tossing3d_controller_declares_a_parameter_space() -> None:
+    """**A silent-failure shape, pinned so it cannot change without notice.**
+
+    `LiftedParameterizedController.params_space` is `None` for every controller this
+    domain drives -- `create_lifted_controllers` never assigns it -- so there is nothing to
+    read a parameter arity off. That matters because `None` does not read as "no answer
+    available" at a call site: code that asks a controller how many parameters it takes
+    will, in the obvious spelling, treat `None` as zero and silently stop sampling. A
+    domain therefore has to declare arity itself (`Tossing3DSkills`' `param_dim`) and check
+    that declaration against what `sample_parameters` actually draws.
+
+    Pinned rather than left as a comment because the failure is invisible: a skill whose
+    parameters stopped being sampled still executes, still terminates, and still writes a
+    plausible `stats.json`. If upstream ever populates `params_space`, this fails and the
+    domain can start reading it instead of declaring it.
+
+    Constructed directly rather than through the factory, which would need a live scene.
+    """
+    from bilevel_planning.structs import LiftedParameterizedController
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        PickCubeController,
+        create_lifted_controllers,
+    )
+    from relational_structs import Type, Variable
+
+    movable = Type("mujoco_movable_object")
+    lifted = LiftedParameterizedController(
+        [Variable("?robot", movable), Variable("?cube", movable), Variable("?barrier", movable)],
+        PickCubeController,
+    )
+    assert lifted.params_space is None, (
+        "a Tossing3D controller now declares a params_space; parameter arity can be read "
+        "off it rather than declared by this domain"
+    )
+    assert "params_space" not in inspect.getsource(create_lifted_controllers), (
+        "create_lifted_controllers now mentions params_space; the factory may be setting it"
+    )
+
+
+def test_kinder_variable_names_carry_the_sigil_and_this_domains_must_not() -> None:
+    """**The trap that disables planning without failing it.**
+
+    KINDER's `Variable.name` carries the PDDL sigil (`"?robot"`); this repo's
+    `core.Variable` deliberately does not, because `PddlWriter.variable_str` adds it at
+    write time. Passing an upstream name straight through therefore renders `??robot`,
+    which Fast Downward's translator splits into two tokens.
+
+    Nothing raises. The domain still parses, planning simply stops finding plans, and
+    `EesMethod._next_plan` catches the resulting `PlanningFailure` and degrades to a no-op
+    -- so a run exits 0 and writes a full `stats.json` in which the method never took an
+    action. Strictly worse than a crash, which is why the asymmetry is pinned from both
+    sides: upstream's names *must* carry the sigil, and this domain's *must not*.
+
+    This domain does not currently import upstream's variables, so nothing is broken today.
+    The test exists because the day someone does, the symptom will be silence.
+    """
+    import re
+
+    from kinder_models.dynamic3d.tossing.parameterized_skills import create_lifted_controllers
+
+    from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+
+    factory_source = inspect.getsource(create_lifted_controllers)
+    upstream = sorted(set(re.findall(r"Variable\(\s*[\"']([^\"']+)", factory_source)))
+    assert upstream, "no Variable declarations found; the shape of upstream changed"
+    assert all(name.startswith("?") for name in upstream), (
+        f"upstream's Variable names no longer all carry the sigil: {upstream}"
+    )
+
+    ours = [
+        Tossing3DSkills._robot,  # noqa: SLF001
+        Tossing3DSkills._cube,  # noqa: SLF001
+        Tossing3DSkills._bin,  # noqa: SLF001
+        Tossing3DSkills._barrier,  # noqa: SLF001
+    ]
+    assert not any(variable.name.startswith("?") for variable in ours), (
+        "this domain's own Variable names have picked up the sigil; PddlWriter adds it, so "
+        "they would render as '??robot' and silently disable planning"
+    )

@@ -28,14 +28,18 @@ def test_the_environment_is_registered_under_tossing3d() -> None:
     assert ENVIRONMENTS["tossing3d"] is Tossing3DCli
 
 
-def test_registering_it_does_not_pull_a_simulator_into_the_global_cli() -> None:
-    """CI never installs the optional extra, and `hitl_pmp.cli` imports every registered
-    environment's CLI. If this domain's import chain reached MuJoCo, `--env lightswitch`
-    would stop working on a machine without it."""
-    import sys
+def test_registering_it_does_not_pull_a_simulator_into_the_global_cli(*, no_kinder_import) -> None:
+    """`hitl_pmp.cli` imports every registered environment's CLI. If this domain's
+    import chain reached MuJoCo, `--env lightswitch` would stop working on a machine
+    without the optional extra.
+
+    Asserted through `no_kinder_import` rather than `sys.modules`: the latter is a
+    session-global proxy that depends on collection order, not on this call. See
+    `conftest.py`.
+    """
+    del no_kinder_import
 
     Cli.parse_args(argv=["--env", "lightswitch", "--method", "skill-oracle"])
-    assert "mujoco" not in sys.modules
 
 
 def test_the_defaults_are_read_off_the_models_rather_than_re_literalled() -> None:
@@ -76,16 +80,22 @@ def test_the_global_cli_registers_this_domains_flags_when_env_is_tossing3d() -> 
     assert args.num_test_tasks == 10
 
 
-def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator() -> None:
+def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator(
+    *, no_kinder_import
+) -> None:
     """`render_fps` is only ever read when a clip is written, and a run without
     `--output-dir` gets no renderer. Building a MuJoCo scene just to fill in a number
-    nothing plays at would make every headless run pay for the one that does not."""
-    import sys
+    nothing plays at would make every headless run pay for the one that does not.
+
+    Asserted through `no_kinder_import` rather than `sys.modules`: the latter is a
+    session-global proxy that depends on collection order, not on this call. See
+    `conftest.py`.
+    """
+    del no_kinder_import
 
     assert Tossing3DCli.resolve_render_fps(env=Tossing3DEnvironment(), renderer=None) == (
         Tossing3DCli.unrendered_render_fps
     )
-    assert "mujoco" not in sys.modules
 
 
 # --- the separate evaluation Problem, and the reset-free arm it unlocks -----------
