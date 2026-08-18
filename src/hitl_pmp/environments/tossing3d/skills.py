@@ -1,68 +1,95 @@
-"""Tossing3D's three lifted skills: `Pick`, `MoveToThrowPose`, `Toss`.
+"""Tossing3D's two lifted skills: `PickCube` and `MoveToTossLocationAndToss`.
 
 Each one is a `core.method.types.Skill` -- an operator model -- paired to an upstream
 KINDER controller that actually executes it. That pairing is the shape
-`kinder_bilevel_planning.env_models.dynamic3d.tidybot3d_shelf3D.py` uses, translated to
-this project's types: there, `LiftedSkill(PickTargetOperator, LiftedPickShelfController)`
-binds a `LiftedOperator` (preconditions / add effects / delete effects) to
-`create_lifted_controllers()["pick_shelf"]`. Here the operator half is the `Skill` below
-and the controller half is `KinderBackend.run_*`, dispatched by `compute_action` through
+`kinder_bilevel_planning.env_models.dynamic3d.tidybot3d_tossing3D.py` uses, translated to
+this project's types: there, `LiftedSkill(PickCubeOperator, controllers["pick_cube"])`
+binds a `LiftedOperator` (preconditions / add effects / delete effects) to a lifted
+controller. Here the operator half is the `Skill` below and the controller half is
+`KinderBackend.run_*`, dispatched by `compute_action` through
 `Tossing3DEnvironment.take_action`.
 
-## This package invents no controller parameter
+## It was three skills, and the middle one is gone
 
-Everything a controller is actually handed is upstream's own value or drawn from
-upstream's own bounds:
+| was | controller(s) | is |
+| --- | --- | --- |
+| `Pick` (distance, rotation) | `pick_shelf` | `PickCube`, **no parameters** |
+| `MoveToThrowPose` (standoff) | `move_to_target` | folded into the toss |
+| `Toss` (speed, ms) | `move_arm_to_conf`, `toss` | `MoveToTossLocationAndToss`, four |
 
-| skill | controller(s) | parameters | where the numbers come from |
-| --- | --- | --- | --- |
-| `Pick` | `pick_shelf` | distance, rotation | upstream's `MOVE_TO_TARGET_{DISTANCE,ROT}_BOUNDS` |
-| `MoveToThrowPose` | `move_to_target` | standoff | **ours** -- see `THROW_STANDOFF_BOUNDS` |
-| `Toss` | `move_arm_to_conf`, then `toss` | speed, release ms | upstream's own two knobs |
+Upstream composed the base move and the throw so that **no predicate has to name the pose
+between them**. On the pick, upstream's `PickCubeController` exposes `sample_parameters`
+(sampling standoff and rotation), but its `reset()` executes `del params` and hardcodes
+`TARGET_DISTANCE = 0.55, TARGET_ROTATION = 0.0` -- so `param_dim=0` is declared here to
+match upstream's effective execution behavior at this pin. Both changes keep controller
+execution identical to upstream's behavior, which is the direction this domain's rules
+point: `kinder_backend.py` drives upstream's controllers unmodified, and this package
+invents no controller parameter.
 
-The one genuinely new range is the throw standoff, and it has to be: upstream's own
-`MOVE_TO_TARGET_DISTANCE_BOUNDS` is `(0.5, 0.6)`, which is a *grasping* standoff, and
-upstream's tossing test simply hardcodes `1.35` with no range at all. So the interval
-below is this repo's, taken from the standoffs it has actually measured rather than
-invented.
+Two consequences worth stating rather than discovering:
 
-**`Toss`'s two continuous parameters are upstream's, not ours.** `TossController.reset`
-takes exactly the two knobs the real TidyBot's `movej_primitive.execute()` does --
-`release_speed` and `gripper_release_ms` -- so both arm configurations remain upstream's,
-untouched. The ranges are `predicates.TOSS_SPEED_BOUNDS`, `(60, 140)` joint-path deg/s,
-and `predicates.TOSS_RELEASE_MS_BOUNDS`, `(300, 1400)` ms from the start of the swing.
+1. **`PickCube` has `param_dim=0`, so it has no sampler and cannot be learned.** EES
+   builds one success classifier and one sampler per skill with `param_dim > 0`; with two
+   skills and only one of them parameterised, every learned parameter in this domain now
+   belongs to the composed toss. Tossing Room already has `param_dim=0` skills, so nothing
+   in the harness is new -- but what a learning run on this domain *measures* is narrower
+   than it was.
+2. **A standoff that cannot score is now only discovered by throwing from it.** The old
+   `MoveToThrowPose` could be rejected before any throw happened, which is what
+   `RobotAtSuccessfulThrowPose` was for. The composed skill's only failure signal is the
+   landing.
 
-**They are drawn independently but are not independent in effect**: the swing lasts
-3100 ms at 60 deg/s and 1700 ms at 140, so a fixed millisecond is a fifth of the way
-through the slow swing and just under half way through the fast one. See
-`TOSS_RELEASE_MS_BOUNDS` for the measured duration table.
+## Every continuous bound below is upstream's
+
+`MoveToTossLocationAndTossController` declares all four on itself, and they are narrower
+than the ones this package used to draw from -- upstream measured (480 draws across 16
+seeds) that every scoring draw fell in speed [117.5, 140.0] deg/s and release
+[710.4, 836.1] ms, and set its bounds a small margin outside that. The old
+`TOSS_SPEED_BOUNDS` of `(60, 140)` and `TOSS_RELEASE_MS_BOUNDS` of `(300, 1400)` spent
+most of a sampler's budget on combinations that can never score.
+
+**That is a real change to what a learning run measures, in the same direction as the
+`param_dim=0` pick**: narrowing the box a sampler draws from raises what an *untrained*
+sampler scores, which is the baseline a trained one has to beat. How much headroom is
+left is a measurement, not an argument, and is not asserted here.
+
+It is not a choice made in this package -- these are the bounds upstream's own controller
+samples from, and `test_kinder_pin.py` pins them against it, so this domain and the
+kb-side bilevel planner draw from the same box. Adopting them is what makes the two
+comparable at all.
+
+`TOSS_SPEED_BOUNDS` is in joint-path **deg/s** while upstream's `SPEED_BOUNDS` is rad/s;
+`KinderBackend.run_move_to_toss_location_and_toss` is the one site that converts. The
+degree convention is kept because every measured toss number in this domain's docs is in
+deg/s.
 
 ## The operator models, and the two choices that are load-bearing
 
 The rule here is that an operator model must never permit *more* than the raw dynamics
 allow -- a precondition weaker than reality yields plans that look valid and cannot
-execute. Two of the declarations below exist only for that reason:
+execute. Both are upstream's own, for the same reasons upstream gives:
 
-1. **`Pick` requires `Reachable(?cube, ?barrier)`.** The base cannot cross the barrier,
-   so a cube past it can never be grasped. Without this precondition a planner emits
-   "toss, then pick it back up and try again", which the dynamics silently refuse.
-2. **`Pick` deletes `RobotAtSuccessfulThrowPose(?robot, ?bin)`.**
-   `pick_shelf` drives the base to the cube, which is on the near side of the barrier and
-   therefore far too short of the bin to throw from. A model that let the predicate
-   survive a pick would let the planner skip `MoveToThrowPose`.
+1. **`PickCube` requires `Reachable(?cube, ?barrier)`.** The base cannot cross the
+   barrier, so a cube past it can never be grasped. Without this precondition a planner
+   emits "toss, then pick it back up and try again", which the dynamics silently refuse.
+2. **The toss deletes `Reachable(?cube, ?barrier)` unconditionally**, hit or miss. A toss
+   makes the cube unreachable whether or not it scored; deleting it only on success would
+   be a model in which a missed throw costs nothing.
 
-And one on the other side:
+And one add effect that is neither of those: **the toss adds `OnGround(?cube)`**, because
+upstream measured 15/15 scoring throws leaving the cube resting on a face. Upstream's
+`OnGround` is face-interchangeable for exactly that reason: a version reading "flat on the
+face it started on" would call most scoring throws a failure, and this add effect could
+not be honest against it. That is one of the things this domain gets for free by looking
+upstream's atoms up rather than re-implementing them (see `predicates.py`).
 
-3. **`Toss` deletes `Reachable(?cube, ?barrier)`.** A toss makes the cube unreachable
-   whether or not it lands in the bin. Declaring it unconditionally is what makes
-   the planner's model of a *failed* toss honest -- the alternative, deleting it only on
-   success, is a model in which a missed throw costs nothing.
-
-Nothing enforces that rule automatically: `test_operator_dynamics_fidelity.py` does not
-list this domain, and both it and this domain's `test_operator_fidelity.py` assert only
-that an applicable ground skill changes the real state -- which a missed throw does. An
-over-permissive `RobotAtSuccessfulThrowPose` is caught only by
-`test_no_toss_parameterisation_scores_from_beyond_the_accepted_band`.
+**The toss also requires `Reachable(?held, ?barrier)`.** Upstream's own note: without it
+the grounder can bind `?barrier` to an object the held cube was never down-x of, and the
+delete effect then targets an atom that was never true. Here the types make `?barrier`
+bind only to the barrier, so the binding hazard does not arise -- but the precondition
+stays, because it is also simply true (the pick requires it and nothing between them
+touches it) and because dropping it would make this operator's delete effect describe an
+atom the operator does not require.
 
 ## No operator takes a goal region
 
@@ -70,12 +97,6 @@ Every signature below names only objects a controller acts on or is aimed at. Th
 landing box is scene geometry the classifiers read out of `State` -- carried on the bin,
 under this domain's stated assumption that the bin's interior *is* that box (see
 `predicates.py`'s module docstring, which also names the config where that is false).
-
-It used to be a fifth object, `blocks_goal_region`, threaded through all three operators.
-Nothing ever bound it to anything but the single region in the scene, no skill could move
-or otherwise affect it, and every grounding was therefore one-to-one -- so dropping it
-changes no operator's strength, only what a plan step has to mention. The preconditions
-and effects below are the same predicates over the same states they were before.
 """
 
 from typing import ClassVar
@@ -86,36 +107,32 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
-from .predicates import (
-    HAND_EMPTY,
-    HOLDING,
-    IN_BIN,
-    ON_GROUND,
-    REACHABLE,
-    ROBOT_AT_SUCCESSFUL_THROW_POSE,
-    THROW_STANDOFF_BOUNDS,
-    TOSS_RELEASE_MS_BOUNDS,
-    TOSS_SPEED_BOUNDS,
-)
+from .predicates import HAND_EMPTY, HOLDING, IN_BIN, ON_GROUND, REACHABLE
 
-# Upstream's own bounds for a `pick_shelf` base standoff and yaw, from
-# `kinder_models/dynamic3d/utils.py:57-58`. Upstream's `PickShelfController.
-# sample_parameters` draws uniformly from exactly these and then rejection-tests the
-# resulting base pose against *other* cubes; with one cube in the scene there is nothing
-# to reject against, so a plain uniform draw is what upstream's sampler reduces to here.
-PICK_DISTANCE_BOUNDS = (0.5, 0.6)
-PICK_ROTATION_BOUNDS = (-np.pi / 4, np.pi / 4)
+# Upstream's `MoveToTossLocationAndTossController.TARGET_DISTANCE_BOUNDS`: where a throw
+# is possible, in metres from the bin. The upper part of the wider range upstream tried
+# does not score.
+TOSS_DISTANCE_BOUNDS = (1.25, 1.45)
 
-# `THROW_STANDOFF_BOUNDS` is the *feasible* range of throw standoffs and is what the
-# sampler below draws from. It is emphatically **not** the range
-# `RobotAtSuccessfulThrowPose` accepts: that band is derived per-call from the live scored
-# box carried on the bin and `THROW_RANGE`, and covers 6/13 of this interval (the
-# untrimmed geometric band, 0.300/0.65 -- see
-# `predicates.RobotAtSuccessfulThrowPoseClassifier`'s docstring for the smaller,
-# margin-trimmed band actually accepted). Those two used to be one symbol, which
-# made `MoveToThrowPose`'s add effect constant-true and its sampler unlearnable -- see
-# `predicates.THROW_STANDOFF_BOUNDS`. It still lives in `predicates.py` rather than here
-# only because that is where its measured provenance is written down.
+# Upstream's `WAYPOINT_TOLERANCE` (`kinder_models/dynamic3d/utils.py`), how close
+# `_check_robot_is_close_to_pose` requires the base to be to its own planned waypoint.
+WAYPOINT_TOLERANCE = 4 * 1e-2
+
+# Upstream's `TARGET_ROTATION_BOUNDS`: the widest yaw about the bin that still leaves the
+# base within half of `WAYPOINT_TOLERANCE` of the bin's axis at the largest standoff.
+# Computed from the two constants above rather than written as a literal, exactly as
+# upstream computes it, so a bump to either cannot silently drift out of sync.
+MAX_TOSS_ROTATION = float(np.arcsin(0.5 * WAYPOINT_TOLERANCE / TOSS_DISTANCE_BOUNDS[1]))
+TOSS_ROTATION_BOUNDS = (-MAX_TOSS_ROTATION, MAX_TOSS_ROTATION)
+
+# Upstream's `SPEED_BOUNDS`, in joint-path deg/s rather than upstream's rad/s -- see this
+# module's docstring for why the degree convention is kept and where it is converted.
+TOSS_SPEED_BOUNDS = (115.0, 140.0)
+
+# Upstream's `RELEASE_MS_BOUNDS`: the millisecond from the start of the swing at which
+# the gripper opens. Absolute rather than a swing fraction because that is what the real
+# TidyBot's `movej_primitive.execute()` takes.
+TOSS_RELEASE_MS_BOUNDS = (700.0, 840.0)
 
 
 class Tossing3DSkills:
@@ -136,9 +153,12 @@ class Tossing3DSkills:
     _bin: ClassVar[Variable] = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
     _barrier: ClassVar[Variable] = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
 
-    PICK: ClassVar[Skill] = Skill(
-        name="Pick",
-        parameters=(_robot, _cube, _barrier, _bin),
+    PICK_CUBE: ClassVar[Skill] = Skill(
+        name="PickCube",
+        # Upstream's own object order for `pick_cube`: (robot, cube, barrier). The
+        # barrier is unused by the controller and present so the operator can say the
+        # cube is still on this side of it.
+        parameters=(_robot, _cube, _barrier),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
@@ -149,44 +169,30 @@ class Tossing3DSkills:
         delete_effects=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
-            # pick_shelf drives the base to the cube: see choice 2.
-            LiftedAtom(predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE, variables=(_robot, _bin)),
         }),
-        param_dim=2,
+        param_dim=0,
     )
 
-    MOVE_TO_THROW_POSE: ClassVar[Skill] = Skill(
-        name="MoveToThrowPose",
-        parameters=(_robot, _cube, _bin),
-        # `Holding` rather than nothing: `move_to_target` here passes
-        # `disable_collision_objects=["cube_0"]`, upstream's own argument, which is only
-        # correct while the cube is in the gripper. Planning the base motion with the cube
-        # ignored while it sits on the floor would drive straight through it.
-        preconditions=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
-        add_effects=frozenset({
-            LiftedAtom(predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE, variables=(_robot, _bin))
-        }),
-        delete_effects=frozenset(),
-        param_dim=1,
-    )
-
-    TOSS: ClassVar[Skill] = Skill(
-        name="Toss",
-        parameters=(_robot, _cube, _bin, _barrier),
+    MOVE_TO_TOSS_LOCATION_AND_TOSS: ClassVar[Skill] = Skill(
+        name="MoveToTossLocationAndToss",
+        # Upstream's own object order: (robot, target, held, barrier).
+        parameters=(_robot, _bin, _cube, _barrier),
         preconditions=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
-            LiftedAtom(predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE, variables=(_robot, _bin)),
+            LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
         }),
         add_effects=frozenset({
-            LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
+            # Measured upstream on 20 throws: 15/15 that scored left the cube on a face.
+            LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
-            # Unconditionally, hit or miss: see this module's docstring, choice 3.
+            # Unconditionally, hit or miss: see this module's docstring, choice 2.
             LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
         }),
-        param_dim=2,
+        param_dim=4,
     )
 
     @staticmethod
@@ -195,19 +201,18 @@ class Tossing3DSkills:
 
         State-independent by the `SkillProvider` contract: a learned sampler generates
         many candidates from this and then picks among them using the state.
+
+        The four components are drawn independently but are not independent in effect --
+        the swing's duration is a function of its speed, so a fixed millisecond is a
+        different fraction of a slow swing than of a fast one.
         """
         skill = ground_skill.skill
-        if skill == Tossing3DSkills.PICK:
+        if skill == Tossing3DSkills.PICK_CUBE:
+            return np.zeros(0)
+        if skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return np.array([
-                rng.uniform(*PICK_DISTANCE_BOUNDS),
-                rng.uniform(*PICK_ROTATION_BOUNDS),
-            ])
-        if skill == Tossing3DSkills.MOVE_TO_THROW_POSE:
-            return np.array([rng.uniform(*THROW_STANDOFF_BOUNDS)])
-        if skill == Tossing3DSkills.TOSS:
-            # Drawn independently, but not independent in effect: the swing's duration is a
-            # function of the speed. See `TOSS_RELEASE_MS_BOUNDS`.
-            return np.array([
+                rng.uniform(*TOSS_DISTANCE_BOUNDS),
+                rng.uniform(*TOSS_ROTATION_BOUNDS),
                 rng.uniform(*TOSS_SPEED_BOUNDS),
                 rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
             ])
@@ -215,25 +220,26 @@ class Tossing3DSkills:
 
     @staticmethod
     def compute_action(*, ground_skill: GroundSkill, params: np.ndarray, state: State) -> Action:
-        """Realize a (ground skill, parameters) pair as this domain's `[id, p0, p1]` vector.
+        """Realize a (ground skill, parameters) pair as this domain's five-slot vector.
 
         `state` is unused: unlike Light Switch, whose skills compute a delta against the
         robot's current position, every parameter here is absolute (a standoff from the
-        bin, a yaw about the cube) and is interpreted by upstream's controller against
-        whatever state it is reset from.
+        bin, a yaw about it, a joint-path speed, a millisecond) and is interpreted by
+        upstream's controller against whatever state it is reset from.
         """
         del state
         skill = ground_skill.skill
-        if skill == Tossing3DSkills.PICK:
+        if skill == Tossing3DSkills.PICK_CUBE:
+            return np.array([Tossing3DEnvironment.pick_cube_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
+        if skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return np.array(
-                [Tossing3DEnvironment.pick_id, float(params[0]), float(params[1])], dtype=float
-            )
-        if skill == Tossing3DSkills.MOVE_TO_THROW_POSE:
-            return np.array(
-                [Tossing3DEnvironment.move_to_throw_pose_id, float(params[0]), 0.0], dtype=float
-            )
-        if skill == Tossing3DSkills.TOSS:
-            return np.array(
-                [Tossing3DEnvironment.toss_id, float(params[0]), float(params[1])], dtype=float
+                [
+                    Tossing3DEnvironment.move_to_toss_location_and_toss_id,
+                    float(params[0]),
+                    float(params[1]),
+                    float(params[2]),
+                    float(params[3]),
+                ],
+                dtype=float,
             )
         raise ValueError(f"Unknown skill: {skill.name}")

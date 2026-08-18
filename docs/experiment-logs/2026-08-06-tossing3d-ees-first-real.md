@@ -1,5 +1,25 @@
 # Tossing3D, EES vs uniform vs oracle: the first run where the sampler is consulted
 
+> **STALENESS NOTE (added 2026-08-16, at the two-skill migration).** Every Tossing3D
+> number on this page was measured on the **three-skill** decomposition: `Pick`
+> (sampling distance and rotation) -> `MoveToThrowPose` (sampling a standoff) -> `Toss`
+> (sampling release speed and gripper release millisecond), over six predicates
+> including `RobotAtSuccessfulThrowPose`. That domain no longer exists. Upstream replaced
+> it with two skills -- a parameterless `pick_cube` and a composed
+> `move_to_toss_location_and_toss` taking four parameters -- and this repo followed, so:
+> the pick has **no** continuous parameters and therefore no sampler at all; the standoff
+> is now the composed toss's first parameter, drawn from upstream's `(1.25, 1.45)` rather
+> than this repo's `(1.10, 1.75)`; release speed is drawn from `(115, 140)` deg/s rather
+> than `(60, 140)`; the gripper release millisecond from `(700, 840)` rather than
+> `(300, 1400)`; `RobotAtSuccessfulThrowPose` and the whole `THROW_RANGE` calibration are
+> deleted; and `OnGround` now accepts a cube resting on any face rather than only the one
+> it started on. Two measured grasp fixes (centre grasp, approach settling) also reach the
+> pick for the first time.
+>
+> **Nothing on this page is edited or recomputed.** It is a correct description of the
+> domain that was actually in effect when these runs happened. It is simply not evidence
+> about the two-skill domain, and no count here is directly comparable to a re-run on it.
+
 > **STALENESS NOTE (added 2026-08-10, after the barrier-collision fix to
 > `THROW_STANDOFF_BOUNDS`).** Every count and ratio below — `65/142`, `32/65`, `19/60`,
 > `18/19`, `48/275`, both task-success rows, and everything else that traces back to
@@ -16,6 +36,27 @@
 >
 > **Nothing above or below is edited or recomputed.** This is a correct description of the
 > range that was actually in effect when these runs happened.
+
+> **SECOND STALENESS NOTE (added 2026-08-18, at the KINDER pin bump).** Every number on
+> this page was also measured on a **different scene**. `environments/tossing3d/` selects
+> no scene of its own, so the geometry moves with the `reference/kindergarden` pin, and
+> the bump this note accompanies crosses upstream `270fdb6`, *"Decreased range of goal
+> region to make tossing not get hit on the wall + made the goal region visible"*. That
+> narrows `blocks_goal_region` from `[1.90, 2.10]` to `[2.00, 2.05]` on x, which inflates
+> to a live scoring window of x ∈ [1.95, 2.10] where it used to be x ∈ [1.85, 2.15] --
+> exactly the bin's own 0.30 m footprint. So the box that scores is now **strictly inside
+> the bin** rather than coincident with it, and **"the cube is in the bin" and "the cube
+> scores" have stopped being the same event**: a cube resting at x = 1.90 is in the bin
+> and does not score.
+>
+> Any solved/unsolved count on this page is therefore a count against a **wider** target
+> than the one in effect now, and is not comparable to a re-run. Landing positions in
+> metres are unaffected as measurements; what changed is which of them score.
+>
+> **Nothing here is edited or recomputed**, for the same reason as the note above: the
+> page correctly describes the conditions its runs actually happened under. Experiments on
+> this domain are being re-run after this stack lands.
+
 
 **Everything in this file up to and including `Method (to be run, not yet run)` was
 committed before any run of this experiment existed**, in the manner of the

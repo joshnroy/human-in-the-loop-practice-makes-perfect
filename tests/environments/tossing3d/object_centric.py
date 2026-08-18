@@ -19,7 +19,6 @@ __all__ = [
     "BIN_X",
     "CUBE_BB_Z",
     "CUBE_START_X",
-    "at_throw_pose",
     "object_centric_state",
 ]
 
@@ -118,20 +117,3 @@ def object_centric_state(  # noqa: PLR0914
     )
     objects = {"robot": robot, "cube_0": cube, "bin_0": target_bin, "cuboid_barrier": barrier}
     return state, objects
-
-
-def at_throw_pose(*, standoff: float, base_y: float = 0.0, base_rot: float = 0.0) -> bool:
-    """Upstream's own `RobotAtThrowPose`, at an *achieved* standoff, with no simulator.
-
-    The classifier is a `@staticmethod`, so it needs no abstractor instance -- which is
-    what keeps the throw-pose band's boundary probes offline after the swap to upstream's
-    classifiers.
-    """
-    from kinder_models.dynamic3d.tossing.state_abstractions import Tossing3DStateAbstractor
-
-    state, objects = object_centric_state(base_x=BIN_X - standoff, base_y=base_y, base_rot=base_rot)
-    return bool(
-        Tossing3DStateAbstractor._check_at_throw_pose(  # noqa: SLF001
-            state, objects["robot"], objects["bin_0"]
-        )
-    )

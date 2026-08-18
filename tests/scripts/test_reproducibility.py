@@ -33,9 +33,9 @@ needs_kinder = pytest.mark.skipif(
 LIGHTSWITCH_ARGS = ("--grid-size", "1", "--num-test-tasks", "8")
 
 # Deliberately the smallest run that still executes real controllers: one evaluation
-# sweep over two scenes. Each task is a full pick/move/toss attempt in MuJoCo, so this
-# is minutes rather than the milliseconds Light Switch costs -- which is why it is
-# gated off CI rather than folded into the default gate.
+# sweep over two scenes. Each task is a full pick-then-drive-and-throw attempt in MuJoCo,
+# so this is minutes rather than the milliseconds Light Switch costs -- which is why it is
+# gated rather than folded into the default gate.
 TOSSING3D_ARGS = ("--num-test-tasks", "2", "--num-cycles", "0")
 
 # This baseline solves 0/8 here at every seed, so the different-seeds assertion rests on
@@ -138,10 +138,15 @@ def test_different_seeds_produce_different_results(*, tmp_path: Path) -> None:
 #
 # Everything above runs Light Switch, whose whole dynamics is a few lines of numpy.
 # Tossing3D is the opposite case and the one actually at risk: MuJoCo physics, PyBullet
-# motion planning and four upstream controllers, none of which this project seeds
+# motion planning and two upstream controllers, none of which this project seeds
 # directly -- `--seed` reaches them only as the scene seed handed to `env.reset(seed=)`.
 # A domain whose runs cannot be regenerated is not a research result, so the guarantee
 # is pinned here per-domain rather than assumed to transfer from Light Switch.
+#
+# It was four controllers until the two-skill migration composed the base move, the windup
+# and the swing into one. That composition moves work *into* the simulator stack this
+# comment is about, so if anything these tests matter more than they did -- the throw's
+# base motion is now planned by the same PyBullet call that plans its swing.
 
 
 @needs_kinder

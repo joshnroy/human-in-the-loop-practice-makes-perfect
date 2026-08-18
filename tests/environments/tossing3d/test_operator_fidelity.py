@@ -16,17 +16,22 @@ be.** Two reasons it cannot join, both structural rather than stylistic:
    hours to days, per run.
 
 So the invariant is enforced here instead, on the states this domain can actually reach:
-the oracle's own trajectory, which is the whole plan shape (`Pick`, `MoveToThrowPose`,
-`Toss`) plus the unrecoverable state after the throw. At each of those states every
-applicable ground skill is executed speculatively and the world is rewound
-(`Tossing3DEnvironment.snapshot`/`restore`, backed by KINDER's own `set_state`), exactly
-as the cross-domain walk does with `set_state`.
+the oracle's own trajectory, which is the whole plan shape (`PickCube`,
+`MoveToTossLocationAndToss`) plus the unrecoverable state after the throw. At each of
+those states every applicable ground skill is executed speculatively and the world is
+rewound (`Tossing3DEnvironment.snapshot`/`restore`, backed by KINDER's own `set_state`),
+exactly as the cross-domain walk does with `set_state`.
 
 The narrowing that remains, stated rather than glossed: this walks one trajectory rather
 than searching, so it cannot find a *reachable-but-unvisited* symbolic state whose model
-is wrong. On a domain with three skills, one plan shape and no branching, there is very
+is wrong. On a domain with two skills, one plan shape and no branching, there is very
 little for such a search to find -- but "very little" is not "nothing", and that is the
 honest limit of what this file proves.
+
+**The walk is one state shorter than it was**, because the plan is: initial, post-pick,
+post-toss. The state the middle rung used to add -- the robot standing at a throw pose,
+holding the cube -- is now interior to a single controller and is not a state any
+symbolic model describes.
 """
 
 import importlib.util
@@ -36,7 +41,13 @@ import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.skill_oracle_policy import SkillOraclePolicy
+from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
+    ORACLE_GRIPPER_RELEASE_MS,
+    ORACLE_RELEASE_SPEED_DEG_S,
+    ORACLE_THROW_ROTATION,
+    ORACLE_THROW_STANDOFF,
+    SkillOraclePolicy,
+)
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -49,9 +60,10 @@ pytestmark = pytest.mark.skipif(
 CANONICAL_SEED = 125
 
 # Draws per candidate. Far below the cross-domain file's 30, and affordable for the same
-# reason it can walk one trajectory: `Pick` is the only skill here whose parameters can
-# miss, `MoveToThrowPose` moves the base for every draw in its range, and `Toss` has no
-# parameters at all. A skill counts as silently ignored only if *every* draw is a no-op.
+# reason it can walk one trajectory: `PickCube` has no parameters at all, and
+# `MoveToTossLocationAndToss` moves the base for every draw in its range -- upstream's
+# `TARGET_DISTANCE_BOUNDS` are all standoffs a base plan reaches. A skill counts as
+# silently ignored only if *every* draw is a no-op.
 _PARAM_DRAWS = 3
 
 
@@ -76,10 +88,10 @@ def test_no_applicable_ground_skill_is_silently_ignored_along_the_oracles_trajec
         goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
         state = env.reset_to_seed(seed=CANONICAL_SEED)
 
-        # Four states: initial, post-Pick, post-MoveToThrowPose, post-Toss. The last is
-        # the unrecoverable one, and is the most valuable of the four -- it is where an
-        # over-permissive model would offer a retrieval that cannot happen.
-        for _ in range(4):
+        # Three states: initial, post-PickCube, post-toss. The last is the unrecoverable
+        # one, and is the most valuable of the three -- it is where an over-permissive
+        # model would offer a retrieval that cannot happen.
+        for _ in range(3):
             atoms = SkillGrounder.abstract_state(
                 state=state, objects=provider.objects(), predicates=provider.predicates()
             )
@@ -164,10 +176,17 @@ def test_a_restore_really_rewinds_the_simulator_and_not_just_the_state_object() 
 
         ground_skill = GroundSkill(
             skill=provider.skills()[1],
-            objects=(env.robot, env.cube, env.bin),
+            objects=(env.robot, env.bin, env.cube, env.barrier),
         )
         action = provider.compute_action(
-            ground_skill=ground_skill, params=np.array([1.35]), state=state
+            ground_skill=ground_skill,
+            params=np.array([
+                ORACLE_THROW_STANDOFF,
+                ORACLE_THROW_ROTATION,
+                ORACLE_RELEASE_SPEED_DEG_S,
+                ORACLE_GRIPPER_RELEASE_MS,
+            ]),
+            state=state,
         )
         first = env.take_action(action=action)
 

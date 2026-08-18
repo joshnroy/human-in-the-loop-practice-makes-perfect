@@ -1,4 +1,4 @@
-"""Offline tests for Tossing3D's six predicate *wrappers*.
+"""Offline tests for Tossing3D's five predicate *wrappers*.
 
 The classifiers themselves are upstream's now, and their semantics are
 `test_kb_predicate_parity.py`'s subject. What is left here is the wiring, which is
@@ -7,12 +7,14 @@ entirely ours and entirely capable of being wrong in ways upstream cannot catch:
 happens when a state carries no abstraction at all.
 
 **This file used to be 450 lines of boundary probes**, most of them for `InBin` and for
-the throw-pose band this domain derived from live scene geometry. Both moved:
+the throw-pose band this domain derived from live scene geometry. The throw-pose band is
+gone outright -- upstream deleted `RobotAtThrowPose` when it composed the base move into
+the toss, so there is no pose between the two skills for a predicate to name. What is left
+moved:
 
-- The four *pure* upstream classifiers (`HandEmpty`, `OnGround`, `MovableIsDownX`,
-  `RobotAtThrowPose`) are `@staticmethod`s over an `ObjectCentricState`, which is
-  constructible with no MuJoCo, so their probes live in `test_kb_predicate_parity.py`
-  and still run offline.
+- The three *pure* upstream classifiers (`HandEmpty`, `OnGround`, `MovableIsDownX`) are
+  `@staticmethod`s over an `ObjectCentricState`, which is constructible with no MuJoCo,
+  so their probes live in `test_kb_predicate_parity.py` and still run offline.
 - `Holding`'s forward-kinematics conjunct and `MovableInGoalRegion`'s ground-fixture
   read genuinely need a simulator, so their probes moved to `test_kinder_fidelity.py`.
   That is a real reduction in defence-in-depth for `InBin` -- this domain's success
@@ -29,7 +31,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
-    KB_AT_THROW_POSE,
     KB_HAND_EMPTY,
     KB_HOLDING,
     KB_IN_GOAL_REGION,
@@ -37,15 +38,14 @@ from hitl_pmp.environments.tossing3d.predicates import (
     KB_ON_GROUND,
     ON_GROUND,
     REACHABLE,
-    ROBOT_AT_SUCCESSFUL_THROW_POSE,
 )
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 
-from .observations import AT_THROW_POSE_ATOMS, HOLDING_ATOMS, INITIAL_ATOMS, state
+from .observations import HOLDING_ATOMS, INITIAL_ATOMS, LANDED_IN_REGION_ATOMS, state
 
 _ENV = Tossing3DEnvironment()
 
-_ALL = (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE, ROBOT_AT_SUCCESSFUL_THROW_POSE)
+_ALL = (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
 
 
 def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
@@ -57,10 +57,6 @@ def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
         HOLDING: (Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
         ON_GROUND: (Tossing3DEnvironment.cube_type,),
         REACHABLE: (Tossing3DEnvironment.cube_type, Tossing3DEnvironment.barrier_type),
-        ROBOT_AT_SUCCESSFUL_THROW_POSE: (
-            Tossing3DEnvironment.robot_type,
-            Tossing3DEnvironment.bin_type,
-        ),
     }
     for predicate, types in expected.items():
         assert predicate.types == types, predicate.name
@@ -77,7 +73,6 @@ def test_this_domains_predicate_names_are_unchanged_by_the_swap() -> None:
         "Holding",
         "OnGround",
         "Reachable",
-        "RobotAtSuccessfulThrowPose",
     ]
 
 
@@ -94,11 +89,6 @@ def test_each_predicate_reads_the_upstream_atom_it_is_backed_by() -> None:
         (HOLDING, (_ENV.robot, _ENV.cube), (KB_HOLDING, ("robot", "cube_0"))),
         (ON_GROUND, (_ENV.cube,), (KB_ON_GROUND, ("cube_0",))),
         (REACHABLE, (_ENV.cube, _ENV.barrier), (KB_IS_DOWN_X, ("cube_0", "cuboid_barrier"))),
-        (
-            ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            (_ENV.robot, _ENV.bin),
-            (KB_AT_THROW_POSE, ("robot", "bin_0")),
-        ),
     ]
     for predicate, objects, atom in cases:
         assert predicate.holds(state(abstract_atoms=frozenset({atom})), objects), predicate.name
@@ -166,13 +156,13 @@ def test_the_abstraction_survives_the_deep_copy_the_environment_does() -> None:
     """`Tossing3DEnvironment.snapshot`/`restore` round-trip a state through
     `model_copy(deep=True)`. An abstraction that did not survive that would leave a
     restored state unable to answer its own predicates."""
-    original = state(abstract_atoms=AT_THROW_POSE_ATOMS)
+    original = state(abstract_atoms=LANDED_IN_REGION_ATOMS)
     copied = original.model_copy(deep=True)
-    assert copied.abstract_atoms == AT_THROW_POSE_ATOMS
-    assert ROBOT_AT_SUCCESSFUL_THROW_POSE.holds(copied, (_ENV.robot, _ENV.bin))
+    assert copied.abstract_atoms == LANDED_IN_REGION_ATOMS
+    assert IN_BIN.holds(copied, (_ENV.cube, _ENV.bin))
 
 
-def test_all_six_predicates_are_predicates() -> None:
+def test_all_five_predicates_are_predicates() -> None:
     """Cheap, but it is what stops a refactor leaving a bare lambda where a `Predicate`
     is expected -- `SkillGrounder` and `PddlWriter` both read `.name` and `.types`."""
     assert all(isinstance(predicate, Predicate) for predicate in _ALL)

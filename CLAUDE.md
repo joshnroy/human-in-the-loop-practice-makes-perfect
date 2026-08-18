@@ -145,18 +145,42 @@ sudo apt install libblas-dev liblapack-dev libgfortran5   # IKFast / pick_shelf 
 **The Tossing3D scene moves with the `reference/kindergarden` pin.**
 `environments/tossing3d/` selects no scene of its own, so a pin bump can change the
 geometry every measured number was taken under.
-`test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` reads the installed
-KINDER's own task JSON and fails loudly if the bin comes off the scoring box, so the
-coupling is observable rather than silent.
+`test_the_shipped_scenes_scoring_box_lies_inside_the_bin` reads the installed KINDER's own
+task JSON, and `test_the_live_scoring_window_lies_inside_the_bins_live_footprint` measures
+the compiled model, so the coupling is observable rather than silent.
 
-**`environments/tossing3d/predicates.py` implements nothing.** All six classifiers are
+**What that coupling has already changed, and the part that is easy to get wrong:**
+upstream `270fdb6` tightened `blocks_goal_region` to `[2.00, 2.05]` on x, which inflates to
+a live scoring window of x ∈ [1.95, 2.10] against a 0.30 m bin footprint of [1.85, 2.15].
+The two boxes used to coincide; the scored box is now strictly *inside* the bin. So **"the
+cube is in the bin" and "the cube scores" are no longer the same event** — a cube resting
+at x = 1.90 is in the bin and does not score. The invariant the tests pin is the surviving
+one-way implication, scoring implies in-bin. **Every Tossing3D number measured before this
+pin bump was measured on the wider box**, so none of them is evidence about this scene; the
+committed experiment logs carry staleness notes saying so.
+
+**`environments/tossing3d/predicates.py` implements nothing.** All five classifiers are
 `kinder_models.dynamic3d.tossing.state_abstractions`', evaluated once per state by
 `KinderBackend.abstract_atoms` and carried on a `Tossing3DState`; each `Predicate` is a
 lookup into that set, so a hand-built `core.State` **raises** rather than quietly answering
-`False` six times. The *operator* model stays ours on purpose — upstream's `pick_cube` has
-no `MovableIsDownX` precondition and no `RobotAtThrowPose` delete effect, and puts the
-one-way-door constraint on the toss where this domain puts it on the pick.
-`test_kb_predicate_parity.py` pins where the two agree and where they diverge.
+`False` five times. `test_kb_predicate_parity.py` pins the classifiers' own semantics.
+
+**The operator model is still written here rather than imported, but it no longer
+*differs* from upstream's.** That is a change: it used to put the one-way-door constraint
+in a different place from `kinder_bilevel_planning`'s. At the two-skill rung the two
+models agree atom for atom — `pick_cube` is pre `{HandEmpty, OnGround, MovableIsDownX}`,
+add `{Holding}`, del `{HandEmpty, OnGround}`; `move_to_toss_location_and_toss` is pre
+`{Holding, MovableIsDownX}`, add `{HandEmpty, MovableInGoalRegion, OnGround}`, del
+`{Holding, MovableIsDownX}` — the only difference being that this domain's `InBin` carries
+a bin argument upstream's unary `MovableInGoalRegion` does not.
+
+**That agreement is deliberately not pinned by a test, and the reason is worth knowing.**
+`kinder_bilevel_planning` is *importable* in this environment but is **not installed from
+`reference/`** — only `kinder-models` is — so `import kinder_bilevel_planning` resolves to
+the **main checkout's** tree regardless of which pin a worktree declares. A test asserting
+agreement would silently compare against a different commit than the one under test, which
+is the read-vs-run skew this file warns about elsewhere. Pinning it properly means
+installing that package from `reference/` first.
 
 ### Contributing upstream to `kindergarden` / `kinder-baselines`
 
