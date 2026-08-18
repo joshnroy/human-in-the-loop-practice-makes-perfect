@@ -1,133 +1,67 @@
 """The learned ("wrapped") sampler from Practice Makes Perfect / EES.
 
-Ported from the sibling `hitl-practice` fork of predicators:
+Ported from the sibling fork of predicators:
+`active_sampler_learning_approach.py`'s `_learn_nsrt_sampler` (dataset + per-skill MLP refit)
+and `_wrap_sampler_test`/`_wrap_sampler_exploration` (draw N candidates from the base sampler,
+score all, take the argmax -- and at exploration time only, with probability epsilon take a
+uniformly random candidate and *report* that it did, so the caller can suppress the competence
+update); `utils.construct_active_sampler_input` for the input layout
+(`[1.0 bias] + concat(state[obj] for obj in objects) + params`); and `ml_models.py` for the
+architecture, normalization, single-class fallback and full-batch Adam + BCE loop.
 
-- `predicators/approaches/active_sampler_learning_approach.py`
-  - `_ClassifierWrappedSamplerLearner._learn_nsrt_sampler` (~L392-452): builds the
-    (input, binary label) dataset and refits an MLP classifier per skill.
-  - `_wrap_sampler_test` / `_wrap_sampler_exploration` (~L689-732): draw
-    `active_sampler_learning_num_samples` candidate parameter vectors from the
-    skill's base/oracle sampler, score every one with the classifier, take the
-    argmax -- and, at exploration time only, with probability
-    `active_sampler_learning_exploration_epsilon` take a uniformly random candidate
-    instead and *report* that it did (the caller suppresses the competence update
-    for epsilon-random choices, since a deliberately random action says nothing
-    about the skill's competence).
-- `predicators/utils.py::construct_active_sampler_input` (~L309-320): the input
-  vector layout, `[1.0 bias] + concat(state[obj] for obj in objects) + params`
-  under the default `active_sampler_learning_feature_selection="all"`.
-- `predicators/ml_models.py`: `MLPBinaryClassifier` (~L1108),
-  `PyTorchBinaryClassifier` (~L373), `_NormalizingBinaryClassifier` (~L301) and
-  `_train_pytorch_model` (~L1251) -- architecture, normalization, single-class
-  fallback, full-batch Adam + BCE training loop with best-loss checkpointing.
+Defaults are predicators' `settings.py` as overridden by
+`scripts/configs/active_sampler_learning.yaml`, the config the paper's own experiments were
+launched with. Note `sampler_mlp_classifier_max_itr` has *two* reference values: the library
+default 10000 and the launch config's 100000.
 
-Defaults come from `predicators/settings.py` (`active_sampler_learning_num_samples
-= 100`, `active_sampler_learning_exploration_epsilon = 0.5`,
-`active_sampler_learning_object_specific_samplers = False`,
-`mlp_classifier_hid_sizes = [32, 32]`, `learning_rate = 1e-3`, `weight_decay = 0`,
-`mlp_classifier_n_iter_no_change = 5000`, `sampler_mlp_classifier_max_itr = 10000`)
-as overridden by `scripts/configs/active_sampler_learning.yaml`
-(`sampler_mlp_classifier_max_itr: 100000`, `mlp_classifier_balance_data: False`) --
-the config the paper's own experiments were launched with. Note that
-`sampler_mlp_classifier_max_itr` therefore has *two* reference values: predicators'
-library default of 10000, and the paper launch config's 100000.
-
-Scope: this file owns *only* parameter selection for a single skill. There is one
-`LearnedSkillSampler` per skill *name* (parameterized option), never per grounding,
-because `object_specific_samplers=False` is the paper's setting. Choosing *which*
-skill to practice, and the competence models that consume `was_random`, live
-elsewhere.
+Scope: **only parameter selection for a single skill.** One `LearnedSkillSampler` per skill
+*name*, never per grounding, because `object_specific_samplers=False` is the paper's setting.
 
 Deviations from predicators, all deliberate:
 
-1. `max_train_iters` defaults to 1000 on the two classes in this file, matching
-   neither predicators' settings.py default (10000) nor the paper config's 100000.
-   100000 full-batch steps per skill per learning cycle is minutes of CPU per refit
-   and makes the test suite unusable, so these classes keep the cheap value.
-   Nothing else about the optimizer differs.
+1. `max_train_iters` defaults to 1000 here, matching neither reference value, because 100000
+   full-batch steps per skill per cycle makes the test suite unusable. **Never reached in a
+   real run** -- `EesMethod._refit_samplers` always passes `sampler_max_train_iters`
+   explicitly, whose default of 10000 is predicators' own. Do NOT read this as "raise it to
+   100000", which an earlier version of this docstring said: more training measurably
+   overfits the decisive Ball-Ring cup-placement classifier -- train BCE 5.9e-3 at 10000
+   against 2.8e-5 at 100000, while held-out argmax success falls 0.988 -> 0.930 (paired,
+   t = 5.67, 10/10 seeds). See `docs/experiment-logs/2026-08-03-ballring-iters.md`.
+2. The best-loss checkpoint is kept in memory rather than round-tripped through a temp file.
+   Same weights, no stray files.
+3. Where predicators raises `RuntimeError` if no reinitialization reaches `best_loss < 1`,
+   this keeps the best weights found and returns -- otherwise a numerical fluke crashes a
+   long unattended practice run.
+4. The classifier is not pickled to disk; run artifacts are `--output-dir`'s concern here.
+5. Candidate parameter vectors are passed *in* by the caller, since the base sampler belongs
+   to the environment's `skills.py` and this file must stay domain-agnostic.
+6. When the classifier cannot *discriminate* among the candidates, `sample` returns a
+   uniformly random one rather than the argmax of a degenerate score vector -- matching what
+   predicators effectively does pre-learning, and avoiding a silent bias toward whichever
+   candidate the caller drew first. `was_random` still reports `False`: it means specifically
+   "the epsilon-greedy branch fired". `was_informed` reports the fallback; see `SamplerChoice`.
 
-   That default is never reached in a real run: `EesMethod._refit_samplers` always
-   passes `max_train_iters=self.sampler_max_train_iters` explicitly, and the only
-   code that constructs `LearnedSkillSampler`/`MlpBinaryClassifier` without it is
-   `tests/methods/practice_makes_perfect/`, which overrides it anyway. So the
-   observation that 1000 sits below `n_iter_no_change` -- which is what motivated
-   raising `EesMethod.sampler_max_train_iters` off 1000 -- is harmless here: unit
-   tests want a fixed cheap step count, not early stopping.
+   The condition is a property of the *scores*, not of the training set. A count-based gate
+   would be wrong: on `ThrowRecycling` a one-positive classifier's argmax still lands 97/275,
+   above the 1-in-5 a uniform draw gets, because the harm is concentrated in the 170/275 of
+   refits whose decision boundary came out backwards -- a count gate discards the good half
+   with the bad. The cost, stated plainly: the fallback draws over *all* candidates, so a wide
+   plateau's implied ranking is thrown away and a fitted classifier's uniform draw is fed to
+   the competence models as a deliberate attempt. Intended, but a real trade -- suppressing
+   the update instead would pin a never-successful skill at its Beta(10, 1) prior forever.
+7. `sample` breaks a tie among equally-scored candidates uniformly at random rather than
+   taking `np.argmax`'s lowest index, which on a saturated classifier (and this architecture
+   does saturate) means the pick is decided by the caller's draw order while `was_random`
+   reports a deliberate choice. 91/275 of one-positive probes were such ties.
 
-   Do NOT read this as "raise it to 100000 for real experiments", which is what an
-   earlier version of this docstring said. Real runs come through
-   `EesMethod.sampler_max_train_iters`, whose default of 10000 is predicators' own
-   settings.py default. More training measurably overfits the decisive Ball-Ring
-   cup-placement classifier: train BCE 5.9e-3 at 10000 against 2.8e-5 at 100000
-   (i.e. it interpolates the training set) while held-out argmax success falls from
-   0.988 to 0.930 (paired, t = 5.67, 10/10 seeds).
-   See docs/experiment-logs/2026-08-03-ballring-iters.md.
-2. The best-loss checkpoint is kept in memory (`copy.deepcopy` of the state dict)
-   rather than round-tripped through a `tempfile.NamedTemporaryFile` as
-   `_train_pytorch_model` does. Same weights, no stray temp files.
-3. `_fit` in predicators raises `RuntimeError` if no reinitialization try reaches
-   `best_loss < 1`. Here that case keeps the best weights found and returns. With
-   `n_reinitialize_tries = 1` (the default) predicators would simply crash a long
-   unattended practice run on a numerical fluke, and BCE loss below 1 is
-   essentially always reached anyway.
-4. The classifier is not pickled to disk. predicators dumps
-   `<save_id>.sampler_classifier` for offline analysis; run artifacts are
-   `--output-dir`'s concern in this codebase, not the sampler's.
-5. Candidate parameter vectors are passed *in* by the caller rather than drawn here
-   from a base sampler. The base/oracle sampler belongs to the environment's
-   `skills.py`, and this file must stay domain-agnostic; `num_candidates` is kept
-   as the documented count the caller should draw (predicators'
-   `active_sampler_learning_num_samples`).
-6. Whenever the classifier cannot *discriminate* among the candidates it was
-   handed, `sample` returns a *uniformly random* candidate rather than the argmax
-   of a degenerate score vector. This matches what predicators effectively does
-   pre-learning -- the NSRT's own base sampler is used unwrapped, i.e. a single
-   unfiltered draw -- and avoids silently biasing every early episode toward
-   whichever candidate the caller happened to draw first.
-   `was_random` still reports `False` there: it means specifically "the
-   epsilon-greedy branch fired", which is the signal the competence models key on,
-   and a sampler with nothing to say has no greedy branch to deviate from.
-   `was_informed` is the flag that reports the fallback fired; see `SamplerChoice`
-   for why the two are kept separate.
+   **This branch alone is distribution-preserving** -- the candidates are iid and therefore
+   exchangeable. Deviation 6's fallback is not: it deliberately widens the draw from the
+   plateau to the whole candidate set, so the support of the output jumps discontinuously at
+   `uninformative_tie_fraction`.
 
-   The condition is a property of the *scores*, not of the training set. Gating on
-   how much data exists instead would be wrong: measured on `ThrowRecycling`, a
-   one-positive classifier's argmax still lands 97/275, above the 1-in-5 a uniform
-   draw gets, because the harm is concentrated in the 170/275 of refits whose
-   decision boundary came out backwards. A count-based gate would discard the good
-   half with the bad.
-
-   The cost of this branch, stated plainly: the fallback draws over *all*
-   candidates, so a plateau that covers most but not all of them has its implied
-   ranking thrown away, and a fitted classifier's uniform draw is now fed to the
-   competence models as a deliberate attempt. That is intended -- a plateau this
-   wide is the signature of the saturated box whose orientation one positive
-   cannot pin down, and a wrong-slope classifier's argmax lands 38/170, the 1-in-5
-   of a uniform draw -- but it is a real trade against `was_random`'s stated
-   rationale, not a free win. Suppressing the competence update instead would pin
-   a never-successful skill at its Beta(10, 1) prior forever, which is worse.
-7. `sample` breaks a tie among equally-scored candidates *uniformly at random*
-   rather than taking the lowest index. `np.argmax` returns the first maximal
-   index, which on a saturated classifier -- and the ported architecture does
-   saturate, interpolating <= 16 rows to a train BCE of ~5e-6 -- means the pick is
-   decided by the caller's draw order while `was_random` reports a deliberate
-   choice. Measured, 91/275 of one-positive probes were such ties.
-
-   This branch alone is *distribution-preserving*: the candidates are iid and
-   therefore exchangeable, so conditional on the multiset of candidates, "the first
-   one attaining the maximum" and "a uniform draw among those attaining it" have
-   the same law. It removes an order dependence and corrects a mislabelling without
-   changing the distribution of the parameters returned. **Deviation 6's fallback
-   is not** -- see above; it deliberately widens the draw from the plateau to the
-   whole candidate set, and the support of the output therefore jumps
-   discontinuously at `uninformative_tie_fraction`.
-
-Neither deviation detects a classifier that is flat to within a rounding error but
-not bit-identical: the guard is exact equality against `scores.max()`. All three
-measured degenerate cases (unfitted, both single-class shortcuts, and the saturated
-float32 sigmoid) do produce exactly equal scores, so it covers them -- but "cannot
-discriminate" is the broader property, and this detects only its exact form.
-"""
+Neither branch detects a classifier flat to within a rounding error but not bit-identical: the
+guard is exact equality against `scores.max()`. All three measured degenerate cases do produce
+exactly equal scores, but "cannot discriminate" is the broader property."""
 
 import contextlib
 import copy

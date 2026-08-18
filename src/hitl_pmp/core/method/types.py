@@ -64,7 +64,7 @@ class EpisodeTrace(BaseModel):
     an `EpisodeTrace` handed back by `run_task_episode`'s caller
     (`practice_loop.py`'s `_evaluate`) rather than being threaded into
     `run_task_episode` itself, because a recorder carries real per-run state (an
-    open file handle) and `core/README.md`'s own precedent (`LoopRecorder`, for the
+    open file handle) and this repo's own precedent (`LoopRecorder`, for the
     identical reason) is that a stateful recorder never enters this layer -- only
     plain data crosses the boundary."""
 

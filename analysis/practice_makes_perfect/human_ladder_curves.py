@@ -1,115 +1,59 @@
-"""Post-run analysis for a scoped human-in-the-loop measurement on Tossing Room: three
-fixed arms (a no-human control and two ceilings) plus a rescue-rate dose-response sweep.
+"""Post-run analysis for a scoped human-in-the-loop measurement on Tossing Room: three fixed
+arms (a no-human control and two ceilings) plus a rescue-rate dose-response sweep.
 
-**Background.** `--practice-reset-policy never` is the real-robot condition -- a robot
-practising in a lab is not teleported to a fresh start every few minutes. Measured on this
-domain, it is also badly damaged: Tossing Room's one-way ledge severs rooms 0-2 from the
-item pile in room 3, so a practice period that steps left once can never pick anything up
-again, and under `never` that damage carries into every later period.
-
-**This is a re-measurement of PR #195's own rate sweep** (still open, not merged, as of
-this writing -- https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/195),
-fixing two things Josh flagged in review there: (1) #195's `--num-cycles 10` budget had not
-converged -- N=14's pooled OVERALL climbed `77, 100, ..., 259` across its 11 checkpoints,
-still rising at the last one -- so this sweep runs **`--num-cycles 100`**, 10x longer; (2)
-#195's `--ask-for-help at-random` trigger draws one RNG sample per policy call
-(`Bernoulli(1/N)`), so two runs at the same N can still land a different number of actual
-requests, confounding "what does the rate do" with "what did the RNG happen to draw". This
-sweep instead uses `--ask-for-help at-fixed-interval`
-(https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/200), which fires
-on exactly every Nth policy call with zero RNG draws, so the request count is a deterministic
-function of N and the run length alone. Per Josh's explicit instruction, N < 5 is dropped
-(the old sweep's N=1,2,3 points) and the grid is extended up to N=30 (the old sweep's max
-was 20).
-
-**The four components.**
+`--practice-reset-policy never` is the real-robot condition, and on this domain it is badly
+damaged: Tossing Room's one-way ledge severs rooms 0-2 from the item pile in room 3, so a
+practice period that steps left once can never pick anything up again, and under `never` that
+damage carries into every later period.
 
 | component | `--method` | `--ask-for-help` | `--human-reset-target` | world | seeds |
 | --- | --- | --- | --- | --- | --- |
 | `no-human` | `ees` | `never` | -- | one-way | 10 |
 | `two-way-ledge` | `ees` | `never` | -- | two-way | 10 |
-| `skill-oracle` | `skill-oracle` | -- | -- | one-way | 10 (reused from #195 -- see below) |
+| `skill-oracle` | `skill-oracle` | -- | -- | one-way | 10 (reused, not re-run) |
 | rate sweep | `ees` | `at-fixed-interval` | `task-initial` | one-way | 10 per N |
 
 The rate sweep varies `--mean-steps-between-help-requests` (N; a request fires on exactly
-every Nth policy call, deterministically) over N in {5, 7, 10, 14, 20, 25, 30} -- denser at
-low N, where the response is expected to move fastest, sparser toward N=30 where it is
-expected to have mostly flattened.
+every Nth policy call, deterministically, with zero RNG draws) over N in
+{5, 7, 10, 14, 20, 25, 30} -- denser at low N where the response moves fastest.
 
-**`skill-oracle` is reused unchanged from #195, not re-run.**
-`methods/oracle/cli.py`'s `SkillOracleCli.add_arguments` registers no flags at all, and its
-`run` hardcodes `num_cycles=0` regardless of what the global CLI parsed -- confirmed
-empirically: `--method skill-oracle --num-cycles 100` errors `unrecognized arguments:
---num-cycles 100`. An oracle never practises/learns over cycles, so its result is
-cycle-count-invariant, and the code paths it depends on (`environments/tossingroom/`,
-`methods/oracle/`, `core/`, `practice_loop.py`) are unchanged between #195's fork point and
-this sweep's. Re-running it would reproduce #195's own 10 seeds byte-for-byte at real
-compute cost, so this analysis reads them from
-`docs/experiment-logs/2026-08-10-human-ladder-rate-sweep-runs/skill-oracle/` (committed on
-#195's branch) unchanged.
+**`skill-oracle` is reused unchanged rather than re-run.** `SkillOracleCli.add_arguments`
+registers no flags and its `run` hardcodes `num_cycles=0`, so an oracle's result is
+cycle-count-invariant; re-running would reproduce the same 10 seeds byte-for-byte at real
+compute cost.
 
 **Which comparisons are clean.** `no-human` and every rate-sweep point share `--method ees`,
 the one-way world and all ten seeds, so `PairedTests.sign_flip` applies to each N against the
 control. `two-way-ledge` changes the world and `skill-oracle` changes the Method, so neither
-is sign-flipped against anything -- each is reported as a ceiling level only, the same
-precedent #195's own module used.
+is sign-flipped against anything -- each is reported as a ceiling level only.
 
-**Non-learners are drawn flat, not as curves.** `skill-oracle` never practises (no
-`--num-cycles` flag exists for it) and has a single evaluation checkpoint, so it is a
-horizontal reference line. `no-human` and `two-way-ledge` both learn and get real curves;
-`two-way-ledge` is grey, matching `skill-oracle`, because it IS a ceiling arm in CLAUDE.md's
-sense (not the manipulation under test -- it removes irreversibility from the world, not
-"does an assistance mechanism exist"), distinguished from `skill-oracle` by linestyle rather
-than a fourth hue (CLAUDE.md: "do not introduce a fourth hue; encode a second axis with
-linestyle instead" -- no stated exception for a ceiling arm that still learns). It keeps its
-own curve rather than being flattened, since flattening it would misreport a real learner as
-a constant (see `_REFERENCE_ARMS`'s own comment) -- grey colour and a real curve are
-independent choices, and this module makes both explicitly rather than letting the second
-follow from the first.
+**Non-learners are drawn flat.** `skill-oracle` has a single evaluation checkpoint, so it is
+a horizontal reference line. `two-way-ledge` is grey (a ceiling arm in CLAUDE.md's sense --
+it removes irreversibility from the world rather than adding an assistance mechanism) but
+keeps its own curve, since flattening it would misreport a real learner as a constant. It is
+distinguished from `skill-oracle` by linestyle rather than a fourth hue. The rate sweep is
+blue-family (`Blues`, light N=5 to dark N=30): every point has an assistance mechanism, which
+is what the blue/orange rule tracks; the colourmap's lightness carries the rate.
 
-**Colour.** `no-human` is orange (`#D55E00`): the standing "nothing helps" colour, reused
-across every figure in this report. The rate sweep is blue-family (`Blues`, a sequential
-colourmap from light N=5 to dark N=30): every rate-sweep arm has an assistance mechanism
-available (`--ask-for-help at-fixed-interval`, always firing at a strictly positive rate
-here), which is what the blue/orange rule tracks -- not the specific rate, which the
-colourmap's lightness carries instead. `skill-oracle` is grey and dotted (reference line);
-`two-way-ledge` is ALSO grey (a deliberate fix over #195's module, which gave it a fourth,
-unreserved hue -- magenta), distinguished from `skill-oracle` by its own dash pattern
-rather than a colour CLAUDE.md's rule does not grant it.
-
-**The three training-curve figures (overall/TRASH/RECYCLING) carry all ten arms on ONE
-panel each** -- the three fixed arms plus all seven rate-sweep points, so a reader sees the
-whole ladder's shape over practice, not just its final-checkpoint dose-response. The seven
-rate-sweep curves are thin, partly transparent and have no per-seed traces of their own (that
-would be 70 more lines); they are drawn first so the three fixed arms' bold, per-seed-backed
-curves stay visually on top. See `render_family` for why a colourbar replaces a named legend
-entry for the seven of them.
-
-**The separate dose-response figure is not a training curve, and stays alongside the merged
-panels rather than being replaced by them.** It answers a different question -- what does
-FINAL performance do as the rescue rate varies -- so its x axis is N, not online transitions,
-and it draws one point per seed at each of the seven sampled N values, plus the pooled mean,
-with the `no-human` and `skill-oracle` levels as reference lines for context. The merged
-training-curve panels show shape over practice; this figure is still the one to read for the
-exact per-N numbers the training curves intentionally omit from their (colourbar-only) legend.
+**The three training-curve figures (overall/TRASH/RECYCLING) carry all ten arms on ONE panel
+each.** The seven rate-sweep curves are thin, partly transparent, drawn first and without
+per-seed traces (that would be 70 more lines), so the three fixed arms' per-seed-backed curves
+stay on top; a colourbar replaces named legend entries for them. **The separate dose-response
+figure is not a training curve** -- its x axis is N, not online transitions, and it is the one
+to read for the exact per-N final numbers the merged panels omit.
 
 **The manipulation checks are not optional here.** `num_practice_resets` must be 0
 everywhere, or an arm labelled reset-free was quietly reset for free.
 `num_human_interventions_recorded` must be exactly 0 for the three arms with no reachable
-human (`no-human`, `two-way-ledge`, `skill-oracle`) and strictly positive for every
-rate-sweep point -- at N <= 30 over 15000 policy calls (`--num-cycles 100 --max-steps-
-per-interaction 150`) the deterministic trigger fires at least 500 times, so a zero there
-would mean the trigger never wired rather than a legitimate null.
+human and strictly positive for every rate-sweep point -- at N <= 30 over 15000 policy calls
+the deterministic trigger fires at least 500 times, so a zero would mean the trigger never
+wired rather than a legitimate null.
 
 **Statistics.** Every `no-human`-paired comparison is `PairedTests.sign_flip`, exact by
-enumerating its null in full -- no normal approximation, no scipy. Imported from
-`paired_tests` rather than reimplemented; goal classification comes from
-`goal_families.GoalFamilies` for the same reason.
+enumerating its null in full -- no normal approximation, no scipy.
 
-Reads only already-produced output (CLAUDE.md's `analysis/` convention -- this never runs a
-simulation or drives a `Method`). Each `--arm` points at the directory holding that arm's
-`<seed>/stats.json`; each `--rate-point` does the same for one N in the sweep.
-"""
+Reads only already-produced output. Each `--arm` points at the directory holding that arm's
+`<seed>/stats.json`; each `--rate-point` does the same for one N in the sweep."""
 
 import argparse
 import json

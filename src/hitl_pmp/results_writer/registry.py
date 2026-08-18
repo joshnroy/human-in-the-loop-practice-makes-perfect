@@ -32,8 +32,8 @@ and "always, when I can write at all" is one of the answers.
 
 `stats.json`, `config_snapshot.json`, `timing.json`, `sampler_draws.jsonl` and
 `episode_traces.jsonl` are all *not* `ResultsWriter`s, and three of them structurally
-cannot be. `results_writer.py`'s module docstring and this folder's README give the
-per-file reasoning; the short version is that `stats.json` is the run's product rather
+cannot be. `results_writer.py`'s module docstring gives the per-file reasoning; the short
+version is that `stats.json` is the run's product rather
 than an observation of it and must not be movable by editing a list, and the others
 fire at boundaries the harness does not own.
 """

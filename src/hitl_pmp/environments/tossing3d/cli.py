@@ -3,8 +3,7 @@
     python -m hitl_pmp.cli --env tossing3d --method skill-oracle \\
         --num-test-tasks 5 --output-dir /tmp/tossing3d
 
-Run it under the KINDER venv, not `hitl-pmp` -- KINDER pulls MuJoCo, PyBullet and OpenCV
-and caps `requires-python` at `<3.13`, so it lives in its own virtualenv (see CLAUDE.md).
+KINDER installs into `hitl-pmp` itself, as the `tossing3d` extra; see CLAUDE.md.
 """
 
 import argparse

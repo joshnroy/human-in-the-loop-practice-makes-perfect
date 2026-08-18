@@ -39,7 +39,7 @@ class Renderer(abc.ABC):
 class VideoStream(BaseModel):
     """One video file being written frame by frame, as the frames are produced.
 
-    A real instance rather than a static-method container (the split core/README.md
+    A real instance rather than a static-method container (the split CLAUDE.md
     draws): it holds genuine per-file state -- the open ffmpeg encoder and how many
     frames have gone into it -- which VideoWriter, whose whole input is one already-
     complete sequence, does not.

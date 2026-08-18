@@ -51,7 +51,7 @@ class Type(BaseModel):
     matches its type, and what lets State.get/set look up a feature by name instead
     of a raw index. No parent/inheritance: nothing here consumes it yet (no
     is_instance()/ancestor-walking exists), and no current domain needs a type
-    hierarchy — see core/README.md for when it'd earn its way back in."""
+    hierarchy."""
 
     model_config = ConfigDict(frozen=True)
 

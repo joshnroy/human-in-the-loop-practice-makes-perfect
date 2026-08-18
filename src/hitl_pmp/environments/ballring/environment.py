@@ -460,7 +460,7 @@ class BallRingEnvironment(Environment):
 
     def get_valid_actions(self) -> list[Action]:
         # Continuous 5D action space (matches predicators): no finite menu to
-        # enumerate. A discrete skill layer lives in skills.py (see README), not here.
+        # enumerate. A discrete skill layer lives in skills.py, not here.
         return []
 
     def noop_action(self) -> Action:

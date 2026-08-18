@@ -18,8 +18,7 @@ table rolls off** to the floor, and a **cup placed on the smooth sub-region of t
 sticky table falls off** too. So the one reliable plan is: drop the ball into the
 cup, carry the cup onto the sticky table's *non-smooth* region, and the ball rides
 along. The entire learning problem is **specializing the cup-placement sampler** to
-hit the non-smooth region — a needle-in-cluttered-state target. See
-[`environments/ballring/README.md`](../../src/hitl_pmp/environments/ballring/README.md).
+hit the non-smooth region — a needle-in-cluttered-state target.
 
 Paper mapping: this is predicators' `ball_and_cup_sticky_table`
 (`BallAndCupStickyTableEnv`), the paper's "Ball-Ring (Simulated)". Deterministic

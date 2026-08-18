@@ -29,8 +29,8 @@ class FastDownwardPlanner:
 
     This is the piece EES genuinely needs: it plans with a *per-ground-skill* cost
     (EES uses -log(competence)), so the minimum-cost plan is the
-    maximum-likelihood-of-success plan. No built-in planner substitutes -- see
-    README.md ("Why Fast Downward, not a hand-rolled planner").
+    maximum-likelihood-of-success plan. No built-in planner substitutes:
+    predicators' own non-FD `astar` does not support per-operator costs at all.
 
     Ported faithfully from the sibling hitl-practice repo's
     `predicators/planning.py` (`generate_sas_file_for_fd`, `_ground_op_to_sas_op`,
@@ -103,7 +103,7 @@ class FastDownwardPlanner:
     # the same env var works for both repos. The fallback is a `downward/` checkout
     # sitting beside this repo -- the same sibling-repo convention CLAUDE.md already
     # documents for `../hitl-practice` -- rather than an absolute path, so this is
-    # portable across machines. See README.md's install steps.
+    # portable across machines. See CLAUDE.md's install steps.
     _FD_EXEC_PATH_ENV_VAR = "FD_EXEC_PATH"
 
     @staticmethod
@@ -176,7 +176,7 @@ class FastDownwardPlanner:
         if not script.is_file():
             raise FileNotFoundError(
                 f"No fast-downward.py at {script}. Fast Downward is not vendored with "
-                f"this project (see planning/README.md); install it and set the "
+                f"this project (see CLAUDE.md); install it and set the "
                 f"{FastDownwardPlanner._FD_EXEC_PATH_ENV_VAR} environment variable to "
                 "its checkout directory."
             )
