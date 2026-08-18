@@ -36,9 +36,16 @@ cd .. && git clone https://github.com/aibasel/downward.git && cd downward && ./b
 | `reference/kindergarden` | `joshnroy/kindergarden` |
 | `reference/predicators` | `Learning-and-Intelligent-Systems/predicators` |
 
-Two of the three point at forks on purpose: a submodule *hard-fails* when its pinned SHA
-is force-pushed away, and a fork Josh controls cannot be force-pushed under us.
-`predicators` is read-only reference, pinned on its default branch (`master`, not `main`).
+**All three point at the canonical upstream remote**, and the two KINDER rows did not
+until 2026-08-14. Forks bought exactly one thing: a submodule *hard-fails* when its pinned
+SHA is force-pushed away, and a fork Josh controls cannot be force-pushed under us. That
+protection is given up here, knowingly. Two rows to watch: `kinder-baselines` @ `2f3fc902`
+is reachable from four PRPL branches, but the open-gripper pin above it is reachable from
+one **open topic branch**, so a rebase there orphans it; and `kindergarden` @ `c9f00e8` is
+reachable from **no** PRPL ref at all — `git submodule update --init` succeeds only because
+GitHub serves the bare SHA out of the fork network's shared object store, which holds only
+while the fork does. `predicators` never needed a fork: read-only reference, pinned on its
+default branch (`master`, not `main`).
 
 A fresh clone gets empty directories until you populate them:
 
