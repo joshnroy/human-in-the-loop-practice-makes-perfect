@@ -101,6 +101,37 @@ def test_hand_empty_holds_only_at_an_open_gripper() -> None:
         assert check(state, objects["robot"]) is expected, gripper
 
 
+def test_upstream_still_names_the_predicate_this_domain_looks_up() -> None:
+    """`predicates.KB_GRIPPER_COMMANDED_CLOSED` is a **string** keyed into the atom set
+    `KinderBackend.abstract_atoms` builds, so an upstream rename would not be a type error
+    here -- `GRIPPER_COMMANDED_CLOSED` would simply never hold, `OpenGripper` would never
+    be applicable, and the absorbing state would silently become absorbing again.
+
+    That is the whole coupling, so it is pinned directly: upstream's predicate exists,
+    carries exactly this name, and is unary over the robot type.
+    """
+    from kinder_models.dynamic3d.tossing.state_abstractions import GripperCommandedClosed
+
+    from hitl_pmp.environments.tossing3d.predicates import KB_GRIPPER_COMMANDED_CLOSED
+
+    assert GripperCommandedClosed.name == KB_GRIPPER_COMMANDED_CLOSED
+    assert len(GripperCommandedClosed.types) == 1
+    assert GripperCommandedClosed.types[0].name == "mujoco_tidybot_robot"
+
+
+def test_the_closed_on_nothing_state_satisfies_neither_hand_empty_nor_holding() -> None:
+    """The defect, measured on upstream's classifiers: a gripper commanded shut with the
+    cube still flat on the floor is `HandEmpty`-false and `Holding`-false at once. Every
+    operator but `OpenGripper` needs one of the two, so the applicable set is empty."""
+    gripper_open = _abstractor_static(name="_check_gripper_open")
+    on_ground = _abstractor_static(name="_check_on_ground")
+    state, objects = object_centric_state(gripper=1.0, cube_z=0.025)
+    assert gripper_open(state, objects["robot"]) is False
+    # The cube never left the floor, which is the other half of "closed on nothing" and
+    # is exactly `OpenGripper`'s `OnGround(?held)` precondition.
+    assert on_ground(state, objects["cube_0"])
+
+
 def test_on_ground_holds_for_a_cube_resting_flat_on_the_floor() -> None:
     check = _abstractor_static(name="_check_on_ground")
     state, objects = object_centric_state(cube_z=0.025)

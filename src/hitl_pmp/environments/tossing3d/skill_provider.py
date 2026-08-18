@@ -9,6 +9,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import Tossing3DEnvironment
 from .predicates import (
+    GRIPPER_COMMANDED_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -39,6 +40,9 @@ class Tossing3DSkillProvider(SkillProvider):
             Tossing3DSkills.PICK,
             Tossing3DSkills.MOVE_TO_THROW_POSE,
             Tossing3DSkills.TOSS,
+            # A recovery rather than part of the solve: inapplicable in every healthy
+            # state, and the only operator applicable in the one a failed grasp leaves.
+            Tossing3DSkills.OPEN_GRIPPER,
         )
 
     def predicates(self) -> tuple[Predicate, ...]:
@@ -49,6 +53,7 @@ class Tossing3DSkillProvider(SkillProvider):
             ON_GROUND,
             REACHABLE,
             ROBOT_AT_SUCCESSFUL_THROW_POSE,
+            GRIPPER_COMMANDED_CLOSED,
         )
 
     def types(self) -> tuple[Type, ...]:

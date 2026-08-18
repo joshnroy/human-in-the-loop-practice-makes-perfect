@@ -14,6 +14,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
+    GRIPPER_COMMANDED_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -65,6 +66,10 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         Tossing3DSkills.PICK,
         Tossing3DSkills.MOVE_TO_THROW_POSE,
         Tossing3DSkills.TOSS,
+        # The recovery from a grasp that closed on nothing. Published like any other
+        # skill: a planner has to be able to select it, and it is inapplicable everywhere
+        # except the one state it exists for.
+        Tossing3DSkills.OPEN_GRIPPER,
     )
     assert set(provider.predicates()) == {
         IN_BIN,
@@ -73,6 +78,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         ON_GROUND,
         REACHABLE,
         ROBOT_AT_SUCCESSFUL_THROW_POSE,
+        GRIPPER_COMMANDED_CLOSED,
     }
     assert {obj.type for obj in provider.objects()} == set(provider.types())
 
