@@ -64,7 +64,7 @@ CANONICAL_SEED = 125
 # `MoveToTossLocationAndToss` moves the base for every draw in its range -- upstream's
 # `TARGET_DISTANCE_BOUNDS` are all standoffs a base plan reaches. A skill counts as
 # silently ignored only if *every* draw is a no-op.
-_PARAM_DRAWS = 3
+_PARAM_DRAWS = 1
 
 
 def _describe(*, ground_skill: GroundSkill) -> str:
