@@ -13,6 +13,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: "pip"
+      - name: Cache ruff
+        uses: actions/cache@v4
+        with:
+          path: .ruff_cache
+          key: ruff-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ruff-${{ runner.os }}-
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
@@ -68,6 +76,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
+          cache: "pip"
+      - name: Cache mypy
+        uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: mypy-${{ runner.os }}-${{ hashFiles('src/**/*.py', 'pyproject.toml') }}
+          restore-keys: |
+            mypy-${{ runner.os }}-
       # Two passes, in this order, because the two conditions catch different bugs and
       # neither subsumes the other.
       #
@@ -105,32 +121,18 @@ jobs:
       - run: pip install -e ".[dev,tossing3d,wandb]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - run: mypy src
 
-  test:
+  test-unit:
+    name: "test / unit & core"
     runs-on: ubuntu-latest
     env: *kinder_env
     steps:
-      # Selecting OSMesa above is only half of it -- `libosmesa6-dev` is what makes the
-      # backend exist. Without it MuJoCo raises on import and `kinder`'s `_check_deps`
-      # swallows the exception, so every Dynamic3D environment vanishes *silently* and
-      # the failure resurfaces much later as a `NameNotFound`. Copied from
-      # kinder-baselines' own CI, whose `unit-tests` job runs this same step verbatim;
-      # BLAS/LAPACK are in it because `pybullet_helpers` compiles IKFast against them.
-      # Before checkout, as it is there: it touches nothing in the workspace.
-      - name: Install LAPACK BLAS, and OSMESA
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      # Fast Downward is a genuine runtime dependency of the planning-based
-      # Methods (--method ees) and its tests deliberately shell out to a real
-      # binary rather than mocking one -- a mock would not exercise the SAS
-      # cost patching, which is the whole load-bearing mechanism. Built from
-      # source and cached, since there is no usable wheel/apt package.
+          cache: "pip"
       - name: Cache Fast Downward
         id: cache-fd
         uses: actions/cache@v4
@@ -142,19 +144,131 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/aibasel/downward.git
           cd downward && ./build.py
-      # The MimicLabs scene assets, cached exactly as Fast Downward is above: restore by
-      # key, and a conditional step that fetches them only on a miss.
-      #
-      # They are a genuine runtime dependency of every simulator-backed Tossing3D test --
-      # `Tossing3D-o1.json` declares `"scene": "lab2"`, and building it opens
-      # `meshes/lab2/.../wall_decoration_vis.msh`. Without them 23 tests fail on a missing
-      # file, which is what they did before this step existed.
-      #
-      # **Keyed on the `reference/kindergarden` gitlink**, because that is what the assets
-      # move with. Deliberately no `restore-keys`: a prefix fallback would serve the
-      # previous pin's geometry after a bump, which is precisely the silent scene change
-      # `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` exists to catch.
-      # A bump therefore pays one slow download and reseeds the key.
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      - name: Pytest — Unit & Core tests (MSS)
+        run: |
+          pytest -q \
+            tests/core \
+            tests/planning \
+            tests/recording \
+            tests/results_writer \
+            tests/environments/ballring \
+            tests/environments/lightswitch \
+            tests/methods \
+            tests/humans \
+            tests/test_*.py
+        env:
+          FD_EXEC_PATH: ${{ github.workspace }}/downward
+
+  test-analysis:
+    name: "test / historical analysis (main only)"
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env: *kinder_env
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-analysis-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-analysis-
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      - name: Pytest — Historical Analysis tests
+        run: pytest -q tests/analysis
+
+  test-tossingroom:
+    name: "test / tossingroom (2D physics)"
+    runs-on: ubuntu-latest
+    env: *kinder_env
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+      - name: Cache Fast Downward
+        id: cache-fd
+        uses: actions/cache@v4
+        with:
+          path: downward
+          key: fast-downward-${{ runner.os }}-release-v1
+      - name: Build Fast Downward
+        if: steps.cache-fd.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/aibasel/downward.git
+          cd downward && ./build.py
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      - name: Pytest — TossingRoom
+        run: |
+          pytest -q \
+            tests/environments/tossingroom \
+            tests/environments/test_noop_action.py \
+            tests/environments/test_operator_dynamics_fidelity.py
+        env:
+          FD_EXEC_PATH: ${{ github.workspace }}/downward
+
+  test-tossing3d:
+    name: "test / tossing3d (MuJoCo/OSMesa)"
+    runs-on: ubuntu-latest
+    env: *kinder_env
+    steps:
+      - name: Cache apt packages
+        id: cache-apt
+        uses: actions/cache@v4
+        with:
+          path: /tmp/apt-packages
+          key: apt-packages-${{ runner.os }}-mesa-blas-v1
+      - name: Install LAPACK BLAS, and OSMESA
+        run: |
+          if [ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -d --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+            mkdir -p /tmp/apt-packages
+            cp /var/cache/apt/archives/*.deb /tmp/apt-packages/
+          fi
+          sudo dpkg -i /tmp/apt-packages/*.deb
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+      - name: Cache Fast Downward
+        id: cache-fd
+        uses: actions/cache@v4
+        with:
+          path: downward
+          key: fast-downward-${{ runner.os }}-release-v1
+      - name: Build Fast Downward
+        if: steps.cache-fd.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/aibasel/downward.git
+          cd downward && ./build.py
       - name: Resolve the kindergarden pin
         id: kinder-pin
         run: echo "sha=$(git rev-parse HEAD:reference/kindergarden)" >> "$GITHUB_OUTPUT"
@@ -164,18 +278,14 @@ jobs:
         with:
           path: reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
           key: mimiclabs-scenes-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
-      # After the install, because it imports `kinder`. Fetching here rather than letting
-      # `kinder.make()` do it means `DISABLE_AUTO_DYNAMIC3D_SCENES_DOWNLOAD` stays set for
-      # pytest: the assets are either in place before any test runs, or this step fails
-      # loudly -- instead of one test quietly pulling 2 GB mid-suite.
-      #
-      # The whole 2.0 GB tree, because upstream's downloader takes no scene argument: it
-      # fetches one `assets.zip` from one Drive URL and unpacks all seven lab scenes.
-      # Tossing3D reads ~25 MB of that (`meshes/lab2` 14 M, `textures/lab2` 7.5 M, plus
-      # 3.7 M of shared top-level textures `lab2.xml` also references). Scoping the fetch
-      # would need an upstream `kindergarden` change, so the cache pays the 2 GB once per
-      # pin instead.
       - name: Download MimicLabs scene assets
         if: steps.cache-assets.outputs.cache-hit != 'true'
         run: python -c "from kinder.utils import download_mimiclabs_assets as d; d(non_interactive=True)"
@@ -189,38 +299,87 @@ jobs:
               assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
               print(f"{mod.__name__}: {path}")
           PY
-      # **Two pytest processes, because MuJoCo and torch cannot share one.**
-      #
-      # `libOSMesa.so.8` links `libLLVM.so.20.1` dynamically; `libtriton.so` statically
-      # bundles 16,740 exported LLVM symbols and declares no dynamic LLVM dependency. Once
-      # a Tossing3D test has loaded OSMesa, the `import triton` that `torch.optim.Adam`
-      # triggers (via `torch._compile` -> `torch._dynamo`) puts a second LLVM in the same
-      # address space, and symbol interposition kills the interpreter outright -- a bare
-      # `Fatal Python error: Segmentation fault`, with no test summary and therefore no
-      # report of anything that failed before it. This does not bite the workstation, whose
-      # EGL is NVIDIA's driver and links no LLVM.
-      #
-      # kinder-baselines never hits it because its CI is one pytest per package
-      # (`run_in_affected_packages.sh`), so `kinder-models` and the torch packages never
-      # share an interpreter. This is the same shape, at the granularity we have.
-      #
-      # `tests/environments/tossing3d/` is the split point because it is the *only* path
-      # that pulls `mujoco` into the pytest process -- measured per candidate file, not
-      # assumed from names. `tests/scripts/test_reproducibility.py` drives Tossing3D
-      # through the CLI in subprocesses, so it stays on the other side.
-      #
-      # `--ignore` is the complement of the first step's path, so every test still runs in
-      # exactly one of the two: 180 + 1745 = 1925, the same total as the single run.
       - name: Pytest — Tossing3D (loads MuJoCo/OSMesa; own process)
         run: pytest -q tests/environments/tossing3d
         env:
-          # `downward/` is checked out inside the workspace here rather than
-          # beside the repo, so point the planner at it explicitly.
           FD_EXEC_PATH: ${{ github.workspace }}/downward
-      # `!cancelled()` rather than the default, so a failure in the step above cannot hide
-      # this one's results -- both always report, and the job fails if either did.
-      - name: Pytest — everything else (loads torch; own process)
-        if: ${{ !cancelled() }}
-        run: pytest -q --ignore=tests/environments/tossing3d
+
+  test-scripts:
+    name: "test / scripts & reproducibility"
+    runs-on: ubuntu-latest
+    env: *kinder_env
+    steps:
+      - name: Cache apt packages
+        id: cache-apt
+        uses: actions/cache@v4
+        with:
+          path: /tmp/apt-packages
+          key: apt-packages-${{ runner.os }}-mesa-blas-v1
+      - name: Install LAPACK BLAS, and OSMESA
+        run: |
+          if [ "${{ steps.cache-apt.outputs.cache-hit }}" != "true" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -d --no-install-recommends liblapack-dev libblas-dev libosmesa6-dev libgl1 libglx-mesa0
+            mkdir -p /tmp/apt-packages
+            cp /var/cache/apt/archives/*.deb /tmp/apt-packages/
+          fi
+          sudo dpkg -i /tmp/apt-packages/*.deb
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+      - name: Cache Fast Downward
+        id: cache-fd
+        uses: actions/cache@v4
+        with:
+          path: downward
+          key: fast-downward-${{ runner.os }}-release-v1
+      - name: Build Fast Downward
+        if: steps.cache-fd.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/aibasel/downward.git
+          cd downward && ./build.py
+      - name: Resolve the kindergarden pin
+        id: kinder-pin
+        run: echo "sha=$(git rev-parse HEAD:reference/kindergarden)" >> "$GITHUB_OUTPUT"
+      - name: Cache MimicLabs scene assets
+        id: cache-assets
+        uses: actions/cache@v4
+        with:
+          path: reference/kindergarden/src/kinder/envs/dynamic3d/models/assets/mimiclabs_scenes
+          key: mimiclabs-scenes-${{ runner.os }}-${{ steps.kinder-pin.outputs.sha }}
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      - name: Download MimicLabs scene assets
+        if: steps.cache-assets.outputs.cache-hit != 'true'
+        run: python -c "from kinder.utils import download_mimiclabs_assets as d; d(non_interactive=True)"
+      - name: Verify KINDER resolves under reference/
+        run: |
+          python - <<'PY'
+          import pathlib, kinder, kinder_models
+          root = pathlib.Path.cwd() / "reference"
+          for mod in (kinder, kinder_models):
+              path = pathlib.Path(mod.__file__).resolve()
+              assert root in path.parents, f"{mod.__name__} resolves to {path}, not under {root}"
+              print(f"{mod.__name__}: {path}")
+          PY
+      - name: Pytest — Scripts & Reproducibility
+        run: pytest -q tests/scripts
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
+
+  test:
+    name: "test"
+    needs: [test-unit, test-tossingroom, test-tossing3d, test-scripts]
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "All parallel test jobs passed successfully!"
