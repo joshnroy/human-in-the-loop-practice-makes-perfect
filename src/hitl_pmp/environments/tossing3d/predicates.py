@@ -1,10 +1,4 @@
-"""Tossing3D's symbolic layer: seven predicates, all of them upstream's.
-
-The seventh, `GRIPPER_COMMANDED_CLOSED`, arrived with the `reference/kinder-baselines`
-bump to `4cf35b5` and is the strict negation of `HAND_EMPTY`. It is what makes the
-"grasp closed on nothing" state nameable, and therefore recoverable; see its own comment
-and `skills.py`'s `OPEN_GRIPPER`. The table below predates it and describes the six that
-were swapped from this domain's own classifiers to upstream's.
+"""Tossing3D's symbolic layer: six predicates, all of them upstream's.
 
 **These are kinder-baselines' classifiers, not ours.** Every predicate below is a lookup
 into the atom set upstream's own `Tossing3DStateAbstractor`
@@ -244,7 +238,6 @@ KB_HOLDING = "Holding"
 KB_ON_GROUND = "OnGround"
 KB_IS_DOWN_X = "MovableIsDownX"
 KB_AT_THROW_POSE = "RobotAtThrowPose"
-KB_GRIPPER_COMMANDED_CLOSED = "GripperCommandedClosed"
 
 
 # `Predicate.holds` is a positional `(state, objects)` callable per its interface contract
@@ -275,23 +268,6 @@ HAND_EMPTY = Predicate(
     types=(Tossing3DEnvironment.robot_type,),
     holds=lambda state, objects: Tossing3DAtoms.holds(
         state=state, name=KB_HAND_EMPTY, objects=(objects[0],)
-    ),
-)
-
-GRIPPER_COMMANDED_CLOSED = Predicate(
-    name="GripperCommandedClosed",
-    types=(Tossing3DEnvironment.robot_type,),
-    # **The strict negation of `HAND_EMPTY`, not an independent measurement.** Upstream
-    # emits it in the `else` branch of the very check that emits `HandEmpty`, so exactly
-    # one of the two holds in every state -- pinned in `test_kb_predicate_parity.py`.
-    #
-    # It exists because `HandEmpty` and `Holding` do not partition the states this domain
-    # can reach. `HandEmpty` wants the gripper command at ~0; `Holding` wants it past a
-    # threshold *and* the cube lifted. A grasp that closes on nothing satisfies neither,
-    # and every operator but `OpenGripper` needs one of them -- so the applicable set is
-    # empty and stays empty. Naming the gap is what makes it recoverable.
-    holds=lambda state, objects: Tossing3DAtoms.holds(
-        state=state, name=KB_GRIPPER_COMMANDED_CLOSED, objects=(objects[0],)
     ),
 )
 

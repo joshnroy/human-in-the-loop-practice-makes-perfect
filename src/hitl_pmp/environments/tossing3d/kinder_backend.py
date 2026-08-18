@@ -246,10 +246,6 @@ class KinderBackend(BaseModel):
     pick_step_limit: ClassVar[int] = 400
     move_step_limit: ClassVar[int] = 200
     arm_step_limit: ClassVar[int] = 200
-    # `OpenGripperController` commands the gripper open and terminates as soon as it reads
-    # back as open, so this is a small multiple of the settling time rather than a motion
-    # budget -- there is no plan to execute and no arm to move.
-    gripper_step_limit: ClassVar[int] = 50
 
     env_id: str = "kinder/Tossing3D-o1-v0"
     scene_bg: bool = True
@@ -754,33 +750,6 @@ class KinderBackend(BaseModel):
             gripper_release_ms=int(round(gripper_release_ms)),
         )
         return windup, swing
-
-    def run_open_gripper(self) -> ControllerRun:
-        """`open_gripper` -- upstream's recovery from a grasp that closed on nothing.
-
-        Unparameterized, and it has to be: upstream's `OpenGripperController.
-        sample_parameters` raises `NotImplementedError`, because there is nothing to
-        choose. `reset` takes `params=None`, `step` commands the gripper open, and
-        `terminated` reads `pos_gripper` back against upstream's own
-        `GRIPPER_OPEN_COMMAND_TOLERANCE`.
-
-        **The state this recovers from does not self-heal, and the obvious test for that
-        is misleading.** `OpenGripperController.step` returns `np.zeros(11)`, so an
-        all-zeros "do nothing" action *is* the open command -- idling with zeros would
-        appear to fix it. The real motion controllers latch the gripper command forward
-        instead, so an honest idle holds the command shut indefinitely.
-
-        Takes only the robot: the cube is not an argument upstream's controller has. The
-        operator in `skills.py` still names the cube, because its `OnGround(?held)`
-        precondition is about the cube -- an operator parameter, not a controller one.
-        """
-        return self.run_controller(
-            module="tossing",
-            key="open_gripper",
-            object_names=(self.robot_name,),
-            params=None,
-            limit=self.gripper_step_limit,
-        )
 
     def _object_centric(self) -> Any:
         if self._raw_env is None:

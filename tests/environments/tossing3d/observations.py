@@ -106,20 +106,6 @@ LANDED_IN_REGION_ATOMS = frozenset({
 # Holding, and standing somewhere upstream's `RobotAtThrowPose` accepts.
 AT_THROW_POSE_ATOMS = HOLDING_ATOMS | frozenset({("RobotAtThrowPose", ("robot", "bin_0"))})
 
-# The absorbing state: a grasp that closed on nothing. `pos_gripper` is commanded shut
-# while the cube is still flat on the floor, so `HandEmpty` is false (the command is not
-# ~0) and `Holding` is false too (nothing was lifted). Neither of the two predicates every
-# other operator needs holds, which is exactly what makes the applicable set empty.
-#
-# `GripperCommandedClosed` is upstream's name for the gap, and it is the strict negation
-# of `HandEmpty` rather than an independent measurement -- see
-# `test_kb_predicate_parity.py`.
-CLOSED_ON_NOTHING_ATOMS = frozenset({
-    ("GripperCommandedClosed", ("robot",)),
-    ("OnGround", ("cube_0",)),
-    ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
-})
-
 # After a throw that *missed*: the cube is at rest past the one-way barrier and outside the
 # goal region, the hand is empty, and the base is still at the pose it threw from. The
 # domain's dead end -- no `MovableIsDownX` means `Pick` is inapplicable, and an empty hand
