@@ -152,14 +152,13 @@ jobs:
           restore-keys: |
             pytest-${{ runner.os }}-
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
-      - name: Pytest — Unit & Core tests
+      - name: Pytest — Unit & Core tests (MSS)
         run: |
           pytest -q \
             tests/core \
             tests/planning \
             tests/recording \
             tests/results_writer \
-            tests/analysis \
             tests/environments/ballring \
             tests/environments/lightswitch \
             tests/methods \
@@ -167,6 +166,30 @@ jobs:
             tests/test_*.py
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward
+
+  test-analysis:
+    name: "test / historical analysis (main only)"
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env: *kinder_env
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+      - name: Cache pytest cache
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: pytest-${{ runner.os }}-analysis-${{ hashFiles('tests/**', 'src/**') }}
+          restore-keys: |
+            pytest-${{ runner.os }}-analysis-
+      - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
+      - name: Pytest — Historical Analysis tests
+        run: pytest -q tests/analysis
 
   test-tossingroom:
     name: "test / tossingroom (2D physics)"
