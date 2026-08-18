@@ -7,84 +7,100 @@ Playing at 1/2 speed (10 fps) with Left: Close-Up Cube Camera, Right: Global Sce
 
 import os
 from pathlib import Path
-import numpy as np
+
 import imageio.v2 as imageio
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 os.environ["DISPLAY"] = ":0"
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 
-import mujoco
 import kinder
-import kinder.envs.dynamic3d.envs
+import kinder.envs.dynamic3d.envs  # noqa: F401  (the MODULE, not the package)
+import mujoco
 from kinder.envs.dynamic3d.object_types import MujocoTidyBotRobotObjectType
-from pybullet_helpers.geometry import Pose, multiply_poses
-from pybullet_helpers.inverse_kinematics import inverse_kinematics
 from kinder_models.dynamic3d.cube_symmetry import upright_grasp_rotations
 from kinder_models.dynamic3d.tidybot_pick_controller import TidyBotPickController
 from kinder_models.dynamic3d.tossing.parameterized_skills import create_lifted_controllers
 from kinder_models.dynamic3d.utils import (
     _ARM_MAX_ACCELERATION,
     _ARM_MAX_VELOCITY,
+    _CONTROL_TIMESTEP,
     GRASP_TRANSFORM_TO_OBJECT,
     _compute_per_joint_profile,
-    _CONTROL_TIMESTEP,
 )
+from pybullet_helpers.geometry import Pose, multiply_poses
+from pybullet_helpers.inverse_kinematics import inverse_kinematics
 
 kinder.register_all_environments()
 
 WINDUP_CONF_DEG = (0, 50, 180, -110, 0, -100, 90)
 FULL_TOSS_CONF_DEG = (0, 20, 180, -35, 0, 25, 90)
 
-def unwrap_joints(target, ref):
+
+def unwrap_joints(*, target, ref):
     """Unwrap continuous target angles to be within [-pi, pi] of reference."""
     target = np.array(target, dtype=np.float64)
     ref = np.array(ref, dtype=np.float64)
     diff = (target - ref + np.pi) % (2 * np.pi) - np.pi
     return ref + diff
 
+
 class TwoStagePickCubeController(TidyBotPickController):
     STANDOFF = (0.55, 0.0)
-    VERTICAL_OFFSET = 0.12 # 12cm above cube
+    VERTICAL_OFFSET = 0.12  # 12cm above cube
 
-    def reset(self, x, params=None):
+    def reset(self, x, params=None):  # noqa: PLR0917  (overrides TidyBotPickController.reset)
         cube = self.objects[1]
-        rotations = upright_grasp_rotations(
-            (x.get(cube, 'qx'), x.get(cube, 'qy'), x.get(cube, 'qz'), x.get(cube, 'qw'))
-        )
+        rotations = upright_grasp_rotations((
+            x.get(cube, "qx"),
+            x.get(cube, "qy"),
+            x.get(cube, "qz"),
+            x.get(cube, "qw"),
+        ))
         for rotation in rotations:
             upright = x.copy()
-            for f, v in zip(('qx', 'qy', 'qz', 'qw'), rotation):
+            for f, v in zip(("qx", "qy", "qz", "qw"), rotation, strict=False):
                 upright.set(cube, f, v)
             try:
                 super().reset(upright, np.array(self.STANDOFF))
-                self._setup_two_stage_trajectories(upright, rotation)
+                self._setup_two_stage_trajectories(plan_x=upright, rotation=rotation)
                 return
             except Exception:
                 continue
-        raise RuntimeError('Failed to plan two-stage pick')
+        raise RuntimeError("Failed to plan two-stage pick")
 
-    def _setup_two_stage_trajectories(self, plan_x, rotation):
+    def _setup_two_stage_trajectories(self, *, plan_x, rotation):
         target_object = self.objects[1]
-        cube_pos = (plan_x.get(target_object, 'x'), plan_x.get(target_object, 'y'), plan_x.get(target_object, 'z'))
+        cube_pos = (
+            plan_x.get(target_object, "x"),
+            plan_x.get(target_object, "y"),
+            plan_x.get(target_object, "z"),
+        )
         cube_pose = Pose(cube_pos, rotation)
-        
+
         # Terminal centered grasp pose (z=0)
-        grasp_pose = multiply_poses(cube_pose, Pose((-0.005, 0.0, 0.0), GRASP_TRANSFORM_TO_OBJECT.orientation))
-        
+        grasp_pose = multiply_poses(
+            cube_pose, Pose((-0.005, 0.0, 0.0), GRASP_TRANSFORM_TO_OBJECT.orientation)
+        )
+
         # Stage 1 Target Pose: Vertical Offset + Yaw Aligned (z + 12cm)
         pre_grasp_pose = Pose(
-            (grasp_pose.position[0], grasp_pose.position[1], grasp_pose.position[2] + self.VERTICAL_OFFSET),
-            grasp_pose.orientation
+            (
+                grasp_pose.position[0],
+                grasp_pose.position[1],
+                grasp_pose.position[2] + self.VERTICAL_OFFSET,
+            ),
+            grasp_pose.orientation,
         )
 
         q_home = np.array(self.home_joints[:7])
         q_pre_raw = inverse_kinematics(self._pybullet_sim.robot, pre_grasp_pose, set_joints=False)
-        q_pre = unwrap_joints(q_pre_raw[:7], q_home)
+        q_pre = unwrap_joints(target=q_pre_raw[:7], ref=q_home)
 
         q_grasp_raw = inverse_kinematics(self._pybullet_sim.robot, grasp_pose, set_joints=False)
-        q_grasp = unwrap_joints(q_grasp_raw[:7], q_pre)
+        q_grasp = unwrap_joints(target=q_grasp_raw[:7], ref=q_pre)
 
         # Stage 1 Profile: home -> pre_grasp (transit to offset + yaw)
         self._s1_traj, self._s1_dir = _compute_per_joint_profile(
@@ -105,7 +121,7 @@ class TwoStagePickCubeController(TidyBotPickController):
         self._retract_start_joints = q_grasp.copy()
         self._retract_step_idx = 0
 
-        self._stage = 1 # 1: Transit, 2: Vertical Descent, 3: Retract
+        self._stage = 1  # 1: Transit, 2: Vertical Descent, 3: Retract
         self._traj_step_idx = 0
 
     @property
@@ -128,15 +144,19 @@ class TwoStagePickCubeController(TidyBotPickController):
         if self._stage == 1:
             idx = min(self._traj_step_idx, len(self._s1_traj) - 1)
             s = float(self._s1_traj[idx])
-            ds = (self._s1_traj[idx] - self._s1_traj[idx - 1]) / _CONTROL_TIMESTEP if idx > 0 else 0.0
-            
+            ds = (
+                (self._s1_traj[idx] - self._s1_traj[idx - 1]) / _CONTROL_TIMESTEP
+                if idx > 0
+                else 0.0
+            )
+
             curr = np.array(self._get_current_robot_arm_conf()[:7])
             target = self._s1_start + self._s1_dir * s
-            
+
             action = np.zeros(11, dtype=np.float32)
             action[3:10] = 2.0 * (target - curr) + self._s1_dir * (ds * 2.0)
             action[10] = 0.0
-            
+
             self._traj_step_idx += 1
             if self._traj_step_idx >= len(self._s1_traj):
                 self._stage = 2
@@ -147,15 +167,19 @@ class TwoStagePickCubeController(TidyBotPickController):
         if self._stage == 2:
             idx = min(self._traj_step_idx, len(self._s2_traj) - 1)
             s = float(self._s2_traj[idx])
-            ds = (self._s2_traj[idx] - self._s2_traj[idx - 1]) / _CONTROL_TIMESTEP if idx > 0 else 0.0
-            
+            ds = (
+                (self._s2_traj[idx] - self._s2_traj[idx - 1]) / _CONTROL_TIMESTEP
+                if idx > 0
+                else 0.0
+            )
+
             curr = np.array(self._get_current_robot_arm_conf()[:7])
             target = self._s2_start + self._s2_dir * s
-            
+
             action = np.zeros(11, dtype=np.float32)
             action[3:10] = 2.0 * (target - curr) + self._s2_dir * (ds * 2.0)
             action[10] = 0.0
-            
+
             self._traj_step_idx += 1
             if self._traj_step_idx >= len(self._s2_traj):
                 self._pre_grasp = True
@@ -165,38 +189,43 @@ class TwoStagePickCubeController(TidyBotPickController):
         # Stage 3: Gripper Close & Retract Lift
         return super().step()
 
-def render_two_stage_video(seed=103, output_dir=Path("docs/two_stage_videos")):
+
+def render_two_stage_video(*, seed=103, output_dir=Path("docs/two_stage_videos")):
     env = kinder.make("kinder/Tossing3D-o1-v0", render_mode="rgb_array")
     obs, _ = env.reset(seed=seed)
     oc = env.unwrapped._object_centric_env
     sim = oc._robot_env.sim
     rc = sim._render_context_offscreen
-    fovy = float(sim.model.mj_model.vis.global_.fovy)
+    _fovy = float(sim.model.mj_model.vis.global_.fovy)
     wide_cam_id = oc._robot_env.camera_names.index("task_view")
-    
+
     state = env.observation_space.devectorize(obs)
     cube = state.get_object_from_name("cube_0")
     bin_obj = state.get_object_from_name("bin_0")
     robot = list(state.get_objects(MujocoTidyBotRobotObjectType))[0]
-    
+
     pick_ctrl = TwoStagePickCubeController((robot, cube))
     pick_ctrl.reset(state)
-    
+
     tossing_skills = create_lifted_controllers(env.action_space)
     move_ctrl = tossing_skills["move_to_target"].ground((robot, bin_obj))
     windup_ctrl = tossing_skills["move_arm_to_conf"].ground((robot,))
     toss_ctrl = tossing_skills["toss"].ground((robot,))
-    
+
     skills = [
         ("1. Two-Stage Pick Cube", pick_ctrl, None, 180, []),
         ("2. Move to Standoff", move_ctrl, np.array([1.30, 0.0]), 150, ["cube_0"]),
         ("3. Arm Windup", windup_ctrl, np.deg2rad(WINDUP_CONF_DEG), 100, []),
         ("4. High-Speed Toss", toss_ctrl, np.deg2rad(FULL_TOSS_CONF_DEG), 100, []),
     ]
-    
+
     frames = []
     total_step = 0
-    init_cube_pos = np.array([float(state.get(cube, "x")), float(state.get(cube, "y")), float(state.get(cube, "z"))])
+    init_cube_pos = np.array([
+        float(state.get(cube, "x")),
+        float(state.get(cube, "y")),
+        float(state.get(cube, "z")),
+    ])
 
     try:
         font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
@@ -206,8 +235,12 @@ def render_two_stage_video(seed=103, output_dir=Path("docs/two_stage_videos")):
     except Exception:
         font_large = font_med = font_small = font_tag = ImageFont.load_default()
 
-    def capture_frame(phase_title):
-        curr_c = np.array([float(state.get(cube, "x")), float(state.get(cube, "y")), float(state.get(cube, "z"))])
+    def capture_frame(*, phase_title):
+        curr_c = np.array([
+            float(state.get(cube, "x")),
+            float(state.get(cube, "y")),
+            float(state.get(cube, "z")),
+        ])
         disp = np.linalg.norm(curr_c[:2] - init_cube_pos[:2]) * 1000
 
         # Wide view
@@ -245,39 +278,61 @@ def render_two_stage_video(seed=103, output_dir=Path("docs/two_stage_videos")):
 
         d = ImageDraw.Draw(comb)
         d.rectangle([0, 0, total_w, 65], fill=(16, 20, 26))
-        d.text((20, 6), "TWO-STAGE CONTROLLER: (1. Offset + Yaw ──> 2. Straight Vertical Descent) [1/2 SPEED]", fill=(100, 255, 100), font=font_large)
-        d.text((20, 28), "Stage 1 moves arm to z+12cm with yaw aligned -> Stage 2 drops straight down vertically -> Clamps center & tosses", fill=(180, 220, 180), font=font_small)
-        d.text((20, 46), f"Active Phase: {phase_title} | Seed: {seed}", fill=(80, 210, 255), font=font_med)
+        d.text(
+            (20, 6),
+            "TWO-STAGE CONTROLLER: (1. Offset + Yaw ──> 2. Straight Vertical Descent) [1/2 SPEED]",
+            fill=(100, 255, 100),
+            font=font_large,
+        )
+        d.text(
+            (20, 28),
+            "Stage 1 moves arm to z+12cm with yaw aligned -> Stage 2 drops straight down "
+            "vertically -> Clamps center & tosses",
+            fill=(180, 220, 180),
+            font=font_small,
+        )
+        d.text(
+            (20, 46),
+            f"Active Phase: {phase_title} | Seed: {seed}",
+            fill=(80, 210, 255),
+            font=font_med,
+        )
 
         d.rectangle([0, total_h - 45, total_w, total_h], fill=(12, 16, 20))
-        d.text((20, total_h - 35), "Controller: TwoStagePickCubeController | Standoff: 0.55m | Kinova Gen3 on TidyBot Base", fill=(255, 230, 120), font=font_small)
+        d.text(
+            (20, total_h - 35),
+            "Controller: TwoStagePickCubeController | Standoff: 0.55m | "
+            "Kinova Gen3 on TidyBot Base",
+            fill=(255, 230, 120),
+            font=font_small,
+        )
         frames.append(np.array(comb))
 
     for skill_name, ctrl, params, limit, dis_col in skills:
         if params is not None:
-            if dis_col: ctrl.reset(state, params, disable_collision_objects=dis_col)
-            else: ctrl.reset(state, params)
+            if dis_col:
+                ctrl.reset(state, params, disable_collision_objects=dis_col)
+            else:
+                ctrl.reset(state, params)
 
-        for s in range(limit):
+        for _s in range(limit):
             action = ctrl.step()
             obs, _, _, _, _ = env.step(action)
             state = env.observation_space.devectorize(obs)
             ctrl.observe(state)
-            
-            if skill_name.startswith("1."):
-                desc = pick_ctrl.current_stage_name
-            else:
-                desc = skill_name
-                
-            capture_frame(desc)
+
+            desc = pick_ctrl.current_stage_name if skill_name.startswith("1.") else skill_name
+
+            capture_frame(phase_title=desc)
             total_step += 1
-            if ctrl.terminated(): break
+            if ctrl.terminated():
+                break
 
     # Flight
     for _ in range(40):
         obs, _, _, _, _ = env.step(np.zeros(11, dtype=np.float32))
         state = env.observation_space.devectorize(obs)
-        capture_frame("Flight & Landing in Goal Bin")
+        capture_frame(phase_title="Flight & Landing in Goal Bin")
         total_step += 1
 
     env.close()
@@ -290,6 +345,7 @@ def render_two_stage_video(seed=103, output_dir=Path("docs/two_stage_videos")):
     imageio.mimsave(gif_path, frames[::2], fps=5)
     print(f"Saved Two-Stage Pick Video to {mp4_path} ({len(frames)} frames @ 10 fps)")
     return mp4_path, gif_path
+
 
 if __name__ == "__main__":
     render_two_stage_video(seed=103)

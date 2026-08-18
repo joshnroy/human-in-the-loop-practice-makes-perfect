@@ -1,24 +1,25 @@
-"""Generate dual-view (Close-Up Grasp + Wide Scene) videos for Seed 103 toss rollouts at 1/2 speed."""
+"""Generate dual-view (Close-Up Grasp + Wide Scene) videos for Seed 103 toss rollouts at
+1/2 speed."""
 
 import os
-import sys
 from pathlib import Path
-import numpy as np
+
 import imageio.v2 as imageio
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 os.environ["DISPLAY"] = ":0"
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["PYOPENGL_PLATFORM"] = "egl"
 
-import mujoco
 import kinder
-import kinder.envs.dynamic3d.envs
+import kinder.envs.dynamic3d.envs  # noqa: F401  (the MODULE, not the package)
+import mujoco
 from kinder.envs.dynamic3d.object_types import MujocoTidyBotRobotObjectType
-from pybullet_helpers.geometry import Pose
-from kinder_models.dynamic3d.utils import GRASP_TRANSFORM_TO_OBJECT
 from kinder_models.dynamic3d.tidybot_pick_controller import TidyBotPickController
 from kinder_models.dynamic3d.tossing.parameterized_skills import create_lifted_controllers
+from kinder_models.dynamic3d.utils import GRASP_TRANSFORM_TO_OBJECT
+from pybullet_helpers.geometry import Pose
 
 kinder.register_all_environments()
 os.environ["DISPLAY"] = ":0"
@@ -89,7 +90,8 @@ CONFIGS = [
     },
 ]
 
-def project_point_to_gl_cam(gl_cam, fovy_deg, world_point, width, height):
+
+def project_point_to_gl_cam(*, gl_cam, fovy_deg, world_point, width, height):
     """Project 3D world coordinate to 2D pixel coordinate for the active free camera."""
     cam_pos = np.array(gl_cam.pos)
     forward = np.array(gl_cam.forward)
@@ -100,19 +102,34 @@ def project_point_to_gl_cam(gl_cam, fovy_deg, world_point, width, height):
         return None
     right /= norm
     cam_mat = np.column_stack([right, up, -forward])
-    
+
     rel = world_point - cam_pos
     c_coords = cam_mat.T @ rel
     if c_coords[2] >= -1e-4:
         return None
-    
+
     f_y = (height / 2.0) / np.tan(np.deg2rad(fovy_deg) / 2.0)
     f_x = f_y
     u = int(width / 2.0 + (c_coords[0] / -c_coords[2]) * f_x)
     v = int(height / 2.0 - (c_coords[1] / -c_coords[2]) * f_y)
     return (u, v)
 
-def annotate_dual_frame(closeup_raw, wide_raw, cfg, step, skill_name, phase_desc, gl_cam, fovy_deg, cube_pos, target_pos, current_pinch_pos, is_grasping):
+
+def annotate_dual_frame(
+    *,
+    closeup_raw,
+    wide_raw,
+    cfg,
+    step,
+    skill_name,
+    phase_desc,
+    gl_cam,
+    fovy_deg,
+    cube_pos,
+    target_pos,
+    current_pinch_pos,
+    is_grasping,
+):
     w_sub = 640
     h_sub = 480
 
@@ -138,9 +155,15 @@ def annotate_dual_frame(closeup_raw, wide_raw, cfg, step, skill_name, phase_desc
     draw_wide.text((16, 14), "📷 WIDE SCENE VIEW", fill=(255, 255, 255), font=font_tag)
 
     # 3D projected markers on close-up
-    p_cube = project_point_to_gl_cam(gl_cam, fovy_deg, cube_pos, w_sub, h_sub)
-    p_target = project_point_to_gl_cam(gl_cam, fovy_deg, target_pos, w_sub, h_sub)
-    p_pinch = project_point_to_gl_cam(gl_cam, fovy_deg, current_pinch_pos, w_sub, h_sub)
+    p_cube = project_point_to_gl_cam(
+        gl_cam=gl_cam, fovy_deg=fovy_deg, world_point=cube_pos, width=w_sub, height=h_sub
+    )
+    p_target = project_point_to_gl_cam(
+        gl_cam=gl_cam, fovy_deg=fovy_deg, world_point=target_pos, width=w_sub, height=h_sub
+    )
+    p_pinch = project_point_to_gl_cam(
+        gl_cam=gl_cam, fovy_deg=fovy_deg, world_point=current_pinch_pos, width=w_sub, height=h_sub
+    )
 
     if p_cube is not None and (0 <= p_cube[0] < w_sub) and (0 <= p_cube[1] < h_sub):
         cx, cy = p_cube
@@ -159,7 +182,9 @@ def annotate_dual_frame(closeup_raw, wide_raw, cfg, step, skill_name, phase_desc
     if p_pinch is not None and (0 <= p_pinch[0] < w_sub) and (0 <= p_pinch[1] < h_sub):
         px, py = p_pinch
         if is_grasping:
-            draw_close.ellipse([px - 5, py - 5, px + 5, py + 5], fill=(255, 80, 80), outline=(255, 255, 255))
+            draw_close.ellipse(
+                [px - 5, py - 5, px + 5, py + 5], fill=(255, 80, 80), outline=(255, 255, 255)
+            )
             draw_close.text((px - 95, py - 7), "Pinch Site ►", fill=(255, 120, 120), font=font_tag)
 
     # Combine left and right
@@ -173,18 +198,31 @@ def annotate_dual_frame(closeup_raw, wide_raw, cfg, step, skill_name, phase_desc
 
     # Header banner
     draw.rectangle([0, 0, total_w, 68], fill=(16, 20, 26))
-    draw.text((20, 6), f"{cfg['title']}  [1/2 SPEED SLOW-MOTION]", fill=(255, 255, 255), font=font_large)
+    draw.text(
+        (20, 6), f"{cfg['title']}  [1/2 SPEED SLOW-MOTION]", fill=(255, 255, 255), font=font_large
+    )
     draw.text((20, 30), cfg["subtitle"], fill=(190, 205, 220), font=font_small)
-    draw.text((20, 48), f"Current Phase: {skill_name} | Step: {step:03d} | Seed: 103", fill=(80, 210, 255), font=font_med)
+    draw.text(
+        (20, 48),
+        f"Current Phase: {skill_name} | Step: {step:03d} | Seed: 103",
+        fill=(80, 210, 255),
+        font=font_med,
+    )
 
     # Bottom banner
     draw.rectangle([0, total_h - 52, total_w, total_h], fill=(12, 16, 20))
-    draw.text((20, total_h - 44), f"Grasp Spec: {cfg['target_desc']}  |  {phase_desc}", fill=(255, 230, 120), font=font_med)
+    draw.text(
+        (20, total_h - 44),
+        f"Grasp Spec: {cfg['target_desc']}  |  {phase_desc}",
+        fill=(255, 230, 120),
+        font=font_med,
+    )
     draw.text((20, total_h - 24), cfg["outcome"], fill=cfg["color"], font=font_med)
 
     return np.array(combined_img)
 
-def run_dual_toss(cfg, seed=103, standoff=1.35, output_dir=Path("docs/toss_videos")):
+
+def run_dual_toss(*, cfg, seed=103, standoff=1.35, output_dir=Path("docs/toss_videos")):
     env = kinder.make("kinder/Tossing3D-o1-v0", render_mode="rgb_array")
     obs, _ = env.reset(seed=seed)
     oc = env.unwrapped._object_centric_env
@@ -229,25 +267,31 @@ def run_dual_toss(cfg, seed=103, standoff=1.35, output_dir=Path("docs/toss_video
         ("4. High-Speed Toss Swing", toss_ctrl, np.deg2rad(FULL_TOSS_CONF_DEG), 100, []),
     ]
 
-    print(f"\n=================================================")
+    print("\n=================================================")
     print(f"Running Dual-View Toss: {cfg['id']} (Seed {seed})")
-    print(f"=================================================")
+    print("=================================================")
 
     # Wide camera id
     wide_cam_id = oc._robot_env.camera_names.index("task_view")
 
     for skill_name, ctrl, params, limit, dis_col in skills:
         if params is not None:
-            if dis_col: ctrl.reset(state, params, disable_collision_objects=dis_col)
-            else: ctrl.reset(state, params)
+            if dis_col:
+                ctrl.reset(state, params, disable_collision_objects=dis_col)
+            else:
+                ctrl.reset(state, params)
 
         for s in range(limit):
             action = ctrl.step()
             obs, _, _, _, _ = env.step(action)
             state = env.observation_space.devectorize(obs)
             ctrl.observe(state)
-            
-            curr_cube_pos = np.array([float(state.get(cube, "x")), float(state.get(cube, "y")), float(state.get(cube, "z"))])
+
+            curr_cube_pos = np.array([
+                float(state.get(cube, "x")),
+                float(state.get(cube, "y")),
+                float(state.get(cube, "z")),
+            ])
 
             # Render Wide View (task_view)
             rc.render(width=640, height=480, camera_id=wide_cam_id)
@@ -269,24 +313,42 @@ def run_dual_toss(cfg, seed=103, standoff=1.35, output_dir=Path("docs/toss_video
                 current_pinch_pos = curr_cube_pos.copy()
 
             gl_cam = rc.scn.camera[0]
-            is_closed = getattr(pick_ctrl, "_closed_gripper", True) if skill_name == "1. Pick Cube" else True
+            is_closed = (
+                getattr(pick_ctrl, "_closed_gripper", True)
+                if skill_name == "1. Pick Cube"
+                else True
+            )
 
             annotated = annotate_dual_frame(
-                closeup_raw, wide_raw, cfg, total_step, skill_name, f"Executing {skill_name}",
-                gl_cam, fovy, curr_cube_pos, target_world, current_pinch_pos, is_closed
+                closeup_raw=closeup_raw,
+                wide_raw=wide_raw,
+                cfg=cfg,
+                step=total_step,
+                skill_name=skill_name,
+                phase_desc=f"Executing {skill_name}",
+                gl_cam=gl_cam,
+                fovy_deg=fovy,
+                cube_pos=curr_cube_pos,
+                target_pos=target_world,
+                current_pinch_pos=current_pinch_pos,
+                is_grasping=is_closed,
             )
             frames.append(annotated)
             total_step += 1
 
             if ctrl.terminated():
-                print(f"  {skill_name} completed in {s+1} steps")
+                print(f"  {skill_name} completed in {s + 1} steps")
                 break
 
     # Settle physics 40 steps
-    for s in range(40):
+    for _s in range(40):
         obs, _, _, _, _ = env.step(np.zeros(11, dtype=np.float32))
         state = env.observation_space.devectorize(obs)
-        curr_cube_pos = np.array([float(state.get(cube, "x")), float(state.get(cube, "y")), float(state.get(cube, "z"))])
+        curr_cube_pos = np.array([
+            float(state.get(cube, "x")),
+            float(state.get(cube, "y")),
+            float(state.get(cube, "z")),
+        ])
 
         rc.render(width=640, height=480, camera_id=wide_cam_id)
         wide_raw = rc.read_pixels(width=640, height=480)
@@ -301,8 +363,18 @@ def run_dual_toss(cfg, seed=103, standoff=1.35, output_dir=Path("docs/toss_video
 
         gl_cam = rc.scn.camera[0]
         annotated = annotate_dual_frame(
-            closeup_raw, wide_raw, cfg, total_step, "Flight & Resting", "Evaluating Goal",
-            gl_cam, fovy, curr_cube_pos, target_world, curr_cube_pos, True
+            closeup_raw=closeup_raw,
+            wide_raw=wide_raw,
+            cfg=cfg,
+            step=total_step,
+            skill_name="Flight & Resting",
+            phase_desc="Evaluating Goal",
+            gl_cam=gl_cam,
+            fovy_deg=fovy,
+            cube_pos=curr_cube_pos,
+            target_pos=target_world,
+            current_pinch_pos=curr_cube_pos,
+            is_grasping=True,
         )
         frames.append(annotated)
         total_step += 1
@@ -312,19 +384,20 @@ def run_dual_toss(cfg, seed=103, standoff=1.35, output_dir=Path("docs/toss_video
     output_dir.mkdir(parents=True, exist_ok=True)
     mp4_path = output_dir / f"dual_toss_seed103_{cfg['id']}.mp4"
     gif_path = output_dir / f"dual_toss_seed103_{cfg['id']}.gif"
-    
+
     # 1/2 speed playback (fps = 10 instead of standard 20)
     imageio.mimsave(mp4_path, frames, fps=10)
     imageio.mimsave(gif_path, frames[::2], fps=5)
     print(f"Saved {mp4_path} ({len(frames)} frames @ 10 fps = 1/2 speed)")
     return frames, mp4_path, gif_path
 
+
 def main():
     output_dir = Path("docs/toss_videos")
     all_runs = []
-    
+
     for cfg in CONFIGS:
-        frames, mp4, gif = run_dual_toss(cfg, seed=103, standoff=1.35, output_dir=output_dir)
+        frames, mp4, gif = run_dual_toss(cfg=cfg, seed=103, standoff=1.35, output_dir=output_dir)
         all_runs.append((cfg, frames, mp4, gif))
 
     # 2x2 comparison grid of dual-view runs
@@ -344,6 +417,7 @@ def main():
     imageio.mimsave(grid_mp4, grid_frames, fps=10)
     imageio.mimsave(grid_gif, grid_frames[::2], fps=5)
     print(f"\nSaved 2x2 Dual Comparison to {grid_mp4}")
+
 
 if __name__ == "__main__":
     main()
