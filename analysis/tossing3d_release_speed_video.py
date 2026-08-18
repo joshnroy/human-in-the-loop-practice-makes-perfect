@@ -2,7 +2,16 @@
 
 Reads `scripts/tossing3d_release_speed_clips.py`'s output -- one `clip_<speed>_<ms>.mp4` per
 cell plus a `tosses.json` -- and builds simulator footage on the left, a to-scale side
-elevation on the right, and a status bar underneath. **The right-hand panel never clears**:
+elevation on the right, and a status bar underneath.
+
+> **The producer is gone; this reader is not.** The two-skill migration deleted
+> `scripts/tossing3d_release_speed_clips.py` along with the three other scripts that drove
+> the retired `Pick -> MoveToThrowPose -> Toss` decomposition. This module is post-run
+> analysis (`analysis/` never drives a simulator), so it still composes footage already on
+> disk exactly as before -- but nothing in the tree produces new input for it, and the
+> footage it can read was recorded on a decomposition and a scene that no longer exist.
+> Kept rather than deleted because the composition itself is reusable; the named script is
+> readable in git history. **The right-hand panel never clears**:
 each parabola stays, faint, under the next, so the last segment shows the whole family.
 Never touches a simulator, so the visual design can be re-cut against footage that cost
 minutes.

@@ -2,9 +2,8 @@
 
 **Every test in this file skips cleanly without KINDER**, gated on
 `importlib.util.find_spec("kinder")` -- the *import* package name, not the distribution
-name `kindergarden`. CI never installs the optional extra, so on CI this whole file
-skips and the offline files carry the suite. Locally, KINDER installs into `hitl-pmp`
-itself (the `tossing3d` extra), so this runs in the ordinary gate:
+name `kindergarden`. Locally, and on CI since 2026-08-14, KINDER installs into
+`hitl-pmp` itself (the `tossing3d` extra), so this runs in the ordinary gate:
 
     scripts/with_env.sh python -m pytest tests/environments/tossing3d/ -q
 
@@ -18,19 +17,35 @@ What these check that the offline tests structurally cannot:
    whole basis for this domain trusting its own symbolic layer rather than the simulator.
 2. The goal box in the `State` is the live `Region.bbox`, element for element -- the only
    check that can catch a wrong box, which has shipped once already.
-3. The oracle's pick parameters really are what upstream's own sampler draws.
-4. The oracle reproduces the rest positions and step counts recorded in
-   `docs/kinder-environment-validation.md`.
+3. The two upstream classifiers that **cannot** be evaluated offline really do what the
+   swap claimed: `Holding`'s forward-kinematics conjunct rejects a cube that is closed on
+   but nowhere near the gripper, and `MovableInGoalRegion` agrees with `_check_goals()`
+   at both edges of the scored box. Those are the two probes that had to move here when
+   the classifiers became upstream's.
+4. The oracle reproduces the rest position and step counts recorded below.
 5. The `Tossing3D-o1.json` the installed KINDER ships still puts the bin on the box that
-   scores. That one is new. This domain no longer commits a scene of its own, so the
-   scene moves with the `reference/kindergarden` pin -- and that check is what makes a
-   pin bump a **loud** event rather than a silent change of geometry under every number
-   already measured.
+   scores. This domain no longer commits a scene of its own, so the scene moves with the
+   `reference/kindergarden` pin -- and that check is what makes a pin bump a **loud** event
+   rather than a silent change of geometry under every number already measured.
 
-**Several tests here used to run twice, once per `Tossing3DTaskConfig` member.** That
-enum is gone -- upstream's bin fix (`kindergarden` PR #126) landed on `Tossing3D-o1.json`
-itself rather than as a new variant, so `STOCK` and `COINCIDENT` came to load the same
-scene. See `Tossing3DEnvironment.backend` for the full history.
+## What the two-skill migration removed from this file
+
+Four tests are deleted rather than ported, all of them for the same reason: they measured
+a decomposition this domain no longer runs.
+
+- **`test_oracle_pick_parameters_match_upstreams_own_sampler`** checked that
+  `ORACLE_PICK_DISTANCE`/`ORACLE_PICK_ROTATION` really were what
+  `PickShelfController.sample_parameters` drew from `np.random.default_rng(123)`.
+  `PickCube` has `param_dim=0` and derives both internally, so there is nothing left to
+  agree about.
+- **`test_the_derived_band_agrees_with_whether_the_throw_actually_scores`**,
+  **`test_no_toss_parameterisation_scores_from_beyond_the_accepted_band`** and
+  **`test_the_converse_guard_would_catch_a_widened_band`** were the three-way calibration
+  guard for `RobotAtSuccessfulThrowPose` -- forward, converse, and a proof the converse
+  could fail. The predicate and its `THROW_RANGE` calibration are gone with the pose they
+  described. The property they protected (that the sampler's range is a range throws
+  actually score from) now lives upstream, in the `TARGET_DISTANCE_BOUNDS` that
+  `test_kinder_pin.py` pins this package's own copy against.
 """
 
 import importlib.util
@@ -41,20 +56,10 @@ import pytest
 
 from hitl_pmp.core.method.types import LabeledAction
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import (
-    HOLDING,
-    IN_BIN,
-    ROBOT_AT_SUCCESSFUL_THROW_POSE,
-    THROW_STANDOFF_BOUNDS,
-    TOSS_RELEASE_MS_BOUNDS,
-    TOSS_SPEED_BOUNDS,
-)
+from hitl_pmp.environments.tossing3d.predicates import HOLDING, IN_BIN
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
-from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
-    ORACLE_PICK_DISTANCE,
-    ORACLE_PICK_ROTATION,
-    SkillOraclePolicy,
-)
+from hitl_pmp.environments.tossing3d.skill_oracle_policy import SkillOraclePolicy
+from hitl_pmp.environments.tossing3d.skills import TOSS_DISTANCE_BOUNDS
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 
 # The DISTRIBUTION is `kindergarden`; the IMPORT package is `kinder`. Keying on the
@@ -70,83 +75,158 @@ pytestmark = needs_kinder
 # `docs/kinder-environment-validation.md` was measured at.
 CANONICAL_SEED = 125
 
-# The measured landing at standoff 1.35, from that same record, reproduced by
-# `scripts/tossing3d_oracle_demo.py` on this machine.
+# Where the oracle's cube comes to rest, at `ORACLE_THROW_STANDOFF`,
+# `ORACLE_RELEASE_SPEED_DEG_S` and `ORACLE_GRIPPER_RELEASE_MS`.
 #
-# > **Superseded 2026-08-13 by the 1 kHz gripper release. The value below is left exactly
-# > as published.** `REST_X_PRE_1KHZ_RELEASE = 1.9902` remains correct for what it
-# > measured: the throw as it stood when the gripper opened on the first *control step*
-# > past path fraction 0.46, i.e. at the old `reference/` pins (`kinder-baselines`
-# > `1b564a1`, `kindergarden` `98ad2c0`). Re-measured on those pins during this change it
-# > reproduced at **1.9901**, so it was never wrong.
+# > **Re-measured 2026-08-16 under the composed controller.** Every earlier value in this
+# > file was taken with `Pick` -> `MoveToThrowPose(1.35)` -> `Toss(speed, ms)` driven as
+# > three separate controllers from this package. `MoveToTossLocationAndToss` plans the
+# > base motion, the windup and the swing together, and the swing therefore starts from
+# > the arm configuration its own motion planner reached rather than from a separately
+# > commanded windup. **Those earlier numbers are not restated or recomputed here** -- they
+# > are correct for what they measured, and are left in git history and in the experiment
+# > logs that cite them:
 # >
-# > What moved is the trigger, not this domain. `joshnroy/kinder-baselines` PR #12 plus
-# > `joshnroy/kindergarden` PR #2 schedule the release on an absolute millisecond inside
-# > the physics substep loop, so it fires when it says rather than at the next 100 ms
-# > boundary. **That change alone moves the landing +41.6 mm, with the release fraction
-# > held at 0.46 and no parameter changed**: measured 2.0318 at `0f8c554` + `539c6b8`.
-# > The `Toss` parameters arriving in the same PR contribute nothing further at the
-# > oracle's own operating point -- `(140 deg/s, 720 ms)` reproduces that same 2.0318.
+# > | measured | three-skill | composed |
+# > | --- | --- | --- |
+# > | resting x | 1.9926 | 2.0175 |
+# > | controller steps | 71 / 23 / 16 / 18 (four executions) | 121 / 51 (two) |
 # >
-# > Both numbers are kept because they answer different questions. The old one is the
-# > record of what the pre-scheduling throw did; the new one is what the gate asserts now.
-# > A future pin bump that moves the landing again should add a third line here rather
-# > than editing either.
-REST_X_PRE_1KHZ_RELEASE = 1.9902
+# > Reproducibility was checked rather than assumed: three independent runs at
+# > `CANONICAL_SEED` returned bit-identical values for both.
+#
+# Resting x is a bin-carom outcome rather than evidence about throw distance -- first
+# contact is the bin, and across three seeds of one parameter cell the pre-migration grid
+# measured impact x spreading 2.2 mm while resting x spread 216.5 mm. It is pinned here as
+# a *reproducibility* check on one seed, not as a claim about the throw.
+# Upstream inflates a ground region by this much per side before it becomes a
+# `Region` (`kinder/envs/dynamic3d/objects/base.py`,
+# `PhysicsObject.ground_placement_threshold`). Restated rather than imported:
+# upstream sets it as an instance attribute on a literal, so there is no module
+# constant to read. The live goal-box test measures the real box against this,
+# so a change upstream fails there rather than going unnoticed.
+GROUND_PLACEMENT_THRESHOLD = 0.05
 
-# What the oracle lands at under the scheduled 1 kHz release, at `ORACLE_RELEASE_SPEED_DEG_S`
-# and `ORACLE_GRIPPER_RELEASE_MS`. This is what the assertions below use.
-#
-# > **Third line, 2026-08-13.** `2.0318` is the landing at upstream's 720 ms; at the
-# > oracle's 792 ms the same rollout rests at `1.9926`. Resting x is a bin-carom
-# > outcome (first contact is `bin_0` in `17/18` rows; across three seeds of one cell
-# > impact x spreads 2.2 mm, resting x 216.5 mm), not evidence about throw distance.
-REST_X = 1.9926
+# > **Third and fourth rows, 2026-08-18, at the bumped pins.** The rows above are
+# > left exactly as published; this branch bumps `reference/kindergarden` to a scene
+# > whose `blocks_goal_region` is `[2.00, 2.05]` rather than `[1.90, 2.10]`, and
+# > `reference/kinder-baselines` to the rung whose `pick_cube` plans its own base
+# > motion. Nothing below is recomputed from anything above it -- every column is a
+# > rollout that was actually run:
+# >
+# > | measured | three-skill | composed | kb `f12326c` | kb `2ccc7e6` |
+# > | --- | --- | --- | --- | --- |
+# > | resting x | 1.9926 | 2.0175 | 2.0204 | 2.0202 |
+# > | controller steps | 71 / 23 / 16 / 18 | 121 / 51 | 187 / 51 | 208 / 51 |
+# >
+# > The changes in resting x are a carom outcome and not evidence about the throw
+# > (see the note below). The pick's step count rose 121 -> 187 because the composed
+# > rung plans its own base motion rather than starting from a pose the caller drove
+# > to, and 187 -> 208 at `2ccc7e6`, which chains the pick's three arm plans by their
+# > own endpoints instead of by the raw IK solution. **The toss's 51 is unchanged
+# > across all three**, which is the check that the swing itself did not move --
+# > upstream measured the same, reporting its own canonical rollout bit-identical
+# > either side of that commit.
+# >
+# > Reproducibility was checked rather than assumed at this pin too: 3/3 independent
+# > runs at `CANONICAL_SEED` returned `[208, 51]` and x = 2.020231 bit-identically.
+REST_X = 2.0202
 BIN_FLOOR_Z = 0.0444
 
-# The toss parameterisations `test_the_derived_band_agrees_with_whether_the_throw_actually_
-# scores` probes to decide whether *any* throw scores from a standoff. The oracle's own pair
-# leads because it is the one verified to score at 1.15 on `CANONICAL_SEED`, so the `True`
-# case short-circuits after a single sequence; the other two are the measured reach argmax
-# and a slow throw, so a `False` verdict does not rest on one parameterisation.
-_UNION_PROBE_PARAMS = ((140.0, 720.0), (140.0, 763.0), (60.0, 850.0))
+# What the two controller executions take, at the same operating point and re-measured in
+# the same run. Pinned so that a change in either controller's termination condition is a
+# loud event: a controller that silently stopped terminating would otherwise show up only
+# as a slower suite.
+ORACLE_CONTROLLER_STEPS = [208, 51]
+
+# Two standoffs from inside upstream's own `TARGET_DISTANCE_BOUNDS`, measured 2026-08-16
+# at `CANONICAL_SEED` to land on opposite sides of the goal box: 1.25 rests the cube at
+# x = 2.1057 (inside) and 1.45 at x = 1.6901 (short). Both ends of the range the sampler
+# draws from, so a test that needs a scoring rollout and a missing one needs no standoff
+# this domain could not itself have drawn.
+# Re-measured 2026-08-18 at the bumped pins, because the scored box narrowed from
+# x in [1.85, 2.15] to [1.95, 2.10] and the old lower-bound choice stopped
+# scoring: at `CANONICAL_SEED`, 1.25 now rests the cube at x = 2.1061, which is
+# 6 mm *past* the box's far edge. Swept across the whole range at 0.025 m, the
+# scoring interval is 1.275 to 1.400 (6/9 sampled standoffs score). 1.35 is taken
+# rather than an edge of that interval so the choice is not one carom away from
+# flipping; it rests at x = 2.0204, mid-box.
+STANDOFF_THAT_SCORES = 1.35
+STANDOFF_THAT_MISSES = TOSS_DISTANCE_BOUNDS[1]
 
 
 def _env():
     return Tossing3DEnvironment()
 
 
-def test_in_bin_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory() -> None:
+def _run_oracle(*, env, standoff: float | None = None):
+    """Drive the oracle's whole two-skill plan and return the final state.
+
+    The task is built ONCE, before the rollout: `build_task` rebuilds the scene (see
+    `Tossing3DTasks`' docstring), so building it inside the loop would silently reset the
+    episode between every step.
+    """
+    goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
+    state = env.reset_to_seed(seed=CANONICAL_SEED)
+    kwargs = {} if standoff is None else {"throw_standoff": standoff}
+    for _ in range(2):
+        action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal, **kwargs)
+        state = env.take_action(action=action.action)
+    return state
+
+
+@pytest.mark.parametrize("standoff", [STANDOFF_THAT_SCORES, STANDOFF_THAT_MISSES])
+def test_in_bin_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory(
+    *, standoff: float
+) -> None:
     """The differential test this domain's trust rests on, checked at every step of a real
     oracle episode.
 
     Both verdicts flip during the episode -- `False` while the cube is on the floor and in
     the gripper, `True` once it lands -- so agreeing at every step is a real constraint and
-    not something a predicate hardwired to `True` would pass. The two standoffs come from
-    `test_the_derived_band_agrees_with_whether_the_throw_actually_scores`: one solves the
-    scene and one does not, so the pair also exercises agreement on a `False` final
-    verdict, which is what the retired stock arm used to provide."""
-    for standoff in (1.15, 1.45):
+    not something a predicate hardwired to `True` would pass. The two standoffs are the
+    ends of upstream's own distance bounds and were measured to land on opposite sides of
+    the goal box, so the pair also exercises agreement on a `False` final verdict."""
+    env = _env()
+    try:
+        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        for _ in range(2):
+            symbolic = IN_BIN.holds(state, (env.cube, env.bin))
+            assert symbolic == env.is_solved(), (
+                f"standoff {standoff}: InBin said {symbolic} while KINDER's "
+                f"own _check_goals() said {env.is_solved()}"
+            )
+            action = SkillOraclePolicy.get_labeled_action(
+                state=state, env=env, goal=goal, throw_standoff=standoff
+            )
+            state = env.take_action(action=action.action)
+        assert IN_BIN.holds(state, (env.cube, env.bin)) == env.is_solved()
+    finally:
+        env.close()
+
+
+def test_the_two_probe_standoffs_really_do_land_on_opposite_sides_of_the_box() -> None:
+    """**The test above is only worth anything if its two cases differ**, and a negative
+    -- "they agree" -- passes just as well when both rollouts miss, or both score, as when
+    one does each. Asserted separately so that a change making both standoffs behave alike
+    fails here, naming the reason, rather than quietly halving the agreement test's
+    coverage.
+
+    Which standoff does which is measured, not derived: nothing in the symbolic layer
+    predicts it any more, which is exactly what retiring `RobotAtSuccessfulThrowPose`
+    gave up."""
+    outcomes = {}
+    for standoff in (STANDOFF_THAT_SCORES, STANDOFF_THAT_MISSES):
         env = _env()
         try:
-            # Built ONCE, before the rollout. `build_task` rebuilds the scene (see
-            # `Tossing3DTasks`' docstring), so building it inside the loop would silently
-            # reset the episode between every step.
-            goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
-            state = env.reset_to_seed(seed=CANONICAL_SEED)
-            for _ in range(3):
-                symbolic = IN_BIN.holds(state, (env.cube, env.bin))
-                assert symbolic == env.is_solved(), (
-                    f"standoff {standoff}: InBin said {symbolic} while KINDER's "
-                    f"own _check_goals() said {env.is_solved()}"
-                )
-                action = SkillOraclePolicy.get_labeled_action(
-                    state=state, env=env, goal=goal, throw_standoff=standoff
-                )
-                state = env.take_action(action=action.action)
-            assert IN_BIN.holds(state, (env.cube, env.bin)) == env.is_solved()
+            _run_oracle(env=env, standoff=standoff)
+            outcomes[standoff] = bool(env.is_solved())
         finally:
             env.close()
+
+    assert outcomes[STANDOFF_THAT_SCORES] is True
+    assert outcomes[STANDOFF_THAT_MISSES] is False
 
 
 def test_the_goal_box_in_the_state_is_the_live_region_bbox_element_for_element() -> None:
@@ -161,54 +241,41 @@ def test_the_goal_box_in_the_state_is_the_live_region_bbox_element_for_element()
         corners = ("x_min", "y_min", "z_min", "x_max", "y_max", "z_max")
         in_state = tuple(state.get(obj=env.bin, feature_name=name) for name in corners)
         assert in_state == pytest.approx(live)
-        # And it is the inflated box, not the JSON's [1.90, 2.10].
-        assert live[0] == pytest.approx(1.85, abs=1e-6)
-        assert live[3] == pytest.approx(2.15, abs=1e-6)
-    finally:
-        env.close()
-
-
-def test_oracle_pick_parameters_match_upstreams_own_sampler() -> None:
-    """`skill_oracle_policy.py` writes these two out as literals so the oracle is
-    deterministic without importing KINDER. This is the check that they are in fact what
-    upstream's own `PickShelfController.sample_parameters` draws from the rng upstream's
-    own test constructs."""
-    env = _env()
-    try:
-        env.reset_to_seed(seed=CANONICAL_SEED)
-        backend = env.backend()
-        api = backend.api()
-        lifted = api.shelf_controllers(backend._env.action_space)
-        kinder_state = backend._state
-        controller = lifted["pick_shelf"].ground((
-            kinder_state.get_object_from_name(backend.robot_name),
-            kinder_state.get_object_from_name(backend.cube_name),
-        ))
-        distance, rotation = controller.sample_parameters(kinder_state, np.random.default_rng(123))
-        assert distance == pytest.approx(ORACLE_PICK_DISTANCE)
-        assert rotation == pytest.approx(ORACLE_PICK_ROTATION)
+        # And it is the *inflated* box rather than the range the JSON declares --
+        # derived from the installed file rather than written down, so a further
+        # tightening of the region is caught by the containment tests, which say
+        # what broke, instead of here as a bare number mismatch.
+        (goal_range,) = _installed_task_json()["regions"]["blocks_goal_region"]["ranges"]
+        assert live[0] == pytest.approx(goal_range[0] - GROUND_PLACEMENT_THRESHOLD, abs=1e-6)
+        assert live[3] == pytest.approx(goal_range[3] + GROUND_PLACEMENT_THRESHOLD, abs=1e-6)
+        assert live[0] < goal_range[0] and live[3] > goal_range[3]
     finally:
         env.close()
 
 
 def test_the_oracle_reproduces_the_recorded_landing_and_step_counts() -> None:
-    """The reference numbers: cube at rest x = 2.0318 (was 1.9902 before the 1 kHz
-    gripper release -- see `REST_X_PRE_1KHZ_RELEASE`), z = 0.0444 (the bin's interior
-    floor, i.e. the cube is *in* the bin), `_check_goals()` True, and the four controller
-    executions terminating in 71 / 23 / 16 / 18 steps."""
+    """The reference numbers, **re-measured 2026-08-18 at the pins this branch carries**:
+    the cube comes to rest at x = 2.0202, z = 0.0444 (the bin's interior floor, i.e. the
+    cube is *in* the bin), `_check_goals()` True, and the two controller executions
+    terminating in 208 / 51 steps.
+
+    See `REST_X`' own note for the three earlier measurements, why each moved, and why
+    they are left as published rather than replaced. Every one of them was reproduced
+    bit-identically across three independent runs before being pinned, this one included
+    (3/3 at `CANONICAL_SEED`)."""
     env = _env()
     try:
         # Built ONCE, before the rollout: `build_task` rebuilds the scene.
         goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
         state = env.reset_to_seed(seed=CANONICAL_SEED)
         steps: list[int] = []
-        for _ in range(3):
+        for _ in range(2):
             action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
             state = env.take_action(action=action.action)
             steps.extend(env.last_controller_steps())
             assert env.last_skill_error() is None, env.last_skill_error()
 
-        assert steps == [71, 23, 16, 18]
+        assert steps == ORACLE_CONTROLLER_STEPS
         assert state.get(obj=env.cube, feature_name="x") == pytest.approx(REST_X, abs=1e-3)
         assert state.get(obj=env.cube, feature_name="z") == pytest.approx(BIN_FLOOR_Z, abs=1e-3)
         assert env.is_solved()
@@ -217,124 +284,41 @@ def test_the_oracle_reproduces_the_recorded_landing_and_step_counts() -> None:
         env.close()
 
 
-@pytest.mark.parametrize(("standoff", "expected"), [(1.15, True), (1.45, False)])
-def test_the_derived_band_agrees_with_whether_the_throw_actually_scores(
-    *, standoff: float, expected: bool
-) -> None:
-    """**The guard that the accepted band still matches reality.**
-
-    `RobotAtSuccessfulThrowPose` is upstream's `RobotAtThrowPose`, whose band is a
-    literal upstream measured by bisecting `_check_goals()` over real rollouts. A literal
-    goes stale silently: a wrong value still yields a plausible-looking band. If upstream
-    changes the toss controller, the windup configuration, the cube's mass or the physics
-    step -- or if a `reference/kindergarden` pin bump moves the scene -- this is what
-    fails.
-
-    **The two standoffs straddle the band's far edge**, which is the edge that moves. 1.15
-    is comfortably inside upstream's `(1.09, 1.375)` and 1.45 is outside it, so the pair
-    exercises agreement on a `True` and a `False` verdict rather than only the happy path.
-    Measured over three scene seeds, 1.15 solves 3/3 and 1.45 solves 0/3.
-
-    These two points were originally chosen to catch a specific mismeasurement of this
-    domain's own `THROW_RANGE` -- the *impact* range, 1.275 m, against the tempting
-    free-floor rest displacement of 1.3499 m, 0.075 m longer because it includes
-    post-impact roll. That constant is gone with the derivation it fed, but the two
-    standoffs remain well-chosen for what this test now checks, so they are kept rather
-    than re-picked.
-
-    Asserted against real episode outcomes rather than against a recorded number, so this
-    is a check that the symbolic layer still describes the dynamics.
-
-    **Both halves assert the union claim, which is what the band now means.** `expected`
-    used to mean "the oracle's throw scores from here"; it means "*some* toss
-    parameterisation scores from here", which is the weaker claim the predicate makes. The
-    reality half therefore probes `_UNION_PROBE_PARAMS` rather than running the oracle: the
-    oracle throws at whatever millisecond it currently carries, so asserting *its* outcome
-    would re-assert the old meaning and fail on a release-millisecond change that broke
-    nothing. That is not hypothetical -- at standoff 1.15 the throw scores at 720 ms and
-    misses at 792 ms, while the pose stays genuinely throwable at both.
-
-    **The predicate half cannot depend on the release millisecond at all**, which is the
-    structural reason it survives such a change: it is evaluated after `MoveToThrowPose` and
-    before `Toss`, and reads only the base pose and the bin's live geometry. Confirmed by
-    driving the raw action interface -- `True` at 1.15 and `False` at 1.45, identical at 720
-    and 792, with no constant re-measured.
-
-    **The `False` case is deliberately weaker than it looks, and is reinforced elsewhere.**
-    Three parameterisations failing is not "no parameterisation scores"; the standoff it
-    probes, 1.45, is the same pose
-    `test_no_toss_parameterisation_scores_from_beyond_the_accepted_band` covers with a wider
-    sample, and that test carries the strong claim.
-
-    **Resting x is deliberately not asserted here.** At these standoffs the cube's first
-    contact is the bin rather than the floor (`bin_0` in 17/18 committed grid rows at
-    140 deg/s), so where it comes to rest is set by how it caroms rather than by the throw:
-    at standoff 1.15 and 789 ms three seeds of the *same* cell rest 216 mm apart while their
-    distances before first ground contact agree to 2.2 mm. Outcomes are unaffected --
-    `check_goals()` is a verdict, not a distance -- so this asserts outcomes.
-    """
+def test_the_oracle_solves_in_exactly_two_controller_executions() -> None:
+    """One execution per skill, and two skills. Stated apart from the step counts above
+    because it is the claim that survives a retune: a decomposition that quietly went back
+    to driving a windup and a swing separately would keep landing the cube in the bin and
+    would report four executions here."""
     env = _env()
     try:
         goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
         state = env.reset_to_seed(seed=CANONICAL_SEED)
-        for _ in range(3):
-            action = SkillOraclePolicy.get_labeled_action(
-                state=state, env=env, goal=goal, throw_standoff=standoff
-            )
+        per_skill = []
+        for _ in range(2):
+            action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
             state = env.take_action(action=action.action)
-            assert env.last_skill_error() is None, env.last_skill_error()
-            if action.label.startswith("MoveToThrowPose("):
-                predicted = ROBOT_AT_SUCCESSFUL_THROW_POSE.holds(state, (env.robot, env.bin))
-
-        assert predicted == expected, (
-            f"at standoff {standoff} the predicate says {predicted}, but it was measured "
-            f"to be {expected}. Upstream's THROW_STANDOFF_BOUNDS is no longer calibrated "
-            f"against this scene."
-        )
+            per_skill.append(len(env.last_controller_steps()))
+        assert per_skill == [1, 1]
     finally:
         env.close()
 
-    # The reality half, stated as the union claim rather than as the oracle's own outcome.
-    # Short-circuits on the first scoring pair, so the `True` case costs one sequence.
-    scored = next(
-        (
-            (speed, release_ms)
-            for speed, release_ms in _UNION_PROBE_PARAMS
-            if _throw_scores_from_standoff(standoff=standoff, speed=speed, release_ms=release_ms)
-        ),
-        None,
-    )
-    assert (scored is not None) == expected, (
-        f"at standoff {standoff} the predicate says {expected}, but of the "
-        f"{len(_UNION_PROBE_PARAMS)} toss parameterisations probed "
-        f"{'none scored' if scored is None else f'{scored} scored'}. The band and the "
-        "dynamics disagree about whether ANY parameterisation scores from this pose."
-    )
 
+def test_the_composed_toss_at_the_shortest_standoff_does_not_disturb_the_barrier() -> None:
+    """**The regression guard for a defect that shipped once.** `cuboid_barrier` is a
+    real dynamic MuJoCo body rather than a static collision-free waypoint check, and base
+    motion planning had `obstacle_geoms` hardcoded empty upstream -- so a short enough
+    standoff drove the base straight through the barrier and knocked it over. The old
+    `THROW_STANDOFF_BOUNDS` floor of 1.10 m existed to clear the worst colliding standoff
+    (1.00 m, measured three ways) by a 0.10 m margin.
 
-def test_move_to_throw_pose_at_the_lower_standoff_bound_does_not_disturb_the_barrier() -> None:
-    """**The regression guard for the bug `THROW_STANDOFF_BOUNDS`'s lower end exists to
-    fix.** `move_to_target`'s base motion planner has collision-checking hardcoded off
-    upstream, and `cuboid_barrier` is a real dynamic MuJoCo body -- not a static
-    collision-free waypoint check -- so a `MoveToThrowPose` standoff that is too short
-    drives the base straight through it and knocks it over.
+    **That floor is gone with the skill that carried it**, and the shortest standoff this
+    domain can now draw is `TOSS_DISTANCE_BOUNDS[0]` -- upstream's own, and further out.
+    The hazard is upstream's to have designed around, but the consequence of getting it
+    wrong is still ours, so the property is re-asserted at whatever the current floor is
+    rather than deleted along with the constant.
 
-    This would have caught the original defect: at the old lower bound (0.45 m) running
-    this exact sequence visibly displaces the barrier. Three independent sweeps using the
-    real oracle Pick parameters (`ORACLE_PICK_DISTANCE`, `ORACLE_PICK_ROTATION` -- a
-    placeholder-param probe earlier gave a wrong, lower number and was caught and
-    corrected) found the worst colliding standoff is 1.00 m and never exceeded it: 10
-    seeds x 0.005 m resolution over [0.98, 1.03], 10 seeds x 0.02 m resolution over
-    [0.90, 1.40], and all four corners of `Pick`'s own full sampling box
-    (`PICK_DISTANCE_BOUNDS`, `PICK_ROTATION_BOUNDS`) plus the oracle point, since `Pick`
-    also samples during practice, not just at its oracle default. The new lower bound,
-    1.10 m, is `BARRIER_COLLISION_MARGIN` (0.10 m) clear of that worst measured point, and
-    a confirming sweep of the new range at 0.05 m resolution over 10 seeds scored 140/140
-    clear with the barrier bit-exact every time.
-
-    Runs the oracle's own Pick, then `MoveToThrowPose` at exactly
-    `THROW_STANDOFF_BOUNDS[0]` -- so this is red against the old bounds and green against
-    the new ones without hardcoding either number."""
+    Runs the oracle's own pick, then the composed toss at exactly `TOSS_DISTANCE_BOUNDS[0]`,
+    so this reads the bound rather than hardcoding it."""
     env = _env()
     try:
         goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
@@ -343,14 +327,14 @@ def test_move_to_throw_pose_at_the_lower_standoff_bound_does_not_disturb_the_bar
             state.get(obj=env.barrier, feature_name=name) for name in ("x", "y", "z")
         )
 
-        # Pick, at the oracle's own parameters.
+        # PickCube, which takes no parameters at all.
         action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
         state = env.take_action(action=action.action)
         assert env.last_skill_error() is None, env.last_skill_error()
 
-        # MoveToThrowPose at exactly the sampler's lower bound.
+        # The composed toss at exactly the sampler's shortest standoff.
         action = SkillOraclePolicy.get_labeled_action(
-            state=state, env=env, goal=goal, throw_standoff=THROW_STANDOFF_BOUNDS[0]
+            state=state, env=env, goal=goal, throw_standoff=TOSS_DISTANCE_BOUNDS[0]
         )
         state = env.take_action(action=action.action)
         assert env.last_skill_error() is None, env.last_skill_error()
@@ -359,57 +343,20 @@ def test_move_to_throw_pose_at_the_lower_standoff_bound_does_not_disturb_the_bar
             state.get(obj=env.barrier, feature_name=name) for name in ("x", "y", "z")
         )
         assert barrier_after == pytest.approx(barrier_before, abs=1e-4), (
-            f"MoveToThrowPose(standoff={THROW_STANDOFF_BOUNDS[0]}) moved cuboid_barrier "
-            f"from {barrier_before} to {barrier_after} -- the base drove through it"
+            f"MoveToTossLocationAndToss(distance={TOSS_DISTANCE_BOUNDS[0]}) moved "
+            f"cuboid_barrier from {barrier_before} to {barrier_after} -- the base drove "
+            "through it"
         )
     finally:
         env.close()
 
 
-def test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores() -> None:
-    """**The guard that makes a `reference/kindergarden` pin bump loud instead of silent.**
+def _installed_task_json() -> dict:
+    """`Tossing3D-o1.json`, read out of the KINDER that is actually installed.
 
-    This domain no longer commits a scene of its own: it runs whatever
-    `Tossing3D-o1.json` the installed KINDER registers. That is the decision, and it has
-    a cost worth naming rather than leaving implicit -- **the scene now moves with the
-    pin.** That coupling is precisely the defect that produced this test's existence: the
-    retired `Tossing3DTaskConfig.STOCK` meant "whatever the submodule ships", so its
-    meaning moved when the pin moved, and two tests broke with nobody having edited them.
-
-    Accepting the coupling therefore requires making it observable, which is this test.
-    It reads the task JSON out of the KINDER that is actually **installed** -- located
-    through the import system rather than a hardcoded path, so it is the tree that is
-    *run*, not a second checkout that might sit at a different commit -- and pins the one
-    property the domain cannot survive losing: `bin_init_region` is centred on
-    `blocks_goal_region`'s centre, i.e. the bin sits on the box that scores.
-
-    **Why that property and not the file's bytes.** A byte or hash comparison would fail
-    on every pin bump, including ones that change nothing about the geometry, and a test
-    that cries wolf gets deleted. The form this refuses is the one that broke the domain:
-    upstream `1183de7` moved the bin to x = 2.23 and left the region behind, putting the
-    two centres 230 mm apart.
-
-    **Why the tolerance is 5 mm rather than exact, measured rather than chosen.** The two
-    known-good forms are not identical, and the difference is instructive. The pin this
-    repo currently records (`4113237`) declares `[[2.0, -0.0005, 2.001, 0.0005]]` -- a
-    1 mm-wide sampling range running from 2.0 to 2.001, whose **mean is 2.0005**, i.e.
-    0.5 mm past the goal region's centre. kg#126 as **merged** to the lab repo
-    (`98ad2c0`) tightened it to `[[2.0, 0.0, 2.0, 0.0]]`, zero-width and exactly on
-    centre. So bumping the pin onto the merged commit shifts the bin's mean position by
-    0.5 mm: tiny, but a real dynamics change rather than a formatting one, and worth
-    saying out loud because numbers in this file were measured under the jitter form.
-    5 mm admits both, matches
-    `test_the_bin_and_the_goal_region_coincide_in_the_shipped_scene`'s live tolerance,
-    and excludes 230 mm by a factor of 46.
-
-    The width bound is a second, independent thing worth pinning: it keeps the bin's
-    placement effectively deterministic, which is what lets a single scene seed reproduce
-    a landing position. Both known forms are <= 1 mm wide.
-
-    Offline as far as the geometry goes -- it reads the JSON, not a compiled model --
-    but it needs KINDER installed to find the file, so it lives here with the rest of the
-    simulator-gated tests. `test_the_bin_and_the_goal_region_coincide_in_the_shipped_scene`
-    is the live counterpart, measured off MuJoCo after inflation and sampling.
+    Located through the import system rather than a hardcoded path, so it is the tree that
+    is *run* -- a second checkout at a different commit has already caused a wrong SHA to
+    be stated as fact.
     """
     import json
 
@@ -424,62 +371,251 @@ def test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores() -> None:
         / "Tossing3D-o1.json"
     )
     assert task_json.is_file(), f"the installed KINDER has no o1 task JSON at {task_json}"
-    regions = json.loads(task_json.read_text())["regions"]
+    return json.loads(task_json.read_text())
+
+
+# How far a margin may go negative and still count as containment. The two boxes were
+# *exactly* coincident before `blocks_goal_region` was tightened, and that scene is
+# correct -- but subtracting equal floats through two different routes (JSON arithmetic
+# versus the compiled model) leaves noise of order 1e-16, so a bare `>= 0` would call a
+# valid coincident geometry a failure. 1e-9 is seven orders of magnitude below the
+# smallest real margin at the current pin (0.03 m) and seven above the observed noise.
+CONTAINMENT_TOLERANCE = 1e-9
+
+
+def _containment_margins(
+    *,
+    scored_x: tuple[float, float],
+    scored_y: tuple[float, float],
+    footprint_x: tuple[float, float],
+    footprint_y: tuple[float, float],
+) -> dict[str, float]:
+    """Per-edge signed clearance from the scored box to the bin's footprint.
+
+    Positive means the scored box is inside the footprint on that edge. **All three
+    containment tests call this**, including the converse guard -- an inlined second copy
+    would let the guard keep passing while the real assertion was inverted, which is
+    exactly the "test that proves nothing" shape this file exists to avoid.
+    """
+    return {
+        "x near": scored_x[0] - footprint_x[0],
+        "x far": footprint_x[1] - scored_x[1],
+        "y left": scored_y[0] - footprint_y[0],
+        "y right": footprint_y[1] - scored_y[1],
+    }
+
+
+def _is_contained(*, margins: dict[str, float]) -> bool:
+    return all(margin >= -CONTAINMENT_TOLERANCE for margin in margins.values())
+
+
+def _live_bin_half_extents(*, env) -> tuple[float, float]:
+    """The bin's half-extents off the compiled MuJoCo model, not off the task JSON.
+
+    Read off the raw observation rather than the `core.State`, because this domain's bin
+    type carries the scored box (`x_min`..`z_max`) rather than the bin's own bounding box.
+    The observation's `bb_x`/`bb_y` come from the compiled MuJoCo model, so this stays a
+    measurement of the live scene rather than a re-reading of the task JSON.
+    """
+    observation = env.backend().observe()
+    return (
+        float(observation.get(name="bin_0", feature="bb_x")) / 2,
+        float(observation.get(name="bin_0", feature="bb_y")) / 2,
+    )
+
+
+def test_the_shipped_scenes_scoring_box_lies_inside_the_bin() -> None:
+    """**The guard that makes a `reference/kindergarden` pin bump loud instead of silent.**
+
+    This domain runs whatever `Tossing3D-o1.json` the installed KINDER registers, so the
+    scene moves with the pin. Making that coupling observable is this test's whole job.
+
+    ## What is asserted, and why in this direction
+
+    The invariant the domain cannot survive losing is **scoring implies in-bin**: a cube
+    may not score from a position outside the bin. So the scored box must lie *inside* the
+    bin's footprint.
+
+    **Containment, not containment-with-margin**, and the distinction is deliberate: before
+    `blocks_goal_region` was tightened the two boxes were exactly coincident, which is a
+    correct scene with zero margin on every edge. Requiring a positive margin would call it
+    a failure. The only slack allowed is `CONTAINMENT_TOLERANCE`, which exists for float
+    noise rather than for geometry.
+
+    That is the opposite containment from the one this test asserted before, and the reason
+    is a real change in the scene rather than a change of mind. It used to require the two
+    boxes to share a **centre**, to within 5 mm. That held while `blocks_goal_region` was
+    `[1.90, 2.10]` on x, because inflating it by `GROUND_PLACEMENT_THRESHOLD` per side gives
+    `[1.85, 2.15]` -- exactly the 0.30 m bin footprint, so the two boxes coincided and every
+    containment held trivially. At the pin this branch bumps to, the region is
+    `[2.00, 2.05]`, inflating to `[1.95, 2.10]`: strictly smaller than the footprint on
+    every side, and centred at 2.025 against a bin at 2.000. **The old centring assertion is
+    red on this correct scene, by 25 mm against its own 5 mm tolerance** -- and a test
+    asserting the bin fits inside the scoring box would be red too, since a 0.30 m bin
+    cannot fit inside a 0.15 m box.
+
+    The consequence is worth stating plainly, because prose elsewhere still assumes
+    otherwise: **"the cube is in the bin" and "the cube scores" are no longer the same
+    event.** A cube resting at x = 1.90 is inside the bin and does not score. What survives,
+    and what this test pins, is the one-way implication.
+
+    ## Why containment and not centring
+
+    Centring is neither necessary nor sufficient: two boxes can share a centre while one
+    spills outside the other, and a scored box slightly off-centre but well inside is
+    harmless. The form this refuses is the one that actually broke the domain -- upstream
+    `1183de7` moved `bin_init_region` to x = 2.23 and left `blocks_goal_region` behind, so
+    the scored box sat 230 mm clear of the bin and only a throw that **missed** the bin
+    scored. `test_the_containment_guard_would_catch_a_bin_moved_off_the_scored_box` proves
+    this arithmetic still rejects that geometry.
+
+    ## Why the JSON and not the file's bytes
+
+    A byte or hash comparison would fail on every pin bump, including ones that change
+    nothing about the geometry, and a test that cries wolf gets deleted. Every number here
+    is read from the installed task JSON at test time -- none is written down -- so a
+    further tightening of the region moves the assertion with it rather than breaking it.
+
+    Offline as far as the geometry goes (it reads the JSON, not a compiled model), but it
+    needs KINDER installed to find the file. The live counterpart is
+    `test_the_live_scoring_window_lies_inside_the_bins_live_footprint`.
+    """
+    task_json = _installed_task_json()
+    regions = task_json["regions"]
 
     (bin_range,) = regions["bin_init_region"]["ranges"]
-    bin_x_start, bin_x_end = bin_range[0], bin_range[2]
-    bin_centre = (bin_x_start + bin_x_end) / 2
+    bin_x = (bin_range[0] + bin_range[2]) / 2
+    bin_y = (bin_range[1] + bin_range[3]) / 2
+
+    bin_spec = task_json["objects"]["bin"]["bin_0"]
+    half_length, half_width = bin_spec["length"] / 2, bin_spec["width"] / 2
+    footprint_x = (bin_x - half_length, bin_x + half_length)
+    footprint_y = (bin_y - half_width, bin_y + half_width)
 
     (goal_range,) = regions["blocks_goal_region"]["ranges"]
-    goal_centre = (goal_range[0] + goal_range[3]) / 2
-
-    assert bin_centre == pytest.approx(goal_centre, abs=0.005), (
-        f"{task_json} declares bin_init_region centred at x = {bin_centre} against "
-        f"blocks_goal_region centred at x = {goal_centre}. The bin has come off the box "
-        "that scores, which is the pre-PR-126 defect: a cube landing IN the bin would "
-        "score a FAILURE, and training on this scene would reward missing it. The pin "
-        "moved the scene -- decide whether that is wanted before trusting any number "
-        "measured after this point."
+    # A ground region is inflated by `ground_placement_threshold` per side before it becomes
+    # a `Region`, so the scored box is wider than the range the file declares.
+    scored_x = (
+        goal_range[0] - GROUND_PLACEMENT_THRESHOLD,
+        goal_range[3] + GROUND_PLACEMENT_THRESHOLD,
     )
-    assert bin_x_end - bin_x_start <= 0.001, (
-        f"{task_json} samples the bin over {bin_x_end - bin_x_start} m on x. Above about "
-        "a millimetre the bin's position stops being effectively determined by the scene "
-        "seed, and per-seed landing positions recorded in this file stop reproducing."
+    scored_y = (
+        goal_range[1] - GROUND_PLACEMENT_THRESHOLD,
+        goal_range[4] + GROUND_PLACEMENT_THRESHOLD,
     )
 
+    margins = _containment_margins(
+        scored_x=scored_x, scored_y=scored_y, footprint_x=footprint_x, footprint_y=footprint_y
+    )
+    assert _is_contained(margins=margins), (
+        f"the scored box {scored_x} x {scored_y} is not inside the bin's footprint "
+        f"{footprint_x} x {footprint_y}; per-edge margins were {margins}. A cube can score "
+        "from outside the bin, which is the pre-PR-126 defect."
+    )
 
-def test_the_bin_and_the_goal_region_coincide_in_the_shipped_scene() -> None:
-    """**The invariant the whole domain rests on, re-measured live rather than asserted
-    about JSON:** the bin sits on the box that scores, so "the cube is in the bin" and
-    "the cube is in the goal region" are the same event.
 
-    Measured rather than read off the file because neither box is where the file says it
-    is -- `blocks_goal_region` is inflated by 0.05 m per side before it becomes a region,
-    and the bin's placement is sampled from a 1 mm-wide range.
+def test_the_live_scoring_window_lies_inside_the_bins_live_footprint() -> None:
+    """The same invariant as the test above, measured off the running simulator instead.
 
-    **This is the fixed state of a scene that used to be broken, and the gap is the whole
-    story.** Upstream commit `1183de7` moved `bin_init_region` to x = 2.23 and left
-    `blocks_goal_region` behind, putting the bin ~230 mm off the region: a cube landing
-    *in* the bin scored a **failure**, and training against it would have rewarded
-    missing. `kindergarden` PR #126 put the bin back to x = 2.0. The tolerance below is
-    5 mm against a measured ~0.1 mm, and 230 mm is the value it exists to exclude -- so
-    this test is red on the pre-fix scene without needing one to compare against.
+    Worth having twice because neither box is where the file says it is: the goal region is
+    inflated before it becomes a `Region`, the bin's placement is sampled from its own
+    range, and the bin's bounding box comes off the compiled MuJoCo model rather than the
+    JSON's `length`/`width`. The JSON test would still pass if upstream changed how a region
+    is inflated; this one would not.
     """
     env = _env()
     try:
         state = env.reset_to_seed(seed=CANONICAL_SEED)
-        # The scored box rides on the bin object now that the goal region is not modelled
-        # separately, but it is still `blocks_goal_region`'s live bbox rather than the
-        # bin's own geometry -- so this stays a comparison of two independent sources.
-        goal_min = state.get(obj=env.bin, feature_name="x_min")
-        goal_max = state.get(obj=env.bin, feature_name="x_max")
         bin_x = state.get(obj=env.bin, feature_name="x")
-        centre = (goal_min + goal_max) / 2
-        gap = abs(bin_x - centre)
-        assert gap < 0.005, (
-            f"the bin is {gap} m off the goal region's centre. At ~0.23 m this is the "
-            "pre-PR-126 scene, in which a cube landing in the bin scores a failure."
+        bin_y = state.get(obj=env.bin, feature_name="y")
+        live = env.backend().goal_region_bbox()
+        scored_x, scored_y = (live[0], live[3]), (live[1], live[4])
+
+        half_length, half_width = _live_bin_half_extents(env=env)
+        footprint_x = (bin_x - half_length, bin_x + half_length)
+        footprint_y = (bin_y - half_width, bin_y + half_width)
+
+        margins = _containment_margins(
+            scored_x=scored_x,
+            scored_y=scored_y,
+            footprint_x=footprint_x,
+            footprint_y=footprint_y,
         )
+        assert _is_contained(margins=margins), (
+            f"the live scoring window x {scored_x} y {scored_y} is not inside the bin's "
+            f"live footprint x {footprint_x} y {footprint_y}; per-edge margins were "
+            f"{margins}. Scoring no longer implies in-bin."
+        )
+    finally:
+        env.close()
+
+
+def test_the_containment_guard_would_catch_a_bin_moved_off_the_scored_box() -> None:
+    """The converse direction: prove the two tests above are capable of going red.
+
+    A geometry guard that only ever runs against a correct scene proves nothing -- it would
+    pass just as happily if it were asserting a tautology. This reconstructs the actual
+    historical defect (upstream `1183de7` put the bin at x = 2.23 and left the scored box
+    behind) from the installed JSON's own numbers and checks that it is rejected.
+
+    **It calls `_containment_margins`/`_is_contained`, the same two functions the real
+    tests call**, rather than repeating the arithmetic. An inlined copy would keep passing
+    if a sign were inverted in the real assertions, so it would prove that *a* containment
+    check rejects the bad scene rather than that *this* one does.
+    """
+    task_json = _installed_task_json()
+    (goal_range,) = task_json["regions"]["blocks_goal_region"]["ranges"]
+    half_length = task_json["objects"]["bin"]["bin_0"]["length"] / 2
+
+    scored_x = (
+        goal_range[0] - GROUND_PLACEMENT_THRESHOLD,
+        goal_range[3] + GROUND_PLACEMENT_THRESHOLD,
+    )
+    (goal_y_min, goal_y_max) = (goal_range[1], goal_range[4])
+    scored_y = (
+        goal_y_min - GROUND_PLACEMENT_THRESHOLD,
+        goal_y_max + GROUND_PLACEMENT_THRESHOLD,
+    )
+    displaced_bin_x = 2.23
+    footprint_x = (displaced_bin_x - half_length, displaced_bin_x + half_length)
+    half_width = task_json["objects"]["bin"]["bin_0"]["width"] / 2
+    footprint_y = (-half_width, half_width)
+
+    margins = _containment_margins(
+        scored_x=scored_x, scored_y=scored_y, footprint_x=footprint_x, footprint_y=footprint_y
+    )
+    assert not _is_contained(margins=margins), (
+        "the pre-PR-126 geometry passes the containment check, so the guard above cannot "
+        f"catch the defect it exists for; margins were {margins}"
+    )
+
+
+def test_the_thrown_cube_really_comes_to_rest_on_one_of_its_faces() -> None:
+    """**The evidence behind the composed toss's `OnGround` add effect.** kb#113's
+    operator model records `15/15` scoring throws leaving the cube resting on a face, and
+    this package added `OnGround` to the toss's add effects on the strength of that. An
+    add effect that read false after a scoring throw would have EES label a throw that
+    scored a failure, so the claim is worth one live rollout.
+
+    Deliberately checks the *tilt* rather than the classifier, so it says which of the two
+    conjuncts holds: a cube in the bin is off the floor by the bin's own interior height,
+    which is what upstream's `ON_GROUND_TOLERANCE` has to absorb, and reading only its verdict
+    would not distinguish "landed flat" from "landed inside the height tolerance"."""
+    env = _env()
+    try:
+        state = _run_oracle(env=env)
+        assert env.is_solved()
+        rotation = tuple(
+            state.get(obj=env.cube, feature_name=name) for name in ("qx", "qy", "qz", "qw")
+        )
+        # Upstream's own function and upstream's own tolerance, which is the pair
+        # `_check_on_ground` itself uses. This package no longer carries a closed-form
+        # copy of the symmetry algebra to compare against -- the classifier is upstream's
+        # now, so measuring the same quantity it measures is the honest check.
+        from kinder_models.dynamic3d.cube_symmetry import cube_tilt_from_upright
+        from kinder_models.dynamic3d.utils import ON_GROUND_TOLERANCE
+
+        assert cube_tilt_from_upright(rotation) < ON_GROUND_TOLERANCE
     finally:
         env.close()
 
@@ -576,13 +712,13 @@ def test_set_state_rebuilds_the_scene_so_reset_to_task_really_rewinds() -> None:
 
 def test_a_recorded_episode_is_physics_rate_rather_than_one_frame_per_skill() -> None:
     """The frame count is the whole claim. One `take_action` here is a whole controller
-    execution -- tens of MuJoCo ticks -- so rendering once per decision gave a four-frame
+    execution -- tens of MuJoCo ticks -- so rendering once per decision gave a three-frame
     `episode.mp4` of a domain that exists to show a throw. With the gymnasium
     `RenderCollection` wrapper in place, every one of those ticks reaches the clip.
 
     Asserted as a floor rather than an exact number: the oracle's controllers terminate
-    on their own conditions (71/23/16/18 at the canonical seed), and pinning the total
-    would make this a second, fragile copy of the step-count test above.
+    on their own conditions (`ORACLE_CONTROLLER_STEPS` at the canonical seed), and pinning
+    the total would make this a second, fragile copy of the step-count test above.
     """
     from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
 
@@ -637,189 +773,6 @@ def test_recording_does_not_change_where_the_cube_comes_to_rest() -> None:
 
     assert rest["plain"][0] == pytest.approx(REST_X, abs=1e-3)
     assert rest["recorded"] == pytest.approx(rest["plain"], abs=1e-6)
-
-
-# The converse-direction guard for `RobotAtSuccessfulThrowPose`. Every other check on this
-# predicate runs FORWARD -- a pose the band accepts does score. This asserts the other half,
-# that a pose the band rejects cannot be rescued by some toss parameterisation, which
-# nothing else covers: `tests/environments/test_operator_dynamics_fidelity.py` does not
-# list this domain, and both it and this domain's stand-in (`test_operator_fidelity.py`)
-# assert only that an applicable skill CHANGES the real state -- which a missed throw does.
-#
-# Newly load-bearing because the band is now a union, and a union is over-permissive exactly
-# when the thing it unions over is not contiguous. The forward tests would all still pass,
-# since they only ever visit poses the band accepts.
-
-# How far outside the accepted band to stand. Large enough to clear `move_to_target`'s own
-# several-millimetre stopping noise -- PR #196's closest miss at 1.375 was 0.1 mm, and a
-# guard placed inside that noise would flake rather than fail.
-#
-# **0.075 rather than the 0.05 this was while the band was ours.** The offset is chosen so
-# that `hi + BAND_EDGE_PROBE_OFFSET` stays at 1.450, which is the standoff the docstring
-# below carries `0/24` measured evidence for. Our own far edge was 1.400 and upstream's is
-# 1.375, so keeping 0.05 would have silently moved the probe to an unmeasured 1.425 -- and
-# 1.425 is throwable: it scored, so the old offset now fails. That failure is a real
-# finding rather than a broken guard, and it is stated here rather than tuned away:
-# **upstream's band is conservative at its far edge**, rejecting poses a toss genuinely
-# scores from over [1.375, 1.425]. That is the safe direction for a planner to be wrong in
-# -- promised less than the dynamics deliver -- and it is upstream's constant to change,
-# not ours. What this guard exists to catch is the dangerous direction, a band so wide it
-# promises throws no parameter draw can deliver, and it still catches that from 1.450.
-BAND_EDGE_PROBE_OFFSET = 0.075
-
-# A coarse sample of the toss parameter box, as (release_speed, gripper_release_ms)
-# fractions of their bounds. `(1.0, 0.42)` is the measured reach argmax -- at 140 deg/s the
-# impact range peaks near 763 ms, not at either end of `TOSS_RELEASE_MS_BOUNDS` -- so the
-# sample includes the throw most likely to reach, which is the one the assertion rests on.
-_PARAM_GRID = (
-    (0.0, 0.5),
-    (1.0, 0.5),
-    (0.0, 0.0),
-    (1.0, 1.0),
-    (0.5, 0.5),
-    (1.0, 0.42),
-)
-
-
-def _lerp(*, bounds: tuple[float, float], fraction: float) -> float:
-    return bounds[0] + fraction * (bounds[1] - bounds[0])
-
-
-def _throw_scores_from_standoff(*, standoff: float, speed: float, release_ms: float) -> bool:
-    """Run one full `Pick -> MoveToThrowPose(standoff) -> Toss(speed, release_ms)` and
-    report whether KINDER's own `_check_goals()` scored it.
-
-    Driven through the raw action interface rather than `SkillOraclePolicy`, because the
-    oracle hard-codes the toss parameters and this test's whole purpose is to choose them
-    adversarially."""
-    env = _env()
-    try:
-        env.reset_to_seed(seed=CANONICAL_SEED)
-        env.take_action(action=np.array([env.pick_id, ORACLE_PICK_DISTANCE, ORACLE_PICK_ROTATION]))
-        env.take_action(action=np.array([env.move_to_throw_pose_id, standoff, 0.0]))
-        env.take_action(action=np.array([env.toss_id, speed, release_ms]))
-        return bool(env.is_solved())
-    finally:
-        env.close()
-
-
-def _accepted_standoff_band() -> tuple[float, float]:
-    """The band `RobotAtSuccessfulThrowPose` accepts: upstream's own constant.
-
-    It used to be recomputed here from live scene geometry plus `THROW_RANGE`, because
-    the band this domain applied was *derived* -- move the bin and the band followed. It
-    is now upstream's literal `THROW_STANDOFF_BOUNDS`, and upstream says so in its own
-    comment: "A literal, not a live read of the region, so a scene whose bin or goal
-    region moves needs remeasuring."
-
-    **That is a real reduction in robustness, recorded rather than hidden.** This repo's
-    scene moves with the `reference/kindergarden` pin, so a pin bump that relocates the
-    bin now silently invalidates this band instead of being followed automatically.
-    `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` is what makes such
-    a move loud.
-    """
-    from kinder_models.dynamic3d.tossing.state_abstractions import (
-        THROW_STANDOFF_BOUNDS as KB_BOUNDS,
-    )
-
-    return (float(KB_BOUNDS[0]), float(KB_BOUNDS[1]))
-
-
-def test_no_toss_parameterisation_scores_from_beyond_the_accepted_band() -> None:
-    """**The converse direction: a pose past the band's far edge is unthrowable, by every
-    toss parameterisation in bounds.**
-
-    Without this, `RobotAtSuccessfulThrowPose` could widen arbitrarily and every existing
-    test would still pass -- they only ever check poses it accepts. An over-permissive band
-    here is the `NearBin` tautology's failure mode wearing a different shape: it does not
-    make the label constant-true, it makes it constant-true *on the wrong side*, promising
-    the planner a throw that no parameter draw can deliver.
-
-    **Only the far edge is probed.** The near edge is upstream's 1.09 m, which already sits
-    below the sampler's own 1.10 m floor, so a probe `BAND_EDGE_PROBE_OFFSET` below it is
-    not a pose `MoveToThrowPose` can be asked for at all and the sequence would fail for
-    reasons that have nothing to do with the band. (While this domain carried its own
-    classifier the near edge was 0.21 m and the same argument held with more room.)
-
-    **The pass is not vacuous, which for a negative assertion has to be checked separately
-    from the assertion.** At the probe standoff of 1.450 every cell executes with no skill
-    error, the base really arrives (`base_x` 0.5497 against the commanded 2.0 - 1.45), and
-    the cube really flies: displacements of 0.377 to 1.206 m over `_PARAM_GRID`. A wider
-    manual check at the same pose -- 6 release milliseconds bracketing the measured reach
-    argmax, over 3 seeds -- scored `0/18`, with the furthest of those coming to rest at
-    x = 1.8323, still 68 mm short of the trimmed box's 1.900 near edge. So `0/24` at this
-    pose in total, and the guard is failing throws rather than failing to throw."""
-    lo, hi = _accepted_standoff_band()
-    standoff = hi + BAND_EDGE_PROBE_OFFSET
-
-    scored = [
-        (speed_fraction, ms_fraction)
-        for speed_fraction, ms_fraction in _PARAM_GRID
-        if _throw_scores_from_standoff(
-            standoff=standoff,
-            speed=_lerp(bounds=TOSS_SPEED_BOUNDS, fraction=speed_fraction),
-            release_ms=_lerp(bounds=TOSS_RELEASE_MS_BOUNDS, fraction=ms_fraction),
-        )
-    ]
-
-    assert not scored, (
-        f"standoff {standoff:.3f} is {BAND_EDGE_PROBE_OFFSET} m beyond the accepted band "
-        f"[{lo:.3f}, {hi:.3f}], so RobotAtSuccessfulThrowPose rejects it -- but "
-        f"{len(scored)}/{len(_PARAM_GRID)} toss parameterisations scored from it: {scored}. "
-        "The band is too NARROW: it rejects a pose that is genuinely throwable."
-    )
-
-
-def test_the_accepted_band_end_to_end_is_upstreams_own_constant() -> None:
-    """**Proves the guard above probes a live boundary.** A negative-only test passes
-    trivially if the band it reads is not the band the predicate applies.
-
-    This sweeps the base along the bin's axis on a *real* scene and reads the verdict back
-    through the whole production path -- `KinderBackend.abstract_atoms`, which runs
-    upstream's own `Tossing3DStateAbstractor` against a mutated `ObjectCentricState`, then
-    this domain's own `Predicate`. The band that comes back must be upstream's constant,
-    to the millimetre.
-
-    It deliberately executes no throw: the expensive half of the argument is the guard's
-    own, and this half is about which numbers the predicate actually reads.
-    """
-    lo, hi = _accepted_standoff_band()
-    env = _env()
-    try:
-        env.reset_to_seed(seed=CANONICAL_SEED)
-        backend = env.backend()
-        snapshot = backend.snapshot()
-        robot = snapshot.get_object_from_name(backend.robot_name)
-        target_bin = snapshot.get_object_from_name(backend.bin_name)
-        bin_x = float(snapshot.get(target_bin, "x"))
-        # On the bin's axis, so the lateral and heading conjuncts pass and the standoff
-        # conjunct is the only thing under test.
-        snapshot.set(robot, "pos_base_y", float(snapshot.get(target_bin, "y")))
-        snapshot.set(robot, "pos_base_rot", 0.0)
-
-        accepted = []
-        for millimetre in range(1000, 1500):
-            standoff = millimetre / 1000.0
-            snapshot.set(robot, "pos_base_x", bin_x - standoff)
-            atoms = backend.abstract_atoms(state=snapshot)
-            if ("RobotAtThrowPose", ("robot", "bin_0")) in atoms:
-                accepted.append(standoff)
-
-        assert accepted, "no standoff accepted at all through the production path"
-        # To the millimetre, not exactly: an `ObjectCentricState` is float32, and the
-        # standoff here is a *difference* of two float32 positions rather than a literal,
-        # so the low edge reads back as 1.091 against upstream's 1.09. That is this
-        # sweep's own resolution, not a disagreement about the band.
-        assert min(accepted) == pytest.approx(lo, abs=1e-3), (
-            f"the band's near edge read back end-to-end is {min(accepted)}, but "
-            f"upstream's constant is {lo}"
-        )
-        assert max(accepted) == pytest.approx(hi, abs=1e-3), (
-            f"the band's far edge read back end-to-end is {max(accepted)}, but "
-            f"upstream's constant is {hi}"
-        )
-    finally:
-        env.close()
 
 
 def test_holding_uses_upstreams_forward_kinematics_conjunct() -> None:

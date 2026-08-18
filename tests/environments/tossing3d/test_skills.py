@@ -1,6 +1,23 @@
-"""Offline tests for the three lifted skills, their operator models and their samplers."""
+"""Offline tests for the two lifted skills, their operator models and their samplers.
 
-import importlib.util
+**It was three, and the middle one is gone.** `Pick` -> `MoveToThrowPose` -> `Toss`
+became `PickCube` -> `MoveToTossLocationAndToss`, because upstream composed the base move
+and the throw into one controller and derived the pick's standoff and grasp rotation
+internally. Two whole families of test went with them and are not ported:
+
+- **`MoveToThrowPose`'s standoff sampler**, and the pair of properties it existed to
+  carry: that a draw could both satisfy and fail `RobotAtSuccessfulThrowPose` (so EES saw
+  two classes), and that `THROW_STANDOFF_BOUNDS`' floor cleared
+  `WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MARGIN`. There is no standoff
+  skill to sample for and no predicate to satisfy; the standoff is now the composed
+  toss's first parameter, drawn from upstream's own `TARGET_DISTANCE_BOUNDS`.
+- **`Pick`'s `(distance, rotation)` sampler.** `PickCube` has `param_dim=0`.
+
+What replaces both, and is the stronger statement, is that every continuous bound this
+module draws from is now *upstream's own*, pinned against the installed controller in
+`test_kinder_pin.py` -- so there is one place these numbers are measured and it is not
+this repo.
+"""
 
 import numpy as np
 import pytest
@@ -9,25 +26,19 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
-    BARRIER_COLLISION_MARGIN,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
     ON_GROUND,
     REACHABLE,
-    ROBOT_AT_SUCCESSFUL_THROW_POSE,
-    TOSS_RELEASE_MS_BOUNDS,
-    TOSS_SPEED_BOUNDS,
-    UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
-    WORST_BARRIER_COLLISION_STANDOFF,
-)
-from hitl_pmp.environments.tossing3d.predicates import (
-    THROW_STANDOFF_BOUNDS as PREDICATE_THROW_STANDOFF_BOUNDS,
 )
 from hitl_pmp.environments.tossing3d.skills import (
-    PICK_DISTANCE_BOUNDS,
-    PICK_ROTATION_BOUNDS,
-    THROW_STANDOFF_BOUNDS,
+    MAX_TOSS_ROTATION,
+    TOSS_DISTANCE_BOUNDS,
+    TOSS_RELEASE_MS_BOUNDS,
+    TOSS_ROTATION_BOUNDS,
+    TOSS_SPEED_BOUNDS,
+    WAYPOINT_TOLERANCE,
     Tossing3DSkills,
 )
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
@@ -35,18 +46,17 @@ from hitl_pmp.planning.grounding import SkillGrounder
 
 from .observations import INITIAL_ATOMS, state
 
-# The two sampler-versus-band tests below call upstream's own `RobotAtThrowPose`
-# classifier, which lives in `kinder_models`. It is a `@staticmethod` so it needs no
-# simulator *process*, but it does need the package importable -- hence the gate, which
-# keeps a checkout with unpopulated `reference/` from failing wholesale. Defined after the
-# imports rather than before them: nothing above it is conditional on KINDER, and ruff's
-# `E402` rejects a module-level statement wedged in among the imports.
-_needs_kinder = pytest.mark.skipif(
-    importlib.util.find_spec("kinder") is None, reason="requires the tossing3d extra"
-)
-
 _ENV = Tossing3DEnvironment()
 _SKILLS = Tossing3DSkills
+
+# The four bounds the composed toss draws from, in slot order, so the sampler tests can
+# be written once over all four rather than once per dial.
+_TOSS_BOUNDS = (
+    TOSS_DISTANCE_BOUNDS,
+    TOSS_ROTATION_BOUNDS,
+    TOSS_SPEED_BOUNDS,
+    TOSS_RELEASE_MS_BOUNDS,
+)
 
 
 # The exact lifted signature of each operator, in declaration order. Pinned as a literal
@@ -59,11 +69,39 @@ _SKILLS = Tossing3DSkills
 # symbolic object: it is scene geometry the classifiers read out of `State`, not a thing a
 # planner binds a variable to. A signature that reintroduced it would put an object into
 # every plan step that no skill can act on.
+#
+# Both orders are upstream's own -- `(robot, cube, barrier)` for the pick and
+# `(robot, target, held, barrier)` for the composed toss -- so a ground skill built here
+# can be handed to upstream's controller unpermuted.
 _EXPECTED_PARAMETERS = {
-    "Pick": ("robot", "cube", "barrier", "bin"),
-    "MoveToThrowPose": ("robot", "cube", "bin"),
-    "Toss": ("robot", "cube", "bin", "barrier"),
+    "PickCube": ("robot", "cube", "barrier"),
+    "MoveToTossLocationAndToss": ("robot", "bin", "cube", "barrier"),
 }
+
+
+def _every_skill() -> tuple:
+    return (_SKILLS.PICK_CUBE, _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS)
+
+
+def _pick_cube() -> GroundSkill:
+    return GroundSkill(skill=_SKILLS.PICK_CUBE, objects=(_ENV.robot, _ENV.cube, _ENV.barrier))
+
+
+def _toss() -> GroundSkill:
+    return GroundSkill(
+        skill=_SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+        objects=(_ENV.robot, _ENV.bin, _ENV.cube, _ENV.barrier),
+    )
+
+
+def test_the_domain_declares_exactly_two_skills() -> None:
+    """The headline of the migration. `MoveToThrowPose` is not a skill any more, and a
+    reintroduced third one would mean the operator layer had drifted from the controllers
+    `kinder_backend.py` can actually drive."""
+    assert [skill.name for skill in _every_skill()] == [
+        "PickCube",
+        "MoveToTossLocationAndToss",
+    ]
 
 
 def test_no_operator_names_a_goal_region_object() -> None:
@@ -71,7 +109,7 @@ def test_no_operator_names_a_goal_region_object() -> None:
 
     Checked by *type* rather than by variable name, so renaming the variable cannot smuggle
     the dependency back in."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _every_skill():
         declared = [variable.type.name for variable in skill.parameters]
         assert "tossing3d_goal_region" not in declared, (
             f"{skill.name} still takes a goal-region parameter: {declared}"
@@ -79,35 +117,14 @@ def test_no_operator_names_a_goal_region_object() -> None:
 
 
 def test_each_operator_declares_exactly_the_objects_it_acts_on() -> None:
-    """The positive half of the test above: dropping the goal region must not have
-    disturbed the objects that remain, nor their order (`GroundSkill.objects` is
-    positional, and the oracle builds its groundings by hand)."""
+    """The positive half of the test above, and the check that both signatures are still
+    upstream's own object order (`GroundSkill.objects` is positional, the oracle builds its
+    groundings by hand, and `KinderBackend` hands the names to upstream unpermuted)."""
     actual = {
         skill.name: tuple(variable.name for variable in skill.parameters)
-        for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS)
+        for skill in _every_skill()
     }
     assert actual == _EXPECTED_PARAMETERS
-
-
-def _pick() -> GroundSkill:
-    return GroundSkill(
-        skill=_SKILLS.PICK,
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin),
-    )
-
-
-def _move() -> GroundSkill:
-    return GroundSkill(
-        skill=_SKILLS.MOVE_TO_THROW_POSE,
-        objects=(_ENV.robot, _ENV.cube, _ENV.bin),
-    )
-
-
-def _toss() -> GroundSkill:
-    return GroundSkill(
-        skill=_SKILLS.TOSS,
-        objects=(_ENV.robot, _ENV.cube, _ENV.bin, _ENV.barrier),
-    )
 
 
 def test_pick_requires_reachable_so_no_plan_retrieves_a_tossed_cube() -> None:
@@ -117,76 +134,70 @@ def test_pick_requires_reachable_so_no_plan_retrieves_a_tossed_cube() -> None:
     tests/environments/test_operator_dynamics_fidelity.py exists for."""
     assert (
         LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier))
-        in _SKILLS.PICK.preconditions
+        in _SKILLS.PICK_CUBE.preconditions
     )
 
 
-def test_pick_deletes_the_throw_pose_because_the_grasp_drives_the_base_to_the_cube() -> None:
-    """`pick_shelf` navigates to the cube, which is on the near side of the barrier and
-    therefore far too short of the bin to throw from. A model that let the predicate
-    survive a pick would let the planner skip `MoveToThrowPose` entirely."""
-    assert (
-        LiftedAtom(
-            predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            variables=(_SKILLS._robot, _SKILLS._bin),
-        )
-        in _SKILLS.PICK.delete_effects
-    )
-
-
-def test_toss_deletes_reachable_unconditionally_hit_or_miss() -> None:
+def test_the_toss_deletes_reachable_unconditionally_hit_or_miss() -> None:
     """A toss makes the cube unreachable whether or not it lands in the region. Deleting
     it only on success would be a model in which a missed throw costs nothing -- which is
     precisely the cost this domain exists to represent."""
     assert (
         LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier))
-        in _SKILLS.TOSS.delete_effects
+        in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.delete_effects
     )
 
 
-def test_the_three_operator_models_are_exactly_as_declared() -> None:
+def test_the_toss_lands_the_cube_flat_as_well_as_in_the_bin() -> None:
+    """**The add effect that forced `OnGround` to become face-interchangeable.**
+
+    kb#113's operator model records that `15/15` scoring throws left the cube resting on a
+    face, so the composed toss adds `OnGround`. Under the old "flat on the face it started
+    on" classifier that effect would read false on most scoring throws and EES would train
+    its sampler against noise -- see `test_predicates.py`'s six-faces tests for the other
+    half of this pair."""
+    assert (
+        LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,))
+        in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects
+    )
+
+
+def test_the_toss_requires_reachable_as_well_as_deleting_it() -> None:
+    """An operator whose delete effect names an atom it does not require would be
+    describing a state it never established. Upstream keeps this precondition for a
+    binding reason the types here already rule out; it stays because it is also true."""
+    assert (
+        LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier))
+        in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions
+    )
+
+
+def test_the_two_operator_models_are_exactly_as_declared() -> None:
     """Pinned field by field, so a change to the symbolic layer is a deliberate edit to
     this list rather than a silent drift."""
-    assert _SKILLS.PICK.preconditions == frozenset({
+    assert _SKILLS.PICK_CUBE.preconditions == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
         LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier)),
     })
-    assert _SKILLS.PICK.add_effects == frozenset({
+    assert _SKILLS.PICK_CUBE.add_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
     })
-    assert _SKILLS.PICK.delete_effects == frozenset({
+    assert _SKILLS.PICK_CUBE.delete_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
-        LiftedAtom(
-            predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            variables=(_SKILLS._robot, _SKILLS._bin),
-        ),
     })
 
-    assert _SKILLS.MOVE_TO_THROW_POSE.preconditions == frozenset({
-        LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
-    })
-    assert _SKILLS.MOVE_TO_THROW_POSE.add_effects == frozenset({
-        LiftedAtom(
-            predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            variables=(_SKILLS._robot, _SKILLS._bin),
-        )
-    })
-    assert _SKILLS.MOVE_TO_THROW_POSE.delete_effects == frozenset()
-
-    assert _SKILLS.TOSS.preconditions == frozenset({
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
-        LiftedAtom(
-            predicate=ROBOT_AT_SUCCESSFUL_THROW_POSE,
-            variables=(_SKILLS._robot, _SKILLS._bin),
-        ),
+        LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier)),
     })
-    assert _SKILLS.TOSS.add_effects == frozenset({
-        LiftedAtom(predicate=IN_BIN, variables=(_SKILLS._cube, _SKILLS._bin)),
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=IN_BIN, variables=(_SKILLS._cube, _SKILLS._bin)),
+        LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
     })
-    assert _SKILLS.TOSS.delete_effects == frozenset({
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.delete_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
         LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier)),
     })
@@ -194,9 +205,9 @@ def test_the_three_operator_models_are_exactly_as_declared() -> None:
 
 def test_no_skill_declares_ignore_effects() -> None:
     """Unlike Ball-Ring's navigations and Tossing Room's Press, nothing here wipes a whole
-    predicate: there is one cube, one bin and one region, so every effect is expressible
+    predicate: there is one cube, one bin and one barrier, so every effect is expressible
     as a plain add or delete."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _every_skill():
         assert skill.ignore_effects == frozenset(), skill.name
 
 
@@ -209,71 +220,99 @@ def test_no_variable_carries_the_question_mark_the_pddl_writer_adds() -> None:
     `EesMethod._next_plan` catches `PlanningFailure` and degrades to a no-op. So this is
     checked structurally as well as end-to-end below: a run can otherwise exit 0 and
     write a full `stats.json` in which the method never took a single action."""
-    for skill in (_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS):
+    for skill in _every_skill():
         for variable in skill.parameters:
             assert not variable.name.startswith("?"), f"{skill.name}: {variable.name}"
 
 
-def test_integration_fast_downward_plans_the_three_skill_solve() -> None:
+def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
     """An INTEGRATION test, deliberately not skipped, in the style of
     `tests/planning/test_fast_downward.py`: it shells out to a real Fast Downward on this
     domain's own PDDL. It needs no simulator -- the whole symbolic layer is built from a
-    hand-written `KinderObservation` -- so it runs on CI, where the `tossing3d` extra is
-    never installed but Fast Downward is.
+    hand-written `KinderObservation` -- so it runs on CI, where Fast Downward is present.
 
     The structural test above would not have caught a second way of emitting unparseable
     PDDL; this one catches any of them, and is the check that was missing when
-    `--env tossing3d --method ees` ran to completion planning nothing."""
+    `--env tossing3d --method ees` ran to completion planning nothing.
+
+    **Two steps, not three.** That the planner finds the shorter plan at all is the
+    end-to-end evidence that the composed operator's preconditions are reachable from the
+    initial abstract state without the retired throw-pose predicate in between."""
     env = Tossing3DEnvironment()
     objects = (env.robot, env.cube, env.bin, env.barrier)
-    predicates = (
-        IN_BIN,
-        HAND_EMPTY,
-        HOLDING,
-        ON_GROUND,
-        REACHABLE,
-        ROBOT_AT_SUCCESSFUL_THROW_POSE,
-    )
+    predicates = (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
     init_atoms = SkillGrounder.abstract_state(
         state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
     )
     plan = FastDownwardPlanner.plan(
-        skills=(_SKILLS.PICK, _SKILLS.MOVE_TO_THROW_POSE, _SKILLS.TOSS),
+        skills=_every_skill(),
         predicates=predicates,
         types=(env.robot_type, env.cube_type, env.bin_type, env.barrier_type),
         objects=objects,
         init_atoms=init_atoms,
         goal=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}),
     )
-    assert [step.skill.name for step in plan] == ["Pick", "MoveToThrowPose", "Toss"]
+    assert [step.skill.name for step in plan] == ["PickCube", "MoveToTossLocationAndToss"]
 
 
-def test_param_dims_give_the_throw_a_release_speed_of_its_own() -> None:
-    """`Toss`'s dials are upstream's own `TossController.reset` parameters rather than
-    quantities this package synthesised, so both arm configurations remain upstream's.
-    """
-    assert _SKILLS.PICK.param_dim == 2
-    assert _SKILLS.MOVE_TO_THROW_POSE.param_dim == 1
-    assert _SKILLS.TOSS.param_dim == 2
+def test_the_pick_takes_no_continuous_parameters_at_all() -> None:
+    """`PickCubeController` derives its standoff (`PickCubeController.STANDOFF`) and its
+    grasp rotation (`upright_grasp_rotations`) internally, so there is nothing for a
+    refiner to backtrack over and nothing for EES to learn. This is a real narrowing of
+    what a learning run on this domain measures, and it is upstream's choice rather than
+    one made here."""
+    assert _SKILLS.PICK_CUBE.param_dim == 0
+
+
+def test_the_composed_toss_carries_all_four_dials() -> None:
+    """Standoff and yaw used to belong to `MoveToThrowPose`, speed and millisecond to
+    `Toss`. One controller now takes all four, so every learned parameter in this domain
+    belongs to this one skill."""
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.param_dim == 4
+
+
+def test_the_rotation_bound_is_computed_from_the_waypoint_tolerance_not_typed() -> None:
+    """Upstream derives `MAX_TARGET_ROTATION` from `WAYPOINT_TOLERANCE` and the largest
+    standoff -- the widest yaw about the bin that still leaves the base within half the
+    tolerance of the bin's axis -- and this module reproduces the derivation rather than
+    the number it currently produces. A literal here would go stale silently if upstream
+    retuned either input."""
+    assert (
+        pytest.approx(float(np.arcsin(0.5 * WAYPOINT_TOLERANCE / TOSS_DISTANCE_BOUNDS[1])))
+        == MAX_TOSS_ROTATION
+    )
+    assert TOSS_ROTATION_BOUNDS == (-MAX_TOSS_ROTATION, MAX_TOSS_ROTATION)
 
 
 def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
     assert Tossing3DSkills.compute_action(
-        ground_skill=_pick(), params=np.array([0.55, 0.1]), state=state()
-    ) == pytest.approx([Tossing3DEnvironment.pick_id, 0.55, 0.1])
+        ground_skill=_pick_cube(), params=np.zeros(0), state=state()
+    ) == pytest.approx([Tossing3DEnvironment.pick_cube_id, 0.0, 0.0, 0.0, 0.0])
     assert Tossing3DSkills.compute_action(
-        ground_skill=_move(), params=np.array([1.35]), state=state()
-    ) == pytest.approx([Tossing3DEnvironment.move_to_throw_pose_id, 1.35, 0.0])
-    assert Tossing3DSkills.compute_action(
-        ground_skill=_toss(), params=np.array([140.0, 720.0]), state=state()
-    ) == pytest.approx([Tossing3DEnvironment.toss_id, 140.0, 720.0])
+        ground_skill=_toss(), params=np.array([1.35, 0.01, 140.0, 792.0]), state=state()
+    ) == pytest.approx([
+        Tossing3DEnvironment.move_to_toss_location_and_toss_id,
+        1.35,
+        0.01,
+        140.0,
+        792.0,
+    ])
+
+
+def test_the_toss_parameters_land_in_slots_one_through_four_in_order() -> None:
+    """Four dials in four slots is four chances to transpose a pair, and a transposition
+    of speed and millisecond typechecks. Encoded from four mutually distinguishable
+    values, so any permutation fails."""
+    action = Tossing3DSkills.compute_action(
+        ground_skill=_toss(), params=np.array([1.31, -0.007, 128.5, 733.0]), state=state()
+    )
+    assert list(action[1:]) == pytest.approx([1.31, -0.007, 128.5, 733.0])
 
 
 def test_every_action_matches_the_declared_action_space() -> None:
     for ground_skill, params in (
-        (_pick(), np.array([0.55, 0.1])),
-        (_move(), np.array([1.35])),
-        (_toss(), np.array([140.0, 720.0])),
+        (_pick_cube(), np.zeros(0)),
+        (_toss(), np.array([1.35, 0.0, 140.0, 792.0])),
     ):
         action = Tossing3DSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state()
@@ -281,203 +320,48 @@ def test_every_action_matches_the_declared_action_space() -> None:
         assert action.shape == Tossing3DEnvironment.action_space.shape
 
 
-def test_sample_params_draws_pick_parameters_inside_upstreams_own_bounds() -> None:
-    """Upstream's `PickShelfController.sample_parameters` draws uniformly from exactly
-    these two constants and then rejection-tests against *other* cubes; with one cube
-    there is nothing to reject, so a plain uniform draw is what it reduces to here."""
-    rng = np.random.default_rng(0)
-    for _ in range(200):
-        distance, rotation = Tossing3DSkills.sample_params(ground_skill=_pick(), rng=rng)
-        assert PICK_DISTANCE_BOUNDS[0] <= distance <= PICK_DISTANCE_BOUNDS[1]
-        assert PICK_ROTATION_BOUNDS[0] <= rotation <= PICK_ROTATION_BOUNDS[1]
+def test_sampling_the_pick_returns_an_empty_vector_rather_than_a_zero() -> None:
+    """`param_dim=0` has to mean "no parameters", not "one parameter that happens to be
+    zero": a length-1 draw would give EES a dial to learn that the controller ignores."""
+    drawn = Tossing3DSkills.sample_params(ground_skill=_pick_cube(), rng=np.random.default_rng(0))
+    assert drawn.shape == (0,)
 
 
-@_needs_kinder
-def test_the_sampler_draws_both_satisfying_and_unsatisfying_standoffs() -> None:
-    """**The sampler must be able to miss.** `MoveToThrowPose`'s only add effect is
-    `RobotAtSuccessfulThrowPose`, and EES trains that skill's success classifier on
-    exactly that label. This test used to assert the opposite -- that *every* sampled
-    standoff satisfies the add effect -- which is a tautology dressed as a fidelity check:
-    it holds precisely when the label is constant-true and the sampler cannot learn.
-
-    Both outcomes must occur, and every draw must still be in bounds."""
-    from .object_centric import at_throw_pose
-
-    rng = np.random.default_rng(0)
-    outcomes = []
-    for _ in range(200):
-        (standoff,) = Tossing3DSkills.sample_params(ground_skill=_move(), rng=rng)
-        assert THROW_STANDOFF_BOUNDS[0] <= standoff <= THROW_STANDOFF_BOUNDS[1]
-        outcomes.append(at_throw_pose(standoff=standoff))
-    assert any(outcomes), "no draw ever succeeds: the skill could never achieve its effect"
-    assert not all(outcomes), (
-        "every draw succeeds: the add effect is constant-true and no sampler can learn"
-    )
-
-
-def test_the_sampler_range_is_the_measured_feasible_range() -> None:
-    """The measured feasible range `[0.40, 2.06]`, inset at both ends: below 0.40 m the
-    base shoves the bin across the floor, above 2.06 m `Toss`'s windup fails to
-    motion-plan, and above ~1.79 m the predicate would start accepting the pose `Pick`
-    leaves the base in.
-
-    **The lower bound is no longer that 0.40 m inset.** A separate, tighter hazard sits
-    inside it: `cuboid_barrier` is a real dynamic MuJoCo body `move_to_target`'s base
-    motion planner does not collision-check against, so a standoff up to 1.00 m still
-    drives the base through it (see `predicates.THROW_STANDOFF_BOUNDS`'s docstring for
-    the three-ways-confirmed measurement). `BARRIER_COLLISION_MARGIN` moves the floor to
-    1.10 m, well above the bin-shove threshold this docstring's first paragraph
-    describes.
-
-    `skills.py` imports the interval from `predicates.py` rather than declaring its own,
-    so there is one place it is measured. That import is **not** the same thing as the
-    predicate's acceptance band, which is derived per call -- see the test below."""
-    assert THROW_STANDOFF_BOUNDS == (1.10, 1.75)
-    assert THROW_STANDOFF_BOUNDS is PREDICATE_THROW_STANDOFF_BOUNDS
-
-
-def test_the_sampler_range_excludes_the_measured_barrier_collision_range() -> None:
-    """**The safety property, pinned so it survives a future retune.** Unlike the test
-    above -- which pins the current bound to a literal and fails on any change at all,
-    including a safe widening -- this one states *why* the lower bound has to be where
-    it is: clear of every standoff `test_move_to_throw_pose_at_the_lower_standoff_bound_
-    does_not_disturb_the_barrier` (in `test_kinder_fidelity.py`, which needs a live KINDER
-    install and so skips on CI) confirmed drives the base through `cuboid_barrier`.
-
-    This is the one offline check of that safety property CI can actually run. If someone
-    re-measures `WORST_BARRIER_COLLISION_STANDOFF` higher, or shrinks
-    `BARRIER_COLLISION_MARGIN`, without widening `THROW_STANDOFF_BOUNDS` to match, this
-    fails here rather than only in the live-KINDER test that skips everywhere but a
-    KINDER-installed machine."""
-    assert THROW_STANDOFF_BOUNDS[0] >= WORST_BARRIER_COLLISION_STANDOFF + BARRIER_COLLISION_MARGIN
-
-
-@_needs_kinder
-def test_the_sampler_range_is_not_the_predicates_acceptance_band() -> None:
-    """The defect this whole change exists to fix, pinned as a property.
-
-    `predicates.py` used to hand `THROW_STANDOFF_BOUNDS` straight to the classifier as its
-    acceptance interval, so widening the sampler's range widened the acceptance region in
-    lockstep and the add effect stayed constant-true. The acceptance band is now
-    upstream's own measured `THROW_STANDOFF_BOUNDS` -- a different constant that happens
-    to share the name, see `predicates.py` -- and is strictly narrower than the range the
-    sampler draws from.
-
-    Upstream keeps the same separation for the same reason: its sampler draws from
-    `TOSS_TARGET_DISTANCE_BOUNDS` = (1.25, 1.45), not from the band its predicate
-    accepts."""
-    from .object_centric import at_throw_pose
-
-    low, high = THROW_STANDOFF_BOUNDS
-    accepted = [
-        standoff / 1000
-        for standoff in range(int(low * 1000), int(high * 1000))
-        if at_throw_pose(standoff=standoff / 1000)
-    ]
-    assert accepted
-    assert max(accepted) - min(accepted) < (high - low) / 2
-
-
-def test_toss_samples_one_release_speed_inside_the_measured_bounds() -> None:
-    """The dial is in joint-path deg/s. `TOSS_SPEED_BOUNDS` stays inside PR #213's
-    measured grid, so a draw is never an extrapolation.
-    """
+@pytest.mark.parametrize("slot", range(4))
+def test_every_toss_dial_is_drawn_across_its_own_bounds(*, slot: int) -> None:
+    """Each dial in bounds, and each one a real draw rather than a constant dressed as
+    one -- a sampler that returned a bound's midpoint in some slot would pass a
+    containment-only check on every draw."""
     rng = np.random.default_rng(0)
     draws = [
-        float(Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[0]) for _ in range(200)
+        float(Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[slot])
+        for _ in range(200)
     ]
-    assert all(TOSS_SPEED_BOUNDS[0] <= speed <= TOSS_SPEED_BOUNDS[1] for speed in draws)
-    # A real draw, not a constant dressed as one.
-    assert max(draws) - min(draws) > (TOSS_SPEED_BOUNDS[1] - TOSS_SPEED_BOUNDS[0]) / 2
+    low, high = _TOSS_BOUNDS[slot]
+    assert all(low <= value <= high for value in draws)
+    assert max(draws) - min(draws) > (high - low) / 2
 
 
-def test_the_shipped_default_speed_is_the_upper_edge_of_the_samplers_range() -> None:
-    """140 deg/s is upstream's default and exactly the top of the sampler's range: it must
-    be reachable so the oracle's throw is learnable, but it is the edge rather than an
-    interior point because it is what the real TidyBot primitive commands
-    (`movej_primitive.execute(..., max_vel=140, ...)`).
-
-    Asserted as equality rather than containment, so widening the range fails here.
-    """
-    assert TOSS_SPEED_BOUNDS[0] < UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
-    assert TOSS_SPEED_BOUNDS[1] == UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
-
-
-def test_toss_samples_a_gripper_release_ms_inside_the_measured_bounds() -> None:
-    """The second dial, in milliseconds from the start of the swing. Slot 1 is drawn
-    separately and tested above.
-    """
-    rng = np.random.default_rng(0)
-    draws = [
-        float(Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[1]) for _ in range(200)
-    ]
-    assert all(TOSS_RELEASE_MS_BOUNDS[0] <= ms <= TOSS_RELEASE_MS_BOUNDS[1] for ms in draws)
-    # A real draw, not a constant dressed as one.
-    assert max(draws) - min(draws) > (TOSS_RELEASE_MS_BOUNDS[1] - TOSS_RELEASE_MS_BOUNDS[0]) / 2
-
-
-def test_the_two_toss_dials_are_drawn_independently() -> None:
-    """A sampler that wrote one draw into both slots, or drew the second from the first,
-    would pass each single-slot test above while collapsing the space onto a line. Pinned
-    as near-zero rank correlation.
-    """
+def test_the_four_toss_dials_are_drawn_independently() -> None:
+    """A sampler that wrote one draw into several slots, or derived one from another,
+    would pass every single-slot test above while collapsing the space onto a line or a
+    plane. Pinned as near-zero rank correlation between all six pairs."""
     rng = np.random.default_rng(0)
     draws = np.array([
         Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng) for _ in range(500)
     ])
-    speeds, release_ms = draws[:, 0], draws[:, 1]
-    speed_ranks = np.argsort(np.argsort(speeds))
-    ms_ranks = np.argsort(np.argsort(release_ms))
-    assert abs(float(np.corrcoef(speed_ranks, ms_ranks)[0, 1])) < 0.15
-
-
-def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None:
-    """The bounds' upper edge is set by the *shortest* swing, not the longest.
-    `gripper_release_ms` is unclamped upstream: past the end of the swing the gripper
-    never opens and the cube is never thrown.
-
-    Recomputed from upstream's own profile rather than against a copied number, so it
-    fails if a pin bump changes the swing's timing.
-    """
-    kinder_models = pytest.importorskip("kinder_models")
-    del kinder_models
-    from kinder_models.dynamic3d.tossing.parameterized_skills import (
-        TOSS_RELEASE_ARM_CONFIGURATION,
-        TOSS_SLICES_PER_CONTROL_STEP,
-        TOSS_WINDUP_ARM_CONFIGURATION,
-        toss_profile_limits,
-    )
-    from kinder_models.dynamic3d.utils import CONTROL_TIMESTEP, _trapezoidal_motion_profile
-
-    s_total = float(np.linalg.norm(TOSS_RELEASE_ARM_CONFIGURATION - TOSS_WINDUP_ARM_CONFIGURATION))
-    shortest_ms = min(
-        (
-            len(
-                _trapezoidal_motion_profile(
-                    s_total,
-                    max_vel=limits[0],
-                    max_accel=limits[1],
-                    max_decel=limits[2],
-                    step_size=CONTROL_TIMESTEP,
-                )
-            )
-            - 1
-        )
-        * TOSS_SLICES_PER_CONTROL_STEP
-        for limits in (
-            toss_profile_limits(np.deg2rad(deg))
-            for deg in np.linspace(TOSS_SPEED_BOUNDS[0], TOSS_SPEED_BOUNDS[1], 37)
-        )
-    )
-    assert TOSS_RELEASE_MS_BOUNDS[1] <= shortest_ms
+    ranks = np.argsort(np.argsort(draws, axis=0), axis=0)
+    correlations = np.corrcoef(ranks, rowvar=False)
+    off_diagonal = correlations[~np.eye(4, dtype=bool)]
+    assert np.max(np.abs(off_diagonal)) < 0.15
 
 
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     stray = GroundSkill(
-        skill=_SKILLS.PICK.model_copy(update={"name": "NotASkill"}),
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, _ENV.bin),
+        skill=_SKILLS.PICK_CUBE.model_copy(update={"name": "NotASkill"}),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier),
     )
     with pytest.raises(ValueError, match="Unknown skill"):
         Tossing3DSkills.sample_params(ground_skill=stray, rng=np.random.default_rng(0))
     with pytest.raises(ValueError, match="Unknown skill"):
-        Tossing3DSkills.compute_action(ground_skill=stray, params=np.zeros(2), state=state())
+        Tossing3DSkills.compute_action(ground_skill=stray, params=np.zeros(4), state=state())

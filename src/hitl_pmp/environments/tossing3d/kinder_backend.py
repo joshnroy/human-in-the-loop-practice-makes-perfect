@@ -141,10 +141,9 @@ class KinderObservation(BaseModel):
     the compiled model rather than re-derived from the task JSON. The JSON range is
     inflated by `ground_placement_threshold` (0.05 m per side, z clamped at 0) before it
     becomes a region, so the literal in the file is not the box that scores. Reading it
-    back is what lets `predicates.InBinClassifier` be a pure function of `State` and
-    still agree with `_check_goals()` exactly. It reaches that classifier carried on the
-    **bin** object, under this domain's assumption that the bin's interior is this region
-    -- see `predicates.py`'s module docstring.
+    back is what lets this domain's `InBin` agree with `_check_goals()` exactly. It
+    reaches the state carried on the **bin** object, under this domain's assumption that
+    the bin's interior contains this region -- see `predicates.py`'s module docstring.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -235,17 +234,17 @@ class KinderBackend(BaseModel):
     # translates one to the other rather than assuming they coincide.
     robot_atom_name: ClassVar[str] = "robot"
 
-    # Upstream's own arm configurations, in degrees, copied verbatim from
-    # `test_pick_ground_toss`. The windup is the posture upstream's toss is demonstrated
-    # from; the toss target is the swing itself. Neither is interpolated or retuned here
-    # -- this package invents no controller parameter (see `skills.py`).
-    windup_conf_deg: ClassVar[tuple[int, ...]] = (0, 50, 180, -110, 0, -100, 90)
-    toss_conf_deg: ClassVar[tuple[int, ...]] = (0, 20, 180, -35, 0, 25, 90)
+    # Upstream's arm configurations are no longer named here: the composed toss reads
+    # `TOSS_WINDUP_ARM_CONFIGURATION` and `TOSS_RELEASE_ARM_CONFIGURATION` itself, so this
+    # package no longer hands them in and cannot get them out of step with upstream's.
 
-    # Upstream's own per-controller step budgets, again from `test_pick_ground_toss`.
+    # Per-controller step budgets. `pick_step_limit` is upstream's own from
+    # `test_pick_ground_toss`; `toss_step_limit` covers base motion, windup and swing in
+    # one controller, so it is the sum of what the three separate budgets used to be
+    # (200 + 200 + 200) with headroom, and sits below the 3000 upstream's own
+    # `test_pick_cube_then_move_and_toss_scores` allows.
     pick_step_limit: ClassVar[int] = 400
-    move_step_limit: ClassVar[int] = 200
-    arm_step_limit: ClassVar[int] = 200
+    toss_step_limit: ClassVar[int] = 1000
 
     env_id: str = "kinder/Tossing3D-o1-v0"
     scene_bg: bool = True
@@ -272,7 +271,7 @@ class KinderBackend(BaseModel):
     _env: Any = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
     _robot_name: str = PrivateAttr(default="")
-    # Upstream's `Tossing3DStateAbstractor`: the six predicates' actual implementation.
+    # Upstream's `Tossing3DStateAbstractor`: the five predicates' actual implementation.
     # Held here for the backend's whole lifetime rather than on a `State`, because
     # `Tossing3DEnvironment` deep-copies states and deep-copying this would clone the
     # PyBullet client it does forward kinematics through.
@@ -453,7 +452,7 @@ class KinderBackend(BaseModel):
 
         This is a *KINDER* `ObjectCentricState`, copied -- not one of this package's flat
         `core.State`s, which are a lossy projection (four of the robot's twenty-two
-        features, six of the cube's sixteen). A caller that wants to rewind must hold one
+        features, ten of the cube's sixteen). A caller that wants to rewind must hold one
         of these, which is why the handle is deliberately opaque rather than something
         that looks interchangeable with a `core.State`.
         """
@@ -502,10 +501,10 @@ class KinderBackend(BaseModel):
     def abstract_atoms(self, *, state: Any = None) -> frozenset[AbstractAtom]:
         """Upstream's own symbolic abstraction of `state` (default: the live state).
 
-        This is where all six of this domain's predicates are actually evaluated --
+        This is where all five of this domain's predicates are actually evaluated --
         `predicates.py` only looks the answers up. Calling upstream's `state_abstractor`
-        once per state, rather than once per predicate, also means the six answers are
-        guaranteed mutually consistent: they describe one instant, not six.
+        once per state, rather than once per predicate, also means the five answers are
+        guaranteed mutually consistent: they describe one instant, not five.
 
         **Pure in its argument, which is the property the whole seam rests on.**
         `state_abstractor` opens with `self._pybullet_sim.set_state(state)`, re-pointing
@@ -616,9 +615,6 @@ class KinderBackend(BaseModel):
         object_names: Sequence[str],
         params: np.ndarray | None,
         limit: int,
-        disable_collision_objects: Sequence[str] | None = None,
-        release_speed: float | None = None,
-        gripper_release_ms: int | None = None,
     ) -> ControllerRun:
         """Drive one upstream controller to termination, stepping the live simulator.
 
@@ -626,15 +622,17 @@ class KinderBackend(BaseModel):
         into `env.step`, devectorize, `controller.observe`, break on `terminated()`.
 
         A controller that does not terminate within `limit` is reported as
-        `terminated=False` rather than raised, and a controller that *raises* (KINDER's
-        motion planners `assert plan is not None`) is reported through `error`. Both are
-        ordinary outcomes of a skill whose continuous parameters do not work out, and the
-        caller has to be able to keep going -- `take_action` must be total.
+        `terminated=False` rather than raised, and a controller that *raises* is reported
+        through `error`. Both are ordinary outcomes of a skill whose continuous parameters
+        do not work out, and the caller has to be able to keep going -- `take_action` must
+        be total.
 
-        `disable_collision_objects` (only on `MoveToTargetGroundController.reset`),
-        `release_speed` and `gripper_release_ms` (only on `TossController.reset`) are
-        per-controller keywords, so each is forwarded only when supplied -- passing one to a
-        controller that does not declare it is a `TypeError`.
+        **`BaseException`, not `Exception`, and that is load-bearing.** The controllers
+        this drives raise `bilevel_planning`'s `TrajectorySamplingFailure`, which is
+        **not** an `Exception` subclass, so `except Exception` misses every sampling
+        failure and lets it escape `take_action`. KINDER's own motion planners also still
+        `assert plan is not None`, which `Exception` would have caught -- so both kinds
+        arrive here and both must be reported rather than propagated.
         """
         api = self.api()
         state = self._require_state()
@@ -650,24 +648,20 @@ class KinderBackend(BaseModel):
         objects = tuple(state.get_object_from_name(name) for name in object_names)
         controller = lifted[key].ground(objects)
 
-        reset_kwargs: dict[str, Any] = {}
-        if disable_collision_objects is not None:
-            reset_kwargs["disable_collision_objects"] = list(disable_collision_objects)
-        if release_speed is not None:
-            reset_kwargs["release_speed"] = release_speed
-        if gripper_release_ms is not None:
-            reset_kwargs["gripper_release_ms"] = gripper_release_ms
-
         try:
-            controller.reset(state, params, **reset_kwargs)
-        except Exception as exc:  # noqa: BLE001  (any planner failure is a failed skill)
+            controller.reset(state, params)
+        except BaseException as exc:  # noqa: BLE001  (any planner failure is a failed skill)
+            if isinstance(exc, KeyboardInterrupt | SystemExit):
+                raise
             return ControllerRun(steps=0, terminated=False, error=f"{type(exc).__name__}: {exc}")
 
         for step in range(limit):
             try:
                 action = controller.step()
                 observation, _, _, _, _ = self._env.step(action)
-            except Exception as exc:  # noqa: BLE001  (same reasoning as above)
+            except BaseException as exc:  # noqa: BLE001  (same reasoning as above)
+                if isinstance(exc, KeyboardInterrupt | SystemExit):
+                    raise
                 return ControllerRun(
                     steps=step, terminated=False, error=f"{type(exc).__name__}: {exc}"
                 )
@@ -677,79 +671,66 @@ class KinderBackend(BaseModel):
                 return ControllerRun(steps=step + 1, terminated=True)
         return ControllerRun(steps=limit, terminated=False)
 
-    def run_pick(self, *, distance: float, rotation: float) -> ControllerRun:
-        """`pick_shelf` -- upstream's grasp, the same one `tidybot3d_shelf3D.py` models.
+    def run_pick_cube(self) -> ControllerRun:
+        """`pick_cube` -- upstream's parameterless grasp of a cube off the ground.
 
-        `disable_collision_objects` is deliberately absent: it exists only on tossing's
-        `MoveToTargetGroundController.reset`, and passing it here is a `TypeError`.
+        Where to stand and which grasp rotation to use are derived inside the controller
+        (`PickCubeController.STANDOFF`, `upright_grasp_rotations`), so there is nothing to
+        pass and nothing for a sampler to draw. `params` is `None` rather than an empty
+        array because upstream's `sample_parameters` returns `tuple()` and `reset`
+        immediately `del`s it.
+
+        `disable_collision_objects` is deliberately absent: it exists on
+        `MoveToTargetGroundController.reset` and on the composed toss, not here, and
+        passing it is a `TypeError`.
         """
         return self.run_controller(
-            module="shelf",
-            key="pick_shelf",
-            object_names=(self.robot_name, self.cube_name),
-            params=np.array([distance, rotation]),
+            module="tossing",
+            key="pick_cube",
+            object_names=(self.robot_name, self.cube_name, self.barrier_name),
+            params=None,
             limit=self.pick_step_limit,
         )
 
-    def run_move_to_throw_pose(self, *, standoff: float, rotation: float) -> ControllerRun:
-        """`move_to_target` onto the bin, at `standoff` metres.
+    def run_move_to_toss_location_and_toss(
+        self,
+        *,
+        distance: float,
+        rotation: float,
+        release_speed_deg_s: float,
+        gripper_release_ms: float,
+    ) -> ControllerRun:
+        """Drive to a throw pose and throw, as one upstream controller.
 
-        `disable_collision_objects=["cube_0"]` is upstream's own argument here: the robot
-        is *holding* the cube at this point, so planning the base motion against it as an
-        obstacle makes every plan fail.
+        One controller, three internal phases (base motion, windup, swing). It replaced a
+        `move_to_target` + `move_arm_to_conf` + `toss` sequence this package used to drive
+        itself; the composition is upstream's, so the phase boundaries are no longer
+        visible from here and neither is a per-phase step count.
+
+        **The one place in the domain where degrees become radians**: the dial is carried
+        in joint-path deg/s (`skills.TOSS_SPEED_BOUNDS`) and the controller's own
+        `SPEED_BOUNDS` are rad/s. A second or missing conversion is a silent 57x error
+        either way.
+
+        `gripper_release_ms` stays a float here -- upstream's `reset` rounds it to an int
+        itself (`int(round(...))`), unlike the old `TossController.reset`, which truncated
+        and so needed the rounding done on this side.
+
+        `disable_collision_objects` is left to upstream's own default, which is the held
+        cube's name: the robot's own cargo would otherwise reject every base plan.
         """
         return self.run_controller(
             module="tossing",
-            key="move_to_target",
-            object_names=(self.robot_name, self.bin_name),
-            params=np.array([standoff, rotation]),
-            limit=self.move_step_limit,
-            disable_collision_objects=[self.cube_name],
+            key="move_to_toss_location_and_toss",
+            object_names=(self.robot_name, self.cube_name, self.barrier_name),
+            params=np.array([
+                distance,
+                rotation,
+                float(np.deg2rad(release_speed_deg_s)),
+                gripper_release_ms,
+            ]),
+            limit=self.toss_step_limit,
         )
-
-    def run_toss(
-        self, *, release_speed_deg_s: float, gripper_release_ms: float
-    ) -> tuple[ControllerRun, ControllerRun]:
-        """The windup and the swing, back to back -- upstream's `move_arm_to_conf` then `toss`.
-
-        Two controllers, one skill. Upstream never demonstrates `toss` from anywhere but
-        this windup, and `move_arm_to_conf` takes a raw 7-DoF joint vector that
-        `sample_parameters` explicitly refuses to sample (`NotImplementedError`), so a
-        windup is a posture the swing requires, not a skill anything could usefully
-        select on its own. The swing is skipped if the windup did not land, since tossing
-        from an unknown arm pose is not the thing that was measured.
-
-        **The one place in the domain where degrees become radians**: the dial is carried
-        in joint-path deg/s (`predicates.TOSS_SPEED_BOUNDS`) and `TossController.reset`
-        takes rad/s. A second or missing conversion is a silent 57x error either way.
-
-        Both parameters reach the **swing only** -- `move_arm_to_conf`'s `reset` declares
-        neither, so forwarding one there is a `TypeError`.
-
-        `gripper_release_ms` is milliseconds on both sides but is rounded to an `int` here:
-        upstream `divmod`s `int(gripper_release_ms)`, which truncates, so `722.9` would
-        otherwise schedule 722.
-        """
-        windup = self.run_controller(
-            module="tossing",
-            key="move_arm_to_conf",
-            object_names=(self.robot_name,),
-            params=np.deg2rad(self.windup_conf_deg),
-            limit=self.arm_step_limit,
-        )
-        if not windup.terminated:
-            skipped = ControllerRun(steps=0, terminated=False, error="windup did not terminate")
-            return windup, skipped
-        swing = self.run_controller(
-            module="tossing",
-            key="toss",
-            object_names=(self.robot_name,),
-            params=np.deg2rad(self.toss_conf_deg),
-            limit=self.arm_step_limit,
-            release_speed=float(np.deg2rad(release_speed_deg_s)),
-            gripper_release_ms=int(round(gripper_release_ms)),
-        )
-        return windup, swing
 
     def _object_centric(self) -> Any:
         if self._raw_env is None:

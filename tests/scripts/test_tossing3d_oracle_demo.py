@@ -24,14 +24,14 @@ import numpy as np
 import pytest
 
 from scripts.tossing3d_oracle_demo import (
-    COINCIDENCE_TOLERANCE_M,
+    CONTAINMENT_TOLERANCE_M,
     CONTRAST_LINE,
     DEFAULT_STANDOFFS,
     GOAL_REGION_RGBA,
-    Coincidence,
     Footprint,
     GoalRegion,
     RestingPlace,
+    ScoringGeometry,
     StandoffSeedResult,
     annotate,
     bin_footprint,
@@ -48,26 +48,33 @@ from scripts.tossing3d_oracle_demo import (
     reveal_goal_region,
     should_keep_frame,
     site_names,
-    verify_coincidence,
+    verify_containment,
     write_gif,
 )
 
 SCRIPT_PATH = Path(__file__).resolve().parents[2] / "scripts" / "tossing3d_oracle_demo.py"
 
-# Measured off the compiled model, not restated from a doc. The goal region is a fixed
-# ground region so it does not move with the seed; the bin's placement *is* sampled from
-# a 1 mm-wide `bin_init_region`, so its footprint shifts by a fraction of a millimetre
-# per seed. Both seeds are recorded rather than one, because a single constant here
-# would misrepresent a quantity that genuinely varies.
+# Measured off the compiled model at the pins this branch carries, not restated from a
+# doc. **Both numbers moved, and one of them stopped varying.**
 #
-# `PRE_FIX_BIN_X` is the geometry `kindergarden` PR #126 removed -- the bin sitting
-# 23 cm off the region that scores. It is kept, under its own name, because it is the
-# non-vacuity check for `verify_coincidence`: a verifier that accepted it would be
-# asserting nothing. `LIVE_BIN_X` is the same measurement taken with the bin on the goal
-# region, which is what the installed KINDER now ships.
-LIVE_GOAL_X = (1.8500, 2.1500)
+# `LIVE_GOAL_X` was `(1.8500, 2.1500)`, which was exactly the bin's own footprint --
+# upstream `270fdb6` narrowed `blocks_goal_region` to `[2.00, 2.05]`, inflating to
+# `[1.95, 2.10]`. So the scored box is now strictly *inside* the bin: 100 mm of inset at
+# the near edge and 50 mm at the far one.
+#
+# `LIVE_BIN_X` was a per-seed dict, because `bin_init_region` used to be a 1 mm-wide
+# sampling range and the bin's footprint shifted by a fraction of a millimetre per seed.
+# It is zero-width now (`[[2.0, 0.0, 2.0, 0.0]]`), so the footprint is identical at every
+# seed -- measured at seeds 0 and 125 and found bit-identical, which is why one constant
+# is now honest where two were needed before.
+#
+# `PRE_FIX_BIN_X` is the geometry `kindergarden` PR #126 removed -- the bin sitting 23 cm
+# off the region that scores. It is kept, under its own name and with its own per-seed
+# jitter, because it is the non-vacuity check for `verify_containment`: a verifier that
+# accepted it would be asserting nothing.
+LIVE_GOAL_X = (1.9500, 2.1000)
 PRE_FIX_BIN_X = {0: (2.080813, 2.380813), 125: (2.080101, 2.380101)}
-LIVE_BIN_X = {0: (1.850813, 2.150813), 125: (1.850101, 2.150101)}
+LIVE_BIN_X = (1.8500, 2.1500)
 
 
 def _frames(*, count: int = 3, width: int = 8, height: int = 6) -> list[np.ndarray]:
@@ -660,10 +667,15 @@ class _FakeGeomModel:
 
 
 def _bin_model() -> _FakeGeomModel:
-    """The real seed-0 bin: a 0.3 m base plus four walls, centred on 2.000813."""
+    """The real bin: a 0.3 m base plus four walls, centred on 2.0.
+
+    Not centred on 2.000813 any more. `bin_init_region` was a 1 mm-wide sampling range,
+    so the bin used to land a fraction of a millimetre off 2.0 differently per seed; it
+    is zero-width at this pin, and the footprint measures identical at seeds 0 and 125.
+    """
     return _FakeGeomModel(
         bodies=["floor", "bin_0", "bin_0", "bin_0", "bin_0", "bin_0", "cube_0"],
-        centers=[0.0, 2.000813, 2.000813, 2.000813, 1.860813, 2.140813, 0.625],
+        centers=[0.0, 2.0, 2.0, 2.0, 1.86, 2.14, 0.625],
         halves=[5.0, 0.15, 0.15, 0.15, 0.01, 0.01, 0.025],
     )
 
@@ -673,11 +685,11 @@ def test_the_bin_footprint_is_read_off_the_geoms_of_the_bin_body() -> None:
     on the body is what keeps them out of the answer."""
     model = _bin_model()
     footprint = bin_footprint(model=model, data=model, body_name="bin_0")
-    assert (round(footprint.x_min, 6), round(footprint.x_max, 6)) == LIVE_BIN_X[0]
+    assert (round(footprint.x_min, 6), round(footprint.x_max, 6)) == LIVE_BIN_X
 
 
 def test_a_missing_bin_body_raises_rather_than_reporting_an_empty_footprint() -> None:
-    """An empty match would sail through the coincidence check as a zero-width box."""
+    """An empty match would sail through the containment check as a zero-width box."""
     model = _bin_model()
     with pytest.raises(ValueError, match="bin_1"):
         bin_footprint(model=model, data=model, body_name="bin_1")
@@ -706,7 +718,7 @@ def test_the_goal_region_footprint_comes_from_the_live_sim_backed_bbox() -> None
     """`Region.bbox` silently falls back to the XML/parent-frame value when `env` is
     unset, so the env has to be attached before it is read."""
     fixture = _FakeGroundFixture(
-        blocks_goal_region=[_FakeRegion(bbox=[1.85, -0.15, 0.0, 2.15, 0.15, 0.15])]
+        blocks_goal_region=[_FakeRegion(bbox=[1.95, -0.12, 0.0, 2.10, 0.12, 0.15])]
     )
     footprint = goal_region_footprint(ground_fixture=fixture, robot_env=object())
     assert (footprint.x_min, footprint.x_max) == LIVE_GOAL_X
@@ -727,56 +739,68 @@ def test_an_absent_goal_region_raises_with_what_was_there_instead() -> None:
         goal_region_footprint(ground_fixture=fixture, robot_env=object())
 
 
-# --- the coincidence check --------------------------------------------------------
+# --- the containment check --------------------------------------------------------
 
 
-def _coincidence(*, goal: tuple[float, float], bin_x: tuple[float, float]) -> Coincidence:
-    return Coincidence(
+def _geometry(*, goal: tuple[float, float], bin_x: tuple[float, float]) -> ScoringGeometry:
+    return ScoringGeometry(
         goal=Footprint(x_min=goal[0], x_max=goal[1]),
         bin_footprint=Footprint(x_min=bin_x[0], x_max=bin_x[1]),
     )
 
 
 def test_the_pre_fix_geometry_overlapped_only_partly_and_that_was_the_defect() -> None:
-    """7.0 cm of a 30 cm box, at seed 0. The two boxes were not disjoint -- they just
-    had no sliver a cube could be in that was both in the bin and in the goal."""
-    coincidence = _coincidence(goal=LIVE_GOAL_X, bin_x=PRE_FIX_BIN_X[0])
-    assert coincidence.overlap == pytest.approx(0.069187, abs=1e-6)
+    """1.9 cm of a 30 cm box, at seed 0, against the narrowed scored box. The two were
+    not disjoint -- they just had no sliver a cube could be in that was both in the bin
+    and in the goal."""
+    assert _geometry(goal=LIVE_GOAL_X, bin_x=PRE_FIX_BIN_X[0]).overlap == pytest.approx(
+        0.019187, abs=1e-6
+    )
 
 
-def test_the_pre_fix_geometry_is_rejected_by_the_coincidence_check() -> None:
+def test_the_pre_fix_geometry_is_rejected_by_the_containment_check() -> None:
     """The non-vacuity check for everything below it: a verifier that passed on the
     geometry upstream's fix removed would be asserting nothing at all."""
     for seed, bin_x in PRE_FIX_BIN_X.items():
-        with pytest.raises(ValueError, match="do not coincide"):
-            verify_coincidence(coincidence=_coincidence(goal=LIVE_GOAL_X, bin_x=bin_x))
+        with pytest.raises(ValueError, match="not inside the bin"):
+            verify_containment(geometry=_geometry(goal=LIVE_GOAL_X, bin_x=bin_x))
         assert seed in PRE_FIX_BIN_X
 
 
-def test_the_shipped_geometry_passes_at_every_seed_measured() -> None:
-    for bin_x in LIVE_BIN_X.values():
-        verify_coincidence(coincidence=_coincidence(goal=LIVE_GOAL_X, bin_x=bin_x))
+def test_the_shipped_geometry_passes() -> None:
+    verify_containment(geometry=_geometry(goal=LIVE_GOAL_X, bin_x=LIVE_BIN_X))
 
 
-def test_the_measured_coincidence_gap_is_well_under_the_tolerance() -> None:
-    """Not a threshold that had to be tuned to let the answer through: the worst
-    measured gap is 0.8 mm against a 5 mm tolerance, and the pre-fix bin missed by
-    231 mm."""
-    gaps = [_coincidence(goal=LIVE_GOAL_X, bin_x=bin_x).gap for bin_x in LIVE_BIN_X.values()]
-    assert max(gaps) < COINCIDENCE_TOLERANCE_M / 5
-    assert min(_coincidence(goal=LIVE_GOAL_X, bin_x=b).gap for b in PRE_FIX_BIN_X.values()) > 0.2
+def test_the_scored_box_is_inset_from_the_bin_rather_than_merely_not_spilling() -> None:
+    """The tolerance is not doing the work, and the direction is the interesting part.
+    The scored box is inset by 100 mm at the near edge and 50 mm at the far one, so
+    `overhang` is 50 mm *negative* against a 1e-9 bound -- eight orders of margin. The
+    pre-fix bin spills by more than 100 mm, on the other side of zero."""
+    live = _geometry(goal=LIVE_GOAL_X, bin_x=LIVE_BIN_X)
+    assert live.overhang == pytest.approx(-0.05, abs=1e-6)
+    assert live.overhang < -CONTAINMENT_TOLERANCE_M
+    assert min(_geometry(goal=LIVE_GOAL_X, bin_x=b).overhang for b in PRE_FIX_BIN_X.values()) > 0.1
 
 
-def test_the_coincidence_error_names_both_boxes_it_compared() -> None:
+def test_a_coincident_scored_box_is_still_accepted() -> None:
+    """Containment, not containment-with-margin. Before the region was narrowed the two
+    boxes were exactly equal, which is a correct scene with zero clearance on every edge;
+    a check demanding positive clearance would call it a failure. This is why the
+    tolerance absorbs float noise only."""
+    verify_containment(geometry=_geometry(goal=(1.85, 2.15), bin_x=(1.85, 2.15)))
+
+
+def test_the_containment_error_names_both_boxes_it_compared() -> None:
     """The message has to be enough to diagnose from, since this fires mid-run."""
     with pytest.raises(ValueError, match=r"2\.3808"):
-        verify_coincidence(coincidence=_coincidence(goal=LIVE_GOAL_X, bin_x=PRE_FIX_BIN_X[0]))
+        verify_containment(geometry=_geometry(goal=LIVE_GOAL_X, bin_x=PRE_FIX_BIN_X[0]))
 
 
-def test_a_bin_offset_by_more_than_the_tolerance_is_rejected() -> None:
-    """A near miss, not just the stock 23 cm one -- the check is a real bound."""
-    with pytest.raises(ValueError, match="do not coincide"):
-        verify_coincidence(coincidence=_coincidence(goal=(1.85, 2.15), bin_x=(1.86, 2.16)))
+def test_a_bin_shifted_off_the_scored_box_at_all_is_rejected() -> None:
+    """A near miss, not just the stock 23 cm one -- the check is a real bound, and one
+    with no slack, so a single millimetre of spill is caught."""
+    with pytest.raises(ValueError, match="not inside the bin"):
+        verify_containment(geometry=_geometry(goal=(1.95, 2.10), bin_x=(1.951, 2.10)))
 
 
 # --- the caption's fixed line -----------------------------------------------------
@@ -784,7 +808,8 @@ def test_a_bin_offset_by_more_than_the_tolerance_is_rejected() -> None:
 
 def test_the_caption_reports_the_bin_footprint_beside_the_goal_box() -> None:
     """Putting both bracketed ranges on one line is what lets a viewer read the
-    coincidence off the frame rather than take it on trust."""
+    containment off the frame rather than take it on trust -- and, now that the two boxes
+    differ, see that they differ."""
     lines = caption_lines(
         standoff=1.35,
         rest=(2.0, 0.0, 0.0444),
