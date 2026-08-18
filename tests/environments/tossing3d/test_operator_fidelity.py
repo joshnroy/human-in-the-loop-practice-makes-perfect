@@ -117,22 +117,11 @@ def test_no_applicable_ground_skill_is_silently_ignored_along_the_oracles_trajec
 
         assert not violations, "\n".join(f"  - {v}" for v in sorted(set(violations)))
         # Coverage floor, so the property above cannot pass vacuously: the oracle's own
-        # trajectory reaches a state where each of the *solve* skills is applicable.
-        #
-        # `OpenGripper` is deliberately excluded, and excluding it is the correct
-        # statement rather than a weakening. It is a recovery operator: its precondition
-        # `GripperCommandedClosed` is false in every state a healthy oracle trajectory
-        # passes through, so requiring it here would assert that the walk visits a failure
-        # this walk exists to show never happens. Its own applicability, and the same
-        # applicable-implies-the-dynamics-agree property this file checks, are pinned
-        # where the absorbing state actually is:
-        # `test_kinder_fidelity.py::test_open_gripper_actually_reopens_a_gripper_closed_
-        # on_nothing` drives it on a real scene, and `test_skills.py`'s two Fast Downward
-        # integration tests pin that it is the only way out.
-        solve_skills = {skill.name for skill in provider.skills() if skill.name != "OpenGripper"}
-        assert exercised == solve_skills, (
-            f"the walk never reached a state where {sorted(solve_skills - exercised)} was "
-            f"applicable, so this file proves nothing about those skills"
+        # trajectory reaches a state where each of the three skills is applicable.
+        assert exercised == {skill.name for skill in provider.skills()}, (
+            f"the walk never reached a state where "
+            f"{sorted({s.name for s in provider.skills()} - exercised)} was applicable, so "
+            f"this file proves nothing about those skills"
         )
     finally:
         env.close()

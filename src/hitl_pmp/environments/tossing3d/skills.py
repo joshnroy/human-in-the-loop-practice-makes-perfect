@@ -1,4 +1,4 @@
-"""Tossing3D's four lifted skills: `Pick`, `MoveToThrowPose`, `Toss`, `OpenGripper`.
+"""Tossing3D's three lifted skills: `Pick`, `MoveToThrowPose`, `Toss`.
 
 Each one is a `core.method.types.Skill` -- an operator model -- paired to an upstream
 KINDER controller that actually executes it. That pairing is the shape
@@ -19,7 +19,6 @@ upstream's own bounds:
 | `Pick` | `pick_shelf` | distance, rotation | upstream's `MOVE_TO_TARGET_{DISTANCE,ROT}_BOUNDS` |
 | `MoveToThrowPose` | `move_to_target` | standoff | **ours** -- see `THROW_STANDOFF_BOUNDS` |
 | `Toss` | `move_arm_to_conf`, then `toss` | speed, release ms | upstream's own two knobs |
-| `OpenGripper` | `open_gripper` | none | upstream refuses to sample any |
 
 The one genuinely new range is the throw standoff, and it has to be: upstream's own
 `MOVE_TO_TARGET_DISTANCE_BOUNDS` is `(0.5, 0.6)`, which is a *grasping* standoff, and
@@ -59,35 +58,6 @@ And one on the other side:
    the planner's model of a *failed* toss honest -- the alternative, deleting it only on
    success, is a model in which a missed throw costs nothing.
 
-4. **`OpenGripper` requires `OnGround(?held)`.** This is upstream's own design (kb#118)
-   and the reason is modelling, not planner mechanics: it confines the operator to the
-   case where the cube is *already* down, so releasing asserts nothing about where a
-   dropped cube would land. Without it the operator would have to say what happens when
-   the gripper opens on a cube it really is holding -- "delete `Holding`, add `OnGround`
-   somewhere" -- which is a *conditional* effect, and `core.method.types.Skill` has no way
-   to express one: preconditions, adds and deletes are flat frozensets with no `when`.
-
-   > Upstream's PR body argues that the `OnGround` precondition is not needed for Fast
-   > Downward reasons "because this is bilevel planning, not FD", and it was expected that
-   > hitl -- which *does* run a real FD -- would need it for the extra reason that
-   > `seq-opt-lmcut` rejects conditional effects. **Measured, that second reason does not
-   > apply here.** A variant operator with no `OnGround` precondition and a `Holding`
-   > delete was put through this repo's own `FastDownwardPlanner` at `seq-opt-lmcut` and
-   > was accepted, planning normally: `PddlWriter` emits a plain `(not (Holding ...))`,
-   > never a `when`, because a `Skill` cannot represent one in the first place. So the
-   > precondition is kept for upstream's modelling reason alone, which is sufficient on
-   > its own.
-
-## `OpenGripper` is a recovery, not part of the solve
-
-Nothing in a healthy episode selects it: from an open gripper `GripperCommandedClosed` is
-false, so it is inapplicable, and the plan is the same three skills it always was. It
-exists for the state a *failed* grasp leaves behind -- gripper commanded shut, cube still
-on the floor -- in which `HandEmpty` and `Holding` are **both** false and therefore every
-other operator is inapplicable, permanently. That state is absorbing and does not
-self-heal; see `KinderBackend.run_open_gripper` for why an idle-with-zeros probe makes it
-look as though it does.
-
 Nothing enforces that rule automatically: `test_operator_dynamics_fidelity.py` does not
 list this domain, and both it and this domain's `test_operator_fidelity.py` assert only
 that an applicable ground skill changes the real state -- which a missed throw does. An
@@ -117,7 +87,6 @@ from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
 from .predicates import (
-    GRIPPER_COMMANDED_CLOSED,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -166,10 +135,6 @@ class Tossing3DSkills:
     _cube: ClassVar[Variable] = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
     _bin: ClassVar[Variable] = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
     _barrier: ClassVar[Variable] = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
-    # `OpenGripper`'s own cube variable. Named apart from `_cube` because the two say
-    # different things: `_cube` is the object a skill acts *on*, while `_held` is the
-    # object whose being already on the ground is what makes releasing safe to model.
-    _held: ClassVar[Variable] = Variable(name="held", type=Tossing3DEnvironment.cube_type)
 
     PICK: ClassVar[Skill] = Skill(
         name="Pick",
@@ -224,21 +189,6 @@ class Tossing3DSkills:
         param_dim=2,
     )
 
-    OPEN_GRIPPER: ClassVar[Skill] = Skill(
-        name="OpenGripper",
-        parameters=(_robot, _held),
-        preconditions=frozenset({
-            LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_robot,)),
-            # See this module's docstring, choice 4.
-            LiftedAtom(predicate=ON_GROUND, variables=(_held,)),
-        }),
-        add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
-        delete_effects=frozenset({
-            LiftedAtom(predicate=GRIPPER_COMMANDED_CLOSED, variables=(_robot,))
-        }),
-        param_dim=0,
-    )
-
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         """A state-independent draw of this skill's continuous parameters.
@@ -261,10 +211,6 @@ class Tossing3DSkills:
                 rng.uniform(*TOSS_SPEED_BOUNDS),
                 rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
             ])
-        if skill == Tossing3DSkills.OPEN_GRIPPER:
-            # Nothing to draw: upstream's `OpenGripperController.sample_parameters` raises
-            # `NotImplementedError`, because commanding the gripper open has no dial.
-            return np.array([])
         raise ValueError(f"Unknown skill: {skill.name}")
 
     @staticmethod
@@ -290,7 +236,4 @@ class Tossing3DSkills:
             return np.array(
                 [Tossing3DEnvironment.toss_id, float(params[0]), float(params[1])], dtype=float
             )
-        if skill == Tossing3DSkills.OPEN_GRIPPER:
-            # Both slots are zero and both are ignored: the controller is unparameterized.
-            return np.array([Tossing3DEnvironment.open_gripper_id, 0.0, 0.0], dtype=float)
         raise ValueError(f"Unknown skill: {skill.name}")
