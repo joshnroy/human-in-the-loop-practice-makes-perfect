@@ -118,8 +118,46 @@ BIN_FLOOR_Z = 0.0444
 _UNION_PROBE_PARAMS = ((140.0, 720.0), (140.0, 763.0), (60.0, 850.0))
 
 
+# Upstream inflates a ground region by this much per side before it becomes a `Region`
+# (`kinder/envs/dynamic3d/objects/base.py`, `PhysicsObject.ground_placement_threshold`).
+# Restated rather than imported: upstream sets it as an instance attribute on a literal,
+# so there is no module constant to read. `test_the_goal_box_in_the_state_is_the_live_
+# region_bbox_element_for_element` measures the live box against the JSON, so a change to
+# this number upstream fails there rather than going unnoticed here.
+GROUND_PLACEMENT_THRESHOLD = 0.05
+
+
 def _env():
     return Tossing3DEnvironment()
+
+
+def _installed_task_json_regions() -> dict:
+    """`Tossing3D-o1.json`'s `regions`, read out of the KINDER that is actually installed.
+
+    Located through the import system rather than a hardcoded path, so it is the tree that
+    is *run* -- a second checkout at a different commit has already caused a wrong SHA to
+    be stated as fact.
+    """
+    import json
+
+    import kinder
+
+    task_json = (
+        Path(kinder.__file__).resolve().parent
+        / "envs"
+        / "dynamic3d"
+        / "tasks"
+        / "Tossing3D"
+        / "Tossing3D-o1.json"
+    )
+    assert task_json.is_file(), f"the installed KINDER has no o1 task JSON at {task_json}"
+    return json.loads(task_json.read_text())["regions"]
+
+
+def _goal_region_x_range_from_the_installed_task_json() -> tuple[float, float]:
+    """`blocks_goal_region`'s declared x range, before inflation."""
+    (goal_range,) = _installed_task_json_regions()["blocks_goal_region"]["ranges"]
+    return goal_range[0], goal_range[3]
 
 
 def test_in_bin_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory() -> None:
@@ -160,8 +198,16 @@ def test_in_bin_agrees_with_kinders_own_goal_check_on_the_oracles_trajectory() -
 def test_the_goal_box_in_the_state_is_the_live_region_bbox_element_for_element() -> None:
     """The only check that can catch a wrong goal box. Pinned against `Region.bbox` read
     back off the compiled model, never against the task JSON's literal -- the JSON range
-    is inflated by 0.05 m per side before it becomes a region, and a predicate written
-    against the literal is 2/3 of the true width on x."""
+    is inflated by `GROUND_PLACEMENT_THRESHOLD` per side before it becomes a region, and a
+    predicate written against the literal is narrower than the true box on x.
+
+    The second half derives the expected edges from the installed KINDER's own JSON rather
+    than restating them, so a scene change fails in
+    `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` -- which says what
+    broke -- instead of here as a bare number mismatch. It was two literals (1.85 / 2.15)
+    until `kindergarden` `270fdb6` narrowed `blocks_goal_region` from
+    `[1.90, 2.10]` to `[2.00, 2.05]` on x, moving the inflated edges to 1.95 / 2.10."""
+    json_x_min, json_x_max = _goal_region_x_range_from_the_installed_task_json()
     env = _env()
     try:
         state = env.reset_to_seed(seed=CANONICAL_SEED)
@@ -169,9 +215,10 @@ def test_the_goal_box_in_the_state_is_the_live_region_bbox_element_for_element()
         corners = ("x_min", "y_min", "z_min", "x_max", "y_max", "z_max")
         in_state = tuple(state.get(obj=env.bin, feature_name=name) for name in corners)
         assert in_state == pytest.approx(live)
-        # And it is the inflated box, not the JSON's [1.90, 2.10].
-        assert live[0] == pytest.approx(1.85, abs=1e-6)
-        assert live[3] == pytest.approx(2.15, abs=1e-6)
+        # And it is the inflated box, not the JSON's own range.
+        assert live[0] == pytest.approx(json_x_min - GROUND_PLACEMENT_THRESHOLD, abs=1e-6)
+        assert live[3] == pytest.approx(json_x_max + GROUND_PLACEMENT_THRESHOLD, abs=1e-6)
+        assert live[0] < json_x_min and live[3] > json_x_max
     finally:
         env.close()
 
