@@ -1,104 +1,48 @@
-"""Offline tests for the KINDER -> `core.State` translation and the action encoding.
+"""`Tossing3DEnvironment`: the KINDER -> `core.State` translation and the action encoding.
 
-Everything here runs without MuJoCo. The simulator-backed half is
-`test_kinder_fidelity.py`.
+**This file used to be entirely offline and is now mostly simulator-backed.** The reason
+is not a change of testing taste: the boundary type the offline half was built on
+(`KinderObservation`, a dict of plain floats) no longer exists, because the predicates are
+upstream's now and a predicate that runs forward kinematics cannot be evaluated against a
+dict. See `conftest.py` for the full trade.
+
+What is still genuinely offline is kept offline and marked as such, because it is the part
+that protects the laziness itself -- if constructing a `Tossing3DEnvironment` ever imported
+MuJoCo, `hitl_pmp.cli` would stop importing on a machine without it, and a test that needed
+a simulator to notice could not say so.
 """
+
+import sys
 
 import numpy as np
 import pytest
 
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
-from .observations import GOAL_REGION_BBOX, observation, state
+from .conftest import CANONICAL_SEED, requires_kinder
+
+# --- genuinely offline: no simulator is built, and that is the property ----------------
 
 
 def test_constructing_the_environment_imports_no_simulator() -> None:
-    """The whole reason `KinderBackend` is lazy. If constructing a `Tossing3DEnvironment`
-    ever pulled MuJoCo in, CI -- which never installs the optional extra -- could not so
-    much as import `hitl_pmp.cli`, since `tossing3d` is in its ENVIRONMENTS registry."""
-    import sys
-
+    """The whole reason `KinderBackend` is lazy. `hitl_pmp.cli` imports every registered
+    environment's CLI, so if constructing one of these reached MuJoCo then `--env
+    lightswitch` would stop working on a machine without the optional extra."""
     env = Tossing3DEnvironment()
     assert env.variant == "o1"
     assert "mujoco" not in sys.modules
-
-
-def test_translation_maps_every_declared_feature_from_the_kinder_observation() -> None:
-    translated = state(cube_x=1.5, cube_y=0.25, cube_z=0.3, gripper=0.9, base_x=0.6, base_y=-0.1)
-    env = Tossing3DEnvironment()
-
-    assert translated.get(obj=env.cube, feature_name="x") == pytest.approx(1.5)
-    assert translated.get(obj=env.cube, feature_name="y") == pytest.approx(0.25)
-    assert translated.get(obj=env.cube, feature_name="z") == pytest.approx(0.3)
-    assert translated.get(obj=env.robot, feature_name="pos_gripper") == pytest.approx(0.9)
-    assert translated.get(obj=env.robot, feature_name="pos_base_x") == pytest.approx(0.6)
-    assert translated.get(obj=env.robot, feature_name="pos_base_y") == pytest.approx(-0.1)
-
-
-def test_the_goal_box_travels_in_the_state_rather_than_being_re_derived() -> None:
-    """The predicate that decides success reads its box out of the `State`. If the box
-    were re-derived from the task JSON instead it would be the *uninflated* range, which
-    is 2/3 of the true width on x -- the axis a toss controls -- and every KINDER success
-    near the edge would score here as a failure. That defect has shipped once already."""
-    translated = state()
-    env = Tossing3DEnvironment()
-    corners = ("x_min", "y_min", "z_min", "x_max", "y_max", "z_max")
-    read_back = tuple(translated.get(obj=env.bin, feature_name=name) for name in corners)
-    assert read_back == pytest.approx(GOAL_REGION_BBOX)
-
-
-def test_the_robot_is_found_by_its_feature_schema_not_by_a_hardcoded_name() -> None:
-    """The robot's name comes from the robot config, not from the task JSON's `objects`
-    block, so it is the one object this translation cannot look up by literal. It is
-    identified by being the only thing carrying `pos_base_x`."""
-    renamed = observation()
-    renamed.features["tidybot_left"] = renamed.features.pop("robot")
-    env = Tossing3DEnvironment()
-
-    translated = env.build_state(observation=renamed, seed=125, steps_taken=0)
-
-    assert translated.get(obj=env.robot, feature_name="pos_base_x") == pytest.approx(0.0)
-
-
-def test_a_missing_object_raises_instead_of_translating_to_zeros() -> None:
-    """Silence here would be a scene that changed shape upstream being read as a scene
-    where everything sits at the origin."""
-    incomplete = observation()
-    del incomplete.features["cube_0"]
-    with pytest.raises(KeyError, match="cube_0"):
-        Tossing3DEnvironment().build_state(observation=incomplete, seed=0, steps_taken=0)
-
-
-def test_a_missing_feature_raises_and_names_what_was_available() -> None:
-    partial = observation()
-    del partial.features["cube_0"]["bb_z"]
-    with pytest.raises(KeyError, match="bb_z"):
-        Tossing3DEnvironment().build_state(observation=partial, seed=0, steps_taken=0)
-
-
-def test_set_state_refuses_a_mid_episode_state() -> None:
-    """The load-bearing honesty of this domain: MuJoCo's qpos/qvel are not in a flat
-    `core.State`, so there is no faithful mid-episode rewind. Quietly restoring the
-    episode's *initial* state instead would make an evaluation look like it rewound."""
-    env = Tossing3DEnvironment()
-    mid_episode = state(env=env, steps_taken=2)
-    with pytest.raises(ValueError, match="episode-initial"):
-        env.set_state(state=mid_episode)
-
-
-def test_the_scene_object_carries_the_seed_set_state_would_rebuild_from() -> None:
-    env = Tossing3DEnvironment()
-    translated = state(env=env, seed=4242)
-    assert translated.get(obj=env.scene, feature_name="seed") == pytest.approx(4242)
-    assert translated.get(obj=env.scene, feature_name="steps_taken") == pytest.approx(0)
 
 
 def test_get_valid_actions_is_empty_because_the_parameters_are_continuous() -> None:
     assert Tossing3DEnvironment().get_valid_actions() == []
 
 
-def test_the_action_space_has_one_id_slot_and_two_parameter_slots() -> None:
-    assert Tossing3DEnvironment.action_space.shape == (3,)
+def test_the_action_space_has_one_id_slot_and_four_parameter_slots() -> None:
+    """Four, not two. `move_to_toss_location_and_toss` is the widest skill -- distance,
+    rotation, tossing speed, release millisecond -- and it is one skill rather than the
+    two it used to be, so its four parameters have to fit in a single action vector."""
+    assert Tossing3DEnvironment.action_space.shape == (5,)
 
 
 def test_the_backend_overrides_no_task_config_so_the_scene_is_upstreams() -> None:
@@ -123,87 +67,193 @@ def test_a_variant_this_domains_symbolic_layer_cannot_describe_is_refused() -> N
         env.backend()
 
 
-def test_a_non_finite_action_is_recorded_as_a_no_op_rather_than_raising() -> None:
-    """`take_action` must be total over its Box action space, and `round(inf)` raises."""
+def test_the_noop_id_is_not_a_real_skill_id() -> None:
+    """Negative rather than 2, so that adding a third controller can never silently turn
+    every no-op into it."""
     env = Tossing3DEnvironment()
-    assert env._execute(action=np.array([np.inf, 0.0, 0.0])) == []
+    assert env.noop_id not in {env.pick_cube_id, env.move_to_toss_location_and_toss_id}
+
+
+def test_a_non_finite_action_is_recorded_as_a_no_op_rather_than_raising() -> None:
+    """`take_action` must be total over its Box action space, and `round(inf)` raises.
+    Still offline: the finiteness check runs before anything touches the scene."""
+    env = Tossing3DEnvironment()
+    assert env._execute(action=np.array([np.inf, 0.0, 0.0, 0.0, 0.0])) == []  # noqa: SLF001
     assert env.last_skill_error() is not None
     assert "non-finite" in env.last_skill_error()
 
 
-def test_an_unknown_skill_id_is_recorded_as_a_no_op_rather_than_raising() -> None:
-    env = Tossing3DEnvironment()
-    assert env._execute(action=np.array([7.0, 0.0, 0.0])) == []
-    assert "unknown skill id: 7" in str(env.last_skill_error())
+# --- simulator-backed from here on ----------------------------------------------------
+#
+# Marked per test rather than with a module-level `pytestmark`, because the offline tests
+# above must keep running on a checkout with an empty `reference/` -- they are the ones
+# that prove no simulator is needed.
 
 
-def test_the_noop_action_runs_no_controller_at_all() -> None:
-    """The defect this domain surfaced: `pick_id == 0`, so the `np.zeros(3)` that
-    `EesMethod` used to emit when it could not plan was a real `pick_shelf` at
-    distance 0.0. `_execute` returning no runs is exactly "no controller ran"."""
-    env = Tossing3DEnvironment()
-    assert env._execute(action=env.noop_action()) == []
-    assert "unknown skill id" in str(env.last_skill_error())
+@requires_kinder
+def test_the_declared_type_schemas_are_kinders_own(*, live_env: Tossing3DEnvironment) -> None:
+    """**The check `environment.py`'s own docstring promises, which did not exist.**
 
+    The two `core.Type`s are written out as literals rather than derived at import, so
+    that this class stays importable without MuJoCo. That is the right trade, but it makes
+    the schemas a *copy* -- and a copy has no way of noticing that the original moved. A
+    rename or a reordering upstream would leave the translation reading the right feature
+    names off the wrong indices, which is silent and produces plausible numbers.
 
-def test_the_noop_id_is_not_a_real_skill_id() -> None:
-    env = Tossing3DEnvironment()
-    assert env.noop_id not in {env.pick_id, env.move_to_throw_pose_id, env.toss_id}
-
-
-def test_the_toss_dispatch_reads_its_release_speed_from_slot_one(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`_execute` turns an action vector into controller arguments, so it is where a slot
-    could be read from the wrong index. Offline: the backend is stubbed.
+    Compared against `MujocoObjectTypeFeatures`, upstream's own declaration, element for
+    element and in order: the translation is positional, so order is as load-bearing as
+    membership.
     """
-    from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+    from kinder.envs.dynamic3d.object_types import (
+        MujocoMovableObjectType,
+        MujocoObjectTypeFeatures,
+        MujocoTidyBotRobotObjectType,
+    )
 
-    seen: list[float] = []
-
-    def spy_run_toss(  # noqa: PLR0917, ANN202
-        self: KinderBackend, *, release_speed_deg_s: float, gripper_release_ms: float
-    ):
-        del gripper_release_ms
-        seen.append(release_speed_deg_s)
-        return ControllerRun(steps=1, terminated=True), ControllerRun(steps=1, terminated=True)
-
-    monkeypatch.setattr(KinderBackend, "run_toss", spy_run_toss)
-
-    env = Tossing3DEnvironment()
-    # Assigning the cached `PrivateAttr` skips `backend()`'s lazy build, which would
-    # resolve a task-config path.
-    env._backend = KinderBackend()  # noqa: SLF001
-
-    env._execute(action=np.array([float(env.toss_id), 140.0, 0.0]))
-    env._execute(action=np.array([float(env.toss_id), 60.0, 0.0]))
-
-    assert seen == [140.0, 60.0]
+    del live_env  # only here so a broken KINDER install fails once, in the fixture
+    assert tuple(MujocoObjectTypeFeatures[MujocoTidyBotRobotObjectType]) == (
+        Tossing3DEnvironment.robot_type.feature_names
+    )
+    assert tuple(MujocoObjectTypeFeatures[MujocoMovableObjectType]) == (
+        Tossing3DEnvironment.movable_type.feature_names
+    )
 
 
-def test_the_toss_dispatch_reads_its_gripper_release_ms_from_slot_two(
-    *, monkeypatch: pytest.MonkeyPatch
+@requires_kinder
+def test_translation_carries_every_feature_kinder_reports_for_every_object(
+    *, live_env: Tossing3DEnvironment
 ) -> None:
-    """Asserted at two distinct values, so a hardcoded pass-through of the default fails
-    here too. Offline: the backend is stubbed.
-    """
-    from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+    """The translation is lossless, and that is what lets the abstractor be handed a state
+    back. A subset would be cheaper and is exactly what this domain used to do -- four of
+    the robot's thirty-eight features -- but `_check_holding` runs forward kinematics off
+    the arm joints, so a lossy state is one the abstractor rejects or, worse, misreads."""
+    state = live_env.get_current_state()
+    kinder_state = live_env.backend().kinder_state()
 
-    seen: list[float] = []
+    for obj in (live_env.robot, live_env.cube, live_env.bin, live_env.barrier):
+        kinder_object = kinder_state.get_object_from_name(obj.name)
+        for feature_name in obj.type.feature_names:
+            assert state.get(obj=obj, feature_name=feature_name) == pytest.approx(
+                float(kinder_state.get(kinder_object, feature_name))
+            ), f"{obj.name}.{feature_name} did not survive the translation"
 
-    def spy_run_toss(  # noqa: PLR0917, ANN202
-        self: KinderBackend, *, release_speed_deg_s: float, gripper_release_ms: float
-    ):
-        del release_speed_deg_s
-        seen.append(gripper_release_ms)
-        return ControllerRun(steps=1, terminated=True), ControllerRun(steps=1, terminated=True)
 
-    monkeypatch.setattr(KinderBackend, "run_toss", spy_run_toss)
+@requires_kinder
+def test_the_bin_no_longer_carries_a_scored_region_box(*, live_env: Tossing3DEnvironment) -> None:
+    """**A deletion pinned as an absence, because reintroducing it would be a regression
+    that looks like a feature.** The bin used to carry six extra features (`x_min` ..
+    `z_max`) so a hand-written `InBin` could be a pure function of the `State`. That box
+    was a second copy of a region upstream owns, and it shipped wrong once already -- the
+    *uninflated* range, 2/3 of the true width on the one axis a toss controls.
 
-    env = Tossing3DEnvironment()
-    env._backend = KinderBackend()  # noqa: SLF001
+    `MovableInGoalRegion` reads the region off the live simulator now, so there is nothing
+    for the `State` to smuggle and the bin is an ordinary movable object like any other."""
+    assert live_env.bin.type is Tossing3DEnvironment.movable_type
+    for corner in ("x_min", "y_min", "z_min", "x_max", "y_max", "z_max"):
+        assert corner not in live_env.bin.type.feature_names
 
-    env._execute(action=np.array([float(env.toss_id), 140.0, 300.0]))
-    env._execute(action=np.array([float(env.toss_id), 140.0, 1300.0]))
 
-    assert seen == [300.0, 1300.0]
+@requires_kinder
+def test_the_scene_object_carries_the_seed_set_state_would_rebuild_from(
+    *, live_env: Tossing3DEnvironment
+) -> None:
+    """`scene` is this domain's own object, not KINDER's: it holds the two facts a flat
+    `State` cannot otherwise carry, and the seed is the only thing a rewind has to go on."""
+    state = live_env.get_current_state()
+    assert state.get(obj=live_env.scene, feature_name="seed") == pytest.approx(CANONICAL_SEED)
+    assert state.get(obj=live_env.scene, feature_name="steps_taken") == pytest.approx(0)
+
+
+@requires_kinder
+def test_set_state_refuses_a_mid_episode_state(*, live_env: Tossing3DEnvironment) -> None:
+    """The load-bearing honesty of this domain: MuJoCo's qpos/qvel are not in a flat
+    `core.State`, so there is no faithful mid-episode rewind. Quietly restoring the
+    episode's *initial* state instead would make an evaluation look like it rewound."""
+    mid_episode = live_env.build_state(
+        kinder_state=live_env.backend().kinder_state(), seed=CANONICAL_SEED, steps_taken=2
+    )
+    with pytest.raises(ValueError, match="episode-initial"):
+        live_env.set_state(state=mid_episode)
+
+
+@requires_kinder
+def test_set_state_accepts_an_episode_initial_state_and_rebuilds_from_its_seed(
+    *, live_env: Tossing3DEnvironment
+) -> None:
+    """The other half of the same contract, which is what makes the refusal above a
+    distinction rather than a blanket refusal."""
+    initial = live_env.build_state(
+        kinder_state=live_env.backend().kinder_state(), seed=CANONICAL_SEED, steps_taken=0
+    )
+    live_env.set_state(state=initial)
+    assert live_env.get_current_state().get(
+        obj=live_env.scene, feature_name="seed"
+    ) == pytest.approx(CANONICAL_SEED)
+
+
+@requires_kinder
+def test_an_unknown_skill_id_is_recorded_as_a_no_op_rather_than_raising(
+    *, live_env: Tossing3DEnvironment
+) -> None:
+    assert live_env._execute(action=np.array([7.0, 0.0, 0.0, 0.0, 0.0])) == []  # noqa: SLF001
+    assert "unknown skill id: 7" in str(live_env.last_skill_error())
+
+
+@requires_kinder
+def test_the_noop_action_runs_no_controller_at_all(*, live_env: Tossing3DEnvironment) -> None:
+    """The defect this domain surfaced: `pick_cube_id == 0`, so the `np.zeros(5)` that
+    `EesMethod` used to emit when it could not plan was a real `pick_cube` at distance
+    0.0 -- a whole arm trajectory. `_execute` returning no runs is exactly "no controller
+    ran", which is the assertion that would have caught it."""
+    assert live_env._execute(action=live_env.noop_action()) == []  # noqa: SLF001
+    assert "unknown skill id" in str(live_env.last_skill_error())
+
+
+@requires_kinder
+def test_pick_cube_is_handed_exactly_the_first_two_parameter_slots(
+    *, live_env: Tossing3DEnvironment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_execute` is where an action vector becomes controller arguments, so it is where a
+    slot could be read from the wrong index -- silently, since every slot is a plausible
+    float. Asserted at distinct values so a hardcoded pass-through fails here too."""
+    seen: list[np.ndarray] = []
+    monkeypatch.setattr(KinderBackend, "run_skill", _spy(seen=seen))
+
+    live_env._execute(  # noqa: SLF001
+        action=np.array([float(live_env.pick_cube_id), 0.41, 0.42, 9.9, 9.9])
+    )
+
+    assert len(seen) == 1
+    assert seen[0] == pytest.approx([0.41, 0.42])
+
+
+@requires_kinder
+def test_the_fused_toss_skill_is_handed_all_four_parameter_slots_in_order(
+    *, live_env: Tossing3DEnvironment, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**The slot ordering that the fusion made newly fragile.** These four used to arrive
+    through two separate controllers with two separate signatures, so a mis-ordering could
+    not silently swap a standoff for a release millisecond. They now travel as one vector
+    into one `sample_parameters`, and every one of them is a bare float."""
+    seen: list[np.ndarray] = []
+    monkeypatch.setattr(KinderBackend, "run_skill", _spy(seen=seen))
+
+    live_env._execute(  # noqa: SLF001
+        action=np.array([float(live_env.move_to_toss_location_and_toss_id), 1.35, 0.0, 2.44, 0.72])
+    )
+
+    assert len(seen) == 1
+    assert seen[0] == pytest.approx([1.35, 0.0, 2.44, 0.72])
+
+
+def _spy(*, seen: list[np.ndarray]):
+    """A `run_skill` stand-in that records the parameter vector and runs no simulator."""
+    from hitl_pmp.adapters.kinder.types import ControllerRun
+
+    # Positional `self` because it stands in for a bound method on KinderBackend.
+    def run_skill(self: KinderBackend, **kwargs) -> ControllerRun:  # noqa: PLR0917, ANN003
+        del self
+        seen.append(np.asarray(kwargs["params"], dtype=float))
+        return ControllerRun(steps=1, terminated=True)
+
+    return run_skill

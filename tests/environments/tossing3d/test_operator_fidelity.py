@@ -16,15 +16,22 @@ be.** Two reasons it cannot join, both structural rather than stylistic:
    hours to days, per run.
 
 So the invariant is enforced here instead, on the states this domain can actually reach:
-the oracle's own trajectory, which is the whole plan shape (`Pick`, `MoveToThrowPose`,
-`Toss`) plus the unrecoverable state after the throw. At each of those states every
-applicable ground skill is executed speculatively and the world is rewound
-(`Tossing3DEnvironment.snapshot`/`restore`, backed by KINDER's own `set_state`), exactly
-as the cross-domain walk does with `set_state`.
+the oracle's own trajectory, which is the whole plan shape (`pick_cube`,
+`move_to_toss_location_and_toss`) plus the unrecoverable state after the throw. At each of
+those states every applicable ground skill is executed speculatively and the world is
+rewound (`Tossing3DEnvironment.snapshot`/`restore`, backed by KINDER's own `set_state`),
+exactly as the cross-domain walk does with `set_state`.
+
+**The plan shape is two skills now, not three.** Upstream fuses the base move and the
+throw into one controller -- *"Composed rather than split so that no predicate has to name
+the pose between them"* -- so the trajectory is initial -> post-pick -> post-toss, and
+there is no intermediate throw pose for a walk to visit. That makes this file's coverage
+floor a stronger claim than it was: with two skills and three states, reaching a state
+where each skill is applicable covers the whole model.
 
 The narrowing that remains, stated rather than glossed: this walks one trajectory rather
 than searching, so it cannot find a *reachable-but-unvisited* symbolic state whose model
-is wrong. On a domain with three skills, one plan shape and no branching, there is very
+is wrong. On a domain with two skills, one plan shape and no branching, there is very
 little for such a search to find -- but "very little" is not "nothing", and that is the
 honest limit of what this file proves.
 """
@@ -49,9 +56,9 @@ pytestmark = pytest.mark.skipif(
 CANONICAL_SEED = 125
 
 # Draws per candidate. Far below the cross-domain file's 30, and affordable for the same
-# reason it can walk one trajectory: `Pick` is the only skill here whose parameters can
-# miss, `MoveToThrowPose` moves the base for every draw in its range, and `Toss` has no
-# parameters at all. A skill counts as silently ignored only if *every* draw is a no-op.
+# reason it can walk one trajectory: `pick_cube` is the only skill here whose parameters
+# can miss, and `move_to_toss_location_and_toss` moves the base for every draw in its
+# range. A skill counts as silently ignored only if *every* draw is a no-op.
 _PARAM_DRAWS = 3
 
 
@@ -76,10 +83,10 @@ def test_no_applicable_ground_skill_is_silently_ignored_along_the_oracles_trajec
         goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
         state = env.reset_to_seed(seed=CANONICAL_SEED)
 
-        # Four states: initial, post-Pick, post-MoveToThrowPose, post-Toss. The last is
-        # the unrecoverable one, and is the most valuable of the four -- it is where an
-        # over-permissive model would offer a retrieval that cannot happen.
-        for _ in range(4):
+        # Three states: initial, post-pick_cube, post-move_to_toss_location_and_toss. The
+        # last is the unrecoverable one, and is the most valuable of the three -- it is
+        # where an over-permissive model would offer a retrieval that cannot happen.
+        for _ in range(3):
             atoms = SkillGrounder.abstract_state(
                 state=state, objects=provider.objects(), predicates=provider.predicates()
             )
@@ -117,7 +124,7 @@ def test_no_applicable_ground_skill_is_silently_ignored_along_the_oracles_trajec
 
         assert not violations, "\n".join(f"  - {v}" for v in sorted(set(violations)))
         # Coverage floor, so the property above cannot pass vacuously: the oracle's own
-        # trajectory reaches a state where each of the three skills is applicable.
+        # trajectory reaches a state where each of the two skills is applicable.
         assert exercised == {skill.name for skill in provider.skills()}, (
             f"the walk never reached a state where "
             f"{sorted({s.name for s in provider.skills()} - exercised)} was applicable, so "
@@ -162,12 +169,18 @@ def test_a_restore_really_rewinds_the_simulator_and_not_just_the_state_object() 
         # Mid-episode really is mid-episode: the arm is up, holding the cube.
         assert state.get(obj=env.cube, feature_name="z") > 0.1
 
+        # The fused move-and-toss, over upstream's own `(?robot, ?held, ?barrier)`. Its
+        # four parameters come from the controller's own sampler rather than a literal:
+        # this repo no longer owns a standoff to write down, and a fixed vector here would
+        # be a fourth copy of numbers upstream already narrowed twice.
         ground_skill = GroundSkill(
             skill=provider.skills()[1],
-            objects=(env.robot, env.cube, env.bin),
+            objects=(env.robot, env.cube, env.barrier),
         )
         action = provider.compute_action(
-            ground_skill=ground_skill, params=np.array([1.35]), state=state
+            ground_skill=ground_skill,
+            params=provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0)),
+            state=state,
         )
         first = env.take_action(action=action)
 

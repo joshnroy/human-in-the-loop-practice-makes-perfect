@@ -79,8 +79,9 @@ def test_toss_profile_limits_clamps_effort_at_the_default() -> None:
     """`TOSS_MAX_VELOCITY` is a genuine ceiling: a release speed above it is clamped
     rather than scaling the profile past the default.
 
-    `TOSS_SPEED_BOUNDS` caps at `TOSS_MAX_VELOCITY`, so this probes above our own range
-    deliberately -- from inside our bounds the clamp is unreachable and so invisible.
+    The sampler's own band tops out at `TOSS_MAX_VELOCITY`, so this probes above the
+    reachable range deliberately -- from inside the band the clamp is unreachable and so
+    invisible.
     """
     from kinder_models.dynamic3d.tossing.parameterized_skills import TOSS_MAX_VELOCITY
 
@@ -90,18 +91,126 @@ def test_toss_profile_limits_clamps_effort_at_the_default() -> None:
     assert toss_profile_limits(np.deg2rad(240.0))[0] == pytest.approx(TOSS_MAX_VELOCITY)
 
 
-def test_the_release_speed_our_sampler_can_draw_is_never_clamped() -> None:
-    """The clamp must sit at or above our own upper bound, so no draw the EES sampler
-    makes is silently rewritten. `TOSS_SPEED_BOUNDS`' top edge is the boundary case: it
-    is exactly `TOSS_MAX_VELOCITY`, so it must pass through unscaled rather than
-    tripping the clamp.
+def test_no_release_speed_the_sampler_can_draw_is_ever_silently_clamped() -> None:
+    """The clamp must sit at or above the top of the band that is actually drawn from, so
+    no sampled speed is rewritten on its way into the profile.
+
+    **This test changed hands rather than changing meaning.** It used to read
+    `TOSS_SPEED_BOUNDS` out of this repo's own `predicates.py`. That constant is gone --
+    the fused `move_to_toss_location_and_toss` controller carries its own `SPEED_BOUNDS`
+    and its own `sample_parameters` draws from them, which is the whole point of the
+    bridge (a second copy of upstream's number is a number that can drift). The property
+    worth protecting is unchanged, so it is re-homed onto the constant that now decides
+    it instead of being deleted with the one that used to.
+
+    The top edge is the boundary case and is asserted exactly: it *is* `TOSS_MAX_VELOCITY`,
+    so it must pass through unscaled rather than tripping the clamp.
     """
-    from hitl_pmp.environments.tossing3d.predicates import TOSS_SPEED_BOUNDS
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        TOSS_MAX_VELOCITY,
+        MoveToTossLocationAndTossController,
+    )
 
     toss_profile_limits = _toss_profile_limits()
+    low, high = MoveToTossLocationAndTossController.SPEED_BOUNDS
 
-    for deg in np.linspace(TOSS_SPEED_BOUNDS[0], TOSS_SPEED_BOUNDS[1], 37):
-        assert np.rad2deg(toss_profile_limits(np.deg2rad(deg))[0]) == pytest.approx(deg)
+    assert high == pytest.approx(TOSS_MAX_VELOCITY), (
+        "the sampler's upper bound has come off the clamp point, so the top of its own "
+        "range is now silently rewritten on the way into the profile"
+    )
+    for speed in np.linspace(low, high, 37):
+        assert toss_profile_limits(speed)[0] == pytest.approx(speed)
+
+
+def test_the_sampler_draws_all_four_dials_from_upstreams_own_bounds() -> None:
+    """The bounds this repo used to declare, now read off the controller that owns them.
+
+    hitl carried `TOSS_RELEASE_MS_BOUNDS = (300, 1400)` against a controller band of
+    `(700, 840)` -- a window about nine times too wide, so the large majority of its draws
+    could not score, and nothing detected it because both numbers were internally
+    consistent. There is one number now. This pins that the sampler really does draw four
+    parameters, since `param_dim` is declared in `skills.py` and
+    `LiftedParameterizedController.params_space` is `None` on every Tossing3D controller,
+    so there is nothing to read the arity off at runtime.
+    """
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        MoveToTossLocationAndTossController,
+    )
+
+    controller = MoveToTossLocationAndTossController
+    drawn = controller.sample_parameters(controller, None, np.random.default_rng(0))
+
+    assert drawn.shape == (4,)
+    for value, bounds in zip(
+        drawn[2:],
+        (controller.SPEED_BOUNDS, controller.RELEASE_MS_BOUNDS),
+        strict=True,
+    ):
+        assert bounds[0] <= value <= bounds[1]
+
+
+def test_the_base_plan_ignores_the_held_object_without_being_told_to() -> None:
+    """**The one behaviour a deleted test used to protect, re-homed to its new owner.**
+
+    `KinderBackend.run_move_to_throw_pose` used to pass
+    `disable_collision_objects=["cube_0"]` by hand, and a test here spied on it. That
+    method is gone with the three-skill decomposition, but the hazard is not: upstream
+    PR #103 turned base-motion collision-checking *on* (`run_base_motion_planning` had
+    hardcoded `obstacle_geoms` empty), so the cube the robot is carrying is an obstacle to
+    the robot's own base plan unless something excludes it. Every plan fails if nothing
+    does.
+
+    Nothing in this repo does any more -- `_execute` passes no `reset_kwargs` at all -- so
+    this is now purely a claim about the pin, which is exactly what this file is for.
+    Three parts, because the claim needs all three: the keyword defaults to `None`, `None`
+    means "the object at index 1", and index 1 is `?held`.
+    """
+    import inspect
+
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        MoveToTossLocationAndTossController,
+        create_lifted_controllers,
+    )
+
+    reset_parameters = inspect.signature(MoveToTossLocationAndTossController.reset).parameters
+    assert reset_parameters["disable_collision_objects"].default is None
+
+    source = inspect.getsource(MoveToTossLocationAndTossController._plan_base_motion)  # noqa: SLF001
+    assert "if disable_collision_objects is None:" in source
+    assert "disable_collision_objects = [self.objects[1].name]" in source
+
+    # No simulator: `create_lifted_controllers` `del`s its first two arguments and merely
+    # stores `pybullet_sim`, so the declarations are readable without building a scene.
+    lifted = create_lifted_controllers(None, None, pybullet_sim=None)
+    variables = lifted["move_to_toss_location_and_toss"].variables
+    assert [variable.name for variable in variables] == ["?robot", "?held", "?barrier"], (
+        "the controller's parameters have been reordered, so `self.objects[1]` is no "
+        "longer the held object and the base plan now excludes the wrong thing"
+    )
+
+
+def test_the_gripper_release_millisecond_is_rounded_rather_than_truncated() -> None:
+    """Upstream `divmod`s an int, and `int()` truncates toward zero, so `722.9` meaning
+    722 would be a systematic bias toward releasing early -- and the arm is near peak
+    speed at release, where 1 ms is millimetres of landing position rather than a rounding
+    detail.
+
+    This used to be `KinderBackend.run_toss`'s job and had its own test there. The dial is
+    drawn by the controller's own sampler now and rounded inside its own `reset`, so the
+    check belongs here: it is upstream's behaviour that this repo depends on.
+    """
+    import inspect
+
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        MoveToTossLocationAndTossController,
+    )
+
+    source = inspect.getsource(MoveToTossLocationAndTossController.reset)
+    assert "int(round(float(current_params[3])))" in source, (
+        "the release millisecond is no longer rounded on its way into the controller; "
+        "if this moved rather than went away, follow it -- truncation biases every throw "
+        "toward an early release"
+    )
 
 
 def test_the_toss_schedule_is_exactly_as_wide_as_kinder_demands() -> None:

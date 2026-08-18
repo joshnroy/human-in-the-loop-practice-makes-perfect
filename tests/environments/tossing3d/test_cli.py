@@ -1,9 +1,13 @@
-"""Offline tests for `Tossing3DCli`'s flags and for its registration in the global CLI.
+"""`Tossing3DCli`'s flags and its registration in the global CLI.
 
-`run_method` drives a real simulator, so it lives in `test_kinder_fidelity.py`.
+**This file is still entirely offline, and that is a property rather than a leftover.**
+Constructing a `Tossing3DEnvironment` builds no simulator (`backend()` is lazy), and
+`draw_scene_seed` is a pure function of an RNG, so the strongest assertions here need no
+KINDER at all. `run_method` drives a real simulator and lives in `test_kinder_fidelity.py`.
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,7 +15,7 @@ import pytest
 from hitl_pmp.cli import ENVIRONMENTS, Cli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
+from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_PARAMETER_SEED
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 
 
@@ -29,11 +33,9 @@ def test_the_environment_is_registered_under_tossing3d() -> None:
 
 
 def test_registering_it_does_not_pull_a_simulator_into_the_global_cli() -> None:
-    """CI never installs the optional extra, and `hitl_pmp.cli` imports every registered
-    environment's CLI. If this domain's import chain reached MuJoCo, `--env lightswitch`
-    would stop working on a machine without it."""
-    import sys
-
+    """`hitl_pmp.cli` imports every registered environment's CLI. If this domain's import
+    chain reached MuJoCo, `--env lightswitch` would stop working on a machine without the
+    optional extra."""
     Cli.parse_args(argv=["--env", "lightswitch", "--method", "skill-oracle"])
     assert "mujoco" not in sys.modules
 
@@ -45,7 +47,7 @@ def test_the_defaults_are_read_off_the_models_rather_than_re_literalled() -> Non
     assert args.canonical_seed == fields["canonical_seed"].default
     assert args.scene_bg is True
     assert args.test_env_seed_offset == Tossing3DTasks.model_fields["test_env_seed_offset"].default
-    assert args.oracle_throw_standoff == ORACLE_THROW_STANDOFF
+    assert args.oracle_parameter_seed == ORACLE_PARAMETER_SEED
 
 
 def test_there_is_no_scene_selection_flag() -> None:
@@ -59,13 +61,29 @@ def test_there_is_no_scene_selection_flag() -> None:
         _build_parser().parse_args(["--task-config", "stock"])
 
 
-def test_the_oracle_standoff_is_overridable() -> None:
-    """1.35 is upstream's own value and solves the shipped scene. It stays overridable
-    because the band-calibration tests drive standoff directly, and because the value
-    that solves is a property of the scene's geometry rather than a constant of the
-    domain."""
-    args = _build_parser().parse_args(["--oracle-throw-standoff", "1.55"])
-    assert args.oracle_throw_standoff == pytest.approx(1.55)
+def test_there_is_no_throw_standoff_flag() -> None:
+    """**The second retired choice, pinned the same way and for a sharper reason.**
+    `--oracle-throw-standoff` named the distance a separate `MoveToThrowPose` stopped at
+    before a separate `Toss` fired. Upstream fuses the base move and the throw into one
+    controller, which draws standoff, rotation, speed and release millisecond as a single
+    four-vector from its own sampler -- so there is no longer a moment at which a standoff
+    could be imposed, and a hand-picked value cannot be substituted into the draw
+    piecewise.
+
+    This matters more than an unused flag usually would: the value it carried (1.35) is
+    still quoted throughout `docs/`, so an old command line would look like it was being
+    honoured while the oracle drew something else entirely. argparse rejecting it is what
+    makes that impossible rather than merely unlikely."""
+    with pytest.raises(SystemExit):
+        _build_parser().parse_args(["--oracle-throw-standoff", "1.35"])
+
+
+def test_the_oracle_parameter_seed_is_overridable() -> None:
+    """What is left to choose is *which draw* the oracle takes, not what it draws. Fixed
+    by default rather than threaded from `--seed`, because the oracle is a reference arm
+    and should behave identically across the runs it is being compared against."""
+    args = _build_parser().parse_args(["--oracle-parameter-seed", "77"])
+    assert args.oracle_parameter_seed == 77
 
 
 def test_the_global_cli_registers_this_domains_flags_when_env_is_tossing3d() -> None:
@@ -80,8 +98,6 @@ def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator
     """`render_fps` is only ever read when a clip is written, and a run without
     `--output-dir` gets no renderer. Building a MuJoCo scene just to fill in a number
     nothing plays at would make every headless run pay for the one that does not."""
-    import sys
-
     assert Tossing3DCli.resolve_render_fps(env=Tossing3DEnvironment(), renderer=None) == (
         Tossing3DCli.unrendered_render_fps
     )
@@ -95,10 +111,6 @@ def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator
 # sweep. That is invisible under the per-period reset and fatal to a reset-free arm:
 # `--practice-reset-policy never` would be a label rather than a condition. These pin
 # the split that makes it real.
-#
-# All three run on CI. Constructing a `Tossing3DEnvironment` builds no simulator (the
-# backend is lazy -- see `Tossing3DEnvironment.backend`), and `draw_scene_seed` is a
-# pure function of an RNG, so the strongest assertion here needs no KINDER at all.
 
 
 def test_build_problem_returns_wholly_independent_objects() -> None:
@@ -140,3 +152,11 @@ def test_both_problems_draw_the_same_test_scene_seeds() -> None:
     assert drawn == redrawn
     # Not a constant stream -- otherwise the equality above would hold vacuously.
     assert len(set(drawn)) > 1
+
+
+def test_building_a_problem_still_builds_no_simulator() -> None:
+    """The property every offline test in this file rests on, asserted once directly
+    rather than only relied upon."""
+    args = _build_parser().parse_args([])
+    Tossing3DCli.build_problem(args=args)
+    assert "mujoco" not in sys.modules

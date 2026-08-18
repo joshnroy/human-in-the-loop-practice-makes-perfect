@@ -1,10 +1,33 @@
-"""Offline tests for `KinderBackend`'s sub-step recording switch.
+"""Offline tests for `KinderBackend`'s recording switch and its controller dispatch.
 
-Everything here runs without MuJoCo, which is the point: the switch and the drain are
-plain Python, and CI -- which never installs the optional extra -- is exactly where a
-wiring regression would otherwise go unnoticed. Whether the wrapper really collects one
-frame per physics tick is a question only a simulator can answer, and lives in
-`test_kinder_fidelity.py`.
+Everything here runs without MuJoCo, and that is a deliberate exception to this package's
+otherwise simulator-only rule. The rest of the domain went simulator-backed because its
+predicates genuinely need a `PyBulletSim` to answer at all (see `conftest.py`). Nothing in
+this file is like that: the recording switch is a boolean and a wrapper swap, and
+`run_skill` is a dispatch that forwards keyword arguments. Both are plain Python, and a
+wiring regression in either would be invisible to a simulator test, which would see only
+the end result.
+
+What a simulator has to answer instead -- whether the wrapper really collects one frame
+per physics tick -- lives in `test_kinder_fidelity.py`.
+
+## What used to be here and is not
+
+Four tests spied on `run_controller` and the three skill-specific wrappers built on it
+(`run_pick`, `run_move_to_throw_pose`, `run_toss`). All four are gone, because all four
+methods are gone: `KinderBackend` now exposes one generic `run_skill`, and the arguments
+those tests pinned are no longer this repo's to get right.
+
+* the deg/s -> rad/s conversion and the gripper-release rounding were ours while this repo
+  declared its own toss dials; the fused controller's own sampler draws both now, in the
+  controller's own units, so there is no conversion site left to test;
+* the windup/swing sequencing was ours while `Toss` was two upstream controllers driven
+  back to back; it is one controller now;
+* `disable_collision_objects=["cube_0"]` was ours to thread through; upstream's
+  `_plan_base_motion` now defaults it to the held object.
+
+The last one is a real behaviour that still has to hold, so it did not simply evaporate --
+it moved to `test_kinder_pin.py`, which is where "upstream still does this for us" belongs.
 """
 
 import sys
@@ -13,7 +36,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from hitl_pmp.environments.tossing3d.kinder_backend import ControllerRun, KinderBackend
+from hitl_pmp.adapters.kinder.types import ControllerRun
+from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 
 
 def test_substep_recording_is_off_by_default() -> None:
@@ -53,131 +77,92 @@ def test_draining_while_recording_is_off_is_empty_even_with_a_scene() -> None:
     assert backend.drain_substep_frames() == []
 
 
-def test_move_to_throw_pose_disables_collision_against_the_held_cube(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`run_move_to_throw_pose`'s own docstring claims
-    `disable_collision_objects=["cube_0"]` is passed to upstream's `move_to_target` --
-    the robot is holding the cube at this point, so treating it as a base-motion obstacle
-    makes every plan fail. It wasn't actually threaded through: `run_controller` has a
-    real `disable_collision_objects` parameter, and `run_move_to_throw_pose` never
-    supplied it, leaving it `None`.
+class _SpyControllers:
+    """Stands in for `KinderControllers`, recording the one `run` call it receives.
 
-    This is entirely offline: no simulator needed, since the bug is about which kwarg
-    reaches `run_controller`, not about simulator behaviour.
-
-    That upstream fix has now landed and the pin has bumped, so this is no longer the
-    dormant guard it was written as. `reference/kinder-baselines` used to be pinned at
-    `11eace5`, where `run_base_motion_planning` hardcoded `obstacle_geoms` empty
-    (Princeton-Robot-Planning-and-Learning/kinder-baselines#102) and this kwarg therefore
-    had zero observable effect. The pin is now `1b564a1`, which contains upstream PR #103
-    -- the fix for that issue -- so collision-checking against scene obstacles is **on**.
-    The held cube is a `MujocoObjectType` like any other, and `run_base_motion_planning`
-    filters `disable_collision_objects` out of the obstacle set *before* looking up each
-    remaining object's geom, so passing `["cube_0"]` is what keeps the robot's own held
-    cube from becoming an unexcluded obstacle to its own base-motion plan.
+    Not a `KinderControllers` subclass: constructing one needs a `KinderStateTranslator`,
+    which needs a live KINDER state, which is the simulator this file exists to avoid.
+    `KinderBackend.controllers()` is monkeypatched to hand this back instead, so nothing
+    type-checks it at runtime.
     """
-    calls: list[dict[str, Any]] = []
 
-    # `self` must stay positional -- `monkeypatch.setattr` installs this as an unbound
-    # class method, and Python's bound-method call convention always passes the instance
-    # positionally, the same reasoning `core/README.md` gives for `__getitem__`.
-    def spy_run_controller(  # noqa: PLR0917
-        self: KinderBackend, *, module: str, key: str, **kwargs: Any
-    ) -> ControllerRun:
-        calls.append({"module": module, "key": key, **kwargs})
-        return ControllerRun(steps=1, terminated=True)
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
 
-    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
-
-    backend = KinderBackend()
-    # `robot_name` is a property that reads a scene-derived private attribute and raises
-    # before any `reset()`; `run_move_to_throw_pose` only needs a name to pass through,
-    # not a real one, so a `PrivateAttr` write stands in for a scene without a simulator.
-    backend._robot_name = "robot_test"  # noqa: SLF001
-
-    backend.run_move_to_throw_pose(standoff=1.35, rotation=0.0)
-
-    assert len(calls) == 1
-    assert calls[0]["disable_collision_objects"] == [backend.cube_name]
+    def run(self, **kwargs: Any) -> ControllerRun:
+        self.calls.append(kwargs)
+        return ControllerRun(steps=7, terminated=True)
 
 
-def test_run_toss_converts_the_release_speed_to_radians_exactly_once(
+def _spying_backend(*, monkeypatch: pytest.MonkeyPatch) -> tuple[KinderBackend, _SpyControllers]:
+    spy = _SpyControllers()
+    monkeypatch.setattr(KinderBackend, "controllers", lambda self: spy)
+    return KinderBackend(), spy
+
+
+def test_run_skill_forwards_its_key_objects_params_and_limit_verbatim(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """This domain carries the dial in joint-path deg/s and `TossController.reset` takes
-    rad/s, so exactly one site converts. A second or missing conversion is a silent 57x
-    error either way. Offline: it spies on `run_controller`.
+    """`run_skill` is the one seam between this domain and the generic bridge, so it is
+    where a transposed argument would land. Every value is distinct here, so swapping any
+    two of them fails rather than coincidentally passing."""
+    backend, spy = _spying_backend(monkeypatch=monkeypatch)
+    params = np.array([1.1, 2.2, 3.3, 4.4])
+
+    run = backend.run_skill(
+        key="move_to_toss_location_and_toss",
+        object_names=("robot_test", "cube_0", "cuboid_barrier"),
+        params=params,
+        state="the-core-state",
+        limit=123,
+    )
+
+    (call,) = spy.calls
+    assert call["key"] == "move_to_toss_location_and_toss"
+    assert call["object_names"] == ("robot_test", "cube_0", "cuboid_barrier")
+    assert call["params"] is params
+    assert call["state"] == "the-core-state"
+    assert call["limit"] == 123
+    assert run.steps == 7
+
+
+def test_run_skill_hands_the_bridge_a_step_that_advances_the_simulator(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`KinderControllers.run` owns the loop but not the simulator, so the step callable
+    is what actually moves the world -- and it must also keep `KinderBackend`'s own cached
+    state in step, or `kinder_state()` would report the pose the skill started from for
+    the rest of the episode.
     """
-    calls: list[dict[str, Any]] = []
+    backend, spy = _spying_backend(monkeypatch=monkeypatch)
 
-    def spy_run_controller(  # noqa: PLR0917  (see the sibling test for why `self` is positional)
-        self: KinderBackend, *, module: str, key: str, **kwargs: Any
-    ) -> ControllerRun:
-        calls.append({"module": module, "key": key, **kwargs})
-        return ControllerRun(steps=1, terminated=True)
+    # Both signatures are positional because gymnasium's are: `env.step(action)` and
+    # `observation_space.devectorize(observation)` are third-party contracts, which is the
+    # documented exemption from this repo's keyword-only rule.
+    class _FakeSpace:
+        @staticmethod
+        def devectorize(observation: Any) -> str:  # noqa: PLR0917
+            return f"devectorized:{observation}"
 
-    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
+    class _FakeEnv:
+        observation_space = _FakeSpace()
 
-    backend = KinderBackend()
-    backend._robot_name = "robot_test"  # noqa: SLF001
+        @staticmethod
+        def step(action: np.ndarray) -> tuple[Any, float, bool, bool, dict[str, Any]]:  # noqa: PLR0917
+            return f"observation-for-{action.tolist()}", 0.0, False, False, {}
 
-    backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=720.0)
+    backend._env = _FakeEnv()  # noqa: SLF001
 
-    assert [call["key"] for call in calls] == ["move_arm_to_conf", "toss"]
-    # `move_arm_to_conf.reset` declares no release speed; passing one is a TypeError.
-    assert "release_speed" not in calls[0]
-    assert calls[1]["release_speed"] == pytest.approx(np.deg2rad(140.0))
+    backend.run_skill(
+        key="pick_cube",
+        object_names=("robot_test", "cube_0", "cuboid_barrier"),
+        params=np.array([0.5, 0.0]),
+        state="the-core-state",
+        limit=1,
+    )
 
+    (call,) = spy.calls
+    reached = call["step"](np.array([9.0]))
 
-def test_run_toss_rounds_the_gripper_release_ms_to_an_int_rather_than_truncating(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Upstream `divmod`s `int(gripper_release_ms)`, and `int()` truncates toward zero, so
-    a float handed straight through would make `722.9` mean 722 -- a systematic bias toward
-    releasing early. Offline: it spies on `run_controller`.
-    """
-    calls: list[dict[str, Any]] = []
-
-    def spy_run_controller(  # noqa: PLR0917  (see the sibling test for why `self` is positional)
-        self: KinderBackend, *, module: str, key: str, **kwargs: Any
-    ) -> ControllerRun:
-        calls.append({"module": module, "key": key, **kwargs})
-        return ControllerRun(steps=1, terminated=True)
-
-    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
-
-    backend = KinderBackend()
-    backend._robot_name = "robot_test"  # noqa: SLF001
-
-    backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=722.9)
-
-    assert "gripper_release_ms" not in calls[0]
-    scheduled = calls[1]["gripper_release_ms"]
-    assert isinstance(scheduled, int)
-    assert scheduled == 723
-
-
-def test_run_toss_skips_the_swing_when_the_windup_fails_whatever_the_speed(
-    *, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Tossing from an unknown arm pose is not what upstream measured, at any speed."""
-    calls: list[str] = []
-
-    def spy_run_controller(  # noqa: PLR0917
-        self: KinderBackend, *, module: str, key: str, **kwargs: Any
-    ) -> ControllerRun:
-        del module, kwargs
-        calls.append(key)
-        return ControllerRun(steps=0, terminated=False, error="planning failed")
-
-    monkeypatch.setattr(KinderBackend, "run_controller", spy_run_controller)
-
-    backend = KinderBackend()
-    backend._robot_name = "robot_test"  # noqa: SLF001
-
-    windup, swing = backend.run_toss(release_speed_deg_s=140.0, gripper_release_ms=520.0)
-
-    assert calls == ["move_arm_to_conf"]
-    assert windup.terminated is False
-    assert swing.error == "windup did not terminate"
+    assert reached == "devectorized:observation-for-[9.0]"
+    assert backend.kinder_state() == reached
