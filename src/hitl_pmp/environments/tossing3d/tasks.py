@@ -1,14 +1,16 @@
 """Task generation for Tossing3D.
 
 One goal family, and it is upstream's: `["on", "cube_0", "blocks_goal_region"]`, which
-`_check_goals()` evaluates as containment in a ground region. `predicates.IN_BIN`
-reproduces that check exactly (see its docstring), so a `Task` here asks for precisely
-what KINDER scores.
+`_check_goals()` evaluates as containment in a ground region. The goal atom is
+`MovableInGoalRegion(cube_0)`, exactly what `Tossing3DStateAbstractor.goal_deriver`
+derives, so a `Task` here asks for precisely what KINDER scores and nothing reproduces
+that check a second time.
 
-The goal atom names the **bin**, not the region, because this domain assumes the bin's
-interior *is* that region -- the box `IN_BIN` tests against is still the live
-`blocks_goal_region` bbox, carried in the `State` on the bin object. See `predicates.py`'s
-module docstring for the assumption and for the task config under which it is false.
+The goal no longer names the **bin**. It used to be `InBin(cube_0, bin_0)`, under a stated
+assumption that the bin's interior *is* the scored region, with the region's box smuggled
+through the `State` on the bin object so a hand-written classifier could be a pure
+function of it. Upstream's predicate reads the region off the live simulator, so neither
+the assumption nor the smuggling is needed.
 
 ## A task is a scene seed, not an arithmetic construction
 
@@ -40,10 +42,10 @@ import numpy as np
 from pydantic import PrivateAttr
 
 from hitl_pmp.core.problem.tasks.tasks import Tasks
-from hitl_pmp.core.problem.tasks.types import Goal, Task
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 
 from .environment import Tossing3DEnvironment
-from .predicates import IN_BIN
+from .predicates import MOVABLE_IN_GOAL_REGION, Tossing3DPredicates
 
 # Scene seeds are drawn from [0, SCENE_SEED_LIMIT). Gymnasium seeds are non-negative
 # ints; the bound is 2**31 - 1 rather than 2**63 purely so a seed printed in a log or a
@@ -116,9 +118,7 @@ class Tossing3DTasks(Tasks):
         state = self.env.get_current_state()
         return Task(
             initial_state=state,
-            goal=Goal(
-                atoms=frozenset({IN_BIN(state=state, objects=(self.env.cube, self.env.bin))})
-            ),
+            goal=Goal(atoms=frozenset({self.goal_atom()})),
         )
 
     def build_task(self, *, scene_seed: int) -> Task:
@@ -132,12 +132,23 @@ class Tossing3DTasks(Tasks):
         initial_state = self.env.reset_to_seed(seed=scene_seed)
         return Task(
             initial_state=initial_state,
-            goal=Goal(
-                atoms=frozenset({
-                    IN_BIN(state=initial_state, objects=(self.env.cube, self.env.bin))
-                })
-            ),
+            goal=Goal(atoms=frozenset({self.goal_atom()})),
         )
+
+    def goal_atom(self) -> GroundAtom:
+        """`MovableInGoalRegion(cube_0)` -- upstream's own goal, verbatim.
+
+        `Tossing3DStateAbstractor.goal_deriver` derives exactly this atom for every cube
+        in the scene, so a `Task` here asks for precisely what KINDER scores. It used to
+        be `InBin(cube_0, bin_0)`, a hitl predicate testing containment in a box smuggled
+        through the `State` on the bin; the bin is not part of the goal at all upstream.
+
+        Built per call rather than cached because the predicate closes over this
+        environment's live abstraction, which a `close()` and re-`reset()` replaces.
+        """
+        return Tossing3DPredicates.get(
+            abstraction=self.env.abstraction(), name=MOVABLE_IN_GOAL_REGION
+        )(state=self.env.get_current_state(), objects=(self.env.cube,))
 
     @staticmethod
     def draw_scene_seed(*, rng: np.random.Generator) -> int:

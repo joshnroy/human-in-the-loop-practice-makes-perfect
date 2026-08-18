@@ -1,179 +1,103 @@
 """The one module in this package that touches KINDER, and the only place a KINDER
 import may appear.
 
-Everything above it (`environment.py`, `predicates.py`, `skills.py`, `tasks.py`,
-`problem.py`, `cli.py`) talks to `KinderBackend` in plain Python types, so the whole
-package imports, typechecks and tests on a machine with no MuJoCo -- which CI is, since
-it never installs the optional `tossing3d` extra.
+What it owns is now narrow: the **live gym environment** -- building it, seeding it,
+choosing its camera, collecting frames, closing it. Everything that is true of KINDER in
+general rather than of Tossing3D in particular has moved to `adapters/kinder/`:
 
-**Nothing here reimplements KINDER.** The simulator, the physics, all four controllers
-and the success criterion are upstream's, driven exactly as upstream's own
-`kinder-models/tests/dynamic3d/tossing/test_tossing_parameterized_skills.py::test_pick_ground_toss`
-drives them. What this module supplies is the translation: a KINDER `ObjectCentricState`
-becomes a `KinderObservation` of plain floats, and a whole *skill* becomes one call.
+| concern | where it lives now |
+| --- | --- |
+| the EGL / `DISPLAY` import dance | `adapters.kinder.bootstrap` |
+| `ObjectCentricState` <-> `core.State` | `adapters.kinder.state_translation` |
+| the state abstractor as `core.Predicate`s | `adapters.kinder.abstraction` |
+| controllers as parameters, draws, executions | `adapters.kinder.controllers` |
 
-## The import dance, which is the trap that costs an hour
+This module's job is to construct those three from a live scene and hand them out.
 
-`kinder.register_all_environments()` rewrites `MUJOCO_GL` to `osmesa` whenever `DISPLAY`
-is unset (`src/kinder/__init__.py:67-74`). Under `osmesa`, `import mujoco` raises on this
-machine -- and `_check_deps` swallows *every* exception, so the entire `Dynamic3D`
-category is skipped in silence and the failure surfaces much later as
+## What this package no longer reimplements
 
-    gymnasium.error.NameNotFound: Environment `Tossing3D-o1` doesn't exist in namespace kinder.
+It used to carry six hand-written predicate classifiers "ported from upstream's own
+`state_abstractions`, thresholds included", plus its own sampling bounds for every skill
+parameter. Both were copies, and a copy has no mechanism for noticing that the original
+moved. The measured consequence: hitl's `TOSS_RELEASE_MS_BOUNDS` was `(300, 1400)` while
+the controller's own band was `(700, 840)`, so it drew from a window about nine times too
+wide and the large majority of its draws could not score.
 
-Three things together avoid it, and all three are load-bearing:
+Now `Tossing3DStateAbstractor` classifies and `create_lifted_controllers`' own samplers
+draw. There is nothing left here to keep in agreement with upstream.
 
-1. `DISPLAY` is set (to `:0`; nothing is ever drawn to it) so the rewrite never fires.
-2. `MUJOCO_GL`/`PYOPENGL_PLATFORM` are forced to `egl`, overriding an inherited `osmesa`.
-3. A *module* inside `kinder.envs.dynamic3d` is imported -- `kinder.envs.dynamic3d.envs`,
-   not the package `kinder.envs.dynamic3d`, which does not pull in `mujoco` -- so
-   `mujoco` is already in `sys.modules` before `register_all_environments()` runs.
+## Constructing the abstractor resets the scene, so ordering matters
 
-`register_all_environments()` leaves `MUJOCO_GL` reading `osmesa` afterwards even when
-it worked, so the environment is re-asserted immediately after the call rather than left
-to a caller who might forget.
+`Tossing3DStateAbstractor.__init__` calls `sim.reset()` -- it needs an initial state to
+build its `PyBulletSim` from. So it is constructed once, immediately after the gym
+environment is made and *before* the episode's own `reset(seed=...)`, and never again.
+Building it after seeding would silently discard the seed.
+
+The abstractor and the controllers share one `PyBulletSim`, which is upstream's own
+arrangement in `tidybot3d_tossing3D.py`. That is not only tidy: grounding a controller
+mints an instance, and a per-grounding sim is one live `p.connect(p.DIRECT)` server each.
 
 ## The PyBullet client leak is fixed upstream, not worked around here
 
-Grounding a KINDER controller mints a fresh instance, and `MoveArmToConfController`/
-`TossController`/`PickShelfController` each open a `PyBulletSim` -- i.e. a live
-`p.connect(p.DIRECT)` physics server -- inside `reset()`. Historically nothing ever
-disconnected them, so an iterative run leaked ~136 MB and one client per skill
-execution, without bound.
+`PyBulletSim` disconnects from a `weakref.finalize` when it is collected (upstream PR #87,
+`9512b9e`, an ancestor of the pin). **Do not add a `_release`-style explicit `close()`**:
+with the finalizer in place that double-disconnects.
 
-The fix is a `weakref.finalize(self, p.disconnect, ...)` in `PyBulletSim`, which landed
-upstream as PR #87 (squash-merged as `9512b9e`). `reference/kinder-baselines` is a git
-submodule pinned at `1b564a1`, and `9512b9e` is an ancestor of that pin, so the fix is
-present and the client is released when the controller is collected.
-**Do not add a `_release`-style explicit `close()` here**: with the finalizer in place
-that double-disconnects.
+## Physics-rate frames come from a wrapper, not a hand-rolled buffer
 
-## Physics-rate frames come from a wrapper, not from a hand-rolled buffer
+One `take_action` is a whole controller execution, so a `core.Renderer` -- one frame per
+*transition* -- would give a two-frame clip of a domain whose entire point is a throw.
+`gymnasium.wrappers.RenderCollection` collects `env.render()` on every `step()`, and its
+own `render()` hands the list back and clears it. `RecordVideo` is deliberately not used:
+it writes its own uncaptioned file per gym reset, which would leave the harness's
+`episode.mp4` still two frames long and add a second file beside it.
 
-One `take_action` is a whole controller execution, so a `core.Renderer` -- which emits
-one frame per *transition* -- gives a four-frame clip of a domain whose entire point is a
-throw. The frames exist; nothing captured them.
-
-Capturing them is `gymnasium.wrappers.RenderCollection`'s exact job: it collects
-`env.render()` on every `step()` and `reset()`, and its own `render()` hands the list
-back and clears it. KINDER wraps its envs with the sibling `RecordVideo` throughout its
-own tests, so wrapping is upstream's idiom too. `RecordVideo` itself is deliberately
-*not* used here -- it writes its own `rl-video-episode-N.mp4` per gym reset, with no
-caption, which would leave the harness's own `episode.mp4` still four frames long and add
-a second, differently-named file beside it. `RenderCollection` instead feeds the frames
-into the list `Problem.run_task_episode` already returns, so every existing consumer
-(`--output-dir`, `--num-render-checkpoints`, `--record-full-loop`) gets the smooth clip
-with no new file and no new codepath.
-
-**Collected frames are not aliases.** `RenderCollection` stores whatever `render()`
-returned, without copying, so a simulator that handed back a view into one reused buffer
-would silently yield a clip of N identical frames. Measured on this scene: two successive
-`env.render()` calls share no memory (`np.shares_memory` is `False`) and collected frames
-are distinct arrays, so nothing needs copying on the way out. `test_kinder_fidelity.py`
-asserts the collected frames genuinely differ rather than trusting that measurement.
-
-Recording is **off by default**: it renders every physics tick, which is tens to hundreds
-of MuJoCo renders per skill, and a training run that wants no video must not pay for it.
-`Tossing3DProblem.run_task_episode` turns it on for exactly the episodes it was given a
-renderer for.
+Collected frames were measured not to alias one reused MuJoCo buffer
+(`np.shares_memory` is `False` between successive renders), so nothing is copied on the
+way out. Recording is **off by default**: it renders every physics tick, and a training
+run that wants no video must not pay for it.
 """
 
-import os
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Mapping, Sequence
 from types import ModuleType
 from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-# A DISPLAY only has to *exist* -- nothing is ever drawn to it. See the module docstring.
-FALLBACK_DISPLAY = ":0"
+from hitl_pmp.adapters.kinder.abstraction import KinderAbstraction
+from hitl_pmp.adapters.kinder.bootstrap import KinderBootstrap
+from hitl_pmp.adapters.kinder.controllers import KinderControllers
+from hitl_pmp.adapters.kinder.state_translation import KinderStateTranslator
+from hitl_pmp.adapters.kinder.types import ControllerRun
 
 # `task_view` is the camera this scene's own task config defines, and the only one that
-# shows the throw. `agentview_1` (what upstream's demo script sets, but only
-# `if "TidyBot" in env_id`, which `kinder/Tossing3D-o1-v0` is not) is absent from this
-# scene's `camera_names` entirely, and `set_render_camera` does not validate the name --
-# so choosing it silently renders a near-static shot of a wall.
+# shows the throw. `set_render_camera` does not validate the name, so choosing a camera
+# this scene does not define silently renders a near-static shot of a wall.
 DEFAULT_CAMERA = "task_view"
 
-# Upstream's own `test_pick_ground_toss` value; the *only* seed any number in this
-# package's docs was measured at.
+# Upstream's own `test_pick_ground_toss` value; the seed most numbers in this package's
+# docs were measured at.
 DEFAULT_SCENE_SEED = 125
-
-
-class KinderObservation(BaseModel):
-    """One KINDER `ObjectCentricState`, flattened to plain floats.
-
-    This is the boundary type: `KinderBackend` produces it, `Tossing3DEnvironment`
-    consumes it, and nothing about it requires KINDER to construct -- which is what lets
-    a test build one by hand and exercise the translation offline.
-
-    `goal_region` is the **live** `Region.bbox` of `blocks_goal_region`, read back from
-    the compiled model rather than re-derived from the task JSON. The JSON range is
-    inflated by `ground_placement_threshold` (0.05 m per side, z clamped at 0) before it
-    becomes a region, so the literal in the file is not the box that scores. Reading it
-    back is what lets `predicates.InBinClassifier` be a pure function of `State` and
-    still agree with `_check_goals()` exactly. It reaches that classifier carried on the
-    **bin** object, under this domain's assumption that the bin's interior is this region
-    -- see `predicates.py`'s module docstring.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    features: dict[str, dict[str, float]]
-    goal_region: tuple[float, float, float, float, float, float]
-    solved: bool
-
-    def get(self, *, name: str, feature: str) -> float:
-        """One named feature of one named KINDER object, or a loud error.
-
-        Loud because the alternative is a silent zero: every feature this package reads
-        is named in `Tossing3DEnvironment`'s own `Type` declarations, so a miss means
-        upstream renamed something and the translation is now wrong, not merely empty.
-        """
-        if name not in self.features:
-            raise KeyError(f"no object named {name!r} in this observation: {sorted(self.features)}")
-        obj = self.features[name]
-        if feature not in obj:
-            raise KeyError(f"object {name!r} has no feature {feature!r}: {sorted(obj)}")
-        return obj[feature]
-
-
-class ControllerRun(BaseModel):
-    """What one upstream controller execution did.
-
-    `steps` is how many `env.step` calls it took to terminate -- the quantity the
-    validation record reports as `71 / 23 / 16 / 18` for the oracle's four controller
-    executions, so it is returned rather than discarded.
-
-    `error` is non-`None` when the controller raised. That is not exceptional: KINDER's
-    motion planners `assert plan is not None`, so an unreachable grasp or an
-    unplannable arm trajectory surfaces as an `AssertionError` from `reset()`. A
-    `core.Environment.take_action` must be total over its action space, so the caller
-    turns this into a no-op transition rather than propagating -- see
-    `Tossing3DEnvironment.take_action`.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    steps: int
-    terminated: bool
-    error: str | None = None
 
 
 class KinderApi(BaseModel):
     """Handles to everything this package needs from KINDER, imported in one place.
 
     Held as one object so the import happens exactly once per process and so the EGL
-    environment is guaranteed to have been configured first (see the module docstring).
+    environment is guaranteed to have been configured first (see
+    `adapters.kinder.bootstrap`).
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     kinder: ModuleType
-    robot_type: Any
-    tossing_controllers: Any
-    shelf_controllers: Any
+    state_abstractor_cls: Any
+    # The five `relational_structs.Predicate`s upstream's abstractor may report, in the
+    # order this domain declares them.
+    predicates: tuple[Any, ...]
+    create_lifted_controllers: Any
+    pybullet_sim_cls: Any
     # `gymnasium.wrappers.RenderCollection`, the class itself. Gymnasium is KINDER's own
     # dependency rather than this repo's, so it is imported here with everything else
     # instead of at module scope, which would break the offline import.
@@ -181,53 +105,41 @@ class KinderApi(BaseModel):
 
 
 class KinderBackend(BaseModel):
-    """A live `kinder/Tossing3D-<variant>-v0` and the translation to and from it.
+    """A live `kinder/Tossing3D-<variant>-v0`, and the three bridge objects over it.
 
     Construction imports nothing: `KinderBackend()` is pure pydantic, so
-    `Tossing3DEnvironment` can hold one as an ordinary field and the package stays
+    `Tossing3DEnvironment` can hold one as an ordinary field and this module stays
     importable without MuJoCo. KINDER is imported on the first `reset()`.
 
     One `KinderBackend` owns at most one live gym env at a time. `reset(seed=...)`
     rebuilds the scene from that seed, which is the *only* way this domain can restore a
-    state: a flat `core.State` of positions cannot round-trip MuJoCo's qpos/qvel, so a
+    state: a flat `core.State` of poses cannot round-trip MuJoCo's contact state, so a
     mid-episode state is not restorable and `Tossing3DEnvironment.set_state` refuses one.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # Names as they appear in `Tossing3D-o1.json`'s `objects`/`initial_state`. Fixed by
-    # upstream's scene, not configuration, so ClassVars rather than fields.
+    # Names as they appear in `Tossing3D-o1.json`'s `objects` block. Fixed by upstream's
+    # scene, not configuration, so ClassVars rather than fields.
     cube_name: ClassVar[str] = "cube_0"
     bin_name: ClassVar[str] = "bin_0"
     barrier_name: ClassVar[str] = "cuboid_barrier"
-    goal_region_name: ClassVar[str] = "blocks_goal_region"
 
-    # Upstream's own arm configurations, in degrees, copied verbatim from
-    # `test_pick_ground_toss`. The windup is the posture upstream's toss is demonstrated
-    # from; the toss target is the swing itself. Neither is interpolated or retuned here
-    # -- this package invents no controller parameter (see `skills.py`).
-    windup_conf_deg: ClassVar[tuple[int, ...]] = (0, 50, 180, -110, 0, -100, 90)
-    toss_conf_deg: ClassVar[tuple[int, ...]] = (0, 20, 180, -35, 0, 25, 90)
-
-    # Upstream's own per-controller step budgets, again from `test_pick_ground_toss`.
+    # Upstream's own per-controller step budgets. `pick_cube` drives a base motion and
+    # four arm phases; the composed move-and-toss drives a base motion, a windup and a
+    # swing, so both are generous.
     pick_step_limit: ClassVar[int] = 400
-    move_step_limit: ClassVar[int] = 200
-    arm_step_limit: ClassVar[int] = 200
+    toss_step_limit: ClassVar[int] = 400
 
     env_id: str = "kinder/Tossing3D-o1-v0"
     scene_bg: bool = True
     camera: str = DEFAULT_CAMERA
     render_mode: str = "rgb_array"
-    # Unlocks `ObjectCentricTidyBot3DEnv.set_state`, which otherwise raises
-    # "State access is not allowed". A KINDER `ObjectCentricState` carries velocities as
-    # well as poses (`MujocoMovableObjectType` has `vx..wz`, the robot has `vel_*`), so it
-    # really is a full state -- upstream's own `tidybot3d_shelf3D.py` uses exactly this to
-    # build a transition function. That is what `snapshot`/`restore` below rest on.
-    # Upstream's own env models pass `allow_state_access=True` too.
+    # Unlocks `ObjectCentricTidyBot3DEnv.set_state`, which otherwise raises "State access
+    # is not allowed". Upstream's own env models pass this too.
     allow_state_access: bool = True
-    # Collect one frame per physics tick while a controller runs. Off by default: see the
-    # module docstring. `Tossing3DProblem.run_task_episode` flips it per episode, so a
-    # rendered demo episode records and a training episode does not.
+    # Collect one frame per physics tick while a controller runs. Off by default; see the
+    # module docstring.
     record_substeps: bool = False
 
     _api: KinderApi | None = PrivateAttr(default=None)
@@ -239,83 +151,85 @@ class KinderBackend(BaseModel):
     _env: Any = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
     _robot_name: str = PrivateAttr(default="")
-
-    @staticmethod
-    def configure_headless_rendering(
-        *, environ: MutableMapping[str, str] | None = None
-    ) -> dict[str, str]:
-        """Point MuJoCo at EGL and make sure a `DISPLAY` exists, before KINDER is imported.
-
-        `DISPLAY` is `setdefault`, so a real display wins; `MUJOCO_GL`/`PYOPENGL_PLATFORM`
-        are forced, because the one inherited value known to break the import is exactly
-        the one `register_all_environments()` writes.
-        """
-        target = os.environ if environ is None else environ
-        target.setdefault("DISPLAY", FALLBACK_DISPLAY)
-        target["MUJOCO_GL"] = "egl"
-        target["PYOPENGL_PLATFORM"] = "egl"
-        return {key: target[key] for key in ("DISPLAY", "MUJOCO_GL", "PYOPENGL_PLATFORM")}
+    _translator: KinderStateTranslator | None = PrivateAttr(default=None)
+    _abstraction: KinderAbstraction | None = PrivateAttr(default=None)
+    _controllers: KinderControllers | None = PrivateAttr(default=None)
 
     def api(self) -> KinderApi:
-        """Import KINDER once, in the right order, and register its environments.
-
-        Registration happens here rather than in a caller because
-        `register_all_environments()` is itself the call that rewrites `MUJOCO_GL`, so
-        the environment is re-asserted on the very next line.
-        """
+        """Import KINDER once, in the right order, and register its environments."""
         if self._api is not None:
             return self._api
-        self.configure_headless_rendering()
+        kinder = KinderBootstrap.register_environments()
 
-        import kinder
-        import kinder.envs.dynamic3d.envs  # noqa: F401  (the MODULE, not the package)
-        from gymnasium.wrappers import RenderCollection
-        from kinder.envs.dynamic3d.object_types import MujocoTidyBotRobotObjectType
-        from kinder_models.dynamic3d.shelf.parameterized_skills import (
-            create_lifted_controllers as shelf_create_lifted_controllers,
-        )
         from kinder_models.dynamic3d.tossing.parameterized_skills import (
-            create_lifted_controllers as tossing_create_lifted_controllers,
+            PyBulletSim,
+            create_lifted_controllers,
+        )
+        from kinder_models.dynamic3d.tossing.state_abstractions import (
+            HandEmpty,
+            Holding,
+            MovableInGoalRegion,
+            MovableIsDownX,
+            OnGround,
+            Tossing3DStateAbstractor,
         )
 
-        kinder.register_all_environments()
-        self.configure_headless_rendering()
+        from gymnasium.wrappers import RenderCollection  # isort: skip
 
         self._api = KinderApi(
             kinder=kinder,
-            robot_type=MujocoTidyBotRobotObjectType,
-            tossing_controllers=tossing_create_lifted_controllers,
-            shelf_controllers=shelf_create_lifted_controllers,
+            state_abstractor_cls=Tossing3DStateAbstractor,
+            predicates=(HandEmpty, OnGround, Holding, MovableInGoalRegion, MovableIsDownX),
+            create_lifted_controllers=create_lifted_controllers,
+            pybullet_sim_cls=PyBulletSim,
             render_collection=RenderCollection,
         )
         return self._api
 
     @property
     def robot_name(self) -> str:
-        """The robot's name in the live scene, resolved by *type* at reset.
+        """The robot's name in the live scene, resolved at reset.
 
-        By type rather than by literal because the robot is the one object whose name is
-        a property of the robot config (`sim.robot_name`) rather than of the task JSON's
-        `objects` block, and it carries a different feature schema from everything else.
+        A property of the robot config (`sim.robot_name`) rather than of the task JSON's
+        `objects` block, which is why it is read rather than written down.
         """
         if not self._robot_name:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no scene.")
         return self._robot_name
 
-    def reset(self, *, seed: int) -> KinderObservation:
-        """Build (or rebuild) the scene at `seed` and return the initial observation.
+    def translator(self) -> KinderStateTranslator:
+        if self._translator is None:
+            raise RuntimeError("KinderBackend.reset() has not run yet; there is no scene.")
+        return self._translator
 
-        The gym env is remade whenever there is not one already; `env.reset(seed=...)`
-        alone is enough afterwards, and is what makes a differently-seeded initial state
+    def abstraction(self) -> KinderAbstraction:
+        if self._abstraction is None:
+            raise RuntimeError("KinderBackend.reset() has not run yet; there is no scene.")
+        return self._abstraction
+
+    def controllers(self) -> KinderControllers:
+        if self._controllers is None:
+            raise RuntimeError("KinderBackend.reset() has not run yet; there is no scene.")
+        return self._controllers
+
+    def reset(self, *, seed: int) -> Any:
+        """Build (or rebuild) the scene at `seed` and return the resulting KINDER state.
+
+        The gym env is remade only when there is not one already; `env.reset(seed=...)`
+        alone is enough afterwards, which is what makes a differently-seeded initial state
         cheap relative to a fresh `make`.
+
+        **`abstraction().invalidate()` on every reset, unconditionally.** The abstractor
+        reads the goal region off the live simulator rather than off the state, so every
+        cached answer is about a scene that no longer exists. Over-invalidating costs one
+        abstractor call; under-invalidating is a wrong answer that never expires.
         """
         api = self.api()
         if self._raw_env is None:
             # No `task_config_path` override: this domain runs whatever scene the
-            # installed KINDER registers for `env_id`. See
-            # `Tossing3DEnvironment.backend` for why the choice was retired, and
-            # `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` for
-            # what stops a pin bump changing that scene silently.
+            # installed KINDER registers for `env_id`. See `Tossing3DEnvironment.backend`
+            # for why the choice was retired, and `test_kinder_fidelity.py`'s goal-box
+            # tests for what stops a pin bump changing that scene silently.
             self._raw_env = api.kinder.make(
                 self.env_id,
                 render_mode=self.render_mode,
@@ -326,14 +240,81 @@ class KinderBackend(BaseModel):
             available = list(getattr(object_centric, "camera_names", []))
             if available and self.camera not in available:
                 raise ValueError(f"camera {self.camera!r} is not in this scene: {available}")
-            # Before any wrapper goes on, as upstream's own `test_pick_ground_toss` does:
-            # a recording made through the wrong camera is a silent shot of a wall.
+            # Before any wrapper goes on, as upstream's own tests do: a recording made
+            # through the wrong camera is a silent shot of a wall.
             object_centric.set_render_camera(self.camera)
+            self._build_bridge()
         self._sync_recording_wrapper()
         observation, _ = self._env.reset(seed=seed)
         self._state = self._env.observation_space.devectorize(observation)
-        self._robot_name = next(iter(self._state.get_objects(self.api().robot_type))).name
-        return self.observe()
+        self._robot_name = self._object_centric().robot_name
+        self.abstraction().invalidate()
+        return self._state
+
+    def _build_bridge(self) -> None:
+        """Construct the translator, abstraction and controllers for the live scene.
+
+        Called once per gym environment, right after `make` and **before** any seeded
+        reset -- `Tossing3DStateAbstractor.__init__` resets the simulator to build its own
+        `PyBulletSim`, so doing this later would throw away the seed.
+        """
+        api = self.api()
+        object_centric = self._object_centric()
+        abstractor = api.state_abstractor_cls(object_centric)
+        initial_state, _ = object_centric.reset()
+        translator = KinderStateTranslator.from_kinder_state(kinder_state=initial_state)
+        pybullet_sim = api.pybullet_sim_cls(initial_state, rendering=False)
+        self._translator = translator
+        self._abstraction = KinderAbstraction.build(
+            translator=translator,
+            state_abstractor=abstractor.state_abstractor,
+            kinder_predicates=api.predicates,
+        )
+        self._controllers = KinderControllers(
+            translator=translator,
+            lifted_controllers=api.create_lifted_controllers(
+                object_centric.action_space,
+                object_centric.initial_constant_state,
+                pybullet_sim=pybullet_sim,
+            ),
+        )
+
+    def run_skill(
+        self,
+        *,
+        key: str,
+        object_names: Sequence[str],
+        params: np.ndarray,
+        state: Any,
+        limit: int,
+    ) -> ControllerRun:
+        """Drive one upstream controller to termination against the live simulator.
+
+        The loop itself is `KinderControllers.run`'s -- generic, and upstream's own body.
+        What this supplies is the simulator step, which is the part that is not generic.
+        """
+
+        # Positional because `KinderControllers.run` calls it that way -- it stands in for
+        # `gym.Env.step`, whose signature is not ours.
+        def step(action: np.ndarray) -> Any:  # noqa: PLR0917
+            observation, _, _, _, _ = self._env.step(action)
+            self._state = self._env.observation_space.devectorize(observation)
+            return self._state
+
+        return self.controllers().run(
+            key=key,
+            object_names=object_names,
+            params=params,
+            state=state,
+            step=step,
+            limit=limit,
+        )
+
+    def kinder_state(self) -> Any:
+        """The live KINDER state, as the simulator last reported it."""
+        if self._state is None:
+            raise RuntimeError("KinderBackend.reset() has not run yet; there is no state.")
+        return self._state
 
     def close(self) -> None:
         """Release the gym env, if one was ever built. Idempotent."""
@@ -342,14 +323,15 @@ class KinderBackend(BaseModel):
             self._raw_env = None
             self._env = None
             self._state = None
+            self._translator = None
+            self._abstraction = None
+            self._controllers = None
 
     def set_substep_recording(self, *, enabled: bool) -> None:
         """Turn per-physics-tick frame collection on or off, effective immediately.
 
         Imports nothing on its own: a backend with no scene yet just remembers the flag,
-        and the wrapper goes on at the next `reset()`. That matters because this is
-        called from `run_task_episode`, which a test may reach without ever intending to
-        start MuJoCo.
+        and the wrapper goes on at the next `reset()`.
         """
         self.record_substeps = enabled
         self._sync_recording_wrapper()
@@ -360,10 +342,6 @@ class KinderBackend(BaseModel):
         This is `RenderCollection.render()` -- the wrapper's own drain -- not a buffer
         kept here. Empty whenever recording is off or no scene exists, which are both
         ordinary states rather than errors: `run_task_episode` drains unconditionally.
-
-        No copy is taken. See the module docstring: collected frames were measured to be
-        distinct arrays rather than aliases of one reused MuJoCo buffer, and copying a
-        physics-rate episode would double an already-large peak for nothing.
         """
         if not self.record_substeps or self._env is None or self._env is self._raw_env:
             return []
@@ -386,107 +364,43 @@ class KinderBackend(BaseModel):
             self._env = self._raw_env
 
     def snapshot(self) -> Any:
-        """An opaque handle to the live simulator state, restorable by `restore`.
+        """An opaque handle to the live simulator state, restorable by `restore`."""
+        return self.kinder_state().copy()
 
-        This is a *KINDER* `ObjectCentricState`, copied -- not one of this package's flat
-        `core.State`s, which are a lossy projection (four of the robot's twenty-two
-        features, six of the cube's sixteen). A caller that wants to rewind must hold one
-        of these, which is why the handle is deliberately opaque rather than something
-        that looks interchangeable with a `core.State`.
-        """
-        return self._require_state().copy()
-
-    def restore(self, *, snapshot: Any) -> KinderObservation:
-        """Put the simulator back to a `snapshot`, exactly, and re-observe.
-
-        Faithful in a way `Tossing3DEnvironment.set_state` cannot be: this restores
-        velocities and the full arm configuration too, because a KINDER
-        `ObjectCentricState` carries them. Requires `allow_state_access`.
+    def restore(self, *, snapshot: Any) -> Any:
+        """Put the simulator back to a `snapshot`, exactly, and return it.
 
         **Faithful to float32, not bit-exact.** An `ObjectCentricState` is the observation
-        vector, and `ObjectCentricBoxSpace` is float32, while MuJoCo integrates in
-        float64. So a round-trip reintroduces ~1.2e-7 of relative error, which 200
-        substeps per env step amplify: measured over one `move_to_target`, two runs from
-        the same snapshot end up ~1e-7 apart on x and ~2.7e-4 on the quaternion. That is
-        four orders of magnitude below any state change a symbolic predicate here cares
-        about, but it does mean a rewound rollout is *not* byte-reproducible, and nothing
-        should be built on the assumption that it is.
+        vector and `ObjectCentricBoxSpace` is float32, while MuJoCo integrates in float64,
+        so a round-trip reintroduces ~1.2e-7 of relative error that 200 substeps per env
+        step amplify. Four orders of magnitude below any state change a symbolic predicate
+        cares about, but a rewound rollout is *not* byte-reproducible and nothing should
+        be built on the assumption that it is.
         """
         self._object_centric().set_state(snapshot)
         self._state = snapshot.copy()
-        return self.observe()
-
-    def observe(self) -> KinderObservation:
-        """Flatten the live KINDER state (plus the live goal box and verdict) to floats.
-
-        Feature names come from `ObjectCentricState.type_features`, the state's own
-        type -> feature-name mapping, rather than from anything on the `Type` itself:
-        KINDER's `Type` is `relational_structs.Type`, which carries only a name and a
-        parent, and the schema lives beside it in `MujocoObjectTypeFeatures`. Reading it
-        off the state means the names are whatever this particular state actually has.
-        """
-        state = self._require_state()
-        features = {
-            obj.name: {name: float(state.get(obj, name)) for name in state.type_features[obj.type]}
-            for obj in state
-        }
-        return KinderObservation(
-            features=features,
-            goal_region=self.goal_region_bbox(),
-            solved=self.check_goals(),
-        )
+        # A restore moves the simulator without changing any `core.State` this process
+        # already holds, which is exactly the case the cache's generation key exists for.
+        self.abstraction().invalidate()
+        return self._state
 
     def check_goals(self) -> bool:
         """Upstream's own verdict -- `ObjectCentricTidyBot3DEnv._check_goals()`.
 
-        This is the success criterion for this domain. `predicates.IN_BIN` is
-        written to agree with it and is differentially tested against it; it is never a
-        second, independent definition of success.
+        Kept as the independent reference the symbolic layer is checked against. It is no
+        longer reimplemented anywhere: `MovableInGoalRegion` comes from upstream's own
+        abstractor, so the fidelity tests compare two upstream computations of the same
+        thing rather than upstream's against a port of it.
         """
         return bool(self._object_centric()._check_goals())  # noqa: SLF001
-
-    def goal_region_bbox(self) -> tuple[float, float, float, float, float, float]:
-        """The live world-frame box `_check_goals()` scores containment in.
-
-        `Region.bbox` only reads the site's simulated position when the region carries an
-        `env`; ground regions are constructed with `env=None`, so it otherwise falls back
-        to an XML/parent-frame value. Upstream's own `check_in_region` handles that by
-        swapping `env` in and back out, and so does this -- leaving a sim reference behind
-        on a region upstream deliberately left bare would be a side effect of taking a
-        measurement.
-        """
-        object_centric = self._object_centric()
-        ground = object_centric._ground_fixture  # noqa: SLF001
-        regions = ground.region_objects
-        found = regions.get(self.goal_region_name, [])
-        if len(found) != 1:
-            raise ValueError(
-                f"expected exactly one {self.goal_region_name!r} region, found "
-                f"{len(found)} (regions: {sorted(regions)})"
-            )
-        region = found[0]
-        original = region.env
-        region.env = object_centric._robot_env  # noqa: SLF001
-        try:
-            bbox = [float(value) for value in region.bbox]
-        finally:
-            region.env = original
-        if len(bbox) != 6:
-            raise ValueError(f"{self.goal_region_name!r} is not a single box: bbox={bbox}")
-        x_min, y_min, z_min, x_max, y_max, z_max = bbox
-        return (x_min, y_min, z_min, x_max, y_max, z_max)
 
     def render(self) -> np.ndarray:
         """One RGB frame from `task_view`, copied out of MuJoCo's buffer.
 
-        Rendered from the *unwrapped* env, so a single frame is still a single frame
-        while a `RenderCollection` is in place -- that wrapper's own `render()` returns
-        the collected list and drains it, which would both break this signature and eat
-        the episode's frames.
-
-        The copy is belt-and-braces. Two successive `render()` calls on this scene were
-        measured to share no memory, so this array is already the caller's own; the copy
-        stays because `np.asarray` would not add one if that ever changed.
+        Rendered from the *unwrapped* env, so a single frame is still a single frame while
+        a `RenderCollection` is in place -- that wrapper's own `render()` returns the
+        collected list and drains it, which would both break this signature and eat the
+        episode's frames.
         """
         if self._raw_env is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is nothing to render.")
@@ -505,155 +419,7 @@ class KinderBackend(BaseModel):
             raise ValueError(f"environment metadata has no render_fps: {dict(metadata)}")
         return int(metadata["render_fps"])
 
-    def run_controller(
-        self,
-        *,
-        module: str,
-        key: str,
-        object_names: Sequence[str],
-        params: np.ndarray | None,
-        limit: int,
-        disable_collision_objects: Sequence[str] | None = None,
-        release_speed: float | None = None,
-        gripper_release_ms: int | None = None,
-    ) -> ControllerRun:
-        """Drive one upstream controller to termination, stepping the live simulator.
-
-        The loop body is upstream's own, from `test_pick_ground_toss`: `controller.step()`
-        into `env.step`, devectorize, `controller.observe`, break on `terminated()`.
-
-        A controller that does not terminate within `limit` is reported as
-        `terminated=False` rather than raised, and a controller that *raises* (KINDER's
-        motion planners `assert plan is not None`) is reported through `error`. Both are
-        ordinary outcomes of a skill whose continuous parameters do not work out, and the
-        caller has to be able to keep going -- `take_action` must be total.
-
-        `disable_collision_objects` (only on `MoveToTargetGroundController.reset`),
-        `release_speed` and `gripper_release_ms` (only on `TossController.reset`) are
-        per-controller keywords, so each is forwarded only when supplied -- passing one to a
-        controller that does not declare it is a `TypeError`.
-        """
-        api = self.api()
-        state = self._require_state()
-        factory = {
-            "tossing": api.tossing_controllers,
-            "shelf": api.shelf_controllers,
-        }
-        if module not in factory:
-            raise ValueError(f"unknown controller module {module!r}; known: {sorted(factory)}")
-        lifted = factory[module](self._env.action_space)
-        if key not in lifted:
-            raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
-        objects = tuple(state.get_object_from_name(name) for name in object_names)
-        controller = lifted[key].ground(objects)
-
-        reset_kwargs: dict[str, Any] = {}
-        if disable_collision_objects is not None:
-            reset_kwargs["disable_collision_objects"] = list(disable_collision_objects)
-        if release_speed is not None:
-            reset_kwargs["release_speed"] = release_speed
-        if gripper_release_ms is not None:
-            reset_kwargs["gripper_release_ms"] = gripper_release_ms
-
-        try:
-            controller.reset(state, params, **reset_kwargs)
-        except Exception as exc:  # noqa: BLE001  (any planner failure is a failed skill)
-            return ControllerRun(steps=0, terminated=False, error=f"{type(exc).__name__}: {exc}")
-
-        for step in range(limit):
-            try:
-                action = controller.step()
-                observation, _, _, _, _ = self._env.step(action)
-            except Exception as exc:  # noqa: BLE001  (same reasoning as above)
-                return ControllerRun(
-                    steps=step, terminated=False, error=f"{type(exc).__name__}: {exc}"
-                )
-            self._state = self._env.observation_space.devectorize(observation)
-            controller.observe(self._state)
-            if controller.terminated():
-                return ControllerRun(steps=step + 1, terminated=True)
-        return ControllerRun(steps=limit, terminated=False)
-
-    def run_pick(self, *, distance: float, rotation: float) -> ControllerRun:
-        """`pick_shelf` -- upstream's grasp, the same one `tidybot3d_shelf3D.py` models.
-
-        `disable_collision_objects` is deliberately absent: it exists only on tossing's
-        `MoveToTargetGroundController.reset`, and passing it here is a `TypeError`.
-        """
-        return self.run_controller(
-            module="shelf",
-            key="pick_shelf",
-            object_names=(self.robot_name, self.cube_name),
-            params=np.array([distance, rotation]),
-            limit=self.pick_step_limit,
-        )
-
-    def run_move_to_throw_pose(self, *, standoff: float, rotation: float) -> ControllerRun:
-        """`move_to_target` onto the bin, at `standoff` metres.
-
-        `disable_collision_objects=["cube_0"]` is upstream's own argument here: the robot
-        is *holding* the cube at this point, so planning the base motion against it as an
-        obstacle makes every plan fail.
-        """
-        return self.run_controller(
-            module="tossing",
-            key="move_to_target",
-            object_names=(self.robot_name, self.bin_name),
-            params=np.array([standoff, rotation]),
-            limit=self.move_step_limit,
-            disable_collision_objects=[self.cube_name],
-        )
-
-    def run_toss(
-        self, *, release_speed_deg_s: float, gripper_release_ms: float
-    ) -> tuple[ControllerRun, ControllerRun]:
-        """The windup and the swing, back to back -- upstream's `move_arm_to_conf` then `toss`.
-
-        Two controllers, one skill. Upstream never demonstrates `toss` from anywhere but
-        this windup, and `move_arm_to_conf` takes a raw 7-DoF joint vector that
-        `sample_parameters` explicitly refuses to sample (`NotImplementedError`), so a
-        windup is a posture the swing requires, not a skill anything could usefully
-        select on its own. The swing is skipped if the windup did not land, since tossing
-        from an unknown arm pose is not the thing that was measured.
-
-        **The one place in the domain where degrees become radians**: the dial is carried
-        in joint-path deg/s (`predicates.TOSS_SPEED_BOUNDS`) and `TossController.reset`
-        takes rad/s. A second or missing conversion is a silent 57x error either way.
-
-        Both parameters reach the **swing only** -- `move_arm_to_conf`'s `reset` declares
-        neither, so forwarding one there is a `TypeError`.
-
-        `gripper_release_ms` is milliseconds on both sides but is rounded to an `int` here:
-        upstream `divmod`s `int(gripper_release_ms)`, which truncates, so `722.9` would
-        otherwise schedule 722.
-        """
-        windup = self.run_controller(
-            module="tossing",
-            key="move_arm_to_conf",
-            object_names=(self.robot_name,),
-            params=np.deg2rad(self.windup_conf_deg),
-            limit=self.arm_step_limit,
-        )
-        if not windup.terminated:
-            skipped = ControllerRun(steps=0, terminated=False, error="windup did not terminate")
-            return windup, skipped
-        swing = self.run_controller(
-            module="tossing",
-            key="toss",
-            object_names=(self.robot_name,),
-            params=np.deg2rad(self.toss_conf_deg),
-            limit=self.arm_step_limit,
-            release_speed=float(np.deg2rad(release_speed_deg_s)),
-            gripper_release_ms=int(round(gripper_release_ms)),
-        )
-        return windup, swing
-
     def _object_centric(self) -> Any:
         if self._raw_env is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no scene.")
         return self._raw_env.unwrapped._object_centric_env  # noqa: SLF001
-
-    def _require_state(self) -> Any:
-        if self._state is None:
-            raise RuntimeError("KinderBackend.reset() has not run yet; there is no state.")
-        return self._state

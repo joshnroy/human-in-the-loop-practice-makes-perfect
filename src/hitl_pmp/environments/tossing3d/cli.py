@@ -3,8 +3,8 @@
     python -m hitl_pmp.cli --env tossing3d --method skill-oracle \\
         --num-test-tasks 5 --output-dir /tmp/tossing3d
 
-Run it under the KINDER venv, not `hitl-pmp` -- KINDER pulls MuJoCo, PyBullet and OpenCV
-and caps `requires-python` at `<3.13`, so it lives in its own virtualenv (see CLAUDE.md).
+KINDER installs into `hitl-pmp` itself, as the optional `tossing3d` extra -- the separate
+`kinder-venv` this docstring used to send readers to no longer exists (see CLAUDE.md).
 """
 
 import argparse
@@ -19,7 +19,7 @@ from hitl_pmp.method_runner import MethodRunner
 from .environment import Tossing3DEnvironment
 from .problem import Tossing3DProblem
 from .renderer import Tossing3DRenderer
-from .skill_oracle_policy import ORACLE_THROW_STANDOFF
+from .skill_oracle_policy import ORACLE_PARAMETER_SEED
 from .skill_provider import Tossing3DOracle, Tossing3DSkillProvider
 from .tasks import Tossing3DTasks
 
@@ -89,14 +89,17 @@ class Tossing3DCli:
             default=task_fields["test_env_seed_offset"].default,
             help="Offset added to --seed to derive the test scene-seed stream.",
         )
+        # There is deliberately no --oracle-throw-standoff flag any more. It named the
+        # standoff a separate MoveToThrowPose stopped at; the base move and the throw are
+        # one controller now, and the oracle draws all four continuous parameters from
+        # that controller's own sampler. What is left to choose is which draw it takes.
         parser.add_argument(
-            "--oracle-throw-standoff",
-            type=float,
-            default=ORACLE_THROW_STANDOFF,
-            help="How far from the bin the oracle stops before throwing, in metres. The "
-            "default is upstream's own test value and solves the shipped scene. Which "
-            "standoffs solve is a property of the scene's geometry, not a constant of "
-            "this domain, so it stays overridable.",
+            "--oracle-parameter-seed",
+            type=int,
+            default=ORACLE_PARAMETER_SEED,
+            help="Seed for the draw the oracle takes from the controllers' own "
+            "parameter samplers. Fixed rather than derived from --seed so the oracle "
+            "behaves identically across the runs it is a reference arm for.",
         )
         parser.set_defaults(scene_bg=True)
 
@@ -151,7 +154,7 @@ class Tossing3DCli:
             env=practice_problem.env,
             skill_provider=Tossing3DSkillProvider(env=practice_problem.env),
             oracle=Tossing3DOracle(
-                env=practice_problem.env, throw_standoff=args.oracle_throw_standoff
+                env=practice_problem.env, parameter_seed=args.oracle_parameter_seed
             ),
         )
         renderer: type[Renderer] | None = Tossing3DRenderer if args.output_dir is not None else None

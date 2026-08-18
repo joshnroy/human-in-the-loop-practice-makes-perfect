@@ -1,57 +1,41 @@
-"""Tossing3D's privileged solver: the three-skill sequence and its parameters.
+"""Tossing3D's privileged solver: the two-skill sequence and its parameters.
 
-The whole policy is a three-way branch on the symbolic state -- pick, walk to the throw
-pose, throw -- because the domain admits exactly one plan shape. What makes it an
-*oracle* rather than a fixed script is the continuous parameters, which are the part a
-learner would have to find -- all upstream's own published values except
-`ORACLE_GRIPPER_RELEASE_MS`, which is ours and measured:
+The whole policy is a two-way branch on the symbolic state -- pick, then move-and-throw --
+because the domain admits exactly one plan shape. It used to be a three-way branch; the
+middle arm is gone because upstream fuses the base move and the throw into one controller.
 
-- **`ORACLE_PICK_DISTANCE` / `ORACLE_PICK_ROTATION`** are the pair upstream's own
-  `PickShelfController.sample_parameters` draws from `np.random.default_rng(123)` -- the
-  rng that upstream's `test_pick_ground_toss` constructs to parameterize this exact
-  grasp. With one cube in the scene upstream's rejection loop has nothing to reject
-  against, so its first draw is accepted and the sampler reduces to two uniforms over
-  `MOVE_TO_TARGET_DISTANCE_BOUNDS` and `MOVE_TO_TARGET_ROT_BOUNDS`. They are written out
-  as literals here so the oracle is deterministic without importing KINDER, and
-  `test_oracle_pick_parameters_match_upstreams_own_sampler` pins them against the real
-  sampler whenever the simulator is installed.
-- **`ORACLE_THROW_STANDOFF = 1.35`** is upstream's own `target_distance` in the same
-  test, and is the standoff every measured number in `docs/kinder-environment-validation.md`
-  and `docs/tossing3d-integration-status.md` was taken at.
-- **`ORACLE_RELEASE_SPEED_DEG_S = 140`** is upstream's own shipped default, aliased from
-  `predicates.UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S`: what `toss_profile_limits()` returns
-  when passed nothing, and the speed every committed Tossing3D number was measured at --
-  including the `10/10` this oracle scores at standoff 1.35. Not a tuned value; moving it
-  would be a new measurement.
+## What makes it an oracle rather than a fixed script
 
-- **`ORACLE_GRIPPER_RELEASE_MS = 792`** is ours, not upstream's: the midpoint of the
-  `5/5` band PR #240 measured at `ORACLE_RELEASE_SPEED_DEG_S`, 763.2-821.1 ms, rounded
-  to whole ms by `KinderBackend.run_toss`. Upstream's 720 is below that band.
+The continuous parameters, which are the part a learner would have to find. **They are
+now upstream's own draws rather than this repo's constants.** The oracle asks the
+controller's own sampler, seeded deterministically, and takes the first draw.
 
-These are **one operating point measured together**, not independently valid constants.
-PR #221 measured the best standoffs over 60-83.34 deg/s at 1.050-1.075, below
-`THROW_STANDOFF_BOUNDS`'s floor. Moving any one alone changes the throw.
+That is a deliberate change of kind, and it is worth being explicit about what it costs
+and buys:
 
-**1.35 lands the cube at x = 1.9902, inside the bin and inside the goal box, and scores
-`True`.**
+- **It retires `ORACLE_THROW_STANDOFF = 1.35`, `ORACLE_RELEASE_SPEED_DEG_S = 140` and
+  `ORACLE_GRIPPER_RELEASE_MS = 792`**, together with the `--oracle-throw-standoff` flag
+  that drove the band-calibration sweeps. Those were "one operating point measured
+  together" for a *split* move-and-throw; with the two fused, the standoff and the two
+  toss dials are drawn as one four-vector by one sampler, and a hand-picked triple can no
+  longer be substituted into it piecewise.
+- **The sampler is the narrow one now.** `MoveToTossLocationAndTossController` documents
+  its own bounds as measured: `SPEED_BOUNDS` from 115 deg/s to the ceiling and
+  `RELEASE_MS_BOUNDS` of `(700, 840)`, narrowed from the originally-shipped
+  `(600, 840)` because "every scoring draw fell in speed_deg [117.5, 140.0] and release_ms
+  [710.4, 836.1]". So an arbitrary draw from it is a plausible throw, which is precisely
+  what the old wide hitl bounds were not.
+- **It is not a guaranteed solve.** The old oracle was a single measured point that scored
+  `10/10` at its own standoff. This one draws from a band, so its success rate is the
+  band's, not a point's. Nothing in this repo has measured that rate under the new pins,
+  and this docstring does not claim one -- `test_the_oracle_solves_the_shipped_scene`
+  exercises a fixed seed rather than asserting a rate.
 
-> **Staleness note, 2026-08-13.** 1.9902 is left as published and is correct for the throw
-> it measured, the release firing on the first control step past path fraction 0.46. Under
-> the scheduled 1 kHz release the same standoff, seed and speed rest at **x = 2.0318**:
-> +41.6 mm, still inside the bin and still `True`.
-> `tests/environments/tossing3d/test_kinder_fidelity.py` carries both values.
+## Every previously published Tossing3D number is stale
 
-> **Second staleness note, 2026-08-13.** Both numbers above were measured at 720 ms; at
-> 792 ms the same rollout rests at **x = 1.9926**, still in the bin and still `True`.
-
-That used to be a contrast: on the scene KINDER shipped before the upstream bin
-fix (`kindergarden` PR #126, now carried on this repo's `reference/kindergarden` pin) the
-bin sat 23 cm further out, the same standoff put the cube *in* it at x = 2.2197, and
-`_check_goals()` was `False` -- landing in the bin was a scored failure. There is one
-scene now and no way to select the pre-fix one, so 1.35 simply solves it; see
-`Tossing3DEnvironment.backend` for why the choice was retired rather than
-preserved. `Tossing3DCli` still exposes `--oracle-throw-standoff`, which is what the
-band-calibration tests drive off it.
+Every measured number in `docs/` was taken under the three-skill decomposition, the
+pre-bump goal region, and hitl's own sampling bounds. None of the three still holds. The
+affected entries carry staleness notes; nothing has been recomputed here.
 """
 
 import numpy as np
@@ -61,25 +45,13 @@ from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import Goal
 
 from .environment import Tossing3DEnvironment
-from .predicates import (
-    UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S,
-    HoldingClassifier,
-    RobotAtSuccessfulThrowPoseClassifier,
-)
+from .predicates import HOLDING, Tossing3DPredicates
 from .skills import Tossing3DSkills
 
-# Upstream's own draw; see the module docstring.
-ORACLE_PICK_DISTANCE = 0.5682351863248143
-ORACLE_PICK_ROTATION = -0.7008563047585579
-
-# Upstream's own `target_distance` for the throw.
-ORACLE_THROW_STANDOFF = 1.35
-
-# Upstream's own shipped release speed; see the module docstring.
-ORACLE_RELEASE_SPEED_DEG_S = UPSTREAM_DEFAULT_RELEASE_SPEED_DEG_S
-
-# Ours, not upstream's; see the module docstring.
-ORACLE_GRIPPER_RELEASE_MS = 792.0
+# The oracle's draws are reproducible, so a rollout is reproducible. Fixed rather than
+# threaded from `--seed` because the oracle is a reference arm: it should behave the same
+# whichever run is being compared against it.
+ORACLE_PARAMETER_SEED = 123
 
 
 class SkillOraclePolicy:
@@ -92,34 +64,30 @@ class SkillOraclePolicy:
         state: State,
         env: Tossing3DEnvironment,
         goal: Goal,
-        throw_standoff: float = ORACLE_THROW_STANDOFF,
+        parameter_seed: int = ORACLE_PARAMETER_SEED,
     ) -> LabeledAction:
         """The next privileged action toward the one goal this domain has.
 
         Goal-agnostic: unlike Tossing Room, whose state cannot distinguish a
-        throw-recycling task from a throw-trash one, there is exactly one goal family
-        here (`InBin(cube_0, bin_0)`) and the state says everything.
+        throw-recycling task from a throw-trash one, there is exactly one goal family here
+        and the state says everything.
+
+        The branch reads `Holding` off upstream's abstractor rather than a local
+        classifier, so the oracle and the operator model cannot disagree about which
+        skill's preconditions currently hold.
         """
         del goal
-        holding = HoldingClassifier.holds(state=state, robot=env.robot, cube=env.cube)
-        at_throw_pose = RobotAtSuccessfulThrowPoseClassifier.holds(
-            state=state, robot=env.robot, target=env.bin
+        abstraction = env.abstraction()
+        holding = Tossing3DPredicates.get(abstraction=abstraction, name=HOLDING).holds(
+            state, (env.robot, env.cube)
         )
 
         ground_skill: GroundSkill
-        params: np.ndarray
-        if holding and at_throw_pose:
+        if holding:
             ground_skill = GroundSkill(
-                skill=Tossing3DSkills.TOSS,
-                objects=(env.robot, env.cube, env.bin, env.barrier),
+                skill=Tossing3DSkills.move_to_toss_location_and_toss(abstraction=abstraction),
+                objects=(env.robot, env.cube, env.barrier),
             )
-            params = np.array([ORACLE_RELEASE_SPEED_DEG_S, ORACLE_GRIPPER_RELEASE_MS])
-        elif holding:
-            ground_skill = GroundSkill(
-                skill=Tossing3DSkills.MOVE_TO_THROW_POSE,
-                objects=(env.robot, env.cube, env.bin),
-            )
-            params = np.array([throw_standoff])
         else:
             # Covers both "hand empty, cube on the ground" and the unrecoverable state
             # after a missed toss. In the latter the grasp will fail to plan and
@@ -127,11 +95,16 @@ class SkillOraclePolicy:
             # because there is nothing this domain can do to recover and pretending
             # otherwise would hide the irreversibility the domain exists to exhibit.
             ground_skill = GroundSkill(
-                skill=Tossing3DSkills.PICK,
-                objects=(env.robot, env.cube, env.barrier, env.bin),
+                skill=Tossing3DSkills.pick_cube(abstraction=abstraction),
+                objects=(env.robot, env.cube, env.barrier),
             )
-            params = np.array([ORACLE_PICK_DISTANCE, ORACLE_PICK_ROTATION])
 
+        params = Tossing3DSkills.sample_params(
+            ground_skill=ground_skill,
+            rng=np.random.default_rng(parameter_seed),
+            controllers=env.controllers(),
+            state=state,
+        )
         action = Tossing3DSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )

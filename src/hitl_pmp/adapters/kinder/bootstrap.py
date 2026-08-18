@@ -25,6 +25,7 @@ not of Tossing3D: every Dynamic3D environment reaches the same trap.
 
 import os
 from collections.abc import MutableMapping
+from types import ModuleType
 
 # A DISPLAY only has to *exist*; nothing is ever drawn to it.
 FALLBACK_DISPLAY = ":0"
@@ -52,7 +53,7 @@ class KinderBootstrap:
         return {key: target[key] for key in RENDERING_VARIABLES}
 
     @staticmethod
-    def register_environments() -> object:
+    def register_environments() -> ModuleType:
         """Import KINDER in the order that works, register its environments, return it.
 
         The dynamic3d module import below is what makes registration succeed; see the

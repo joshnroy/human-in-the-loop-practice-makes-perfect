@@ -36,10 +36,13 @@ import numpy as np
 from gymnasium.spaces import Box
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from hitl_pmp.adapters.kinder.abstraction import KinderAbstraction
+from hitl_pmp.adapters.kinder.controllers import KinderControllers
+from hitl_pmp.adapters.kinder.types import ControllerRun
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
-from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
+from .kinder_backend import KinderBackend
 
 
 class Tossing3DSnapshot(BaseModel):
@@ -65,70 +68,124 @@ class Tossing3DEnvironment(Environment):
     half of this domain's tests without the optional `tossing3d` extra.
 
     `Type`s and singleton `Object`s stay `ClassVar`s: the scene's cast is fixed by
-    upstream's task JSON and does not vary between two instances. Feature schemas are
-    mostly a *subset* of KINDER's own -- every name below appears verbatim in
-    `kinder/envs/dynamic3d/object_types.py` with two exceptions, both ours and both
-    flagged where they are declared: `scene` (see `scene_type`), and the bin's six bbox
-    features, which are the scored region's box rather than anything KINDER calls a bin
-    feature (see `bin_type`).
+    upstream's task JSON and does not vary between two instances.
+
+    **The feature schemas are KINDER's, whole, rather than the subset this domain's own
+    arithmetic once read.** That is forced by consuming upstream's state abstractor:
+    `Tossing3DStateAbstractor._check_holding` pushes the state into a live PyBullet sim
+    and runs forward kinematics off the arm joints, so a `State` carrying four of the
+    robot's thirty-eight features cannot rebuild a state the abstractor will accept. They
+    are written out here rather than derived at import, so this class stays importable
+    without MuJoCo; `test_the_declared_type_schemas_are_kinders_own` compares them against
+    the installed KINDER's `type_features` and fails loudly on a rename.
+
+    **Three objects share one type, and that is upstream's model, not a simplification.**
+    `bin_0`, `cube_0` and `cuboid_barrier` are all `MujocoMovableObjectType` -- upstream's
+    own `state_abstractions` says so in a comment: *"Upstream types cube, bin and barrier
+    alike, so names state the type, not the subset."* The operators bind `?cube`,
+    `?barrier` and `?held` over that one type. hitl previously declared four separate
+    types, which was a narrower model than the controllers and predicates it wrapped.
+
+    The bin no longer carries a scored-region box. `MovableInGoalRegion` comes from
+    upstream's abstractor, which reads the region off the live simulator, so there is
+    nothing left for the `State` to smuggle.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    # KINDER's `MujocoTidyBotRobotObjectType` carries 22 features; these are the four the
-    # symbolic layer reads. `pos_gripper` is what upstream's own `HandEmpty`/`Holding`
-    # classifiers key on.
+    # `MujocoTidyBotRobotObjectType`, all 38 features, verbatim and in order.
     robot_type: ClassVar[Type] = Type(
-        name="tossing3d_robot",
-        feature_names=("pos_base_x", "pos_base_y", "pos_base_rot", "pos_gripper"),
+        name="mujoco_tidybot_robot",
+        feature_names=(
+            "pos_base_x",
+            "pos_base_y",
+            "pos_base_rot",
+            "pos_arm_joint1",
+            "pos_arm_joint2",
+            "pos_arm_joint3",
+            "pos_arm_joint4",
+            "pos_arm_joint5",
+            "pos_arm_joint6",
+            "pos_arm_joint7",
+            "pos_gripper",
+            "pos_gripper_joint1",
+            "pos_gripper_joint2",
+            "pos_gripper_joint3",
+            "pos_gripper_joint4",
+            "pos_gripper_joint5",
+            "pos_gripper_joint6",
+            "pos_gripper_joint7",
+            "pos_gripper_joint8",
+            "vel_base_x",
+            "vel_base_y",
+            "vel_base_rot",
+            "vel_arm_joint1",
+            "vel_arm_joint2",
+            "vel_arm_joint3",
+            "vel_arm_joint4",
+            "vel_arm_joint5",
+            "vel_arm_joint6",
+            "vel_arm_joint7",
+            "vel_gripper",
+            "vel_gripper_joint1",
+            "vel_gripper_joint2",
+            "vel_gripper_joint3",
+            "vel_gripper_joint4",
+            "vel_gripper_joint5",
+            "vel_gripper_joint6",
+            "vel_gripper_joint7",
+            "vel_gripper_joint8",
+        ),
     )
-    # A subset of `MujocoMovableObjectType`'s 16. `bb_z` is the cube's own bounding-box
-    # height, which upstream's `OnGround` uses to decide "resting on the floor" without a
-    # hardcoded cube size; `qx`/`qy` are its flatness check.
-    cube_type: ClassVar[Type] = Type(
-        name="tossing3d_cube", feature_names=("x", "y", "z", "qx", "qy", "bb_z")
+    # `MujocoMovableObjectType`, all 16. The cube, the bin and the barrier are all this.
+    movable_type: ClassVar[Type] = Type(
+        name="mujoco_movable_object",
+        feature_names=(
+            "x",
+            "y",
+            "z",
+            "qw",
+            "qx",
+            "qy",
+            "qz",
+            "vx",
+            "vy",
+            "vz",
+            "wx",
+            "wy",
+            "wz",
+            "bb_x",
+            "bb_y",
+            "bb_z",
+        ),
     )
-    # `bin_0` and `cuboid_barrier` are `MujocoObjectType`; x/y/z is what the symbolic layer
-    # needs of their poses.
-    #
-    # The bin carries six more, and they are **not** KINDER features: they are the live
-    # `Region.bbox` of `blocks_goal_region`, the box `_check_goals()` actually scores
-    # against. They ride on the bin because this domain assumes the bin's interior *is*
-    # that region -- see `predicates.py`'s module docstring for the assumption, the config
-    # that makes it true, and the config where it is false. Carrying the box in the `State`
-    # (rather than having a predicate reach for a class attribute on the Environment) is
-    # what keeps every classifier a pure function of `State` while still agreeing with
-    # `_check_goals()` exactly.
-    bin_type: ClassVar[Type] = Type(
-        name="tossing3d_bin",
-        feature_names=("x", "y", "z", "x_min", "y_min", "z_min", "x_max", "y_max", "z_max"),
-    )
-    barrier_type: ClassVar[Type] = Type(name="tossing3d_barrier", feature_names=("x", "y", "z"))
-    # Also ours, and also not a KINDER object: the two facts a flat State cannot otherwise
-    # carry. `seed` is what `set_state` rebuilds the scene from; `steps_taken` is what
-    # lets it refuse a state it cannot restore.
+    # Ours, and not a KINDER object: the two facts a flat State cannot otherwise carry.
+    # `seed` is what `set_state` rebuilds the scene from; `steps_taken` is what lets it
+    # refuse a state it cannot restore. `KinderStateTranslator` drops it on the way to
+    # KINDER, which is the documented behaviour for exactly this case.
     scene_type: ClassVar[Type] = Type(name="tossing3d_scene", feature_names=("seed", "steps_taken"))
 
     robot: ClassVar[Object] = Object(name="robot", type=robot_type)
-    cube: ClassVar[Object] = Object(name="cube_0", type=cube_type)
-    bin: ClassVar[Object] = Object(name="bin_0", type=bin_type)
-    barrier: ClassVar[Object] = Object(name="cuboid_barrier", type=barrier_type)
+    cube: ClassVar[Object] = Object(name="cube_0", type=movable_type)
+    bin: ClassVar[Object] = Object(name="bin_0", type=movable_type)
+    barrier: ClassVar[Object] = Object(name="cuboid_barrier", type=movable_type)
     scene: ClassVar[Object] = Object(name="scene", type=scene_type)
 
     # Skill ids, as they appear in slot 0 of an Action. Fixed so a recorded action vector
-    # keeps its meaning.
-    pick_id: ClassVar[int] = 0
-    move_to_throw_pose_id: ClassVar[int] = 1
-    toss_id: ClassVar[int] = 2
+    # keeps its meaning. Two now rather than three: the base move and the throw are one
+    # controller upstream, so no id names the pose between them.
+    pick_cube_id: ClassVar[int] = 0
+    move_to_toss_location_and_toss_id: ClassVar[int] = 1
     # Not a skill: the id `noop_action` carries, chosen outside the real ids so
-    # `_execute` falls through every branch. Negative rather than 3 so that adding a
-    # fourth controller can never silently turn every no-op into it.
+    # `_execute` falls through every branch. Negative rather than 2 so that adding a
+    # third controller can never silently turn every no-op into it.
     noop_id: ClassVar[int] = -1
 
-    # [skill_id, param_0, param_1]. Two parameter slots because `Pick` is the widest
-    # skill (distance, rotation); `MoveToThrowPose` uses one and `Toss` none, and the
-    # unused slots are ignored rather than validated, exactly as Tossing Room does.
-    action_space: ClassVar[Box] = Box(-np.inf, np.inf, (3,))
+    # [skill_id, p0, p1, p2, p3]. Four parameter slots because
+    # `move_to_toss_location_and_toss` is the widest skill (distance, rotation, tossing
+    # speed, release ms); `pick_cube` uses two, and the unused slots are ignored rather
+    # than validated, exactly as Tossing Room does.
+    action_space: ClassVar[Box] = Box(-np.inf, np.inf, (5,))
 
     variant: str = "o1"
     scene_bg: bool = True
@@ -209,38 +266,41 @@ class Tossing3DEnvironment(Environment):
         """
         return self._last_controller_steps
 
-    def build_state(self, *, observation: KinderObservation, seed: int, steps_taken: int) -> State:
-        """Translate one `KinderObservation` into this domain's `core.State`.
+    def abstraction(self) -> KinderAbstraction:
+        """This environment's live symbolic layer, building the scene if needed.
 
-        Pure, and free of KINDER: it reads named features out of plain dicts, so a test
-        can hand it a hand-built observation and check the translation with no simulator.
+        **Reaching for this starts MuJoCo**, which is new and is the cost of consuming
+        upstream's abstractor: the predicates are no longer pure arithmetic over a flat
+        `State`, so there is no offline way to obtain them. `hard_reset()` rather than a
+        bare `backend()` call, because the bridge is only constructed once a scene exists.
         """
+        if self._backend is None or self._backend._abstraction is None:  # noqa: SLF001
+            self.hard_reset()
+        return self.backend().abstraction()
+
+    def controllers(self) -> KinderControllers:
+        """This environment's live controllers. Starts MuJoCo, as `abstraction()` does."""
+        if self._backend is None or self._backend._controllers is None:  # noqa: SLF001
+            self.hard_reset()
+        return self.backend().controllers()
+
+    def build_state(self, *, kinder_state: Any, seed: int, steps_taken: int) -> State:
+        """Translate one KINDER `ObjectCentricState` into this domain's `core.State`.
+
+        The object translation is `adapters.kinder.state_translation`'s and carries every
+        feature, losslessly -- what this adds is the one object KINDER has no place for.
+        `scene` holds the seed a rebuild needs and the step count `set_state` refuses on;
+        the translator drops it on the way back, which is its documented behaviour for
+        exactly this case.
+
+        The bin no longer carries a scored-region box. That was six features smuggled
+        through the `State` so a hand-written classifier could be a pure function of it;
+        `MovableInGoalRegion` reads the region off the live simulator instead.
+        """
+        translated = self.backend().translator().to_core_state(kinder_state=kinder_state)
         return State(
             data={
-                self.robot: self._vector(
-                    observation=observation,
-                    name=self._robot_source(observation=observation),
-                    obj=self.robot,
-                ),
-                self.cube: self._vector(
-                    observation=observation, name=self.cube.name, obj=self.cube
-                ),
-                # Pose from KINDER, then the scored box appended: the bin is the one object
-                # whose features come from two sources, because the box is not KINDER's
-                # notion of the bin at all -- it is `blocks_goal_region`, which this domain
-                # assumes the bin's interior coincides with.
-                self.bin: np.concatenate([
-                    self._vector(
-                        observation=observation,
-                        name=self.bin.name,
-                        obj=self.bin,
-                        features=("x", "y", "z"),
-                    ),
-                    np.array(observation.goal_region, dtype=float),
-                ]),
-                self.barrier: self._vector(
-                    observation=observation, name=self.barrier.name, obj=self.barrier
-                ),
+                **translated.data,
                 self.scene: np.array([float(seed), float(steps_taken)], dtype=float),
             }
         )
@@ -268,7 +328,7 @@ class Tossing3DEnvironment(Environment):
             self._last_skill_error = "; ".join(errors)
 
         next_state = self.build_state(
-            observation=self.backend().observe(), seed=seed, steps_taken=steps_taken + 1
+            kinder_state=self.backend().kinder_state(), seed=seed, steps_taken=steps_taken + 1
         )
         # `_adopt`, deliberately not `set_state`: the simulator has already advanced by
         # this skill, so there is nothing to restore, and `set_state` would refuse a
@@ -286,16 +346,18 @@ class Tossing3DEnvironment(Environment):
     def noop_action(self) -> Action:
         """`noop_id` in slot 0, which `_execute` falls through as an unrecognised skill.
 
-        Emphatically not a zero vector: `pick_id == 0`, so `np.zeros(3)` is a real
-        `pick_shelf` at distance 0.0 -- a whole arm trajectory, and the concrete bug
-        this method exists to close. This is the one domain here where a wrong no-op
-        costs seconds of simulator time as well as a wrong state.
+        Emphatically not a zero vector: `pick_cube_id == 0`, so `np.zeros(5)` is a real
+        `pick_cube` at distance 0.0 -- a whole arm trajectory, and the concrete bug this
+        method exists to close. This is the one domain here where a wrong no-op costs
+        seconds of simulator time as well as a wrong state.
 
         `take_action` still advances the scene's `steps_taken`, as it does for any
         unrecognised action. That is the interface's contract, not a violation of it:
         the world does not move, but the transition is still charged.
         """
-        return np.array([float(self.noop_id), 0.0, 0.0])
+        action = np.zeros(self.action_space.shape[0], dtype=float)
+        action[0] = float(self.noop_id)
+        return action
 
     def set_state(self, *, state: State) -> None:
         """Adopt `state`, rebuilding the simulator from its seed when it is an initial one.
@@ -346,20 +408,21 @@ class Tossing3DEnvironment(Environment):
         immediately afterwards; `hard_reset` and `set_state` both go through here, so
         there is exactly one place that puts this domain into a known state.
         """
-        observation = self.backend().reset(seed=seed)
-        state = self.build_state(observation=observation, seed=seed, steps_taken=0)
+        kinder_state = self.backend().reset(seed=seed)
+        state = self.build_state(kinder_state=kinder_state, seed=seed, steps_taken=0)
         self._adopt(state=state)
         return state
 
     def snapshot(self) -> "Tossing3DSnapshot":
         """A restorable handle to the live simulator, including mid-episode.
 
-        `set_state` cannot do this from a `core.State` alone, because a `core.State` is a
-        lossy projection of KINDER's own state (four of the robot's twenty-two features,
-        six of the cube's sixteen). KINDER's `ObjectCentricState` is *not* lossy -- it
-        carries velocities and the full arm configuration, which is exactly why upstream's
-        `tidybot3d_shelf3D.py` can use it to build a transition function -- so a genuine
-        rewind is available as long as the caller holds one of these.
+        `set_state` cannot do this from a `core.State` alone. The `State` now carries every
+        feature KINDER reports -- the translation is lossless, which is what lets the
+        abstractor be handed one back -- but it still does not carry MuJoCo's `qpos`/`qvel`
+        contact state, and `Tossing3DEnvironment.set_state` is documented to restore only
+        an episode-initial state. A KINDER `ObjectCentricState` is what upstream's own
+        `tidybot3d_shelf3D.py` builds a transition function from, so a genuine rewind is
+        available as long as the caller holds one of these.
 
         Deliberately a separate, explicitly-named operation rather than a widening of
         `set_state`: `core.Environment.set_state` is documented as the *human's*
@@ -381,7 +444,7 @@ class Tossing3DEnvironment(Environment):
     def is_solved(self) -> bool:
         """Upstream's own `_check_goals()`, straight through.
 
-        Used by the fidelity tests to check `predicates.IN_BIN` against the thing
+        Used by the fidelity tests to check `MovableInGoalRegion` against the thing
         it is supposed to agree with. Not used to decide episode success -- that goes
         through `Goal.is_satisfied` like every other domain, so the symbolic layer is
         what is actually being trusted.
@@ -394,65 +457,45 @@ class Tossing3DEnvironment(Environment):
             self._backend.close()
 
     def _execute(self, *, action: Action) -> list[ControllerRun]:
-        """Dispatch one action vector onto upstream's controllers."""
+        """Dispatch one action vector onto upstream's controllers.
+
+        Two branches now rather than three, and neither takes a parameter this repo
+        invented: the slots are handed to the controller exactly as its own sampler drew
+        them. Both controllers take the same three objects, which is upstream's own
+        signature -- `?barrier` is unused by `pick_cube` and present so an operator can
+        say the cube is still on this side of it.
+        """
         backend = self.backend()
         if not np.all(np.isfinite(np.asarray(action, dtype=float))):
             self._last_skill_error = f"non-finite action: {action!r}"
             return []
         skill_id = int(round(float(action[0])))
-        if skill_id == self.pick_id:
-            return [backend.run_pick(distance=float(action[1]), rotation=float(action[2]))]
-        if skill_id == self.move_to_throw_pose_id:
-            # Rotation is pinned at upstream's own test value rather than exposed: 1.35 m
-            # of standoff at a nonzero yaw aims the throw off the goal region entirely,
-            # and no measurement in this repo covers it.
-            return [backend.run_move_to_throw_pose(standoff=float(action[1]), rotation=0.0)]
-        if skill_id == self.toss_id:
-            # Slot 1 is the release speed in joint-path deg/s; slot 2 is the millisecond
-            # from the start of the swing at which the gripper opens.
-            windup, swing = backend.run_toss(
-                release_speed_deg_s=float(action[1]),
-                gripper_release_ms=float(action[2]),
-            )
-            return [windup, swing]
+        objects = (backend.robot_name, backend.cube_name, backend.barrier_name)
+        state = self.get_current_state()
+        if skill_id == self.pick_cube_id:
+            return [
+                backend.run_skill(
+                    key="pick_cube",
+                    object_names=objects,
+                    params=np.asarray(action[1:3], dtype=float),
+                    state=state,
+                    limit=backend.pick_step_limit,
+                )
+            ]
+        if skill_id == self.move_to_toss_location_and_toss_id:
+            # distance, rotation, tossing speed (rad/s), release millisecond -- all four
+            # in the controller's own units, because they came from its own sampler.
+            return [
+                backend.run_skill(
+                    key="move_to_toss_location_and_toss",
+                    object_names=objects,
+                    params=np.asarray(action[1:5], dtype=float),
+                    state=state,
+                    limit=backend.toss_step_limit,
+                )
+            ]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []
 
     def _adopt(self, *, state: State) -> None:
         self.current_state = state
-
-    def _robot_source(self, *, observation: KinderObservation) -> str:
-        """The robot's name in the observation.
-
-        Resolved by feature schema rather than by literal: the robot is the one object
-        whose name comes from the robot config rather than the task JSON's `objects`
-        block, and it is the only one carrying `pos_base_x`.
-        """
-        for name, features in observation.features.items():
-            if "pos_base_x" in features:
-                return name
-        raise KeyError(
-            "no object in this observation has a pos_base_x feature, so none of them is "
-            f"the TidyBot robot: {sorted(observation.features)}"
-        )
-
-    def _vector(
-        self,
-        *,
-        observation: KinderObservation,
-        name: str,
-        obj: Object,
-        features: tuple[str, ...] | None = None,
-    ) -> np.ndarray:
-        """The named features of one observed object, in schema order.
-
-        `features` narrows the read to a prefix of the object's schema, for the one object
-        (the bin) whose remaining features do not come from KINDER at all.
-        """
-        return np.array(
-            [
-                observation.get(name=name, feature=feature)
-                for feature in (features if features is not None else obj.type.feature_names)
-            ],
-            dtype=float,
-        )
