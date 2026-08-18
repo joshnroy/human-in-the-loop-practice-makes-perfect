@@ -217,6 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 results/
+MUJOCO_LOG.TXT
 .claude/worktrees/
 
 # Weights & Biases (--record-wandb). The writer passes dir=<output-dir>, so offline
