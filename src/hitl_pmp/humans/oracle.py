@@ -35,7 +35,7 @@ class UnconditionalHumanOracle(HumanOracle):
     a `CommandGoalDescription`, which originally wrapped only a symbolic `Goal`. A `Goal`
     is a frozenset of `GroundAtom`s whose truth is an opaque `holds` callable, so no
     domain-agnostic implementation can synthesise a `State` satisfying one -- v0 as
-    sketched in `humans/README.md` ("just calls `env.set_state(...)` to satisfy the
+    originally sketched ("just calls `env.set_state(...)` to satisfy the
     goal") was not implementable as written. `CommandGoalDescription.target_state` closes
     that, and see its own comment for why a reset is genuinely a different command rather
     than a weakening of the goal-directed one.

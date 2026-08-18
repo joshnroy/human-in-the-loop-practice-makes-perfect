@@ -1,37 +1,18 @@
-"""Per-draw sampler instrumentation: what parameter the learned sampler actually
-chose on every practice execution, and what the environment did with it.
+"""Per-draw sampler instrumentation: what parameter the learned sampler actually chose on every
+practice execution, and what the environment did with it.
 
-## Why this is a sibling file and not a field on `Metrics`
+**The rule, stated once here since the other recorders point at it: `stats.json` holds only
+what must be byte-comparable; everything else observed about a run goes in a sibling file.**
+Its byte-stability is how this repo proves a change did not alter results
+(`tests/scripts/test_reproducibility.py` rests on it for three domains), and a list of float
+parameters appended to `Metrics` would break that check for every open PR at once.
 
-`stats.json` is the serialized `Metrics`, and its **byte-stability is load-bearing**:
-it is how this repo proves a change did not alter results. PR #146 used exactly that
-property to show the Tossing Room rename was behaviour-neutral, and
-`tests/scripts/test_reproducibility.py` rests on it for three domains. Anything
-appended to `Metrics` that varies per run -- and a list of float parameters certainly
-does -- breaks that check for every open PR at once.
+`SkillPracticeTally` is eight counters -- it can say a skill's informed draws succeeded
+117/206 against 48/275 uniform, but not *which* standoff those informed draws converged on,
+because the parameter is never retained. One line per draw is what makes that plottable.
 
-`timing.json` and `config_snapshot.json` are separate files beside `stats.json` for
-this same reason, and this is the third. The rule is worth stating once: **`stats.json`
-holds only what must be byte-comparable; everything else observed about a run goes in a
-sibling.**
-
-## What it answers that integer counters cannot
-
-`SkillPracticeTally` is eight counters. It can say a skill's informed draws succeeded
-117/206 while its uniform draws succeeded 48/275 -- the central result of PR #133 --
-but it cannot say *which standoff* those informed draws converged on, because the
-parameter itself is never retained. "The sampler converges onto the standoff that
-works" was therefore an inference from success rates, with no parameter trajectory
-behind it. One line per draw is what makes that plottable.
-
-## The format, and why JSONL
-
-One JSON object per line, flushed as it is written. A 100-cycle Tossing3D run is
-hours, so a record readable only after a clean exit would be unavailable exactly when
-it is wanted -- during the run, and after a crash. Every flushed line stands alone, so
-a killed run leaves a file that parses up to its last complete draw.
-
-Each record is:
+One JSON object per line, flushed as written, so a killed run leaves a file that parses up to
+its last complete draw:
 
 | field | meaning |
 | --- | --- |
@@ -42,25 +23,17 @@ Each record is:
 | `params` | the chosen continuous parameters, as drawn |
 | `achieved` | post-action features of the ground skill's own objects, `"<object>.<feature>"` |
 
-`consultation` is never `no_sampler`: a `param_dim == 0` skill never reaches a sampler,
-so it produces no draw at all. That makes the file's row count equal to
-`num_attempts - num_unparameterized_attempts` summed over `stats.json`'s per-cycle
-tallies, which `tests/test_sampler_draws.py` asserts -- the two views of the same
-events are kept honest against each other rather than allowed to drift.
+`consultation` is never `no_sampler`: a `param_dim == 0` skill never reaches a sampler, so it
+produces no draw at all. That makes the row count equal
+`num_attempts - num_unparameterized_attempts` summed over `stats.json`'s per-cycle tallies,
+which `tests/test_sampler_draws.py` asserts, keeping the two views honest against each other.
 
 `cycle` rather than online transitions, because a `Method` does not know the harness's
-transition count. Join to `stats.json`'s `evaluations` (one entry per sweep, carrying
-`num_online_transitions`) to put draws on the same x-axis as a learning curve;
-`analysis/` owns that join.
+transition count. Join to `stats.json`'s `evaluations` to put draws on a learning curve's
+x-axis; `analysis/` owns that join.
 
-## Pure observer
-
-Nothing here draws randomness, and no call into it returns a value any caller branches
-on -- the same contract `recording.LoopRecorder` holds for `--record-full-loop`. A run
-with recording on takes exactly the actions it would have taken with it off and writes
-a byte-identical `stats.json`, which is asserted end-to-end through the real CLI rather
-than argued from inspection.
-"""
+**Pure observer.** A run with recording on writes a byte-identical `stats.json` to one with
+it off, asserted end-to-end through the real CLI."""
 
 import argparse
 from pathlib import Path

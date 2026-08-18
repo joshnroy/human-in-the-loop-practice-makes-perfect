@@ -6,8 +6,8 @@ Every experiment in this project is the same shape: run `hitl_pmp.cli` once per
 tree to an `analysis/` script. This exists so that is a supported, reviewable,
 re-runnable command rather than a throwaway shell loop rewritten per experiment.
 
-Why it isn't in `analysis/`: `analysis/` is strictly post-run (see its README and
-CLAUDE.md) -- it reads `--output-dir` output and never drives a simulation. This
+Why it isn't in `analysis/`: `analysis/` is strictly post-run (see CLAUDE.md) --
+it reads `--output-dir` output and never drives a simulation. This
 *does* drive simulations, so it lives in `scripts/` instead, mirroring the sibling
 `hitl-practice` repo's own `scripts/` convention. It only ever shells out to the
 CLI; it imports nothing from `hitl_pmp`, so it cannot accidentally reach past that

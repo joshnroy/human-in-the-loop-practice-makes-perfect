@@ -1,69 +1,30 @@
 """Per-sweep progress, written while a run is still going.
 
-## The failure this removes
+`stats.json` is written once, after the last cycle -- so on a multi-hour Tossing3D run a
+**hung run and a slow run produced identical evidence**, and no ETA was computable.
+`progress.jsonl` is appended and flushed after every evaluation sweep, answering both
+from the file alone: `sweeps_completed` / `sweeps_total` gives the ETA, and the last
+line's wall-clock `timestamp` distinguishes a hang (stopped advancing) from a slow cycle
+(merely old).
 
-`stats.json` is written once, after the last cycle. On Light Switch that is seconds
-and nobody notices; on Tossing3D a 100-cycle run is hours, and until now the output
-directory stayed empty for all of them. So a **hung run and a slow run produced
-identical evidence**, and the only way to tell them apart was to wait for one of them
-to finish. There was no way to compute an ETA either, which is what turns "it is
-still going" into a decision about whether to keep waiting.
+**Always on**, with no flag: `--output-dir` is the whole condition. Instrumentation you
+have to remember to switch on is not available for the run you did not expect to need it
+for, and this costs a few hundred bytes and one `write` per sweep.
 
-`progress.jsonl` is appended and flushed after every evaluation sweep. Two questions
-become answerable from the file alone:
+**`open_if_requested` takes `num_cycles` rather than reading it off `args`**, because
+`num_cycles` is a method-CLI decision, not a flag: `SkillOracleCli` passes the literal
+`0` and its namespace has no such attribute, while `PracticeCycleCli` declares one. A
+`getattr(args, "num_cycles", 0)` fallback would be right for both of today's methods by
+coincidence and silently wrong for the first method that computes its own cycle count.
 
-- **How far along is it** -- `sweeps_completed` out of `sweeps_total`, so an ETA is
-  `elapsed_seconds / sweeps_completed * (sweeps_total - sweeps_completed)` off any
-  single line.
-- **Is it still moving** -- the last line's `timestamp`. A wall-clock stamp that
-  stopped advancing is a hang; one that is merely old is a slow cycle. A file that
-  only records counts cannot distinguish those.
+**A sibling of `stats.json`**, for the same reason as `timing.json`,
+`config_snapshot.json`, `sampler_draws.jsonl` and `competence_log.jsonl`: it carries
+timestamps, and `stats.json`'s byte-stability is how this repo verifies a change did not
+alter results (`tests/scripts/test_reproducibility.py`).
 
-## Always on, unlike --record-sampler-draws
-
-There is no flag. Instrumentation you have to remember to switch on is not available
-for the run you did not expect to need it for, and this one costs a few hundred bytes
-and one `write` per sweep. `--record-sampler-draws` is opt-in because it is per-draw
-and domain-specific; this is per-sweep and universal.
-
-That is what makes this the `ResultsWriter` that establishes the always-on shape.
-`--output-dir` is the whole condition: there is somewhere to write, so it writes. No
-flag was invented to fit `open_if_requested`'s name, because the contract that method
-states is "decide for yourself whether this run wants you", and "always, when I can"
-is a legitimate answer to it -- see `results_writer.py`.
-
-## Why `open_if_requested` takes `num_cycles` rather than reading it off `args`
-
-`sweeps_total` is `num_cycles + 1`, and **`num_cycles` is a method-CLI decision, not a
-flag**: `SkillOracleCli` passes the literal `0` to `MethodRunner.run` and its `args`
-namespace has no `num_cycles` attribute at all, while `PracticeCycleCli` declares one.
-A writer that re-derived the denominator with `getattr(args, "num_cycles", 0)` would be
-right for both of today's methods by coincidence and silently wrong for the first
-method that computes its own cycle count -- a wrong ETA denominator that no test would
-catch, since nothing else in the run knows what it should have been. So the harness
-passes the same authoritative value it passes to `PracticeLoop`.
-
-## A sibling of stats.json, for the same reason as the others
-
-It carries timestamps and elapsed wall-clock, and `stats.json`'s **byte-stability is
-load-bearing** -- it is how this repo verifies a change did not alter results (PR #146
-used exactly that property; `tests/scripts/test_reproducibility.py` rests on it for
-three domains). A timestamp inside `stats.json` would break that on every single run.
-`timing.json`, `config_snapshot.json`, `sampler_draws.jsonl` and `competence_log.jsonl`
-are all separate for this reason; this is the fifth.
-
-Nothing here is ever an input to a reproducibility comparison, and a run's actions do
-not depend on it: the same seed still writes a byte-identical `stats.json` with this
-file being written beside it.
-
-## One line per sweep, not per cycle
-
-`num_cycles = N` produces `N + 1` evaluation sweeps -- one before any practice, then
-one after each cycle -- so counting sweeps rather than cycles means a `num_cycles=0`
-run (every non-learning baseline) still reports its single sweep instead of writing
-nothing at all. It also means `sweeps_completed / sweeps_total` is a true fraction of
-the work, which a cycle count off by one would not be.
-"""
+**One line per sweep, not per cycle.** `num_cycles = N` produces `N + 1` sweeps, so a
+`num_cycles=0` run (every non-learning baseline) still reports its single sweep instead
+of writing nothing, and `sweeps_completed / sweeps_total` is a true fraction of the work."""
 
 import argparse
 import time

@@ -1,37 +1,15 @@
-"""Per-step instrumentation: the full (state, action) trajectory of every evaluation
-episode, not just its solved/unsolved outcome.
+"""Per-step instrumentation: the full (state, action) trajectory of every evaluation episode,
+not just its solved/unsolved outcome.
 
-## Why this is a sibling file and not a field on `Metrics`
+A sibling file rather than a field on `Metrics`, because `stats.json`'s byte-stability is
+how this repo proves a change did not alter results. `TaskOutcome` records only whether a
+test task was solved, never how many steps it took -- previously the only place a step count
+could be recovered was a rendered `episode.mp4`'s frame count, which exists for one task per
+checkpoint and only under `--output-dir`.
 
-`stats.json` is the serialized `Metrics`, and its **byte-stability is load-bearing**:
-it is how this repo proves a change did not alter results (see `sampler_draws.py`'s
-own docstring for the fuller version of this argument, which applies unchanged here).
-`timing.json`, `config_snapshot.json`, `sampler_draws.jsonl` and `competence_log.jsonl`
-are all separate files beside `stats.json` for the same reason, and this is the fifth.
-
-## What it answers that `TaskOutcome` cannot
-
-`core.metrics.types.TaskOutcome` records only whether a test task was solved, never
-how many steps it took or what the trajectory looked like. That is enough for a
-learning curve, but not enough to answer "how long is a solve, and how does that
-change as N (the help-seeking interval) changes" -- the question that motivated this
-file: the only place a step count could previously be recovered was a rendered
-`episode.mp4`'s frame count, which exists for exactly one task per checkpoint
-(`--num-render-checkpoints`) and only when `--output-dir` is set at all. This
-generalizes past that one question: a full per-step trace is also what makes a past
-episode resumable or re-visualizable later (neither of which this file builds --
-it only makes the data exist).
-
-## The format, and why JSONL
-
-One JSON object per line -- same reasoning as `sampler_draws.py`/`competence_log.py`:
-a record readable only after a clean exit would be unavailable exactly when it is
-most wanted, during a long sweep or after a crash. Flushed once per *episode* rather
-than once per step (an evaluation episode is a handful to a few dozen steps, cheap to
-redo if the run dies mid-episode, unlike the multi-hour practice stream
-`sampler_draws.py` guards against losing).
-
-Each record is one step of one evaluation episode:
+One JSON object per line, flushed once per *episode*: a record readable only after a clean
+exit would be unavailable exactly when it is most wanted. Each record is one step of one
+evaluation episode:
 
 | field | meaning |
 | --- | --- |
@@ -45,32 +23,16 @@ Each record is one step of one evaluation episode:
 | `action` | the raw action vector, as a plain list of floats |
 | `state` | the state *after* this action, flattened `"<object>.<feature>": float` |
 
-`state` is deliberately the *whole* feature vector rather than a curated subset, for
-the same reason `sampler_draws.py`'s `read_features` is: which features matter is a
-per-domain question this recorder does not try to answer.
+`state` is deliberately the *whole* feature vector: which features matter is a per-domain
+question this recorder does not try to answer.
 
-## Why the recorder is never threaded into `Problem.run_task_episode`
+**Never threaded into `Problem.run_task_episode`.** It reads back the `EpisodeTrace` that
+every domain's `run_task_episode` already returns unconditionally, because a recorder carries
+real per-run state (an open file handle) and a stateful recorder never crosses into `core` --
+only plain data does. So it lives in `practice_loop.py`'s layer, alongside `sampler_draws.py`.
 
-`core.method.types.EpisodeTrace` -- the plain (states, labeled actions) data every
-domain's `run_task_episode` already returns, unconditionally -- is what this recorder
-reads. It is deliberately *not* handed a stateful recorder to write through as it
-runs, unlike how a renderer is threaded straight into the loop: a recorder carries
-real per-run state (an open file handle), and `core/README.md`'s existing precedent
-(`recording.LoopRecorder`, kept out of `core` for the identical reason) is that a
-stateful recorder never crosses into `core` -- only plain data does. So this class
-lives up in `practice_loop.py`'s layer (alongside `sampler_draws.py`), reads back the
-`EpisodeTrace` `_evaluate` already has in hand once `run_task_episode` returns, and
-writes it out exactly the way `recording.LoopRecorder.record_evaluation_episode`
-already consumes the returned `frames` list after the fact.
-
-## Pure observer
-
-Nothing here draws randomness, and no call into it returns a value any caller
-branches on -- the same contract `SamplerDrawRecorder`/`CompetenceLogRecorder` hold.
-A run with recording on takes exactly the actions it would have taken with it off and
-writes a byte-identical `stats.json`, asserted end-to-end through the real CLI in
-`tests/test_episode_traces.py` rather than argued from inspection.
-"""
+**Pure observer.** A run with recording on writes a byte-identical `stats.json` to one with
+it off, asserted end-to-end through the real CLI in `tests/test_episode_traces.py`."""
 
 import argparse
 from pathlib import Path

@@ -1,33 +1,14 @@
-"""Per-checkpoint skill-competence instrumentation: what each ground skill's
-competence model actually believed at every evaluation checkpoint, not just what
-can be inferred after the fact from raw practice tallies.
+"""Per-checkpoint skill-competence instrumentation: what each ground skill's competence model
+actually believed at every evaluation checkpoint.
 
-## Why this is a sibling file and not a field on `Metrics`
+A sibling file rather than a field on `Metrics`, because `stats.json`'s byte-stability is how
+this repo proves a change did not alter results. `EesMethod` prices every plan as
+`sum(-log(competence))`, but `Metrics.practice_outcomes_per_cycle` records only raw
+success/attempt counts -- recovering the posterior mean from those means re-deriving the
+window/recency/prior arithmetic the model already computed. This writes that number directly.
 
-`stats.json` is the serialized `Metrics`, and its **byte-stability is load-bearing**:
-it is how this repo proves a change did not alter results (see `sampler_draws.py`'s
-own docstring for the fuller version of this argument, which applies unchanged here).
-`timing.json`, `config_snapshot.json` and `sampler_draws.jsonl` are all separate files
-beside `stats.json` for the same reason, and this is the fourth.
-
-## What it answers that raw practice tallies cannot
-
-`EesMethod` prices every plan as `sum(-log(competence))`, so competence is literally
-the number its own planning runs on -- but `Metrics.practice_outcomes_per_cycle` only
-ever recorded raw success/attempt counts, never the Beta-Bernoulli posterior mean
-`OptimisticSkillCompetenceModel.get_current_competence()` actually returns. Recovering
-"what did the model believe" from those tallies means re-deriving the same
-window/recency/prior arithmetic the model itself already computed -- error-prone, and
-redundant with a number the run already had in hand. This file writes that number
-directly.
-
-## The format, and why JSONL
-
-One JSON object per line, flushed as it is written -- same reasoning as
-`sampler_draws.py`: a record readable only after a clean exit would be unavailable
-exactly when it is most wanted, during a long run or after a crash.
-
-Each record is:
+One JSON object per line, flushed as written: a record readable only after a clean exit would
+be unavailable exactly when it is most wanted.
 
 | field | meaning |
 | --- | --- |
@@ -37,31 +18,17 @@ Each record is:
 | `objects` | the ground skill's bound object names, in parameter order |
 | `competence` | `get_current_competence()`'s posterior mean at this checkpoint |
 
-Keyed by *ground* skill (`skill` + `objects` together), not lifted skill name alone:
-`EesMethod` estimates competence per grounding (predicators' `_ground_op_hist`
-keying), so two groundings of the same lifted skill can carry different competence
+Keyed by *ground* skill (`skill` + `objects`), not lifted name alone: `EesMethod` estimates
+competence per grounding, so two groundings of one lifted skill can carry different competence
 and would collide under a lifted-only key.
 
-## A ground skill absent from a checkpoint
+**A ground skill absent from a checkpoint** has simply never been attempted --
+`competence_model()` creates one lazily and `current_competences()` does not invent one, so
+checkpoint 0 contributes no rows for a fresh `EesMethod` at all. Rows carrying a default value
+would be a different and wrong claim.
 
-`Method.current_competences()` reports only ground skills it already has a model
-for -- `EesMethod.competence_model()` creates one lazily, only when a ground skill is
-actually consulted, and `current_competences()` does not invent one for a skill that
-was never attempted. So a ground skill simply has no rows before its first practice
-attempt, rather than rows carrying some default value -- most visibly, checkpoint 0
-(before any practice) contributes no rows for a fresh `EesMethod` at all. That mirrors
-`skill_costs()`'s own iteration, which reads only `self._competence_models`.
-
-## Pure observer
-
-Nothing here draws randomness, and no call into it returns a value any caller
-branches on -- the same contract `SamplerDrawRecorder` holds. A run with recording on
-takes exactly the actions it would have taken with it off and writes a byte-identical
-`stats.json`, asserted end-to-end through the real CLI in `tests/test_competence_log.py`
-rather than argued from inspection. Read-only with respect to a run's own state: it is
-handed a `Method`'s already-computed `current_competences()` at a checkpoint boundary
-`method_runner.py` already visits, and asks nothing of the run in exchange.
-"""
+**Pure observer.** A run with recording on writes a byte-identical `stats.json` to one with it
+off, asserted end-to-end through the real CLI in `tests/test_competence_log.py`."""
 
 import argparse
 from pathlib import Path

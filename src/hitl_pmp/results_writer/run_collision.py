@@ -1,14 +1,8 @@
 """`RunNameCollisionCheck`: **one canonical run per experiment**, enforced at setup.
 
-## What it is actually for
-
-Not "does a run with this name already exist" -- that would be a uniqueness check on a
-string. The goal is that one experiment (one distinct configuration) has one canonical
-run, so the check compares **configurations**, and the case it exists to catch is a bug
-in our own code: two runs with *different* configs generating the *same* name means
-`run_naming.RUN_NAME_FIELDS` is missing an axis of variation.
-
-Three cases, three different meanings:
+Not a uniqueness check on a string: it compares **configurations**, and the case it exists
+to catch is a bug in our own code -- two runs with different configs generating the same
+name means `run_naming.RUN_NAME_FIELDS` is missing an axis of variation.
 
 | existing run with this name | its config | verdict |
 | --- | --- | --- |
@@ -16,40 +10,22 @@ Three cases, three different meanings:
 | one or more | **differs** | `MissingVariationAxisError` -- our namer is wrong |
 | one or more | identical | `DuplicateExperimentError` -- a genuine re-run |
 
-**`--re-run` authorises the third row only.** Silencing the second would knowingly write
-two different experiments into one canonical slot, which is precisely what this check
-exists to prevent, so `re_run` is not even consulted on that path. A missing axis also
-outranks a duplicate when both are present: the duplicate is only meaningful once the
-namer is known to be complete.
+**`--re-run` authorises the third row only**; `re_run` is not even consulted on the second
+path, since silencing it would knowingly write two different experiments into one canonical
+slot. A missing axis outranks a duplicate when both are present.
 
-## What counts as "the same experiment"
+**"The same experiment"** is everything in the resolved namespace except the flags that
+cannot change the result: the pure observers (`--record-*`, `--num-render-checkpoints`,
+`--record-full-loop`), `--output-dir`, and `--re-run` itself. Each recording flag is
+separately asserted to leave `stats.json` byte-identical, which is this repo's definition of
+"did not alter results". `ConfigSnapshot` deliberately keeps no such list -- its job is
+provenance, so it records `vars(args)` wholesale; this is the opposite job (equivalence).
+Keys present on only one side are compared against a sentinel rather than skipped, since
+comparing over the intersection would make an added or removed flag invisible.
 
-Everything in the resolved namespace **except the flags that cannot change the result**:
-the pure observers (`--record-*`, `--num-render-checkpoints`, `--record-full-loop`), the
-output location (`--output-dir`), and `--re-run` itself. That complement is not a
-judgement call -- each recording flag is separately asserted to leave `stats.json`
-byte-identical, which is this repo's definition of "did not alter results", so a run
-recorded with different instrumentation or written to a different directory *is* the
-same experiment. Every other flag feeds the environment, the method or the seed, so a
-difference in one is a different experiment by definition.
-
-`ConfigSnapshot` deliberately keeps no such list -- it records `vars(args)` wholesale,
-because its job is provenance ("under what conditions did this happen") and dropping a
-field would lose evidence. This is the opposite job (equivalence), so it needs the
-exclusions that `ConfigSnapshot` must not have. The two are consistent: the snapshot
-keeps everything, and equality is defined over a stated subset of it.
-
-Keys present on only one side are compared against a sentinel rather than skipped.
-Comparing over the intersection would make an added or removed flag invisible, which is
-the same silent-omission failure in a different place.
-
-## Pure, and therefore testable
-
-This module takes the runs that already exist as data and imports no tracker. Fetching
-them is the backend's job (`wandb_writer.py`), so every case here -- including the exact
-wording of both errors, which is as much the deliverable as the check -- is covered
-without a network, a credential, or `wandb` installed.
-"""
+**Pure, and therefore testable**: this module takes the runs that already exist as data and
+imports no tracker, so every case -- including the exact wording of both errors -- is
+covered without a network, a credential, or `wandb` installed."""
 
 from typing import ClassVar
 

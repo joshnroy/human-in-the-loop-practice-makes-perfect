@@ -13,8 +13,8 @@ class SkillOraclePolicy:
     ActionOraclePolicy, which acts directly in raw action space). Light-Switch-
     only, same as ActionOraclePolicy -- the cross-environment dispatch lives one
     layer up, in methods/oracle/skill_oracle_method.py's SkillOracleMethod, since
-    that's the layer allowed to reason about which environment is wired (see
-    core/README.md's Problem facade section). A static-method container, never
+    that's the layer allowed to reason about which environment is wired -- the
+    `Problem` facade layer. A static-method container, never
     instantiated, same as every other business-logic class in this project."""
 
     @staticmethod

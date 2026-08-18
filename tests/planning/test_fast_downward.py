@@ -1,6 +1,6 @@
 """Every test here except the executable-lookup ones is an INTEGRATION test: it
-shells out to a real, locally-installed Fast Downward (see planning/README.md for
-the install steps). They are deliberately not skipped -- the cost-patching protocol
+shells out to a real, locally-installed Fast Downward (see CLAUDE.md for the
+install steps). They are deliberately not skipped -- the cost-patching protocol
 is the load-bearing EES mechanism and a mock would not exercise it at all."""
 
 import sys

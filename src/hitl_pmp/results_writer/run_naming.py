@@ -1,65 +1,30 @@
 """`RunNamer`: the one place a run's name is built, for any tracker backend.
 
-## The problem this exists for
-
-`WandbResultsWriter` named runs `f"{method}-seed{seed}"`. An 80-run study therefore
-showed as `ees-seed0` ... `ees-seed9` repeated eight times: **every run in the project
-collided on name regardless of environment, reset policy, ledge type or cycle budget**,
-and the flat run list could not tell a `never` arm from a `scheduled` one without
-opening each run. That is not hypothetical -- the live project holds three separate runs
-called `ees-seed0`, one on Light Switch (a 35-key config) and two on Tossing Room (48
-keys).
-
-## Curated fields, not a hash of the config
-
-Appending a hash of the resolved config would be unique by construction and unreadable
-by construction. The name is for the **run list**, which is read by a human, so the
-fields are curated and the *collision check* (`run_collision.py`) is what makes that
-curation safe: if two different experiments ever produce one name, setup fails and names
-the field to add. Uniqueness by construction versus readability plus a loud check --
-this project chose the second.
-
-## The format
+The format, ordered **outermost axis first, seed last**, so an alphabetical run list
+groups a whole arm's seeds together instead of interleaving arms:
 
     <env>-<method>[-<domain variant>...]-<reset policy>[-ask-<help policy>][-c<cycles>]-seed<seed>
 
     tossingroom-ees-oneway-split-never-ask-never-c100-seed3
     lightswitch-skill-oracle-scheduled-seed7
 
-Ordered **outermost axis first, seed last**, so an alphabetical run list groups a whole
-arm's seeds together instead of interleaving arms -- the same reason
-`scripts/run_sweep.py` lays results out as `<results-root>/<method>/<seed>/`. Tokens are
-lowercase `[a-z0-9-]`, since a name ends up in a URL and in offline directory names.
+Tokens are lowercase `[a-z0-9-]`, since a name ends up in a URL and in offline directory
+names.
 
-## Which fields are in the table, and why those
+**Curated fields, not a hash of the config.** A hash would be unique by construction and
+unreadable by construction; the name is for the run list, which a human reads. What makes
+that curation safe is the *collision check* (`run_collision.py`): if two different
+experiments produce one name, setup fails and names the field to add. `RUN_NAME_FIELDS`
+holds the axes this project's committed studies actually vary. Two runs differing only in
+a domain constant (`--throw-tolerance`, ...) get the same name and the check fires --
+**that is the intended workflow, not a hole**: the table grows when an experiment varies
+something new, rather than pre-emptively carrying every flag.
 
-`RUN_NAME_FIELDS` holds the axes this project's committed studies actually vary, counted
-from the run commands in `docs/experiment-logs/`: `--num-cycles` (97 mentions),
-`--practice-reset-policy` (47), `--two-way-ledge` (21) and `--ask-for-help` (13), plus
-`--env`/`--method`/`--seed`, plus `--unsplit-skills` -- which is in the table because
-the collision check demanded it. Replayed over the 121 runs the project already held,
-this table minus that one field produced 81 names, 40 of which grouped runs differing
-*only* in `unsplit_skills`. That is the intended loop in miniature: curate, let the
-check find the omission, add the field.
-
-Deliberately **not** in the table: `--num-test-tasks` and `--max-steps-per-interaction`,
-which appear often but as a study's fixed budget rather than an axis within it, and the
-long tail of domain constants (`--throw-tolerance`, `--distance-coefficient`, ...). Two
-runs differing only in one of those get the same name -- and the collision check fires,
-names the field, and points here. **That is the intended workflow, not a hole**: the
-table grows when an experiment actually varies something new, rather than pre-emptively
-carrying every flag and making every name unreadable.
-
-## Failing loudly beats defaulting quietly
-
-A field this table names must be present in the resolved namespace, or `name` raises. It
-never falls back to `getattr(args, dest, <default>)`, which is the specific trap here: a
-renamed flag would silently drop an axis from *every* name, and the absent-attribute
-default for `num_cycles` happens to equal the literal `SkillOracleCli` passes today, so
-it would look correct right up until a method computed its own cycle count. Fields that
-are legitimately absent -- a method's or a domain's own flags -- are declared
-`optional=True` one by one; see `RunNameField`.
-"""
+**Failing loudly beats defaulting quietly.** A field this table names must be present in
+the resolved namespace, or `name` raises -- never `getattr(args, dest, <default>)`, since
+a renamed flag would silently drop an axis from *every* name. Legitimately-absent fields
+(a method's or domain's own flags) are declared `optional=True` one by one; see
+`RunNameField`."""
 
 import argparse
 import re

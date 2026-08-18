@@ -96,7 +96,7 @@ class Method(BaseModel, abc.ABC):
 
         True means the agent genuinely got there by acting. It is NOT satisfiable by
         calling `env.set_state` -- that is the privileged external override reserved
-        for `HumanOracle` (see core/README.md), and using it here would report a
+        for `HumanOracle`, and using it here would report a
         recovery no agent performed. Every implementation in this repo today returns
         False, because none of them can navigate anywhere on purpose; nothing calls
         this method yet, so False is the honest answer rather than a regression."""

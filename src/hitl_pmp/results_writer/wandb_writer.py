@@ -1,91 +1,35 @@
 """`--record-wandb`: mirror a run's evaluation sweeps into Weights & Biases.
 
-## What W&B adds that this repo does not already have
+W&B is an **index and a viewer, never the system of record** -- `docs/experiment-logs/`
+stays the durable committed record. What it adds over `stats.json` +
+`config_snapshot.json` + `timing.json` + `progress.jsonl` is cross-run comparison
+without writing a script, watching a sweep from another machine, and a durable index.
 
-Very little of the usual experiment-tracking pitch applies here: `stats.json` already
-holds the results, `config_snapshot.json` already holds richer provenance than W&B
-collects, `timing.json` already holds wall-clock and concurrency, and
-`progress.jsonl` already answers "is this run alive". Three things are genuinely
-missing, and they are the whole reason for this file:
+**Offline by default.** If `WANDB_MODE` is unset this passes `mode="offline"`: no run
+blocks on the network, a machine with no credential still works, and a sweep of ~22
+concurrent runs opens no sockets. Sync later with
+`wandb sync <output-dir>/wandb/offline-run-*`. Only W&B's own four modes are accepted;
+anything else raises before the run starts, since a silent downgrade is a run the
+launcher believes is syncing and is not. `dir=<output-dir>`, so a run's W&B directory
+sits beside the `stats.json` it describes rather than in W&B's cwd-relative default.
 
-1. **Cross-run comparison without writing a script.** Every comparison today is a
-   bespoke `analysis/` script against one `--results-root`.
-2. **Watching a long sweep from somewhere other than this machine.**
-3. **A durable index of runs.** `results/` is gitignored, local, and on one box.
+**`wandb sweep` is deliberately not adopted**: its agent draws its own hyperparameter
+values, which is directly at odds with this project's fixed-seeds discipline.
+`WANDB_RUN_GROUP` gives the grouping without that.
 
-W&B is an **index and a viewer, never the system of record.** `docs/experiment-logs/`
-stays the durable, reviewed, committed record; a W&B run page is not citable six months
-out the way a committed log entry is, and `scripts/check_doc_links.sh` already bans a
-URL in a committed doc.
+**One canonical run per experiment.** Names come from `run_naming.RunNamer`; before the
+run starts this asks W&B whether the name is taken and **compares configurations**. A
+same-name run with a different config means the namer is missing an axis -- a bug here --
+and it fails loudly, naming the field. See `run_collision.py`. The check needs the
+network, so it runs only when the run itself is online; offline runs print one line
+saying it was skipped, and their collisions surface at `wandb sync`. It also cannot catch
+two runs launched *simultaneously* under one name, since each queries before either
+exists.
 
-## Offline by default
-
-If `WANDB_MODE` is unset this passes `mode="offline"`, which writes to local disk and
-syncs later (`wandb sync <output-dir>/wandb/offline-run-*`). That default is set here
-rather than left to the environment for three independent reasons: no run ever blocks
-on the network; a machine with no credential (CI, a fresh worktree) still works; and a
-sweep of ~22 concurrent runs opens no sockets. An explicit `WANDB_MODE=online` wins, so
-watching a single long run live is a launch-time choice, not a code change. Only W&B's
-own four modes are accepted; anything else raises before the run starts rather than
-falling back to offline, since a silent downgrade is a run the launcher believes is
-syncing and is not.
-
-`scripts/run_sweep.py` already forwards `os.environ` to every child, so `WANDB_MODE`,
-`WANDB_ENTITY`, `WANDB_PROJECT` and `WANDB_RUN_GROUP` propagate across a whole grid with
-no code change and no extra flags -- which is why this file adds exactly one flag and
-reads the rest from W&B's own environment variables rather than inventing parallel ones.
-
-## `wandb sweep` is deliberately not adopted
-
-`scripts/run_sweep.py` already owns fixed seeds, the `<results-root>/<method>/<seed>/`
-layout `analysis/` globs for, spawn-retry, `timing.json` and cross-agent concurrency
-budgeting. W&B's sweep agent **draws its own hyperparameter values**, which is directly
-at odds with this project's "fixed seeds, never randomly drawn" discipline. W&B's
-*grouping* gives what its sweeps would have given us, via `WANDB_RUN_GROUP`.
-
-## Where the offline data lands
-
-`dir=<output-dir>`, so a run's W&B directory sits beside the `stats.json` it describes,
-inside the gitignored `results/` tree. W&B's own default is `./wandb/`, relative to the
-**current working directory** -- which for a run launched from the repo would be the
-repo root. `wandb/` is gitignored anyway, belt and braces, since a failed `init` can
-still write there.
-
-## One canonical run per experiment, checked before the run starts
-
-Run names come from `run_naming.RunNamer` (curated, readable, W&B-agnostic), and this
-file adds the half that makes a curated name safe: before the run starts, it asks W&B
-whether that name is already taken and **compares configurations**, not just names. A
-same-name run with a different config means our namer is missing an axis of variation --
-a bug in this repo -- and it fails loudly, naming the field. See `run_collision.py`.
-
-**The check needs the network, so it runs only when the run itself is online.** Under
-`WANDB_MODE=offline` (this file's default) there is no API to ask, and firing one anyway
-would break the property that a sweep of ~22 concurrent runs opens no sockets and needs
-no credential. Offline runs therefore print one line saying the check was skipped, and
-their collisions surface when someone runs `wandb sync`. That is a real gap and worth
-stating plainly rather than papering over: the check is only as good as the mode the
-sweep ran in. `WANDB_MODE=online` is what today's sweeps actually use.
-
-When it does run it is bounded (`wandb.Api(timeout=...)`, at most one filtered query),
-and an unreachable or unauthenticated API is an error rather than a silent pass -- an
-online run with no reachable API is going to fail in `wandb.init` moments later anyway,
-so failing here costs nothing and says something useful.
-
-One thing it cannot catch: two runs launched *simultaneously* under the same name, since
-each queries before either exists. Nothing short of a server-side atomic reservation
-would, and W&B's is on the opaque run id rather than the display name.
-
-## Pure observer
-
-Nothing here draws randomness and no method returns a value any caller branches on.
-A run with `--record-wandb` writes a byte-identical `stats.json` to one without it,
-asserted end-to-end through the real CLI in `tests/results_writer/test_wandb_writer.py`.
-The one guarantee that is **weaker** and should not be overclaimed: any W&B call costs
-wall-clock, so `timing.json` from a `--record-wandb` run is not strictly comparable to
-one without. Offline mode makes that small but it does not make it zero, and it has not
-been measured.
-"""
+**Pure observer.** A run with `--record-wandb` writes a byte-identical `stats.json` to
+one without, asserted end-to-end in `tests/results_writer/test_wandb_writer.py`. The one
+weaker guarantee: any W&B call costs wall-clock, so `timing.json` from a `--record-wandb`
+run is not strictly comparable to one without. Unmeasured."""
 
 import argparse
 import importlib.util
