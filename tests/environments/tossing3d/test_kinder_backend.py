@@ -152,12 +152,20 @@ def test_toggling_substep_recording_imports_no_simulator() -> None:
     flipped by `Tossing3DProblem.run_task_episode`, which a test may reach without ever
     intending to build a scene.
 
-    **In a subprocess, because an in-process `sys.modules` check stopped meaning this.**
-    The predicates are upstream's now, so `test_kb_predicate_parity.py` genuinely imports
-    `kinder_models` -- and therefore MuJoCo -- inside its own tests. It sorts before this
-    file, so a same-interpreter assertion here was reading *another module's* import and
-    failing for a reason that has nothing to do with `KinderBackend`. A fresh interpreter
-    asks the question this test is actually about.
+    **This one keeps a subprocess rather than moving to `no_kinder_import`**, and the
+    reason is worth stating because the other three did move.
+
+    An in-process `sys.modules` check stopped meaning anything here: the predicates are
+    upstream's now, so `test_kb_predicate_parity.py` genuinely imports `kinder_models` --
+    and therefore MuJoCo -- inside its own tests, and it sorts before this file. A
+    same-interpreter assertion was reading *another module's* import and failing for a
+    reason that has nothing to do with `KinderBackend`.
+
+    A fresh interpreter fixes that and is **strictly stronger than the fixture**: the
+    fixture is behavioural, so it catches only code that reaches `KinderBackend.api()` at
+    runtime, while this catches a module-scope `import kinder` anywhere in the chain too --
+    the gap `conftest.py` names as its own. The cost is one interpreter spawn, which is why
+    it is not the mechanism for all four.
     """
     backend = KinderBackend()
     backend.set_substep_recording(enabled=True)
@@ -493,3 +501,16 @@ def test_an_interrupt_still_escapes_rather_than_being_swallowed_as_a_failed_skil
         backend.run_move_to_toss_location_and_toss(
             distance=1.35, rotation=0.0, release_speed_deg_s=140.0, gripper_release_ms=792.0
         )
+
+
+def test_the_laziness_guard_itself_trips_on_a_real_import(*, no_kinder_import) -> None:
+    """A guard that can only ever pass proves nothing, and this one replaced an assertion
+    that had exactly that failure mode -- `"mujoco" not in sys.modules` is trivially true
+    for a process that never touches KINDER, whatever the code under test does.
+
+    `KinderBackend.api()` is the single door: all five KINDER imports in this package sit
+    inside it. Calling it is therefore the one thing the guard must catch."""
+    del no_kinder_import
+
+    with pytest.raises(AssertionError, match="supposed to stay lazy"):
+        KinderBackend().api()

@@ -12,15 +12,19 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from .observations import GOAL_REGION_BBOX, observation, state
 
 
-def test_constructing_the_environment_imports_no_simulator() -> None:
+def test_constructing_the_environment_imports_no_simulator(*, no_kinder_import) -> None:
     """The whole reason `KinderBackend` is lazy. If constructing a `Tossing3DEnvironment`
-    ever pulled MuJoCo in, CI -- which never installs the optional extra -- could not so
-    much as import `hitl_pmp.cli`, since `tossing3d` is in its ENVIRONMENTS registry."""
-    import sys
+    ever pulled MuJoCo in, `hitl_pmp.cli` could not be imported at all on a machine
+    without the optional extra, since `tossing3d` is in its ENVIRONMENTS registry.
+
+    Asserted through `no_kinder_import` rather than `sys.modules`: the latter is a
+    session-global proxy that depends on collection order, not on this call. See
+    `conftest.py`.
+    """
+    del no_kinder_import
 
     env = Tossing3DEnvironment()
     assert env.variant == "o1"
-    assert "mujoco" not in sys.modules
 
 
 def test_translation_maps_every_declared_feature_from_the_kinder_observation() -> None:
