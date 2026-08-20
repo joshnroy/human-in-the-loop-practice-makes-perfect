@@ -72,6 +72,35 @@ class SkillGrounder:
         return frozenset(atoms)
 
     @staticmethod
+    def all_possible_ground_atoms(
+        *, objects: tuple[Object, ...], predicates: tuple[Predicate, ...]
+    ) -> frozenset[GroundAtom]:
+        """Every GroundAtom that COULD exist, across every predicate and every
+        type-matching combination of objects -- `abstract_state`'s unfiltered cousin,
+        with no `predicate.holds` check at all. `abstract_state` is "what's true here";
+        this is "what could ever be said" -- the universe a caller needs when it has to
+        make a ground atom false rather than merely not assert it (a closed-world reset
+        that deletes everything not in a target set, e.g. EesMethod's
+        `ask_for_reset_task_initial`, which cannot know in general which atoms hold at
+        the point in a plan where it executes, so it must delete every possible atom
+        outside the target rather than only the ones some particular state happens to
+        have true).
+
+        Same repeated-object inclusion as `abstract_state` (see the class docstring),
+        for the same reason: this must stay a strict superset of `abstract_state`'s
+        output for identical `objects`/`predicates`, or the delete-effect set it is used
+        to build could miss an atom `abstract_state` would have reported true."""
+        atoms: set[GroundAtom] = set()
+        for predicate in predicates:
+            candidates_per_slot = [
+                [obj for obj in objects if obj.type == object_type]
+                for object_type in predicate.types
+            ]
+            for combo in itertools.product(*candidates_per_slot):
+                atoms.add(GroundAtom(predicate=predicate, objects=combo))
+        return frozenset(atoms)
+
+    @staticmethod
     def applicable_ground_skills(
         *, skills: tuple[Skill, ...], objects: tuple[Object, ...], true_atoms: frozenset[GroundAtom]
     ) -> list[GroundSkill]:

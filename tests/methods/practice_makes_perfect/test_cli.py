@@ -8,9 +8,7 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.human_intervention import HumanResetTarget
-from hitl_pmp.methods.help_seeking import HelpSeekingTrigger
-from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, HelpSeekingCli, RandomSkillsCli
+from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 
 
 @pytest.fixture(autouse=True)
@@ -137,99 +135,43 @@ def test_ees_run_completes_end_to_end_through_the_cli(
     assert re.search(r"success rate: \d+/5", capsys.readouterr().out)
 
 
-def test_the_ask_for_help_default_builds_no_policy_at_all() -> None:
-    """`None`, not "a policy configured off". That is the structural claim behind
-    --ask-for-help never being byte-identical: an unconfigured run holds no detector and
-    draws no randomness, and EesMethod returns its practice policy unwrapped."""
-    args = argparse.Namespace(seed=0)
-    assert HelpSeekingCli.build_policy(args=args) is None
-
-
-def test_an_omitted_flag_falls_back_to_never() -> None:
-    """A hand-built Namespace -- a test, a one-off script -- predates every one of these
-    flags, so the absent case has to mean the incumbent behaviour."""
-    assert HelpSeekingCli.build_policy(args=argparse.Namespace()) is None
-
-
-def test_the_asking_flags_reach_the_policy() -> None:
-    args = argparse.Namespace(
-        ask_for_help=HelpSeekingTrigger.AT_RANDOM,
-        stuck_patience=7,
-        mean_steps_between_help_requests=40,
-        seed=3,
-    )
-    policy = HelpSeekingCli.build_policy(args=args)
-    assert policy is not None
-    assert policy.trigger is HelpSeekingTrigger.AT_RANDOM
-    assert policy.stuck_patience == 7
-    assert policy.mean_steps_between_requests == 40
-    assert policy.seed == 3
-
-
-def test_the_policy_is_seeded_from_the_global_seed() -> None:
-    """So a sweep's seeds do not all ask on identical steps -- the BallRing
-    --noise-seed trap, where a constant default made every arm identical."""
-    seeds = set()
-    for seed in range(4):
-        policy = HelpSeekingCli.build_policy(
-            args=argparse.Namespace(ask_for_help=HelpSeekingTrigger.AT_RANDOM, seed=seed)
-        )
-        assert policy is not None
-        seeds.add(policy.seed)
-    assert seeds == {0, 1, 2, 3}
-
-
-def test_ees_registers_the_asking_flags_with_never_as_the_default() -> None:
+def test_ees_registers_the_two_reset_skill_cost_flags_defaulting_to_none() -> None:
+    """`None` is what keeps a run byte-identical to before either ground skill
+    existed: EesMethod.may_request_human_help is then False and plan_to never offers
+    either skill to the planner -- see that class's own docstring."""
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
     args = parser.parse_args([])
-    assert args.ask_for_help is HelpSeekingTrigger.NEVER
-    assert args.stuck_patience == 20
-    assert args.mean_steps_between_help_requests == 150
+    assert args.ask_for_reset_task_initial_cost is None
+    assert args.ask_for_reset_random_task_cost is None
 
 
-def test_ees_accepts_every_asking_mode() -> None:
+def test_ees_accepts_both_reset_skill_cost_flags() -> None:
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
     args = parser.parse_args([
-        "--ask-for-help",
-        "on-stuck",
-        "--stuck-patience",
-        "5",
-        "--mean-steps-between-help-requests",
-        "30",
+        "--ask-for-reset-task-initial-cost",
+        "0.134",
+        "--ask-for-reset-random-task-cost",
+        "0.336",
     ])
-    assert args.ask_for_help is HelpSeekingTrigger.ON_STUCK
-    assert args.stuck_patience == 5
-    assert args.mean_steps_between_help_requests == 30
+    assert args.ask_for_reset_task_initial_cost == pytest.approx(0.134)
+    assert args.ask_for_reset_random_task_cost == pytest.approx(0.336)
 
 
-def test_ees_rejects_an_unknown_asking_mode() -> None:
-    parser = argparse.ArgumentParser()
-    EesCli.add_arguments(parser=parser)
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--ask-for-help", "sometimes"])
-
-
-def test_ees_rejects_a_non_positive_stuck_patience() -> None:
-    parser = argparse.ArgumentParser()
-    EesCli.add_arguments(parser=parser)
-    with pytest.raises(SystemExit):
-        parser.parse_args(["--stuck-patience", "0"])
-
-
-def test_random_skills_does_not_register_the_asking_flags() -> None:
-    """RandomSkillsMethod does not compose HelpSeekingMixin, so offering it a flag it
-    cannot honour would be a lie in --help. It is not in the experiment grid."""
+def test_random_skills_does_not_register_the_reset_skill_cost_flags() -> None:
+    """RandomSkillsMethod has no planner to offer either ground skill to -- offering
+    the flags would be a lie in --help. Not in the experiment grid."""
     parser = argparse.ArgumentParser()
     RandomSkillsCli.add_arguments(parser=parser)
     args = parser.parse_args([])
-    assert not hasattr(args, "ask_for_help")
+    assert not hasattr(args, "ask_for_reset_task_initial_cost")
+    assert not hasattr(args, "ask_for_reset_random_task_cost")
 
 
 def test_an_asking_ees_run_on_a_domain_with_no_human_fails_before_it_starts() -> None:
-    """End to end through the real CLI: the flag builds a policy, EesMethod therefore
-    declares it may ask, and PracticeLoop refuses up front because Light Switch wires no
+    """End to end through the real CLI: configuring either cost flag makes EesMethod
+    declare it may ask, and PracticeLoop refuses up front because Light Switch wires no
     HumanOracle. Fails at construction rather than a cycle in, which is the whole point
     of validating on the Method's declaration instead of on a per-step poll."""
     args = Cli.parse_args(
@@ -238,10 +180,8 @@ def test_an_asking_ees_run_on_a_domain_with_no_human_fails_before_it_starts() ->
             "lightswitch",
             "--method",
             "ees",
-            "--ask-for-help",
-            "on-stuck",
-            "--stuck-patience",
-            "1",
+            "--ask-for-reset-task-initial-cost",
+            "0.1",
             "--num-cycles",
             "1",
             "--max-steps-per-interaction",
@@ -250,6 +190,6 @@ def test_an_asking_ees_run_on_a_domain_with_no_human_fails_before_it_starts() ->
             "1",
         ]
     )
-    assert args.human_reset_target is HumanResetTarget.TASK_INITIAL
+    assert not hasattr(args, "human_reset_target")
     with pytest.raises(ValueError, match="HumanOracle"):
         EesCli.run(args=args, env_cli=LightSwitchCli)

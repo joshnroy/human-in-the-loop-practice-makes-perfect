@@ -1,5 +1,14 @@
 # Deterministic rescue-rate dose-response on Tossing Room, 10x the cycle budget: the sweep saturates at N=7, no RNG confound, no bimodality
 
+**STALE MECHANISM (later PR).** The harness-side `HelpSeekingPolicy`/`HelpSeekingTrigger`
+machinery this sweep drives -- `methods/help_seeking.py`, `methods/stuck_detector.py`,
+and the `--ask-for-help at-fixed-interval`/`--mean-steps-between-help-requests`/
+`--human-reset-target` flags -- has been deleted. Asking for help is now a real ground
+skill (`ask_for_reset_task_initial`/`ask_for_reset_random_task`) EES's own planner can
+select, priced directly rather than triggered on a fixed schedule by a harness-side
+wrapper; see `ees_method.py` and that PR's body. The measurements below describe a
+feature that no longer exists in this form and are not evidence about the replacement.
+
 **Three fixed arms plus a seven-point rescue-rate sweep, ten fixed seeds (0-9) each, all
 `--env tossingroom --practice-reset-policy never --num-test-tasks 30 --num-cycles 100
 --max-steps-per-interaction 150`.**

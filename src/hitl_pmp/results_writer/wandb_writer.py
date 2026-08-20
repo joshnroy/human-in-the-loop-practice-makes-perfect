@@ -171,9 +171,13 @@ class WandbResultsWriter(ResultsWriter):
             run_name=run_name,
             # `job_type`/`tags` stay the coarse facets W&B groups a run list by; the
             # name is what identifies it. Both read the namespace directly, and neither
-            # is optional on any method or domain.
+            # is optional on any method or domain. `--wandb-tag` (repeatable) is
+            # appended on top rather than replacing these two, so a whole experiment's
+            # runs can be tag-filtered without losing the env/method grouping every
+            # other run is filed under. `getattr`, not `args.wandb_tag`, since a
+            # hand-built Namespace predating the flag has no such attribute.
             job_type=str(args.method),
-            tags=(str(args.env), str(args.method)),
+            tags=(str(args.env), str(args.method), *(getattr(args, "wandb_tag", None) or [])),
             mode=WandbResultsWriter.resolve_mode(),
         )
 

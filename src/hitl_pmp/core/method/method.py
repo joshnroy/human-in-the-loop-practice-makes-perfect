@@ -69,10 +69,66 @@ class HumanHelpRequested(Exception):  # noqa: N818
     would silently give every arm that catches one the behaviour of the other, and the
     two could then not be compared.
 
-    Carries no payload: what the human is asked *for* is the harness's own
-    `--human-reset-target` (a property of the human, not of the request), and what the
-    robot was pursuing is the task the loop already holds. A `Method` that later needs
-    to ask for something specific adds a field here rather than a second exception."""
+    **Always this period's own task-initial state.** `--human-reset-target` (which also
+    offered "a freshly sampled train task") is gone: that second target is not a normal
+    mid-plan transition (it can change the goal atoms, not just reset state toward the
+    current one), so it moved to `HumanRandomTaskResetRequested` below rather than
+    staying a variant of this exception.
+
+    **Carries one optional field, `cost`**, exactly the extension this docstring used to
+    invite ("a `Method` that later needs to ask for something specific adds a field here
+    rather than a second exception"). `None` (the default) means "price this the
+    harness's own way" -- `practice_loop.py` then queries
+    `Problem.calculate_cost_for_human_command`, the incumbent behaviour, still exercised
+    by anything that raises the bare exception. A `Method` that has already priced the
+    request as part of its own planning (EES, whose planner chose this ground skill
+    against a configured `--ask-for-reset-task-initial-cost`) sets it instead, so the
+    harness banks the number the plan was actually built against rather than re-deriving
+    an unrelated one from the `HumanOracle`'s own pricing -- see
+    `EesMethod.ask_for_reset_task_initial_cost` for why that pricing is deliberately
+    independent of the human's own (`UnconditionalHumanOracle.intervention_cost` is a
+    flat structural constant, not a per-skill dial)."""
+
+    def __init__(self, *, cost: float | None = None) -> None:
+        super().__init__(cost)
+        self.cost = cost
+
+
+class HumanRandomTaskResetRequested(Exception):  # noqa: N818
+    """Raised by a practice policy that is choosing to end the interaction period by
+    asking a human to reposition it onto a freshly sampled train task, rather than
+    stopping for free (as `InteractionComplete` does) or continuing after a rescue (as
+    `HumanHelpRequested` does). Control flow, not an error, exactly like the other two
+    (hence the same ruff N818 waiver).
+
+    **Modeled like `InteractionComplete`, not like `HumanHelpRequested`, and for a
+    structural reason.** Resetting onto a *freshly sampled* train task can change the
+    goal atoms the episode is pursuing, not merely the state -- a classical plan built
+    for one fixed goal cannot have this as a mid-plan step the way
+    `ask_for_reset_task_initial` (which only ever restores THIS period's own task) can.
+    So selecting it ends the current interaction period outright: no goal is
+    necessarily achieved, and whatever plan was in flight is simply abandoned, exactly
+    as it would be if `InteractionComplete` had fired instead.
+
+    **What makes it a distinct event from `InteractionComplete` anyway.** Where
+    `InteractionComplete` is free and leaves the robot exactly where it happens to be,
+    this is priced (`cost`, same `None`-means-harness-priced convention as
+    `HumanHelpRequested`) and resolved through a real human reset -- the environment is
+    put at a freshly sampled train task's initial state, and that sampling **advances
+    the train-task stream**, the same real, intended difference `--human-reset-target
+    random` used to describe. `EesMethod` selects this over the free ending exactly
+    where it would otherwise have raised `InteractionComplete`, whenever
+    `ask_for_reset_random_task_cost` is configured -- see that field.
+
+    Kept a third, separate exception rather than a payload on either existing one for
+    the same reason `HumanHelpRequested` stays separate from `InteractionComplete`: the
+    three describe three different things a caller needs to tell apart by `except`, and
+    conflating any two would silently give every existing catcher of one the behaviour
+    of another."""
+
+    def __init__(self, *, cost: float | None = None) -> None:
+        super().__init__(cost)
+        self.cost = cost
 
 
 class Method(BaseModel, abc.ABC):
@@ -160,17 +216,23 @@ class Method(BaseModel, abc.ABC):
 
         Concrete `False` by default, for the same reason as `end_cycle`: no baseline
         built so far asks for anything, and none of them should need boilerplate to say
-        so. A Method that composes `methods/help_seeking.py`'s policy overrides it."""
+        so. `EesMethod` overrides it, True exactly when one of its two ground-skill
+        cost flags (`ask_for_reset_task_initial_cost`/`ask_for_reset_random_task_cost`)
+        is configured -- see that class."""
         return False
 
     def observe_help_granted(self, *, state: State) -> None:
         """Called by practice_loop.py immediately *after* a rescue has been executed,
         handing over the state the human actually left behind.
 
-        This is what lets a Method restart whatever detector made it ask. Without it a
-        rescued robot is instantly re-rescued forever: a human by construction puts it
-        back somewhere it has already been, so under any novelty-based rule every state
-        is non-novel the moment it arrives. See `StuckDetector.restart`.
+        This is what lets a Method restart whatever detector made it ask -- a hook that
+        exists for any future novelty-based trigger a Method might carry, though
+        `EesMethod` today needs no such restart: it decides to ask fresh at every
+        planning call (a real ground skill priced like any other), not from an
+        accumulated per-period detector, so it inherits this as a no-op. Without a
+        restart, a Method that DID carry such state would be instantly re-rescued
+        forever: a human by construction puts it back somewhere it has already been, so
+        under any novelty-based rule every state is non-novel the moment it arrives.
 
         The *readback* state, not the state that was commanded -- a capability-aware
         human (v1+) that only partially succeeds leaves the environment somewhere other

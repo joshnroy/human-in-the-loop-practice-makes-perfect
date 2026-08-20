@@ -1,5 +1,14 @@
 # The naive `on-no-applicable-skill` help-seeking trigger: 0/10 seeds ever ask
 
+**STALE MECHANISM (later PR).** The harness-side `HelpSeekingPolicy`/`HelpSeekingTrigger`
+machinery this log measures -- `methods/help_seeking.py`, `methods/stuck_detector.py`,
+and the `--ask-for-help`/`--stuck-patience`/`--mean-steps-between-help-requests`/
+`--human-reset-target` flags -- has been deleted. Asking for help is now a real ground
+skill (`ask_for_reset_task_initial`/`ask_for_reset_random_task`) EES's own planner can
+select, priced directly rather than triggered by a harness-side heuristic; see
+`ees_method.py` and that PR's body. The measurements below describe a feature that no
+longer exists in this form and are not evidence about the replacement.
+
 **One arm, ten fixed seeds (0-9), `--env tossingroom --method ees --ask-for-help
 on-no-applicable-skill --human-reset-target task-initial`, `--practice-reset-policy
 never`, `--num-cycles 10 --max-steps-per-interaction 150 --num-test-tasks 30`.**

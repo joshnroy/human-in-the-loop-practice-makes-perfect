@@ -4,7 +4,12 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from hitl_pmp.core.method.method import InteractionComplete, Method
+from hitl_pmp.core.method.method import (
+    HumanHelpRequested,
+    HumanRandomTaskResetRequested,
+    InteractionComplete,
+    Method,
+)
 from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.method.types import (
     GroundSkill,
@@ -20,17 +25,17 @@ from hitl_pmp.core.method.types import (
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
-from hitl_pmp.methods.help_seeking import HelpSeekingMixin
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
 from hitl_pmp.planning.types import TranslationCache
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .competence_models import OptimisticSkillCompetenceModel
+from .human_reset_skill import ASK_FOR_RESET_TASK_INITIAL_NAME, HumanResetSkillBuilder
 from .wrapped_sampler import LearnedSkillSampler
 
 
-class EesMethod(HelpSeekingMixin, Method):
+class EesMethod(Method):
     """EES (Estimate / Extrapolate / Situate) -- the "Practice Makes Perfect"
     paper's own method, ported from predicators' `active_sampler_learning`
     approach + `active_sampler` explorer with
@@ -83,13 +88,23 @@ class EesMethod(HelpSeekingMixin, Method):
        own optimization (`active_sampler_explorer_replan_frequency`), and the
        reason scoring is cheap enough to do per candidate per step.
 
-    **`HelpSeekingMixin` is what makes this the Method that can ask for a human**
-    (`--ask-for-help`). It contributes one optional field and two `Method` overrides,
-    and it changes nothing at all when unconfigured -- `get_practice_policy` then
-    returns exactly the lambda it always returned. Composed rather than inherited from
-    `Method` itself because asking for help is not something every Method does, and
-    listed first so its `may_request_human_help`/`observe_help_granted` win over
-    `Method`'s no-op defaults.
+    **Asking for help is a real ground skill this Method's own planner can select, not
+    a harness-side wrapper.** An earlier version composed a `HelpSeekingMixin` that
+    wrapped the whole practice policy in a heuristic trigger (on-stuck, at-random, ...)
+    living outside the planner entirely -- Josh's ruling, quoted verbatim: "we want the
+    robot to *plan* to ask for help, not have it be part of the harness". That mixin
+    (and the CLI flags it drove) is deleted; what replaces it is two ground skills,
+    `ask_for_reset_task_initial` (a genuine mid-plan step -- see `plan_to`,
+    `HumanResetSkillBuilder`) and `ask_for_reset_random_task` (a period-ending choice,
+    since a fresh task can change the goal -- see `_EesEpisode._next_plan`), each priced
+    by its own required-when-present flag (`ask_for_reset_task_initial_cost`/
+    `ask_for_reset_random_task_cost`) rather than routed through the competence model:
+    `UnconditionalHumanOracle` always succeeds by construction, so there is nothing
+    about it to *learn* -- only a price to set. `None` (both defaults) is what keeps an
+    unconfigured run byte-identical to before either skill existed: `may_request_human_
+    help` is then False, `plan_to` never offers the reset skill to the planner, and the
+    "nothing left to practice" branch still raises the free `InteractionComplete` it
+    always did.
     """
 
     env: Environment
@@ -214,6 +229,25 @@ class EesMethod(HelpSeekingMixin, Method):
     # Running at the paper config's 100000 reproduces predicators' own score
     # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
     sampler_max_train_iters: int = 10000
+
+    # Cost of ask_for_reset_task_initial, a mid-plan ground skill EES's own planner can
+    # select whose effect resets every ground atom to this period's own task-initial
+    # state -- see plan_to and HumanResetSkillBuilder. Injected directly into
+    # FastDownwardPlanner's ground_skill_costs, bypassing the competence model entirely
+    # (competence would measure a success rate; UnconditionalHumanOracle always
+    # succeeds by construction, so there is nothing to measure -- only a price). `None`
+    # (the default) means the skill is never offered to the planner at all, which is
+    # what keeps an unconfigured run byte-identical: see plan_to.
+    ask_for_reset_task_initial_cost: float | None = None
+    # Cost of ask_for_reset_random_task: selecting it ENDS the interaction period (no
+    # goal necessarily achieved) and resets onto a freshly sampled train task,
+    # advancing the train-task stream -- modeled like InteractionComplete rather than
+    # as a mid-plan step, because a fresh task can change the goal atoms, which a
+    # classical plan built for one fixed goal cannot have as a step (see
+    # HumanRandomTaskResetRequested). `None` (the default) means this Method never
+    # selects it, so the "nothing left to practice" branch still raises the free
+    # InteractionComplete it always did -- see _EesEpisode._next_plan.
+    ask_for_reset_random_task_cost: float | None = None
 
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
@@ -414,23 +448,61 @@ class EesMethod(HelpSeekingMixin, Method):
         init_atoms: frozenset[GroundAtom],
         goal: frozenset[GroundAtom],
         costs: dict[GroundSkill, float],
+        task_initial_atoms: frozenset[GroundAtom] | None = None,
     ) -> list[GroundSkill]:
         """Costs change on nearly every call, but `init_atoms`/`goal` repeat heavily
         -- the test set is fixed for the whole run, and practice replans toward the
         same few candidates' preconditions -- so this hands the planner a per-run
         `TranslationCache` to skip re-translating PDDL it has already seen. Costs are
         patched into the SAS *after* translation, so caching that stage cannot change
-        the plan; see `TranslationCache`."""
+        the plan; see `TranslationCache`.
+
+        **`task_initial_atoms` is NOT `init_atoms`.** `init_atoms` is wherever this
+        particular call is planning FROM -- the episode's current true state, which
+        moves every step. `task_initial_atoms` is the practice period's own task's
+        fixed initial abstract state (`_EesEpisode._task_initial_atoms`), the thing
+        `ask_for_reset_task_initial` resets TO. Conflating the two would build an
+        operator whose effect is "reset to wherever you already are" -- a symbolic
+        no-op.
+
+        When not `None` AND `ask_for_reset_task_initial_cost` is configured, this adds
+        `ask_for_reset_task_initial` -- built fresh here from `task_initial_atoms` (see
+        `HumanResetSkillBuilder`, which is why this cannot be a domain-general skill
+        declared once in `skills()`) -- to both `skills` and `costs` before asking the
+        planner, priced at the configured cost rather than anything read off `costs`.
+        `_EesEpisode` passes its own `_task_initial_atoms` from every practice-context
+        call (goal-pursuit, and both `_practice_plan` calls, which are only ever
+        reached while practicing) -- `None` for an evaluation episode (no evaluation
+        policy ever supplies one) and for `refresh_planning_progress_plans`' speculative
+        scoring pass, so no evaluation episode is ever rescued and the scoring pass is
+        deliberately kept on the plain skill set, unable to perturb what
+        `score_ground_skill` computes for other candidates. Different `init_atoms`
+        (almost every call) means a different domain string and therefore a different
+        `TranslationCache` key, so caching stays correct without any special-casing
+        here -- see `TranslationCache`."""
         self._planning_attempts += 1
+        skills = self.skills()
+        ground_skill_costs = costs
+        if task_initial_atoms is not None and self.ask_for_reset_task_initial_cost is not None:
+            reset_ground_skill = HumanResetSkillBuilder.build_ask_for_reset_task_initial(
+                objects=self.objects(),
+                predicates=self.predicates(),
+                init_atoms=task_initial_atoms,
+            )
+            skills = (*skills, reset_ground_skill.skill)
+            ground_skill_costs = {
+                **costs,
+                reset_ground_skill: self.ask_for_reset_task_initial_cost,
+            }
         try:
             return FastDownwardPlanner.plan(
-                skills=self.skills(),
+                skills=skills,
                 predicates=self.predicates(),
                 types=self.types(),
                 objects=self.objects(),
                 init_atoms=init_atoms,
                 goal=goal,
-                ground_skill_costs=costs,
+                ground_skill_costs=ground_skill_costs,
                 default_cost=self.default_cost(),
                 timeout=self.planning_timeout,
                 translation_cache=self._translation_cache,
@@ -688,6 +760,18 @@ class EesMethod(HelpSeekingMixin, Method):
 
     # ------------------------------------------------------------------ policy
 
+    def may_request_human_help(self) -> bool:
+        """True exactly when either reset skill was configured with a cost -- the
+        predicate `practice_loop.py` validates against up front (a Method that may ask
+        but whose Problem has no HumanOracle is refused before the run starts, not
+        three cycles in). `False` for both `None` defaults is what keeps an
+        unconfigured EES run needing no HumanOracle wired, exactly as before either
+        skill existed."""
+        return (
+            self.ask_for_reset_task_initial_cost is not None
+            or self.ask_for_reset_random_task_cost is not None
+        )
+
     def get_task_policy(self, *, task: Task) -> Policy:
         """Evaluation: plan to the goal with current competences and execute
         greedily. Records nothing -- these are held-out test tasks."""
@@ -699,17 +783,22 @@ class EesMethod(HelpSeekingMixin, Method):
         `pursue_task_goal_first`), then spend the rest of the period practicing
         whichever skill scores best.
 
-        `seeking_help` wraps that policy so EES can raise `HumanHelpRequested` from
-        inside it -- and returns it *untouched* when `--ask-for-help never` (the
-        default) left `help_seeking` as None, which is what makes such a run take
-        structurally the pre-change code path. Only the practice policy is wrapped:
-        `get_task_policy` deliberately cannot ask, because no evaluation episode is ever
-        rescued."""
+        No wrapper: unlike the deleted harness-side help-seeking policy, asking for
+        help is now decided from *inside* `_EesEpisode.step` itself -- either as a
+        ground skill the plan popped (`ask_for_reset_task_initial`, which raises
+        `HumanHelpRequested` at dispatch time) or as the substitute for a free
+        `InteractionComplete` (`ask_for_reset_random_task`, raising
+        `HumanRandomTaskResetRequested`). So this returns the episode's own policy
+        completely unwrapped, structurally identical to `get_task_policy` above --
+        `practicing=True` is the only difference, and it is what both of those checks
+        key on."""
         init_atoms = self.abstract_state(state=task.initial_state)
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
-        episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
+        episode = _EesEpisode(
+            method=self, goal=task.goal.atoms, practicing=True, task_initial_atoms=init_atoms
+        )
         self._practice_episode = episode
-        return self.seeking_help(policy=lambda state: episode.step(state=state))
+        return lambda state: episode.step(state=state)
 
     def observe_environment_reset(self, *, state: State) -> None:
         """Score the in-flight skill against the state the harness is about to
@@ -892,10 +981,25 @@ class _EesEpisode:
     persisted state, and it holds a back-reference to its EesMethod (which
     pydantic would try to validate/copy)."""
 
-    def __init__(self, *, method: EesMethod, goal: frozenset[GroundAtom], practicing: bool) -> None:
+    def __init__(
+        self,
+        *,
+        method: EesMethod,
+        goal: frozenset[GroundAtom],
+        practicing: bool,
+        task_initial_atoms: frozenset[GroundAtom] | None = None,
+    ) -> None:
         self._method = method
         self._goal = goal
         self._practicing = practicing
+        # This period's own task's initial abstract state -- what
+        # ask_for_reset_task_initial resets to. Deliberately NOT the same thing as
+        # `true_atoms`/`init_atoms` passed around this class: those are wherever the
+        # episode currently IS, which changes every step, while this is fixed for the
+        # whole episode. `None` for an evaluation episode (practicing=False, and
+        # get_task_policy never supplies one), which is what keeps the reset skill from
+        # ever being offered to an evaluation plan -- see plan_to.
+        self._task_initial_atoms = task_initial_atoms
         self._plan: list[GroundSkill] = []
         self._pending: GroundSkill | None = None
         self._pending_sampler_record: _SkillAttempt | None = None
@@ -948,6 +1052,14 @@ class _EesEpisode:
             )
         if not self._plan:
             if self._practicing:
+                if method.ask_for_reset_random_task_cost is not None:
+                    # The paid substitute for the free ending below: same trigger
+                    # (nothing left worth practicing), but the human resets the world
+                    # onto a freshly sampled train task instead of leaving the robot
+                    # exactly where it ran out of options. See
+                    # HumanRandomTaskResetRequested's own docstring for why this ends
+                    # the period rather than being a mid-plan step.
+                    raise HumanRandomTaskResetRequested(cost=method.ask_for_reset_random_task_cost)
                 # Nothing left worth practicing (no candidate reachable and no
                 # applicable skill to bootstrap from). Ending the period here
                 # rather than burning the remaining budget on no-ops is what keeps
@@ -961,6 +1073,21 @@ class _EesEpisode:
             return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)
+        if ground_skill.skill.name == ASK_FOR_RESET_TASK_INITIAL_NAME:
+            # The plan chose to ask for help. Dispatch to the harness's own rescue
+            # mechanism instead of the normal controller/skill-execution path below --
+            # this "skill" has no controller, no add-effects to score, and must never
+            # reach execute_ground_skill (which would create a competence model for it,
+            # exactly what this mechanism is built to bypass). self._pending is
+            # deliberately left untouched: there is nothing here for observe_pending to
+            # settle, and the skill that WAS pending was already observed at the top of
+            # this call.
+            assert method.ask_for_reset_task_initial_cost is not None, (
+                "ask_for_reset_task_initial appeared in a plan without a configured "
+                "cost -- plan_to only ever offers it to the planner when "
+                "ask_for_reset_task_initial_cost is not None."
+            )
+            raise HumanHelpRequested(cost=method.ask_for_reset_task_initial_cost)
         # By default every skill executed during practice explores (epsilon-greedy).
         # Under reproduce_predicators_explore_target_only, only the practice target
         # does -- the prefix that navigates to it uses the greedy learned sampler,
@@ -1065,7 +1192,10 @@ class _EesEpisode:
             else:
                 try:
                     plan = method.plan_to(
-                        init_atoms=true_atoms, goal=self._goal, costs=method.skill_costs()
+                        init_atoms=true_atoms,
+                        goal=self._goal,
+                        costs=method.skill_costs(),
+                        task_initial_atoms=self._task_initial_atoms,
                     )
                 except PlanningFailure:
                     plan = []
@@ -1091,6 +1221,10 @@ class _EesEpisode:
                     init_atoms=true_atoms,
                     goal=candidate.preconditions,
                     costs=method.skill_costs(),
+                    # Only ever reached while practicing -- _next_plan only calls
+                    # _practice_plan when self._practicing (see that method) -- so
+                    # self._task_initial_atoms is always set here.
+                    task_initial_atoms=self._task_initial_atoms,
                 )
             except PlanningFailure:
                 # Outscored the eventual winner and lost on reachability alone, which
