@@ -100,39 +100,20 @@ class SkillProvider(BaseModel, abc.ABC):
         return None
 
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
-        """A domain-specific ground skill representing `HumanCubeBinResetRequested`:
-        a human reset that repositions whichever of this domain's own objects it
-        considers "movable, not the robot", offered to `EesMethod`'s own planner as a
-        real mid-plan step. Takes no `cost`: pricing is `EesMethod.plan_to`'s job
-        (`--ask-for-reset-cube-bin-cost`, injected into `ground_skill_costs` the same
-        way `ask_for_reset_task_initial_cost` is), exactly as this skill's operator
-        model carries no cost of its own -- only preconditions/add/delete effects, the
-        same shape every other `Skill` in this codebase has.
+        """A domain-specific ground skill for `HumanCubeBinResetRequested`: offered
+        to `EesMethod`'s planner as a mid-plan step, priced by `plan_to` itself
+        (`--ask-for-reset-cube-bin-cost`), not here.
 
-        **Why this is not domain-agnostic the way `ask_for_reset_task_initial`/
-        `ask_for_reset_random_task` are.** Those two reset to a fully-known symbolic
-        state (this period's init_atoms, or nothing at all -- they end the period), so
-        their operators are built generically from whatever `objects`/`predicates`/
-        `init_atoms` a domain hands over (`HumanResetSkillBuilder`, in
-        `methods/practice_makes_perfect/`). This skill's effect is "the objects a
-        human could tidy up end up in their just-placed configuration", which can
-        only be written down in terms of *this domain's own* predicates -- Tossing3D's
-        `OnGround`/`Reachable`/`InBin` name nothing another domain has. So the operator
-        has to be built where those predicates are defined, by the domain's own
-        `SkillProvider`, not generically by `EesMethod`.
+        Unlike `ask_for_reset_task_initial`/`ask_for_reset_random_task` (built
+        generically from a domain's `objects`/`predicates`/`init_atoms`), this
+        skill's effect -- "the objects a human could tidy up are back in place" --
+        can only be written in terms of *this domain's own* predicates, so each
+        domain's `SkillProvider` builds its own operator here.
 
-        Returned `GroundSkill.skill.name` must equal `ASK_FOR_RESET_CUBE_BIN_ONLY_NAME`
-        exactly -- that is what `_EesEpisode.step` intercepts on, the same contract
-        `ASK_FOR_RESET_TASK_INITIAL_NAME` is for the other reset skill.
-
-        Concrete `None` default, mirroring `oracle_sampler_input`'s pattern: most
-        domains have no "robot vs everything else" distinction a partial reset could
-        exploit, and none of them should need boilerplate to say so. `None` means this
-        domain has nothing to offer -- `EesMethod.plan_to` then never adds the skill to
-        the planner's candidate set, regardless of whether
-        `--ask-for-reset-cube-bin-cost` was configured, which is the domain-side half
-        of what keeps every other domain's run byte-identical to before this skill
-        existed."""
+        `GroundSkill.skill.name` must equal `ASK_FOR_RESET_CUBE_BIN_ONLY_NAME`
+        exactly (`_EesEpisode.step` intercepts on it). `None` default: most domains
+        have no robot/non-robot distinction to offer, and `plan_to` never adds the
+        skill regardless of the cost flag when this returns `None`."""
         return None
 
 

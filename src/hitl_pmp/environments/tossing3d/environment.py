@@ -409,29 +409,14 @@ class Tossing3DEnvironment(Environment):
         return state
 
     def reset_movables(self) -> bool:
-        """Reposition `cube`/`bin` to freshly sampled ground poses, leaving the
-        robot's own live configuration untouched, and return True: unlike the
-        `core.Environment` default (which declines), Tossing3D genuinely supports
-        this, backed by a real per-object pose-setting primitive in the live
-        simulator -- see `KinderBackend.reset_cube_and_bin`.
+        """Reposition `cube`/`bin` to fresh ground poses, robot untouched, and
+        return True (`core.Environment`'s default declines). Backed by
+        `KinderBackend.reset_cube_and_bin`, a real per-object pose-setting
+        primitive -- deliberately not routed through `set_state`, which can only
+        rebuild the whole scene (relocating the robot too).
 
-        **Deliberately not routed through `set_state`.** `set_state` can only rebuild
-        the *whole* scene from a seed (see its own docstring), which would relocate
-        the robot too -- exactly what this method exists to avoid. This is a third,
-        separate operation, alongside `set_state` and `snapshot`/`restore`, for the
-        same reason those two stayed separate from each other: each is a genuinely
-        different kind of state change, and widening one to cover another would
-        misdescribe what actually happened.
-
-        **`steps_taken`/`seed` carry forward unchanged.** Unlike `take_action` (which
-        advances `steps_taken` by one, as this domain's own forward dynamics) and
-        `set_state` (which always reports `steps_taken=0`, since it rebuilds the scene
-        from `seed`), this is neither: a live-simulator partial correction is not a
-        skill execution and is not a scene rebuild, so nothing about this domain's own
-        episode bookkeeping moves. Carrying them forward is also what keeps a second
-        `reset_movables` mid-episode from looking like `set_state` accepted a non-zero
-        `steps_taken` state, which it explicitly refuses to do.
-        """
+        `steps_taken`/`seed` carry forward unchanged: this is neither a skill
+        execution nor a scene rebuild, so episode bookkeeping doesn't move."""
         state = self.get_current_state()
         seed = int(round(state.get(obj=self.scene, feature_name="seed")))
         steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))

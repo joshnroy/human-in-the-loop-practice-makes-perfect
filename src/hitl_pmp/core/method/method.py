@@ -66,51 +66,22 @@ class HumanRandomTaskResetRequested(Exception):  # noqa: N818
 
 
 class HumanCubeBinResetRequested(Exception):  # noqa: N818
-    """Raised by a practice policy that is choosing to ask a human for a *partial*
-    reset: reposition whichever of this domain's own non-robot objects a human could
-    casually tidy up, while leaving the robot's own configuration exactly as it is.
-    Control flow, not an error, exactly like the other three (hence the same ruff
-    N818 waiver).
+    """Raised by a practice policy asking a human for a *partial* reset:
+    reposition the domain's non-robot objects, leave the robot untouched.
+    Control flow, not an error (N818 waiver).
 
-    **A third, structurally different kind of reset from either existing one.**
-    `HumanHelpRequested` and `HumanRandomTaskResetRequested` both restore a *complete*
-    symbolic state (this period's own task-initial atoms, or a freshly sampled task's)
-    via `Problem.execute_human_command`'s `target_state: State`. This one cannot go
-    through that path at all: `target_state` describes every object at once, and on a
-    simulator-backed domain like Tossing3D the only way to install one is a whole-scene
-    rebuild (`Tossing3DEnvironment.set_state` -- see its own docstring) which
-    necessarily also relocates the robot. A partial reset needs a state-mutation
-    primitive `HumanOracle`/`Environment` did not previously have -- see
-    `Environment.reset_movables` and `HumanOracle.execute_movables_reset`, and
-    `Problem.execute_movables_reset`, the facade `PracticeLoop` calls instead of
-    `execute_human_command` for this exception.
+    Structurally different from the other two resets: those restore a complete
+    symbolic state via `target_state: State`, which on a simulator-backed domain
+    means a whole-scene rebuild that would also relocate the robot. This instead
+    goes through `Environment.reset_movables`/`HumanOracle.execute_movables_reset`
+    (`Problem.execute_movables_reset` is the facade), new primitives that default
+    to declining so every other domain is untouched. See
+    `SkillProvider.human_cube_bin_reset_skill` for how a domain opts in.
 
-    **Modeled like `HumanHelpRequested`, not like `HumanRandomTaskResetRequested`.**
-    The robot is not relocated and the goal is not changed, so there is no structural
-    reason this has to end the interaction period -- exactly the reasoning that keeps
-    `HumanHelpRequested` a mid-plan step rather than a period-ending one. Whatever plan
-    was in flight is simply invalidated (the touched objects' atoms may have changed)
-    and `_EesEpisode.step`'s closed-loop replanning handles that the same way any other
-    stochastic divergence does.
-
-    **Which domain objects "reposition" touches is entirely the domain's business.**
-    This exception carries no target description at all -- unlike the other two, whose
-    caller supplies `target_state`, this one's caller (a `Method`) does not know which
-    objects a given domain considers "not the robot"; only the domain's own
-    `Environment`/`SkillProvider` do. See `SkillProvider.human_cube_bin_reset_skill`
-    for how a domain opts in, and `Environment.reset_movables` for how it is carried
-    out; every domain that does not override either stays exactly as it was, since both
-    default to declining (`None`/`False`).
-
-    **Carries one required `cost` field**, unlike the other two's optional one. Both of
-    those support `cost=None` ("price this the harness's own way", queried from
-    `Problem.calculate_cost_for_human_command`) because that query is well-defined for
-    a goal-directed or full-state-restore command. No such query exists for "reposition
-    whatever a domain calls its movables" -- there is no `Goal`/`target_state` pair to
-    price against -- so a `Method` raising this must always have priced it itself
-    (`EesMethod` does, from its own `--ask-for-reset-cube-bin-cost`), and the field is
-    required rather than optional to make that contract explicit rather than silently
-    accepting a `None` no caller can currently supply a price for."""
+    Modeled like `HumanHelpRequested` (period continues, plan replans on the
+    resulting divergence like any other), not like the full resets. `cost` is
+    required, not optional: there's no `Goal`/`target_state` to price a partial
+    reset against, so the raising `Method` must always price it itself."""
 
     def __init__(self, *, cost: float) -> None:
         super().__init__(cost)

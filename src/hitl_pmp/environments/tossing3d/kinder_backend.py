@@ -483,46 +483,21 @@ class KinderBackend(BaseModel):
         return self.observe()
 
     def reset_cube_and_bin(self) -> KinderObservation:
-        """Reposition `cube_name`/`bin_name` to freshly sampled ground poses, in the
-        live simulator, leaving the robot's own configuration (and every other
-        object) untouched. The partial-reset primitive `Tossing3DEnvironment.
-        reset_movables` builds on -- see that method for how the result becomes a
-        `core.State`.
+        """Reposition `cube_name`/`bin_name` to fresh ground poses in the live
+        simulator, robot and everything else untouched. Backs
+        `Tossing3DEnvironment.reset_movables`.
 
-        **A real per-object primitive, not a splice of two snapshots.** Upstream's own
-        `ObjectCentricTidyBot3DEnv._initialize_object_poses` -- called once at
-        `reset()`, right before the robot's own pose is initialized -- repositions
-        every ground-placed `initial_state` object exactly this way: sample a
-        collision-free pose per object via `sample_collision_free_positions` (which
-        reads each object's own init region off `task_config`) and call `mujoco_
-        object.set_pose(position, orientation)` on it directly. This calls the same
-        two functions, scoped to `cube_name`/`bin_name` only -- not `_initialize_
-        object_poses` itself, which would also reposition `barrier_name` (this
-        domain's third ground-placed initial_state object, out of scope for this
-        reset) -- so the placement is upstream's own physically-grounded sampler, not
-        arithmetic performed on two different snapshots' float arrays. `set_pose` is a
-        genuine MuJoCo write (`mujoco_object.set_pose`/`sim.forward()`), so the
-        resulting pose is exactly as collision-free and exactly as "resting on the
-        ground" as any object upstream's own `reset()` ever places -- there is no
-        interpenetration risk of the kind a hand-spliced state could introduce.
+        Uses upstream's own placement sampler (`sample_collision_free_positions`
+        + `mujoco_object.set_pose`), the same one `_initialize_object_poses` uses
+        at `reset()`, scoped to just these two objects -- a real MuJoCo write, not
+        a splice of two snapshots, so poses are as collision-free as any object
+        upstream's own reset ever places. Both objects' regions are genuine
+        ranges as of kindergarden#166, so both get independently randomized.
+        Note `blocks_goal_region` is now parented on `bin_0`, so this also moves
+        the scored window, not just the bin's visible position.
 
-        **`bin_name`'s region is a genuine range, as of the kindergarden#166 pin
-        (`Tossing3D-o1.json`'s `bin_init_region` widened from a single fixed point to
-        a real box).** Both `cube_name` (`blocks_init_region`) and `bin_name` now get
-        freshly, independently randomized ground poses on every call -- verified
-        empirically (5 consecutive calls landed the bin at 5 visibly different (x, y)
-        pairs). This also means the SCORED window moves too: `blocks_goal_region` is
-        now parented on `bin_0` rather than the ground (see `goal_region_bbox`'s own
-        docstring), so wherever this reset lands the bin is where a toss now has to
-        land to score -- this reset does not merely relocate the bin, it relocates the
-        goal.
-
-        **Draws from the live scene's own `np_random`,** the same continuing generator
-        `_initialize_object_poses` itself draws from at `reset()`, rather than being
-        handed a fresh seed -- consistent with how every other in-episode source of
-        randomness in this domain (a controller's own internal sampling) continues
-        that one stream rather than being independently reseeded per call.
-        """
+        Draws from the live scene's own `np_random` (not a fresh seed), same as
+        every other in-episode source of randomness in this domain."""
         from kinder.envs.dynamic3d.placement_samplers import sample_collision_free_positions
         from kinder.envs.dynamic3d.utils import convert_yaw_to_quaternion
 

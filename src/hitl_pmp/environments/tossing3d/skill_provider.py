@@ -58,25 +58,16 @@ class Tossing3DSkillProvider(SkillProvider):
         return Tossing3DSkills.compute_action(ground_skill=ground_skill, params=params, state=state)
 
     def human_cube_bin_reset_skill(self) -> GroundSkill:
-        """Tossing3D's `ask_for_reset_cube_bin_only`: `KinderBackend.reset_cube_and_
-        bin` repositions `cube_0`/`bin_0` to freshly sampled ground poses and leaves
-        the robot untouched, so the operator's effects are exactly what a fresh
-        ground placement is known to produce for those two objects -- `OnGround` and
-        `Reachable` (`MovableIsDownX`, cube-vs-barrier) become true, `InBin` becomes
-        false (the cube's fresh position is nowhere near the goal region) -- while
-        every atom this skill does not name (`HandEmpty`, `Holding`) is left exactly
-        as it was, matching what the robot's own untouched configuration means
-        physically.
+        """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`
+        to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot
+        untouched. Effects: `OnGround`/`Reachable` become true, `InBin` becomes
+        false; everything unnamed (`HandEmpty`, `Holding`) stays as it was.
 
-        **`HandEmpty(robot)` is a real precondition, not decoration.** Without it,
-        this operator would claim "nothing about Holding changes" even when the
-        robot *was* holding the cube -- but repositioning the cube out from under a
-        closed gripper is not something this operator's effects describe, and
-        `skills.py`'s own rule ("an operator must never permit more than the raw
-        dynamics allow") says a precondition weaker than that is unsound. Requiring
-        `HandEmpty(robot)` first makes "Holding is unaffected" true by construction:
-        it was already false, and nothing here touches the robot to change that.
-        """
+        `HandEmpty(robot)` is a real precondition, not decoration: without it the
+        operator would claim `Holding` is unaffected even while the robot holds
+        the cube, which repositioning it out from under a closed gripper doesn't
+        actually describe (`skills.py`'s "never permit more than the raw dynamics
+        allow" rule). Requiring it first makes that claim true by construction."""
         env = self.env
         robot = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
         cube = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
