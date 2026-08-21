@@ -41,3 +41,25 @@ class HumanOracle(abc.ABC):
         hand-waved at this level so different versions can model humans of different
         capability/efficiency without changing the interface."""
         raise NotImplementedError
+
+    @staticmethod
+    @abc.abstractmethod
+    def execute_movables_reset(*, env: Environment) -> None:
+        """Ask the human for a *partial* reset: `env.reset_movables()`, whatever that
+        means for this domain, and nothing else. No `CommandStartStateDescription`/
+        `CommandGoalDescription` pair, unlike `execute_human_command`, because there is
+        no goal being pursued and no target state to describe -- the caller
+        (`Problem.execute_movables_reset`, reached only from `HumanCubeBinResetRequested`)
+        does not know which objects a domain considers "not the robot"; only the
+        domain's own `Environment` does, via `reset_movables`.
+
+        A concrete oracle should raise if `env.reset_movables()` returns False (this
+        domain declined -- there is nothing to execute), the same way
+        `execute_human_command` raises rather than no-opping when there is no
+        target_state to restore. Unlike that method, there is no cost-inf branch on
+        `calculate_cost_for_human_command` to have checked first: a Method that may
+        raise `HumanCubeBinResetRequested` at all is only ever built against a domain
+        that supports it (see `SkillProvider.human_cube_bin_reset_skill`, which is
+        what makes the ground skill reachable in the first place), so reaching this
+        call with a declining Environment would mean that contract was broken."""
+        raise NotImplementedError

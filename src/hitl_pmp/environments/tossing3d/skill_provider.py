@@ -2,8 +2,12 @@
 
 import numpy as np
 
-from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
+from hitl_pmp.core.method.skill_provider import (
+    ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
+    OraclePolicyProvider,
+    SkillProvider,
+)
+from hitl_pmp.core.method.types import GroundSkill, LabeledAction, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
@@ -52,6 +56,48 @@ class Tossing3DSkillProvider(SkillProvider):
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> Action:
         return Tossing3DSkills.compute_action(ground_skill=ground_skill, params=params, state=state)
+
+    def human_cube_bin_reset_skill(self) -> GroundSkill:
+        """Tossing3D's `ask_for_reset_cube_bin_only`: `KinderBackend.reset_cube_and_
+        bin` repositions `cube_0`/`bin_0` to freshly sampled ground poses and leaves
+        the robot untouched, so the operator's effects are exactly what a fresh
+        ground placement is known to produce for those two objects -- `OnGround` and
+        `Reachable` (`MovableIsDownX`, cube-vs-barrier) become true, `InBin` becomes
+        false (the cube's fresh position is nowhere near the goal region) -- while
+        every atom this skill does not name (`HandEmpty`, `Holding`) is left exactly
+        as it was, matching what the robot's own untouched configuration means
+        physically.
+
+        **`HandEmpty(robot)` is a real precondition, not decoration.** Without it,
+        this operator would claim "nothing about Holding changes" even when the
+        robot *was* holding the cube -- but repositioning the cube out from under a
+        closed gripper is not something this operator's effects describe, and
+        `skills.py`'s own rule ("an operator must never permit more than the raw
+        dynamics allow") says a precondition weaker than that is unsound. Requiring
+        `HandEmpty(robot)` first makes "Holding is unaffected" true by construction:
+        it was already false, and nothing here touches the robot to change that.
+        """
+        env = self.env
+        robot = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
+        cube = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
+        bin_ = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
+        barrier = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
+        skill = Skill(
+            name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
+            parameters=(robot, cube, bin_, barrier),
+            preconditions=frozenset({
+                LiftedAtom(predicate=HAND_EMPTY, variables=(robot,)),
+            }),
+            add_effects=frozenset({
+                LiftedAtom(predicate=ON_GROUND, variables=(cube,)),
+                LiftedAtom(predicate=REACHABLE, variables=(cube, barrier)),
+            }),
+            delete_effects=frozenset({
+                LiftedAtom(predicate=IN_BIN, variables=(cube, bin_)),
+            }),
+            param_dim=0,
+        )
+        return GroundSkill(skill=skill, objects=(env.robot, env.cube, env.bin, env.barrier))
 
 
 class Tossing3DOracle(OraclePolicyProvider):

@@ -89,6 +89,22 @@ class EesCli:
             "it took before this skill existed.",
         )
         parser.add_argument(
+            "--ask-for-reset-cube-bin-cost",
+            type=float,
+            default=EesMethod.model_fields["ask_for_reset_cube_bin_cost"].default,
+            help="Cost of the ask_for_reset_cube_bin_only ground skill: a mid-plan "
+            "step, like ask_for_reset_task_initial, but built by the domain's own "
+            "SkillProvider rather than generically here -- its effect (reposition "
+            "whichever objects this domain calls 'movable, not the robot' to a "
+            "freshly sampled ground pose) can only be written in terms of that "
+            "domain's own predicates. Configuring this against a domain whose "
+            "SkillProvider.human_cube_bin_reset_skill() has nothing to offer (every "
+            "domain but Tossing3D today) is a misconfiguration plan_to reports rather "
+            "than silently ignores. Omitted (the default, None) means the skill is not "
+            "offered to the planner at all, so a run takes exactly the code path it "
+            "took before this skill existed.",
+        )
+        parser.add_argument(
             "--exploration-epsilon",
             type=float,
             default=EesMethod.model_fields["exploration_epsilon"].default,
@@ -173,6 +189,7 @@ class EesCli:
                 draw_recorder=draw_recorder,
                 ask_for_reset_task_initial_cost=args.ask_for_reset_task_initial_cost,
                 ask_for_reset_random_task_cost=args.ask_for_reset_random_task_cost,
+                ask_for_reset_cube_bin_cost=args.ask_for_reset_cube_bin_cost,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,

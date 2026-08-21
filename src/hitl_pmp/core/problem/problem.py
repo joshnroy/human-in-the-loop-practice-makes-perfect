@@ -98,6 +98,21 @@ class Problem(BaseModel, abc.ABC):
             command_start_state_description=start, command_goal_description=end, env=self.env
         )
 
+    def execute_movables_reset(self) -> None:
+        """The *partial*-reset sanctioned command: let the human reposition whichever
+        of this domain's own non-robot objects it considers movable, leaving the
+        robot's own configuration untouched. No `goal`/`target_state` -- unlike
+        `execute_human_command`, there is no target description for this facade to
+        build and hand over; see `HumanOracle.execute_movables_reset` for why.
+
+        Reached only from `HumanCubeBinResetRequested` (see `PracticeLoop`), which is
+        only ever raised by a Method built against a domain whose `SkillProvider.
+        human_cube_bin_reset_skill` opted in -- so by the time this runs,
+        `self.env.reset_movables()` succeeding is an established contract, not
+        something this facade re-checks."""
+        assert self.human is not None, "execute_movables_reset needs self.human set."
+        self.human.execute_movables_reset(env=self.env)
+
     def sample_train_task(self) -> Task:
         return self.tasks.sample_train_task()
 

@@ -107,3 +107,25 @@ class UnconditionalHumanOracle(HumanOracle):
                 "reports inf for exactly this command, so check it first."
             )
         env.set_state(state=target_state.model_copy(deep=True))
+
+    @staticmethod
+    def execute_movables_reset(*, env: Environment) -> None:
+        """`env.reset_movables()`, and nothing else: a v0 human complies immediately
+        and unconditionally, so there is no capability model to consult and no
+        `target_state` to copy -- unlike `execute_human_command`, the domain itself
+        decides what changes.
+
+        Raises if the domain declined (`reset_movables()` returned False), the same
+        shape as `execute_human_command`'s missing-target_state check: by the time
+        this runs, the caller has already priced and is about to record an
+        intervention, so silently doing nothing would bill one that never happened."""
+        if not env.reset_movables():
+            raise ValueError(
+                "UnconditionalHumanOracle was asked to execute a movables reset, but "
+                f"{type(env).__name__}.reset_movables() returned False -- this domain "
+                "has no notion of 'the robot' distinct from 'everything else' (or has "
+                "not implemented one). A Method should only raise "
+                "HumanCubeBinResetRequested against a domain whose SkillProvider."
+                "human_cube_bin_reset_skill opted in, which is what makes this call "
+                "reachable in the first place."
+            )

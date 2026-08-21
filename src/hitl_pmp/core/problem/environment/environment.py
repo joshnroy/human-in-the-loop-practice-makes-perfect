@@ -117,3 +117,25 @@ class Environment(BaseModel, abc.ABC):
         Concrete implementations sample an initial state and call self.set_state on
         it."""
         raise NotImplementedError
+
+    def reset_movables(self) -> bool:
+        """External override, like `set_state`, but *partial*: reposition whichever of
+        this domain's own non-robot objects a human could casually tidy up, leaving
+        the robot's own current configuration untouched. Called only through
+        `HumanOracle.execute_movables_reset`/`Problem.execute_movables_reset`, in
+        response to a Method raising `HumanCubeBinResetRequested`.
+
+        Concrete `False` by default, for the same reason as `Method.reset_environment`:
+        most domains here have no notion of "the robot" as distinct from "everything
+        else" that a partial reset could exploit, and none of them should need
+        boilerplate to say so. `False` means declined -- the caller must not claim a
+        reset happened. `Tossing3DEnvironment` is the one override, backed by a real
+        per-object pose-setting primitive in the live simulator (see
+        `KinderBackend.reset_cube_and_bin`); it returns True.
+
+        Deliberately not a widening of `set_state`: `set_state` is documented as the
+        *human's* full-state privileged override, installed from a `State` describing
+        every object at once, while this touches an unspecified, domain-chosen subset
+        and takes no argument at all -- the domain decides what "movables" means, not
+        the caller."""
+        return False

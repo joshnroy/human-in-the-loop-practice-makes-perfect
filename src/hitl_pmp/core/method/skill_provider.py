@@ -8,6 +8,17 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
+# The one name `_EesEpisode.step` checks for to intercept this ground skill before it
+# would otherwise be dispatched through the normal controller/skill-execution path --
+# the same interception `ASK_FOR_RESET_TASK_INITIAL_NAME` gets, for the same reason
+# (this "skill" has no controller and must never reach execute_ground_skill). Defined
+# here, in core/, rather than in methods/practice_makes_perfect/ alongside that
+# constant, because a concrete SkillProvider (e.g. Tossing3DSkillProvider) is what
+# names its returned GroundSkill -- and a SkillProvider must not import methods/
+# (methods sits above environments in the layered contract, not below it). This is
+# the one piece of the contract both sides need without either importing the other.
+ASK_FOR_RESET_CUBE_BIN_ONLY_NAME = "ask_for_reset_cube_bin_only"
+
 
 class SkillProvider(BaseModel, abc.ABC):
     """The one per-domain object a domain-agnostic learning/baseline Method needs to
@@ -86,6 +97,42 @@ class SkillProvider(BaseModel, abc.ABC):
         A concrete provider that overrides this must build the row consistently for
         both a training observation and a candidate being scored -- i.e. it is a pure
         function of `(ground_skill, state, params)`."""
+        return None
+
+    def human_cube_bin_reset_skill(self) -> GroundSkill | None:
+        """A domain-specific ground skill representing `HumanCubeBinResetRequested`:
+        a human reset that repositions whichever of this domain's own objects it
+        considers "movable, not the robot", offered to `EesMethod`'s own planner as a
+        real mid-plan step. Takes no `cost`: pricing is `EesMethod.plan_to`'s job
+        (`--ask-for-reset-cube-bin-cost`, injected into `ground_skill_costs` the same
+        way `ask_for_reset_task_initial_cost` is), exactly as this skill's operator
+        model carries no cost of its own -- only preconditions/add/delete effects, the
+        same shape every other `Skill` in this codebase has.
+
+        **Why this is not domain-agnostic the way `ask_for_reset_task_initial`/
+        `ask_for_reset_random_task` are.** Those two reset to a fully-known symbolic
+        state (this period's init_atoms, or nothing at all -- they end the period), so
+        their operators are built generically from whatever `objects`/`predicates`/
+        `init_atoms` a domain hands over (`HumanResetSkillBuilder`, in
+        `methods/practice_makes_perfect/`). This skill's effect is "the objects a
+        human could tidy up end up in their just-placed configuration", which can
+        only be written down in terms of *this domain's own* predicates -- Tossing3D's
+        `OnGround`/`Reachable`/`InBin` name nothing another domain has. So the operator
+        has to be built where those predicates are defined, by the domain's own
+        `SkillProvider`, not generically by `EesMethod`.
+
+        Returned `GroundSkill.skill.name` must equal `ASK_FOR_RESET_CUBE_BIN_ONLY_NAME`
+        exactly -- that is what `_EesEpisode.step` intercepts on, the same contract
+        `ASK_FOR_RESET_TASK_INITIAL_NAME` is for the other reset skill.
+
+        Concrete `None` default, mirroring `oracle_sampler_input`'s pattern: most
+        domains have no "robot vs everything else" distinction a partial reset could
+        exploit, and none of them should need boilerplate to say so. `None` means this
+        domain has nothing to offer -- `EesMethod.plan_to` then never adds the skill to
+        the planner's candidate set, regardless of whether
+        `--ask-for-reset-cube-bin-cost` was configured, which is the domain-side half
+        of what keeps every other domain's run byte-identical to before this skill
+        existed."""
         return None
 
 

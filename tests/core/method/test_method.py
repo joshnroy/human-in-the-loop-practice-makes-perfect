@@ -3,6 +3,7 @@ from typing import Any
 import numpy as np
 
 from hitl_pmp.core.method.method import (
+    HumanCubeBinResetRequested,
     HumanHelpRequested,
     HumanRandomTaskResetRequested,
     InteractionComplete,
@@ -188,3 +189,24 @@ def test_human_random_task_reset_requested_is_distinct_from_the_other_two_signal
     assert issubclass(HumanRandomTaskResetRequested, Exception)
     assert HumanRandomTaskResetRequested().cost is None
     assert HumanRandomTaskResetRequested(cost=0.75).cost == 0.75
+
+
+def test_human_cube_bin_reset_requested_is_distinct_from_the_other_three_signals() -> None:
+    """A fourth, distinct control-flow signal -- modeled like `HumanHelpRequested`
+    (the period continues) but resolved through a partial reset rather than a
+    full-state one. Kept separate for the same reason as the other three: tellable
+    apart by `except`, and each catcher gets exactly its own behaviour."""
+    assert not issubclass(HumanCubeBinResetRequested, InteractionComplete)
+    assert not issubclass(HumanCubeBinResetRequested, HumanHelpRequested)
+    assert not issubclass(HumanCubeBinResetRequested, HumanRandomTaskResetRequested)
+    assert not issubclass(HumanHelpRequested, HumanCubeBinResetRequested)
+    assert not issubclass(HumanRandomTaskResetRequested, HumanCubeBinResetRequested)
+    assert issubclass(HumanCubeBinResetRequested, Exception)
+
+
+def test_human_cube_bin_reset_requested_carries_a_required_cost() -> None:
+    """Unlike the other two reset signals, `cost` is not optional here -- there is no
+    harness-priced query for a partial reset (no Goal/target_state pair to price
+    against), so a Method raising this must always have priced it itself. See the
+    exception's own docstring for why."""
+    assert HumanCubeBinResetRequested(cost=0.4).cost == 0.4

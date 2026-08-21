@@ -482,6 +482,105 @@ class KinderBackend(BaseModel):
         self._state = snapshot.copy()
         return self.observe()
 
+    def reset_cube_and_bin(self) -> KinderObservation:
+        """Reposition `cube_name`/`bin_name` to freshly sampled ground poses, in the
+        live simulator, leaving the robot's own configuration (and every other
+        object) untouched. The partial-reset primitive `Tossing3DEnvironment.
+        reset_movables` builds on -- see that method for how the result becomes a
+        `core.State`.
+
+        **A real per-object primitive, not a splice of two snapshots.** Upstream's own
+        `ObjectCentricTidyBot3DEnv._initialize_object_poses` -- called once at
+        `reset()`, right before the robot's own pose is initialized -- repositions
+        every ground-placed `initial_state` object exactly this way: sample a
+        collision-free pose per object via `sample_collision_free_positions` (which
+        reads each object's own init region off `task_config`) and call `mujoco_
+        object.set_pose(position, orientation)` on it directly. This calls the same
+        two functions, scoped to `cube_name`/`bin_name` only -- not `_initialize_
+        object_poses` itself, which would also reposition `barrier_name` (this
+        domain's third ground-placed initial_state object, out of scope for this
+        reset) -- so the placement is upstream's own physically-grounded sampler, not
+        arithmetic performed on two different snapshots' float arrays. `set_pose` is a
+        genuine MuJoCo write (`mujoco_object.set_pose`/`sim.forward()`), so the
+        resulting pose is exactly as collision-free and exactly as "resting on the
+        ground" as any object upstream's own `reset()` ever places -- there is no
+        interpenetration risk of the kind a hand-spliced state could introduce.
+
+        **`bin_name`'s region is currently a single point.** `Tossing3D-o1.json`'s
+        `bin_init_region` is `[2.0, 0.0, 2.0, 0.0]` -- zero width on both axes -- so
+        every call places the bin at exactly the same (x, y); only `cube_name`'s
+        region (`blocks_init_region`, a real 0.25m x 0.5m box) is actually randomized
+        today. This method still asks the region-driven sampler for both, rather than
+        hardcoding the bin's pose, so a future task JSON that widens `bin_init_region`
+        is honoured automatically -- but a caller should not expect the bin to visibly
+        move under the current shipped scene. See this domain's `Environment.
+        reset_movables` docstring for why this is a scene-configuration fact rather
+        than a code limitation.
+
+        **Draws from the live scene's own `np_random`,** the same continuing generator
+        `_initialize_object_poses` itself draws from at `reset()`, rather than being
+        handed a fresh seed -- consistent with how every other in-episode source of
+        randomness in this domain (a controller's own internal sampling) continues
+        that one stream rather than being independently reseeded per call.
+        """
+        from kinder.envs.dynamic3d.placement_samplers import sample_collision_free_positions
+        from kinder.envs.dynamic3d.utils import convert_yaw_to_quaternion
+
+        object_centric = self._object_centric()
+        ground_fixture = object_centric._ground_fixture  # noqa: SLF001
+        assert ground_fixture is not None, (
+            "reset_cube_and_bin needs a live scene (KinderBackend.reset() first)."
+        )
+
+        configs: dict[str, dict[str, dict[str, Any]]] = {}
+        entity_region_names: dict[str, str] = {}
+        entity_pos_yaw_samplers: dict[str, Any] = {}
+        for object_name in (self.cube_name, self.bin_name):
+            region_name = self._initial_state_region(
+                object_centric=object_centric, object_name=object_name
+            )
+            obj = object_centric._objects_dict[object_name]  # noqa: SLF001
+            obj_type = obj.__class__.REGISTERED_NAME
+            obj_config = object_centric.task_config["objects"][obj_type][object_name]
+            configs.setdefault(obj_type, {})[object_name] = obj_config
+            entity_region_names[object_name] = region_name
+            entity_pos_yaw_samplers[object_name] = ground_fixture.sample_pose_in_region
+
+        object_poses = sample_collision_free_positions(
+            configs,
+            object_centric.np_random,
+            entity_region_names=entity_region_names,
+            entity_pos_yaw_samplers=entity_pos_yaw_samplers,
+        )
+        for obj_poses_dict in object_poses.values():
+            for object_name, pose in obj_poses_dict.items():
+                obj = object_centric._objects_dict[object_name]  # noqa: SLF001
+                obj.set_pose(pose["position"], convert_yaw_to_quaternion(pose["yaw"]))
+
+        assert object_centric._robot_env is not None  # noqa: SLF001
+        assert object_centric._robot_env.sim is not None  # noqa: SLF001
+        object_centric._robot_env.sim.forward()  # noqa: SLF001
+        object_centric._current_state = (  # noqa: SLF001
+            object_centric._get_object_centric_state()  # noqa: SLF001
+        )
+        self._state = object_centric._get_current_state()  # noqa: SLF001
+        return self.observe()
+
+    @staticmethod
+    def _initial_state_region(*, object_centric: Any, object_name: str) -> str:
+        """The region name `object_name` is placed in at a real `reset()`, read off
+        `task_config["initial_state"]`'s own `["on"/"in", object_name, region_name]`
+        predicates -- the same lookup `_initialize_object_poses` performs, so a task
+        JSON's own region assignment is honoured rather than duplicated as a literal
+        here."""
+        for predicate in object_centric.task_config.get("initial_state", []):
+            if predicate[0] in ("on", "in") and predicate[1] == object_name:
+                return str(predicate[2])
+        raise ValueError(
+            f"no initial_state predicate places {object_name!r}; cannot sample a "
+            "fresh ground pose for it."
+        )
+
     def observe(self) -> KinderObservation:
         """Flatten the live KINDER state (plus the live goal box and verdict) to floats.
 
