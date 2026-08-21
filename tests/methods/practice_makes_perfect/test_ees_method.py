@@ -1827,8 +1827,12 @@ def test_plan_to_offers_the_cube_bin_reset_skill_when_configured_and_the_domain_
     (`Adjacent(cell0, cell0)`, reflexive and false in every real init state) is
     achievable if and only if plan_to actually added the injected ground skill to
     the planner's candidate set -- see _CubeBinCapableSkillProvider's own docstring
-    for why no ordinary LightSwitch skill could ever produce it."""
-    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.1)
+    for why no ordinary LightSwitch skill could ever produce it.
+
+    0.01, not 0.1: this must clear plan_to's own shared cost ceiling (default_cost()
+    when nothing has been observed yet, ~0.095) to test injection rather than
+    affordability -- see the dedicated affordability tests below for that."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.01)
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
     init_atoms = method.abstract_state(state=task.initial_state)
     cell0 = env.get_cells()[0]
@@ -1836,6 +1840,80 @@ def test_plan_to_offers_the_cube_bin_reset_skill_when_configured_and_the_domain_
     assert not goal <= init_atoms, "the fixture must actually start with the goal false"
 
     plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+
+
+def test_an_unaffordable_cube_bin_reset_is_rejected_even_as_the_only_route_to_the_goal() -> None:
+    """The bug this guards against, reproduced and closed: classical cost-optimal
+    planning has no price for "give up", so PlanningFailure is not a competing
+    finite-cost alternative -- offering ask_for_reset_cube_bin_only unconditionally
+    means ANY configured cost is preferred over reporting no plan, however large.
+    Verified against a probe sweeping 0.001 through 1,000,000 before this fix
+    existed: every one of them produced a plan through the reset. This is the same
+    goal as test_plan_to_offers_the_cube_bin_reset_skill_..., the ONLY route to
+    which is the reset -- but priced far above any of this run's own competence-
+    derived costs, so plan_to's shared ceiling (see plan_to's own docstring --
+    ask_for_reset_cube_bin_only goes through the exact same reset_costs_by_name
+    mechanism as the other two reset skills, not a copy of its own) declines it and
+    re-requests with no reset offered at all. The goal is genuinely unreachable
+    without it, so PlanningFailure propagates from Fast Downward itself -- there is
+    no cube-bin-specific message to match anymore, since there is no cube-bin-
+    specific code path left to produce one."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=1_000_000.0)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+
+    with pytest.raises(PlanningFailure):
+        method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+
+
+def test_an_affordable_cube_bin_reset_still_clears_the_threshold() -> None:
+    """The companion to the test above: the fix must not make the skill unusable --
+    a genuinely cheap reset (well under default_cost(), the fallback threshold
+    before anything has been observed) still gets used when it is the only route to
+    the goal."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.001)
+    assert method.default_cost() > 0.001, "the fixture must actually be cheap"
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+
+    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+
+
+def test_the_affordability_threshold_is_derived_from_this_runs_own_costs_not_a_fixed_constant() -> (
+    None
+):
+    """Self-calibrating, not a second flag to tune: the same configured reset cost
+    is rejected when nothing has depressed any skill's competence yet, and accepted
+    once some OTHER ground skill's own competence-derived cost has risen above it --
+    "the same order of magnitude as EES's own competence-derived skill costs",
+    read directly off method.skill_costs() rather than a constant invented here."""
+    reset_cost = 0.3
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=reset_cost)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+    assert reset_cost > method.default_cost(), "the fixture must start unaffordable"
+
+    with pytest.raises(PlanningFailure):
+        method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+
+    # Depress TURN_ON_LIGHT's competence (repeated failures) until its own
+    # competence-derived cost clears reset_cost -- nothing about this reset itself
+    # changed, only what this run now believes about a DIFFERENT skill.
+    turn_on = _turn_on_light(env=env)
+    for _ in range(20):
+        method.observe_outcome(ground_skill=turn_on, success=False)
+    costs_now = method.skill_costs()
+    assert max(costs_now.values()) > reset_cost, "the fixture must depress competence enough"
+
+    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=costs_now)
     assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
 
 

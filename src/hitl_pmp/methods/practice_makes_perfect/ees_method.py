@@ -510,7 +510,8 @@ class EesMethod(Method):
         own observed competence. Clears the ceiling: accepted. Doesn't: re-requested
         with no reset offered, so a real cheaper alternative still wins and a truly
         unreachable goal still raises `PlanningFailure` -- keeping "stay stuck,
-        unrescued" possible."""
+        unrescued" possible. Shared across all three reset skills, including
+        `ask_for_reset_cube_bin_only`, via the same `reset_costs_by_name` dict."""
         skills = self.skills()
         ground_skill_costs = costs
         reset_costs_by_name: dict[str, float] = {}
@@ -583,6 +584,53 @@ class EesMethod(Method):
             )
 
         plan = self._plan_or_raise(
+            skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs
+        )
+        if not reset_costs_by_name:
+            return plan
+        used = [
+            ground_skill for ground_skill in plan if ground_skill.skill.name in reset_costs_by_name
+        ]
+        if not used:
+            return plan
+        # A reset skill has no precondition at all -- EXCEPT ask_for_reset_cube_bin_
+        # only, whose own HandEmpty(robot) precondition is what makes this reasoning
+        # (below) sound for it too: it is only ever offered from a state where that
+        # precondition already holds, so a real step establishing it never needs to
+        # precede the reset in an optimal plan either -- see SkillProvider.human_
+        # cube_bin_reset_skill's own docstring. Which position it appears at does not
+        # matter for the ceiling check below, only that it appears; `used[0]` is
+        # representative (a second reset back-to-back would itself be pure waste for
+        # the same reason, so at most one distinct reset skill is ever genuinely
+        # load-bearing in one optimal plan).
+        reset_cost = reset_costs_by_name[used[0].skill.name]
+        ceiling = max(costs.values(), default=self.default_cost())
+        if reset_cost <= ceiling:
+            return plan
+        # DECLINE: re-request with no reset skill offered at all, so a real (possibly
+        # pricier) alternative still wins if one exists, and PlanningFailure still
+        # propagates -- unrescued and stuck -- if none does.
+        return self._plan_or_raise(
+            skills=self.skills(), init_atoms=init_atoms, goal=goal, ground_skill_costs=costs
+        )
+
+    def _plan_or_raise(
+        self,
+        *,
+        skills: tuple[Skill, ...],
+        init_atoms: frozenset[GroundAtom],
+        goal: frozenset[GroundAtom],
+        ground_skill_costs: dict[GroundSkill, float],
+    ) -> list[GroundSkill]:
+        """One real Fast Downward invocation, counted and error-translated -- the sole
+        place `plan_to` ever actually asks the planner for something, which `plan_to`
+        itself may now call twice in one call (offering a reset, then again without
+        one if that reset's cost is declined -- see that method's own docstring). Both
+        invocations count as a genuine "asked the planner for a plan" -- see
+        `planning_outcomes` -- since a caller measuring planning load cares about how
+        many times FastDownward was actually invoked, not how many `plan_to` calls
+        that took."""
+        self._planning_attempts += 1
         try:
             return FastDownwardPlanner.plan(
                 skills=skills,
