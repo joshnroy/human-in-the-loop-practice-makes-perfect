@@ -15,60 +15,26 @@ ASK_FOR_RESET_RANDOM_TASK_NAME = "ask_for_reset_random_task"
 
 
 class HumanResetSkillBuilder:
-    """Builds the two per-episode ground skills that let EES's own planner choose to
-    ask a human for a reset, each priced by its own required-when-present flag
-    (`--ask-for-reset-task-initial-cost`/`--ask-for-reset-random-task-cost`) injected
-    directly into `FastDownwardPlanner`'s `ground_skill_costs` -- `EesMethod.plan_to`
-    does the injecting, this only builds the operators.
+    """Builds the two per-episode ground skills that let EES's planner ask a human
+    for a reset, priced via `--ask-for-reset-task-initial-cost`/
+    `--ask-for-reset-random-task-cost` and injected into `ground_skill_costs` by
+    `EesMethod.plan_to` (which also does the injecting; this only builds operators).
 
-    **`ask_for_reset_task_initial`** puts the world back at THIS period's own task's
-    initial symbolic state. **`ask_for_reset_random_task`** is dispatched as a request
-    to reposition onto a *freshly sampled* train task instead (see
-    `HumanRandomTaskResetRequested`) -- but the operator built here for it is
-    constructed from the SAME `task_initial_atoms` as the first skill, not from
-    whatever the freshly sampled task turns out to be (which is not known at plan
-    time: sampling only happens if this ground skill is actually dispatched). That is
-    sound on a domain whose task family is *shape-invariant* -- every task's abstract
-    initial state reduces to the same (predicate, objects) set regardless of which
-    scene was sampled, which is Tossing3D's case (verified empirically: 9 fixed scene
-    seeds plus 8 RNG-drawn samples all abstracted to
-    `{HandEmpty(robot), OnGround(cube_0), Reachable(cube_0, cuboid_barrier)}`) --
-    rather than a general framework guarantee. A domain whose sampled tasks vary in
-    goal or initial shape would make this operator's declared effect merely an
-    *estimate* of what dispatch actually produces; `_EesEpisode.step`'s closed-loop
-    divergence check (comparing the next queued skill's preconditions against the
-    real post-dispatch state) prevents an inapplicable action from ever being taken on
-    such a mismatch, but the planner's cost comparisons against a real reset would no
-    longer be trustworthy there. No domain in this repo other than Tossing3D
-    configures `ask_for_reset_random_task_cost` today.
+    `ask_for_reset_task_initial` restores THIS period's task-initial state.
+    `ask_for_reset_random_task` is dispatched onto a freshly sampled task instead,
+    but its operator is built from the SAME `task_initial_atoms` -- sound because
+    Tossing3D's task family is shape-invariant (every sampled task abstracts to the
+    same atoms; verified empirically). Not a general guarantee for other domains.
 
-    **Why neither can be a domain-general `Skill`, declared once beside `pick_cube`/
-    `move_to_toss_location_and_toss`.** A lifted `Skill`'s add/delete effects are fixed
-    PDDL text, identical for every problem the domain ever plans over. "Reset to THIS
-    task's own init_atoms" is per-episode data -- two tasks of the same domain can have
-    different init_atoms -- so it can only be built once `init_atoms` is known, which is
-    exactly when `EesMethod.plan_to` is called (it already receives `init_atoms` per
-    episode). So each builder below is called fresh inside `plan_to`, not registered
-    once in a domain's `skills()`.
+    Built fresh inside `plan_to` rather than declared once in `skills()`, since
+    "reset to this task's own init_atoms" is per-episode data, not fixed PDDL text.
+    Made STRIPS-sound by naming every atom NOT in init_atoms as a delete effect and
+    every atom that IS as an add effect (disjoint by construction, so applying both
+    always leaves the state exactly init_atoms). One grounding per skill, binding
+    all `objects`.
 
-    **How "reset to exactly init_atoms" becomes a sound STRIPS operator.** A STRIPS
-    delete effect only removes the ground atoms it names; whatever it doesn't name
-    stays exactly as it was. So achieving "every atom equals init_atoms, regardless of
-    what was true before" needs the operator to name every possible atom that is NOT in
-    init_atoms as a delete effect (`SkillGrounder.all_possible_ground_atoms(...) -
-    init_atoms`) and every atom that IS in init_atoms as an add effect. Since add/delete
-    are disjoint by construction (an atom is in init_atoms or it isn't), applying both
-    together leaves the state exactly init_atoms no matter what was true beforehand.
-
-    **One parameter per object, all of them bound in the single grounding this
-    returns.** A `LiftedAtom` can only reference this skill's own declared parameters
-    (`Skill._check_variables_are_declared_parameters`), so every `Object` init_atoms or
-    the universe could ever mention needs its own `Variable` -- there is exactly one
-    grounding of either skill, binding all of `objects` in order, which is also the
-    only grounding `EesMethod.plan_to` ever offers the planner.
-
-    A static-method container, never instantiated, same as every other business-logic
-    class in this project."""
+    A static-method container, never instantiated, same as this project's other
+    business-logic classes."""
 
     @staticmethod
     def build_ask_for_reset_task_initial(

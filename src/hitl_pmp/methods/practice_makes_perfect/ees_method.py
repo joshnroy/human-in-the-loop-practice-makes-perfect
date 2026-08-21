@@ -470,65 +470,28 @@ class EesMethod(Method):
         costs: dict[GroundSkill, float],
         task_initial_atoms: frozenset[GroundAtom] | None = None,
     ) -> list[GroundSkill]:
-        """Costs change on nearly every call, but `init_atoms`/`goal` repeat heavily
-        -- the test set is fixed for the whole run, and practice replans toward the
-        same few candidates' preconditions -- so this hands the planner a per-run
-        `TranslationCache` to skip re-translating PDDL it has already seen. Costs are
-        patched into the SAS *after* translation, so caching that stage cannot change
-        the plan; see `TranslationCache`.
+        """`costs` changes nearly every call; `init_atoms`/`goal` repeat heavily, so
+        this uses a per-run `TranslationCache` (costs are patched post-translation,
+        so caching can't change the plan).
 
-        **`task_initial_atoms` is NOT `init_atoms`.** `init_atoms` is wherever this
-        particular call is planning FROM -- the episode's current true state, which
-        moves every step. `task_initial_atoms` is the practice period's own task's
-        fixed initial abstract state (`_EesEpisode._task_initial_atoms`), the thing
-        `ask_for_reset_task_initial` resets TO. Conflating the two would build an
-        operator whose effect is "reset to wherever you already are" -- a symbolic
-        no-op.
+        `task_initial_atoms` is NOT `init_atoms` -- it's the practice period's own
+        fixed initial state (what `ask_for_reset_task_initial` resets TO), not
+        wherever this call happens to be planning from. When set and a reset cost
+        is configured, the corresponding reset skill is built fresh (see
+        `HumanResetSkillBuilder`) and added to `skills`/`ground_skill_costs` at its
+        configured cost. `None` for evaluation episodes and the speculative scoring
+        pass, so neither is ever rescued.
 
-        When not `None` AND `ask_for_reset_task_initial_cost`/`ask_for_reset_random_
-        task_cost` is configured, this adds the corresponding reset skill -- built
-        fresh here from `task_initial_atoms` (see `HumanResetSkillBuilder`, which is
-        why neither can be a domain-general skill declared once in `skills()`) -- to
-        both `skills` and `ground_skill_costs` before asking the planner, priced at
-        the configured cost rather than anything read off `costs`. Both reset skills
-        are built from the SAME `task_initial_atoms`, differing only in name/cost --
-        see `HumanResetSkillBuilder`'s own docstring for what that reuse assumes and
-        `_EesEpisode.step` for how the two names are told apart at dispatch time.
-        `_EesEpisode` passes its own `_task_initial_atoms` from every practice-context
-        call (goal-pursuit, and both `_practice_plan` calls, which are only ever
-        reached while practicing) -- `None` for an evaluation episode (no evaluation
-        policy ever supplies one) and for `refresh_planning_progress_plans`' speculative
-        scoring pass, so no evaluation episode is ever rescued and the scoring pass is
-        deliberately kept on the plain skill set, unable to perturb what
-        `score_ground_skill` computes for other candidates. Different `init_atoms`
-        (almost every call) means a different domain string and therefore a different
-        `TranslationCache` key, so caching stays correct without any special-casing
-        here -- see `TranslationCache`.
-
-        **A reset that clears the planner's search is not automatically ACCEPTED.**
-        Classical cost-minimizing search has no way to weigh "no plan" as a competing
-        finite-cost alternative: any finite reset cost beats it, so once a
-        zero-precondition reset skill is offered, FastDownward accepts it at ANY
-        configured cost whenever it is the only (or cheapest) way to reach `goal` --
-        confirmed empirically against Tossing3D's real one-way door across costs
-        0.001 through 1e6. Left unchecked, that would silently turn "sweep the reset
-        cost" into "always reset regardless of cost", exactly the failure mode a
-        `never`-policy run with an unrescued robot is supposed to be able to still
-        show. So when the plan `FastDownwardPlanner.plan` returns actually uses a
-        reset skill, its OWN configured cost is compared against a ceiling before
-        being accepted: `max(costs.values(), default=self.default_cost())` -- the
-        priciest ordinary ground-skill step this exact call already knows the cost
-        of (or, with nothing scored yet, the fresh-skill default). This is deliberately
-        NOT an invented constant: `costs` is the exact argument this method already
-        receives, so the bar moves with the robot's own observed competence over a
-        run -- a reset stays comparably reasonable exactly when the robot's own skills
-        are ALSO costly/unreliable, and looks like a bad deal when they are cheap and
-        reliable. A reset whose cost clears the ceiling is accepted as before; one that
-        does not is re-requested with NO reset skill offered at all, so a genuinely
-        cheaper-but-real alternative (if one exists) still wins, and a genuinely
-        UNREACHABLE goal still raises `PlanningFailure` -- the free `InteractionComplete`
-        (or the next practice candidate) a caller falls back to on that exception is
-        exactly the "stay stuck, unrescued" outcome this exists to keep possible."""
+        A reset that clears the search isn't automatically accepted: classical
+        cost-minimizing search can't weigh "no plan" against any finite cost, so an
+        offered reset would otherwise be taken at any magnitude (confirmed
+        empirically, costs 0.001-1e6). So when the plan uses a reset skill, its cost
+        is checked against `max(costs.values(), default=self.default_cost())` --
+        the priciest ordinary skill already in scope, so the bar tracks the robot's
+        own observed competence. Clears the ceiling: accepted. Doesn't: re-requested
+        with no reset offered, so a real cheaper alternative still wins and a truly
+        unreachable goal still raises `PlanningFailure` -- keeping "stay stuck,
+        unrescued" possible."""
         skills = self.skills()
         ground_skill_costs = costs
         reset_costs_by_name: dict[str, float] = {}
