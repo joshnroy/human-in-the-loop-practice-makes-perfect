@@ -184,8 +184,20 @@ class MethodRunner:
         ]
 
         def record_results_writers() -> None:
+            # The checkpoint clip write_clip just wrote for *this* sweep, if any --
+            # written_clips is keyed by transitions, and metrics.evaluations[-1] is
+            # this sweep's own (transitions, num_solved, num_total) by the time
+            # on_sweep_end (this closure's only caller) fires: PracticeLoop calls
+            # hand_over (which drives write_clip) before on_sweep_end, for every
+            # sweep, rendered or not. None whenever num_render_checkpoints did not
+            # render this particular sweep, or there is no --output-dir to write a
+            # clip into at all -- exactly the gating a results writer should not have
+            # to re-derive.
+            video_path = (
+                written_clips.get(metrics.evaluations[-1][0]) if metrics.evaluations else None
+            )
             for writer in results_writers:
-                writer.record_checkpoint(metrics=metrics)
+                writer.record_checkpoint(metrics=metrics, video_path=video_path)
 
         # --record-skill-competence's recorder, or None (the default, and what keeps
         # every unrecorded run byte-identical). Built here rather than inside a

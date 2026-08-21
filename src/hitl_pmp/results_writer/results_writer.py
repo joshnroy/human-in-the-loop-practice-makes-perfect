@@ -28,6 +28,7 @@ off, asserted end-to-end through the real CLI in
 
 import abc
 import argparse
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
@@ -76,14 +77,23 @@ class ResultsWriter(BaseModel, abc.ABC):
         *configuration*, a writer cannot otherwise see; a writer that does not need it
         ignores it."""
 
-    def record_checkpoint(self, *, metrics: Metrics) -> None:
+    def record_checkpoint(self, *, metrics: Metrics, video_path: Path | None = None) -> None:
         """One evaluation sweep just finished and was recorded.
 
         Fired after `PracticeLoop._evaluate` has appended, so `metrics.evaluations[-1]`
         is that sweep -- the same boundary `progress.jsonl` and `competence_log.jsonl`
         already key on, and the same learning-curve x-axis. Deliberately per *sweep*,
         never per environment step: a step-level hook would be thousands of calls per
-        run for no analytic gain."""
+        run for no analytic gain.
+
+        `video_path` is the small, bounded checkpoint clip `method_runner.py`'s own
+        `write_clip` just wrote for *this* sweep, when `--num-render-checkpoints`
+        rendered one -- `None` otherwise (most sweeps, and every run with no renderer
+        at all), which is this hook's own gating, not something a writer re-derives.
+        Deliberately not `--record-full-loop`'s recording: that stays a separate,
+        heavier, occasionally-triggered diagnostic path, never routed through this
+        per-sweep hook. A writer that does not care ignores it, matching every other
+        concrete no-op parameter this interface has."""
 
     def close(self, *, metrics: Metrics) -> None:
         """The run is over; write any summary and release anything held.

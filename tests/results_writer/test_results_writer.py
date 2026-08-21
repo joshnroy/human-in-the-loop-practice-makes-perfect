@@ -18,6 +18,7 @@ import pytest
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
+from hitl_pmp.environments.lightswitch.renderer import LightSwitchRenderer
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchOracle
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.method_runner import MethodRunner
@@ -38,6 +39,9 @@ class SpyResultsWriter(ResultsWriter):
     # the harness's own instance would append somewhere the test cannot see.
     checkpoints: ClassVar[list[CheckpointScalars]] = []
     summaries: ClassVar[list[RunSummaryScalars]] = []
+    # What video_path the harness handed each checkpoint call, in call order --
+    # None on every entry unless a test actually renders a checkpoint clip.
+    video_paths: ClassVar[list[Path | None]] = []
 
     @staticmethod
     def open_if_requested(
@@ -48,10 +52,11 @@ class SpyResultsWriter(ResultsWriter):
             return None
         return SpyResultsWriter()
 
-    def record_checkpoint(self, *, metrics: Metrics) -> None:
+    def record_checkpoint(self, *, metrics: Metrics, video_path: Path | None = None) -> None:
         scalars = CheckpointScalars.from_metrics(metrics=metrics)
         assert scalars is not None
         self.checkpoints.append(scalars)
+        self.video_paths.append(video_path)
 
     def close(self, *, metrics: Metrics) -> None:
         self.summaries.append(RunSummaryScalars.from_metrics(metrics=metrics))
@@ -85,6 +90,7 @@ def spy_registry(*, monkeypatch: pytest.MonkeyPatch) -> type[SpyResultsWriter]:
     lists start empty -- so one test's hook calls cannot leak into the next."""
     monkeypatch.setattr(SpyResultsWriter, "checkpoints", [])
     monkeypatch.setattr(SpyResultsWriter, "summaries", [])
+    monkeypatch.setattr(SpyResultsWriter, "video_paths", [])
     monkeypatch.setattr("hitl_pmp.method_runner.RESULTS_WRITERS", (SpyResultsWriter,))
     return SpyResultsWriter
 
@@ -153,6 +159,44 @@ def test_each_checkpoint_hook_reads_the_sweep_that_just_finished(
         for scalars in spy_registry.checkpoints
     ]
     assert observed == [tuple(entry) for entry in metrics.evaluations]
+
+
+def test_a_rendered_checkpoint_clips_path_reaches_the_writer(
+    *, spy_registry: type[SpyResultsWriter], tmp_path: Path
+) -> None:
+    """The wiring `results_writer.py`'s `video_path` contract exists for: when
+    `--num-render-checkpoints` actually renders a sweep, `method_runner.py`'s own
+    `write_clip` output is what every writer's `record_checkpoint` receives -- not
+    re-rendered, not re-derived, the same file `episode.mp4`/`episode_NNNNNN.mp4`
+    are copied from."""
+    problem = _build_problem()
+    metrics = MethodRunner.run(
+        args=_args(spy=True, output_dir=tmp_path),
+        method=SkillOracleMethod(env=problem.env, oracle=LightSwitchOracle(env=problem.env)),
+        problem=problem,
+        num_cycles=1,
+        max_steps_per_interaction=2,
+        renderer=LightSwitchRenderer,
+        render_fps=2,
+        num_render_checkpoints=2,
+    )
+    assert len(metrics.evaluations) == len(spy_registry.video_paths) == 2
+    # Both sweeps rendered (num_render_checkpoints=2 covers both of a 1-cycle run's
+    # two sweeps), so every entry is a real, existing checkpoint clip.
+    for video_path in spy_registry.video_paths:
+        assert video_path is not None
+        assert video_path.is_file()
+    assert spy_registry.video_paths[0] != spy_registry.video_paths[1]
+
+
+def test_no_video_path_reaches_the_writer_when_nothing_was_rendered(
+    *, spy_registry: type[SpyResultsWriter]
+) -> None:
+    """The ordinary case, and what keeps every run with no renderer at all
+    (--method skill-oracle with no --output-dir, most of this file's other tests)
+    passing video_path=None -- unchanged from before this feature existed."""
+    _run(args=_args(), num_cycles=2)
+    assert spy_registry.video_paths == [None, None, None]
 
 
 def test_close_is_fired_once_with_the_finished_run(*, spy_registry: type[SpyResultsWriter]) -> None:

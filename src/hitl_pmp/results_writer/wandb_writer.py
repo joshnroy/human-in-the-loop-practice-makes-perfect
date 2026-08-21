@@ -253,18 +253,34 @@ class WandbResultsWriter(ResultsWriter):
             ) from error
         return tuple(runs)
 
-    def record_checkpoint(self, *, metrics: Metrics) -> None:
+    def record_checkpoint(self, *, metrics: Metrics, video_path: Path | None = None) -> None:
+        """Log this sweep's scalars, plus a `wandb.Video` when `video_path` names a
+        checkpoint clip `method_runner.py` just rendered for it.
+
+        One `.log()` call, not two: W&B advances its step on every `.log()`, and the
+        step this writer uses is `checkpoint` (see `_handle`'s own `define_metric`
+        calls) -- splitting the video into a second call would risk it landing on a
+        different step than the scalars it belongs beside if a caller ever logged
+        anything in between. `video_path is None` (every sweep `--num-render-
+        checkpoints` did not render) is the ordinary case and costs nothing beyond the
+        one `is None` check -- no `wandb.Video` is constructed, and no extra key
+        appears in the logged dict, so a run with no rendered checkpoints logs bit-for-
+        bit what it did before this existed.
+
+        **Never `--record-full-loop`'s recording.** That path is deliberately not
+        wired here -- see this method's own `video_path` contract on the base class."""
         scalars = CheckpointScalars.from_metrics(metrics=metrics)
         if scalars is None:
             return
-        payload = scalars.model_dump()
+        payload: dict[str, Any] = scalars.model_dump()
         # Mirrored into the two prefixed groups _handle's define_metric calls bind to
         # by_cycle's/by_transitions' own step metric -- see that method. Each group
         # excludes its OWN axis field (plotting a metric against itself is not a
         # learning curve) but keeps the OTHER axis as a plotted quantity, e.g.
         # by_cycle/num_online_transitions shows how many env steps have happened by a
-        # given cycle. The un-prefixed flat payload is still logged too, unchanged --
-        # every existing consumer of the bare field names stays byte-identical.
+        # given cycle. Computed from the scalars-only payload, BEFORE video is added
+        # below -- a video isn't a learning-curve scalar, so it is never mirrored into
+        # either axis group, only into the flat/unprefixed log.
         by_cycle = {
             f"by_cycle/{name}": value for name, value in payload.items() if name != "checkpoint"
         }
@@ -273,6 +289,12 @@ class WandbResultsWriter(ResultsWriter):
             for name, value in payload.items()
             if name != "num_online_transitions"
         }
+        if video_path is not None:
+            # Lazy, for the same reason `_handle` imports lazily: this package must
+            # import, typecheck and test on a machine with no wandb at all.
+            import wandb
+
+            payload["episode_video"] = wandb.Video(str(video_path))
         self._handle().log({**payload, **by_cycle, **by_transitions})
 
     def close(self, *, metrics: Metrics) -> None:

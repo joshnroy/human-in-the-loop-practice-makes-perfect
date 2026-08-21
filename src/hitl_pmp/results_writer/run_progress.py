@@ -79,14 +79,18 @@ class RunProgressWriter(ResultsWriter):
             sweeps_total=num_cycles + 1,
         )
 
-    def record_checkpoint(self, *, metrics: Metrics) -> None:
+    def record_checkpoint(self, *, metrics: Metrics, video_path: Path | None = None) -> None:
         """Append the state of the run as of the sweep that just finished.
 
         Reads `metrics.evaluations[-1]`, so this must be called after the sweep has
         been recorded -- which is exactly where `PracticeLoop` fires its hook. Doing
         nothing when there are no evaluations yet keeps the hook safe to call
         unconditionally.
+
+        `video_path` is ignored: this writer's product is `progress.jsonl`, a small
+        text file meant to be tailed, and a checkpoint clip's path is not progress.
         """
+        del video_path
         if not metrics.evaluations:
             return
         transitions, num_solved, num_total = metrics.evaluations[-1]

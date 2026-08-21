@@ -24,9 +24,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from hitl_pmp.core.metrics.metrics import Metrics
+from hitl_pmp.core.renderer.renderer import VideoWriter
 from hitl_pmp.results_writer.run_collision import MissingVariationAxisError
 from hitl_pmp.results_writer.types import ExistingRun
 from hitl_pmp.results_writer.wandb_writer import WandbResultsWriter
@@ -366,6 +368,55 @@ def test_checkpoint_scalars_are_mirrored_into_both_learning_curve_axis_groups(
     assert run.summary["by_transitions/num_solved"] == 3
 
     writer.close(metrics=second)
+
+
+
+
+@wandb_installed
+def test_a_rendered_checkpoint_clip_is_logged_as_a_wandb_video(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`method_runner.py`'s own `write_clip` produces exactly this: a small, bounded
+    per-checkpoint `episode_NNNNNN.mp4`. Never `--record-full-loop`'s recording --
+    that stays a separate, heavier path this writer is never handed."""
+    import wandb
+
+    monkeypatch.setenv("WANDB_MODE", "offline")
+    monkeypatch.setenv("WANDB_SILENT", "true")
+    video_path = tmp_path / "episode_000017.mp4"
+    VideoWriter.write(
+        frames=[np.zeros((4, 4, 3), dtype=np.uint8) for _ in range(2)],
+        output_path=video_path,
+        fps=1,
+    )
+    args = Args.lightswitch(output_dir=tmp_path)
+    writer = WandbResultsWriter.open_if_requested(args=args, num_cycles=1)
+    assert writer is not None
+    writer.record_checkpoint(metrics=WandbHarness.metrics_with_one_sweep(), video_path=video_path)
+
+    run = wandb.run
+    assert run is not None
+    assert "episode_video" in run.summary.keys()  # noqa: SIM118 - Summary has no __contains__
+    writer.close(metrics=WandbHarness.metrics_with_one_sweep())
+
+
+@wandb_installed
+def test_no_video_key_is_logged_when_no_checkpoint_clip_was_rendered(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`video_path=None` (the default, and every sweep --num-render-checkpoints did
+    not render) must log exactly the scalars a run without this feature always
+    logged -- no `episode_video` key at all, not merely an empty/None one, so a run
+    with no rendered checkpoints stays indistinguishable from one before this
+    existed."""
+    import wandb
+
+    monkeypatch.setenv("WANDB_MODE", "offline")
+    monkeypatch.setenv("WANDB_SILENT", "true")
+    args = Args.lightswitch(output_dir=tmp_path)
+    writer = WandbResultsWriter.open_if_requested(args=args, num_cycles=1)
+    assert writer is not None
+    writer.record_checkpoint(metrics=WandbHarness.metrics_with_one_sweep())
 
 
 @wandb_installed
