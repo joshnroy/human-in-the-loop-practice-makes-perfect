@@ -257,7 +257,23 @@ class WandbResultsWriter(ResultsWriter):
         scalars = CheckpointScalars.from_metrics(metrics=metrics)
         if scalars is None:
             return
-        self._handle().log(scalars.model_dump())
+        payload = scalars.model_dump()
+        # Mirrored into the two prefixed groups _handle's define_metric calls bind to
+        # by_cycle's/by_transitions' own step metric -- see that method. Each group
+        # excludes its OWN axis field (plotting a metric against itself is not a
+        # learning curve) but keeps the OTHER axis as a plotted quantity, e.g.
+        # by_cycle/num_online_transitions shows how many env steps have happened by a
+        # given cycle. The un-prefixed flat payload is still logged too, unchanged --
+        # every existing consumer of the bare field names stays byte-identical.
+        by_cycle = {
+            f"by_cycle/{name}": value for name, value in payload.items() if name != "checkpoint"
+        }
+        by_transitions = {
+            f"by_transitions/{name}": value
+            for name, value in payload.items()
+            if name != "num_online_transitions"
+        }
+        self._handle().log({**payload, **by_cycle, **by_transitions})
 
     def close(self, *, metrics: Metrics) -> None:
         """Write the run summary and finish the W&B run.
@@ -299,6 +315,17 @@ class WandbResultsWriter(ResultsWriter):
             # data exists, so no historical run needs migrating.
             self._run.define_metric("checkpoint")
             self._run.define_metric("*", step_metric="checkpoint")
+            # Two more panel groups, so W&B renders the learning curve BOTH ways --
+            # num_online_transitions on the x-axis as well as checkpoint -- as
+            # separate panels automatically (W&B groups panels by metric prefix),
+            # rather than Josh hand-building a custom chart per run. `checkpoint` is
+            # already defined above; `num_online_transitions` needs its own
+            # define_metric call before it can be referenced as a step_metric, same
+            # as checkpoint was. record_checkpoint below fills both prefixes on every
+            # call, so both panels populate live as the run progresses.
+            self._run.define_metric("num_online_transitions")
+            self._run.define_metric("by_cycle/*", step_metric="checkpoint")
+            self._run.define_metric("by_transitions/*", step_metric="num_online_transitions")
         return self._run
 
     @staticmethod

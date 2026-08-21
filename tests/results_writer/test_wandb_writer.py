@@ -304,6 +304,71 @@ def test_the_config_and_summary_reach_wandb(
 
 
 @wandb_installed
+def test_checkpoint_scalars_are_mirrored_into_both_learning_curve_axis_groups(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Josh wants two learning-curve panels filling live, not one: `checkpoint` (cycle
+    count) on the x-axis, matching every other metric's default, and
+    `num_online_transitions` on a second. `_handle`'s `define_metric` calls bind
+    `by_cycle/*`/`by_transitions/*` to the two step metrics; this checks the DATA those
+    panels would render is genuinely logged incrementally by `record_checkpoint`, which
+    is what a hand-built custom chart in the W&B UI would otherwise require per run.
+
+    Two sweeps, not one, so "incrementally" is a real claim: the first checkpoint's
+    mirrored values must differ from the second's, not just be present once at the end."""
+    import wandb
+
+    monkeypatch.setenv("WANDB_MODE", "offline")
+    monkeypatch.setenv("WANDB_SILENT", "true")
+    args = argparse.Namespace(
+        record_wandb=True,
+        output_dir=tmp_path,
+        env="lightswitch",
+        method="skill-oracle",
+        seed=3,
+        practice_reset_policy="scheduled",
+        re_run=False,
+        num_render_checkpoints=1,
+        record_full_loop=Path("loop.mp4"),
+    )
+    writer = WandbResultsWriter.open_if_requested(args=args, num_cycles=2)
+    assert writer is not None
+
+    first = WandbHarness.metrics_with_one_sweep(num_solved=2, num_total=3)
+    writer.record_checkpoint(metrics=first)
+    run = wandb.run
+    assert run is not None
+    # Both prefixed mirrors present after the FIRST checkpoint already -- filling live,
+    # not assembled only at the end.
+    assert run.summary["by_cycle/num_solved"] == 2
+    assert run.summary["by_cycle/num_total"] == 3
+    assert run.summary["by_cycle/num_online_transitions"] == 17
+    assert run.summary["by_transitions/num_solved"] == 2
+    assert run.summary["by_transitions/num_total"] == 3
+    assert run.summary["by_transitions/checkpoint"] == 0
+    # Neither group re-plots its own x-axis as a y-value against itself. `not in`
+    # against wandb's own Summary falls back to the legacy sequence protocol (no
+    # __contains__ defined) and raises, so this goes through the public `keys()`
+    # instead.
+    summary_keys = set(run.summary.keys())
+    assert "by_cycle/checkpoint" not in summary_keys
+    assert "by_transitions/num_online_transitions" not in summary_keys
+    # The un-prefixed flat scalars still land too -- byte-identical to before this
+    # landing, so an existing dashboard built against the bare names is unaffected.
+    assert run.summary["num_solved"] == 2
+
+    second = Metrics()
+    second.record_evaluation(num_online_transitions=17, num_solved=2, num_total=3)
+    second.record_evaluation(num_online_transitions=40, num_solved=3, num_total=3)
+    writer.record_checkpoint(metrics=second)
+    assert run.summary["by_cycle/num_online_transitions"] == 40
+    assert run.summary["by_transitions/checkpoint"] == 1
+    assert run.summary["by_transitions/num_solved"] == 3
+
+    writer.close(metrics=second)
+
+
+@wandb_installed
 def test_wandb_tag_is_appended_on_top_of_the_env_and_method_tags(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
