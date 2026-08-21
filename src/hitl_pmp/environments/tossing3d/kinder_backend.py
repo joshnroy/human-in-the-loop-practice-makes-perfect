@@ -506,16 +506,16 @@ class KinderBackend(BaseModel):
         ground" as any object upstream's own `reset()` ever places -- there is no
         interpenetration risk of the kind a hand-spliced state could introduce.
 
-        **`bin_name`'s region is currently a single point.** `Tossing3D-o1.json`'s
-        `bin_init_region` is `[2.0, 0.0, 2.0, 0.0]` -- zero width on both axes -- so
-        every call places the bin at exactly the same (x, y); only `cube_name`'s
-        region (`blocks_init_region`, a real 0.25m x 0.5m box) is actually randomized
-        today. This method still asks the region-driven sampler for both, rather than
-        hardcoding the bin's pose, so a future task JSON that widens `bin_init_region`
-        is honoured automatically -- but a caller should not expect the bin to visibly
-        move under the current shipped scene. See this domain's `Environment.
-        reset_movables` docstring for why this is a scene-configuration fact rather
-        than a code limitation.
+        **`bin_name`'s region is a genuine range, as of the kindergarden#166 pin
+        (`Tossing3D-o1.json`'s `bin_init_region` widened from a single fixed point to
+        a real box).** Both `cube_name` (`blocks_init_region`) and `bin_name` now get
+        freshly, independently randomized ground poses on every call -- verified
+        empirically (5 consecutive calls landed the bin at 5 visibly different (x, y)
+        pairs). This also means the SCORED window moves too: `blocks_goal_region` is
+        now parented on `bin_0` rather than the ground (see `goal_region_bbox`'s own
+        docstring), so wherever this reset lands the bin is where a toss now has to
+        land to score -- this reset does not merely relocate the bin, it relocates the
+        goal.
 
         **Draws from the live scene's own `np_random`,** the same continuing generator
         `_initialize_object_poses` itself draws from at `reset()`, rather than being

@@ -439,6 +439,31 @@ def test_reset_movables_moves_the_cube_to_a_fresh_ground_pose() -> None:
         env.close()
 
 
+def test_reset_movables_moves_the_bin_too_now_that_its_region_is_a_real_range() -> None:
+    """As of the kindergarden#166 pin, bin_init_region is a genuine box rather than a
+    single fixed point -- see KinderBackend.reset_cube_and_bin's own docstring for the
+    correction this test pins. Since blocks_goal_region is now parented on bin_0 (also
+    #166/#272), this reset relocates the SCORED window along with the bin, not just the
+    bin's own visible position."""
+    env = _env()
+    try:
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        before_bin = (
+            env.get_current_state().get(obj=env.bin, feature_name="x"),
+            env.get_current_state().get(obj=env.bin, feature_name="y"),
+        )
+
+        env.reset_movables()
+        state = env.get_current_state()
+        after_bin = (
+            state.get(obj=env.bin, feature_name="x"),
+            state.get(obj=env.bin, feature_name="y"),
+        )
+        assert after_bin != pytest.approx(before_bin, abs=1e-6)
+    finally:
+        env.close()
+
+
 def test_reset_movables_breaks_a_grasp_since_the_robot_is_never_touched() -> None:
     """Empirical grounding for the operator's HandEmpty(robot) precondition (see
     Tossing3DSkillProvider.human_cube_bin_reset_skill's own docstring), and a
