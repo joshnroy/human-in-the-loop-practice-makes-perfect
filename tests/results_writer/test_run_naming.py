@@ -35,7 +35,8 @@ class Namespaces:
             "practice_reset_policy": "never",
             "two_way_ledge": False,
             "unsplit_skills": False,
-            "ask_for_help": "never",
+            "ask_for_reset_task_initial_cost": None,
+            "ask_for_reset_random_task_cost": None,
             "num_cycles": 100,
         }
         fields.update(overrides)
@@ -43,8 +44,8 @@ class Namespaces:
 
     @staticmethod
     def skill_oracle_lightswitch(**overrides: object) -> argparse.Namespace:
-        """The oracle's namespace genuinely has **no** `num_cycles` and no
-        `ask_for_help`: `SkillOracleCli.add_arguments` adds nothing and its `run`
+        """The oracle's namespace genuinely has **no** `num_cycles` and neither reset
+        skill's cost flag: `SkillOracleCli.add_arguments` adds nothing and its `run`
         passes the literal 0 to `MethodRunner`. So absence is a real state the namer
         must handle, not a hypothetical."""
         fields: dict[str, object] = {
@@ -60,9 +61,8 @@ class Namespaces:
 def test_the_name_carries_environment_method_arm_and_seed() -> None:
     """The whole point: a reader can tell what a run was from the run list, without
     opening it."""
-    assert (
-        RunNamer.name(args=Namespaces.ees_tossingroom())
-        == "tossingroom-ees-oneway-split-never-ask-never-c100-seed3"
+    assert RunNamer.name(args=Namespaces.ees_tossingroom()) == (
+        "tossingroom-ees-oneway-split-never-reset-cost-none-random-reset-cost-none-c100-seed3"
     )
 
 
@@ -105,8 +105,9 @@ def test_a_missing_required_field_raises_instead_of_being_defaulted() -> None:
 
 def test_names_are_url_and_path_safe() -> None:
     """A run name ends up in a URL and in offline directory names, so it stays
-    lowercase `[a-z0-9-]` regardless of what a flag's value looked like."""
-    name = RunNamer.name(args=Namespaces.ees_tossingroom(ask_for_help="ON_STUCK"))
+    lowercase `[a-z0-9-]` regardless of what a flag's value looked like -- a float cost
+    is the case worth pinning here, since "0.134" contains a "." _slug must strip."""
+    name = RunNamer.name(args=Namespaces.ees_tossingroom(ask_for_reset_task_initial_cost=0.134))
     assert name == name.lower()
     assert set(name) <= set("abcdefghijklmnopqrstuvwxyz0123456789-")
 
@@ -135,7 +136,7 @@ def test_every_arm_of_a_realistic_grid_gets_its_own_name() -> None:
 
 
 def test_two_methods_on_one_environment_do_not_collide() -> None:
-    """The oracle's shorter name (no cycle count, no help policy) must not be a prefix
+    """The oracle's shorter name (no cycle count, no reset-skill cost flags) must not be a prefix
     collision with a learner's -- absence of an optional field is only safe because
     `method`, which determines that absence, is itself in the name."""
     assert RunNamer.name(args=Namespaces.skill_oracle_lightswitch()) != RunNamer.name(

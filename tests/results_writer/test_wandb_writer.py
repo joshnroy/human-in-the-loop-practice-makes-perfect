@@ -304,6 +304,76 @@ def test_the_config_and_summary_reach_wandb(
 
 
 @wandb_installed
+def test_wandb_tag_is_appended_on_top_of_the_env_and_method_tags(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--wandb-tag`, repeated, lands alongside the two tags every run already gets --
+    so a whole experiment's runs can be filtered to in the W&B UI without displacing the
+    env/method facets every other run is grouped by."""
+    import wandb
+
+    monkeypatch.setenv("WANDB_MODE", "offline")
+    monkeypatch.setenv("WANDB_SILENT", "true")
+    args = argparse.Namespace(
+        record_wandb=True,
+        output_dir=tmp_path,
+        env="lightswitch",
+        method="skill-oracle",
+        seed=3,
+        practice_reset_policy="scheduled",
+        re_run=False,
+        num_render_checkpoints=1,
+        record_full_loop=Path("loop.mp4"),
+        wandb_tag=["human-ladder-v2", "reset-cost-sweep"],
+    )
+    writer = WandbResultsWriter.open_if_requested(args=args, num_cycles=2)
+    assert writer is not None
+    writer.record_checkpoint(metrics=WandbHarness.metrics_with_one_sweep())
+
+    run = wandb.run
+    assert run is not None
+    assert set(run.tags) == {
+        "lightswitch",
+        "skill-oracle",
+        "human-ladder-v2",
+        "reset-cost-sweep",
+    }
+    writer.close(metrics=WandbHarness.metrics_with_one_sweep())
+
+
+@wandb_installed
+def test_wandb_tag_defaults_to_no_extra_tags(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A namespace with no `wandb_tag` at all (every hand-built Namespace that predates
+    this flag, including this file's other tests) must not raise -- `getattr`, not
+    `args.wandb_tag`, matching every other optional flag `WandbResultsWriter` reads."""
+    import wandb
+
+    monkeypatch.setenv("WANDB_MODE", "offline")
+    monkeypatch.setenv("WANDB_SILENT", "true")
+    args = argparse.Namespace(
+        record_wandb=True,
+        output_dir=tmp_path,
+        env="lightswitch",
+        method="skill-oracle",
+        seed=3,
+        practice_reset_policy="scheduled",
+        re_run=False,
+        num_render_checkpoints=1,
+        record_full_loop=Path("loop.mp4"),
+    )
+    writer = WandbResultsWriter.open_if_requested(args=args, num_cycles=2)
+    assert writer is not None
+    writer.record_checkpoint(metrics=WandbHarness.metrics_with_one_sweep())
+
+    run = wandb.run
+    assert run is not None
+    assert set(run.tags) == {"lightswitch", "skill-oracle"}
+    writer.close(metrics=WandbHarness.metrics_with_one_sweep())
+
+
+@wandb_installed
 def test_no_wandb_run_is_started_before_the_first_checkpoint(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

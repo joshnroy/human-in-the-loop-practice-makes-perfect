@@ -98,6 +98,16 @@ class Problem(BaseModel, abc.ABC):
             command_start_state_description=start, command_goal_description=end, env=self.env
         )
 
+    def execute_movables_reset(self) -> None:
+        """The *partial*-reset command: let the human reposition whichever
+        non-robot objects this domain considers movable, robot untouched. No
+        `goal`/`target_state` to build, unlike `execute_human_command`.
+
+        Reached only from `HumanCubeBinResetRequested`, only ever raised against a
+        domain whose `SkillProvider.human_cube_bin_reset_skill` opted in."""
+        assert self.human is not None, "execute_movables_reset needs self.human set."
+        self.human.execute_movables_reset(env=self.env)
+
     def sample_train_task(self) -> Task:
         return self.tasks.sample_train_task()
 

@@ -7,7 +7,6 @@ import hitl_pmp.cli as cli_module
 from hitl_pmp.cli import ENVIRONMENTS, METHODS, Cli, MethodCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
-from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
@@ -318,37 +317,40 @@ def test_main_records_a_full_loop_end_to_end(*, tmp_path: Path) -> None:
     assert output.exists()
 
 
-def test_the_human_reset_target_defaults_to_the_periods_own_task() -> None:
-    """The incumbent behaviour is the default, so every banked command line keeps its
-    old code path."""
+def test_the_human_reset_target_flag_and_type_are_gone() -> None:
+    """`--human-reset-target`/`HumanResetTarget` named a global "what does the human
+    do" axis that no longer exists: `ask_for_reset_task_initial` always means
+    task-initial, and `ask_for_reset_random_task` (a structurally different real-world
+    action -- resample a task and advance the train-task stream, rather than restore
+    this one) replaces the old RANDOM target -- see HumanRandomTaskResetRequested's
+    own docstring. Both are now EES's own flags
+    (--ask-for-reset-task-initial-cost/--ask-for-reset-random-task-cost), not a global
+    one, because WHICH is asked for is now the plan's own choice, not a harness-wide
+    setting."""
+    with pytest.raises(ModuleNotFoundError):
+        import hitl_pmp.human_intervention  # noqa: F401
     args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
-    assert args.human_reset_target is HumanResetTarget.TASK_INITIAL
+    assert not hasattr(args, "human_reset_target")
 
 
-def test_parse_args_accepts_the_human_reset_target() -> None:
+def test_wandb_tag_is_repeatable_and_defaults_to_none() -> None:
+    """`--wandb-tag` is appended into WandbResultsWriter.tags on top of the --env/
+    --method tags every run already gets -- see that module. `append`'s own default
+    (None until the flag is passed at least once) is what a caller with no --wandb-tag
+    at all gets, matching every other optional flag here."""
+    args = Cli.parse_args(argv=["--env", "lightswitch", "--method", "skill-oracle"])
+    assert args.wandb_tag is None
     args = Cli.parse_args(
-        argv=["--env", "tossingroom", "--method", "ees", "--human-reset-target", "random"]
+        argv=[
+            "--env",
+            "lightswitch",
+            "--method",
+            "skill-oracle",
+            "--wandb-tag",
+            "human-ladder-v2",
+            "--wandb-tag",
+            "reset-cost-sweep",
+        ]
     )
-    assert args.human_reset_target is HumanResetTarget.RANDOM
-
-
-def test_parse_args_rejects_an_unknown_human_reset_target() -> None:
-    with pytest.raises(SystemExit):
-        Cli.parse_args(
-            argv=["--env", "tossingroom", "--method", "ees", "--human-reset-target", "elsewhere"]
-        )
-
-
-def test_the_global_cli_owns_the_human_but_not_the_trigger() -> None:
-    """The split this refactor exists to make. WHAT the human does is a global flag
-    because it is a property of the human; WHEN to ask is a method flag, because
-    deciding to ask is part of the method. The import contract enforces the same thing:
-    hitl_pmp.methods sits above hitl_pmp.method_runner, so the runner could not build a
-    trigger policy even if this test did not exist."""
-    args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])
-    assert hasattr(args, "human_reset_target")
-    assert hasattr(args, "ask_for_help")
-    # The retired harness-side flags, gone rather than deprecated: they named an
-    # external monitor that no longer exists.
-    assert not hasattr(args, "human_intervention_trigger")
+    assert args.wandb_tag == ["human-ladder-v2", "reset-cost-sweep"]
     assert not hasattr(args, "mean_steps_between_human_interventions")

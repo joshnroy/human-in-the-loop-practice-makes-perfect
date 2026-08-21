@@ -13,6 +13,7 @@ from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
+from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -109,6 +110,22 @@ def test_a_run_that_writes_no_video_resolves_a_playback_rate_without_a_simulator
 # All three run on CI. Constructing a `Tossing3DEnvironment` builds no simulator (the
 # backend is lazy -- see `Tossing3DEnvironment.backend`), and `draw_scene_seed` is a
 # pure function of an RNG, so the strongest assertion here needs no KINDER at all.
+
+
+def test_build_problem_wires_the_v0_human_oracle() -> None:
+    """`tests/environments/tossing3d/test_problem.py`'s own
+    `test_the_problem_has_no_human_oracle_yet` builds a `Tossing3DProblem` BY HAND
+    (bypassing this composition root) and says so explicitly: "this is the domain in
+    the repo that most wants one ... a gap in what is representable, not evidence that
+    no intervention was needed". `--method ees`'s `ask_for_reset_task_initial`/
+    `ask_for_reset_random_task` ground skills are exactly that intervention becoming
+    representable -- and need a real `HumanOracle` wired here, in the CLI's own
+    composition root, or `PracticeLoop.run` refuses any run that configures either
+    cost flag before it starts (`Method.may_request_human_help` is True but
+    `Problem.human` is None). `UnconditionalHumanOracle` matches `tossingroom`'s own
+    `TossingRoomCli.build_problem` wiring."""
+    args = _build_parser().parse_args([])
+    assert Tossing3DCli.build_problem(args=args).human is UnconditionalHumanOracle
 
 
 def test_build_problem_returns_wholly_independent_objects() -> None:

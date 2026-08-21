@@ -117,3 +117,15 @@ class Environment(BaseModel, abc.ABC):
         Concrete implementations sample an initial state and call self.set_state on
         it."""
         raise NotImplementedError
+
+    def reset_movables(self) -> bool:
+        """External override, like `set_state` but *partial*: reposition whichever
+        non-robot objects a human could tidy up, robot untouched. Called only via
+        `HumanOracle.execute_movables_reset`/`Problem.execute_movables_reset`, from
+        `HumanCubeBinResetRequested`.
+
+        `False` by default (declined -- caller must not claim a reset happened);
+        `Tossing3DEnvironment` overrides, returns True. Not a widening of
+        `set_state`: that takes a full `State` for every object, this touches an
+        unspecified domain-chosen subset and takes no argument at all."""
+        return False

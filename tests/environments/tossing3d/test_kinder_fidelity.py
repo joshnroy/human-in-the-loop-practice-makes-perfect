@@ -12,8 +12,15 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import LabeledAction
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import HOLDING
+from hitl_pmp.environments.tossing3d.predicates import (
+    HAND_EMPTY,
+    HOLDING,
+    IN_BIN,
+    ON_GROUND,
+    REACHABLE,
+)
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import SkillOraclePolicy
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
@@ -373,5 +380,160 @@ def test_in_bin_agrees_with_kinders_own_goal_check_at_the_boundary() -> None:
                 f"x={x}: MovableInGoalRegion said {symbolic} while KINDER's own "
                 f"_check_goals() said {backend.check_goals()}"
             )
+    finally:
+        env.close()
+
+
+# --- reset_movables / reset_cube_and_bin: the partial, robot-untouched reset ------
+
+
+def _robot_pose(*, state: State) -> tuple[float, float, float, float]:
+    return (
+        state.get(obj=Tossing3DEnvironment.robot, feature_name="pos_base_x"),
+        state.get(obj=Tossing3DEnvironment.robot, feature_name="pos_base_y"),
+        state.get(obj=Tossing3DEnvironment.robot, feature_name="pos_base_rot"),
+        state.get(obj=Tossing3DEnvironment.robot, feature_name="pos_gripper"),
+    )
+
+
+def test_reset_movables_leaves_the_robot_pose_exactly_where_it_was() -> None:
+    """The whole point of this partial reset: unlike set_state (a seed-based whole-
+    scene rebuild, which also re-initializes the robot's own pose), this must leave
+    the robot's live joint/base configuration untouched.
+
+    **`abs=1e-6`, not bit-exact.** `sim.forward()` recomputes the whole scene's
+    kinematics after cube/bin are moved, and `KinderBackend.restore`'s own docstring
+    already documents this domain's ~1e-7-relative float32 round-trip noise -- this
+    is that same noise, not evidence the robot moved. Measured here at ~9e-9 absolute
+    on a single call; the bound is set two orders of magnitude above that, not at it.
+    """
+    env = _env()
+    try:
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
+        action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
+        state = env.take_action(action=action.action)  # PickCube: moves the robot for real
+        before = _robot_pose(state=state)
+
+        assert env.reset_movables() is True
+        after = _robot_pose(state=env.get_current_state())
+        assert after == pytest.approx(before, abs=1e-6)
+    finally:
+        env.close()
+
+
+def test_reset_movables_moves_the_cube_to_a_fresh_ground_pose() -> None:
+    env = _env()
+    try:
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        before = env.get_current_state().get(obj=env.cube, feature_name="x")
+
+        env.reset_movables()
+        state = env.get_current_state()
+        after = state.get(obj=env.cube, feature_name="x")
+        assert after != pytest.approx(before, abs=1e-6)
+        assert ON_GROUND.holds(state, (env.cube,))
+        assert REACHABLE.holds(state, (env.cube, env.barrier))
+        assert not IN_BIN.holds(state, (env.cube, env.bin))
+    finally:
+        env.close()
+
+
+def test_reset_movables_moves_the_bin_too_now_that_its_region_is_a_real_range() -> None:
+    """As of the kindergarden#166 pin, bin_init_region is a genuine box rather than a
+    single fixed point -- see KinderBackend.reset_cube_and_bin's own docstring for the
+    correction this test pins. Since blocks_goal_region is now parented on bin_0 (also
+    #166/#272), this reset relocates the SCORED window along with the bin, not just the
+    bin's own visible position."""
+    env = _env()
+    try:
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        before_bin = (
+            env.get_current_state().get(obj=env.bin, feature_name="x"),
+            env.get_current_state().get(obj=env.bin, feature_name="y"),
+        )
+
+        env.reset_movables()
+        state = env.get_current_state()
+        after_bin = (
+            state.get(obj=env.bin, feature_name="x"),
+            state.get(obj=env.bin, feature_name="y"),
+        )
+        assert after_bin != pytest.approx(before_bin, abs=1e-6)
+    finally:
+        env.close()
+
+
+def test_reset_movables_breaks_a_grasp_since_the_robot_is_never_touched() -> None:
+    """Empirical grounding for the operator's HandEmpty(robot) precondition (see
+    Tossing3DSkillProvider.human_cube_bin_reset_skill's own docstring), and a
+    correction to the naive prediction: teleporting the cube away from wherever the
+    gripper is does flip Holding to False (the cube is no longer there to hold), but
+    it does NOT flip HandEmpty to True -- the gripper itself is still physically
+    closed (nothing here opens it), and upstream's HandEmpty apparently reads gripper
+    aperture rather than "is Holding false". So the reachable-if-uncontracted result
+    is a state where BOTH are False -- neither holding nor empty-handed, something no
+    ordinary pick_cube/toss transition ever produces -- which is a *stronger* reason
+    this operator requires HandEmpty(robot) as a precondition than "Holding would go
+    stale", not a weaker one. This calls the backend primitive directly, bypassing
+    the operator's precondition, specifically to demonstrate why it is required."""
+    env = _env()
+    try:
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
+        action = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
+        state = env.take_action(action=action.action)
+        assert HOLDING.holds(state, (env.robot, env.cube)), "the oracle's Pick should grasp"
+
+        env.reset_movables()
+        state = env.get_current_state()
+        assert not HOLDING.holds(state, (env.robot, env.cube))
+        assert not HAND_EMPTY.holds(state, (env.robot,)), (
+            "if this starts holding, the HandEmpty(robot) precondition guard above "
+            "needs re-checking against upstream's classifier, not just this test"
+        )
+    finally:
+        env.close()
+
+
+def test_reset_movables_leaves_the_scenes_seed_and_steps_taken_unchanged() -> None:
+    """Neither take_action's forward-dynamics bump nor set_state's always-zero: this
+    is a third kind of state change, and its own bookkeeping stays put -- see
+    Tossing3DEnvironment.reset_movables's own docstring for why."""
+    env = _env()
+    try:
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        before_seed = state.get(obj=env.scene, feature_name="seed")
+        before_steps = state.get(obj=env.scene, feature_name="steps_taken")
+
+        env.reset_movables()
+        state = env.get_current_state()
+        assert state.get(obj=env.scene, feature_name="seed") == before_seed
+        assert state.get(obj=env.scene, feature_name="steps_taken") == before_steps
+    finally:
+        env.close()
+
+
+def test_reset_movables_leaves_the_barrier_untouched() -> None:
+    """Out of scope for this reset: only cube_0/bin_0 are repositioned, never
+    cuboid_barrier -- see KinderBackend.reset_cube_and_bin's own docstring for why
+    this is a deliberately narrower scope than upstream's own `_initialize_object_
+    poses` (which would also touch the barrier)."""
+    env = _env()
+    try:
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        before = (
+            state.get(obj=env.barrier, feature_name="x"),
+            state.get(obj=env.barrier, feature_name="y"),
+            state.get(obj=env.barrier, feature_name="z"),
+        )
+        env.reset_movables()
+        state = env.get_current_state()
+        after = (
+            state.get(obj=env.barrier, feature_name="x"),
+            state.get(obj=env.barrier, feature_name="y"),
+            state.get(obj=env.barrier, feature_name="z"),
+        )
+        assert after == pytest.approx(before, abs=1e-9)
     finally:
         env.close()

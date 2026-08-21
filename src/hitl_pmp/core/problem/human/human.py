@@ -41,3 +41,15 @@ class HumanOracle(abc.ABC):
         hand-waved at this level so different versions can model humans of different
         capability/efficiency without changing the interface."""
         raise NotImplementedError
+
+    @staticmethod
+    @abc.abstractmethod
+    def execute_movables_reset(*, env: Environment) -> None:
+        """Ask the human for a *partial* reset: `env.reset_movables()`, nothing
+        else. No target-state pair, unlike `execute_human_command` -- the domain's
+        own `Environment` decides what "not the robot" means, not the caller.
+
+        Should raise if `env.reset_movables()` returns False (domain declined) --
+        reaching that should mean a broken contract, since a Method only raises
+        `HumanCubeBinResetRequested` against a domain that opted in."""
+        raise NotImplementedError

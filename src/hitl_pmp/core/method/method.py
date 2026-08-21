@@ -18,61 +18,74 @@ from .types import (
 
 
 class InteractionComplete(Exception):  # noqa: N818
-    """Raised by a practice policy that has nothing further worth doing, ending
-    the current interaction period early.
+    """Raised by a practice policy with nothing further worth doing, ending the
+    period early so the online-transition count stays data-driven, not
+    budget-driven. Not an error, hence no `Error` suffix (ruff N818 waiver).
 
-    This is what makes the online-transition count *data-driven* rather than
-    budget-driven: practice_loop.py charges only the steps actually taken, the
-    way predicators sums `len(result.actions)` over the trajectories its
-    explorers actually produced (main.py:244) rather than assuming every request
-    ran to `max_num_steps_interaction_request`. predicators' explorers signal the
-    same condition by raising out of `run_episode_and_get_observations`, which
-    then returns a correspondingly short trajectory.
-
-    Not an error: ending early is a normal end to a period. The cycle still
-    retrains (`end_cycle`) and is still evaluated. Named without the `Error`
-    suffix (hence the ruff N818 waiver) precisely because it is control flow, not
-    a failure.
-
-    **Distinct from `HumanHelpRequested` below**, and deliberately never widened to
-    cover it -- see that exception's own docstring for the two differences."""
+    Distinct from `HumanHelpRequested` below -- see that docstring."""
 
 
 class HumanHelpRequested(Exception):  # noqa: N818
-    """Raised by a practice policy that cannot get anywhere from where it is and is
-    asking a human to reposition it. Control flow, not an error, exactly like
-    `InteractionComplete` above (hence the same ruff N818 waiver).
+    """Raised by a practice policy asking a human to reposition it -- the robot
+    asking, not a monitor noticing (see CLAUDE.md's robot-vs-agent rule). Control
+    flow, not an error, same N818 waiver as `InteractionComplete`.
 
-    **This is the robot asking, not a monitor noticing.** ("Robot", not "agent", per
-    CLAUDE.md's naming rule -- this is our own `Method` acting, and nothing here
-    involves an LLM. The rule exists partly because the arm this exception replaces was
-    called `agent-signal`.) Deciding when to ask is
-    *policy*, and policy belongs to the `Method`: the harness's whole job here is
-    mechanism -- invoke the `HumanOracle`, price the command, bank the cost, and carry
-    on. An external watcher of the state stream that summoned a human on the `Method`'s
-    behalf would be measuring the watcher.
+    Two differences from `InteractionComplete`: it means "I can still act but
+    acting is getting me nowhere" rather than "nothing is applicable", and the
+    period *continues* after the rescue instead of ending.
 
-    **Two differences from `InteractionComplete`, both load-bearing.**
+    Carries an optional `cost`: `None` means "price it the harness's own way"
+    (`Problem.calculate_cost_for_human_command`); a `Method` that already priced
+    the request itself (EES, via its planner) sets it directly instead, so the
+    harness banks the number the plan was built against."""
 
-      * *What it claims.* `InteractionComplete` means "no ground skill is applicable at
-        all", which on Tossing Room essentially never happens because `MoveRoom` always
-        is. This means "I am still perfectly able to act, and acting is getting me
-        nowhere" -- the absorbing region behind the one-way ledge, where a robot paces
-        between rooms forever.
-      * *What happens next.* `InteractionComplete` **ends** the interaction period.
-        This does not: the human answers and the period **continues**, bounded by the
-        step budget like everything else. The rescue does consume the loop iteration it
-        was raised on, so a `Method` that asks every step cannot spin.
+    def __init__(self, *, cost: float | None = None) -> None:
+        super().__init__(cost)
+        self.cost = cost
 
-    Kept a separate exception rather than a widened `InteractionComplete` because that
-    exception's meaning is EES-wide and already-merged results depend on it. Reusing it
-    would silently give every arm that catches one the behaviour of the other, and the
-    two could then not be compared.
 
-    Carries no payload: what the human is asked *for* is the harness's own
-    `--human-reset-target` (a property of the human, not of the request), and what the
-    robot was pursuing is the task the loop already holds. A `Method` that later needs
-    to ask for something specific adds a field here rather than a second exception."""
+class HumanRandomTaskResetRequested(Exception):  # noqa: N818
+    """Raised by a practice policy asking a human to reset it onto a freshly
+    sampled train task (advancing the train-task stream), rather than this
+    period's own task-initial state. Control flow, not an error (N818 waiver).
+
+    Modeled like `HumanHelpRequested` -- the period continues, not like
+    `InteractionComplete`. Safe here because Tossing3D's task family is
+    shape-invariant (every sampled task shares the same goal and initial-state
+    shape), so a fresh task is symbolically indistinguishable from this period's
+    own -- see `HumanResetSkillBuilder`. That's a domain-dependent fact, not a
+    general one: a domain whose tasks vary in goal/shape must not reuse this.
+
+    Priced like `HumanHelpRequested` (`cost`, `None` = harness-priced), and
+    gated by the same cost ceiling in `EesMethod.plan_to` -- so a genuinely
+    stuck robot can still stay stuck rather than always resetting."""
+
+    def __init__(self, *, cost: float | None = None) -> None:
+        super().__init__(cost)
+        self.cost = cost
+
+
+class HumanCubeBinResetRequested(Exception):  # noqa: N818
+    """Raised by a practice policy asking a human for a *partial* reset:
+    reposition the domain's non-robot objects, leave the robot untouched.
+    Control flow, not an error (N818 waiver).
+
+    Structurally different from the other two resets: those restore a complete
+    symbolic state via `target_state: State`, which on a simulator-backed domain
+    means a whole-scene rebuild that would also relocate the robot. This instead
+    goes through `Environment.reset_movables`/`HumanOracle.execute_movables_reset`
+    (`Problem.execute_movables_reset` is the facade), new primitives that default
+    to declining so every other domain is untouched. See
+    `SkillProvider.human_cube_bin_reset_skill` for how a domain opts in.
+
+    Modeled like `HumanHelpRequested` (period continues, plan replans on the
+    resulting divergence like any other), not like the full resets. `cost` is
+    required, not optional: there's no `Goal`/`target_state` to price a partial
+    reset against, so the raising `Method` must always price it itself."""
+
+    def __init__(self, *, cost: float) -> None:
+        super().__init__(cost)
+        self.cost = cost
 
 
 class Method(BaseModel, abc.ABC):
@@ -160,17 +173,23 @@ class Method(BaseModel, abc.ABC):
 
         Concrete `False` by default, for the same reason as `end_cycle`: no baseline
         built so far asks for anything, and none of them should need boilerplate to say
-        so. A Method that composes `methods/help_seeking.py`'s policy overrides it."""
+        so. `EesMethod` overrides it, True exactly when one of its three ground-skill
+        cost flags (`ask_for_reset_task_initial_cost`/`ask_for_reset_random_task_cost`/
+        `ask_for_reset_cube_bin_cost`) is configured -- see that class."""
         return False
 
     def observe_help_granted(self, *, state: State) -> None:
         """Called by practice_loop.py immediately *after* a rescue has been executed,
         handing over the state the human actually left behind.
 
-        This is what lets a Method restart whatever detector made it ask. Without it a
-        rescued robot is instantly re-rescued forever: a human by construction puts it
-        back somewhere it has already been, so under any novelty-based rule every state
-        is non-novel the moment it arrives. See `StuckDetector.restart`.
+        This is what lets a Method restart whatever detector made it ask -- a hook that
+        exists for any future novelty-based trigger a Method might carry, though
+        `EesMethod` today needs no such restart: it decides to ask fresh at every
+        planning call (a real ground skill priced like any other), not from an
+        accumulated per-period detector, so it inherits this as a no-op. Without a
+        restart, a Method that DID carry such state would be instantly re-rescued
+        forever: a human by construction puts it back somewhere it has already been, so
+        under any novelty-based rule every state is non-novel the moment it arrives.
 
         The *readback* state, not the state that was commanded -- a capability-aware
         human (v1+) that only partially succeeds leaves the environment somewhere other

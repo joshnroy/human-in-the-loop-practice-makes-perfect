@@ -147,3 +147,30 @@ def test_abstract_state_allows_a_repeated_object_within_one_atom() -> None:
         GroundAtom(predicate=same_x, objects=(_BLOCK_A, _BLOCK_A)),
         GroundAtom(predicate=same_x, objects=(_BLOCK_B, _BLOCK_B)),
     })
+
+
+def test_all_possible_ground_atoms_ignores_truth_and_enumerates_every_combination() -> None:
+    """Unlike `abstract_state`, which filters by `predicate.holds`, this is the whole
+    universe: every type-matching combination for every predicate, whether or not it
+    currently holds. This is what a "reset to exactly these atoms" operator needs to
+    build a sound delete-effect set -- see EesMethod's ask_for_reset_task_initial, which
+    must delete every possible atom NOT in the target init_atoms, not just the ones
+    presently true."""
+    atoms = SkillGrounder.all_possible_ground_atoms(
+        objects=(_ROBOT, _CELL0, _CELL1), predicates=(_IN_CELL, _ADJACENT)
+    )
+    assert atoms == frozenset({
+        GroundAtom(predicate=_IN_CELL, objects=(_ROBOT, _CELL0)),
+        GroundAtom(predicate=_IN_CELL, objects=(_ROBOT, _CELL1)),
+        GroundAtom(predicate=_ADJACENT, objects=(_CELL0, _CELL0)),
+        GroundAtom(predicate=_ADJACENT, objects=(_CELL0, _CELL1)),
+        GroundAtom(predicate=_ADJACENT, objects=(_CELL1, _CELL0)),
+        GroundAtom(predicate=_ADJACENT, objects=(_CELL1, _CELL1)),
+    })
+
+
+def test_all_possible_ground_atoms_is_empty_with_no_type_matching_objects() -> None:
+    assert (
+        SkillGrounder.all_possible_ground_atoms(objects=(_ROBOT,), predicates=(_ADJACENT,))
+        == frozenset()
+    )

@@ -408,6 +408,30 @@ class Tossing3DEnvironment(Environment):
         self._adopt(state=state)
         return state
 
+    def reset_movables(self) -> bool:
+        """Reposition `cube`/`bin` to fresh ground poses, robot untouched, and
+        return True (`core.Environment`'s default declines). Backed by
+        `KinderBackend.reset_cube_and_bin`, a real per-object pose-setting
+        primitive -- deliberately not routed through `set_state`, which can only
+        rebuild the whole scene (relocating the robot too).
+
+        `steps_taken`/`seed` carry forward unchanged: this is neither a skill
+        execution nor a scene rebuild, so episode bookkeeping doesn't move."""
+        state = self.get_current_state()
+        seed = int(round(state.get(obj=self.scene, feature_name="seed")))
+        steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
+        backend = self.backend()
+        backend.reset_cube_and_bin()
+        next_state = self.build_state(
+            observation=backend.observe(),
+            seed=seed,
+            steps_taken=steps_taken,
+            object_centric=backend.snapshot(),
+            abstract_atoms=backend.abstract_atoms(),
+        )
+        self._adopt(state=next_state)
+        return True
+
     def snapshot(self) -> "Tossing3DSnapshot":
         """A restorable handle to the live simulator, including mid-episode.
 

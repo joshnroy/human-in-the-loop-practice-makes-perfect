@@ -47,10 +47,20 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
     # Global, so never absent. Rendered bare ("never"/"scheduled"): its values are
     # self-describing and this is the axis most sweeps are built around.
     RunNameField(dest="practice_reset_policy"),
-    # A method flag, absent on --method skill-oracle. Prefixed, because "never" is also
-    # a reset policy value and two bare "never" tokens in one name would read as a
-    # duplicate rather than as two different axes.
-    RunNameField(dest="ask_for_help", prefix="ask-", optional=True),
+    # EES's own flags (methods/help_seeking.py's --ask-for-help/HelpSeekingTrigger is
+    # retired -- asking for help is now a ground skill EES's own planner selects, not a
+    # harness-side trigger; see ees_method.py). `optional=True` for the same reason
+    # `ask_for_help` was: absent on --method skill-oracle/random-skills, which register
+    # neither flag at all. An EES run that never configures either still renders a
+    # "-reset-cost-none-random-reset-cost-none-" token, matching how the retired flag's
+    # own default (HelpSeekingTrigger.NEVER) rendered "ask-never" rather than omitting
+    # the axis -- a run's name says which axes exist for its method, at whatever value.
+    RunNameField(dest="ask_for_reset_task_initial_cost", prefix="reset-cost-", optional=True),
+    RunNameField(dest="ask_for_reset_random_task_cost", prefix="random-reset-cost-", optional=True),
+    # Third reset skill, same optional=True reasoning: absent on --method
+    # skill-oracle/random-skills, and on any --env whose SkillProvider has no
+    # human_cube_bin_reset_skill to offer (every domain but Tossing3D today).
+    RunNameField(dest="ask_for_reset_cube_bin_cost", prefix="cube-bin-reset-cost-", optional=True),
     # A method flag, absent on --method skill-oracle. The literal cycle count rather
     # than a multiple of the default: expressing it as "1x"/"10x" would mean carrying a
     # copy of `--num-cycles`'s default here, which is exactly the kind of duplicated

@@ -56,6 +56,10 @@ class _Human(HumanOracle):
     ) -> None:
         env.set_state(state=_state(x=42.0))
 
+    @staticmethod
+    def execute_movables_reset(*, env: Environment) -> None:
+        env.set_state(state=_state(x=99.0))
+
 
 class _Tasks(Tasks):
     def sample_train_task(self) -> Task:
@@ -160,6 +164,28 @@ def test_execute_human_command_requires_human_to_be_set() -> None:
         problem.execute_human_command(goal=Goal(atoms=frozenset()))
 
 
+def test_execute_movables_reset_lets_human_mutate_env() -> None:
+    problem = _build_problem()
+    problem.env.set_state(state=_state(x=0.0))
+    problem.execute_movables_reset()
+    assert problem.get_current_state()[_OBJ].tolist() == [99.0]
+
+
+def test_execute_movables_reset_requires_human_to_be_set() -> None:
+    env = _Env()
+    problem = _Problem(env=env, tasks=_Tasks(env=env))
+    with pytest.raises(AssertionError):
+        problem.execute_movables_reset()
+
+
+def test_execute_movables_reset_forwards_to_human_with_no_command_description() -> None:
+    """Unlike execute_human_command, there is no CommandGoalDescription to forward --
+    see HumanOracle.execute_movables_reset's own docstring for why."""
+    problem = _build_spy_problem()
+    problem.execute_movables_reset()
+    assert _SpyHuman.movables_reset_calls == 1
+
+
 def test_describe_command_builds_start_and_goal_descriptions() -> None:
     problem = _build_problem()
     problem.env.set_state(state=_state(x=3.0))
@@ -220,6 +246,16 @@ class _SpyHuman(HumanOracle):
     ) -> None:
         del command_start_state_description, env
         _SpyHuman.seen.append(command_goal_description)
+
+    # Records that it was called at all, rather than appending to `seen` (there is no
+    # CommandGoalDescription to record -- see execute_movables_reset's own docstring
+    # for why this call carries no description).
+    movables_reset_calls: int = 0
+
+    @staticmethod
+    def execute_movables_reset(*, env: Environment) -> None:
+        del env
+        _SpyHuman.movables_reset_calls += 1
 
 
 def _build_spy_problem() -> _Problem:

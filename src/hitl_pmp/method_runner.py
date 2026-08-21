@@ -14,7 +14,6 @@ from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
 from hitl_pmp.episode_traces import EpisodeTraceRecorder
-from hitl_pmp.human_intervention import HumanResetTarget
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 from hitl_pmp.results_writer.registry import RESULTS_WRITERS
@@ -247,13 +246,6 @@ class MethodRunner:
                 practice_reset_interval=getattr(args, "practice_reset_interval", None),
                 practice_reset_policy=getattr(
                     args, "practice_reset_policy", PracticeResetPolicy.SCHEDULED
-                ),
-                # WHAT a human does when the Method asks. WHEN it is asked is not read
-                # here and cannot be: hitl_pmp.methods sits above this module in the
-                # import contract, so the trigger is built by the method-CLI and handed
-                # to the Method itself. See human_intervention.HumanResetTarget.
-                human_reset_target=getattr(
-                    args, "human_reset_target", HumanResetTarget.TASK_INITIAL
                 ),
                 # Checkpoint clips are an --output-dir product; without one there is
                 # nowhere to write them, so nothing is rendered for them either. The

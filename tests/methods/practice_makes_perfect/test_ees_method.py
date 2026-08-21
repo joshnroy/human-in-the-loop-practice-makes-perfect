@@ -3,8 +3,20 @@ import math
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.method import HumanHelpRequested
-from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
+from hitl_pmp.core.method.method import (
+    HumanCubeBinResetRequested,
+    HumanHelpRequested,
+    HumanRandomTaskResetRequested,
+    InteractionComplete,
+)
+from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
+from hitl_pmp.core.method.types import (
+    GroundSkill,
+    LiftedAtom,
+    SamplerConsultation,
+    Skill,
+    Variable,
+)
 from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.ballring.environment import BallRingEnvironment
@@ -21,11 +33,19 @@ from hitl_pmp.environments.lightswitch.predicates import ADJACENT, LIGHT_ON
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
-from hitl_pmp.methods.help_seeking import HelpSeekingPolicy, HelpSeekingTrigger
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import HAND_EMPTY, ON_GROUND, REACHABLE
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
     EesMethod,
     _EesEpisode,
     _SkillAttempt,
+)
+from hitl_pmp.methods.practice_makes_perfect.human_reset_skill import (
+    ASK_FOR_RESET_RANDOM_TASK_NAME,
+    ASK_FOR_RESET_TASK_INITIAL_NAME,
+    HumanResetSkillBuilder,
 )
 from hitl_pmp.planning.fast_downward import PlanningFailure
 
@@ -536,8 +556,6 @@ def test_practice_signals_completion_when_nothing_is_applicable() -> None:
     """With no applicable skill and no reachable candidate, EES ends the
     interaction period rather than burning the remaining budget on no-ops -- which
     is what makes PracticeLoop's transition count data-driven."""
-    from hitl_pmp.core.method.method import InteractionComplete
-
     method, env = _build()
     # Robot parked off-cell: no ground skill's preconditions hold anywhere, so
     # there is nothing to bootstrap from (same construction as
@@ -1279,83 +1297,165 @@ def test_the_committed_practice_target_is_recorded_as_selected() -> None:
     assert method.practice_target_outcomes()[selected].num_selected == 1
 
 
-def _help_seeking_build(
-    *, trigger: HelpSeekingTrigger, patience: int = 1, grid_size: int = 4, seed: int = 0
+def _reset_build(
+    *,
+    ask_for_reset_task_initial_cost: float | None = None,
+    ask_for_reset_random_task_cost: float | None = None,
+    grid_size: int = 3,
+    seed: int = 0,
 ) -> tuple[EesMethod, LightSwitchEnvironment]:
     env = LightSwitchEnvironment(grid_size=grid_size)
     method = EesMethod(
         env=env,
         skill_provider=LightSwitchSkillProvider(env=env),
         seed=seed,
-        help_seeking=HelpSeekingPolicy(trigger=trigger, stuck_patience=patience, seed=seed),
+        ask_for_reset_task_initial_cost=ask_for_reset_task_initial_cost,
+        ask_for_reset_random_task_cost=ask_for_reset_random_task_cost,
     )
     return method, env
 
 
-def test_ees_declares_it_cannot_ask_for_help_unless_it_was_configured_to() -> None:
+def _moved_to_cell2_atoms(*, method: EesMethod, task: Task) -> frozenset[GroundAtom]:
+    """This task's own initial state, but with the robot relocated to cell2 -- two
+    MoveRobot steps from where init_atoms has it (cell0), on grid_size=3."""
+    moved = task.initial_state.model_copy(deep=True)
+    moved.set(obj=LightSwitchEnvironment.robot, feature_name="x", feature_val=2.5)
+    return method.abstract_state(state=moved)
+
+
+def test_ees_declares_it_cannot_ask_for_help_unless_a_reset_skill_is_configured() -> None:
     """The predicate practice_loop.py validates against, so it has to be False for the
     incumbent construction -- otherwise every existing EES run would start demanding a
-    HumanOracle it never had."""
+    HumanOracle it never had. True if EITHER reset skill is configured."""
     method, _env = _build()
     assert method.may_request_human_help() is False
-    asking, _env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK)
-    assert asking.may_request_human_help() is True
+    task_initial_only, _env = _reset_build(ask_for_reset_task_initial_cost=0.1)
+    assert task_initial_only.may_request_human_help() is True
+    random_only, _env = _reset_build(ask_for_reset_random_task_cost=0.1)
+    assert random_only.may_request_human_help() is True
 
 
 def test_an_unconfigured_ees_practice_policy_is_completely_unwrapped() -> None:
-    """Not merely "a wrapper that never fires": there is no wrapper. This is the
-    structural claim behind --ask-for-help never being byte-identical."""
+    """Not merely "a wrapper that never fires": there is no wrapper at all. get_practice_
+    policy returns the episode's own step method directly, structurally identical to
+    get_task_policy -- the structural claim behind an unconfigured run staying
+    byte-identical to before either reset skill existed."""
     method, env = _build()
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
     policy = method.get_practice_policy(task=task)
     assert policy.__qualname__.startswith("EesMethod.get_practice_policy")
 
 
-def test_a_configured_ees_asks_for_help_from_inside_its_practice_policy() -> None:
-    """The whole point: the request comes out of the Method's own policy, so nothing
-    outside it has to watch the state stream to notice."""
-    method, env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK, patience=1)
+def test_plan_to_prefers_a_cheap_reset_over_an_expensive_walk_back() -> None:
+    """The core claim: EES's own optimal planner, not a harness heuristic, decides to
+    ask for help when it is the cheaper way to reach a symbolic target. Goal here is
+    literally task_initial_atoms (satisfiable exactly two ways: walk two MoveRobot
+    steps back, at ~2x the default per-skill cost, or the one configured-cheap reset
+    step) -- seq-opt-lmcut is optimal, so a strictly cheaper reset must win."""
+    method, env = _reset_build(ask_for_reset_task_initial_cost=0.01)
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
-    policy = method.get_practice_policy(task=task)
-    state = task.initial_state
-    policy(state)
-    with pytest.raises(HumanHelpRequested):
-        policy(state)
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+
+    plan = method.plan_to(
+        init_atoms=current_atoms,
+        goal=task_initial_atoms,
+        costs=method.skill_costs(),
+        task_initial_atoms=task_initial_atoms,
+    )
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_TASK_INITIAL_NAME]
 
 
-def test_being_told_help_was_granted_lets_ees_act_again() -> None:
-    """Without this the very next call asks again, forever -- the human puts the robot
-    back somewhere it has by construction already been."""
-    method, env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK, patience=1)
+def test_plan_to_does_not_offer_the_reset_skill_without_task_initial_atoms() -> None:
+    """Configured cost alone is not enough -- plan_to also needs task_initial_atoms,
+    which only a practice-context caller supplies (see _EesEpisode). Without it, the
+    only route back is the ordinary (more expensive) walk."""
+    method, env = _reset_build(ask_for_reset_task_initial_cost=0.01)
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
-    policy = method.get_practice_policy(task=task)
-    state = task.initial_state
-    policy(state)
-    with pytest.raises(HumanHelpRequested):
-        policy(state)
-    method.observe_help_granted(state=state)
-    policy(state)
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+
+    plan = method.plan_to(
+        init_atoms=current_atoms, goal=task_initial_atoms, costs=method.skill_costs()
+    )
+    assert ASK_FOR_RESET_TASK_INITIAL_NAME not in [ground.skill.name for ground in plan]
+    assert plan, "the ordinary walk-back route must still exist"
 
 
-def test_each_practice_period_starts_a_fresh_stretch() -> None:
-    """get_practice_policy is called once per interaction period, so it is the period
-    boundary as the Method sees it: a period must not inherit the previous one's
-    visited set."""
-    method, env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK, patience=1)
+def test_plan_to_never_offers_the_reset_skill_when_its_cost_is_unconfigured() -> None:
+    """`None` (the default) means the skill is not offered to the planner at all, even
+    when a caller supplies task_initial_atoms -- the other half of the two-gate check
+    plan_to's own docstring describes."""
+    method, env = _reset_build()
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
-    state = task.initial_state
-    first = method.get_practice_policy(task=task)
-    first(state)
-    with pytest.raises(HumanHelpRequested):
-        first(state)
-    second = method.get_practice_policy(task=task)
-    second(state)
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+
+    plan = method.plan_to(
+        init_atoms=current_atoms,
+        goal=task_initial_atoms,
+        costs=method.skill_costs(),
+        task_initial_atoms=task_initial_atoms,
+    )
+    assert ASK_FOR_RESET_TASK_INITIAL_NAME not in [ground.skill.name for ground in plan]
+    assert plan
 
 
-def test_ees_evaluation_policy_never_asks_for_help() -> None:
+def test_the_reset_skill_resets_to_the_tasks_own_initial_atoms_not_wherever_planning_started() -> (
+    None
+):
+    """The bug this guards against: task_initial_atoms must be the PERIOD's fixed
+    initial state, never confused with `init_atoms` -- wherever a particular plan_to
+    call happens to be planning FROM, which moves every step. Conflating the two would
+    build an operator whose effect is "reset to wherever you already are"."""
+    method, env = _reset_build(ask_for_reset_task_initial_cost=0.01)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+    assert current_atoms != task_initial_atoms, "the fixture must actually move the robot"
+
+    plan = method.plan_to(
+        init_atoms=current_atoms,
+        goal=task_initial_atoms,
+        costs=method.skill_costs(),
+        task_initial_atoms=task_initial_atoms,
+    )
+    reset_ground_skill = plan[0]
+    assert reset_ground_skill.add_effects == task_initial_atoms
+
+
+def test_step_dispatches_a_selected_reset_skill_as_a_human_help_request() -> None:
+    """Once the plan's next step is ask_for_reset_task_initial, step() must intercept
+    it before execute_ground_skill: no controller call, no competence model created for
+    it (that is what "bypasses the competence model entirely" means structurally), and
+    the banked cost is exactly the configured flag, not anything read off `costs`."""
+    method, env = _reset_build(ask_for_reset_task_initial_cost=0.37)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    reset_ground_skill = HumanResetSkillBuilder.build_ask_for_reset_task_initial(
+        objects=method.objects(), predicates=method.predicates(), init_atoms=task_initial_atoms
+    )
+    episode = _EesEpisode(
+        method=method,
+        goal=task.goal.atoms,
+        practicing=True,
+        task_initial_atoms=task_initial_atoms,
+    )
+    episode._plan = [reset_ground_skill]
+
+    with pytest.raises(HumanHelpRequested) as excinfo:
+        episode.step(state=task.initial_state)
+    assert excinfo.value.cost == 0.37
+    assert method._competence_models == {}
+
+
+def test_ees_evaluation_never_offers_or_selects_either_reset_skill() -> None:
     """No evaluation episode is ever rescued -- measurement would be measuring the
-    human. The Method itself must not even be able to ask there."""
-    method, env = _help_seeking_build(trigger=HelpSeekingTrigger.ON_STUCK, patience=1)
+    human. get_task_policy supplies no task_initial_atoms at all, so plan_to can never
+    offer the reset skill there regardless of either cost flag."""
+    method, env = _reset_build(
+        ask_for_reset_task_initial_cost=0.01, ask_for_reset_random_task_cost=0.01
+    )
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
     policy = method.get_task_policy(task=task)
     state = task.initial_state
@@ -1363,13 +1463,498 @@ def test_ees_evaluation_policy_never_asks_for_help() -> None:
         policy(state)
 
 
-def test_help_seeking_does_not_consume_ees_own_rng_stream() -> None:
-    """The two streams are separate objects seeded from the same --seed, so an
-    on-stuck arm plans and samples exactly as an unconfigured one does. If they shared
-    a generator, turning the flag on would silently change EES's own behaviour."""
-    plain, env = _build(seed=5)
-    asking, asking_env = _help_seeking_build(trigger=HelpSeekingTrigger.AT_RANDOM, seed=5)
-    del env, asking_env
-    assert plain._rng.bit_generator.state == asking._rng.bit_generator.state
-    asking.help_seeking._rng.random(100)
-    assert plain._rng.bit_generator.state == asking._rng.bit_generator.state
+# --------------------------------------------------------------------------------
+# ask_for_reset_random_task as a real mid-plan ground skill, not just a stuck fallback.
+#
+# Mirrors the ask_for_reset_task_initial tests above wherever the two skills' shapes
+# actually agree: both are built from THIS episode's own task_initial_atoms (never a
+# freshly sampled task's atoms, which are not known at plan time), so a plan_to call
+# offering both is exercising two ground skills with identical add/delete effects and
+# different names/costs. See HumanResetSkillBuilder's own docstring for why that
+# construction is sound for Tossing3D specifically rather than in general.
+
+
+def test_plan_to_prefers_a_cheap_random_task_reset_over_an_expensive_walk_back() -> None:
+    """The mid-plan counterpart of test_plan_to_prefers_a_cheap_reset_over_an_expensive_
+    walk_back for ask_for_reset_task_initial: FastDownward must be free to select
+    ask_for_reset_random_task inside an ordinary plan_to call, not only as the
+    step()-level substitute for InteractionComplete."""
+    method, env = _reset_build(ask_for_reset_random_task_cost=0.01)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+
+    plan = method.plan_to(
+        init_atoms=current_atoms,
+        goal=task_initial_atoms,
+        costs=method.skill_costs(),
+        task_initial_atoms=task_initial_atoms,
+    )
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_RANDOM_TASK_NAME]
+
+
+def test_plan_to_does_not_offer_the_random_task_reset_skill_without_task_initial_atoms() -> None:
+    method, env = _reset_build(ask_for_reset_random_task_cost=0.01)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+
+    plan = method.plan_to(
+        init_atoms=current_atoms, goal=task_initial_atoms, costs=method.skill_costs()
+    )
+    assert ASK_FOR_RESET_RANDOM_TASK_NAME not in [ground.skill.name for ground in plan]
+    assert plan, "the ordinary walk-back route must still exist"
+
+
+def test_plan_to_never_offers_the_random_task_reset_skill_when_its_cost_is_unconfigured() -> None:
+    method, env = _reset_build()
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+
+    plan = method.plan_to(
+        init_atoms=current_atoms,
+        goal=task_initial_atoms,
+        costs=method.skill_costs(),
+        task_initial_atoms=task_initial_atoms,
+    )
+    assert ASK_FOR_RESET_RANDOM_TASK_NAME not in [ground.skill.name for ground in plan]
+    assert plan
+
+
+def test_plan_to_offers_and_independently_costs_both_reset_skills_when_both_configured() -> None:
+    """Regression test for a composition bug: injecting the second reset skill's cost
+    into `ground_skill_costs` by rebuilding from the bare `costs` argument (rather than
+    from `ground_skill_costs`, which already carries the first skill's injected entry)
+    would silently drop the first skill's cost from the dict it is offered under, even
+    though its Skill object is still present in `skills` -- so whichever of the two is
+    cheaper must be selected correctly in BOTH orderings, not just one."""
+    method, env = _reset_build(
+        ask_for_reset_task_initial_cost=0.02, ask_for_reset_random_task_cost=0.01
+    )
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+    plan = method.plan_to(
+        init_atoms=current_atoms,
+        goal=task_initial_atoms,
+        costs=method.skill_costs(),
+        task_initial_atoms=task_initial_atoms,
+    )
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_RANDOM_TASK_NAME]
+
+    method2, env2 = _reset_build(
+        ask_for_reset_task_initial_cost=0.01, ask_for_reset_random_task_cost=0.02
+    )
+    task2 = LightSwitchTasks(env=env2, seed=0).sample_train_task()
+    task_initial_atoms2 = method2.abstract_state(state=task2.initial_state)
+    current_atoms2 = _moved_to_cell2_atoms(method=method2, task=task2)
+    plan2 = method2.plan_to(
+        init_atoms=current_atoms2,
+        goal=task_initial_atoms2,
+        costs=method2.skill_costs(),
+        task_initial_atoms=task_initial_atoms2,
+    )
+    assert [ground.skill.name for ground in plan2] == [ASK_FOR_RESET_TASK_INITIAL_NAME]
+
+
+def test_step_dispatches_random_task_reset_as_a_human_random_task_reset_request() -> None:
+    """The mid-plan counterpart of test_step_dispatches_a_selected_reset_skill_as_a_
+    human_help_request: once the plan's next step is ask_for_reset_random_task, step()
+    must intercept it and raise HumanRandomTaskResetRequested (not HumanHelpRequested)
+    before execute_ground_skill, banking exactly the configured flag."""
+    method, env = _reset_build(ask_for_reset_random_task_cost=0.19)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    reset_ground_skill = HumanResetSkillBuilder.build_ask_for_reset_random_task(
+        objects=method.objects(), predicates=method.predicates(), init_atoms=task_initial_atoms
+    )
+    episode = _EesEpisode(
+        method=method,
+        goal=task.goal.atoms,
+        practicing=True,
+        task_initial_atoms=task_initial_atoms,
+    )
+    episode._plan = [reset_ground_skill]
+
+    with pytest.raises(HumanRandomTaskResetRequested) as excinfo:
+        episode.step(state=task.initial_state)
+    assert excinfo.value.cost == 0.19
+    assert method._competence_models == {}
+
+
+def test_nothing_left_to_practice_raises_the_free_interaction_complete_even_when_configured() -> (
+    None
+):
+    """The step()-level bootstrap fallback that used to substitute a priced
+    HumanRandomTaskResetRequested here is REMOVED (Josh's correction): it had no
+    analogue on ask_for_reset_task_initial and, unlike the mid-plan ground skill, fired
+    regardless of the configured cost's VALUE -- a bare `is not None` check, not a real
+    comparison. `_practice_plan`'s bootstrap path (no candidate has ever been scored,
+    so `choose_practice_target` returns nothing to iterate) never calls `plan_to` at
+    all, so the mid-plan ground skill was never offered a chance to be selected here
+    either -- meaning this path had NO cost-sensitive route to a reset, only the
+    unconditional one. A genuinely-never-scored, nothing-bootstrap-applicable state must
+    now degrade to the free InteractionComplete, exactly like the `never` baseline with
+    no reset skill configured at all (test_practice_signals_completion_when_nothing_is_
+    applicable) -- configuring ask_for_reset_random_task_cost no longer changes this
+    specific outcome."""
+    method, env = _reset_build(ask_for_reset_random_task_cost=0.42)
+    stranded = env.build_initial_state(light_level=0.0, light_target=0.7)
+    stranded.set(obj=LightSwitchEnvironment.robot, feature_name="x", feature_val=1.23)
+    task = Task(initial_state=stranded, goal=Goal(atoms=frozenset()))
+    env.set_state(state=stranded)
+    assert method._competence_models == {}, "the bootstrap path requires no scored candidate yet"
+
+    policy = method.get_practice_policy(task=task)
+    with pytest.raises(InteractionComplete):
+        policy(env.get_current_state())
+
+
+# --------------------------------------------------------------------------------
+# The post-hoc acceptance ceiling: "no plan" is not a competing finite-cost
+# alternative FastDownward's own search can weigh against ANY finite reset cost, so a
+# reset ground skill -- once offered -- is unconditionally accepted at any magnitude
+# by a pure cost-minimizing search. Confirmed empirically (not just asserted) against
+# costs 0.001 through 1e6 during this investigation, against Tossing3D's real one-way
+# door: MOVE_TO_TOSS_LOCATION_AND_TOSS deletes Reachable(cube, barrier)
+# unconditionally (hit or miss) and no skill ever re-adds it, so a state with
+# Reachable=False is a genuine dead end for both PickCube and the toss skill -- no
+# live simulator needed, since objects/predicates/skills are static declarations.
+#
+# plan_to must decline a reset whose cost exceeds a real, non-arbitrary ceiling
+# derived from costs already in scope (the per-ground-skill -log(competence) costs
+# this same call already receives) rather than accepting it unconditionally.
+
+
+def _tossing3d_dead_end() -> tuple[EesMethod, Tossing3DEnvironment, GroundAtom, GroundAtom]:
+    """A Tossing3D EesMethod plus the one-way-door dead-end atoms: `stuck_atoms` (past
+    the barrier, Reachable=False, unreachable to any real skill) and
+    `task_initial_atoms` (the goal these tests plan toward, and what a reset would
+    produce -- Reachable=True, matching this domain's actual task-initial shape,
+    verified empirically to be scene-seed-invariant -- see HumanResetSkillBuilder's
+    own docstring)."""
+    env = Tossing3DEnvironment()
+    provider = Tossing3DSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=provider, seed=0)
+    cube, barrier, robot = env.cube, env.barrier, env.robot
+    task_initial_atoms = frozenset({
+        HAND_EMPTY(state=None, objects=(robot,)),
+        ON_GROUND(state=None, objects=(cube,)),
+        REACHABLE(state=None, objects=(cube, barrier)),
+    })
+    stuck_atoms = frozenset({
+        HAND_EMPTY(state=None, objects=(robot,)),
+        ON_GROUND(state=None, objects=(cube,)),
+    })
+    return method, env, stuck_atoms, task_initial_atoms
+
+
+def test_plan_to_confirms_the_dead_end_is_genuinely_unreachable_without_any_reset() -> None:
+    """Fixture sanity: without a reset offered at all, this state has no walk back --
+    the premise every test below depends on."""
+    method, _env, stuck_atoms, task_initial_atoms = _tossing3d_dead_end()
+    with pytest.raises(PlanningFailure):
+        method.plan_to(init_atoms=stuck_atoms, goal=task_initial_atoms, costs=method.skill_costs())
+
+
+def test_plan_to_declines_a_reset_whose_cost_exceeds_the_ceiling_and_stays_stuck() -> None:
+    """With no ground skill ever scored (costs == {}), the ceiling falls back to
+    default_cost() (~0.095 at the prior's own defaults) -- a reset costed at 1000.0
+    clears nothing, and since the dead end has no cheaper real alternative either
+    (test above), plan_to must raise PlanningFailure rather than returning a plan that
+    pays for it."""
+    method, _env, stuck_atoms, task_initial_atoms = _tossing3d_dead_end()
+    method.ask_for_reset_random_task_cost = 1000.0
+    assert method.skill_costs() == {}, "a fresh Method has no scored competence models yet"
+
+    with pytest.raises(PlanningFailure):
+        method.plan_to(
+            init_atoms=stuck_atoms,
+            goal=task_initial_atoms,
+            costs=method.skill_costs(),
+            task_initial_atoms=task_initial_atoms,
+        )
+
+
+def test_plan_to_accepts_a_reset_whose_cost_clears_the_ceiling() -> None:
+    """The converse: a reset costed BELOW default_cost() (the ceiling when nothing has
+    been scored yet) is still accepted -- the ceiling is a real bar, not a blanket
+    decline."""
+    method, _env, stuck_atoms, task_initial_atoms = _tossing3d_dead_end()
+    method.ask_for_reset_random_task_cost = 0.01
+    assert method.default_cost() > 0.01, "the fixture must actually clear the ceiling"
+
+    plan = method.plan_to(
+        init_atoms=stuck_atoms,
+        goal=task_initial_atoms,
+        costs=method.skill_costs(),
+        task_initial_atoms=task_initial_atoms,
+    )
+    assert [g.skill.name for g in plan] == [ASK_FOR_RESET_RANDOM_TASK_NAME]
+
+
+def test_plan_to_falls_back_to_a_pricier_real_plan_rather_than_an_unaffordable_reset() -> None:
+    """When a real (reset-free) alternative exists at all, declining an over-ceiling
+    reset must fall back to it rather than giving up outright -- "give up" only wins
+    over a genuine real option when no real option exists, never merely because a
+    reset was rejected. Reuses LightSwitch's own cheap-reset-vs-walk-back fixture
+    (test_plan_to_prefers_a_cheap_random_task_reset_over_an_expensive_walk_back), but
+    inverted: the reset is now priced ABOVE the ceiling (5.0, versus a fresh Method's
+    default_cost() of ~0.095) while the ordinary 2-step MoveRobot walk back to cell0
+    still exists -- plan_to must return that real, pricier walk, not PlanningFailure
+    and not the unaffordable reset."""
+    method, env = _reset_build(ask_for_reset_random_task_cost=5.0)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    task_initial_atoms = method.abstract_state(state=task.initial_state)
+    current_atoms = _moved_to_cell2_atoms(method=method, task=task)
+    assert method.skill_costs() == {}
+    assert method.default_cost() < 5.0, "the fixture must actually exceed the ceiling"
+
+    plan = method.plan_to(
+        init_atoms=current_atoms,
+        goal=task_initial_atoms,
+        costs=method.skill_costs(),
+        task_initial_atoms=task_initial_atoms,
+    )
+    assert ASK_FOR_RESET_RANDOM_TASK_NAME not in [g.skill.name for g in plan]
+    assert plan, "a real (pricier) walk-back must still be returned"
+
+
+def test_the_ceiling_rises_with_a_skills_own_observed_unreliability() -> None:
+    """The ceiling is derived from costs already in scope (the same per-ground-skill
+    -log(competence) dict this plan_to call already receives), not an invented
+    constant -- so it moves as competence estimates evolve, exactly the "same order of
+    magnitude as the reset costs Josh is sweeping" argument. Driving PickCube's own
+    competence down (repeated observed failures) raises its -log(competence) past both
+    swept values (0.5, 1.0), at which point a reset costed at either is accepted where
+    it was declined before any failures were observed."""
+    method, env, stuck_atoms, task_initial_atoms = _tossing3d_dead_end()
+    pick_cube = GroundSkill(
+        skill=Tossing3DSkills.PICK_CUBE, objects=(env.robot, env.cube, env.barrier)
+    )
+    for _ in range(30):
+        method.observe_outcome(ground_skill=pick_cube, success=False)
+    pick_cube_cost = method.skill_costs()[pick_cube]
+    assert pick_cube_cost > 1.0, "the fixture must actually drive the ceiling past both swept costs"
+
+    for swept_cost in (0.5, 1.0):
+        method.ask_for_reset_random_task_cost = swept_cost
+        plan = method.plan_to(
+            init_atoms=stuck_atoms,
+            goal=task_initial_atoms,
+            costs=method.skill_costs(),
+            task_initial_atoms=task_initial_atoms,
+        )
+        assert [g.skill.name for g in plan] == [ASK_FOR_RESET_RANDOM_TASK_NAME]
+
+
+def test_a_never_policy_run_can_stay_stuck_at_both_swept_costs_when_nothing_is_scored() -> None:
+    """The empirical check Josh asked for, at the two costs actually swept (0.5, 1.0):
+    from the SAME one-way-door dead end, with nothing yet scored (a fresh Method,
+    matching the very start of a `never`-policy run before any competence has been
+    observed), the robot ends up stuck-and-unrescued at both swept costs -- not
+    deterministically reset -- because the ceiling (default_cost() at this point,
+    ~0.095) is well below either. This is the "reports a real finding" half of the
+    ask: at this specific fresh-competence point, BOTH swept costs decline, they do
+    not split; test_the_ceiling_rises_with_a_skills_own_observed_unreliability above
+    is what shows the SAME two costs later being ACCEPTED once competence evolves, so
+    across a run's full lifetime the mix does happen, just not from a static snapshot
+    at the very first step alone."""
+    for swept_cost in (0.5, 1.0):
+        method, _env, stuck_atoms, task_initial_atoms = _tossing3d_dead_end()
+        method.ask_for_reset_random_task_cost = swept_cost
+        with pytest.raises(PlanningFailure):
+            method.plan_to(
+                init_atoms=stuck_atoms,
+                goal=task_initial_atoms,
+                costs=method.skill_costs(),
+                task_initial_atoms=task_initial_atoms,
+            )
+
+
+class _CubeBinCapableSkillProvider(LightSwitchSkillProvider):
+    """A LightSwitch-backed stand-in for a domain whose SkillProvider offers
+    `ask_for_reset_cube_bin_only` -- exercises EesMethod's own wiring (plan_to's
+    injection, _EesEpisode.step's interception) without importing Tossing3D or
+    touching a simulator, the same reason `_AskingMethod` in test_practice_loop.py
+    avoids importing a real Method.
+
+    The returned operator adds `Adjacent(cell0, cell0)` -- a reflexive atom no real
+    LightSwitch skill's effects ever touch (`Adjacent` is only ever a precondition in
+    skills.py, never an add/delete effect), so a goal of exactly that atom is
+    achievable if and only if this ground skill was actually offered to the planner.
+    That makes plan_to's own injection directly observable through a real Fast
+    Downward plan, rather than only through step()'s interception (covered
+    separately below)."""
+
+    def human_cube_bin_reset_skill(self) -> GroundSkill:
+        cell_var = Variable(name="cell", type=LightSwitchEnvironment.cell_type)
+        skill = Skill(
+            name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
+            parameters=(cell_var,),
+            preconditions=frozenset(),
+            add_effects=frozenset({LiftedAtom(predicate=ADJACENT, variables=(cell_var, cell_var))}),
+            delete_effects=frozenset(),
+            param_dim=0,
+        )
+        env_cell0 = self.env.get_cells()[0]
+        return GroundSkill(skill=skill, objects=(env_cell0,))
+
+
+def _cube_bin_reset_build(
+    *, ask_for_reset_cube_bin_cost: float | None = None, grid_size: int = 3, seed: int = 0
+) -> tuple[EesMethod, LightSwitchEnvironment]:
+    env = LightSwitchEnvironment(grid_size=grid_size)
+    method = EesMethod(
+        env=env,
+        skill_provider=_CubeBinCapableSkillProvider(env=env),
+        seed=seed,
+        ask_for_reset_cube_bin_cost=ask_for_reset_cube_bin_cost,
+    )
+    return method, env
+
+
+def test_ees_declares_it_can_ask_for_help_when_the_cube_bin_reset_is_configured() -> None:
+    method, _env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.2)
+    assert method.may_request_human_help() is True
+
+
+def test_plan_to_offers_the_cube_bin_reset_skill_when_configured_and_the_domain_supports_it() -> (
+    None
+):
+    """A real Fast Downward plan, not just a constructed operator: the goal
+    (`Adjacent(cell0, cell0)`, reflexive and false in every real init state) is
+    achievable if and only if plan_to actually added the injected ground skill to
+    the planner's candidate set -- see _CubeBinCapableSkillProvider's own docstring
+    for why no ordinary LightSwitch skill could ever produce it.
+
+    0.01, not 0.1: this must clear plan_to's own shared cost ceiling (default_cost()
+    when nothing has been observed yet, ~0.095) to test injection rather than
+    affordability -- see the dedicated affordability tests below for that."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.01)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+    assert not goal <= init_atoms, "the fixture must actually start with the goal false"
+
+    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+
+
+def test_an_unaffordable_cube_bin_reset_is_rejected_even_as_the_only_route_to_the_goal() -> None:
+    """The bug this guards against, reproduced and closed: classical cost-optimal
+    planning has no price for "give up", so PlanningFailure is not a competing
+    finite-cost alternative -- offering ask_for_reset_cube_bin_only unconditionally
+    means ANY configured cost is preferred over reporting no plan, however large.
+    Verified against a probe sweeping 0.001 through 1,000,000 before this fix
+    existed: every one of them produced a plan through the reset. This is the same
+    goal as test_plan_to_offers_the_cube_bin_reset_skill_..., the ONLY route to
+    which is the reset -- but priced far above any of this run's own competence-
+    derived costs, so plan_to's shared ceiling (see plan_to's own docstring --
+    ask_for_reset_cube_bin_only goes through the exact same reset_costs_by_name
+    mechanism as the other two reset skills, not a copy of its own) declines it and
+    re-requests with no reset offered at all. The goal is genuinely unreachable
+    without it, so PlanningFailure propagates from Fast Downward itself -- there is
+    no cube-bin-specific message to match anymore, since there is no cube-bin-
+    specific code path left to produce one."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=1_000_000.0)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+
+    with pytest.raises(PlanningFailure):
+        method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+
+
+def test_an_affordable_cube_bin_reset_still_clears_the_threshold() -> None:
+    """The companion to the test above: the fix must not make the skill unusable --
+    a genuinely cheap reset (well under default_cost(), the fallback threshold
+    before anything has been observed) still gets used when it is the only route to
+    the goal."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.001)
+    assert method.default_cost() > 0.001, "the fixture must actually be cheap"
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+
+    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+
+
+def test_the_affordability_threshold_is_derived_from_this_runs_own_costs_not_a_fixed_constant() -> (
+    None
+):
+    """Self-calibrating, not a second flag to tune: the same configured reset cost
+    is rejected when nothing has depressed any skill's competence yet, and accepted
+    once some OTHER ground skill's own competence-derived cost has risen above it --
+    "the same order of magnitude as EES's own competence-derived skill costs",
+    read directly off method.skill_costs() rather than a constant invented here."""
+    reset_cost = 0.3
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=reset_cost)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+    assert reset_cost > method.default_cost(), "the fixture must start unaffordable"
+
+    with pytest.raises(PlanningFailure):
+        method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+
+    # Depress TURN_ON_LIGHT's competence (repeated failures) until its own
+    # competence-derived cost clears reset_cost -- nothing about this reset itself
+    # changed, only what this run now believes about a DIFFERENT skill.
+    turn_on = _turn_on_light(env=env)
+    for _ in range(20):
+        method.observe_outcome(ground_skill=turn_on, success=False)
+    costs_now = method.skill_costs()
+    assert max(costs_now.values()) > reset_cost, "the fixture must depress competence enough"
+
+    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=costs_now)
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+
+
+def test_plan_to_raises_when_configured_against_a_domain_with_no_cube_bin_reset_skill() -> None:
+    """LightSwitchSkillProvider (used directly, not the fake above) inherits the base
+    SkillProvider's None default -- exactly every domain but Tossing3D today. Setting
+    the cost flag against it is a misconfiguration plan_to must report, not silently
+    ignore."""
+    method, env = _reset_build(seed=0)
+    method.ask_for_reset_cube_bin_cost = 0.1
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    with pytest.raises(ValueError, match="human_cube_bin_reset_skill"):
+        method.plan_to(init_atoms=init_atoms, goal=frozenset(), costs=method.skill_costs())
+
+
+def test_step_dispatches_a_selected_cube_bin_reset_skill_as_a_human_cube_bin_reset() -> None:
+    """Once the plan's next step is ask_for_reset_cube_bin_only, step() must intercept
+    it before execute_ground_skill -- no controller call, no competence model created
+    for it -- and the banked cost is exactly the configured flag."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.37)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    reset_ground_skill = _CubeBinCapableSkillProvider(env=env).human_cube_bin_reset_skill()
+    episode = _EesEpisode(method=method, goal=task.goal.atoms, practicing=True)
+    episode._plan = [reset_ground_skill]
+
+    with pytest.raises(HumanCubeBinResetRequested) as excinfo:
+        episode.step(state=task.initial_state)
+    assert excinfo.value.cost == 0.37
+    assert method._competence_models == {}
+
+
+def test_ees_evaluation_never_offers_the_cube_bin_reset_skill_either() -> None:
+    """Same invariant as the other two reset skills: no evaluation episode is ever
+    rescued. Unlike ask_for_reset_task_initial, this is not gated on
+    task_initial_atoms (its effects don't depend on per-episode init state at all --
+    see human_cube_bin_reset_skill), so this checks get_task_policy runs cleanly
+    end-to-end rather than that plan_to declined to offer the skill."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.01)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    policy = method.get_task_policy(task=task)
+    state = task.initial_state
+    for _ in range(5):
+        policy(state)

@@ -13,6 +13,7 @@ from typing import ClassVar
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.renderer.renderer import Renderer
+from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.method_runner import MethodRunner
 
 from .environment import Tossing3DEnvironment
@@ -197,4 +198,13 @@ class Tossing3DCli:
         tasks = Tossing3DTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
         )
-        return Tossing3DProblem(env=env, tasks=tasks)
+        # Wired for the same reason tossingroom's own build_problem wires it:
+        # --method ees's ask_for_reset_task_initial/ask_for_reset_random_task ground
+        # skills need a real HumanOracle on the practice Problem, or PracticeLoop.run
+        # refuses up front the moment either cost flag is configured. This function
+        # builds both the practice and evaluation Problem (called twice, see above), so
+        # both get one -- harmless on the evaluation side, since no evaluation policy
+        # can ever raise a human-help exception in the first place, and harmless for
+        # every other Method/config, since a HumanOracle that is never asked costs
+        # nothing and changes no existing run's behaviour.
+        return Tossing3DProblem(env=env, tasks=tasks, human=UnconditionalHumanOracle)
