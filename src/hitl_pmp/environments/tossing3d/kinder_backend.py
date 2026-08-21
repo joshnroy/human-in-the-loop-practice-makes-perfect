@@ -139,11 +139,15 @@ class KinderObservation(BaseModel):
 
     `goal_region` is the **live** `Region.bbox` of `blocks_goal_region`, read back from
     the compiled model rather than re-derived from the task JSON. The JSON range is
-    inflated by `ground_placement_threshold` (0.05 m per side, z clamped at 0) before it
+    inflated by `MujocoObject`'s per-object placement threshold (1cm per side) before it
     becomes a region, so the literal in the file is not the box that scores. Reading it
     back is what lets this domain's `InBin` agree with `_check_goals()` exactly. It
-    reaches the state carried on the **bin** object, under this domain's assumption that
-    the bin's interior contains this region -- see `predicates.py`'s module docstring.
+    reaches the state carried on the **bin** object -- the region is attached to the
+    bin's own body (`blocks_goal_region.target` is `bin_0`), under this domain's
+    assumption that the bin's interior contains this region -- see `predicates.py`'s
+    module docstring. Because the region moves with the bin, this box is not fixed
+    across seeds once `bin_init_region` samples a position: it tracks wherever the bin
+    actually landed.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -514,10 +518,12 @@ class KinderBackend(BaseModel):
         gives an identical atom set.
 
         The one exception is `MovableInGoalRegion`, whose scored region comes off the
-        live env's ground fixture rather than off `state` -- upstream says so in
-        `state_abstractor`'s own comment. That region is a static scene fixture (measured
-        identical across seeds), so it does not vary in practice, but it does mean this
-        call needs a live scene.
+        live simulator rather than off `state` -- upstream says so in `state_abstractor`'s
+        own comment. The region is attached to the bin's own body, not a fixed scene
+        fixture, so it genuinely does vary: it tracks wherever the bin currently is, which
+        differs across seeds once `bin_init_region` samples a position rather than naming
+        one fixed point. That is exactly why this call needs a live scene rather than a
+        cached box -- there no longer is one fixed box to cache.
 
         Object names are translated to *this domain's* on the way out. KINDER resolves
         the robot's name from the robot config at reset; this domain's `Object` is the
@@ -550,29 +556,25 @@ class KinderBackend(BaseModel):
     def goal_region_bbox(self) -> tuple[float, float, float, float, float, float]:
         """The live world-frame box `_check_goals()` scores containment in.
 
-        `Region.bbox` only reads the site's simulated position when the region carries an
-        `env`; ground regions are constructed with `env=None`, so it otherwise falls back
-        to an XML/parent-frame value. Upstream's own `check_in_region` handles that by
-        swapping `env` in and back out, and so does this -- leaving a sim reference behind
-        on a region upstream deliberately left bare would be a side effect of taking a
-        measurement.
+        The region is attached to the bin's own body (Tossing3D-o1.json's
+        `blocks_goal_region.target` is `bin_name`), not to the ground, so `Region.bbox`
+        moves with wherever the bin actually is rather than sitting at a scene-fixed
+        point. That also means this no longer needs the env-swap dance a ground-attached
+        region required: `MujocoObject._create_regions` passes the object's own `env`
+        into every `Region` it builds, so `region.env` is already the live env by
+        construction -- unlike a ground region, which is built with `env=None` and only
+        gets one handed in per call.
         """
         object_centric = self._object_centric()
-        ground = object_centric._ground_fixture  # noqa: SLF001
-        regions = ground.region_objects
+        bin_object = object_centric._objects_dict[self.bin_name]  # noqa: SLF001
+        regions = bin_object.region_objects
         found = regions.get(self.goal_region_name, [])
         if len(found) != 1:
             raise ValueError(
                 f"expected exactly one {self.goal_region_name!r} region, found "
                 f"{len(found)} (regions: {sorted(regions)})"
             )
-        region = found[0]
-        original = region.env
-        region.env = object_centric._robot_env  # noqa: SLF001
-        try:
-            bbox = [float(value) for value in region.bbox]
-        finally:
-            region.env = original
+        bbox = [float(value) for value in found[0].bbox]
         if len(bbox) != 6:
             raise ValueError(f"{self.goal_region_name!r} is not a single box: bbox={bbox}")
         x_min, y_min, z_min, x_max, y_max, z_max = bbox

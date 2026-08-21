@@ -27,8 +27,13 @@ needs_kinder = pytest.mark.skipif(
 pytestmark = needs_kinder
 
 CANONICAL_SEED = 125
-GROUND_PLACEMENT_THRESHOLD = 0.05
+# `blocks_goal_region.target` is `bin_0`, not `ground`: its inflation comes from
+# `MujocoObject`'s per-object placement threshold (1cm), not the ground fixture's (5cm).
+OBJECT_PLACEMENT_THRESHOLD = 0.01
 CONTAINMENT_TOLERANCE = 1e-9
+# `bin_init_region` now samples a real range rather than one fixed point, so a claim about
+# "the" bin position has to hold across several seeds, not just CANONICAL_SEED.
+BIN_POSITION_SEEDS = (CANONICAL_SEED, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
 
 def _env():
@@ -88,21 +93,45 @@ def test_the_goal_box_in_the_state_is_the_live_region_bbox_element_for_element()
         in_state = tuple(state.get(obj=env.bin, feature_name=name) for name in corners)
         assert in_state == pytest.approx(live)
 
+        # blocks_goal_region.target is bin_0: the JSON's "ranges" are in the bin's own
+        # local frame, so the bin's live world position has to be added back in before
+        # comparing to `live`, which is a world-frame box.
         (goal_range,) = _installed_task_json()["regions"]["blocks_goal_region"]["ranges"]
-        assert live[0] == pytest.approx(goal_range[0] - GROUND_PLACEMENT_THRESHOLD, abs=1e-6)
-        assert live[3] == pytest.approx(goal_range[3] + GROUND_PLACEMENT_THRESHOLD, abs=1e-6)
-        assert live[0] < goal_range[0] and live[3] > goal_range[3]
+        bin_x = float(env.backend().observe().get(name="bin_0", feature="x"))
+        assert live[0] == pytest.approx(
+            bin_x + goal_range[0] - OBJECT_PLACEMENT_THRESHOLD, abs=1e-6
+        )
+        assert live[3] == pytest.approx(
+            bin_x + goal_range[3] + OBJECT_PLACEMENT_THRESHOLD, abs=1e-6
+        )
+        assert live[0] < bin_x + goal_range[0] and live[3] > bin_x + goal_range[3]
     finally:
         env.close()
 
 
-def test_the_shipped_scenes_scoring_box_lies_inside_the_bin() -> None:
+@pytest.mark.parametrize(
+    "bin_x,bin_y",
+    [
+        (2.0, 0.0),  # the pre-widening fixed point, still a valid sample
+        (1.85, -0.20),  # bin_init_region's corners...
+        (1.85, 0.20),
+        (2.15, -0.20),
+        (2.15, 0.20),
+        (1.85, 0.0),  # ...and edge midpoints
+        (2.15, 0.0),
+        (2.0, -0.20),
+        (2.0, 0.20),
+    ],
+)
+def test_the_shipped_scenes_scoring_box_lies_inside_the_bin(*, bin_x: float, bin_y: float) -> None:
+    """blocks_goal_region.target is bin_0, so its "ranges" are bin-local: this containment
+    property has to hold wherever bin_init_region might place the bin, not just at one
+    point -- swept across the corners and edge midpoints of bin_init_region's actual
+    sampling range, since the bin can land anywhere in it now (see BIN_POSITION_SEEDS'
+    docstring).
+    """
     task_json = _installed_task_json()
     regions = task_json["regions"]
-
-    (bin_range,) = regions["bin_init_region"]["ranges"]
-    bin_x = (bin_range[0] + bin_range[2]) / 2
-    bin_y = (bin_range[1] + bin_range[3]) / 2
 
     bin_spec = task_json["objects"]["bin"]["bin_0"]
     half_length, half_width = bin_spec["length"] / 2, bin_spec["width"] / 2
@@ -111,12 +140,12 @@ def test_the_shipped_scenes_scoring_box_lies_inside_the_bin() -> None:
 
     (goal_range,) = regions["blocks_goal_region"]["ranges"]
     scored_x = (
-        goal_range[0] - GROUND_PLACEMENT_THRESHOLD,
-        goal_range[3] + GROUND_PLACEMENT_THRESHOLD,
+        bin_x + goal_range[0] - OBJECT_PLACEMENT_THRESHOLD,
+        bin_x + goal_range[3] + OBJECT_PLACEMENT_THRESHOLD,
     )
     scored_y = (
-        goal_range[1] - GROUND_PLACEMENT_THRESHOLD,
-        goal_range[4] + GROUND_PLACEMENT_THRESHOLD,
+        bin_y + goal_range[1] - OBJECT_PLACEMENT_THRESHOLD,
+        bin_y + goal_range[4] + OBJECT_PLACEMENT_THRESHOLD,
     )
 
     margins = _containment_margins(
@@ -128,10 +157,15 @@ def test_the_shipped_scenes_scoring_box_lies_inside_the_bin() -> None:
     assert _is_contained(margins=margins), f"scored box not contained in bin: {margins}"
 
 
-def test_the_live_scoring_window_lies_inside_the_bins_live_footprint() -> None:
+@pytest.mark.parametrize("seed", BIN_POSITION_SEEDS)
+def test_the_live_scoring_window_lies_inside_the_bins_live_footprint(*, seed: int) -> None:
+    """Swept across several seeds, not just CANONICAL_SEED: bin_init_region now samples a
+    real range rather than one fixed point, so this has to hold wherever the bin actually
+    landed, not only at its old, single, always-identical position.
+    """
     env = _env()
     try:
-        env.reset_to_seed(seed=CANONICAL_SEED)
+        env.reset_to_seed(seed=seed)
         backend = env.backend()
         scored_x = (backend.goal_region_bbox()[0], backend.goal_region_bbox()[3])
         scored_y = (backend.goal_region_bbox()[1], backend.goal_region_bbox()[4])
@@ -149,6 +183,52 @@ def test_the_live_scoring_window_lies_inside_the_bins_live_footprint() -> None:
         footprint_y=(bin_y - hy, bin_y + hy),
     )
     assert _is_contained(margins=margins), f"live scored window not contained: {margins}"
+
+
+def test_the_goal_regions_live_bbox_moves_with_the_bins_own_position() -> None:
+    """Regression test for the upstream `1183de7`-style desync: a scene edit (there, the
+    bin's init region; here, moving the bin itself) must move the *scored* box along with
+    it, not leave it sitting at whatever point the scene happened to be built at.
+
+    Before the fix (`blocks_goal_region.target` was `ground`), this failed: the region
+    was a fixed site in the world frame, so moving the bin left `goal_region_bbox()`
+    completely unchanged. After the fix (`target` is `bin_0`), the region is a site on
+    the bin's own body, so MuJoCo tracks its live world position as the bin moves.
+    """
+    env = _env()
+    try:
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        backend = env.backend()
+        before_bbox = backend.goal_region_bbox()
+        before_bin_x = float(backend.observe().get(name="bin_0", feature="x"))
+
+        snapshot = backend.snapshot()
+        bin_object = snapshot.get_object_from_name(backend.bin_name)
+        offset = 0.30
+        snapshot.set(bin_object, "x", float(snapshot.get(bin_object, "x")) + offset)
+        backend.restore(snapshot=snapshot)
+
+        after_bbox = backend.goal_region_bbox()
+        after_bin_x = float(backend.observe().get(name="bin_0", feature="x"))
+    finally:
+        env.close()
+
+    actual_bin_delta = after_bin_x - before_bin_x
+    assert actual_bin_delta == pytest.approx(offset, abs=1e-3), "the bin itself did not move"
+
+    box_delta_min = after_bbox[0] - before_bbox[0]
+    box_delta_max = after_bbox[3] - before_bbox[3]
+    assert box_delta_min == pytest.approx(actual_bin_delta, abs=1e-3), (
+        f"the goal region's x_min did not track the bin's move "
+        f"(bin moved {actual_bin_delta}, box x_min moved {box_delta_min})"
+    )
+    assert box_delta_max == pytest.approx(actual_bin_delta, abs=1e-3), (
+        f"the goal region's x_max did not track the bin's move "
+        f"(bin moved {actual_bin_delta}, box x_max moved {box_delta_max})"
+    )
+    # y is untouched by the offset, so the box's y-extent must be unchanged.
+    assert after_bbox[1] == pytest.approx(before_bbox[1], abs=1e-6)
+    assert after_bbox[4] == pytest.approx(before_bbox[4], abs=1e-6)
 
 
 def test_the_containment_guard_would_catch_a_bin_moved_off_the_scored_box() -> None:
@@ -267,9 +347,14 @@ def test_in_bin_agrees_with_kinders_own_goal_check_at_the_boundary() -> None:
         env.reset_to_seed(seed=CANONICAL_SEED)
         backend = env.backend()
         x_min, _, _, x_max, _, _ = backend.goal_region_bbox()
+        # blocks_goal_region.target is bin_0, so its y-extent is centred on wherever the
+        # bin actually landed -- no longer y=0.0 at every seed now that bin_init_region
+        # samples a real range. Sweeping x at a fixed y=0.0 would silently walk outside
+        # the (now bin-relative) region whenever a seed's bin isn't at y=0.
+        bin_y = float(backend.observe().get(name="bin_0", feature="y"))
         snapshot = backend.snapshot()
         cube = snapshot.get_object_from_name(backend.cube_name)
-        snapshot.set(cube, "y", 0.0)
+        snapshot.set(cube, "y", bin_y)
         snapshot.set(cube, "z", 0.0444)
 
         for x, expected in (
