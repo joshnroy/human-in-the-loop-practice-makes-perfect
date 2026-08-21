@@ -83,6 +83,6 @@ def test_the_operator_never_names_hand_empty_or_holding_as_an_effect() -> None:
 
 
 def test_param_dim_is_zero_so_it_has_no_sampler() -> None:
-    """Like ask_for_reset_task_initial, this "skill" has no continuous parameters and
-    is intercepted before execute_ground_skill would ever try to sample any."""
+    """This "skill" has no continuous parameters and is intercepted before
+    execute_ground_skill would ever try to sample any."""
     assert _provider().human_cube_bin_reset_skill().skill.param_dim == 0

@@ -117,13 +117,13 @@ def test_build_problem_wires_the_v0_human_oracle() -> None:
     `test_the_problem_has_no_human_oracle_yet` builds a `Tossing3DProblem` BY HAND
     (bypassing this composition root) and says so explicitly: "this is the domain in
     the repo that most wants one ... a gap in what is representable, not evidence that
-    no intervention was needed". `--method ees`'s `ask_for_reset_task_initial`/
-    `ask_for_reset_random_task` ground skills are exactly that intervention becoming
-    representable -- and need a real `HumanOracle` wired here, in the CLI's own
-    composition root, or `PracticeLoop.run` refuses any run that configures either
-    cost flag before it starts (`Method.may_request_human_help` is True but
-    `Problem.human` is None). `UnconditionalHumanOracle` matches `tossingroom`'s own
-    `TossingRoomCli.build_problem` wiring."""
+    no intervention was needed". `--method ees`'s `ask_for_reset_cube_bin_only` ground
+    skill is exactly that intervention becoming representable -- and needs a real
+    `HumanOracle` wired here, in the CLI's own composition root, or `PracticeLoop.run`
+    refuses any run that configures its cost flag before it starts
+    (`Method.may_request_human_help` is True but `Problem.human` is None).
+    `UnconditionalHumanOracle` matches `tossingroom`'s own `TossingRoomCli.build_problem`
+    wiring."""
     args = _build_parser().parse_args([])
     assert Tossing3DCli.build_problem(args=args).human is UnconditionalHumanOracle
 

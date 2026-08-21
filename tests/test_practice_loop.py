@@ -5,13 +5,7 @@ import numpy as np
 import pytest
 from pydantic import ConfigDict, Field
 
-from hitl_pmp.core.method.method import (
-    HumanCubeBinResetRequested,
-    HumanHelpRequested,
-    HumanRandomTaskResetRequested,
-    InteractionComplete,
-    Method,
-)
+from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete, Method
 from hitl_pmp.core.method.types import (
     EpisodeTrace,
     GroundSkill,
@@ -1623,69 +1617,6 @@ class _RecordingHuman(HumanOracle):
         assert env.reset_movables(), "_FakeEnv.reset_movables() should always accept"
 
 
-class _AskingMethod(_FakeMethod):
-    """A Method that owns the decision to ask, which is the whole point of the split:
-    the harness learns of it only by catching the exception this raises.
-
-    Asks once `steps_before_asking` calls have gone by, and stops asking the moment it
-    is told help was granted -- a minimal stand-in for what a real asking Method
-    (`EesMethod`) does, without importing it. Deliberately not imported:
-    practice_loop.py sits *below* methods/ in the layering, so testing it through a
-    real Method would test the pair rather than the mechanism."""
-
-    steps_before_asking: int = 2
-    steps_taken: int = 0
-    may_ask: bool = True
-    # None (the default) raises a bare HumanHelpRequested -- cost=None, "price this the
-    # harness's own way". A configured value stands in for a Method that priced its own
-    # request (EES, from its planner), so the harness must bank that number verbatim.
-    ask_cost: float | None = None
-    # x observed at each observe_help_granted call, in call order.
-    help_granted_xs: list[float] = Field(default_factory=list)
-
-    def may_request_human_help(self) -> bool:
-        return self.may_ask
-
-    def observe_help_granted(self, *, state: State) -> None:
-        self.help_granted_xs.append(float(state[_OBJ][0]))
-        self.event_log.record(event="observe_help_granted")
-        self.steps_taken = 0
-
-    def get_practice_policy(self, *, task: Task) -> Policy:
-        del task
-        self.practice_policy_calls += 1
-        return lambda state: self._asking_action(state=state)
-
-    def _asking_action(self, *, state: State) -> LabeledAction:
-        del state
-        if self.steps_taken >= self.steps_before_asking:
-            raise HumanHelpRequested(cost=self.ask_cost)
-        self.steps_taken += 1
-        return LabeledAction(action=np.array([0.0]), label="asking")
-
-
-def _build_asking(*, steps_before_asking: int = 2, ask_cost: float | None = None):
-    """A practice/evaluation split whose Method asks for help, with a human wired in."""
-    _RecordingHuman.commands = []
-    practice_env = _FakeEnv()
-    evaluation_env = _FakeEnv()
-    event_log = _EventLog()
-    practice = _FakeProblem(
-        env=practice_env,
-        tasks=_FakeTasks(env=practice_env),
-        event_log=event_log,
-        human=_RecordingHuman,
-    )
-    evaluation = _FakeProblem(env=evaluation_env, tasks=_FakeTasks(env=evaluation_env))
-    method = _AskingMethod(
-        env=practice_env,
-        event_log=event_log,
-        steps_before_asking=steps_before_asking,
-        ask_cost=ask_cost,
-    )
-    return practice, evaluation, method, Metrics()
-
-
 def test_a_method_that_never_asks_is_never_rescued() -> None:
     """The incumbent path is untouched: a plain Method on a maximally absorbing
     environment behaves exactly as it did before any of this existed. The harness has
@@ -1711,50 +1642,12 @@ def test_a_method_that_never_asks_is_never_rescued() -> None:
     assert metrics.num_human_interventions() == (0.0, 0)
 
 
-def test_a_method_that_asks_is_rescued_and_its_cost_recorded() -> None:
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-    )
-    summed_cost, count = metrics.num_human_interventions()
-    assert count == len(_RecordingHuman.commands)
-    assert count > 0
-    # The recording human charges 2.0, so the cost recorded is the one it quoted rather
-    # than an assumed unit.
-    assert summed_cost == 2.0 * count
-
-
-def test_the_period_continues_after_a_rescue_rather_than_ending() -> None:
-    """The difference from InteractionComplete, measured rather than asserted in prose:
-    a period whose Method asks after 2 steps keeps going and is rescued repeatedly,
-    where one that raised InteractionComplete would have stopped at 2.
-
-    Each rescue costs the loop iteration it was raised on, so the period spends 3
-    iterations per "act, act, ask" cycle: 9 steps is exactly 3 of them."""
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-    )
-    assert metrics.num_human_interventions()[1] == 3
-    assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 6]
-
-
-def test_a_rescue_consumes_its_loop_iteration_so_an_always_asking_method_cannot_spin() -> None:
+def test_a_cube_bin_rescue_consumes_its_loop_iteration_so_an_always_asking_method_cannot_spin() -> (
+    None
+):
     """Bounded by the step budget like everything else. A Method that asks on its very
     first call gets exactly max_steps_per_interaction rescues and no more."""
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=0)
+    practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=0)
     PracticeLoop.run(
         problem=practice,
         evaluation_problem=evaluation,
@@ -1768,30 +1661,12 @@ def test_a_rescue_consumes_its_loop_iteration_so_an_always_asking_method_cannot_
     assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 0]
 
 
-def test_the_method_is_told_which_state_the_human_left_behind() -> None:
-    """observe_help_granted is what lets a Method restart its detector. It gets the
-    state *read back* from the environment, not the one that was commanded -- a v1+
-    human that only partially succeeds would leave it somewhere else."""
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-    )
-    # _FakeTasks' train task starts at x=100.0 and TASK_INITIAL is the default target.
-    assert method.help_granted_xs == [100.0, 100.0, 100.0]
-
-
-def test_both_method_hooks_fire_on_a_rescue_in_order() -> None:
+def test_both_method_hooks_fire_on_a_cube_bin_rescue_in_order() -> None:
     """observe_environment_reset against the state about to be lost, then
     observe_help_granted against the state that replaced it. The first is the same
     contract a mid-period interval reset has; the second is new and answers a different
     question."""
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=2)
     PracticeLoop.run(
         problem=practice,
         evaluation_problem=evaluation,
@@ -1809,11 +1684,11 @@ def test_both_method_hooks_fire_on_a_rescue_in_order() -> None:
     assert method.reset_observation_xs == [102.0]
 
 
-def test_a_rescue_is_not_counted_as_a_free_practice_reset() -> None:
+def test_a_cube_bin_rescue_is_not_counted_as_a_free_practice_reset_under_never() -> None:
     """num_practice_resets certifies the reset-free manipulation, so a charged human
     rescue must not land in it -- otherwise a `never` arm that asks would look like an
     arm that was quietly reset for free."""
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+    practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=2)
     PracticeLoop.run(
         problem=practice,
         evaluation_problem=evaluation,
@@ -1828,8 +1703,8 @@ def test_a_rescue_is_not_counted_as_a_free_practice_reset() -> None:
     assert metrics.num_human_interventions()[1] > 0
 
 
-def test_a_rescue_does_not_end_the_cycle_or_retrain() -> None:
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
+def test_a_cube_bin_rescue_does_not_end_the_cycle_or_retrain() -> None:
+    practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=2)
     PracticeLoop.run(
         problem=practice,
         evaluation_problem=evaluation,
@@ -1843,53 +1718,11 @@ def test_a_rescue_does_not_end_the_cycle_or_retrain() -> None:
     assert method.end_cycle_calls == 2
 
 
-def test_a_bare_human_help_requested_still_targets_this_periods_own_task() -> None:
-    """HumanHelpRequested's target is now always this period's own task-initial state
-    -- --human-reset-target is gone, and the "put me somewhere else" axis moved
-    entirely to HumanRandomTaskResetRequested below (a structurally different,
-    period-ending mechanism -- see that exception's own docstring)."""
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-    )
-    # One train task drawn for the period and none for any rescue.
-    assert practice.tasks.train_task_count == 1
-    assert all(
-        float(command.target_state[_OBJ][0]) == 100.0 for command in _RecordingHuman.commands
-    )
-
-
-def test_a_method_supplied_cost_bypasses_the_humans_own_pricing() -> None:
-    """`HumanHelpRequested(cost=...)` is what a Method that priced its own request
-    (EES, from its planner's ground_skill_costs) uses -- the harness must bank that
-    number verbatim rather than re-querying the HumanOracle, which would report an
-    unrelated price (_RecordingHuman quotes a flat 2.0 regardless of what is asked)."""
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2, ask_cost=0.25)
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-    )
-    summed_cost, count = metrics.num_human_interventions()
-    assert count > 0
-    assert summed_cost == pytest.approx(0.25 * count)
-
-
-def test_no_evaluation_episode_is_ever_rescued() -> None:
+def test_no_evaluation_episode_is_ever_cube_bin_rescued() -> None:
     """Measurement runs on the evaluation Problem, which is never handed a practice
     policy -- so a rescued arm's score is still the robot's own. Pinned by giving the
     evaluation Problem no human at all: if the loop ever tried, it would raise."""
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=0)
+    practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=0)
     assert evaluation.human is None
     PracticeLoop.run(
         problem=practice,
@@ -1915,7 +1748,7 @@ def test_a_method_that_may_ask_requires_a_human_on_the_problem() -> None:
         PracticeLoop.run(
             problem=practice,
             evaluation_problem=evaluation,
-            method=_AskingMethod(env=practice_env),
+            method=_CubeBinAskingMethod(env=practice_env),
             metrics=Metrics(),
             num_cycles=1,
             max_steps_per_interaction=10,
@@ -1934,7 +1767,7 @@ def test_a_method_that_cannot_ask_needs_no_human_at_all() -> None:
     PracticeLoop.run(
         problem=practice,
         evaluation_problem=evaluation,
-        method=_AskingMethod(env=practice_env, may_ask=False),
+        method=_FakeMethod(env=practice_env),
         metrics=Metrics(),
         num_cycles=0,
         max_steps_per_interaction=10,
@@ -1969,42 +1802,21 @@ def test_interaction_complete_still_ends_the_period_for_a_method_with_a_human() 
     assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 2]
 
 
-def test_a_rescue_is_handed_to_the_recorder_as_its_own_reset_kind() -> None:
-    practice, evaluation, method, metrics = _build_asking(steps_before_asking=2)
-    recorder = _spy_recorder(problem=practice, num_cycles=1, max_steps=9)
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-        recorder=recorder,
-    )
-    assert [call for call in recorder.calls if call.startswith("human_reset")] == [
-        "human_reset:2",
-        "human_reset:5",
-        "human_reset:8",
-    ]
-
-
-class _RandomResetAskingMethod(_FakeMethod):
-    """Signals it wants to reset onto a freshly sampled train task -- EES raises this
-    both as a genuine mid-plan ground skill and as the step()-level substitute for the
-    free InteractionComplete once ask_for_reset_random_task_cost is configured.
+class _CubeBinAskingMethod(_FakeMethod):
+    """Signals it wants a PARTIAL reset -- EES raises this when its plan pops
+    `ask_for_reset_cube_bin_only`. cost is required, not optional: see
+    HumanCubeBinResetRequested's own docstring for why.
 
     Asks once `steps_before_asking` calls have gone by, and stops asking the moment it
-    is told help was granted -- structurally identical to `_AskingMethod` above (the
-    HumanHelpRequested fake), which is deliberate: the two exceptions are now handled
-    the same way by practice_loop.py (continue, not break), so their test doubles
-    should look the same too."""
+    is told help was granted -- a minimal stand-in for what a real asking Method
+    (`EesMethod`) does, without importing it. Deliberately not imported:
+    practice_loop.py sits *below* methods/ in the layering, so testing it through a
+    real Method would test the pair rather than the mechanism."""
 
     steps_before_asking: int = 2
     steps_taken: int = 0
-    ask_cost: float | None = None
-    # x observed at each observe_help_granted call, in call order -- mirrors
-    # _AskingMethod.help_granted_xs.
+    ask_cost: float = 0.5
+    # x observed at each observe_help_granted call, in call order.
     help_granted_xs: list[float] = Field(default_factory=list)
 
     def may_request_human_help(self) -> bool:
@@ -2013,199 +1825,6 @@ class _RandomResetAskingMethod(_FakeMethod):
     def observe_help_granted(self, *, state: State) -> None:
         self.help_granted_xs.append(float(state[_OBJ][0]))
         self.event_log.record(event="observe_help_granted")
-        self.steps_taken = 0
-
-    def get_practice_policy(self, *, task: Task) -> Policy:
-        del task
-        self.practice_policy_calls += 1
-        return lambda state: self._asking_action(state=state)
-
-    def _asking_action(self, *, state: State) -> LabeledAction:
-        del state
-        if self.steps_taken >= self.steps_before_asking:
-            raise HumanRandomTaskResetRequested(cost=self.ask_cost)
-        self.steps_taken += 1
-        return LabeledAction(action=np.array([0.0]), label="asking")
-
-
-def _build_random_reset_asking(*, steps_before_asking: int = 2, ask_cost: float | None = None):
-    _RecordingHuman.commands = []
-    practice_env = _FakeEnv()
-    evaluation_env = _FakeEnv()
-    event_log = _EventLog()
-    practice = _FakeProblem(
-        env=practice_env,
-        tasks=_FakeTasks(env=practice_env),
-        event_log=event_log,
-        human=_RecordingHuman,
-    )
-    evaluation = _FakeProblem(env=evaluation_env, tasks=_FakeTasks(env=evaluation_env))
-    method = _RandomResetAskingMethod(
-        env=practice_env,
-        event_log=event_log,
-        steps_before_asking=steps_before_asking,
-        ask_cost=ask_cost,
-    )
-    return practice, evaluation, method, Metrics()
-
-
-def test_a_random_task_reset_continues_the_period_rather_than_ending_it() -> None:
-    """The behavioural change this file exists to pin: a period whose Method asks
-    after every 2 steps is rescued repeatedly for the rest of the budget, exactly like
-    HumanHelpRequested (see test_a_rescue_does_not_end_the_cycle_or_retrain), rather
-    than stopping at the first ask. Same steps_before_asking=2/max_steps=9 shape as
-    _AskingMethod's own recorder test below, which asks at steps 2, 5, 8 -- three
-    resets, consuming the whole 9-step budget (loop iterations) rather than stopping
-    at 2 -- though only the 6 non-rescue iterations are real actions/transitions, since
-    a rescue is not charged as an online transition (the HumanHelpRequested handler's
-    own comment above explains why: "roughly 36 out of ~15000 per seed")."""
-    practice, evaluation, method, metrics = _build_random_reset_asking(
-        steps_before_asking=2, ask_cost=0.5
-    )
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-    )
-    assert metrics.num_human_interventions()[1] == 3
-    assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 6]
-
-
-def test_a_random_task_reset_advances_the_train_task_stream_and_banks_its_cost() -> None:
-    practice, evaluation, method, metrics = _build_random_reset_asking(
-        steps_before_asking=2, ask_cost=0.5
-    )
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-    )
-    # One train task drawn for the period, plus one per reset (three, at steps 2/5/8).
-    assert practice.tasks.train_task_count == 4
-    summed_cost, count = metrics.num_human_interventions()
-    assert (summed_cost, count) == (1.5, 3)
-    # Not a free practice reset -- see test_a_rescue_is_not_counted_as_a_free_practice_
-    # reset for why a charged reset must never land in this counter.
-    assert metrics.num_practice_resets == 1  # only the period's own opening reset
-
-
-def test_a_random_task_reset_is_priced_the_harness_way_when_no_cost_is_given() -> None:
-    """`cost=None` (the default) falls back to querying the HumanOracle, exactly like
-    HumanHelpRequested's own fallback. steps_before_asking=0 means every step asks, so
-    a short budget keeps the numbers readable: three resets in a three-step period."""
-    practice, evaluation, method, metrics = _build_random_reset_asking(
-        steps_before_asking=0, ask_cost=None
-    )
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=3,
-        num_test_tasks=1,
-    )
-    # _RecordingHuman quotes a flat 2.0 per reset.
-    assert metrics.num_human_interventions() == (6.0, 3)
-
-
-def test_a_random_task_reset_is_handed_to_the_recorder_as_a_human_reset() -> None:
-    practice, evaluation, method, metrics = _build_random_reset_asking(
-        steps_before_asking=2, ask_cost=0.5
-    )
-    recorder = _spy_recorder(problem=practice, num_cycles=1, max_steps=9)
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=9,
-        num_test_tasks=1,
-        recorder=recorder,
-    )
-    assert [call for call in recorder.calls if call.startswith("human_reset")] == [
-        "human_reset:2",
-        "human_reset:5",
-        "human_reset:8",
-    ]
-
-
-class _DistinctRandomResetTasks(_FakeTasks):
-    """A different x per `sample_train_task` call, so a stale `task` reference is
-    visible in what a later reset installs rather than coincidentally matching.
-    `_FakeTasks.sample_train_task` always returns x=100.0, which cannot distinguish
-    "the period's own task" from "a freshly sampled one" at all."""
-
-    def sample_train_task(self) -> Task:
-        self.train_task_count += 1
-        return Task(
-            initial_state=_state(x=100.0 * self.train_task_count), goal=Goal(atoms=frozenset())
-        )
-
-
-def test_a_random_task_reset_updates_which_task_a_later_interval_reset_targets() -> None:
-    """The staleness bug this guards against: `task`, the local variable
-    `practice_reset_interval` resets against later in the SAME cycle
-    (`problem.reset_to_task(task=task)`), must be reassigned to the freshly sampled
-    task when a random-task reset fires -- otherwise a later interval reset in the
-    same cycle would silently put the environment back on the OLD (pre-reset) task
-    instead of the one the robot is now actually practicing on.
-
-    steps_before_asking=2 asks at step 2 (after two normal actions, each already
-    followed by its own interval reset back to task #1 -- noise this test does not
-    care about). observe_help_granted then resets its counter, so step 3 is a normal
-    action followed by ANOTHER interval reset -- the one that matters here, since
-    _reset_is_due never fires on a period's last step (see its own docstring), so the
-    budget is sized to five steps to leave one interval reset after the ask that is
-    not also the final step. If `task` were left stale, that reset would land on task
-    #1 (x=100.0) instead of task #2 (x=200.0); the one further normal action at step 4
-    then makes the fixed-vs-stale difference visible in the final state (201.0 vs
-    101.0) without needing to inspect an intermediate one."""
-    practice, evaluation, method, metrics = _build_random_reset_asking(
-        steps_before_asking=2, ask_cost=0.5
-    )
-    practice.tasks = _DistinctRandomResetTasks(env=practice.env)
-    PracticeLoop.run(
-        problem=practice,
-        evaluation_problem=evaluation,
-        method=method,
-        metrics=metrics,
-        num_cycles=1,
-        max_steps_per_interaction=5,
-        num_test_tasks=1,
-        practice_reset_interval=1,
-    )
-    # Task #1 (x=100.0) opens the period; task #2 (x=200.0) is the random reset's
-    # target. The interval reset after the ask must land on task #2, not task #1, so
-    # one more real action from there lands at 201.0 rather than 101.0.
-    assert float(practice.env.get_current_state()[_OBJ][0]) == 201.0
-
-
-class _CubeBinAskingMethod(_FakeMethod):
-    """Signals it wants a PARTIAL reset -- EES raises this instead of
-    HumanHelpRequested when its plan pops `ask_for_reset_cube_bin_only` rather than
-    `ask_for_reset_task_initial`. cost is required (not optional, unlike the other
-    two): see HumanCubeBinResetRequested's own docstring for why."""
-
-    steps_before_asking: int = 2
-    steps_taken: int = 0
-    ask_cost: float = 0.5
-    help_granted_xs: list[float] = Field(default_factory=list)
-
-    def may_request_human_help(self) -> bool:
-        return True
-
-    def observe_help_granted(self, *, state: State) -> None:
-        self.help_granted_xs.append(float(state[_OBJ][0]))
         self.steps_taken = 0
 
     def get_practice_policy(self, *, task: Task) -> Policy:
@@ -2244,10 +1863,9 @@ def _build_cube_bin_asking(*, steps_before_asking: int = 2, ask_cost: float = 0.
 
 
 def test_a_cube_bin_reset_continues_the_period_rather_than_ending() -> None:
-    """The difference from HumanRandomTaskResetRequested, and the similarity to
-    HumanHelpRequested: a period whose Method asks after 2 steps keeps going and is
-    rescued repeatedly, exactly like test_the_period_continues_after_a_rescue_rather_
-    than_ending above."""
+    """The difference from InteractionComplete, measured rather than asserted in
+    prose: a period whose Method asks after 2 steps keeps going and is rescued
+    repeatedly, where one that raised InteractionComplete would have stopped at 2."""
     practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=2)
     PracticeLoop.run(
         problem=practice,
@@ -2283,8 +1901,7 @@ def test_a_cube_bin_reset_goes_through_execute_movables_reset_not_execute_human_
 def test_a_cube_bin_reset_banks_the_methods_own_price() -> None:
     """cost is required on this exception -- there is no harness-priced fallback to
     exercise (see HumanCubeBinResetRequested's own docstring), so this checks only
-    that the Method's own number is the one banked, not a 'None means harness-priced'
-    case the way the other two reset tests do."""
+    that the Method's own number is the one banked."""
     practice, evaluation, method, metrics = _build_cube_bin_asking(
         steps_before_asking=2, ask_cost=0.75
     )
@@ -2299,7 +1916,8 @@ def test_a_cube_bin_reset_banks_the_methods_own_price() -> None:
     )
     summed_cost, count = metrics.num_human_interventions()
     assert (summed_cost, count) == (0.75 * 3, 3)
-    # Not a free practice reset, same invariant as the other two reset kinds.
+    # Not a free practice reset -- see test_a_cube_bin_rescue_is_not_counted_as_a_free_
+    # practice_reset_under_never for why a charged reset must never land here.
     assert metrics.num_practice_resets == 1  # only the period's own opening reset
 
 

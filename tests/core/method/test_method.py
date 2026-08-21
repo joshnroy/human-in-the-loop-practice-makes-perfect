@@ -2,13 +2,7 @@ from typing import Any
 
 import numpy as np
 
-from hitl_pmp.core.method.method import (
-    HumanCubeBinResetRequested,
-    HumanHelpRequested,
-    HumanRandomTaskResetRequested,
-    InteractionComplete,
-    Method,
-)
+from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete, Method
 from hitl_pmp.core.method.types import (
     GroundSkill,
     LabeledAction,
@@ -137,18 +131,18 @@ def test_current_competences_default_to_nothing_tracked() -> None:
     assert _MinimalMethod(env=_Env()).current_competences() == {}
 
 
-def test_human_help_requested_is_not_an_interaction_complete() -> None:
+def test_human_cube_bin_reset_requested_is_not_an_interaction_complete() -> None:
     """The two signals must stay tellable apart by `except`, in both directions.
 
     `InteractionComplete` means "no ground skill is applicable, so the period ends";
-    `HumanHelpRequested` means "I am still able to act and getting nowhere, so please
-    reposition me, and the period carries on". Making either a subclass of the other --
-    or reusing one for both -- would silently give every arm that catches one the
-    behaviour of the other, and `InteractionComplete`'s meaning is EES-wide with
-    already-merged results resting on it."""
-    assert not issubclass(HumanHelpRequested, InteractionComplete)
-    assert not issubclass(InteractionComplete, HumanHelpRequested)
-    assert issubclass(HumanHelpRequested, Exception)
+    `HumanCubeBinResetRequested` means "I am still able to act and getting nowhere, so
+    please reposition the movables, and the period carries on". Making either a
+    subclass of the other -- or reusing one for both -- would silently give every arm
+    that catches one the behaviour of the other, and `InteractionComplete`'s meaning
+    is EES-wide with already-merged results resting on it."""
+    assert not issubclass(HumanCubeBinResetRequested, InteractionComplete)
+    assert not issubclass(InteractionComplete, HumanCubeBinResetRequested)
+    assert issubclass(HumanCubeBinResetRequested, Exception)
 
 
 def test_a_method_declares_it_cannot_ask_for_human_help_by_default() -> None:
@@ -164,49 +158,8 @@ def test_observe_help_granted_defaults_to_a_no_op() -> None:
     _MinimalMethod(env=_Env()).observe_help_granted(state=_task().initial_state)
 
 
-def test_human_help_requested_carries_an_optional_cost() -> None:
-    """`None` (the default) means "price this the harness's own way" -- the incumbent
-    behaviour, still exercised by every caller that raises the bare exception, e.g.
-    practice_loop.py's own test doubles. A `Method` that has already priced the request
-    itself (EES, from its planner's own ground_skill_costs) carries that number instead,
-    so the harness banks the cost the plan was actually built against rather than
-    re-deriving one from the HumanOracle's own (unrelated) pricing."""
-    assert HumanHelpRequested().cost is None
-    assert HumanHelpRequested(cost=0.25).cost == 0.25
-
-
-def test_human_random_task_reset_requested_is_distinct_from_the_other_two_signals() -> None:
-    """A third, distinct control-flow signal -- modeled like `InteractionComplete`
-    (it ends the period, no goal necessarily achieved) but, unlike it, priced and
-    resolved through a real human reset onto a freshly sampled train task. Keeping it
-    separate rather than widening either existing exception is what keeps all three
-    tellable apart by `except`, exactly like `HumanHelpRequested` vs
-    `InteractionComplete` above."""
-    assert not issubclass(HumanRandomTaskResetRequested, InteractionComplete)
-    assert not issubclass(HumanRandomTaskResetRequested, HumanHelpRequested)
-    assert not issubclass(InteractionComplete, HumanRandomTaskResetRequested)
-    assert not issubclass(HumanHelpRequested, HumanRandomTaskResetRequested)
-    assert issubclass(HumanRandomTaskResetRequested, Exception)
-    assert HumanRandomTaskResetRequested().cost is None
-    assert HumanRandomTaskResetRequested(cost=0.75).cost == 0.75
-
-
-def test_human_cube_bin_reset_requested_is_distinct_from_the_other_three_signals() -> None:
-    """A fourth, distinct control-flow signal -- modeled like `HumanHelpRequested`
-    (the period continues) but resolved through a partial reset rather than a
-    full-state one. Kept separate for the same reason as the other three: tellable
-    apart by `except`, and each catcher gets exactly its own behaviour."""
-    assert not issubclass(HumanCubeBinResetRequested, InteractionComplete)
-    assert not issubclass(HumanCubeBinResetRequested, HumanHelpRequested)
-    assert not issubclass(HumanCubeBinResetRequested, HumanRandomTaskResetRequested)
-    assert not issubclass(HumanHelpRequested, HumanCubeBinResetRequested)
-    assert not issubclass(HumanRandomTaskResetRequested, HumanCubeBinResetRequested)
-    assert issubclass(HumanCubeBinResetRequested, Exception)
-
-
 def test_human_cube_bin_reset_requested_carries_a_required_cost() -> None:
-    """Unlike the other two reset signals, `cost` is not optional here -- there is no
-    harness-priced query for a partial reset (no Goal/target_state pair to price
-    against), so a Method raising this must always have priced it itself. See the
-    exception's own docstring for why."""
+    """`cost` is not optional here -- there is no harness-priced query for a partial
+    reset (no Goal/target_state pair to price against), so a Method raising this must
+    always have priced it itself. See the exception's own docstring for why."""
     assert HumanCubeBinResetRequested(cost=0.4).cost == 0.4

@@ -4,13 +4,7 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from hitl_pmp.core.method.method import (
-    HumanCubeBinResetRequested,
-    HumanHelpRequested,
-    HumanRandomTaskResetRequested,
-    InteractionComplete,
-    Method,
-)
+from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete, Method
 from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME, SkillProvider
 from hitl_pmp.core.method.types import (
     GroundSkill,
@@ -32,11 +26,6 @@ from hitl_pmp.planning.types import TranslationCache
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .competence_models import OptimisticSkillCompetenceModel
-from .human_reset_skill import (
-    ASK_FOR_RESET_RANDOM_TASK_NAME,
-    ASK_FOR_RESET_TASK_INITIAL_NAME,
-    HumanResetSkillBuilder,
-)
 from .wrapped_sampler import LearnedSkillSampler
 
 
@@ -94,17 +83,12 @@ class EesMethod(Method):
        reason scoring is cheap enough to do per candidate per step.
 
     **Asking for help is a real ground skill this Method's planner can select, not
-    a harness-side wrapper.** Three mid-plan skills (see `plan_to`), each priced
-    by its own required-when-present cost flag rather than the competence model
+    a harness-side wrapper.** A mid-plan skill (see `plan_to`), priced by its own
+    required-when-present cost flag rather than the competence model
     (`UnconditionalHumanOracle` always succeeds, so there's nothing to learn --
     only a price to set). `None` (default) keeps a run byte-identical to before
-    any of the three existed.
-
-    `ask_for_reset_task_initial`/`ask_for_reset_random_task` are built here
-    (`HumanResetSkillBuilder`) from this episode's own `task_initial_atoms` --
-    sound because Tossing3D's task family is shape-invariant. `ask_for_reset_
-    cube_bin_only` is built by the domain's own `SkillProvider` instead, since
-    its effects reference Tossing3D's own predicates."""
+    it existed. `ask_for_reset_cube_bin_only` is built by the domain's own
+    `SkillProvider`, since its effects reference that domain's own predicates."""
 
     env: Environment
     skill_provider: SkillProvider
@@ -229,14 +213,6 @@ class EesMethod(Method):
     # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
     sampler_max_train_iters: int = 10000
 
-    # Cost of ask_for_reset_task_initial, a mid-plan skill the planner can select
-    # to reset to this period's task-initial state -- see plan_to. `None` keeps
-    # an unconfigured run byte-identical.
-    ask_for_reset_task_initial_cost: float | None = None
-    # Cost of ask_for_reset_random_task -- like the above, but resets onto a
-    # freshly sampled train task and doesn't end the period (see
-    # HumanRandomTaskResetRequested). `None` keeps a run byte-identical.
-    ask_for_reset_random_task_cost: float | None = None
     # Cost of ask_for_reset_cube_bin_only -- resets whichever objects the
     # domain's SkillProvider calls "movable, not the robot" (Tossing3D:
     # cube_0/bin_0), robot untouched. `None` keeps a run byte-identical.
@@ -443,73 +419,32 @@ class EesMethod(Method):
         init_atoms: frozenset[GroundAtom],
         goal: frozenset[GroundAtom],
         costs: dict[GroundSkill, float],
-        task_initial_atoms: frozenset[GroundAtom] | None = None,
     ) -> list[GroundSkill]:
         """`costs` changes nearly every call; `init_atoms`/`goal` repeat heavily, so
         this uses a per-run `TranslationCache` (costs are patched post-translation,
         so caching can't change the plan).
 
-        `task_initial_atoms` is NOT `init_atoms` -- it's the practice period's own
-        fixed initial state (what `ask_for_reset_task_initial` resets TO), not
-        wherever this call happens to be planning from. When set and a reset cost
-        is configured, the corresponding reset skill is built fresh (see
-        `HumanResetSkillBuilder`) and added to `skills`/`ground_skill_costs` at its
-        configured cost. `None` for evaluation episodes and the speculative scoring
-        pass, so neither is ever rescued.
+        When `ask_for_reset_cube_bin_cost` is configured, `ask_for_reset_cube_bin_only`
+        is added to `skills`/`ground_skill_costs` at that cost, on every call
+        (evaluation included -- its effects don't depend on per-episode state, so
+        there's no reason to withhold it there the way a full reset would need to be).
 
         A reset that clears the search isn't automatically accepted: classical
         cost-minimizing search can't weigh "no plan" against any finite cost, so an
         offered reset would otherwise be taken at any magnitude (confirmed
-        empirically, costs 0.001-1e6). So when the plan uses a reset skill, its cost
+        empirically, costs 0.001-1e6). So when the plan uses the reset skill, its cost
         is checked against `max(costs.values(), default=self.default_cost())` --
         the priciest ordinary skill already in scope, so the bar tracks the robot's
         own observed competence. Clears the ceiling: accepted. Doesn't: re-requested
         with no reset offered, so a real cheaper alternative still wins and a truly
         unreachable goal still raises `PlanningFailure` -- keeping "stay stuck,
-        unrescued" possible. Shared across all three reset skills, including
-        `ask_for_reset_cube_bin_only`, via the same `reset_costs_by_name` dict."""
+        unrescued" possible."""
         skills = self.skills()
         ground_skill_costs = costs
         reset_costs_by_name: dict[str, float] = {}
-        if task_initial_atoms is not None and self.ask_for_reset_task_initial_cost is not None:
-            reset_ground_skill = HumanResetSkillBuilder.build_ask_for_reset_task_initial(
-                objects=self.objects(),
-                predicates=self.predicates(),
-                init_atoms=task_initial_atoms,
-            )
-            skills = (*skills, reset_ground_skill.skill)
-            ground_skill_costs = {
-                **ground_skill_costs,
-                reset_ground_skill: self.ask_for_reset_task_initial_cost,
-            }
-            reset_costs_by_name[ASK_FOR_RESET_TASK_INITIAL_NAME] = (
-                self.ask_for_reset_task_initial_cost
-            )
-        if task_initial_atoms is not None and self.ask_for_reset_random_task_cost is not None:
-            # Same construction as ask_for_reset_task_initial above, from the SAME
-            # task_initial_atoms (see HumanResetSkillBuilder for why that's sound
-            # here). `**ground_skill_costs`, not `**costs`, so both resets stay
-            # priced when both flags are configured together.
-            random_reset_ground_skill = HumanResetSkillBuilder.build_ask_for_reset_random_task(
-                objects=self.objects(),
-                predicates=self.predicates(),
-                init_atoms=task_initial_atoms,
-            )
-            skills = (*skills, random_reset_ground_skill.skill)
-            ground_skill_costs = {
-                **ground_skill_costs,
-                random_reset_ground_skill: self.ask_for_reset_random_task_cost,
-            }
-            reset_costs_by_name[ASK_FOR_RESET_RANDOM_TASK_NAME] = (
-                self.ask_for_reset_random_task_cost
-            )
         if self.ask_for_reset_cube_bin_cost is not None:
-            # Not gated on task_initial_atoms -- its effects don't depend on
-            # per-episode init_atoms, so it's offered to every plan_to call,
-            # evaluation included. Gated on the domain instead: None means this
-            # SkillProvider has nothing to offer, a misconfiguration worth
-            # reporting. Registered into reset_costs_by_name like the other two,
-            # so it shares the same ceiling check below.
+            # Gated on the domain: None means this SkillProvider has nothing to
+            # offer, a misconfiguration worth reporting.
             cube_bin_ground_skill = self.skill_provider.human_cube_bin_reset_skill()
             if cube_bin_ground_skill is None:
                 raise ValueError(
@@ -829,15 +764,10 @@ class EesMethod(Method):
     # ------------------------------------------------------------------ policy
 
     def may_request_human_help(self) -> bool:
-        """True exactly when any of the three reset skills has a configured cost
-        -- what `practice_loop.py` validates a `HumanOracle` against up front.
-        `False` for all-`None` needs no `HumanOracle` wired, as before these
-        skills existed."""
-        return (
-            self.ask_for_reset_task_initial_cost is not None
-            or self.ask_for_reset_random_task_cost is not None
-            or self.ask_for_reset_cube_bin_cost is not None
-        )
+        """True exactly when `ask_for_reset_cube_bin_cost` has a configured cost --
+        what `practice_loop.py` validates a `HumanOracle` against up front. `False`
+        needs no `HumanOracle` wired, as before this skill existed."""
+        return self.ask_for_reset_cube_bin_cost is not None
 
     def get_task_policy(self, *, task: Task) -> Policy:
         """Evaluation: plan to the goal with current competences and execute
@@ -851,19 +781,15 @@ class EesMethod(Method):
         whichever skill scores best.
 
         No wrapper: unlike the deleted harness-side help-seeking policy, asking for
-        help is now decided from *inside* `_EesEpisode.step` itself -- either as a
-        ground skill the plan popped (`ask_for_reset_task_initial`, which raises
-        `HumanHelpRequested` at dispatch time) or as the substitute for a free
-        `InteractionComplete` (`ask_for_reset_random_task`, raising
-        `HumanRandomTaskResetRequested`). So this returns the episode's own policy
-        completely unwrapped, structurally identical to `get_task_policy` above --
-        `practicing=True` is the only difference, and it is what both of those checks
-        key on."""
+        help is now decided from *inside* `_EesEpisode.step` itself, as the ground
+        skill the plan popped (`ask_for_reset_cube_bin_only`, which raises
+        `HumanCubeBinResetRequested` at dispatch time). So this returns the episode's
+        own policy completely unwrapped, structurally identical to `get_task_policy`
+        above -- `practicing=True` is the only difference, and it is what both of
+        those checks key on."""
         init_atoms = self.abstract_state(state=task.initial_state)
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
-        episode = _EesEpisode(
-            method=self, goal=task.goal.atoms, practicing=True, task_initial_atoms=init_atoms
-        )
+        episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
         self._practice_episode = episode
         return lambda state: episode.step(state=state)
 
@@ -1054,19 +980,10 @@ class _EesEpisode:
         method: EesMethod,
         goal: frozenset[GroundAtom],
         practicing: bool,
-        task_initial_atoms: frozenset[GroundAtom] | None = None,
     ) -> None:
         self._method = method
         self._goal = goal
         self._practicing = practicing
-        # This period's own task's initial abstract state -- what
-        # ask_for_reset_task_initial resets to. Deliberately NOT the same thing as
-        # `true_atoms`/`init_atoms` passed around this class: those are wherever the
-        # episode currently IS, which changes every step, while this is fixed for the
-        # whole episode. `None` for an evaluation episode (practicing=False, and
-        # get_task_policy never supplies one), which is what keeps the reset skill from
-        # ever being offered to an evaluation plan -- see plan_to.
-        self._task_initial_atoms = task_initial_atoms
         self._plan: list[GroundSkill] = []
         self._pending: GroundSkill | None = None
         self._pending_sampler_record: _SkillAttempt | None = None
@@ -1125,19 +1042,10 @@ class _EesEpisode:
                 # substituting a priced reset -- is what keeps the online-transition
                 # count data-driven and keeps a genuinely stuck robot ABLE to stay
                 # stuck, matching the `never` baseline with no reset skill configured
-                # at all -- see InteractionComplete.
-                #
-                # A priced ask_for_reset_random_task USED to fire unconditionally
-                # here whenever configured, bypassing cost entirely (a bare `is not
-                # None` check, not a comparison) -- removed: it had no analogue on
-                # ask_for_reset_task_initial, and unlike that skill's mid-plan
-                # offering (plan_to, gated by a real cost ceiling -- see that
-                # method), this path never went through the planner at all, so there
-                # was no way for a configured cost's VALUE to matter. This is
-                # reachable only when _practice_plan's for-loop over
-                # choose_practice_target()'s candidates never ran (no candidate has
-                # ever been scored) and its own bootstrap fallback found nothing
-                # applicable either -- see
+                # at all -- see InteractionComplete. Reachable only when
+                # _practice_plan's for-loop over choose_practice_target()'s candidates
+                # never ran (no candidate has ever been scored) and its own bootstrap
+                # fallback found nothing applicable either -- see
                 # test_nothing_left_to_practice_raises_the_free_interaction_
                 # complete_even_when_configured.
                 raise InteractionComplete
@@ -1148,28 +1056,10 @@ class _EesEpisode:
             return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)
-        if ground_skill.skill.name == ASK_FOR_RESET_TASK_INITIAL_NAME:
+        if ground_skill.skill.name == ASK_FOR_RESET_CUBE_BIN_ONLY_NAME:
             # Dispatch to the rescue mechanism, not execute_ground_skill -- this
             # "skill" has no controller/effects to score. self._pending stays
             # untouched: nothing here for observe_pending to settle.
-            assert method.ask_for_reset_task_initial_cost is not None, (
-                "ask_for_reset_task_initial appeared in a plan without a configured "
-                "cost -- plan_to only ever offers it to the planner when "
-                "ask_for_reset_task_initial_cost is not None."
-            )
-            raise HumanHelpRequested(cost=method.ask_for_reset_task_initial_cost)
-        if ground_skill.skill.name == ASK_FOR_RESET_RANDOM_TASK_NAME:
-            # Same interception as above. Resets onto a fresh train task and
-            # continues the period, same as HumanHelpRequested (see that
-            # exception's docstring for why).
-            assert method.ask_for_reset_random_task_cost is not None, (
-                "ask_for_reset_random_task appeared in a plan without a configured "
-                "cost -- plan_to only ever offers it to the planner when "
-                "ask_for_reset_random_task_cost is not None."
-            )
-            raise HumanRandomTaskResetRequested(cost=method.ask_for_reset_random_task_cost)
-        if ground_skill.skill.name == ASK_FOR_RESET_CUBE_BIN_ONLY_NAME:
-            # Same interception as above, modeled like HumanHelpRequested too.
             assert method.ask_for_reset_cube_bin_cost is not None, (
                 "ask_for_reset_cube_bin_only appeared in a plan without a configured "
                 "cost -- plan_to only ever offers it to the planner when "
@@ -1280,10 +1170,7 @@ class _EesEpisode:
             else:
                 try:
                     plan = method.plan_to(
-                        init_atoms=true_atoms,
-                        goal=self._goal,
-                        costs=method.skill_costs(),
-                        task_initial_atoms=self._task_initial_atoms,
+                        init_atoms=true_atoms, goal=self._goal, costs=method.skill_costs()
                     )
                 except PlanningFailure:
                     plan = []
@@ -1306,13 +1193,7 @@ class _EesEpisode:
                 return [candidate]
             try:
                 prefix = method.plan_to(
-                    init_atoms=true_atoms,
-                    goal=candidate.preconditions,
-                    costs=method.skill_costs(),
-                    # Only ever reached while practicing -- _next_plan only calls
-                    # _practice_plan when self._practicing (see that method) -- so
-                    # self._task_initial_atoms is always set here.
-                    task_initial_atoms=self._task_initial_atoms,
+                    init_atoms=true_atoms, goal=candidate.preconditions, costs=method.skill_costs()
                 )
             except PlanningFailure:
                 # Outscored the eventual winner and lost on reachability alone, which

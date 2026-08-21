@@ -319,14 +319,9 @@ def test_main_records_a_full_loop_end_to_end(*, tmp_path: Path) -> None:
 
 def test_the_human_reset_target_flag_and_type_are_gone() -> None:
     """`--human-reset-target`/`HumanResetTarget` named a global "what does the human
-    do" axis that no longer exists: `ask_for_reset_task_initial` always means
-    task-initial, and `ask_for_reset_random_task` (a structurally different real-world
-    action -- resample a task and advance the train-task stream, rather than restore
-    this one) replaces the old RANDOM target -- see HumanRandomTaskResetRequested's
-    own docstring. Both are now EES's own flags
-    (--ask-for-reset-task-initial-cost/--ask-for-reset-random-task-cost), not a global
-    one, because WHICH is asked for is now the plan's own choice, not a harness-wide
-    setting."""
+    do" axis that no longer exists: WHICH reset is asked for is now the plan's own
+    choice via a real, planner-priced ground skill (--ask-for-reset-cube-bin-cost),
+    not a harness-wide setting."""
     with pytest.raises(ModuleNotFoundError):
         import hitl_pmp.human_intervention  # noqa: F401
     args = Cli.parse_args(argv=["--env", "tossingroom", "--method", "ees"])

@@ -45,32 +45,14 @@ class EesCli:
         # the paper's stated Light Switch free-period length.
         PracticeCycleCli.add_arguments(parser=parser, default_num_cycles=10, default_max_steps=150)
         # EES can ask for a human via a real, planner-priced ground skill.
-        # RandomSkillsCli has no planner, so it doesn't register these.
-        parser.add_argument(
-            "--ask-for-reset-task-initial-cost",
-            type=float,
-            default=EesMethod.model_fields["ask_for_reset_task_initial_cost"].default,
-            help="Cost of the ask_for_reset_task_initial ground skill: resets to this "
-            "period's task-initial state, mid-plan, when its cost clears the "
-            "competence-based ceiling (see EesMethod.plan_to). Omitted (default) "
-            "means the skill isn't offered at all.",
-        )
-        parser.add_argument(
-            "--ask-for-reset-random-task-cost",
-            type=float,
-            default=EesMethod.model_fields["ask_for_reset_random_task_cost"].default,
-            help="Cost of the ask_for_reset_random_task ground skill: like "
-            "ask_for_reset_task_initial, but resets onto a freshly sampled train "
-            "task (advancing the train-task stream) and doesn't end the period. "
-            "Same ceiling gate. Omitted (default) means the skill isn't offered.",
-        )
+        # RandomSkillsCli has no planner, so it doesn't register this.
         parser.add_argument(
             "--ask-for-reset-cube-bin-cost",
             type=float,
             default=EesMethod.model_fields["ask_for_reset_cube_bin_cost"].default,
             help="Cost of the ask_for_reset_cube_bin_only ground skill: a mid-plan "
-            "step, like ask_for_reset_task_initial, but built by the domain's own "
-            "SkillProvider rather than generically here -- its effect (reposition "
+            "step, priced against a competence-based ceiling (see EesMethod.plan_to), "
+            "built by the domain's own SkillProvider -- its effect (reposition "
             "whichever objects this domain calls 'movable, not the robot' to a "
             "freshly sampled ground pose) can only be written in terms of that "
             "domain's own predicates. Configuring this against a domain whose "
@@ -163,8 +145,6 @@ class EesCli:
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 draw_recorder=draw_recorder,
-                ask_for_reset_task_initial_cost=args.ask_for_reset_task_initial_cost,
-                ask_for_reset_random_task_cost=args.ask_for_reset_random_task_cost,
                 ask_for_reset_cube_bin_cost=args.ask_for_reset_cube_bin_cost,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,

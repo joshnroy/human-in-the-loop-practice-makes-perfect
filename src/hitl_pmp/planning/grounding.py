@@ -80,9 +80,8 @@ class SkillGrounder:
         with no `predicate.holds` check at all. `abstract_state` is "what's true here";
         this is "what could ever be said" -- the universe a caller needs when it has to
         make a ground atom false rather than merely not assert it (a closed-world reset
-        that deletes everything not in a target set, e.g. EesMethod's
-        `ask_for_reset_task_initial`, which cannot know in general which atoms hold at
-        the point in a plan where it executes, so it must delete every possible atom
+        that deletes everything not in a target set, which cannot know in general which
+        atoms hold at the point it executes, so it must delete every possible atom
         outside the target rather than only the ones some particular state happens to
         have true).
 

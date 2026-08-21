@@ -199,12 +199,12 @@ class Tossing3DCli:
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
         )
         # Wired for the same reason tossingroom's own build_problem wires it:
-        # --method ees's ask_for_reset_task_initial/ask_for_reset_random_task ground
-        # skills need a real HumanOracle on the practice Problem, or PracticeLoop.run
-        # refuses up front the moment either cost flag is configured. This function
-        # builds both the practice and evaluation Problem (called twice, see above), so
-        # both get one -- harmless on the evaluation side, since no evaluation policy
-        # can ever raise a human-help exception in the first place, and harmless for
-        # every other Method/config, since a HumanOracle that is never asked costs
-        # nothing and changes no existing run's behaviour.
+        # --method ees's ask_for_reset_cube_bin_only ground skill needs a real
+        # HumanOracle on the practice Problem, or PracticeLoop.run refuses up front the
+        # moment its cost flag is configured. This function builds both the practice
+        # and evaluation Problem (called twice, see above), so both get one -- harmless
+        # on the evaluation side, since no evaluation policy can ever raise a
+        # human-help exception in the first place, and harmless for every other
+        # Method/config, since a HumanOracle that is never asked costs nothing and
+        # changes no existing run's behaviour.
         return Tossing3DProblem(env=env, tasks=tasks, human=UnconditionalHumanOracle)
