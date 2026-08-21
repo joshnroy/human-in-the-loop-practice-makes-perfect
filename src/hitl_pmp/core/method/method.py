@@ -202,9 +202,9 @@ class Method(BaseModel, abc.ABC):
 
         Concrete `False` by default, for the same reason as `end_cycle`: no baseline
         built so far asks for anything, and none of them should need boilerplate to say
-        so. `EesMethod` overrides it, True exactly when one of its two ground-skill
-        cost flags (`ask_for_reset_task_initial_cost`/`ask_for_reset_random_task_cost`)
-        is configured -- see that class."""
+        so. `EesMethod` overrides it, True exactly when one of its three ground-skill
+        cost flags (`ask_for_reset_task_initial_cost`/`ask_for_reset_random_task_cost`/
+        `ask_for_reset_cube_bin_cost`) is configured -- see that class."""
         return False
 
     def observe_help_granted(self, *, state: State) -> None:
