@@ -292,10 +292,13 @@ class WandbResultsWriter(ResultsWriter):
                 tags=list(self.tags),
                 config=self.config,
             )
-            # The learning-curve x-axis every other sidecar already keys on, declared
-            # so W&B's charts use it instead of its own internal step counter.
-            self._run.define_metric("num_online_transitions")
-            self._run.define_metric("*", step_metric="num_online_transitions")
+            # The learning-curve x-axis new panels default to, declared so W&B's
+            # charts use it instead of its own internal step counter. `checkpoint`
+            # (the cycle index) was already logged on every run via
+            # CheckpointScalars -- this only changes the default binding, not what
+            # data exists, so no historical run needs migrating.
+            self._run.define_metric("checkpoint")
+            self._run.define_metric("*", step_metric="checkpoint")
         return self._run
 
     @staticmethod
