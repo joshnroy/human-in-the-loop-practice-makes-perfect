@@ -31,7 +31,11 @@ from hitl_pmp.planning.types import TranslationCache
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .competence_models import OptimisticSkillCompetenceModel
-from .human_reset_skill import ASK_FOR_RESET_TASK_INITIAL_NAME, HumanResetSkillBuilder
+from .human_reset_skill import (
+    ASK_FOR_RESET_RANDOM_TASK_NAME,
+    ASK_FOR_RESET_TASK_INITIAL_NAME,
+    HumanResetSkillBuilder,
+)
 from .wrapped_sampler import LearnedSkillSampler
 
 
@@ -94,17 +98,25 @@ class EesMethod(Method):
     living outside the planner entirely -- Josh's ruling, quoted verbatim: "we want the
     robot to *plan* to ask for help, not have it be part of the harness". That mixin
     (and the CLI flags it drove) is deleted; what replaces it is two ground skills,
-    `ask_for_reset_task_initial` (a genuine mid-plan step -- see `plan_to`,
-    `HumanResetSkillBuilder`) and `ask_for_reset_random_task` (a period-ending choice,
-    since a fresh task can change the goal -- see `_EesEpisode._next_plan`), each priced
-    by its own required-when-present flag (`ask_for_reset_task_initial_cost`/
+    `ask_for_reset_task_initial` and `ask_for_reset_random_task`, each a genuine
+    mid-plan step (see `plan_to`, `HumanResetSkillBuilder`) priced by its own
+    required-when-present flag (`ask_for_reset_task_initial_cost`/
     `ask_for_reset_random_task_cost`) rather than routed through the competence model:
     `UnconditionalHumanOracle` always succeeds by construction, so there is nothing
     about it to *learn* -- only a price to set. `None` (both defaults) is what keeps an
     unconfigured run byte-identical to before either skill existed: `may_request_human_
-    help` is then False, `plan_to` never offers the reset skill to the planner, and the
-    "nothing left to practice" branch still raises the free `InteractionComplete` it
-    always did.
+    help` is then False, `plan_to` never offers either reset skill to the planner, and
+    the "nothing left to practice" branch still raises the free `InteractionComplete`
+    it always did.
+
+    **Both are built from THIS episode's own `task_initial_atoms`, never a freshly
+    sampled task's own atoms** (which are not known at plan time -- sampling only
+    happens if `ask_for_reset_random_task` is actually dispatched, see
+    `HumanRandomTaskResetRequested`). That reuse is sound for a domain whose task
+    family is shape-invariant -- every sampled task's abstract initial state reduces to
+    the same atoms, which Tossing3D's is (verified empirically) -- see
+    `HumanResetSkillBuilder`'s own docstring for the check and the caveat for a domain
+    where it is not.
     """
 
     env: Environment
@@ -239,14 +251,22 @@ class EesMethod(Method):
     # (the default) means the skill is never offered to the planner at all, which is
     # what keeps an unconfigured run byte-identical: see plan_to.
     ask_for_reset_task_initial_cost: float | None = None
-    # Cost of ask_for_reset_random_task: selecting it ENDS the interaction period (no
-    # goal necessarily achieved) and resets onto a freshly sampled train task,
-    # advancing the train-task stream -- modeled like InteractionComplete rather than
-    # as a mid-plan step, because a fresh task can change the goal atoms, which a
-    # classical plan built for one fixed goal cannot have as a step (see
-    # HumanRandomTaskResetRequested). `None` (the default) means this Method never
-    # selects it, so the "nothing left to practice" branch still raises the free
-    # InteractionComplete it always did -- see _EesEpisode._next_plan.
+    # Cost of ask_for_reset_random_task: a genuine mid-plan ground skill, exactly like
+    # ask_for_reset_task_initial_cost above -- built fresh in plan_to from THIS
+    # episode's own task_initial_atoms (not a freshly sampled task's atoms, unknown at
+    # plan time), injected into FastDownwardPlanner's ground_skill_costs, and priced
+    # independently of the competence model for the same reason as the other reset
+    # skill. Dispatching it does NOT end the interaction period (see
+    # HumanRandomTaskResetRequested and practice_loop.py's handler, which `continue`s
+    # exactly like HumanHelpRequested's) -- what actually happens is a human resets
+    # onto a freshly sampled train task, advancing the train-task stream, rather than
+    # restoring this period's own. `None` (the default) means this Method never offers
+    # it to the planner, which is what keeps an unconfigured run byte-identical: see
+    # plan_to. NOT consulted anywhere else -- the step()-level "nothing left to
+    # practice" branch used to raise this unconditionally as a substitute for the free
+    # InteractionComplete, bypassing cost entirely; that branch is gone (see the
+    # comment beside it), so this flag now only ever reaches a robot through plan_to's
+    # own cost-ceilinged mid-plan offering.
     ask_for_reset_random_task_cost: float | None = None
 
     _rng: np.random.Generator = PrivateAttr()
@@ -465,11 +485,15 @@ class EesMethod(Method):
         operator whose effect is "reset to wherever you already are" -- a symbolic
         no-op.
 
-        When not `None` AND `ask_for_reset_task_initial_cost` is configured, this adds
-        `ask_for_reset_task_initial` -- built fresh here from `task_initial_atoms` (see
-        `HumanResetSkillBuilder`, which is why this cannot be a domain-general skill
-        declared once in `skills()`) -- to both `skills` and `costs` before asking the
-        planner, priced at the configured cost rather than anything read off `costs`.
+        When not `None` AND `ask_for_reset_task_initial_cost`/`ask_for_reset_random_
+        task_cost` is configured, this adds the corresponding reset skill -- built
+        fresh here from `task_initial_atoms` (see `HumanResetSkillBuilder`, which is
+        why neither can be a domain-general skill declared once in `skills()`) -- to
+        both `skills` and `ground_skill_costs` before asking the planner, priced at
+        the configured cost rather than anything read off `costs`. Both reset skills
+        are built from the SAME `task_initial_atoms`, differing only in name/cost --
+        see `HumanResetSkillBuilder`'s own docstring for what that reuse assumes and
+        `_EesEpisode.step` for how the two names are told apart at dispatch time.
         `_EesEpisode` passes its own `_task_initial_atoms` from every practice-context
         call (goal-pursuit, and both `_practice_plan` calls, which are only ever
         reached while practicing) -- `None` for an evaluation episode (no evaluation
@@ -479,10 +503,35 @@ class EesMethod(Method):
         `score_ground_skill` computes for other candidates. Different `init_atoms`
         (almost every call) means a different domain string and therefore a different
         `TranslationCache` key, so caching stays correct without any special-casing
-        here -- see `TranslationCache`."""
-        self._planning_attempts += 1
+        here -- see `TranslationCache`.
+
+        **A reset that clears the planner's search is not automatically ACCEPTED.**
+        Classical cost-minimizing search has no way to weigh "no plan" as a competing
+        finite-cost alternative: any finite reset cost beats it, so once a
+        zero-precondition reset skill is offered, FastDownward accepts it at ANY
+        configured cost whenever it is the only (or cheapest) way to reach `goal` --
+        confirmed empirically against Tossing3D's real one-way door across costs
+        0.001 through 1e6. Left unchecked, that would silently turn "sweep the reset
+        cost" into "always reset regardless of cost", exactly the failure mode a
+        `never`-policy run with an unrescued robot is supposed to be able to still
+        show. So when the plan `FastDownwardPlanner.plan` returns actually uses a
+        reset skill, its OWN configured cost is compared against a ceiling before
+        being accepted: `max(costs.values(), default=self.default_cost())` -- the
+        priciest ordinary ground-skill step this exact call already knows the cost
+        of (or, with nothing scored yet, the fresh-skill default). This is deliberately
+        NOT an invented constant: `costs` is the exact argument this method already
+        receives, so the bar moves with the robot's own observed competence over a
+        run -- a reset stays comparably reasonable exactly when the robot's own skills
+        are ALSO costly/unreliable, and looks like a bad deal when they are cheap and
+        reliable. A reset whose cost clears the ceiling is accepted as before; one that
+        does not is re-requested with NO reset skill offered at all, so a genuinely
+        cheaper-but-real alternative (if one exists) still wins, and a genuinely
+        UNREACHABLE goal still raises `PlanningFailure` -- the free `InteractionComplete`
+        (or the next practice candidate) a caller falls back to on that exception is
+        exactly the "stay stuck, unrescued" outcome this exists to keep possible."""
         skills = self.skills()
         ground_skill_costs = costs
+        reset_costs_by_name: dict[str, float] = {}
         if task_initial_atoms is not None and self.ask_for_reset_task_initial_cost is not None:
             reset_ground_skill = HumanResetSkillBuilder.build_ask_for_reset_task_initial(
                 objects=self.objects(),
@@ -491,9 +540,83 @@ class EesMethod(Method):
             )
             skills = (*skills, reset_ground_skill.skill)
             ground_skill_costs = {
-                **costs,
+                **ground_skill_costs,
                 reset_ground_skill: self.ask_for_reset_task_initial_cost,
             }
+            reset_costs_by_name[ASK_FOR_RESET_TASK_INITIAL_NAME] = (
+                self.ask_for_reset_task_initial_cost
+            )
+        if task_initial_atoms is not None and self.ask_for_reset_random_task_cost is not None:
+            # Same construction as ask_for_reset_task_initial immediately above, from
+            # the SAME task_initial_atoms -- not a freshly sampled task's own atoms,
+            # which are not known until (and unless) this ground skill is actually
+            # dispatched. See HumanResetSkillBuilder's own docstring for why this is
+            # sound on Tossing3D specifically (the only domain that configures this
+            # flag today) rather than a general framework guarantee, and for the
+            # closed-loop safety net that catches a mismatch on any domain where it
+            # is not. `**ground_skill_costs` here (not `**costs`) is deliberate: it
+            # carries forward whatever the block above already injected, so both
+            # reset skills stay priced when both flags are configured together.
+            random_reset_ground_skill = HumanResetSkillBuilder.build_ask_for_reset_random_task(
+                objects=self.objects(),
+                predicates=self.predicates(),
+                init_atoms=task_initial_atoms,
+            )
+            skills = (*skills, random_reset_ground_skill.skill)
+            ground_skill_costs = {
+                **ground_skill_costs,
+                random_reset_ground_skill: self.ask_for_reset_random_task_cost,
+            }
+            reset_costs_by_name[ASK_FOR_RESET_RANDOM_TASK_NAME] = (
+                self.ask_for_reset_random_task_cost
+            )
+
+        plan = self._plan_or_raise(
+            skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs
+        )
+        if not reset_costs_by_name:
+            return plan
+        used = [
+            ground_skill for ground_skill in plan if ground_skill.skill.name in reset_costs_by_name
+        ]
+        if not used:
+            return plan
+        # A reset skill has no precondition at all, so an optimal (cost-minimizing)
+        # plan never puts a real step before one it selects: any real step preceding
+        # a "reset the world" operator would be pure waste, since the reset's effects
+        # already determine every atom it names regardless of what came before. Which
+        # position it appears at does not matter for the ceiling check below, only
+        # that it appears; `used[0]` is representative (a second reset back-to-back
+        # would itself be pure waste for the same reason, so at most one distinct
+        # reset skill is ever genuinely load-bearing in one optimal plan).
+        reset_cost = reset_costs_by_name[used[0].skill.name]
+        ceiling = max(costs.values(), default=self.default_cost())
+        if reset_cost <= ceiling:
+            return plan
+        # DECLINE: re-request with no reset skill offered at all, so a real (possibly
+        # pricier) alternative still wins if one exists, and PlanningFailure still
+        # propagates -- unrescued and stuck -- if none does.
+        return self._plan_or_raise(
+            skills=self.skills(), init_atoms=init_atoms, goal=goal, ground_skill_costs=costs
+        )
+
+    def _plan_or_raise(
+        self,
+        *,
+        skills: tuple[Skill, ...],
+        init_atoms: frozenset[GroundAtom],
+        goal: frozenset[GroundAtom],
+        ground_skill_costs: dict[GroundSkill, float],
+    ) -> list[GroundSkill]:
+        """One real Fast Downward invocation, counted and error-translated -- the sole
+        place `plan_to` ever actually asks the planner for something, which `plan_to`
+        itself may now call twice in one call (offering a reset, then again without
+        one if that reset's cost is declined -- see that method's own docstring). Both
+        invocations count as a genuine "asked the planner for a plan" -- see
+        `planning_outcomes` -- since a caller measuring planning load cares about how
+        many times FastDownward was actually invoked, not how many `plan_to` calls
+        that took."""
+        self._planning_attempts += 1
         try:
             return FastDownwardPlanner.plan(
                 skills=skills,
@@ -508,11 +631,10 @@ class EesMethod(Method):
                 translation_cache=self._translation_cache,
             )
         except PlanningFailure:
-            # Counted HERE rather than at the three `except PlanningFailure:` sites
-            # that catch it, so that no catch site -- present or future -- can be the
-            # one that forgets. This is the single place a plan is ever requested,
-            # which makes the counted quantity exactly "asked the planner for a plan
-            # and got none", with no judgement about which asks matter.
+            # Counted HERE rather than at each of `plan_to`'s own callers, so that no
+            # catch site -- present or future -- can be the one that forgets. This
+            # makes the counted quantity exactly "asked the planner for a plan and got
+            # none", with no judgement about which asks matter.
             #
             # That deliberately includes refresh_planning_progress_plans' scoring
             # pass and _practice_plan's per-candidate loop, where a failure is routine
@@ -1052,19 +1174,27 @@ class _EesEpisode:
             )
         if not self._plan:
             if self._practicing:
-                if method.ask_for_reset_random_task_cost is not None:
-                    # The paid substitute for the free ending below: same trigger
-                    # (nothing left worth practicing), but the human resets the world
-                    # onto a freshly sampled train task instead of leaving the robot
-                    # exactly where it ran out of options. See
-                    # HumanRandomTaskResetRequested's own docstring for why this ends
-                    # the period rather than being a mid-plan step.
-                    raise HumanRandomTaskResetRequested(cost=method.ask_for_reset_random_task_cost)
                 # Nothing left worth practicing (no candidate reachable and no
-                # applicable skill to bootstrap from). Ending the period here
-                # rather than burning the remaining budget on no-ops is what keeps
-                # the online-transition count data-driven -- see
-                # InteractionComplete.
+                # applicable skill to bootstrap from). Ending the period here for
+                # free -- rather than burning the remaining budget on no-ops, or
+                # substituting a priced reset -- is what keeps the online-transition
+                # count data-driven and keeps a genuinely stuck robot ABLE to stay
+                # stuck, matching the `never` baseline with no reset skill configured
+                # at all -- see InteractionComplete.
+                #
+                # A priced ask_for_reset_random_task USED to fire unconditionally
+                # here whenever configured, bypassing cost entirely (a bare `is not
+                # None` check, not a comparison) -- removed: it had no analogue on
+                # ask_for_reset_task_initial, and unlike that skill's mid-plan
+                # offering (plan_to, gated by a real cost ceiling -- see that
+                # method), this path never went through the planner at all, so there
+                # was no way for a configured cost's VALUE to matter. This is
+                # reachable only when _practice_plan's for-loop over
+                # choose_practice_target()'s candidates never ran (no candidate has
+                # ever been scored) and its own bootstrap fallback found nothing
+                # applicable either -- see
+                # test_nothing_left_to_practice_raises_the_free_interaction_
+                # complete_even_when_configured.
                 raise InteractionComplete
             # Evaluation: run_task_episode owns termination (goal check + horizon),
             # so degrade to a no-op rather than ending its episode from in here.
@@ -1088,6 +1218,21 @@ class _EesEpisode:
                 "ask_for_reset_task_initial_cost is not None."
             )
             raise HumanHelpRequested(cost=method.ask_for_reset_task_initial_cost)
+        if ground_skill.skill.name == ASK_FOR_RESET_RANDOM_TASK_NAME:
+            # Same interception as ask_for_reset_task_initial just above, for the same
+            # reason: this "skill" has no controller and must never reach
+            # execute_ground_skill. The dispatched exception differs -- practice_loop.py's
+            # HumanRandomTaskResetRequested handler resets onto a freshly sampled train
+            # task and, since that change, CONTINUES the period exactly like
+            # HumanHelpRequested's own handler (it no longer `break`s -- see that
+            # exception's own docstring for why this domain's task family being
+            # shape-invariant makes that sound here).
+            assert method.ask_for_reset_random_task_cost is not None, (
+                "ask_for_reset_random_task appeared in a plan without a configured "
+                "cost -- plan_to only ever offers it to the planner when "
+                "ask_for_reset_random_task_cost is not None."
+            )
+            raise HumanRandomTaskResetRequested(cost=method.ask_for_reset_random_task_cost)
         # By default every skill executed during practice explores (epsilon-greedy).
         # Under reproduce_predicators_explore_target_only, only the practice target
         # does -- the prefix that navigates to it uses the greedy learned sampler,

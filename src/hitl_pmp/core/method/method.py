@@ -70,10 +70,12 @@ class HumanHelpRequested(Exception):  # noqa: N818
     two could then not be compared.
 
     **Always this period's own task-initial state.** `--human-reset-target` (which also
-    offered "a freshly sampled train task") is gone: that second target is not a normal
-    mid-plan transition (it can change the goal atoms, not just reset state toward the
-    current one), so it moved to `HumanRandomTaskResetRequested` below rather than
-    staying a variant of this exception.
+    offered "a freshly sampled train task") is gone: that second target names a
+    physically different action (resample a task and advance the train-task stream,
+    rather than restore this one), so it stays a separate exception,
+    `HumanRandomTaskResetRequested` below, rather than a variant of this one -- even
+    though, on a domain whose task family is shape-invariant, both are now dispatched
+    the same way (see that exception's own docstring).
 
     **Carries one optional field, `cost`**, exactly the extension this docstring used to
     invite ("a `Method` that later needs to ask for something specific adds a field here
@@ -95,30 +97,61 @@ class HumanHelpRequested(Exception):  # noqa: N818
 
 
 class HumanRandomTaskResetRequested(Exception):  # noqa: N818
-    """Raised by a practice policy that is choosing to end the interaction period by
-    asking a human to reposition it onto a freshly sampled train task, rather than
-    stopping for free (as `InteractionComplete` does) or continuing after a rescue (as
-    `HumanHelpRequested` does). Control flow, not an error, exactly like the other two
+    """Raised by a practice policy that is asking a human to reposition it onto a
+    freshly sampled train task. Control flow, not an error, exactly like the other two
     (hence the same ruff N818 waiver).
 
-    **Modeled like `InteractionComplete`, not like `HumanHelpRequested`, and for a
-    structural reason.** Resetting onto a *freshly sampled* train task can change the
-    goal atoms the episode is pursuing, not merely the state -- a classical plan built
-    for one fixed goal cannot have this as a mid-plan step the way
-    `ask_for_reset_task_initial` (which only ever restores THIS period's own task) can.
-    So selecting it ends the current interaction period outright: no goal is
-    necessarily achieved, and whatever plan was in flight is simply abandoned, exactly
-    as it would be if `InteractionComplete` had fired instead.
+    **Modeled like `HumanHelpRequested`, not like `InteractionComplete` -- the period
+    CONTINUES.** This used to end the period outright, on the reasoning that resetting
+    onto a *freshly sampled* train task can change the goal atoms the episode is
+    pursuing, not merely the state, and a classical plan built for one fixed goal
+    cannot have a goal-changing step as a mid-plan transition. That reasoning is still
+    correct in general, but it does not apply on a domain whose task family is
+    *shape-invariant*: if every task the domain ever samples shares the same goal and
+    the same abstract initial-state shape (Tossing3D's case -- single goal family over
+    `ClassVar` objects, verified empirically that a freshly sampled task's abstracted
+    initial atoms always match `task_initial_atoms`), then resetting onto a fresh task
+    is, symbolically, indistinguishable from resetting onto this period's own task --
+    see `HumanResetSkillBuilder` for how `ask_for_reset_random_task` reuses exactly
+    `ask_for_reset_task_initial`'s operator construction on that basis. So `EesMethod`
+    now offers this as a genuine mid-plan ground skill too (`plan_to`), and selecting
+    it no longer ends the interaction period: `practice_loop.py`'s handler `continue`s,
+    exactly like `HumanHelpRequested`'s.
 
-    **What makes it a distinct event from `InteractionComplete` anyway.** Where
-    `InteractionComplete` is free and leaves the robot exactly where it happens to be,
-    this is priced (`cost`, same `None`-means-harness-priced convention as
-    `HumanHelpRequested`) and resolved through a real human reset -- the environment is
-    put at a freshly sampled train task's initial state, and that sampling **advances
-    the train-task stream**, the same real, intended difference `--human-reset-target
-    random` used to describe. `EesMethod` selects this over the free ending exactly
-    where it would otherwise have raised `InteractionComplete`, whenever
-    `ask_for_reset_random_task_cost` is configured -- see that field.
+    **This is a domain-dependent relaxation, not a general framework fact.** A domain
+    whose sampled tasks vary in goal or initial-state shape must NOT rely on this: the
+    ground skill's declared effect (task_initial_atoms) would then be only an estimate
+    of what a real reset produces, and continuing to pursue a stale goal built for the
+    OLD task after installing a NEW one would be a real bug, not merely a suboptimal
+    plan. `_EesEpisode.step`'s closed-loop divergence check (discarding a queued plan
+    whose next precondition the real post-reset state does not satisfy) prevents an
+    inapplicable ACTION from ever being taken on such a mismatch, but it cannot rescue
+    a stale GOAL -- `_EesEpisode._goal` is fixed at construction and is not rebuilt
+    against whatever task a mid-cycle reset actually lands on. No domain in this repo
+    other than Tossing3D configures `ask_for_reset_random_task_cost` today.
+
+    **Still what makes it a distinct event from `HumanHelpRequested` at all.** Where
+    that exception restores THIS period's own task-initial state, this one resolves
+    through a real human reset onto a *freshly sampled* train task, which
+    **advances the train-task stream** -- the same real, intended difference
+    `--human-reset-target random` used to describe, and the reason `practice_loop.py`
+    still dispatches it through its own handler (`PracticeLoop._grant_human_help` with
+    `target_state=fresh_task.initial_state`) rather than folding it into
+    `HumanHelpRequested`. Priced the same way (`cost`, `None`-means-harness-priced).
+
+    **NOT an unconditional substitute for `InteractionComplete` at any configured
+    cost.** An earlier version of the mid-plan offering above also raised this
+    unconditionally from a `step()`-level "nothing left to practice" fallback whenever
+    a cost was configured at all -- a bare presence check, not a comparison against
+    the cost's own VALUE. Removed: a classical cost-minimizing search cannot weigh "no
+    plan" as a competing finite-cost alternative, so once a reset is offered at all it
+    is accepted at any magnitude -- which silently made "sweep the reset cost" mean
+    "always reset regardless of cost", and made a genuinely stuck robot structurally
+    unable to just stay stuck the way the `never` baseline with no reset skill
+    configured can. `EesMethod.plan_to` now enforces a real, cost-derived ceiling
+    (`max` of the ordinary ground-skill costs already in scope for that call) before
+    accepting a reset it finds -- see that method's own docstring -- and the
+    `step()`-level fallback that used to bypass it is gone outright.
 
     Kept a third, separate exception rather than a payload on either existing one for
     the same reason `HumanHelpRequested` stays separate from `InteractionComplete`: the

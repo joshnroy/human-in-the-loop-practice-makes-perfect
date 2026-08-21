@@ -488,21 +488,28 @@ class PracticeLoop:
                         )
                     continue
                 except HumanRandomTaskResetRequested as request:
-                    # Modeled like InteractionComplete: the period ends here, no goal
-                    # necessarily achieved. Unlike InteractionComplete, ending is not
-                    # free -- a human resets the environment onto a FRESHLY SAMPLED
-                    # train task (advancing the train-task stream, same as
-                    # `--human-reset-target random` used to), priced and banked exactly
-                    # like a HumanHelpRequested rescue. See
-                    # HumanRandomTaskResetRequested's own docstring for why this cannot
-                    # be a mid-plan step the way a HumanHelpRequested rescue is.
-                    fresh_task = problem.sample_train_task()
+                    # Modeled like HumanHelpRequested above: the period CONTINUES --
+                    # see that exception's own docstring for why a domain whose task
+                    # family is shape-invariant (Tossing3D's, the only one that
+                    # configures this today) makes that sound. A human resets the
+                    # environment onto a FRESHLY SAMPLED train task (advancing the
+                    # train-task stream, same as `--human-reset-target random` used
+                    # to), priced and banked exactly like a HumanHelpRequested rescue.
+                    #
+                    # `task` is reassigned to the freshly sampled one, deliberately:
+                    # it is read again later THIS SAME cycle by the
+                    # practice_reset_interval branch below (`problem.reset_to_task(
+                    # task=task)`) and by _sample_practice_task on the next cycle only
+                    # after being re-sampled there -- leaving it stale here would make
+                    # a later interval reset in this cycle silently revert the
+                    # environment to the task the robot is no longer practicing on.
+                    task = problem.sample_train_task()
                     state = PracticeLoop._grant_human_help(
                         problem=problem,
                         method=method,
                         metrics=metrics,
                         task=task,
-                        target_state=fresh_task.initial_state,
+                        target_state=task.initial_state,
                         cost=request.cost,
                         state=state,
                     )
@@ -511,7 +518,7 @@ class PracticeLoop:
                         recorder.record_human_reset(
                             state=state, step_index=step, transitions=num_online_transitions
                         )
-                    break
+                    continue
                 except InteractionComplete:
                     # The Method has nothing further worth practicing. Ending
                     # early is normal, and the steps not taken are not charged --
@@ -603,10 +610,9 @@ class PracticeLoop:
         was quietly reset for free. It is not charged as an online transition, matching
         every other reset here, or an arm rescued more often would advance along every
         learning curve's x-axis for free. And it does not end the period or fire
-        `end_cycle` on its own -- ending the period is the caller's decision (the
-        `HumanRandomTaskResetRequested` handler `break`s after this returns; the
-        `HumanHelpRequested` handler does not), exactly like a `practice_reset_interval`
-        reset never ending one either.
+        `end_cycle` on its own -- both handlers `continue` after this returns, neither
+        ends the period from in here, exactly like a `practice_reset_interval` reset
+        never ending one either.
 
         **`cost=None` means "price this the harness's own way"**, by querying
         `Problem.calculate_cost_for_human_command` -- the incumbent behaviour, and what

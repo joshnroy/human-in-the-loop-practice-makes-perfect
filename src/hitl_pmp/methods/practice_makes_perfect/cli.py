@@ -59,24 +59,34 @@ class EesCli:
             "UnconditionalHumanOracle.execute_human_command). Injected directly into "
             "FastDownwardPlanner's ground_skill_costs, bypassing the competence model "
             "entirely (the human always succeeds by construction, so there is nothing "
-            "to learn -- only a price to set). Omitted (the default, None) means the "
-            "skill is not offered to the planner at all, so a run takes exactly the "
-            "code path it took before this skill existed.",
+            "to learn -- only a price to set). Accepted only when its cost clears a "
+            "real ceiling derived from the ordinary ground-skill costs already in "
+            "play (see EesMethod.plan_to) -- a classical planner cannot weigh 'no "
+            "plan' against any finite reset cost on its own, so this is what keeps a "
+            "genuinely stuck robot able to stay stuck rather than always resetting "
+            "regardless of cost. Omitted (the default, None) means the skill is not "
+            "offered to the planner at all, so a run takes exactly the code path it "
+            "took before this skill existed.",
         )
         parser.add_argument(
             "--ask-for-reset-random-task-cost",
             type=float,
             default=EesMethod.model_fields["ask_for_reset_random_task_cost"].default,
-            help="Cost of the ask_for_reset_random_task ground skill: selecting it ENDS "
-            "the current interaction period (no goal necessarily achieved) and resets "
-            "the world onto a freshly sampled train task, advancing the train-task "
-            "stream -- modeled like InteractionComplete rather than as a mid-plan step, "
-            "because sampling a new task can change the goal atoms, which a classical "
-            "plan built for one fixed goal cannot have as a step. EES substitutes it "
-            "for the free InteractionComplete ending exactly where practice would "
-            "otherwise stop for good. Omitted (the default, None) means the skill is "
-            "never selected, so a run takes exactly the code path it took before this "
-            "skill existed.",
+            help="Cost of the ask_for_reset_random_task ground skill: a mid-plan step "
+            "EES's own planner can select, whose effect resets every ground atom to "
+            "this practice period's own task-initial state, same as "
+            "ask_for_reset_task_initial's operator -- but whose dispatch instead "
+            "resets the world onto a FRESHLY SAMPLED train task, advancing the "
+            "train-task stream. That reuse is sound on a domain whose task family is "
+            "shape-invariant (Tossing3D's case; see HumanResetSkillBuilder). "
+            "Selecting it does NOT end the interaction period. Accepted only when its "
+            "cost clears a real ceiling derived from the ordinary ground-skill costs "
+            "already in play (see EesMethod.plan_to) -- a classical planner cannot "
+            "weigh 'no plan' against any finite reset cost on its own, so this is what "
+            "keeps a genuinely stuck robot able to stay stuck rather than always "
+            "resetting regardless of cost. Omitted (the default, None) means the "
+            "skill is never offered or selected, so a run takes exactly the code path "
+            "it took before this skill existed.",
         )
         parser.add_argument(
             "--exploration-epsilon",

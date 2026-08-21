@@ -320,9 +320,10 @@ def test_main_records_a_full_loop_end_to_end(*, tmp_path: Path) -> None:
 def test_the_human_reset_target_flag_and_type_are_gone() -> None:
     """`--human-reset-target`/`HumanResetTarget` named a global "what does the human
     do" axis that no longer exists: `ask_for_reset_task_initial` always means
-    task-initial, and `ask_for_reset_random_task` (a structurally different,
-    period-ending mechanism) replaces the old RANDOM target -- see
-    HumanRandomTaskResetRequested's own docstring. Both are now EES's own flags
+    task-initial, and `ask_for_reset_random_task` (a structurally different real-world
+    action -- resample a task and advance the train-task stream, rather than restore
+    this one) replaces the old RANDOM target -- see HumanRandomTaskResetRequested's
+    own docstring. Both are now EES's own flags
     (--ask-for-reset-task-initial-cost/--ask-for-reset-random-task-cost), not a global
     one, because WHICH is asked for is now the plan's own choice, not a harness-wide
     setting."""

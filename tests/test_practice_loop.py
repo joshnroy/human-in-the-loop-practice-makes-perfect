@@ -1973,18 +1973,30 @@ def test_a_rescue_is_handed_to_the_recorder_as_its_own_reset_kind() -> None:
 
 
 class _RandomResetAskingMethod(_FakeMethod):
-    """Signals it wants to end the period by resetting onto a freshly sampled train
-    task -- EES does this in place of the free InteractionComplete once
-    ask_for_reset_random_task_cost is configured; see that exception's own docstring
-    for why ending the period (rather than continuing, as HumanHelpRequested does) is
-    the right shape for this specific request."""
+    """Signals it wants to reset onto a freshly sampled train task -- EES raises this
+    both as a genuine mid-plan ground skill and as the step()-level substitute for the
+    free InteractionComplete once ask_for_reset_random_task_cost is configured.
+
+    Asks once `steps_before_asking` calls have gone by, and stops asking the moment it
+    is told help was granted -- structurally identical to `_AskingMethod` above (the
+    HumanHelpRequested fake), which is deliberate: the two exceptions are now handled
+    the same way by practice_loop.py (continue, not break), so their test doubles
+    should look the same too."""
 
     steps_before_asking: int = 2
     steps_taken: int = 0
     ask_cost: float | None = None
+    # x observed at each observe_help_granted call, in call order -- mirrors
+    # _AskingMethod.help_granted_xs.
+    help_granted_xs: list[float] = Field(default_factory=list)
 
     def may_request_human_help(self) -> bool:
         return True
+
+    def observe_help_granted(self, *, state: State) -> None:
+        self.help_granted_xs.append(float(state[_OBJ][0]))
+        self.event_log.record(event="observe_help_granted")
+        self.steps_taken = 0
 
     def get_practice_policy(self, *, task: Task) -> Policy:
         del task
@@ -2020,10 +2032,16 @@ def _build_random_reset_asking(*, steps_before_asking: int = 2, ask_cost: float 
     return practice, evaluation, method, Metrics()
 
 
-def test_a_random_task_reset_ends_the_period_rather_than_continuing() -> None:
-    """The difference from HumanHelpRequested, measured rather than asserted in prose:
-    a period whose Method asks after 2 steps stops there instead of being rescued
-    repeatedly for the rest of the budget."""
+def test_a_random_task_reset_continues_the_period_rather_than_ending_it() -> None:
+    """The behavioural change this file exists to pin: a period whose Method asks
+    after every 2 steps is rescued repeatedly for the rest of the budget, exactly like
+    HumanHelpRequested (see test_a_rescue_does_not_end_the_cycle_or_retrain), rather
+    than stopping at the first ask. Same steps_before_asking=2/max_steps=9 shape as
+    _AskingMethod's own recorder test below, which asks at steps 2, 5, 8 -- three
+    resets, consuming the whole 9-step budget (loop iterations) rather than stopping
+    at 2 -- though only the 6 non-rescue iterations are real actions/transitions, since
+    a rescue is not charged as an online transition (the HumanHelpRequested handler's
+    own comment above explains why: "roughly 36 out of ~15000 per seed")."""
     practice, evaluation, method, metrics = _build_random_reset_asking(
         steps_before_asking=2, ask_cost=0.5
     )
@@ -2036,8 +2054,8 @@ def test_a_random_task_reset_ends_the_period_rather_than_continuing() -> None:
         max_steps_per_interaction=9,
         num_test_tasks=1,
     )
-    assert metrics.num_human_interventions()[1] == 1
-    assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 2]
+    assert metrics.num_human_interventions()[1] == 3
+    assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 6]
 
 
 def test_a_random_task_reset_advances_the_train_task_stream_and_banks_its_cost() -> None:
@@ -2053,10 +2071,10 @@ def test_a_random_task_reset_advances_the_train_task_stream_and_banks_its_cost()
         max_steps_per_interaction=9,
         num_test_tasks=1,
     )
-    # One train task drawn for the period, plus one for the reset itself.
-    assert practice.tasks.train_task_count == 2
+    # One train task drawn for the period, plus one per reset (three, at steps 2/5/8).
+    assert practice.tasks.train_task_count == 4
     summed_cost, count = metrics.num_human_interventions()
-    assert (summed_cost, count) == (0.5, 1)
+    assert (summed_cost, count) == (1.5, 3)
     # Not a free practice reset -- see test_a_rescue_is_not_counted_as_a_free_practice_
     # reset for why a charged reset must never land in this counter.
     assert metrics.num_practice_resets == 1  # only the period's own opening reset
@@ -2064,7 +2082,8 @@ def test_a_random_task_reset_advances_the_train_task_stream_and_banks_its_cost()
 
 def test_a_random_task_reset_is_priced_the_harness_way_when_no_cost_is_given() -> None:
     """`cost=None` (the default) falls back to querying the HumanOracle, exactly like
-    HumanHelpRequested's own fallback."""
+    HumanHelpRequested's own fallback. steps_before_asking=0 means every step asks, so
+    a short budget keeps the numbers readable: three resets in a three-step period."""
     practice, evaluation, method, metrics = _build_random_reset_asking(
         steps_before_asking=0, ask_cost=None
     )
@@ -2074,11 +2093,11 @@ def test_a_random_task_reset_is_priced_the_harness_way_when_no_cost_is_given() -
         method=method,
         metrics=metrics,
         num_cycles=1,
-        max_steps_per_interaction=9,
+        max_steps_per_interaction=3,
         num_test_tasks=1,
     )
-    # _RecordingHuman quotes a flat 2.0.
-    assert metrics.num_human_interventions() == (2.0, 1)
+    # _RecordingHuman quotes a flat 2.0 per reset.
+    assert metrics.num_human_interventions() == (6.0, 3)
 
 
 def test_a_random_task_reset_is_handed_to_the_recorder_as_a_human_reset() -> None:
@@ -2096,4 +2115,59 @@ def test_a_random_task_reset_is_handed_to_the_recorder_as_a_human_reset() -> Non
         num_test_tasks=1,
         recorder=recorder,
     )
-    assert [call for call in recorder.calls if call.startswith("human_reset")] == ["human_reset:2"]
+    assert [call for call in recorder.calls if call.startswith("human_reset")] == [
+        "human_reset:2",
+        "human_reset:5",
+        "human_reset:8",
+    ]
+
+
+class _DistinctRandomResetTasks(_FakeTasks):
+    """A different x per `sample_train_task` call, so a stale `task` reference is
+    visible in what a later reset installs rather than coincidentally matching.
+    `_FakeTasks.sample_train_task` always returns x=100.0, which cannot distinguish
+    "the period's own task" from "a freshly sampled one" at all."""
+
+    def sample_train_task(self) -> Task:
+        self.train_task_count += 1
+        return Task(
+            initial_state=_state(x=100.0 * self.train_task_count), goal=Goal(atoms=frozenset())
+        )
+
+
+def test_a_random_task_reset_updates_which_task_a_later_interval_reset_targets() -> None:
+    """The staleness bug this guards against: `task`, the local variable
+    `practice_reset_interval` resets against later in the SAME cycle
+    (`problem.reset_to_task(task=task)`), must be reassigned to the freshly sampled
+    task when a random-task reset fires -- otherwise a later interval reset in the
+    same cycle would silently put the environment back on the OLD (pre-reset) task
+    instead of the one the robot is now actually practicing on.
+
+    steps_before_asking=2 asks at step 2 (after two normal actions, each already
+    followed by its own interval reset back to task #1 -- noise this test does not
+    care about). observe_help_granted then resets its counter, so step 3 is a normal
+    action followed by ANOTHER interval reset -- the one that matters here, since
+    _reset_is_due never fires on a period's last step (see its own docstring), so the
+    budget is sized to five steps to leave one interval reset after the ask that is
+    not also the final step. If `task` were left stale, that reset would land on task
+    #1 (x=100.0) instead of task #2 (x=200.0); the one further normal action at step 4
+    then makes the fixed-vs-stale difference visible in the final state (201.0 vs
+    101.0) without needing to inspect an intermediate one."""
+    practice, evaluation, method, metrics = _build_random_reset_asking(
+        steps_before_asking=2, ask_cost=0.5
+    )
+    practice.tasks = _DistinctRandomResetTasks(env=practice.env)
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=5,
+        num_test_tasks=1,
+        practice_reset_interval=1,
+    )
+    # Task #1 (x=100.0) opens the period; task #2 (x=200.0) is the random reset's
+    # target. The interval reset after the ask must land on task #2, not task #1, so
+    # one more real action from there lands at 201.0 rather than 101.0.
+    assert float(practice.env.get_current_state()[_OBJ][0]) == 201.0
