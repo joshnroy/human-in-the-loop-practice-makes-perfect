@@ -57,6 +57,10 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
     # the axis -- a run's name says which axes exist for its method, at whatever value.
     RunNameField(dest="ask_for_reset_task_initial_cost", prefix="reset-cost-", optional=True),
     RunNameField(dest="ask_for_reset_random_task_cost", prefix="random-reset-cost-", optional=True),
+    # Third reset skill, same optional=True reasoning: absent on --method
+    # skill-oracle/random-skills, and on any --env whose SkillProvider has no
+    # human_cube_bin_reset_skill to offer (every domain but Tossing3D today).
+    RunNameField(dest="ask_for_reset_cube_bin_cost", prefix="cube-bin-reset-cost-", optional=True),
     # A method flag, absent on --method skill-oracle. The literal cycle count rather
     # than a multiple of the default: expressing it as "1x"/"10x" would mean carrying a
     # copy of `--num-cycles`'s default here, which is exactly the kind of duplicated

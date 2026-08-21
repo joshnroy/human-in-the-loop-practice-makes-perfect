@@ -4,11 +4,19 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.method import (
+    HumanCubeBinResetRequested,
     HumanHelpRequested,
     HumanRandomTaskResetRequested,
     InteractionComplete,
 )
-from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
+from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
+from hitl_pmp.core.method.types import (
+    GroundSkill,
+    LiftedAtom,
+    SamplerConsultation,
+    Skill,
+    Variable,
+)
 from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.ballring.environment import BallRingEnvironment
@@ -1763,3 +1771,112 @@ def test_a_never_policy_run_can_stay_stuck_at_both_swept_costs_when_nothing_is_s
                 costs=method.skill_costs(),
                 task_initial_atoms=task_initial_atoms,
             )
+
+
+class _CubeBinCapableSkillProvider(LightSwitchSkillProvider):
+    """A LightSwitch-backed stand-in for a domain whose SkillProvider offers
+    `ask_for_reset_cube_bin_only` -- exercises EesMethod's own wiring (plan_to's
+    injection, _EesEpisode.step's interception) without importing Tossing3D or
+    touching a simulator, the same reason `_AskingMethod` in test_practice_loop.py
+    avoids importing a real Method.
+
+    The returned operator adds `Adjacent(cell0, cell0)` -- a reflexive atom no real
+    LightSwitch skill's effects ever touch (`Adjacent` is only ever a precondition in
+    skills.py, never an add/delete effect), so a goal of exactly that atom is
+    achievable if and only if this ground skill was actually offered to the planner.
+    That makes plan_to's own injection directly observable through a real Fast
+    Downward plan, rather than only through step()'s interception (covered
+    separately below)."""
+
+    def human_cube_bin_reset_skill(self) -> GroundSkill:
+        cell_var = Variable(name="cell", type=LightSwitchEnvironment.cell_type)
+        skill = Skill(
+            name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
+            parameters=(cell_var,),
+            preconditions=frozenset(),
+            add_effects=frozenset({LiftedAtom(predicate=ADJACENT, variables=(cell_var, cell_var))}),
+            delete_effects=frozenset(),
+            param_dim=0,
+        )
+        env_cell0 = self.env.get_cells()[0]
+        return GroundSkill(skill=skill, objects=(env_cell0,))
+
+
+def _cube_bin_reset_build(
+    *, ask_for_reset_cube_bin_cost: float | None = None, grid_size: int = 3, seed: int = 0
+) -> tuple[EesMethod, LightSwitchEnvironment]:
+    env = LightSwitchEnvironment(grid_size=grid_size)
+    method = EesMethod(
+        env=env,
+        skill_provider=_CubeBinCapableSkillProvider(env=env),
+        seed=seed,
+        ask_for_reset_cube_bin_cost=ask_for_reset_cube_bin_cost,
+    )
+    return method, env
+
+
+def test_ees_declares_it_can_ask_for_help_when_the_cube_bin_reset_is_configured() -> None:
+    method, _env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.2)
+    assert method.may_request_human_help() is True
+
+
+def test_plan_to_offers_the_cube_bin_reset_skill_when_configured_and_the_domain_supports_it() -> (
+    None
+):
+    """A real Fast Downward plan, not just a constructed operator: the goal
+    (`Adjacent(cell0, cell0)`, reflexive and false in every real init state) is
+    achievable if and only if plan_to actually added the injected ground skill to
+    the planner's candidate set -- see _CubeBinCapableSkillProvider's own docstring
+    for why no ordinary LightSwitch skill could ever produce it."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.1)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+    assert not goal <= init_atoms, "the fixture must actually start with the goal false"
+
+    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+    assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+
+
+def test_plan_to_raises_when_configured_against_a_domain_with_no_cube_bin_reset_skill() -> None:
+    """LightSwitchSkillProvider (used directly, not the fake above) inherits the base
+    SkillProvider's None default -- exactly every domain but Tossing3D today. Setting
+    the cost flag against it is a misconfiguration plan_to must report, not silently
+    ignore."""
+    method, env = _reset_build(seed=0)
+    method.ask_for_reset_cube_bin_cost = 0.1
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    with pytest.raises(ValueError, match="human_cube_bin_reset_skill"):
+        method.plan_to(init_atoms=init_atoms, goal=frozenset(), costs=method.skill_costs())
+
+
+def test_step_dispatches_a_selected_cube_bin_reset_skill_as_a_human_cube_bin_reset() -> None:
+    """Once the plan's next step is ask_for_reset_cube_bin_only, step() must intercept
+    it before execute_ground_skill -- no controller call, no competence model created
+    for it -- and the banked cost is exactly the configured flag."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.37)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    reset_ground_skill = _CubeBinCapableSkillProvider(env=env).human_cube_bin_reset_skill()
+    episode = _EesEpisode(method=method, goal=task.goal.atoms, practicing=True)
+    episode._plan = [reset_ground_skill]
+
+    with pytest.raises(HumanCubeBinResetRequested) as excinfo:
+        episode.step(state=task.initial_state)
+    assert excinfo.value.cost == 0.37
+    assert method._competence_models == {}
+
+
+def test_ees_evaluation_never_offers_the_cube_bin_reset_skill_either() -> None:
+    """Same invariant as the other two reset skills: no evaluation episode is ever
+    rescued. Unlike ask_for_reset_task_initial, this is not gated on
+    task_initial_atoms (its effects don't depend on per-episode init state at all --
+    see human_cube_bin_reset_skill), so this checks get_task_policy runs cleanly
+    end-to-end rather than that plan_to declined to offer the skill."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.01)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    policy = method.get_task_policy(task=task)
+    state = task.initial_state
+    for _ in range(5):
+        policy(state)

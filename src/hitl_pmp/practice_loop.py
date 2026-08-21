@@ -7,6 +7,7 @@ from typing import Protocol
 import numpy as np
 
 from hitl_pmp.core.method.method import (
+    HumanCubeBinResetRequested,
     HumanHelpRequested,
     HumanRandomTaskResetRequested,
     InteractionComplete,
@@ -519,6 +520,26 @@ class PracticeLoop:
                             state=state, step_index=step, transitions=num_online_transitions
                         )
                     continue
+                except HumanCubeBinResetRequested as request:
+                    # The robot asked for a PARTIAL reset -- see that exception's own
+                    # docstring for why this cannot go through _grant_human_help (there
+                    # is no target_state to describe; Problem.execute_movables_reset
+                    # takes none). The period CONTINUES, exactly like
+                    # HumanHelpRequested's handler above: the robot itself was not
+                    # relocated and the goal did not change.
+                    state = PracticeLoop._grant_movables_reset(
+                        problem=problem,
+                        method=method,
+                        metrics=metrics,
+                        cost=request.cost,
+                        state=state,
+                    )
+                    method.observe_help_granted(state=state)
+                    if recorder is not None:
+                        recorder.record_human_reset(
+                            state=state, step_index=step, transitions=num_online_transitions
+                        )
+                    continue
                 except InteractionComplete:
                     # The Method has nothing further worth practicing. Ending
                     # early is normal, and the steps not taken are not charged --
@@ -643,6 +664,30 @@ class PracticeLoop:
         # Read back rather than assumed: the HumanOracle owns what actually happened to
         # the environment, and a v1+ human that only partially succeeds would leave it
         # somewhere other than the state that was asked for.
+        return problem.get_current_state()
+
+    @staticmethod
+    def _grant_movables_reset(
+        *, problem: Problem, method: Method, metrics: Metrics, cost: float, state: State
+    ) -> State:
+        """Perform the *partial* rescue a `Method` asked for via
+        `HumanCubeBinResetRequested`, charge it, and return the state that results.
+
+        The domain-agnostic sibling of `_grant_human_help`, kept separate rather than
+        folded into it: there is no `target_state` to describe here --
+        `Problem.execute_movables_reset` takes none, see that method's own docstring
+        for why -- and `cost` is required rather than optional (no harness-priced
+        query exists for this command shape; see `HumanCubeBinResetRequested`), so
+        this has neither of `_grant_human_help`'s two `target_state`/`cost=None`
+        branches to share.
+
+        Same ordering guarantee as `_grant_human_help`: the `Method` is told
+        (`observe_environment_reset`) *before* the environment is written, so a Method
+        scoring an in-flight skill scores it against what really happened rather than
+        against the state it is about to lose."""
+        method.observe_environment_reset(state=state)
+        problem.execute_movables_reset()
+        metrics.record_human_intervention(cost=cost)
         return problem.get_current_state()
 
     @staticmethod

@@ -80,6 +80,16 @@ def test_hard_reset_sets_current_state() -> None:
     assert env.get_current_state()[_OBJ].tolist() == [0.0]
 
 
+def test_reset_movables_declines_by_default() -> None:
+    """Most domains have no notion of 'the robot' distinct from 'everything else' a
+    partial reset could exploit, and none of them should need boilerplate to say so.
+    `False` means declined -- current_state must be left untouched."""
+    env = _DummyEnvironment()
+    env.set_state(state=_state(x=7.0))
+    assert env.reset_movables() is False
+    assert env.get_current_state()[_OBJ].tolist() == [7.0]
+
+
 def test_two_instances_carry_independent_state() -> None:
     """The whole point of this refactor: no shared/global current_state anymore."""
     first = _DummyEnvironment()
