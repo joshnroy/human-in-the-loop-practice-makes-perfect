@@ -620,9 +620,7 @@ class EesMethod(Method):
                 **ground_skill_costs,
                 cube_bin_ground_skill: self.ask_for_reset_cube_bin_cost,
             }
-            reset_costs_by_name[ASK_FOR_RESET_CUBE_BIN_ONLY_NAME] = (
-                self.ask_for_reset_cube_bin_cost
-            )
+            reset_costs_by_name[ASK_FOR_RESET_CUBE_BIN_ONLY_NAME] = self.ask_for_reset_cube_bin_cost
 
         plan = self._plan_or_raise(
             skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs

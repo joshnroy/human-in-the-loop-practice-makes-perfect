@@ -370,8 +370,6 @@ def test_checkpoint_scalars_are_mirrored_into_both_learning_curve_axis_groups(
     writer.close(metrics=second)
 
 
-
-
 @wandb_installed
 def test_a_rendered_checkpoint_clip_is_logged_as_a_wandb_video(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -417,6 +415,11 @@ def test_no_video_key_is_logged_when_no_checkpoint_clip_was_rendered(
     writer = WandbResultsWriter.open_if_requested(args=args, num_cycles=1)
     assert writer is not None
     writer.record_checkpoint(metrics=WandbHarness.metrics_with_one_sweep())
+
+    run = wandb.run
+    assert run is not None
+    assert "episode_video" not in run.summary.keys()  # noqa: SIM118
+    writer.close(metrics=WandbHarness.metrics_with_one_sweep())
 
 
 @wandb_installed
