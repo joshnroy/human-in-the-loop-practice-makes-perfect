@@ -1,6 +1,7 @@
 import abc
 from typing import ClassVar
 
+import numpy as np
 from gymnasium.spaces import Space
 from pydantic import BaseModel
 
@@ -129,3 +130,25 @@ class Environment(BaseModel, abc.ABC):
         `set_state`: that takes a full `State` for every object, this touches an
         unspecified domain-chosen subset and takes no argument at all."""
         return False
+
+    def set_substep_recording(self, *, enabled: bool) -> None:
+        """Turn on per-substep frame capture for domains whose dynamics run at a
+        finer time granularity than one frame per `take_action` call -- a no-op by
+        default, like `reset_movables`. `Tossing3DEnvironment` overrides: one
+        `take_action` there is a whole controller execution over hundreds of MuJoCo
+        ticks, so a caller recording practice video (`recording.period_recorder.
+        PeriodRecorder`) needs the ticks in between, not just the boundary state.
+        Every other domain here draws its `core.Renderer` frame from `State` alone,
+        so there is nothing finer-grained to capture and this stays a no-op."""
+        return None
+
+    def drain_substep_frames(self) -> list[np.ndarray]:
+        """Every frame collected since the last drain (or since
+        `set_substep_recording` last turned collection on), clearing the buffer.
+
+        Empty by default, matching `set_substep_recording`'s no-op default: a
+        caller that always drains, whether or not this domain has anything finer
+        than one frame per transition, gets an empty list rather than an
+        AttributeError. `Tossing3DEnvironment` overrides to forward to
+        `KinderBackend.drain_substep_frames`."""
+        return []

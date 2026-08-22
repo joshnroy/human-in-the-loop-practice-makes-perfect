@@ -482,6 +482,16 @@ class Tossing3DEnvironment(Environment):
         self._adopt(state=next_state)
         return True
 
+    def set_substep_recording(self, *, enabled: bool) -> None:
+        """Forwards to `KinderBackend.set_substep_recording` -- see `core.Environment`'s
+        own docstring for why this override exists and every other domain does not
+        need one."""
+        self.backend().set_substep_recording(enabled=enabled)
+
+    def drain_substep_frames(self) -> list[np.ndarray]:
+        """Forwards to `KinderBackend.drain_substep_frames`."""
+        return self.backend().drain_substep_frames()
+
     def snapshot(self) -> "Tossing3DSnapshot":
         """A restorable handle to the live simulator, including mid-episode.
 
