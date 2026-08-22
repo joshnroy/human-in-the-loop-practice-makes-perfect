@@ -306,7 +306,10 @@ class KinderBackend(BaseModel):
     allow_state_access: bool = True
     # Collect one frame per physics tick while a controller runs. Off by default: see the
     # module docstring. `Tossing3DProblem.run_task_episode` flips it per episode, so a
-    # rendered demo episode records and a training episode does not.
+    # rendered demo episode records frames and a training episode does not -- video
+    # capture stays real and opt-in. State capture (`StateCollection`, see
+    # `drain_substep_states`) does NOT follow this flag: it is unconditional, once a
+    # scene exists -- see `_sync_recording_wrapper`.
     record_substeps: bool = False
 
     _api: KinderApi | None = PrivateAttr(default=None)
@@ -454,9 +457,9 @@ class KinderBackend(BaseModel):
             self._abstractor = None
 
     def set_substep_recording(self, *, enabled: bool) -> None:
-        """Turn per-physics-tick frame AND state collection on or off, effective
-        immediately. The two are bundled -- see `drain_substep_states` for why -- so
-        there is no separate flag for state capture.
+        """Turn per-physics-tick FRAME collection on or off, effective immediately.
+        State collection is separate and always on once a scene exists -- see
+        `drain_substep_states` and `_sync_recording_wrapper`.
 
         Imports nothing on its own: a backend with no scene yet just remembers the flag,
         and the wrapper goes on at the next `reset()`. That matters because this is
@@ -475,47 +478,50 @@ class KinderBackend(BaseModel):
 
         No copy is taken. See the module docstring: collected frames were measured to be
         distinct arrays rather than aliases of one reused MuJoCo buffer, and copying a
-        physics-rate episode would double an already-large peak for nothing.
-        """
+        physics-rate episode would double an already-large peak for nothing."""
         if not self.record_substeps or self._env is None or self._env is self._raw_env:
             return []
         return [np.asarray(frame, dtype=np.uint8) for frame in self._env.render()]
 
     def drain_substep_states(self) -> list[Any]:
-        """Every `ObjectCentricState` snapshot collected since the last drain, in the
-        same order and at the same per-tick granularity as `drain_substep_frames` --
-        the two wrappers are stacked together (see `_sync_recording_wrapper`), so a
-        state log recorded from this always lines up 1:1 with the frames a video built
-        from the same run would show. Bundled onto the same `record_substeps` flag
-        rather than a separate one deliberately: a state log with no corresponding
-        recording is not useful (there is nothing to validate it against), and a
-        recording with no state log defeats the point of being able to re-render it
-        later -- see this repo's render-from-logs PR."""
-        if not self.record_substeps or self._env is None or self._env is self._raw_env:
+        """Every `ObjectCentricState` snapshot collected since the last drain, in
+        order, clearing the buffer.
+
+        Unconditional, unlike `drain_substep_frames`: state capture is always on once a
+        scene exists (see `_sync_recording_wrapper`), regardless of `record_substeps` --
+        so a state log is recorded from every episode, not only rendered ones, and a run
+        with no video at all can still be re-rendered later from its log. When frame
+        recording IS also on, the two line up 1:1 (same per-tick granularity, same
+        wrapper stack), so a state log recorded alongside a substep-frame recording
+        covers exactly the ticks the frames do."""
+        if self._env is None or self._env is self._raw_env:
             return []
         return self._env.drain()
 
     def _sync_recording_wrapper(self) -> None:
-        """Put the `RenderCollection`+`StateCollection` stack on, or take it off, to
-        match `record_substeps`.
+        """Put the `StateCollection` wrapper on unconditionally, once a scene exists --
+        state logging is always-on (see `drain_substep_states`). `RenderCollection` is
+        stacked beneath it only while `record_substeps` (frame/video capture) is
+        requested; frames are never buffered when nothing will ever drain them, so
+        video capture stays real and opt-in.
 
-        Wrapping and unwrapping are pure re-bindings around the one `_raw_env`, so
-        toggling between episodes never rebuilds the scene. `StateCollection` is
-        outermost: its `step()` calls `super().step()` (which is `RenderCollection`'s,
-        which renders after stepping the raw env) and then reads the raw env's own
-        `_current_state` via `self.unwrapped`, which is unaffected by wrapper order --
-        but keeping it outermost means `self._env` is always the one object whose
-        `.drain()` this class calls."""
+        Rebuilt fresh on every call rather than toggled in place: the only callers are
+        `set_substep_recording` (used exclusively at episode boundaries, immediately
+        before the next `reset()`, which clears the wrapper's own buffer anyway) and
+        `reset()` itself, so nothing is ever lost by rebuilding. `StateCollection` is
+        outermost when both are stacked: its `step()` calls `super().step()` (which is
+        `RenderCollection`'s, which renders after stepping the raw env) and then reads
+        the raw env's own `_current_state` via `self.unwrapped`, which is unaffected by
+        wrapper order -- but keeping it outermost means `self._env` is always the one
+        object whose `.drain()` this class calls."""
         if self._raw_env is None:
             return
-        recording = self._env is not None and self._env is not self._raw_env
-        if self.record_substeps and not recording:
-            rendered = self.api().render_collection(
-                self._raw_env, pop_frames=True, reset_clean=True
-            )
-            self._env = self.api().state_collection(rendered)
-        elif not self.record_substeps:
-            self._env = self._raw_env
+        inner = (
+            self.api().render_collection(self._raw_env, pop_frames=True, reset_clean=True)
+            if self.record_substeps
+            else self._raw_env
+        )
+        self._env = self.api().state_collection(inner)
 
     def snapshot(self) -> Any:
         """An opaque handle to the live simulator state, restorable by `restore`.

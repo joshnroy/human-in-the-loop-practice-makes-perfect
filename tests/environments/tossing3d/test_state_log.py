@@ -140,3 +140,42 @@ def test_replaying_a_logged_tick_reproduces_the_live_frame(*, tmp_path: Path) ->
         f"replayed frame differs from the live one in {mismatch_fraction:.2%} of pixels -- "
         "restore_plain_snapshot is not reproducing the logged tick"
     )
+
+
+def test_state_capture_is_unconditional_even_when_frame_recording_is_off() -> None:
+    """The property this whole fix exists for: `drain_substep_states` must return real
+    per-tick data regardless of `record_substeps` (frame/video capture), which stays
+    genuinely opt-in -- `drain_substep_frames` stays empty in the same run."""
+    args = argparse.Namespace(
+        variant="o1", scene_bg=True, canonical_seed=125, seed=23, test_env_seed_offset=10000
+    )
+    problem = Tossing3DCli.build_problem(args=args)
+    env = problem.env
+    skill_provider = Tossing3DSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=skill_provider, seed=23)
+    try:
+        problem.hard_reset()
+        backend = env.backend()
+        # Deliberately NOT calling set_substep_recording(enabled=True) -- this is the
+        # ordinary, unrecorded-run path.
+        task = problem.sample_train_task()
+        state = problem.reset_to_task(task=task)
+        backend.drain_substep_frames()
+        backend.drain_substep_states()
+
+        policy = method.get_practice_policy(task=task)
+        episode = method._practice_episode
+        assert episode is not None
+        pick = GroundSkill(
+            skill=Tossing3DSkills.PICK_CUBE, objects=(env.robot, env.cube, env.barrier)
+        )
+        episode._plan = [pick]
+        labeled_action = policy(state)
+        problem.take_action(action=labeled_action.action)
+
+        assert backend.drain_substep_frames() == [], "frame capture must stay opt-in"
+        assert backend.drain_substep_states(), (
+            "state capture must be unconditional, not gated on record_substeps"
+        )
+    finally:
+        env.close()
