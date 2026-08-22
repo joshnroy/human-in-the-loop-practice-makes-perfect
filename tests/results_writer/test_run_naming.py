@@ -35,8 +35,7 @@ class Namespaces:
             "practice_reset_policy": "never",
             "two_way_ledge": False,
             "unsplit_skills": False,
-            "ask_for_reset_task_initial_cost": None,
-            "ask_for_reset_random_task_cost": None,
+            "ask_for_reset_cube_bin_cost": None,
             "num_cycles": 100,
         }
         fields.update(overrides)
@@ -62,7 +61,7 @@ def test_the_name_carries_environment_method_arm_and_seed() -> None:
     """The whole point: a reader can tell what a run was from the run list, without
     opening it."""
     assert RunNamer.name(args=Namespaces.ees_tossingroom()) == (
-        "tossingroom-ees-oneway-split-never-reset-cost-none-random-reset-cost-none-c100-seed3"
+        "tossingroom-ees-oneway-split-never-cube-bin-reset-cost-none-c100-seed3"
     )
 
 
@@ -107,7 +106,7 @@ def test_names_are_url_and_path_safe() -> None:
     """A run name ends up in a URL and in offline directory names, so it stays
     lowercase `[a-z0-9-]` regardless of what a flag's value looked like -- a float cost
     is the case worth pinning here, since "0.134" contains a "." _slug must strip."""
-    name = RunNamer.name(args=Namespaces.ees_tossingroom(ask_for_reset_task_initial_cost=0.134))
+    name = RunNamer.name(args=Namespaces.ees_tossingroom(ask_for_reset_cube_bin_cost=0.134))
     assert name == name.lower()
     assert set(name) <= set("abcdefghijklmnopqrstuvwxyz0123456789-")
 

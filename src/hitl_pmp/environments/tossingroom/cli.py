@@ -306,12 +306,12 @@ class TossingRoomCli:
             num_test_tasks=args.num_test_tasks,
         )
         # Wired unconditionally, not only when --ask-for-help asks for one.
-        # Problem.human is consulted by exactly two methods, and both run only after the
-        # Method has raised HumanHelpRequested -- so a run whose Method never asks is
-        # byte-identical with the oracle wired in, and making the domain human-capable
-        # in one place is what stops the flag and the wiring drifting apart. The
-        # evaluation triple gets one too and never uses it: no evaluation episode is
-        # ever rescued.
+        # Problem.human is consulted by PracticeLoop._grant_movables_reset, which runs
+        # only after the Method has raised HumanCubeBinResetRequested -- so a run whose
+        # Method never asks is byte-identical with the oracle wired in, and making the
+        # domain human-capable in one place is what stops the flag and the wiring
+        # drifting apart. The evaluation triple gets one too and never uses it: no
+        # evaluation episode is ever rescued.
         return TossingRoomProblem(env=env, tasks=tasks, human=UnconditionalHumanOracle)
 
     @staticmethod

@@ -9,14 +9,13 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 # The one name `_EesEpisode.step` checks for to intercept this ground skill before it
-# would otherwise be dispatched through the normal controller/skill-execution path --
-# the same interception `ASK_FOR_RESET_TASK_INITIAL_NAME` gets, for the same reason
+# would otherwise be dispatched through the normal controller/skill-execution path
 # (this "skill" has no controller and must never reach execute_ground_skill). Defined
-# here, in core/, rather than in methods/practice_makes_perfect/ alongside that
-# constant, because a concrete SkillProvider (e.g. Tossing3DSkillProvider) is what
-# names its returned GroundSkill -- and a SkillProvider must not import methods/
-# (methods sits above environments in the layered contract, not below it). This is
-# the one piece of the contract both sides need without either importing the other.
+# here, in core/, rather than in methods/practice_makes_perfect/, because a concrete
+# SkillProvider (e.g. Tossing3DSkillProvider) is what names its returned GroundSkill --
+# and a SkillProvider must not import methods/ (methods sits above environments in the
+# layered contract, not below it). This is the one piece of the contract both sides
+# need without either importing the other.
 ASK_FOR_RESET_CUBE_BIN_ONLY_NAME = "ask_for_reset_cube_bin_only"
 
 
@@ -104,11 +103,10 @@ class SkillProvider(BaseModel, abc.ABC):
         to `EesMethod`'s planner as a mid-plan step, priced by `plan_to` itself
         (`--ask-for-reset-cube-bin-cost`), not here.
 
-        Unlike `ask_for_reset_task_initial`/`ask_for_reset_random_task` (built
-        generically from a domain's `objects`/`predicates`/`init_atoms`), this
-        skill's effect -- "the objects a human could tidy up are back in place" --
+        This skill's effect -- "the objects a human could tidy up are back in place" --
         can only be written in terms of *this domain's own* predicates, so each
-        domain's `SkillProvider` builds its own operator here.
+        domain's `SkillProvider` builds its own operator here rather than a generic
+        one being built from `objects`/`predicates`/`init_atoms`.
 
         `GroundSkill.skill.name` must equal `ASK_FOR_RESET_CUBE_BIN_ONLY_NAME`
         exactly (`_EesEpisode.step` intercepts on it). `None` default: most domains

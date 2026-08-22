@@ -135,42 +135,34 @@ def test_ees_run_completes_end_to_end_through_the_cli(
     assert re.search(r"success rate: \d+/5", capsys.readouterr().out)
 
 
-def test_ees_registers_the_two_reset_skill_cost_flags_defaulting_to_none() -> None:
-    """`None` is what keeps a run byte-identical to before either ground skill
-    existed: EesMethod.may_request_human_help is then False and plan_to never offers
-    either skill to the planner -- see that class's own docstring."""
+def test_ees_registers_the_reset_skill_cost_flag_defaulting_to_none() -> None:
+    """`None` is what keeps a run byte-identical to before the ground skill existed:
+    EesMethod.may_request_human_help is then False and plan_to never offers it to
+    the planner -- see that class's own docstring."""
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
     args = parser.parse_args([])
-    assert args.ask_for_reset_task_initial_cost is None
-    assert args.ask_for_reset_random_task_cost is None
+    assert args.ask_for_reset_cube_bin_cost is None
 
 
-def test_ees_accepts_both_reset_skill_cost_flags() -> None:
+def test_ees_accepts_the_reset_skill_cost_flag() -> None:
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
-    args = parser.parse_args([
-        "--ask-for-reset-task-initial-cost",
-        "0.134",
-        "--ask-for-reset-random-task-cost",
-        "0.336",
-    ])
-    assert args.ask_for_reset_task_initial_cost == pytest.approx(0.134)
-    assert args.ask_for_reset_random_task_cost == pytest.approx(0.336)
+    args = parser.parse_args(["--ask-for-reset-cube-bin-cost", "0.134"])
+    assert args.ask_for_reset_cube_bin_cost == pytest.approx(0.134)
 
 
-def test_random_skills_does_not_register_the_reset_skill_cost_flags() -> None:
-    """RandomSkillsMethod has no planner to offer either ground skill to -- offering
-    the flags would be a lie in --help. Not in the experiment grid."""
+def test_random_skills_does_not_register_the_reset_skill_cost_flag() -> None:
+    """RandomSkillsMethod has no planner to offer the ground skill to -- offering
+    the flag would be a lie in --help. Not in the experiment grid."""
     parser = argparse.ArgumentParser()
     RandomSkillsCli.add_arguments(parser=parser)
     args = parser.parse_args([])
-    assert not hasattr(args, "ask_for_reset_task_initial_cost")
-    assert not hasattr(args, "ask_for_reset_random_task_cost")
+    assert not hasattr(args, "ask_for_reset_cube_bin_cost")
 
 
 def test_an_asking_ees_run_on_a_domain_with_no_human_fails_before_it_starts() -> None:
-    """End to end through the real CLI: configuring either cost flag makes EesMethod
+    """End to end through the real CLI: configuring the cost flag makes EesMethod
     declare it may ask, and PracticeLoop refuses up front because Light Switch wires no
     HumanOracle. Fails at construction rather than a cycle in, which is the whole point
     of validating on the Method's declaration instead of on a per-step poll."""
@@ -180,7 +172,7 @@ def test_an_asking_ees_run_on_a_domain_with_no_human_fails_before_it_starts() ->
             "lightswitch",
             "--method",
             "ees",
-            "--ask-for-reset-task-initial-cost",
+            "--ask-for-reset-cube-bin-cost",
             "0.1",
             "--num-cycles",
             "1",

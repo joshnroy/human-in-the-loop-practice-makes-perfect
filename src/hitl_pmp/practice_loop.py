@@ -6,13 +6,7 @@ from typing import Protocol
 
 import numpy as np
 
-from hitl_pmp.core.method.method import (
-    HumanCubeBinResetRequested,
-    HumanHelpRequested,
-    HumanRandomTaskResetRequested,
-    InteractionComplete,
-    Method,
-)
+from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete, Method
 from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.metrics.types import TaskOutcome
 from hitl_pmp.core.problem.environment.types import State
@@ -357,7 +351,8 @@ class PracticeLoop:
             #
             # This is the ONLY place the loop asks the Method whether it can ask. It is
             # never polled per step: whether a rescue happens on a given step is the
-            # Method's own business, and it says so by raising HumanHelpRequested.
+            # Method's own business, and it says so by raising
+            # HumanCubeBinResetRequested.
             raise ValueError(
                 "this Method may request human help (Method.may_request_human_help is "
                 "True) but the practice Problem has no HumanOracle: Problem.human is "
@@ -456,77 +451,20 @@ class PracticeLoop:
             for step in range(max_steps_per_interaction):
                 try:
                     labeled_action = policy(state)
-                except HumanHelpRequested as request:
-                    # The robot asked, so a human answers and the period CONTINUES --
-                    # the difference from InteractionComplete below, which ends it. The
-                    # harness's whole role here is mechanism: it does not decide that a
-                    # rescue is warranted, it only performs one that was requested.
+                except HumanCubeBinResetRequested as request:
+                    # The robot asked for a PARTIAL reset -- see that exception's own
+                    # docstring for why this cannot describe a target_state
+                    # (Problem.execute_movables_reset takes none). The period
+                    # CONTINUES -- the difference from InteractionComplete below, which
+                    # ends it: the robot itself was not relocated and the goal did not
+                    # change. The harness's whole role here is mechanism: it does not
+                    # decide that a rescue is warranted, it only performs one that was
+                    # requested.
                     #
                     # `continue` consumes this loop iteration, and that is deliberate
                     # rather than incidental: it is what guarantees a Method that asks
                     # on every call cannot spin, since it gets at most one rescue per
-                    # remaining step. The cost is that an asking arm takes about one
-                    # fewer online transition per rescue than the old harness-triggered
-                    # arm did -- roughly 36 out of ~15000 per seed, since the rescue is
-                    # charged a step the old design took for free.
-                    state = PracticeLoop._grant_human_help(
-                        problem=problem,
-                        method=method,
-                        metrics=metrics,
-                        task=task,
-                        target_state=task.initial_state,
-                        cost=request.cost,
-                        state=state,
-                    )
-                    # After the write, with the state the human actually left behind, so
-                    # the Method can restart whatever made it ask. Without this a
-                    # rescued robot is re-rescued forever -- see
-                    # Method.observe_help_granted.
-                    method.observe_help_granted(state=state)
-                    if recorder is not None:
-                        recorder.record_human_reset(
-                            state=state, step_index=step, transitions=num_online_transitions
-                        )
-                    continue
-                except HumanRandomTaskResetRequested as request:
-                    # Modeled like HumanHelpRequested above: the period CONTINUES --
-                    # see that exception's own docstring for why a domain whose task
-                    # family is shape-invariant (Tossing3D's, the only one that
-                    # configures this today) makes that sound. A human resets the
-                    # environment onto a FRESHLY SAMPLED train task (advancing the
-                    # train-task stream, same as `--human-reset-target random` used
-                    # to), priced and banked exactly like a HumanHelpRequested rescue.
-                    #
-                    # `task` is reassigned to the freshly sampled one, deliberately:
-                    # it is read again later THIS SAME cycle by the
-                    # practice_reset_interval branch below (`problem.reset_to_task(
-                    # task=task)`) and by _sample_practice_task on the next cycle only
-                    # after being re-sampled there -- leaving it stale here would make
-                    # a later interval reset in this cycle silently revert the
-                    # environment to the task the robot is no longer practicing on.
-                    task = problem.sample_train_task()
-                    state = PracticeLoop._grant_human_help(
-                        problem=problem,
-                        method=method,
-                        metrics=metrics,
-                        task=task,
-                        target_state=task.initial_state,
-                        cost=request.cost,
-                        state=state,
-                    )
-                    method.observe_help_granted(state=state)
-                    if recorder is not None:
-                        recorder.record_human_reset(
-                            state=state, step_index=step, transitions=num_online_transitions
-                        )
-                    continue
-                except HumanCubeBinResetRequested as request:
-                    # The robot asked for a PARTIAL reset -- see that exception's own
-                    # docstring for why this cannot go through _grant_human_help (there
-                    # is no target_state to describe; Problem.execute_movables_reset
-                    # takes none). The period CONTINUES, exactly like
-                    # HumanHelpRequested's handler above: the robot itself was not
-                    # relocated and the goal did not change.
+                    # remaining step.
                     state = PracticeLoop._grant_movables_reset(
                         problem=problem,
                         method=method,
@@ -599,26 +537,18 @@ class PracticeLoop:
                 on_sweep_end()
 
     @staticmethod
-    def _grant_human_help(
-        *,
-        problem: Problem,
-        method: Method,
-        metrics: Metrics,
-        task: Task,
-        target_state: State,
-        cost: float | None,
-        state: State,
+    def _grant_movables_reset(
+        *, problem: Problem, method: Method, metrics: Metrics, cost: float, state: State
     ) -> State:
-        """Perform the rescue a `Method` asked for, charge it, and return the state that
-        results.
+        """Perform the *partial* rescue a `Method` asked for via
+        `HumanCubeBinResetRequested`, charge it, and return the state that results.
 
         **Mechanism, not policy.** Nothing here decides that a rescue is warranted --
-        that decision was the Method's, and it arrived as a `HumanHelpRequested` or a
-        `HumanRandomTaskResetRequested`. This function only carries it out; which state
-        to restore is the caller's decision (this period's own task-initial state for
-        the former, a freshly sampled train task's for the latter -- see each
-        exception's own docstring for why that axis now lives in which exception is
-        raised rather than in a shared `--human-reset-target` flag).
+        that decision was the Method's, and it arrived as a `HumanCubeBinResetRequested`.
+        This function only carries it out; there is no `target_state` to describe --
+        `Problem.execute_movables_reset` takes none, see that method's own docstring for
+        why -- and `cost` is required rather than optional (no harness-priced query
+        exists for this command shape).
 
         **Practice only.** No evaluation episode is ever rescued: measurement runs on
         `evaluation_problem`, which is never handed a practice policy, so a rescued
@@ -631,60 +561,13 @@ class PracticeLoop:
         was quietly reset for free. It is not charged as an online transition, matching
         every other reset here, or an arm rescued more often would advance along every
         learning curve's x-axis for free. And it does not end the period or fire
-        `end_cycle` on its own -- both handlers `continue` after this returns, neither
-        ends the period from in here, exactly like a `practice_reset_interval` reset
-        never ending one either.
+        `end_cycle` on its own -- the handler `continue`s after this returns, exactly
+        like a `practice_reset_interval` reset never ending one either.
 
-        **`cost=None` means "price this the harness's own way"**, by querying
-        `Problem.calculate_cost_for_human_command` -- the incumbent behaviour, and what
-        every caller that raises a bare exception (no `cost=`) still gets. A `Method`
-        that priced the request itself (EES, from its own planner's
-        `ground_skill_costs`) passes that number through instead, bypassing the query
-        entirely so the harness banks the price the plan was actually built against.
-
-        **Order matters in two places.** The `Method` is told
-        (`observe_environment_reset`) *before* the environment is written, so a Method
-        scoring an in-flight skill scores it against what really happened rather than
-        against the state it is about to be teleported to -- the identical contract a
-        mid-period interval reset has. And a harness-priced cost is *queried before* the
-        command is executed, so what is banked is the price the oracle actually quoted
-        for the command that then ran, not a recomputed one."""
-        # The goal handed over is the one the robot was *pursuing*, not the target
-        # state's: a rescue is a request to be repositioned, and what the robot is
-        # trying to achieve has not changed. A capability-aware human (v1+) prices
-        # exactly that pairing -- "put it somewhere it can still finish this".
-        priced_cost = (
-            cost
-            if cost is not None
-            else problem.calculate_cost_for_human_command(goal=task.goal, target_state=target_state)
-        )
-        method.observe_environment_reset(state=state)
-        problem.execute_human_command(goal=task.goal, target_state=target_state)
-        metrics.record_human_intervention(cost=priced_cost)
-        # Read back rather than assumed: the HumanOracle owns what actually happened to
-        # the environment, and a v1+ human that only partially succeeds would leave it
-        # somewhere other than the state that was asked for.
-        return problem.get_current_state()
-
-    @staticmethod
-    def _grant_movables_reset(
-        *, problem: Problem, method: Method, metrics: Metrics, cost: float, state: State
-    ) -> State:
-        """Perform the *partial* rescue a `Method` asked for via
-        `HumanCubeBinResetRequested`, charge it, and return the state that results.
-
-        The domain-agnostic sibling of `_grant_human_help`, kept separate rather than
-        folded into it: there is no `target_state` to describe here --
-        `Problem.execute_movables_reset` takes none, see that method's own docstring
-        for why -- and `cost` is required rather than optional (no harness-priced
-        query exists for this command shape; see `HumanCubeBinResetRequested`), so
-        this has neither of `_grant_human_help`'s two `target_state`/`cost=None`
-        branches to share.
-
-        Same ordering guarantee as `_grant_human_help`: the `Method` is told
-        (`observe_environment_reset`) *before* the environment is written, so a Method
-        scoring an in-flight skill scores it against what really happened rather than
-        against the state it is about to lose."""
+        **Order matters.** The `Method` is told (`observe_environment_reset`) *before*
+        the environment is written, so a Method scoring an in-flight skill scores it
+        against what really happened rather than against the state it is about to
+        lose -- the identical contract a mid-period interval reset has."""
         method.observe_environment_reset(state=state)
         problem.execute_movables_reset()
         metrics.record_human_intervention(cost=cost)

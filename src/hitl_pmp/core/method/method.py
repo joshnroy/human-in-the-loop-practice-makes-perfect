@@ -22,66 +22,26 @@ class InteractionComplete(Exception):  # noqa: N818
     period early so the online-transition count stays data-driven, not
     budget-driven. Not an error, hence no `Error` suffix (ruff N818 waiver).
 
-    Distinct from `HumanHelpRequested` below -- see that docstring."""
+    Distinct from `HumanCubeBinResetRequested` below -- see that docstring."""
 
 
-class HumanHelpRequested(Exception):  # noqa: N818
-    """Raised by a practice policy asking a human to reposition it -- the robot
-    asking, not a monitor noticing (see CLAUDE.md's robot-vs-agent rule). Control
-    flow, not an error, same N818 waiver as `InteractionComplete`.
+class HumanCubeBinResetRequested(Exception):  # noqa: N818
+    """Raised by a practice policy asking a human for a *partial* reset:
+    reposition the domain's non-robot objects, leave the robot untouched. The
+    robot asking, not a monitor noticing (see CLAUDE.md's robot-vs-agent rule).
+    Control flow, not an error, same N818 waiver as `InteractionComplete`.
 
     Two differences from `InteractionComplete`: it means "I can still act but
     acting is getting me nowhere" rather than "nothing is applicable", and the
     period *continues* after the rescue instead of ending.
 
-    Carries an optional `cost`: `None` means "price it the harness's own way"
-    (`Problem.calculate_cost_for_human_command`); a `Method` that already priced
-    the request itself (EES, via its planner) sets it directly instead, so the
-    harness banks the number the plan was built against."""
-
-    def __init__(self, *, cost: float | None = None) -> None:
-        super().__init__(cost)
-        self.cost = cost
-
-
-class HumanRandomTaskResetRequested(Exception):  # noqa: N818
-    """Raised by a practice policy asking a human to reset it onto a freshly
-    sampled train task (advancing the train-task stream), rather than this
-    period's own task-initial state. Control flow, not an error (N818 waiver).
-
-    Modeled like `HumanHelpRequested` -- the period continues, not like
-    `InteractionComplete`. Safe here because Tossing3D's task family is
-    shape-invariant (every sampled task shares the same goal and initial-state
-    shape), so a fresh task is symbolically indistinguishable from this period's
-    own -- see `HumanResetSkillBuilder`. That's a domain-dependent fact, not a
-    general one: a domain whose tasks vary in goal/shape must not reuse this.
-
-    Priced like `HumanHelpRequested` (`cost`, `None` = harness-priced), and
-    gated by the same cost ceiling in `EesMethod.plan_to` -- so a genuinely
-    stuck robot can still stay stuck rather than always resetting."""
-
-    def __init__(self, *, cost: float | None = None) -> None:
-        super().__init__(cost)
-        self.cost = cost
-
-
-class HumanCubeBinResetRequested(Exception):  # noqa: N818
-    """Raised by a practice policy asking a human for a *partial* reset:
-    reposition the domain's non-robot objects, leave the robot untouched.
-    Control flow, not an error (N818 waiver).
-
-    Structurally different from the other two resets: those restore a complete
-    symbolic state via `target_state: State`, which on a simulator-backed domain
-    means a whole-scene rebuild that would also relocate the robot. This instead
-    goes through `Environment.reset_movables`/`HumanOracle.execute_movables_reset`
-    (`Problem.execute_movables_reset` is the facade), new primitives that default
-    to declining so every other domain is untouched. See
+    Goes through `Environment.reset_movables`/`HumanOracle.execute_movables_reset`
+    (`Problem.execute_movables_reset` is the facade), primitives that default to
+    declining so every other domain is untouched. See
     `SkillProvider.human_cube_bin_reset_skill` for how a domain opts in.
 
-    Modeled like `HumanHelpRequested` (period continues, plan replans on the
-    resulting divergence like any other), not like the full resets. `cost` is
-    required, not optional: there's no `Goal`/`target_state` to price a partial
-    reset against, so the raising `Method` must always price it itself."""
+    `cost` is required, not optional: there's no `Goal`/`target_state` to price a
+    partial reset against, so the raising `Method` must always price it itself."""
 
     def __init__(self, *, cost: float) -> None:
         super().__init__(cost)
@@ -163,7 +123,8 @@ class Method(BaseModel, abc.ABC):
         varies with the interval."""
 
     def may_request_human_help(self) -> bool:
-        """Whether this Method's *practice* policy can raise `HumanHelpRequested`.
+        """Whether this Method's *practice* policy can raise
+        `HumanCubeBinResetRequested`.
 
         Its one and only consumer is practice_loop.py's up-front validation: a Method
         that can ask, paired with a `Problem` that has no `HumanOracle`, is a
@@ -173,9 +134,8 @@ class Method(BaseModel, abc.ABC):
 
         Concrete `False` by default, for the same reason as `end_cycle`: no baseline
         built so far asks for anything, and none of them should need boilerplate to say
-        so. `EesMethod` overrides it, True exactly when one of its three ground-skill
-        cost flags (`ask_for_reset_task_initial_cost`/`ask_for_reset_random_task_cost`/
-        `ask_for_reset_cube_bin_cost`) is configured -- see that class."""
+        so. `EesMethod` overrides it, True exactly when its `ask_for_reset_cube_bin_cost`
+        ground-skill cost flag is configured -- see that class."""
         return False
 
     def observe_help_granted(self, *, state: State) -> None:
