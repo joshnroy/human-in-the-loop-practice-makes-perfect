@@ -424,6 +424,7 @@ def _backend_whose_controller_raises(
         robot_type=object,
         tossing_controllers=factory,
         shelf_controllers=factory,
+        state_collection=object,
         render_collection=object,
     )
     monkeypatch.setattr(KinderBackend, "api", lambda self: api)  # noqa: PLR0917

@@ -193,6 +193,42 @@ class ControllerRun(BaseModel):
     error: str | None = None
 
 
+def _build_state_collection_class() -> Any:
+    """A `gymnasium.Wrapper` that snapshots `ObjectCentricState` after every internal
+    `step()`, mirroring `gymnasium.wrappers.RenderCollection`'s own `step()` (append
+    then return) exactly -- see that class for the pattern this copies. Defined inside
+    a function, not at module scope, because `gymnasium.Wrapper` is KINDER's dependency
+    and importing it eagerly would break this package's offline (no-MuJoCo) import."""
+    from gymnasium import Wrapper
+
+    class StateCollection(Wrapper):
+        def __init__(self, env: Any) -> None:  # noqa: PLR0917 (gymnasium's own signature)
+            super().__init__(env)
+            self.state_list: list[Any] = []
+
+        def reset(self, **kwargs: Any) -> Any:
+            self.state_list = []
+            return super().reset(**kwargs)
+
+        def step(self, action: Any) -> Any:  # noqa: PLR0917 (gymnasium's own signature)
+            output = super().step(action)
+            # `.unwrapped` is `TidyBot3DEnv`, which delegates render() to its own
+            # `_object_centric_env` (see that class's own `render()`) -- the object-
+            # centric state lives one level further in than `.unwrapped` reaches.
+            # Untyped past this point like the rest of this module's KINDER surface.
+            unwrapped: Any = self.unwrapped
+            object_centric = unwrapped._object_centric_env  # noqa: SLF001
+            self.state_list.append(object_centric._get_current_state())  # noqa: SLF001
+            return output
+
+        def drain(self) -> list[Any]:
+            states = self.state_list
+            self.state_list = []
+            return states
+
+    return StateCollection
+
+
 class KinderApi(BaseModel):
     """Handles to everything this package needs from KINDER, imported in one place.
 
@@ -206,6 +242,13 @@ class KinderApi(BaseModel):
     robot_type: Any
     tossing_controllers: Any
     shelf_controllers: Any
+    # A locally-defined `gymnasium.Wrapper` subclass (see `_build_state_collection_class`)
+    # that snapshots `ObjectCentricState` after every internal step, the state-capture
+    # sibling of `render_collection` below -- same per-tick granularity, so a state log
+    # recorded alongside a substep-frame recording covers exactly the ticks the frames
+    # do. Built lazily for the same reason `render_collection` is: `gymnasium.Wrapper`
+    # is KINDER's dependency, not this repo's.
+    state_collection: Any
     # `gymnasium.wrappers.RenderCollection`, the class itself. Gymnasium is KINDER's own
     # dependency rather than this repo's, so it is imported here with everything else
     # instead of at module scope, which would break the offline import.
@@ -338,6 +381,7 @@ class KinderBackend(BaseModel):
             robot_type=MujocoTidyBotRobotObjectType,
             tossing_controllers=tossing_create_lifted_controllers,
             shelf_controllers=shelf_create_lifted_controllers,
+            state_collection=_build_state_collection_class(),
             render_collection=RenderCollection,
         )
         return self._api
@@ -410,7 +454,9 @@ class KinderBackend(BaseModel):
             self._abstractor = None
 
     def set_substep_recording(self, *, enabled: bool) -> None:
-        """Turn per-physics-tick frame collection on or off, effective immediately.
+        """Turn per-physics-tick frame AND state collection on or off, effective
+        immediately. The two are bundled -- see `drain_substep_states` for why -- so
+        there is no separate flag for state capture.
 
         Imports nothing on its own: a backend with no scene yet just remembers the flag,
         and the wrapper goes on at the next `reset()`. That matters because this is
@@ -435,19 +481,39 @@ class KinderBackend(BaseModel):
             return []
         return [np.asarray(frame, dtype=np.uint8) for frame in self._env.render()]
 
+    def drain_substep_states(self) -> list[Any]:
+        """Every `ObjectCentricState` snapshot collected since the last drain, in the
+        same order and at the same per-tick granularity as `drain_substep_frames` --
+        the two wrappers are stacked together (see `_sync_recording_wrapper`), so a
+        state log recorded from this always lines up 1:1 with the frames a video built
+        from the same run would show. Bundled onto the same `record_substeps` flag
+        rather than a separate one deliberately: a state log with no corresponding
+        recording is not useful (there is nothing to validate it against), and a
+        recording with no state log defeats the point of being able to re-render it
+        later -- see this repo's render-from-logs PR."""
+        if not self.record_substeps or self._env is None or self._env is self._raw_env:
+            return []
+        return self._env.drain()
+
     def _sync_recording_wrapper(self) -> None:
-        """Put the `RenderCollection` on, or take it off, to match `record_substeps`.
+        """Put the `RenderCollection`+`StateCollection` stack on, or take it off, to
+        match `record_substeps`.
 
         Wrapping and unwrapping are pure re-bindings around the one `_raw_env`, so
-        toggling between episodes never rebuilds the scene.
-        """
+        toggling between episodes never rebuilds the scene. `StateCollection` is
+        outermost: its `step()` calls `super().step()` (which is `RenderCollection`'s,
+        which renders after stepping the raw env) and then reads the raw env's own
+        `_current_state` via `self.unwrapped`, which is unaffected by wrapper order --
+        but keeping it outermost means `self._env` is always the one object whose
+        `.drain()` this class calls."""
         if self._raw_env is None:
             return
         recording = self._env is not None and self._env is not self._raw_env
         if self.record_substeps and not recording:
-            self._env = self.api().render_collection(
+            rendered = self.api().render_collection(
                 self._raw_env, pop_frames=True, reset_clean=True
             )
+            self._env = self.api().state_collection(rendered)
         elif not self.record_substeps:
             self._env = self._raw_env
 
@@ -481,6 +547,29 @@ class KinderBackend(BaseModel):
         self._object_centric().set_state(snapshot)
         self._state = snapshot.copy()
         return self.observe()
+
+    @staticmethod
+    def snapshot_to_plain(*, snapshot: Any) -> dict[str, list[float]]:
+        """A `snapshot()` (or a `drain_substep_states()` element), as plain
+        `{object_name: [floats]}` -- JSON/pickle-safe, no KINDER `Object`/`Type`
+        identities carried, since those are only ever compared by identity within one
+        live scene and cannot be usefully serialized. `plain_to_snapshot` reconstructs
+        against a *different* live scene's own identities."""
+        return {obj.name: [float(v) for v in snapshot[obj]] for obj in snapshot}
+
+    def plain_to_snapshot(self, *, plain: dict[str, list[float]]) -> Any:
+        """The inverse of `snapshot_to_plain`, against THIS backend's own live scene --
+        `restore(snapshot=this)` then puts that scene into the plain state's pose.
+        Requires a scene already built (`reset()` run at least once), which is what
+        supplies the `Object`/`Type` identities and the `type_features` schema a plain
+        dict cannot carry on its own."""
+        template = self._require_state()
+        objects_by_name = {obj.name: obj for obj in template}
+        data = {
+            objects_by_name[name]: np.array(values, dtype=np.float32)
+            for name, values in plain.items()
+        }
+        return type(template)(data, template.type_features)
 
     def reset_cube_and_bin(self) -> KinderObservation:
         """Reposition `cube_name`/`bin_name` to fresh ground poses in the live

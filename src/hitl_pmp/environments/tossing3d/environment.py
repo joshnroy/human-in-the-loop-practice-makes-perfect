@@ -459,6 +459,21 @@ class Tossing3DEnvironment(Environment):
         self._adopt(state=snapshot.state.model_copy(deep=True))
         return self.get_current_state()
 
+    def restore_plain_snapshot(self, *, plain: dict[str, list[float]]) -> State:
+        """`restore`'s sibling for a *logged* tick rather than an in-memory
+        `Tossing3DSnapshot` -- see `state_log.py`'s module docstring for what produces
+        `plain` and why a flat `core.State` alone cannot do this round-trip.
+
+        `seed=0, steps_taken=0` on the rebuilt `core.State`: both are this domain's own
+        bookkeeping (what `set_state` would rewind from, and what `take_action` counts),
+        neither of which a replayed tick has a real value for or needs one -- nothing a
+        renderer reads (`Tossing3DRenderer.caption` and the pixels themselves) consults
+        either field."""
+        backend = self.backend()
+        backend.restore(snapshot=backend.plain_to_snapshot(plain=plain))
+        self._adopt(state=self._observed_state(seed=0, steps_taken=0))
+        return self.get_current_state()
+
     def is_solved(self) -> bool:
         """Upstream's own `_check_goals()`, straight through.
 
