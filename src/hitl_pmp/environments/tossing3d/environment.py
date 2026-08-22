@@ -48,6 +48,7 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
 from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
+from .state_log import StateLogWriter
 from .types import AbstractAtom, Tossing3DState
 
 
@@ -162,6 +163,12 @@ class Tossing3DEnvironment(Environment):
     _backend: KinderBackend | None = PrivateAttr(default=None)
     _last_skill_error: str | None = PrivateAttr(default=None)
     _last_controller_steps: tuple[int, ...] = PrivateAttr(default=())
+    # None (the default) means every drained tick is discarded rather than persisted --
+    # state capture itself is always on (see KinderBackend.drain_substep_states), but
+    # nothing is written to disk without a writer attached. Set by Tossing3DCli.
+    # run_method when --output-dir is given, shared across the practice and evaluation
+    # environments so the two interleave into one chronological log.
+    _state_log_writer: StateLogWriter | None = PrivateAttr(default=None)
 
     def backend(self) -> KinderBackend:
         """The live simulator handle, built on first use.
@@ -325,6 +332,7 @@ class Tossing3DEnvironment(Environment):
         errors = [run.error for run in runs if run.error is not None]
         if errors:
             self._last_skill_error = "; ".join(errors)
+        self._log_skill_ticks(action=action)
 
         next_state = self._observed_state(seed=seed, steps_taken=steps_taken + 1)
         # `_adopt`, deliberately not `set_state`: the simulator has already advanced by
@@ -333,6 +341,48 @@ class Tossing3DEnvironment(Environment):
         # override; this is the domain's own forward dynamics.
         self._adopt(state=next_state)
         return next_state
+
+    def attach_state_log_writer(self, *, writer: StateLogWriter) -> None:
+        """Wire a `StateLogWriter` so every `take_action` from here on persists its
+        skill and per-tick states, instead of draining them only to discard them --
+        set by `Tossing3DCli.run_method` when `--output-dir` is given."""
+        self._state_log_writer = writer
+
+    def _log_skill_ticks(self, *, action: Action) -> None:
+        """Drain this call's physics ticks and, if a writer is attached, persist them.
+
+        Unconditional: `KinderBackend.drain_substep_states` collects on every step
+        regardless of `record_substeps` (state capture is always on -- see that
+        method's own docstring), so this must drain every `take_action` call or the
+        backend's buffer grows for the rest of the episode -- exactly the unbounded-
+        buffer failure mode this project has hit before. `_state_log_writer is None`
+        (no `--output-dir`) still drains, just discards."""
+        backend = self.backend()
+        ticks = backend.drain_substep_states()
+        writer = self._state_log_writer
+        if writer is None:
+            return
+        name, objects = self._skill_label(action=action)
+        writer.record_skill(name=name, objects=objects, params=tuple(float(v) for v in action[1:]))
+        for tick in ticks:
+            writer.record_tick(state=backend.snapshot_to_plain(snapshot=tick))
+
+    def _skill_label(self, *, action: Action) -> tuple[str, tuple[str, ...]]:
+        """The (name, bound objects) `_execute` would dispatch on `action[0]` -- kept
+        separate from `_execute` itself so a state-log entry names what was ASKED for
+        even on the "unknown skill id" no-op branch, matching how `_last_skill_error`
+        already records that case rather than silently skipping it."""
+        skill_id = int(round(float(action[0])))
+        if skill_id == self.pick_cube_id:
+            return "PickCube", (self.robot.name, self.cube.name, self.barrier.name)
+        if skill_id == self.move_to_toss_location_and_toss_id:
+            return "MoveToTossLocationAndToss", (
+                self.robot.name,
+                self.bin.name,
+                self.cube.name,
+                self.barrier.name,
+            )
+        return f"unknown skill id {skill_id}", ()
 
     def get_valid_actions(self) -> list[Action]:
         """Empty, as in every continuous-parameter domain here: the parameter slots range
@@ -457,6 +507,21 @@ class Tossing3DEnvironment(Environment):
         """Put the simulator and this environment back to `snapshot`, exactly."""
         self.backend().restore(snapshot=snapshot.kinder_state)
         self._adopt(state=snapshot.state.model_copy(deep=True))
+        return self.get_current_state()
+
+    def restore_plain_snapshot(self, *, plain: dict[str, list[float]]) -> State:
+        """`restore`'s sibling for a *logged* tick rather than an in-memory
+        `Tossing3DSnapshot` -- see `state_log.py`'s module docstring for what produces
+        `plain` and why a flat `core.State` alone cannot do this round-trip.
+
+        `seed=0, steps_taken=0` on the rebuilt `core.State`: both are this domain's own
+        bookkeeping (what `set_state` would rewind from, and what `take_action` counts),
+        neither of which a replayed tick has a real value for or needs one -- nothing a
+        renderer reads (`Tossing3DRenderer.caption` and the pixels themselves) consults
+        either field."""
+        backend = self.backend()
+        backend.restore(snapshot=backend.plain_to_snapshot(plain=plain))
+        self._adopt(state=self._observed_state(seed=0, steps_taken=0))
         return self.get_current_state()
 
     def is_solved(self) -> bool:
