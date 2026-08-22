@@ -1426,8 +1426,31 @@ def test_plan_to_offers_the_cube_bin_reset_skill_when_configured_and_the_domain_
     goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
     assert not goal <= init_atoms, "the fixture must actually start with the goal false"
 
-    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+    plan = method.plan_to(
+        init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
+    )
     assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+
+
+def test_plan_to_does_not_offer_the_cube_bin_reset_skill_when_not_practicing() -> None:
+    """The bug this closes: `plan_to` used to offer `ask_for_reset_cube_bin_only` on
+    every call, evaluation included, so a real EES run crashed mid-evaluation-sweep
+    with an uncaught `HumanCubeBinResetRequested` once practice had depressed some
+    skill's competence enough for the reset to clear plan_to's own affordability
+    ceiling. `practicing` defaults to False, so an evaluation-shaped call (no kwarg
+    passed) must never even offer the skill -- not decline it as unaffordable, never
+    offer it at all. Same reflexive-Adjacent-goal fixture as test_plan_to_offers_the_
+    cube_bin_reset_skill_..., the ONLY route to which is the reset, so PlanningFailure
+    here proves the skill was withheld rather than merely priced out."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.01)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    init_atoms = method.abstract_state(state=task.initial_state)
+    cell0 = env.get_cells()[0]
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+    assert not goal <= init_atoms, "the fixture must actually start with the goal false"
+
+    with pytest.raises(PlanningFailure):
+        method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
 
 
 def test_an_unaffordable_cube_bin_reset_is_rejected_even_as_the_only_route_to_the_goal() -> None:
@@ -1451,7 +1474,9 @@ def test_an_unaffordable_cube_bin_reset_is_rejected_even_as_the_only_route_to_th
     goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
 
     with pytest.raises(PlanningFailure):
-        method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+        method.plan_to(
+            init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
+        )
 
 
 def test_an_affordable_cube_bin_reset_still_clears_the_threshold() -> None:
@@ -1466,7 +1491,9 @@ def test_an_affordable_cube_bin_reset_still_clears_the_threshold() -> None:
     cell0 = env.get_cells()[0]
     goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
 
-    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+    plan = method.plan_to(
+        init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
+    )
     assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
 
 
@@ -1487,7 +1514,9 @@ def test_the_affordability_threshold_is_derived_from_this_runs_own_costs_not_a_f
     assert reset_cost > method.default_cost(), "the fixture must start unaffordable"
 
     with pytest.raises(PlanningFailure):
-        method.plan_to(init_atoms=init_atoms, goal=goal, costs=method.skill_costs())
+        method.plan_to(
+            init_atoms=init_atoms, goal=goal, costs=method.skill_costs(), practicing=True
+        )
 
     # Depress TURN_ON_LIGHT's competence (repeated failures) until its own
     # competence-derived cost clears reset_cost -- nothing about this reset itself
@@ -1498,7 +1527,7 @@ def test_the_affordability_threshold_is_derived_from_this_runs_own_costs_not_a_f
     costs_now = method.skill_costs()
     assert max(costs_now.values()) > reset_cost, "the fixture must depress competence enough"
 
-    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=costs_now)
+    plan = method.plan_to(init_atoms=init_atoms, goal=goal, costs=costs_now, practicing=True)
     assert [ground.skill.name for ground in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
 
 
@@ -1506,13 +1535,16 @@ def test_plan_to_raises_when_configured_against_a_domain_with_no_cube_bin_reset_
     """LightSwitchSkillProvider (used directly, not the fake above) inherits the base
     SkillProvider's None default -- exactly every domain but Tossing3D today. Setting
     the cost flag against it is a misconfiguration plan_to must report, not silently
-    ignore."""
+    ignore -- but only while practicing, since an unconfigured evaluation call must
+    not even reach the domain-support check (see plan_to's own docstring)."""
     method, env = _reset_build(seed=0)
     method.ask_for_reset_cube_bin_cost = 0.1
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
     init_atoms = method.abstract_state(state=task.initial_state)
     with pytest.raises(ValueError, match="human_cube_bin_reset_skill"):
-        method.plan_to(init_atoms=init_atoms, goal=frozenset(), costs=method.skill_costs())
+        method.plan_to(
+            init_atoms=init_atoms, goal=frozenset(), costs=method.skill_costs(), practicing=True
+        )
 
 
 def test_step_dispatches_a_selected_cube_bin_reset_skill_as_a_human_cube_bin_reset() -> None:
@@ -1533,13 +1565,40 @@ def test_step_dispatches_a_selected_cube_bin_reset_skill_as_a_human_cube_bin_res
 
 def test_ees_evaluation_never_offers_the_cube_bin_reset_skill() -> None:
     """No evaluation episode is ever rescued -- measurement would be measuring the
-    human. This skill is not gated on any per-episode state at all (its effects don't
-    depend on per-episode init state -- see human_cube_bin_reset_skill), so this checks
-    get_task_policy runs cleanly end-to-end rather than that plan_to declined to offer
-    the skill."""
+    human. This skill is not gated on any per-episode state (its effects don't depend
+    on per-episode init state -- see human_cube_bin_reset_skill); it is gated on
+    `practicing`, and get_task_policy builds a `practicing=False` episode -- so this
+    checks get_task_policy runs cleanly end-to-end rather than that plan_to declined
+    to offer the skill."""
     method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.01)
     task = LightSwitchTasks(env=env, seed=0).sample_train_task()
     policy = method.get_task_policy(task=task)
     state = task.initial_state
     for _ in range(5):
         policy(state)
+
+
+def test_get_task_policy_never_raises_the_cube_bin_reset_even_when_it_alone_reaches_the_goal() -> (
+    None
+):
+    """The actual crash a real EES run hit mid-evaluation-sweep, reproduced without
+    KINDER: an evaluation episode (`get_task_policy`, `practicing=False`) whose goal
+    is reachable ONLY through `ask_for_reset_cube_bin_only` (the reflexive
+    Adjacent(cell0, cell0) fixture -- see _CubeBinCapableSkillProvider) must never
+    raise `HumanCubeBinResetRequested`. Before the practice-only gate, plan_to
+    offered the reset to this call too, so a plan through it was found and step()
+    popped and dispatched it, killing the evaluation sweep with an uncaught
+    exception. After the gate, the goal is simply unreachable this episode, which
+    degrades to repeated no-ops -- exactly like the `never` baseline with no reset
+    configured at all."""
+    method, env = _cube_bin_reset_build(ask_for_reset_cube_bin_cost=0.01)
+    cell0 = env.get_cells()[0]
+    train_task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    goal = frozenset({GroundAtom(predicate=ADJACENT, objects=(cell0, cell0))})
+    task = Task(initial_state=train_task.initial_state, goal=Goal(atoms=goal))
+
+    policy = method.get_task_policy(task=task)
+    state = task.initial_state
+    for _ in range(5):
+        action = policy(state)
+        assert action.label == "no-op (no plan)"

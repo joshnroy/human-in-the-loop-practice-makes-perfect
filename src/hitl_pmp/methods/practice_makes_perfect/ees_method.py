@@ -419,15 +419,24 @@ class EesMethod(Method):
         init_atoms: frozenset[GroundAtom],
         goal: frozenset[GroundAtom],
         costs: dict[GroundSkill, float],
+        practicing: bool = False,
     ) -> list[GroundSkill]:
         """`costs` changes nearly every call; `init_atoms`/`goal` repeat heavily, so
         this uses a per-run `TranslationCache` (costs are patched post-translation,
         so caching can't change the plan).
 
-        When `ask_for_reset_cube_bin_cost` is configured, `ask_for_reset_cube_bin_only`
-        is added to `skills`/`ground_skill_costs` at that cost, on every call
-        (evaluation included -- its effects don't depend on per-episode state, so
-        there's no reason to withhold it there the way a full reset would need to be).
+        When `ask_for_reset_cube_bin_cost` is configured AND `practicing` is True,
+        `ask_for_reset_cube_bin_only` is added to `skills`/`ground_skill_costs` at
+        that cost. `practicing` defaults to False -- the safe default is "do not
+        offer" -- so a caller must opt in explicitly. A robot being scored must
+        never get to ask a human for help, so `get_task_policy`'s evaluation
+        episodes (`practicing=False`, unlike `get_practice_policy`'s) and
+        `refresh_planning_progress_plans`' speculative scoring pass (never a real
+        dispatch -- see that method) both withhold it, regardless of how affordable
+        the configured cost is. Unlike the deleted `ask_for_reset_task_initial`/
+        `ask_for_reset_random_task`, this skill's effects don't depend on
+        per-episode state, so `practicing` -- not a per-episode `task_initial_atoms`
+        -- is the only thing this gate needs.
 
         A reset that clears the search isn't automatically accepted: classical
         cost-minimizing search can't weigh "no plan" against any finite cost, so an
@@ -442,7 +451,7 @@ class EesMethod(Method):
         skills = self.skills()
         ground_skill_costs = costs
         reset_costs_by_name: dict[str, float] = {}
-        if self.ask_for_reset_cube_bin_cost is not None:
+        if practicing and self.ask_for_reset_cube_bin_cost is not None:
             # Gated on the domain: None means this SkillProvider has nothing to
             # offer, a misconfiguration worth reporting.
             cube_bin_ground_skill = self.skill_provider.human_cube_bin_reset_skill()
@@ -619,6 +628,9 @@ class EesMethod(Method):
         plans: list[list[GroundSkill]] = []
         for init_atoms, goal in self._seen_tasks[-self.planning_progress_max_tasks :]:
             try:
+                # practicing=False (the default): this scoring pass never results in
+                # a real dispatch -- see plan_to's own docstring -- so it must never
+                # be the thing that makes the cube-bin reset look cheaper than it is.
                 plans.append(self.plan_to(init_atoms=init_atoms, goal=goal, costs=costs))
             except PlanningFailure:
                 continue
@@ -1170,7 +1182,13 @@ class _EesEpisode:
             else:
                 try:
                     plan = method.plan_to(
-                        init_atoms=true_atoms, goal=self._goal, costs=method.skill_costs()
+                        init_atoms=true_atoms,
+                        goal=self._goal,
+                        costs=method.skill_costs(),
+                        # get_task_policy builds practicing=False episodes -- this is
+                        # the one call site both share, so it is the gate that keeps
+                        # an evaluation episode from ever being offered the reset.
+                        practicing=self._practicing,
                     )
                 except PlanningFailure:
                     plan = []
@@ -1193,7 +1211,15 @@ class _EesEpisode:
                 return [candidate]
             try:
                 prefix = method.plan_to(
-                    init_atoms=true_atoms, goal=candidate.preconditions, costs=method.skill_costs()
+                    init_atoms=true_atoms,
+                    goal=candidate.preconditions,
+                    costs=method.skill_costs(),
+                    # Only ever reached while practicing -- _next_plan only calls
+                    # _practice_plan when self._practicing (see that method) -- so
+                    # this is always True here; passed explicitly rather than
+                    # hardcoded so the two plan_to calls in this class stay
+                    # structurally identical.
+                    practicing=self._practicing,
                 )
             except PlanningFailure:
                 # Outscored the eventual winner and lost on reachability alone, which
