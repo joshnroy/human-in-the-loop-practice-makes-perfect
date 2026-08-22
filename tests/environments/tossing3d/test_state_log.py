@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hitl_pmp.cli import Cli
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -34,7 +35,12 @@ pytestmark = pytest.mark.skipif(
 def _record_one_pick(*, output_path: Path, seed: int) -> list[np.ndarray]:
     """Records only PickCube's own ticks -- ~200, a few seconds -- not a full
     pick+toss, since this file checks the log/replay mechanism, not a live throw.
-    Returns the live substep frames, for comparison against a later replay."""
+    Returns the live substep frames, for comparison against a later replay.
+
+    Goes through `attach_state_log_writer`/`take_action`'s own automatic drain
+    (`Tossing3DEnvironment._log_skill_ticks`), the same path a real CLI run uses --
+    not a hand-rolled drain-and-write, which would test a mechanism nothing in
+    production actually calls that way anymore."""
     args = argparse.Namespace(
         variant="o1", scene_bg=True, canonical_seed=125, seed=seed, test_env_seed_offset=10000
     )
@@ -42,6 +48,13 @@ def _record_one_pick(*, output_path: Path, seed: int) -> list[np.ndarray]:
     env = problem.env
     skill_provider = Tossing3DSkillProvider(env=env)
     method = EesMethod(env=env, skill_provider=skill_provider, seed=seed)
+    writer = StateLogWriter(
+        output_path=output_path,
+        header=StateLogHeader(
+            variant="o1", scene_bg=True, canonical_seed=125, seed=seed, test_env_seed_offset=10000
+        ),
+    )
+    env.attach_state_log_writer(writer=writer)
     try:
         problem.hard_reset()
         backend = env.backend()
@@ -49,7 +62,6 @@ def _record_one_pick(*, output_path: Path, seed: int) -> list[np.ndarray]:
         task = problem.sample_train_task()
         state = problem.reset_to_task(task=task)
         backend.drain_substep_frames()
-        backend.drain_substep_states()
 
         policy = method.get_practice_policy(task=task)
         episode = method._practice_episode
@@ -61,25 +73,10 @@ def _record_one_pick(*, output_path: Path, seed: int) -> list[np.ndarray]:
         labeled_action = policy(state)
         problem.take_action(action=labeled_action.action)
         substep_frames = backend.drain_substep_frames()
-        substep_states = backend.drain_substep_states()
-        assert substep_states, "fixture must actually produce ticks to log anything"
-
-        log = StateLogWriter(
-            output_path=output_path,
-            header=StateLogHeader(
-                variant="o1",
-                scene_bg=True,
-                canonical_seed=125,
-                seed=seed,
-                test_env_seed_offset=10000,
-            ),
-        )
-        log.record_skill(name="PickCube", objects=("robot", "cube_0", "cuboid_barrier"), params=())
-        for tick_state in substep_states:
-            log.record_tick(state=backend.snapshot_to_plain(snapshot=tick_state))
-        log.close()
+        assert substep_frames, "fixture must actually produce ticks to log anything"
         return substep_frames
     finally:
+        writer.close()
         env.close()
 
 
@@ -151,27 +148,21 @@ def test_state_capture_is_unconditional_even_when_frame_recording_is_off() -> No
     )
     problem = Tossing3DCli.build_problem(args=args)
     env = problem.env
-    skill_provider = Tossing3DSkillProvider(env=env)
-    method = EesMethod(env=env, skill_provider=skill_provider, seed=23)
     try:
         problem.hard_reset()
         backend = env.backend()
         # Deliberately NOT calling set_substep_recording(enabled=True) -- this is the
-        # ordinary, unrecorded-run path.
+        # ordinary, unrecorded-run path. `backend.run_pick_cube()` directly, not
+        # `problem.take_action`/a policy: `Tossing3DEnvironment.take_action` now
+        # drains-and-discards on every call itself (see `_log_skill_ticks`), so
+        # calling it here would find nothing left to drain regardless of this
+        # property -- this checks the KinderBackend-level guarantee in isolation.
         task = problem.sample_train_task()
-        state = problem.reset_to_task(task=task)
+        problem.reset_to_task(task=task)
         backend.drain_substep_frames()
         backend.drain_substep_states()
 
-        policy = method.get_practice_policy(task=task)
-        episode = method._practice_episode
-        assert episode is not None
-        pick = GroundSkill(
-            skill=Tossing3DSkills.PICK_CUBE, objects=(env.robot, env.cube, env.barrier)
-        )
-        episode._plan = [pick]
-        labeled_action = policy(state)
-        problem.take_action(action=labeled_action.action)
+        backend.run_pick_cube()
 
         assert backend.drain_substep_frames() == [], "frame capture must stay opt-in"
         assert backend.drain_substep_states(), (
@@ -179,3 +170,43 @@ def test_state_capture_is_unconditional_even_when_frame_recording_is_off() -> No
         )
     finally:
         env.close()
+
+
+def test_an_ordinary_cli_run_writes_a_state_log_with_no_manual_wiring(*, tmp_path: Path) -> None:
+    """The property the rest of this file's tests don't cover: a real run through the
+    actual `hitl_pmp.cli` entrypoint -- the path every sweep and every human actually
+    uses -- must produce this log on its own. Every other test in this file builds the
+    log by hand (`StateLogWriter`/`drain_substep_states` called directly), which proves
+    the mechanism works but not that anything wires it into a real run. skill-oracle,
+    not EES: no practice cycles, so this stays a single short evaluation episode."""
+    output_dir = tmp_path / "run"
+    Cli.main(
+        argv=[
+            "--env",
+            "tossing3d",
+            "--method",
+            "skill-oracle",
+            "--seed",
+            "31",
+            "--num-test-tasks",
+            "1",
+            "--output-dir",
+            str(output_dir),
+        ]
+    )
+
+    log_path = output_dir / "tossing3d_state_log.jsonl"
+    assert log_path.exists(), "an ordinary run must write the state log with no extra flag"
+    reader = StateLogReader(path=log_path)
+    assert reader.header == StateLogHeader(
+        variant="o1", scene_bg=True, canonical_seed=125, seed=31, test_env_seed_offset=10000
+    )
+    skill_events = [e for e in reader.events if isinstance(e, SkillEvent)]
+    tick_events = [e for e in reader.events if isinstance(e, TickEvent)]
+    # PickCube then the toss is this domain's only shortest solve (see
+    # Tossing3DProblem.max_episode_steps' own docstring); a missed throw retries the
+    # same pair within the step budget, so only the first two skills are seed-
+    # independent -- not the whole sequence.
+    assert [e.name for e in skill_events[:2]] == ["PickCube", "MoveToTossLocationAndToss"]
+    assert len(skill_events) >= 2
+    assert len(tick_events) > 0, "each skill must contribute its own real physics ticks"

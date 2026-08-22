@@ -8,6 +8,7 @@ KINDER installs into `hitl-pmp` itself, as the `tossing3d` extra; see CLAUDE.md.
 
 import argparse
 from collections.abc import Callable
+from pathlib import Path
 from typing import ClassVar
 
 from hitl_pmp.core.method.method import Method
@@ -21,7 +22,12 @@ from .problem import Tossing3DProblem
 from .renderer import Tossing3DRenderer
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF
 from .skill_provider import Tossing3DOracle, Tossing3DSkillProvider
+from .state_log import StateLogHeader, StateLogWriter
 from .tasks import Tossing3DTasks
+
+# The state log's own filename under --output-dir, named after its content like
+# stats.json/config_snapshot.json/episode_traces.jsonl are -- see state_log.py.
+STATE_LOG_FILENAME = "tossing3d_state_log.jsonl"
 
 
 class Tossing3DCli:
@@ -143,6 +149,27 @@ class Tossing3DCli:
         # scene-seed stream, so it yields exactly the test tasks the practice Tasks
         # would have. Pinned by test_both_problems_draw_the_same_test_scene_seeds.
         evaluation_problem = Tossing3DCli.build_problem(args=args)
+        # One writer shared by both environments so practice and evaluation interleave
+        # into a single chronological log, matching the order PracticeLoop actually
+        # runs them in (never concurrently). State capture itself is always on
+        # (KinderBackend.drain_substep_states); this only decides whether drained
+        # ticks are persisted -- gated on --output-dir, like every other run artifact,
+        # not a separate flag.
+        if args.output_dir is not None:
+            state_log_writer = StateLogWriter(
+                output_path=Path(args.output_dir) / STATE_LOG_FILENAME,
+                header=StateLogHeader(
+                    variant=args.variant,
+                    scene_bg=args.scene_bg,
+                    canonical_seed=args.canonical_seed,
+                    seed=args.seed,
+                    test_env_seed_offset=args.test_env_seed_offset,
+                ),
+            )
+            practice_problem.env.attach_state_log_writer(writer=state_log_writer)
+            evaluation_problem.env.attach_state_log_writer(writer=state_log_writer)
+        else:
+            state_log_writer = None
         # The Method is wired to the *practice* environment deliberately: its env
         # reference is structural config (skills, predicates, object handles, all of
         # which are ClassVars here), and the two instances are configured identically,
@@ -177,6 +204,8 @@ class Tossing3DCli:
         finally:
             practice_problem.env.close()
             evaluation_problem.env.close()
+            if state_log_writer is not None:
+                state_log_writer.close()
 
     @staticmethod
     def build_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
