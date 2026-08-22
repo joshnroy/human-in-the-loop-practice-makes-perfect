@@ -15,6 +15,7 @@ from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.episode_traces import EpisodeTraceRecorder
 from hitl_pmp.recording.loop_recorder import LoopRecorder
+from hitl_pmp.recording.period_recorder import PeriodRecorder
 
 
 class PracticeResetPolicy(str, enum.Enum):
@@ -269,14 +270,20 @@ class PracticeLoop:
     without a sink is a ValueError raised up front, before the run starts, rather
     than a silent discard of every clip.
 
-    **recorder is a separate, orthogonal thing from renderer.** renderer records
-    *evaluation episodes* at checkpoints, into one clip each. recorder (a
-    recording.LoopRecorder, off by default) records the whole outer loop -- every
-    practice period, every evaluation episode of every sweep, and every reset --
-    into a single continuous video. The hooks below are the only difference a
-    recorder makes: it is handed state this loop already has, and never gets to
-    decide anything, so a recorded run takes exactly the actions an unrecorded one
-    does. See LoopRecorder's own docstring."""
+    **recorder and period_recorder are both separate, orthogonal things from
+    renderer, and from each other.** renderer records *evaluation episodes* at
+    checkpoints, into one clip each. recorder (a recording.LoopRecorder, off by
+    default) records the whole outer loop -- every practice period, every
+    evaluation episode of every sweep, and every reset -- into a single continuous
+    video, not watchable until the run ends. period_recorder (a
+    recording.PeriodRecorder) writes one already-finished file per practice period
+    and per evaluation sweep as each one ends, so a long run's early periods are
+    watchable while later ones are still running -- see its own docstring for why
+    that is a materially different thing from recorder and cannot simply reuse it.
+    Either, both, or neither may be given; the hooks below are the only difference
+    either makes: each is handed state this loop already has, and neither ever gets
+    to decide anything, so a recorded run takes exactly the actions an unrecorded
+    one does. See LoopRecorder's and PeriodRecorder's own docstrings."""
 
     @staticmethod
     def run(
@@ -302,6 +309,7 @@ class PracticeLoop:
         num_render_checkpoints: int = 1,
         on_checkpoint_frames: CheckpointFramesSink | None = None,
         recorder: LoopRecorder | None = None,
+        period_recorder: PeriodRecorder | None = None,
         trace_recorder: EpisodeTraceRecorder | None = None,
     ) -> None:
         # Up front, before hard_reset(), so a caller that forgot the sink finds out
@@ -403,6 +411,7 @@ class PracticeLoop:
             num_online_transitions=num_online_transitions,
             renderer=renderer if 0 in rendered_sweeps else None,
             recorder=recorder,
+            period_recorder=period_recorder,
             sweep_index=0,
             trace_recorder=trace_recorder,
         )
@@ -421,6 +430,12 @@ class PracticeLoop:
             policy = method.get_practice_policy(task=task)
             if recorder is not None:
                 recorder.begin_practice(
+                    cycle_index=cycle,
+                    transitions=num_online_transitions,
+                    task=task.goal.describe(),
+                )
+            if period_recorder is not None:
+                period_recorder.begin_practice(
                     cycle_index=cycle,
                     transitions=num_online_transitions,
                     task=task.goal.describe(),
@@ -448,6 +463,8 @@ class PracticeLoop:
                 metrics.record_practice_reset()
                 if recorder is not None:
                     recorder.record_period_reset(state=state)
+                if period_recorder is not None:
+                    period_recorder.record_period_reset(state=state)
             for step in range(max_steps_per_interaction):
                 try:
                     labeled_action = policy(state)
@@ -477,6 +494,10 @@ class PracticeLoop:
                         recorder.record_human_reset(
                             state=state, step_index=step, transitions=num_online_transitions
                         )
+                    if period_recorder is not None:
+                        period_recorder.record_human_reset(
+                            state=state, step_index=step, transitions=num_online_transitions
+                        )
                     continue
                 except InteractionComplete:
                     # The Method has nothing further worth practicing. Ending
@@ -487,11 +508,22 @@ class PracticeLoop:
                         recorder.record_interaction_complete(
                             state=state, step_index=step, transitions=num_online_transitions
                         )
+                    if period_recorder is not None:
+                        period_recorder.record_interaction_complete(
+                            state=state, step_index=step, transitions=num_online_transitions
+                        )
                     break
                 state = problem.take_action(action=labeled_action.action)
                 num_online_transitions += 1
                 if recorder is not None:
                     recorder.record_practice_step(
+                        state=state,
+                        skill=labeled_action.label,
+                        step_index=step,
+                        transitions=num_online_transitions,
+                    )
+                if period_recorder is not None:
+                    period_recorder.record_practice_step(
                         state=state,
                         skill=labeled_action.label,
                         step_index=step,
@@ -516,6 +548,15 @@ class PracticeLoop:
                         recorder.record_interval_reset(
                             state=state, step_index=step, transitions=num_online_transitions
                         )
+                    if period_recorder is not None:
+                        period_recorder.record_interval_reset(
+                            state=state, step_index=step, transitions=num_online_transitions
+                        )
+            if period_recorder is not None:
+                # After the step loop, before evaluation -- the practice file is a
+                # finished, playable clip from this point on, and evaluation manages
+                # its own file (and its own substep-recording scope) independently.
+                period_recorder.end_practice()
             # Before this cycle's evaluation, so the sweep actually measures what
             # the Method just learned rather than lagging a cycle behind.
             method.end_cycle()
@@ -529,6 +570,7 @@ class PracticeLoop:
                 num_online_transitions=num_online_transitions,
                 renderer=renderer if (cycle + 1) in rendered_sweeps else None,
                 recorder=recorder,
+                period_recorder=period_recorder,
                 sweep_index=cycle + 1,
                 trace_recorder=trace_recorder,
             )
@@ -653,6 +695,7 @@ class PracticeLoop:
         num_online_transitions: int,
         renderer: type[Renderer] | None = None,
         recorder: LoopRecorder | None = None,
+        period_recorder: PeriodRecorder | None = None,
         sweep_index: int = 0,
         trace_recorder: EpisodeTraceRecorder | None = None,
     ) -> list[np.ndarray]:
@@ -661,6 +704,10 @@ class PracticeLoop:
         outcomes: list[TaskOutcome] = []
         if recorder is not None:
             recorder.begin_evaluation(sweep_index=sweep_index, transitions=num_online_transitions)
+        if period_recorder is not None:
+            period_recorder.begin_evaluation(
+                sweep_index=sweep_index, transitions=num_online_transitions
+            )
         for i, task in enumerate(test_tasks):
             policy = method.get_task_policy(task=task)
             # The checkpoint clip is of test task 0 only; a full-loop recording is
@@ -671,6 +718,9 @@ class PracticeLoop:
             if recorder is not None:
                 policy = recorder.watch_policy(policy=policy)
                 episode_renderer = recorder.renderer
+            if period_recorder is not None:
+                policy = period_recorder.watch_policy(policy=policy)
+                episode_renderer = period_recorder.renderer
             solved, task_frames, trace = problem.run_task_episode(
                 task=task, policy=policy, renderer=episode_renderer
             )
@@ -678,6 +728,14 @@ class PracticeLoop:
                 frames = task_frames
             if recorder is not None:
                 recorder.record_evaluation_episode(
+                    task_index=i,
+                    num_tasks=len(test_tasks),
+                    task=task.goal.describe(),
+                    frames=task_frames,
+                    solved=solved,
+                )
+            if period_recorder is not None:
+                period_recorder.record_evaluation_episode(
                     task_index=i,
                     num_tasks=len(test_tasks),
                     task=task.goal.describe(),
@@ -704,6 +762,8 @@ class PracticeLoop:
             num_total=len(test_tasks),
             outcomes=tuple(outcomes),
         )
+        if period_recorder is not None:
+            period_recorder.end_evaluation()
         return frames
 
 

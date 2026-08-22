@@ -35,6 +35,28 @@ class Renderer(abc.ABC):
         been taken yet to produce a label for)."""
         raise NotImplementedError
 
+    @staticmethod
+    def render_substep_frames(
+        *,
+        frames: Sequence[np.ndarray],
+        state: State,
+        env: Environment,
+        label: str | None = None,
+    ) -> list[np.ndarray]:
+        """Caption `frames` -- already-rendered per-substep frames this domain's
+        `Environment.drain_substep_frames` collected -- the same shape of caption
+        `render_frame` draws, so a clip mixing boundary frames and substep frames is
+        one consistent size.
+
+        Empty by default, paired with `Environment.drain_substep_frames`'s own empty
+        default: a domain with no finer time granularity than one frame per
+        transition never has anything to pass here, and a caller
+        (`recording.period_recorder.PeriodRecorder`) is expected to fall back to
+        `render_frame` whenever this returns nothing -- which, for every domain but
+        Tossing3D, is always. Overridden by `Tossing3DRenderer`, whose own docstring
+        explains why one frame per skill is not enough to see a throw happen."""
+        return []
+
 
 class VideoStream(BaseModel):
     """One video file being written frame by frame, as the frames are produced.

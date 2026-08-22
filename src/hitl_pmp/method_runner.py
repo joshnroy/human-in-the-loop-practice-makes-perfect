@@ -16,6 +16,7 @@ from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
 from hitl_pmp.episode_traces import EpisodeTraceRecorder
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
+from hitl_pmp.recording.period_recorder import PeriodRecorder
 from hitl_pmp.results_writer.registry import RESULTS_WRITERS
 
 
@@ -227,6 +228,14 @@ class MethodRunner:
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
         )
+        period_recorder = MethodRunner._build_period_recorder(
+            args=args,
+            problem=problem,
+            renderer=renderer,
+            render_fps=render_fps,
+            num_cycles=num_cycles,
+            max_steps_per_interaction=max_steps_per_interaction,
+        )
         try:
             PracticeLoop.run(
                 problem=problem,
@@ -257,6 +266,7 @@ class MethodRunner:
                 on_cycle_end=record_cycle_end,
                 on_sweep_end=on_sweep_end,
                 recorder=recorder,
+                period_recorder=period_recorder,
                 trace_recorder=trace_recorder,
             )
             # Once more after the loop, so the final evaluation sweep is covered and
@@ -273,6 +283,10 @@ class MethodRunner:
             # watch what the loop was doing.
             if recorder is not None:
                 recorder.close()
+            if period_recorder is not None:
+                # Same reasoning as recorder.close() above: a crashed period leaves a
+                # playable file of everything up to the crash rather than none at all.
+                period_recorder.close()
             # Same placement and same reason: a W&B run left unfinished would never be
             # flushed, and whatever a writer recorded before a crash is exactly what is
             # wanted afterwards. `metrics` is therefore whatever the run got to.
@@ -366,6 +380,33 @@ class MethodRunner:
             renderer=renderer,
             env=problem.env,
             video=VideoStream(output_path=output_path, fps=MethodRunner.full_loop_fps),
+            num_cycles=num_cycles,
+            max_steps_per_interaction=max_steps_per_interaction,
+        )
+
+    @staticmethod
+    def _build_period_recorder(
+        *,
+        args: argparse.Namespace,
+        problem: Problem,
+        renderer: type[Renderer] | None,
+        render_fps: int,
+        num_cycles: int,
+        max_steps_per_interaction: int,
+    ) -> PeriodRecorder | None:
+        """None unless both --output-dir and a renderer are available -- no separate
+        flag, deliberately: this is gated exactly like every other --output-dir
+        artifact (stats.json, config_snapshot.json, the Tossing3D state log), not
+        opt-in behind its own switch. See PeriodRecorder's own docstring for what it
+        writes and why that is a different thing from --record-full-loop, which
+        stays behind its own flag and is unaffected by this."""
+        if args.output_dir is None or renderer is None:
+            return None
+        return PeriodRecorder(
+            renderer=renderer,
+            env=problem.env,
+            output_dir=args.output_dir,
+            fps=render_fps,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
         )
