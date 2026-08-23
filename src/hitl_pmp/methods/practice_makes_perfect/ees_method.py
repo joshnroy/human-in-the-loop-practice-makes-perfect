@@ -1,3 +1,4 @@
+import logging
 import math
 from typing import Any
 
@@ -27,6 +28,8 @@ from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .competence_models import OptimisticSkillCompetenceModel
 from .wrapped_sampler import LearnedSkillSampler
+
+logger = logging.getLogger(__name__)
 
 
 class EesMethod(Method):
@@ -100,7 +103,7 @@ class EesMethod(Method):
     # CFG.active_sampler_explore_bonus / _use_ucb_bonus / _skip_perfect
     explore_bonus: float = 1e-1
     use_ucb_bonus: bool = True
-    skip_perfect: bool = True
+    skip_perfect: bool = False
     # CFG.active_sampler_explorer_planning_progress_max_tasks. The paper text says
     # "the 10 most recently seen tasks"; the reference code instead takes
     # `sorted(seen_idxs)[:10]` ("Don't randomize: would lead to noisy estimates").
@@ -1007,6 +1010,8 @@ class _EesEpisode:
         # Remaining goal-pursuit budget (predicators' `assigned_task_horizon`); None
         # means uncapped. Counts down one per skill while the goal phase runs.
         self._goal_pursuit_remaining: int | None = method.goal_pursuit_horizon
+        # Debug-only tick counter, purely for logging -- see step()'s own debug line.
+        self._debug_step_count: int = 0
 
     def _noop_action(self) -> np.ndarray:
         """Ask the environment what inaction means, rather than assuming zeros.
@@ -1021,6 +1026,10 @@ class _EesEpisode:
 
     def step(self, *, state: State) -> LabeledAction:
         method = self._method
+        self._debug_step_count += 1
+        logger.debug(
+            "_EesEpisode.step: #%d practicing=%s", self._debug_step_count, self._practicing
+        )
         true_atoms = method.abstract_state(state=state)
         self.observe_pending(true_atoms=true_atoms, state=state)
         self._tick_goal_pursuit_horizon()
@@ -1060,6 +1069,13 @@ class _EesEpisode:
                 # fallback found nothing applicable either -- see
                 # test_nothing_left_to_practice_raises_the_free_interaction_
                 # complete_even_when_configured.
+                logger.debug(
+                    "_EesEpisode._next_plan: no candidate reachable and no applicable "
+                    "skill to bootstrap from -- raising InteractionComplete at step #%d "
+                    "true_atoms=%s",
+                    self._debug_step_count,
+                    sorted(f"{a.predicate.name}({','.join(o.name for o in a.objects)})" for a in true_atoms),
+                )
                 raise InteractionComplete
             # Evaluation: run_task_episode owns termination (goal check + horizon),
             # so degrade to a no-op rather than ending its episode from in here.

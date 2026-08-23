@@ -38,6 +38,7 @@ restorable case, and anything that wants a general rewind is asking for somethin
 domain cannot do.
 """
 
+import logging
 from typing import Any, ClassVar
 
 import numpy as np
@@ -50,6 +51,8 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
 from .state_log import StateLogWriter
 from .types import AbstractAtom, Tossing3DState
+
+logger = logging.getLogger(__name__)
 
 
 class Tossing3DSnapshot(BaseModel):
@@ -138,11 +141,14 @@ class Tossing3DEnvironment(Environment):
     # keeps its meaning.
     #
     # **These do not mean what they meant before the two-skill migration.** Id 1 was
-    # `MoveToThrowPose` and id 2 was `Toss`; both are now one composed skill at id 1, and
-    # id 2 is unused. An action vector recorded before that migration is not readable
-    # here -- the parameter slots widened too.
+    # `MoveToThrowPose` and id 2 was `Toss`; both are now one composed skill at id 1. An
+    # action vector recorded before that migration is not readable here -- the parameter
+    # slots widened too. Id 2 is now `OpenGripper`, a distinct assignment from the old
+    # `Toss` it once carried; nothing recorded under the pre-migration scheme collides
+    # with it since that scheme never validated ids beyond 0/1/2 either.
     pick_cube_id: ClassVar[int] = 0
     move_to_toss_location_and_toss_id: ClassVar[int] = 1
+    open_gripper_id: ClassVar[int] = 2
     # Not a skill: the id `noop_action` carries, chosen outside the real ids so
     # `_execute` falls through every branch. Negative rather than 2 so that adding a
     # third controller can never silently turn every no-op into it.
@@ -332,6 +338,7 @@ class Tossing3DEnvironment(Environment):
         errors = [run.error for run in runs if run.error is not None]
         if errors:
             self._last_skill_error = "; ".join(errors)
+            logger.debug("take_action: last_skill_error=%r", self._last_skill_error)
         self._log_skill_ticks(action=action)
 
         next_state = self._observed_state(seed=seed, steps_taken=steps_taken + 1)
@@ -382,6 +389,8 @@ class Tossing3DEnvironment(Environment):
                 self.cube.name,
                 self.barrier.name,
             )
+        if skill_id == self.open_gripper_id:
+            return "OpenGripper", (self.robot.name,)
         return f"unknown skill id {skill_id}", ()
 
     def get_valid_actions(self) -> list[Action]:
@@ -569,6 +578,9 @@ class Tossing3DEnvironment(Environment):
                     gripper_release_ms=float(action[4]),
                 )
             ]
+        if skill_id == self.open_gripper_id:
+            # No parameters: opening the gripper takes none, matching `run_pick_cube`.
+            return [backend.run_open_gripper()]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []
 
