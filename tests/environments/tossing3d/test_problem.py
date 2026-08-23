@@ -62,6 +62,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
     assert provider.skills() == (
         Tossing3DSkills.PICK_CUBE,
         Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+        Tossing3DSkills.OPEN_GRIPPER,
     )
     assert set(provider.predicates()) == {
         IN_BIN,
@@ -86,14 +87,18 @@ def test_every_predicate_a_skill_references_is_one_the_provider_publishes() -> N
 
 def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
     """Walked with the real grounder rather than by hand: from the initial abstract state
-    only `PickCube` is applicable, and holding the cube unlocks the composed toss and
-    nothing else.
+    `PickCube` is applicable, and holding the cube unlocks the composed toss -- plus
+    `OpenGripper` everywhere, since it has no precondition at all (see `Tossing3DSkills`'
+    own docstring for why: it exists precisely to be reachable from a near-miss-grasp
+    dead end no other skill's precondition can describe).
 
-    **There is no third rung any more.** Where the robot stands used to decide between
-    `MoveToThrowPose` and `Toss`; the composed controller drives itself to the standoff,
-    so the base pose is not part of any precondition and the same skill set is applicable
-    whether the robot is next to the bin or across the room. That is asserted below rather
-    than left implicit, because it is exactly the state the retired predicate named."""
+    **There is no third *rung* any more** -- `OpenGripper` is not a step in the oracle's
+    plan shape, just an always-available rescue the oracle never needs. Where the robot
+    stands used to decide between `MoveToThrowPose` and `Toss`; the composed controller
+    drives itself to the standoff, so the base pose is not part of any precondition and
+    the same skill set is applicable whether the robot is next to the bin or across the
+    room. That is asserted below rather than left implicit, because it is exactly the
+    state the retired predicate named."""
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
 
     def applicable(*, atoms=INITIAL_ATOMS, **kwargs) -> set[str]:
@@ -108,20 +113,32 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
             )
         }
 
-    assert applicable() == {"PickCube"}
-    assert applicable(atoms=HOLDING_ATOMS, cube_z=0.4) == {"MoveToTossLocationAndToss"}
+    assert applicable() == {"PickCube", "OpenGripper"}
+    assert applicable(atoms=HOLDING_ATOMS, cube_z=0.4) == {
+        "MoveToTossLocationAndToss",
+        "OpenGripper",
+    }
     # Standing at the old throw standoff changes nothing: the composed skill drives there
     # itself, so no precondition reads the base pose -- and no *atom* reports it either,
     # since upstream deleted `RobotAtThrowPose` with the pose it named.
     assert applicable(atoms=HOLDING_ATOMS, cube_z=0.4, base_x=BIN_X - 1.35) == {
-        "MoveToTossLocationAndToss"
+        "MoveToTossLocationAndToss",
+        "OpenGripper",
     }
 
 
-def test_nothing_is_applicable_once_the_cube_is_past_the_barrier() -> None:
+def test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_barrier() -> None:
     """The irreversibility, read off the symbolic layer: after a toss the cube is beyond
-    the barrier, `Reachable` is false, `Pick` is inapplicable, and no skill remains. A
-    planner asked to recover from here correctly finds no plan."""
+    the barrier, `Reachable` is false, `Pick` is inapplicable, and no skill that could
+    make progress toward the goal remains -- a planner asked to recover from here
+    correctly finds no plan.
+
+    **`OpenGripper` is the one exception, and it does not reopen this.** It has no
+    precondition, so it is always symbolically applicable, including here -- but its
+    effects touch only `HandEmpty`, never `Reachable`/`OnGround`/`InBin`, so applying it
+    changes nothing about whether the goal is reachable. This test asserts the precise
+    surviving invariant (nothing *but* the no-op rescue is applicable) rather than the
+    old, now-too-strong one (nothing at all is applicable)."""
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
     landed = state(
         cube_x=2.6,
@@ -133,9 +150,10 @@ def test_nothing_is_applicable_once_the_cube_is_past_the_barrier() -> None:
     atoms = SkillGrounder.abstract_state(
         state=landed, objects=provider.objects(), predicates=provider.predicates()
     )
-    assert not SkillGrounder.applicable_ground_skills(
+    applicable = SkillGrounder.applicable_ground_skills(
         skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
     )
+    assert {ground.skill.name for ground in applicable} == {"OpenGripper"}
 
 
 def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() -> None:

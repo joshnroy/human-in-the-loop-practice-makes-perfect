@@ -32,7 +32,15 @@ class Tossing3DSkillProvider(SkillProvider):
     env: Tossing3DEnvironment
 
     def skills(self) -> tuple[Skill, ...]:
-        return (Tossing3DSkills.PICK_CUBE, Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS)
+        return (
+            Tossing3DSkills.PICK_CUBE,
+            Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+            # Robot-executed, unlike `human_cube_bin_reset_skill` -- always offered to the
+            # planner (unconditionally, not gated behind `plan_to`'s `practicing`), since
+            # it is a free real action rather than a costed human intervention. See its
+            # docstring in skills.py for why it exists.
+            Tossing3DSkills.OPEN_GRIPPER,
+        )
 
     def predicates(self) -> tuple[Predicate, ...]:
         return (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
