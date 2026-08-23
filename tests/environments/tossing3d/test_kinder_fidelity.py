@@ -422,16 +422,35 @@ def test_reset_movables_leaves_the_robot_pose_exactly_where_it_was() -> None:
         env.close()
 
 
-def test_reset_movables_moves_the_cube_to_a_fresh_ground_pose() -> None:
+def test_reset_movables_returns_the_cube_to_its_fixed_spawn_pose() -> None:
+    """`blocks_init_region` is a single fixed (x, y, yaw) point in this scene, not a
+    range -- a deliberate scoping decision (see the kindergarden pin/PR this test's
+    module docstring would point to), made after `PickCube`'s own standoff geometry
+    was found to place its base-motion target on the wrong side of the barrier for
+    some cube poses a wider range could draw, including poses a completed-but-missed
+    toss can leave the cube at (not only initial spawn). So `reset_movables()` no
+    longer moves the cube to a *different* pose each call -- it always returns to the
+    one pose this scene's region names. Displaces the cube first via a real toss, so
+    the return-to-spawn is actually exercised rather than trivially true because the
+    cube never left."""
     env = _env()
     try:
-        env.reset_to_seed(seed=CANONICAL_SEED)
-        before = env.get_current_state().get(obj=env.cube, feature_name="x")
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        goal = Tossing3DTasks(env=env, seed=0).build_task(scene_seed=CANONICAL_SEED).goal
+        spawn_x = state.get(obj=env.cube, feature_name="x")
+        spawn_y = state.get(obj=env.cube, feature_name="y")
+
+        pick = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
+        state = env.take_action(action=pick.action)
+        toss = SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal)
+        state = env.take_action(action=toss.action)
+        moved_x = state.get(obj=env.cube, feature_name="x")
+        assert moved_x != pytest.approx(spawn_x, abs=1e-3), "the oracle toss should move the cube"
 
         env.reset_movables()
         state = env.get_current_state()
-        after = state.get(obj=env.cube, feature_name="x")
-        assert after != pytest.approx(before, abs=1e-6)
+        assert state.get(obj=env.cube, feature_name="x") == pytest.approx(spawn_x, abs=1e-3)
+        assert state.get(obj=env.cube, feature_name="y") == pytest.approx(spawn_y, abs=1e-3)
         assert ON_GROUND.holds(state, (env.cube,))
         assert REACHABLE.holds(state, (env.cube, env.barrier))
         assert not IN_BIN.holds(state, (env.cube, env.bin))
