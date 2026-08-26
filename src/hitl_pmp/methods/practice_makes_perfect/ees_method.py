@@ -103,7 +103,7 @@ class EesMethod(Method):
     # CFG.active_sampler_explore_bonus / _use_ucb_bonus / _skip_perfect
     explore_bonus: float = 1e-1
     use_ucb_bonus: bool = True
-    skip_perfect: bool = False
+    skip_perfect: bool = True
     # CFG.active_sampler_explorer_planning_progress_max_tasks. The paper text says
     # "the 10 most recently seen tasks"; the reference code instead takes
     # `sorted(seen_idxs)[:10]` ("Don't randomize: would lead to noisy estimates").
@@ -1074,7 +1074,10 @@ class _EesEpisode:
                     "skill to bootstrap from -- raising InteractionComplete at step #%d "
                     "true_atoms=%s",
                     self._debug_step_count,
-                    sorted(f"{a.predicate.name}({','.join(o.name for o in a.objects)})" for a in true_atoms),
+                    sorted(
+                        f"{a.predicate.name}({','.join(o.name for o in a.objects)})"
+                        for a in true_atoms
+                    ),
                 )
                 raise InteractionComplete
             # Evaluation: run_task_episode owns termination (goal check + horizon),
