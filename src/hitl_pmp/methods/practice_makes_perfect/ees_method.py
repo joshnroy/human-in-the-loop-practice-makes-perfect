@@ -63,14 +63,17 @@ class EesMethod(Method):
     A* planner is not a substitute: it ignores per-operator costs entirely.
 
     Deviations from predicators, all deliberate:
-    1. `skip_perfect` and the UCB `num_tries` are computed from competence
-       observations, which exclude epsilon-greedy random attempts. predicators
-       reads `_ground_op_hist`, appended on *every* execution including random
-       ones (`active_sampler_explorer.py:400`), so a skill here reaches a
-       measured rate of 1.0 sooner and is dropped as a practice target earlier.
-       `reproduce_predicators_practice_target_history` restores predicators'
-       all-attempts bookkeeping for exactly these two quantities (competence stays
-       random-excluding either way); see that field for why the flag exists.
+    1. The UCB `num_tries` is computed from competence observations, which
+       exclude epsilon-greedy random attempts. predicators reads
+       `_ground_op_hist`, appended on *every* execution including random ones
+       (`active_sampler_explorer.py:400`). `reproduce_predicators_practice_
+       target_history` restores predicators' all-attempts bookkeeping for this
+       quantity (competence stays random-excluding either way); see that field
+       for why the flag exists. predicators' own `skip_perfect` -- dropping a
+       skill whose measured success rate is exactly 1.0 from the candidate list
+       entirely -- is deliberately not ported: this Method never drops a
+       mastered skill as a candidate, and instead lets the UCB bonus alone
+       deprioritize it as `num_tries` grows.
     2. The outcome of the *last* skill in an interaction period is never observed
        (there is no subsequent state to check `add_effects` against). predicators
        observes at option termination instead. This loses at most one datapoint
@@ -100,10 +103,9 @@ class EesMethod(Method):
     # --- EES hyperparameters, defaulted to predicators'/the paper's own values ---
     # CFG.skill_competence_model_lookahead
     competence_lookahead: int = 1
-    # CFG.active_sampler_explore_bonus / _use_ucb_bonus / _skip_perfect
+    # CFG.active_sampler_explore_bonus / _use_ucb_bonus
     explore_bonus: float = 1e-1
     use_ucb_bonus: bool = True
-    skip_perfect: bool = True
     # CFG.active_sampler_explorer_planning_progress_max_tasks. The paper text says
     # "the 10 most recently seen tasks"; the reference code instead takes
     # `sorted(seen_idxs)[:10]` ("Don't randomize: would lead to noisy estimates").
@@ -138,14 +140,14 @@ class EesMethod(Method):
     reproduce_predicators_double_observe: bool = False
 
     # A second, independent ablation switch (see deviation 1 above). predicators
-    # computes `skip_perfect`'s success-rate check and the UCB `num_tries`/`total`
-    # from `_ground_op_hist`, appended on *every* execution including epsilon-random
-    # ones (`active_sampler_explorer.py:400`). This port instead reads the
+    # computes the UCB `num_tries`/`total` from `_ground_op_hist`, appended on
+    # *every* execution including epsilon-random ones
+    # (`active_sampler_explorer.py:400`). This port instead reads the
     # competence model's history, which *excludes* random attempts -- correct for
     # competence (at epsilon=0.5 counting coin flips would make competence measure
     # how often a coin flip works), but that random-excluding history was then
-    # reused for the practice-target bookkeeping too, which predicators does not do.
-    # Default TRUE (match predicators). ON, the practice-target quantities read an
+    # reused for the UCB bookkeeping too, which predicators does not do.
+    # Default TRUE (match predicators). ON, the UCB quantities read an
     # all-attempts history (greedy + random) matching `_ground_op_hist`, while
     # competence keeps reading its own clean random-excluding history unchanged. Two
     # separable decisions the port had accidentally coupled; turn OFF to ablate.
@@ -332,8 +334,8 @@ class EesMethod(Method):
 
         Independently of competence, every execution is recorded (greedy *and*
         random) into `_all_attempt_outcomes` -- predicators' `_ground_op_hist`.
-        `skip_perfect`/UCB read it only when
-        `reproduce_predicators_practice_target_history` is on.
+        UCB reads it only when `reproduce_predicators_practice_target_history`
+        is on.
         """
         self._all_attempt_outcomes.setdefault(ground_skill, []).append(success)
         model = self.competence_model(ground_skill=ground_skill)
@@ -367,7 +369,7 @@ class EesMethod(Method):
         }
 
     def practice_target_num_tries(self, *, ground_skill: GroundSkill) -> int:
-        """The per-skill trial count `skip_perfect`/UCB reason about. Reads the
+        """The per-skill trial count the UCB bonus reasons about. Reads the
         all-attempts (`_ground_op_hist`) history when
         `reproduce_predicators_practice_target_history` is on, else the competence
         history (which excludes epsilon-random attempts)."""
@@ -383,9 +385,11 @@ class EesMethod(Method):
         return self.total_observations()
 
     def measured_success_rate(self, *, ground_skill: GroundSkill) -> float:
-        """Raw (prior-free) success fraction, which is what predicators' own
-        `skip_perfect` check uses -- deliberately not the posterior mean, which
-        can never reach exactly 1.0 under a Beta prior. Reads the all-attempts
+        """Raw (prior-free) success fraction -- deliberately not the posterior
+        mean, which can never reach exactly 1.0 under a Beta prior. Not consulted
+        by `score_ground_skill` (predicators' own `skip_perfect` gate on this
+        value is deliberately not ported, see the class docstring's deviation 1);
+        kept as a diagnostic other code reads directly. Reads the all-attempts
         (`_ground_op_hist`) history when
         `reproduce_predicators_practice_target_history` is on, else the competence
         history (which excludes epsilon-random attempts)."""
@@ -595,7 +599,6 @@ class EesMethod(Method):
         tally = self._practice_target_tallies.get(name, PracticeTargetTally())
         builder = {
             "scored": tally.with_scored,
-            "declined_perfect": tally.with_declined_perfect,
             "selected": tally.with_selected,
             "unreachable": tally.with_unreachable,
         }[field]
@@ -644,9 +647,9 @@ class EesMethod(Method):
     def score_ground_skill(self, *, ground_skill: GroundSkill) -> float:
         """Planning progress: how much cheaper do the seen tasks' plans get if
         *this* skill improves by one cycle's worth of practice? Ported from
-        predicators' `_score_ground_op_planning_progress`."""
-        if self.skip_perfect and self.measured_success_rate(ground_skill=ground_skill) == 1.0:
-            return -math.inf
+        predicators' `_score_ground_op_planning_progress`. Never returns `-inf`
+        -- predicators' own `skip_perfect` gate is deliberately not ported, see
+        the class docstring's deviation 1."""
         model = self.competence_model(ground_skill=ground_skill)
         extrapolated = model.predict_competence(num_additional_data=self.competence_lookahead)
         costs = self.skill_costs()
@@ -675,20 +678,14 @@ class EesMethod(Method):
 
     def choose_practice_target(self) -> list[GroundSkill]:
         """Candidates in descending score order -- the explorer tries them in turn
-        until one's preconditions are actually reachable. Skills that scored
-        `-inf` (already perfect, per `skip_perfect`) are dropped entirely."""
+        until one's preconditions are actually reachable. Every scored candidate
+        stays a candidate -- `score_ground_skill` never returns `-inf`, so nothing
+        is dropped outright here."""
         scored: list[tuple[float, float, GroundSkill]] = []
         # list(...) because scoring can lazily create competence models, which
         # would otherwise mutate the dict mid-iteration.
         for candidate in list(self._competence_models):
             score = self.score_ground_skill(ground_skill=candidate)
-            if score == -math.inf:
-                # Observation only -- the `continue` below is unchanged, and this is the
-                # one place the drop is visible. `-inf` comes from exactly one branch of
-                # score_ground_skill, so this counts skip_perfect firings and nothing
-                # else. See PracticeTargetTally for why that needed its own counter.
-                self.record_practice_target(name=candidate.skill.name, field="declined_perfect")
-                continue
             self.record_practice_target(name=candidate.skill.name, field="scored")
             # Ties broken randomly, matching predicators' own rng.uniform tiebreak.
             scored.append((score, float(self._rng.uniform()), candidate))
