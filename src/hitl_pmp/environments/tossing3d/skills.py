@@ -289,7 +289,5 @@ class Tossing3DSkills:
                 dtype=float,
             )
         if skill == Tossing3DSkills.OPEN_GRIPPER:
-            return np.array(
-                [Tossing3DEnvironment.open_gripper_id, 0.0, 0.0, 0.0, 0.0], dtype=float
-            )
+            return np.array([Tossing3DEnvironment.open_gripper_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
         raise ValueError(f"Unknown skill: {skill.name}")

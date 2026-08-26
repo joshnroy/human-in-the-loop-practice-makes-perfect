@@ -832,7 +832,10 @@ class KinderBackend(BaseModel):
                 raise
             logger.debug(
                 "run_controller: %s/%s reset() raised %s: %s",
-                module, key, type(exc).__name__, exc,
+                module,
+                key,
+                type(exc).__name__,
+                exc,
             )
             return ControllerRun(steps=0, terminated=False, error=f"{type(exc).__name__}: {exc}")
 
@@ -845,7 +848,11 @@ class KinderBackend(BaseModel):
                     raise
                 logger.debug(
                     "run_controller: %s/%s step() raised at step=%d: %s: %s",
-                    module, key, step, type(exc).__name__, exc,
+                    module,
+                    key,
+                    step,
+                    type(exc).__name__,
+                    exc,
                 )
                 return ControllerRun(
                     steps=step, terminated=False, error=f"{type(exc).__name__}: {exc}"
@@ -855,12 +862,16 @@ class KinderBackend(BaseModel):
             if controller.terminated():
                 logger.debug(
                     "run_controller: %s/%s terminated normally at step=%d",
-                    module, key, step + 1,
+                    module,
+                    key,
+                    step + 1,
                 )
                 return ControllerRun(steps=step + 1, terminated=True)
         logger.debug(
             "run_controller: %s/%s hit limit=%d without terminating",
-            module, key, limit,
+            module,
+            key,
+            limit,
         )
         return ControllerRun(steps=limit, terminated=False)
 
