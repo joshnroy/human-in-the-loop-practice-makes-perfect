@@ -195,6 +195,50 @@ class Tossing3DSkills:
         param_dim=4,
     )
 
+    # A third, robot-executed skill (not the human `ask_for_reset_cube_bin_only`): the
+    # robot's own gripper-open primitive, upstream's `open_gripper` controller. Exists to
+    # give the planner a way out of a near-miss grasp -- the gripper can end up commanded
+    # closed on nothing (`HandEmpty` False, `Holding` False both at once, since the close
+    # never actually caught the cube), and `PickCube` is the only skill this leaves
+    # reachable, but it requires `HandEmpty`, which is exactly what is missing. No other
+    # operator in this domain ever re-adds `HandEmpty`: `MoveToTossLocationAndToss` does,
+    # but only as a post-throw effect that requires `Holding`, the other predicate this
+    # dead end lacks. No precondition -- opening the gripper is always physically safe,
+    # same reasoning as `Tossing3DSkillProvider.human_cube_bin_reset_skill`'s empty
+    # precondition -- and unlike that skill, this one's effect is honest against the real
+    # simulator: it is a real command sent to the robot, so `HandEmpty` (which reads the
+    # command, not contact) is genuinely true on the very next observation, not merely
+    # predicted.
+    #
+    # **No `Holding` delete effect, and no `?cube` parameter -- found the hard way.**
+    # Declaring `delete_effects={Holding(?robot, ?cube)}` on an operator whose
+    # precondition does not also require `Holding(?robot, ?cube)` is exactly the shape
+    # that needs a conditional effect ("delete it if it was there") once Fast Downward's
+    # invariant synthesis merges `HandEmpty`/`Holding` into one mutex-tracked variable --
+    # `PickCube` and `MoveToTossLocationAndToss` both get this for free because their own
+    # preconditions already pin which value the variable had beforehand, but this skill's
+    # empty precondition cannot. `astar(lmcut())` (this project's default search alias)
+    # does not support conditional effects and aborts outright on every `plan_to` call
+    # once this operator is in scope -- confirmed by bisection: dropping just this delete
+    # effect is what fixes it, dropping the add effect instead does not. This project's
+    # `Skill` type has no conditional-effect construct to reach for (same negation gap as
+    # `human_cube_bin_reset_skill`), so the delete effect is dropped rather than
+    # expressed. The one state this leaves imprecise: bridging through `OpenGripper`
+    # while genuinely `Holding` a cube (not a near-miss) would leave the plan believing
+    # `Holding` survives, when the real dynamics drop the cube. Not reachable today --
+    # `OnGround(?cube)` stays False in that belief too (nothing here or elsewhere adds
+    # it), which keeps `PickCube` symbolically unreachable right after -- but a future
+    # skill that adds `OnGround` without going through a pick/toss boundary would need to
+    # revisit this.
+    OPEN_GRIPPER: ClassVar[Skill] = Skill(
+        name="OpenGripper",
+        parameters=(_robot,),
+        preconditions=frozenset(),
+        add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
+        delete_effects=frozenset(),
+        param_dim=0,
+    )
+
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         """A state-independent draw of this skill's continuous parameters.
@@ -216,6 +260,8 @@ class Tossing3DSkills:
                 rng.uniform(*TOSS_SPEED_BOUNDS),
                 rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
             ])
+        if skill == Tossing3DSkills.OPEN_GRIPPER:
+            return np.zeros(0)
         raise ValueError(f"Unknown skill: {skill.name}")
 
     @staticmethod
@@ -242,4 +288,6 @@ class Tossing3DSkills:
                 ],
                 dtype=float,
             )
+        if skill == Tossing3DSkills.OPEN_GRIPPER:
+            return np.array([Tossing3DEnvironment.open_gripper_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
         raise ValueError(f"Unknown skill: {skill.name}")

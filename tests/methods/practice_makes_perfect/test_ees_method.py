@@ -142,15 +142,17 @@ def test_score_prefers_a_skill_whose_improvement_helps_the_seen_tasks() -> None:
     )
 
 
-def test_score_skips_a_perfect_skill() -> None:
-    """predicators' active_sampler_explorer_skip_perfect: a skill already at 100%
-    measured success is not worth practicing, so it scores -inf."""
+def test_score_never_drops_a_perfect_skill_to_negative_infinity() -> None:
+    """predicators' active_sampler_explorer_skip_perfect drops a skill already at
+    100% measured success as not worth practicing. Deliberately not ported (see
+    EesMethod's class docstring, deviation 1): a mastered skill stays scoreable,
+    the UCB bonus alone deprioritizing it as its trial count grows."""
     method, env = _build()
     skill = _turn_on_light(env=env)
     _record_one_seen_task(method=method, env=env)
     for _ in range(10):
         method.observe_outcome(ground_skill=skill, success=True)
-    assert method.score_ground_skill(ground_skill=skill) == -math.inf
+    assert math.isfinite(method.score_ground_skill(ground_skill=skill))
 
 
 def test_end_cycle_advances_every_competence_model() -> None:
@@ -297,9 +299,16 @@ def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_samp
     Note the epsilon branch only exists once a sampler has been *fitted* -- before
     that there is nothing to be greedy about, so the first cycle's attempts do
     update competence (predicators behaves the same way, using the unwrapped base
-    sampler until the first learning cycle). Hence the warm-up cycle below."""
+    sampler until the first learning cycle). Hence the warm-up cycle below.
+
+    epsilon=1.0 makes every *epsilon-consulted* attempt random, but a sampler
+    trained on single-class data short-circuits before consulting epsilon at all
+    (`SamplerConsultation.UNINFORMATIVE` -- see
+    test_ballring_impossible_skill.py's own note on the same shortcut), so not
+    every parameterized attempt is guaranteed random even here. The assertion
+    below reads the real random/non-random split off `practice_outcomes()`
+    rather than assuming every attempt took the random branch."""
     env = LightSwitchEnvironment(grid_size=4)
-    # epsilon=1.0 => once fitted, every parameterized attempt takes the random branch.
     method = EesMethod(
         env=env,
         skill_provider=LightSwitchSkillProvider(env=env),
@@ -336,7 +345,21 @@ def test_random_exploration_attempts_are_kept_out_of_competence_but_kept_as_samp
 
     _practice(steps=12)
 
-    assert _parameterized_competence_observations() == competence_before
+    # Every parameterized skill's competence count must equal exactly its
+    # non-random attempts (num_attempts - num_random_attempts) -- the real
+    # invariant this test is about, robust to the single-class-shortcut caveat
+    # above (an UNINFORMATIVE attempt is non-random and correctly counted).
+    parameterized_names = {
+        ground_skill.skill.name
+        for ground_skill in method._competence_models
+        if ground_skill.skill.param_dim > 0
+    }
+    expected_parameterized_competence = sum(
+        tally.num_attempts - tally.num_random_attempts
+        for name, tally in method.practice_outcomes().items()
+        if name in parameterized_names
+    )
+    assert _parameterized_competence_observations() == expected_parameterized_competence
     assert method.sampler(skill_name="TurnOnLight", param_dim=1).num_observations > sampler_before
     # Param-free skills (MoveRobot) have no sampler and so no epsilon branch --
     # their competence keeps being tracked normally.
@@ -715,26 +738,6 @@ def test_flag_on_counts_random_attempts_in_measured_success_rate() -> None:
     _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
     # 20 greedy successes + 20 random failures = 20/40.
     assert method.measured_success_rate(ground_skill=skill) == pytest.approx(0.5)
-
-
-def test_flag_on_stops_skip_perfect_from_firing_on_a_greedy_only_perfect_skill() -> None:
-    """The mechanism the flag targets: OFF, a mastered skill's random failures are
-    invisible so its measured rate is 1.0 and `skip_perfect` scores it -inf; ON, the
-    random failures count, the rate is below 1.0, and the skill stays a candidate."""
-    off, env = _build()
-    on, _ = _build()
-    on.reproduce_predicators_practice_target_history = True
-    off.reproduce_predicators_practice_target_history = False
-    skill = _turn_on_light(env=env)
-    for method in (off, on):
-        _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=20)
-
-    # OFF (current behavior): only greedy successes are visible -> perfect -> skipped.
-    assert off.measured_success_rate(ground_skill=skill) == 1.0
-    assert off.score_ground_skill(ground_skill=skill) == -math.inf
-    # ON (predicators): random failures count -> not perfect -> still scored finitely.
-    assert on.score_ground_skill(ground_skill=skill) != -math.inf
-    assert math.isfinite(on.score_ground_skill(ground_skill=skill))
 
 
 def test_flag_on_counts_random_attempts_in_the_ucb_denominator() -> None:
@@ -1163,12 +1166,11 @@ def test_practice_target_outcomes_is_empty_before_anything_is_scored() -> None:
     assert method.practice_target_outcomes() == {}
 
 
-def test_a_perfect_skill_is_recorded_as_declined_not_merely_absent() -> None:
-    """The Tossing3D blind spot in miniature. A grounding at a measured rate of 1.0
-    scores -inf under skip_perfect and choose_practice_target drops it, so it never
-    appears as a practice target -- indistinguishable, from the outside, from a
-    grounding that was never a candidate at all. This is the counter that tells them
-    apart."""
+def test_a_perfect_skill_is_recorded_as_scored_not_declined() -> None:
+    """predicators' active_sampler_explorer_skip_perfect would drop a grounding at
+    a measured rate of 1.0 (`num_declined_perfect`) instead of scoring it. Not
+    ported here (see EesMethod's class docstring, deviation 1): a perfect skill
+    stays a scored candidate like any other."""
     method, env = _build()
     perfect = _turn_on_light(env=env)
     for _ in range(5):
@@ -1178,8 +1180,8 @@ def test_a_perfect_skill_is_recorded_as_declined_not_merely_absent() -> None:
     method.choose_practice_target()
 
     tally = method.practice_target_outcomes()["TurnOnLight"]
-    assert tally.num_declined_perfect == 1
-    assert tally.num_scored == 0
+    assert tally.num_scored == 1
+    assert tally.num_declined_perfect == 0
 
 
 def test_an_imperfect_skill_is_recorded_as_scored() -> None:
@@ -1195,9 +1197,11 @@ def test_an_imperfect_skill_is_recorded_as_scored() -> None:
     assert tally.num_declined_perfect == 0
 
 
-def test_declining_is_counted_once_per_grounding_not_once_per_lifted_skill() -> None:
+def test_scoring_is_counted_once_per_grounding_not_once_per_lifted_skill() -> None:
     """score_ground_skill is keyed by GROUND skill while the tally is keyed by the
-    lifted name, so two perfect groundings of one skill must contribute 2, not 1."""
+    lifted name, so two groundings of one skill must contribute 2, not 1 -- even
+    when both are perfect, which no longer excludes them from being scored (see
+    EesMethod's class docstring, deviation 1)."""
     method, env = _build()
     cells = env.get_cells()
     groundings = [
@@ -1209,20 +1213,7 @@ def test_declining_is_counted_once_per_grounding_not_once_per_lifted_skill() -> 
 
     method.choose_practice_target()
 
-    assert method.practice_target_outcomes()["MoveRobot"].num_declined_perfect == 2
-
-
-def test_skip_perfect_off_scores_a_perfect_skill_instead_of_declining_it() -> None:
-    method, env = _build()
-    method.skip_perfect = False
-    perfect = _turn_on_light(env=env)
-    method.observe_outcome(ground_skill=perfect, success=True)
-
-    method.choose_practice_target()
-
-    tally = method.practice_target_outcomes()["TurnOnLight"]
-    assert tally.num_declined_perfect == 0
-    assert tally.num_scored == 1
+    assert method.practice_target_outcomes()["MoveRobot"].num_scored == 2
 
 
 class _SilentTargetEesMethod(EesMethod):
@@ -1253,13 +1244,12 @@ def test_recording_practice_targets_does_not_change_what_ees_does() -> None:
         _record_one_seen_task(method=method, env=env)
         method.observe_outcome(ground_skill=groundings[0], success=True)
         method.observe_outcome(ground_skill=groundings[0], success=False)
-        # Perfect, so skip_perfect drops it -- the branch that records the most.
         method.observe_outcome(ground_skill=groundings[1], success=True)
 
     assert recording.choose_practice_target() == silent.choose_practice_target()
     assert recording._rng.bit_generator.state == silent._rng.bit_generator.state
     # And the recorder really was doing something in the arm that kept it.
-    assert recording.practice_target_outcomes()["MoveRobot"].num_declined_perfect == 1
+    assert recording.practice_target_outcomes()["MoveRobot"].num_scored == 1
     assert silent.practice_target_outcomes() == {}
 
 

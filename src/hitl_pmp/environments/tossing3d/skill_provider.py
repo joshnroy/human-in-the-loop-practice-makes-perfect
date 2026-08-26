@@ -32,7 +32,15 @@ class Tossing3DSkillProvider(SkillProvider):
     env: Tossing3DEnvironment
 
     def skills(self) -> tuple[Skill, ...]:
-        return (Tossing3DSkills.PICK_CUBE, Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS)
+        return (
+            Tossing3DSkills.PICK_CUBE,
+            Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+            # Robot-executed, unlike `human_cube_bin_reset_skill` -- always offered to the
+            # planner (unconditionally, not gated behind `plan_to`'s `practicing`), since
+            # it is a free real action rather than a costed human intervention. See its
+            # docstring in skills.py for why it exists.
+            Tossing3DSkills.OPEN_GRIPPER,
+        )
 
     def predicates(self) -> tuple[Predicate, ...]:
         return (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
@@ -63,11 +71,38 @@ class Tossing3DSkillProvider(SkillProvider):
         untouched. Effects: `OnGround`/`Reachable` become true, `InBin` becomes
         false; everything unnamed (`HandEmpty`, `Holding`) stays as it was.
 
-        `HandEmpty(robot)` is a real precondition, not decoration: without it the
-        operator would claim `Holding` is unaffected even while the robot holds
-        the cube, which repositioning it out from under a closed gripper doesn't
-        actually describe (`skills.py`'s "never permit more than the raw dynamics
-        allow" rule). Requiring it first makes that claim true by construction."""
+        No precondition -- callable from any state. Used to require
+        `HandEmpty(robot)`, on the reasoning that without it the operator would
+        claim `Holding` is unaffected even while the robot holds the cube, which
+        repositioning it out from under a closed gripper doesn't actually
+        describe. That guarded a real correctness gap, but it also made the
+        rescue mechanism unreachable from the one state it exists to rescue:
+        `HandEmpty` is a *command* read (gripper commanded open), not "nothing is
+        genuinely held", and it is never the *effect* of any operator in this
+        domain -- so a gripper that closes without actually grasping anything
+        (`Holding` false, `HandEmpty` also false, since the command is still
+        "closed") reaches a dead end no plan can escape: `PickCube` needs
+        `HandEmpty`, `MoveToTossLocationAndToss` needs `Holding`, and the old
+        precondition meant the reset needed `HandEmpty` too. Nothing in the
+        model can ever produce `HandEmpty` from that state, so the episode raised
+        `InteractionComplete` with a rescue mechanism configured and available,
+        just unreachable.
+
+        The right precondition is really `not Holding` (dropping a genuinely
+        held cube out from under the gripper is the actual problem; an empty,
+        commanded-closed gripper isn't), but this framework's `LiftedAtom`
+        preconditions are positive-only -- no negation. Dropping the
+        precondition to none is what "not Holding" degrades to given that
+        constraint, since `Holding` is true only rarely (mid-carry) and this
+        skill is otherwise always safe to offer. The one residual risk: a
+        *hypothetical* multi-step plan built by the classical planner that
+        chains this skill before `MoveToTossLocationAndToss` would internally
+        assume `Holding` survives the reset, which is false. Nothing in the
+        current domain builds a plan of that shape, and live execution always
+        re-observes predicates fresh from the real simulator rather than
+        carrying planning-time predictions forward -- but a future skill or
+        planner change that did chain them this way would need to account for
+        it."""
         env = self.env
         robot = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
         cube = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
@@ -76,9 +111,7 @@ class Tossing3DSkillProvider(SkillProvider):
         skill = Skill(
             name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
             parameters=(robot, cube, bin_, barrier),
-            preconditions=frozenset({
-                LiftedAtom(predicate=HAND_EMPTY, variables=(robot,)),
-            }),
+            preconditions=frozenset(),
             add_effects=frozenset({
                 LiftedAtom(predicate=ON_GROUND, variables=(cube,)),
                 LiftedAtom(predicate=REACHABLE, variables=(cube, barrier)),

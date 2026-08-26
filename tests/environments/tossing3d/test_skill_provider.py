@@ -10,7 +10,7 @@ reset_movables` (the *execution* half) touch MuJoCo, and those are covered separ
 from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import HAND_EMPTY, IN_BIN, ON_GROUND, REACHABLE
+from hitl_pmp.environments.tossing3d.predicates import IN_BIN, ON_GROUND, REACHABLE
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 
 
@@ -32,17 +32,18 @@ def test_it_is_bound_to_all_four_domain_objects() -> None:
     assert ground.objects == (env.robot, env.cube, env.bin, env.barrier)
 
 
-def test_the_ground_precondition_is_exactly_hand_empty_of_the_robot() -> None:
-    """HandEmpty(robot) is what makes 'nothing about Holding changes' true by
-    construction: repositioning the cube out from under a closed gripper is not
-    something this operator's effects describe, so it must never be offered while the
-    robot could be holding the cube. See Tossing3DSkillProvider.human_cube_bin_reset_
-    skill's own docstring."""
+def test_the_ground_precondition_is_now_empty_not_hand_empty() -> None:
+    """Used to require HandEmpty(robot), on the reasoning that 'nothing about Holding
+    changes' is only true while the gripper is empty. That guarded a real correctness
+    gap but made the rescue unreachable from the one state it exists to rescue -- a
+    near-miss grasp leaves HandEmpty and Holding both false, and nothing in this
+    domain's operator model ever restores HandEmpty on its own. The framework has no
+    negation, so the closest expressible precondition to the right one (not Holding)
+    is none at all. See Tossing3DSkillProvider.human_cube_bin_reset_skill's own
+    docstring for the full reasoning."""
     env = Tossing3DEnvironment()
     ground = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skill()
-    assert ground.preconditions == frozenset({
-        GroundAtom(predicate=HAND_EMPTY, objects=(env.robot,)),
-    })
+    assert ground.preconditions == frozenset()
 
 
 def test_add_effects_place_the_cube_on_ground_and_reachable() -> None:

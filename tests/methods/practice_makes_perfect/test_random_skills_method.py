@@ -1,6 +1,5 @@
 import pytest
 
-from hitl_pmp.core.method.method import InteractionComplete
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
@@ -109,19 +108,28 @@ def test_different_seeds_can_produce_different_action_sequences() -> None:
     assert labels_a != labels_b
 
 
-def _missed_toss_dead_end() -> tuple[Tossing3DEnvironment, RandomSkillsMethod, State]:
-    """A real Tossing3D dead end, offline: the state after a toss that missed.
+def _missed_toss_no_forward_progress() -> tuple[Tossing3DEnvironment, RandomSkillsMethod, State]:
+    """The state after a toss that missed -- no longer a total dead end, but nothing
+    applicable here makes progress toward the goal.
 
     Not a contrivance. `Toss` unconditionally deletes `Reachable(cube, barrier)` --
     the barrier is one-way -- so once the cube is past it `Pick` is inapplicable, and
-    with an empty hand neither `MoveToThrowPose` nor `Toss` is either. Every episode
-    of this domain ends here, which is why the old assert crashed 10/10 runs.
+    with an empty hand neither `MoveToThrowPose` nor `Toss` is either.
+
+    `OpenGripper` is the one exception, and it does not reopen this (see
+    `Tossing3DSkills.OPEN_GRIPPER`'s own docstring): it has no precondition, so it is
+    always symbolically applicable, including here -- but its effects touch only
+    `HandEmpty`, never `Reachable`/`OnGround`/`InBin`, so applying it changes nothing
+    about whether the goal is reachable. `test_problem.py`'s
+    `test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_barrier`
+    pins the same invariant at the grounder level; this asserts what it means for this
+    baseline's dispatch, since a uniform draw over one candidate always picks it.
 
     The numbers are the recorded ones, not invented: cube at x = 2.86 is a *missed*
     toss (the goal region is x in [1.85, 2.15], so the cube is outside it and the
     task is unsolved -- had it landed in, `run_task_episode`'s goal check would end
     the episode before ever calling the policy), and the base at x = 0.65 is a real
-    post-toss pose, so `RobotAtSuccessfulThrowPose` genuinely holds and the dead end is
+    post-toss pose, so `RobotAtSuccessfulThrowPose` genuinely holds and the state is
     not an artifact of the robot standing somewhere it could never be.
 
     The abstraction is passed in rather than derived, because this domain's predicates are
@@ -129,7 +137,7 @@ def _missed_toss_dead_end() -> tuple[Tossing3DEnvironment, RandomSkillsMethod, S
     `environments/tossing3d/predicates.py`). `MISSED_TOSS_ATOMS` states the same situation
     the feature values do: hand empty, cube resting past the one-way barrier, base at a
     throw pose. A hand-built state with no abstraction raises here rather than silently
-    answering `False` to every predicate -- which would have made this dead end look like a
+    answering `False` to every predicate -- which would have made this state look like a
     dead end for the wrong reason.
     """
     env = Tossing3DEnvironment()
@@ -141,31 +149,32 @@ def _missed_toss_dead_end() -> tuple[Tossing3DEnvironment, RandomSkillsMethod, S
         steps_taken=3,
         abstract_atoms=MISSED_TOSS_ATOMS,
     )
-    assert method.applicable_ground_skills(state=state) == []
+    applicable = method.applicable_ground_skills(state=state)
+    assert {ground.skill.name for ground in applicable} == {"OpenGripper"}
     return env, method, state
 
 
-def test_a_dead_end_evaluation_step_degrades_to_a_no_op_rather_than_asserting() -> None:
-    """The evaluation half, matching EesMethod: `run_task_episode` owns termination,
-    so the policy hands back an inert action instead of raising."""
-    env, method, dead_end = _missed_toss_dead_end()
+def test_a_no_progress_evaluation_step_dispatches_the_open_gripper_rescue() -> None:
+    """The evaluation half: `OpenGripper` is the only applicable skill here, so the
+    uniform draw always picks it -- a real (if useless-for-the-goal) dispatch, not the
+    no-op degradation this used to be before `OpenGripper` existed (see
+    `_missed_toss_no_forward_progress`)."""
+    _env, method, state = _missed_toss_no_forward_progress()
 
-    labeled = method.get_task_policy(task=None)(dead_end)  # type: ignore[arg-type]
+    labeled = method.get_task_policy(task=None)(state)  # type: ignore[arg-type]
 
-    assert labeled.label == "no-op (no applicable skills)"
-    assert labeled.action.tolist() == env.noop_action().tolist()
+    assert labeled.label == "OpenGripper(robot)"
 
 
-def test_a_dead_end_practice_step_ends_the_period_instead_of_burning_it() -> None:
-    """The practice half, also matching EesMethod. Without this the two arms are not
-    comparable: practice_loop.py charges a transition per step with no goal check, so
-    a dead-ended period would spend its whole remaining budget on no-ops while EES
-    stops -- and `--method random-skills --num-cycles 10` over EES's budget is exactly
-    how the two get plotted on one transition axis."""
-    _env, method, dead_end = _missed_toss_dead_end()
+def test_a_no_progress_practice_step_dispatches_open_gripper_instead_of_ending_the_period() -> None:
+    """The practice half, also matching EesMethod's own behaviour once `OpenGripper`
+    made this state no longer a total dead end for either method: neither raises
+    `InteractionComplete` here any more."""
+    _env, method, state = _missed_toss_no_forward_progress()
 
-    with pytest.raises(InteractionComplete):
-        method.get_practice_policy(task=None)(dead_end)  # type: ignore[arg-type]
+    labeled = method.get_practice_policy(task=None)(state)  # type: ignore[arg-type]
+
+    assert labeled.label == "OpenGripper(robot)"
 
 
 def test_the_two_phases_agree_wherever_a_skill_is_applicable() -> None:

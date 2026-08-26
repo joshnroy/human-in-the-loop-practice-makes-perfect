@@ -89,6 +89,7 @@ of MuJoCo renders per skill, and a training run that wants no video must not pay
 renderer for.
 """
 
+import logging
 import os
 from collections.abc import Mapping, MutableMapping, Sequence
 from types import ModuleType
@@ -98,6 +99,8 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from .types import AbstractAtom
+
+logger = logging.getLogger(__name__)
 
 # A DISPLAY only has to *exist* -- nothing is ever drawn to it. See the module docstring.
 FALLBACK_DISPLAY = ":0"
@@ -292,6 +295,9 @@ class KinderBackend(BaseModel):
     # `test_pick_cube_then_move_and_toss_scores` allows.
     pick_step_limit: ClassVar[int] = 400
     toss_step_limit: ClassVar[int] = 1000
+    # A single joint-motor actuation, not a multi-phase trajectory -- generous headroom
+    # against `pick_step_limit`/`toss_step_limit` rather than a measured tick count.
+    open_gripper_step_limit: ClassVar[int] = 100
 
     env_id: str = "kinder/Tossing3D-o1-v0"
     scene_bg: bool = True
@@ -824,6 +830,13 @@ class KinderBackend(BaseModel):
         except BaseException as exc:  # noqa: BLE001  (any planner failure is a failed skill)
             if isinstance(exc, KeyboardInterrupt | SystemExit):
                 raise
+            logger.debug(
+                "run_controller: %s/%s reset() raised %s: %s",
+                module,
+                key,
+                type(exc).__name__,
+                exc,
+            )
             return ControllerRun(steps=0, terminated=False, error=f"{type(exc).__name__}: {exc}")
 
         for step in range(limit):
@@ -833,13 +846,33 @@ class KinderBackend(BaseModel):
             except BaseException as exc:  # noqa: BLE001  (same reasoning as above)
                 if isinstance(exc, KeyboardInterrupt | SystemExit):
                     raise
+                logger.debug(
+                    "run_controller: %s/%s step() raised at step=%d: %s: %s",
+                    module,
+                    key,
+                    step,
+                    type(exc).__name__,
+                    exc,
+                )
                 return ControllerRun(
                     steps=step, terminated=False, error=f"{type(exc).__name__}: {exc}"
                 )
             self._state = self._env.observation_space.devectorize(observation)
             controller.observe(self._state)
             if controller.terminated():
+                logger.debug(
+                    "run_controller: %s/%s terminated normally at step=%d",
+                    module,
+                    key,
+                    step + 1,
+                )
                 return ControllerRun(steps=step + 1, terminated=True)
+        logger.debug(
+            "run_controller: %s/%s hit limit=%d without terminating",
+            module,
+            key,
+            limit,
+        )
         return ControllerRun(steps=limit, terminated=False)
 
     def run_pick_cube(self) -> ControllerRun:
@@ -861,6 +894,24 @@ class KinderBackend(BaseModel):
             object_names=(self.robot_name, self.cube_name, self.barrier_name),
             params=None,
             limit=self.pick_step_limit,
+        )
+
+    def run_open_gripper(self) -> ControllerRun:
+        """`open_gripper` -- upstream's parameterless gripper-open primitive.
+
+        Exists so the robot itself can recover from a near-miss grasp: the gripper can
+        end up commanded closed on nothing (`HandEmpty` False, `Holding` False, since the
+        close never actually caught the cube), and no other operator in this domain's
+        model ever re-opens it -- `MoveToTossLocationAndToss` is the only one that adds
+        `HandEmpty` back, and it requires `Holding`, which is exactly what is missing.
+        `params` is `None` for the same reason as `run_pick_cube`: nothing to sample.
+        """
+        return self.run_controller(
+            module="tossing",
+            key="open_gripper",
+            object_names=(self.robot_name,),
+            params=None,
+            limit=self.open_gripper_step_limit,
         )
 
     def run_move_to_toss_location_and_toss(

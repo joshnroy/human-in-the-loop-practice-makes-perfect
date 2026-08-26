@@ -90,9 +90,9 @@ class EesCli:
             "--reproduce-predicators-practice-target-history",
             action=argparse.BooleanOptionalAction,
             default=EesMethod.model_fields["reproduce_predicators_practice_target_history"].default,
-            help="Compute skip_perfect and the UCB num_tries/total from an all-attempts "
-            "history (greedy + random), matching predicators' _ground_op_hist (default "
-            "on). --no-... reads the random-excluding competence history instead.",
+            help="Compute the UCB num_tries/total from an all-attempts history (greedy "
+            "+ random), matching predicators' _ground_op_hist (default on). --no-... "
+            "reads the random-excluding competence history instead.",
         )
         parser.add_argument(
             "--reproduce-predicators-explore-target-only",
