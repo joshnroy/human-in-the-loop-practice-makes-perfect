@@ -1,0 +1,21 @@
+{
+  "executed_actions": 16,
+  "scored_actions": 15,
+  "unscored_actions": 1,
+  "skills": {
+    "MoveToTossLocationAndToss": {
+      "attempts": 7,
+      "successes": 3
+    },
+    "PickCubeFromBin": {
+      "attempts": 3,
+      "successes": 3
+    },
+    "PickCubeFromFloor": {
+      "attempts": 5,
+      "successes": 4
+    }
+  },
+  "practice_resets": 0,
+  "human_interventions": 0
+}
