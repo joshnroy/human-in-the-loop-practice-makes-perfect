@@ -40,9 +40,9 @@ scripts/with_env.sh python analysis/tossing3d_autonomous.py --run-dir artifacts/
 The wrapper delegates directly to `Cli.main`: same-side scene, canonical seed 125,
 EES seed 0, one 16-action practice period, two-action goal-pursuit horizon, no practice
 resets, no human reset skill, one held-out evaluation task, 200 sampler training iterations.
-The supplied video was produced with the equivalent direct CLI invocation during the
-pilot; the launcher-delegation test pins that argument list. All throw parameters were
-sampled by EES. The two-action horizon only limits initial goal pursuit; it does not
+The supplied video is produced by the launcher; the launcher-delegation test pins its
+argument list. The repeated run produced identical metrics to the initial direct-CLI
+pilot. All throw parameters were sampled by EES. The two-action horizon only limits initial goal pursuit; it does not
 specify the subsequent skills or their parameters.
 
 The normal loop performs baseline and final evaluation on a separate environment.
