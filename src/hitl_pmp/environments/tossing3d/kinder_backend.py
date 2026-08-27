@@ -794,6 +794,7 @@ class KinderBackend(BaseModel):
         object_names: Sequence[str],
         params: np.ndarray | None,
         limit: int,
+        pybullet_sim: Any = None,
     ) -> ControllerRun:
         """Drive one upstream controller to termination, stepping the live simulator.
 
@@ -821,7 +822,8 @@ class KinderBackend(BaseModel):
         }
         if module not in factory:
             raise ValueError(f"unknown controller module {module!r}; known: {sorted(factory)}")
-        lifted = factory[module](self._env.action_space)
+        kwargs = {} if pybullet_sim is None else {"pybullet_sim": pybullet_sim}
+        lifted = factory[module](self._env.action_space, **kwargs)
         if key not in lifted:
             raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
         objects = tuple(state.get_object_from_name(name) for name in object_names)
@@ -896,6 +898,35 @@ class KinderBackend(BaseModel):
             object_names=(self.robot_name, self.cube_name, self.barrier_name),
             params=None,
             limit=self.pick_step_limit,
+        )
+
+    def run_pick_cube_from_bin(self) -> ControllerRun:
+        """Provide the live bin's dimensions to upstream's collision-aware retrieval."""
+        from kinder_models.dynamic3d.utils import PyBulletSim
+        from pybullet_helpers.geometry import Pose
+
+        state = self._require_state()
+        obj = state.get_object_from_name(self.bin_name)
+        bin_object = self._object_centric().get_object(self.bin_name)
+        sim = PyBulletSim(state)
+        sim.add_bin(
+            name=self.bin_name,
+            pose=Pose(
+                tuple(state.get(obj, f) for f in ("x", "y", "z")),
+                tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
+            ),
+            length=bin_object.length,
+            width=bin_object.width,
+            height=bin_object.height,
+            wall_thickness=bin_object.wall_thickness,
+        )
+        return self.run_controller(
+            module="tossing",
+            key="pick_cube_from_bin",
+            object_names=(self.robot_name, self.cube_name, self.bin_name),
+            params=None,
+            limit=self.pick_step_limit,
+            pybullet_sim=sim,
         )
 
     def run_open_gripper(self) -> ControllerRun:

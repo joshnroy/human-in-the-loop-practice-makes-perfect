@@ -43,6 +43,24 @@ CONTAINMENT_TOLERANCE = 1e-9
 BIN_POSITION_SEEDS = (CANONICAL_SEED, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
 
+def test_same_side_bin_retrieval_after_an_actual_throw() -> None:
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    try:
+        env.hard_reset()
+        picked = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+        assert HOLDING.holds(picked, (env.robot, env.cube))
+        landed = env.take_action(action=np.array([1, 1.35, 0, 130, 792], dtype=float))
+        assert IN_BIN.holds(landed, (env.cube, env.bin))
+        # Action 3 is the new bin-retrieval skill; on the old implementation it is a no-op.
+        retrieved = env.take_action(action=np.array([3, 0, 0, 0, 0], dtype=float))
+        assert HOLDING.holds(retrieved, (env.robot, env.cube)), env.last_skill_error()
+        assert not IN_BIN.holds(retrieved, (env.cube, env.bin))
+    finally:
+        env.close()
+
+
 def _env():
     return Tossing3DEnvironment()
 

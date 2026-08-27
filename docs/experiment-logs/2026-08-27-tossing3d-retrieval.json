@@ -1,0 +1,102 @@
+[
+  {
+    "step": "initial floor pick",
+    "action": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "frames": 208,
+    "holding": true,
+    "in_bin": false,
+    "reachable": true,
+    "error": null,
+    "cube": {
+      "x": 0.45996934175491333,
+      "y": 0.13619501888751984,
+      "z": 0.5885497331619263
+    }
+  },
+  {
+    "step": "throw 1",
+    "action": [
+      1,
+      1.35,
+      0,
+      130,
+      792
+    ],
+    "frames": 109,
+    "holding": false,
+    "in_bin": true,
+    "reachable": true,
+    "error": null,
+    "cube": {
+      "x": 0.07787114381790161,
+      "y": -0.7121977806091309,
+      "z": 0.04435417428612709
+    }
+  },
+  {
+    "step": "retrieve 1",
+    "action": [
+      3,
+      0,
+      0,
+      0,
+      0
+    ],
+    "frames": 350,
+    "holding": true,
+    "in_bin": false,
+    "reachable": true,
+    "error": null,
+    "cube": {
+      "x": 0.38506826758384705,
+      "y": -0.72057044506073,
+      "z": 0.5876829028129578
+    }
+  },
+  {
+    "step": "throw 2",
+    "action": [
+      1,
+      1.35,
+      0,
+      115,
+      700
+    ],
+    "frames": 142,
+    "holding": false,
+    "in_bin": false,
+    "reachable": true,
+    "error": null,
+    "cube": {
+      "x": -0.3626158535480499,
+      "y": -0.7043076157569885,
+      "z": 0.02489224448800087
+    }
+  },
+  {
+    "step": "retrieve 2",
+    "action": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "frames": 202,
+    "holding": true,
+    "in_bin": false,
+    "reachable": true,
+    "error": null,
+    "cube": {
+      "x": -0.6507573127746582,
+      "y": -0.7339256405830383,
+      "z": 0.5882524251937866
+    }
+  }
+]
