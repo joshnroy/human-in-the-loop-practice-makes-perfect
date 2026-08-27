@@ -27,6 +27,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from .layout import Tossing3DLayout
+
 
 class SkillEvent(BaseModel):
     """One ground skill dispatch: its name, the objects it was bound to, and its
@@ -53,6 +55,7 @@ class StateLogHeader(BaseModel):
     task's own atoms (a fresh `Tossing3DTasks` reproduces the same train-task stream
     from `seed` alone, so the header does not need to carry a task's initial state)."""
 
+    layout: Tossing3DLayout = Tossing3DLayout.BARRIER
     variant: str
     scene_bg: bool
     canonical_seed: int

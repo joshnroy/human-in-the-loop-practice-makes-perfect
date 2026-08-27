@@ -92,6 +92,7 @@ renderer for.
 import logging
 import os
 from collections.abc import Mapping, MutableMapping, Sequence
+from pathlib import Path
 from types import ModuleType
 from typing import Any, ClassVar
 
@@ -299,6 +300,7 @@ class KinderBackend(BaseModel):
     # against `pick_step_limit`/`toss_step_limit` rather than a measured tick count.
     open_gripper_step_limit: ClassVar[int] = 100
 
+    task_config_path: Path | None = None
     env_id: str = "kinder/Tossing3D-o1-v0"
     scene_bg: bool = True
     camera: str = DEFAULT_CAMERA
@@ -416,16 +418,16 @@ class KinderBackend(BaseModel):
         """
         api = self.api()
         if self._raw_env is None:
-            # No `task_config_path` override: this domain runs whatever scene the
-            # installed KINDER registers for `env_id`. See
-            # `Tossing3DEnvironment.backend` for why the choice was retired, and
-            # `test_the_shipped_scene_still_puts_the_bin_on_the_box_that_scores` for
-            # what stops a pin bump changing that scene silently.
+            # The default uses upstream unchanged; the named same-side layout is opt-in.
+            config_kwargs = {}
+            if self.task_config_path is not None:
+                config_kwargs["task_config_path"] = str(self.task_config_path.resolve())
             self._raw_env = api.kinder.make(
                 self.env_id,
                 render_mode=self.render_mode,
                 scene_bg=self.scene_bg,
                 allow_state_access=self.allow_state_access,
+                **config_kwargs,
             )
             object_centric = self._object_centric()
             available = list(getattr(object_centric, "camera_names", []))

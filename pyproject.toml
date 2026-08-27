@@ -220,3 +220,6 @@ layers = [
     "hitl_pmp.recording",
     "hitl_pmp.core",
 ]
+
+[tool.setuptools.package-data]
+hitl_pmp = ["environments/tossing3d/scenes/*.json"]

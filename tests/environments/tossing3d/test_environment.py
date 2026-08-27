@@ -125,14 +125,9 @@ def test_the_cube_carries_the_full_rotation_and_bounding_box_the_symmetry_test_n
 
 
 def test_the_backend_overrides_no_task_config_so_the_scene_is_upstreams() -> None:
-    """**The retired choice, pinned as an absence.** This domain used to select between
-    upstream's `Tossing3D-o1.json` and a copy of it committed here; passing no
-    `task_config_path` is what "run whatever the installed KINDER ships" means at the
-    seam, and a future change that reintroduced an override would silently reintroduce
-    the fork this removed. Reads the backend rather than the simulator, so it stays
-    offline."""
+    """An explicit alternate layout must not change the default upstream scene."""
     backend = Tossing3DEnvironment().backend()
-    assert not hasattr(backend, "task_config_path")
+    assert backend.task_config_path is None
     assert backend.env_id == "kinder/Tossing3D-o1-v0"
 
 
