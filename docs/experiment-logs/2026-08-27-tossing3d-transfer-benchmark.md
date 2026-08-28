@@ -67,6 +67,9 @@ ten fixed far-side test tasks per seed. This is the run at source commit
 `e855da4fd043754b72f924793241f1a5251f6177`, **before the rim recovery fix**.
 Later stack maintenance and the optional-reset correction do not change the source
 commit recorded in these original results. Human resets were disabled throughout.
+The original source revision is retained on `codex/tossing3d-transfer-recorded-run`
+so restacking the draft PRs does not remove its branch reference. This archive is
+not an additional PR or a new experiment.
 
 ![Mean and sample standard deviation over ten seeds](2026-08-27-tossing3d-transfer/plots/learning-curve.png)
 

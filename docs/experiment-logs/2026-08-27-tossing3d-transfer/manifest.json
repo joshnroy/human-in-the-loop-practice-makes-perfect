@@ -1,5 +1,6 @@
 {
   "source_commit": "e855da4fd043754b72f924793241f1a5251f6177",
+  "source_ref": "refs/heads/codex/tossing3d-transfer-recorded-run",
   "includes_rim_fix": false,
   "practice_video_file_counts_at_source": {
     "0": 100,
