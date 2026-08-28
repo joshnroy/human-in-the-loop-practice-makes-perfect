@@ -78,3 +78,10 @@ Five regression cases failed before this correction and passed afterward. Real
 planner tests cover both open and closed empty grippers, ordinary floor pickup
 with reset offered, and stranded-cube recovery through a reset. This does not
 enable resets in the autonomous demonstration or benchmark.
+
+Physical reset placement already reads the loaded scene JSON's `initial_state`
+assignments and the corresponding region samplers; no placement coordinates are
+duplicated in the reset. Two additional simulator tests verify the shipped same-side
+JSON and a temporary JSON with changed bounds and renamed regions. Three resets per
+case place both objects in the configured regions, keep the bin on the robot's side,
+and leave the robot pose unchanged.
