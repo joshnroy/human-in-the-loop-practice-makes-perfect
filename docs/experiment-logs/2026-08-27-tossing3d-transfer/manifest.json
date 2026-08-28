@@ -1,0 +1,205 @@
+{
+  "source_commit": "e855da4fd043754b72f924793241f1a5251f6177",
+  "includes_rim_fix": false,
+  "practice_video_file_counts_at_source": {
+    "0": 100,
+    "1": 100,
+    "2": 100,
+    "3": 100,
+    "4": 100,
+    "5": 100,
+    "6": 100,
+    "7": 100,
+    "8": 100,
+    "9": 100
+  },
+  "selected_videos": [
+    {
+      "file": "videos/seed-0-cycle-0000.mp4",
+      "source": "ees/0/period_videos/practice/cycle_0000.mp4",
+      "reason": "First period of seed 0, selected by seed/order, not success."
+    },
+    {
+      "file": "videos/seed-0-cycle-0099.mp4",
+      "source": "ees/0/period_videos/practice/cycle_0099.mp4",
+      "reason": "Last period of seed 0, showing late-session behavior."
+    },
+    {
+      "file": "videos/seed-1-cycle-0002.mp4",
+      "source": "ees/1/period_videos/practice/cycle_0002.mp4",
+      "reason": "Last period with new actions before seed 1 stopped at 55 actions."
+    },
+    {
+      "file": "videos/seed-2-cycle-0002.mp4",
+      "source": "ees/2/period_videos/practice/cycle_0002.mp4",
+      "reason": "Last period with new actions before seed 2 stopped at 57 actions."
+    },
+    {
+      "file": "videos/seed-3-cycle-0000.mp4",
+      "source": "ees/3/period_videos/practice/cycle_0000.mp4",
+      "reason": "Seed 3 period ending at 19 actions with the recorded rim landing."
+    }
+  ],
+  "files": {
+    "ees/0/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "6914c24f402eea27d6829e2e643d1b4b77b36229652b312077093d358071c9e8"
+    },
+    "ees/0/stats.json": {
+      "bytes": 326076,
+      "sha256": "5e48a4bdd6d1b1f740d9a945f5e478702abef3587cf53420d542d8f356417351"
+    },
+    "ees/0/timing.json": {
+      "bytes": 673,
+      "sha256": "60b61139687ad7179c6726a0d2533c8c9ff42ef7264dc34deb063afb57995357"
+    },
+    "ees/1/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "1eea42926fbb1fc5c372cbbc661aa578c59529fae5a0f80f5ca6f21140aebd19"
+    },
+    "ees/1/stats.json": {
+      "bytes": 277787,
+      "sha256": "cc9758cdb8296f6ff422ed3a9b5e5973891c268720d203822926d409decb6a49"
+    },
+    "ees/1/timing.json": {
+      "bytes": 674,
+      "sha256": "01e0901bbef42dbf174fa6766f03443a1ed228ae2a5dd3cfee22da6cf73b9dae"
+    },
+    "ees/2/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "d1a7a696fa67ac75eb67b447487250f459779c7e198762501be6b576a6abb00b"
+    },
+    "ees/2/stats.json": {
+      "bytes": 324408,
+      "sha256": "8fb8bb91bbb5aa89ec4094b23bcb10cd6ab566884dede3a4b009f4784a0392d5"
+    },
+    "ees/2/timing.json": {
+      "bytes": 673,
+      "sha256": "5b1ad3a06848dea969173c5b1a346f5802d9456e6d2ac7e25e11bd9f36a1b4f8"
+    },
+    "ees/3/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "4dd07d17ffc0ff36ebbe4d4bb199c88b2050c96fb1616b51f39ffed7d227813a"
+    },
+    "ees/3/stats.json": {
+      "bytes": 324871,
+      "sha256": "509f3a8f2c3ce9e40c0eea41f2d7c1e7a486df11b0e1f46ff293e38e5e08d555"
+    },
+    "ees/3/timing.json": {
+      "bytes": 674,
+      "sha256": "2b47dd53dedd2facb42aff656bd639d08aa728846917556ac096b10c6b5fcbc6"
+    },
+    "ees/4/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "412190e41629462f8f4aa2dfb1708bcdb50ee0951bd1f2a7735def7b57968321"
+    },
+    "ees/4/stats.json": {
+      "bytes": 198673,
+      "sha256": "9490e90b70f11a8d577f17321f443aa5defbd097fab5f05507b7081ec12e0400"
+    },
+    "ees/4/timing.json": {
+      "bytes": 676,
+      "sha256": "9e335b85d7ba602af4804eb5c0ddafdce1d13425ebc261a3266b74c5d1a8e80e"
+    },
+    "ees/5/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "f99fb8176f0b4d918d5885548e0fad3101cb019d873989e8557ea83f28e02d36"
+    },
+    "ees/5/stats.json": {
+      "bytes": 325648,
+      "sha256": "3a2cab290b6b76f78c081ceb0bbce30aec7d45e23ba0091c13ebe36949e7ed56"
+    },
+    "ees/5/timing.json": {
+      "bytes": 671,
+      "sha256": "1d8d85347d29f0fb25dba8a29227212c6f17b48be963d76198f2b10a459b8dd8"
+    },
+    "ees/6/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "e70e7a8cd43b9291264a8fe42337d2a46c15e8d3214d8425615ae2dd59753675"
+    },
+    "ees/6/stats.json": {
+      "bytes": 278669,
+      "sha256": "d0d38e9f6c49a02bff9440a7fd0835e28dac3a9b9a05341402dfc799fccf2c77"
+    },
+    "ees/6/timing.json": {
+      "bytes": 671,
+      "sha256": "7054e9ddd2c619bb46671ab301d94a7ba77a2d6f5c536006d6c07998350accb9"
+    },
+    "ees/7/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "8036a8ac36ae89b12d661d3ff2167f851735a09cd70e2a22d996de21a085668e"
+    },
+    "ees/7/stats.json": {
+      "bytes": 325440,
+      "sha256": "94422c6780d8b947fbde3edfff7531da6f54913768a4dd372c308478395bcabf"
+    },
+    "ees/7/timing.json": {
+      "bytes": 675,
+      "sha256": "3c4445255f7ebacd3dbb0ffed888fd37276cb5ced980c3fb13147caa74b16199"
+    },
+    "ees/8/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "bdbbeff6c3ead667b48653c840246275939b1ba6e09e6dc7507b0642da28c747"
+    },
+    "ees/8/stats.json": {
+      "bytes": 278143,
+      "sha256": "b3cac347fbf0a3a926e6e5d6a1fbc5c2160cfd29b6a404d3bfdf9c77637fb3a6"
+    },
+    "ees/8/timing.json": {
+      "bytes": 672,
+      "sha256": "b054b9e3ca92b08c001ce968256533af0df9f6a722f024816400ca7aa18d831b"
+    },
+    "ees/9/config_snapshot.json": {
+      "bytes": 1758,
+      "sha256": "0ebf79cad1cd315c521f612e23c7ac7a0b4086341c982eea45d066e4a0554ea5"
+    },
+    "ees/9/stats.json": {
+      "bytes": 326169,
+      "sha256": "c0b73b070bf016cdd7357a0670ca6e87800f1491686c090c181045b12a640370"
+    },
+    "ees/9/timing.json": {
+      "bytes": 671,
+      "sha256": "f521736b35a63ec7daca94beaa8207e61c274da410dfc3a4a20b3052ea590c35"
+    },
+    "plots/learning-curve.csv": {
+      "bytes": 6092,
+      "sha256": "e075b8945dc2e3bc0be32aaf09ef521aac51b66f73d1bb413e9c02e438b6d342"
+    },
+    "plots/learning-curve.pdf": {
+      "bytes": 27381,
+      "sha256": "73ccca2214d737cd4e85065ce29d58e000baa48bb55a225614dc5e5ea71bedf7"
+    },
+    "plots/learning-curve.png": {
+      "bytes": 471154,
+      "sha256": "bb030b0409ce91a550397afaeb0fa4a2eef8f5182125e98efa56db021fab2ad0"
+    },
+    "plots/learning-curve.svg": {
+      "bytes": 114846,
+      "sha256": "aa3149e00aca87f14f9722421ed49ab211037454fc407d1d83e3de9c67985da2"
+    },
+    "plots/summary.json": {
+      "bytes": 33183,
+      "sha256": "7b30ee96b2fab0d0f3b66a4c13d612093b59d0e739b7b5b1394ac4aecc7993e0"
+    },
+    "videos/seed-0-cycle-0000.mp4": {
+      "bytes": 761233,
+      "sha256": "0d86312d8832c0ea0493b2412b5065ae86975e1a1af3f4093e236f22291a0b86"
+    },
+    "videos/seed-0-cycle-0099.mp4": {
+      "bytes": 50702,
+      "sha256": "670896628501ba5fbee4594c8031368a3cfe9cc341ef6bdbbbfeefa759dea988"
+    },
+    "videos/seed-1-cycle-0002.mp4": {
+      "bytes": 1947931,
+      "sha256": "257002c11d0c2863353f91a375bf3d69b6beed539d195db314e138add2f90bb4"
+    },
+    "videos/seed-2-cycle-0002.mp4": {
+      "bytes": 2266414,
+      "sha256": "902c3c68f9e400a59b46d4660ba677e63d7b8cf09385fbdb8555527d39ab9ae1"
+    },
+    "videos/seed-3-cycle-0000.mp4": {
+      "bytes": 1904045,
+      "sha256": "ec8b73afb22505dfee66db90cd4844842a67f379428583aa8b70ce5f39dbeab1"
+    }
+  }
+}
