@@ -80,7 +80,8 @@ class Tossing3DSkillProvider(SkillProvider):
     def human_cube_bin_reset_skill(self) -> GroundSkill:
         """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`
         to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot
-        untouched. Effects: `OnGround`/`Reachable` become true, `InBin` becomes
+        untouched. Effects: `OnGround` (or same-side `OnFloor`) and
+        `Reachable` become true, `InBin` becomes
         false; everything unnamed (`HandEmpty`, `Holding`) stays as it was.
 
         No precondition -- callable from any state. Used to require
@@ -120,12 +121,17 @@ class Tossing3DSkillProvider(SkillProvider):
         cube = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
         bin_ = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
         barrier = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
+        floor = (
+            LiftedAtom(predicate=ON_FLOOR, variables=(cube, bin_))
+            if env.layout == Tossing3DLayout.SAME_SIDE
+            else LiftedAtom(predicate=ON_GROUND, variables=(cube,))
+        )
         skill = Skill(
             name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
             parameters=(robot, cube, bin_, barrier),
             preconditions=frozenset(),
             add_effects=frozenset({
-                LiftedAtom(predicate=ON_GROUND, variables=(cube,)),
+                floor,
                 LiftedAtom(predicate=REACHABLE, variables=(cube, barrier)),
             }),
             delete_effects=frozenset({

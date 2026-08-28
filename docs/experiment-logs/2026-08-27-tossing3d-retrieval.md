@@ -67,3 +67,14 @@ or learned improvement. EES selection and continuous autonomous practice are ste
 Keep draft until the dependent controller PR and EES integration are reviewed. Validate
 additional landing poses before treating the grasp as reliable across the full sampler
 range; missed grasps must be observed as failures, never counted as success on termination.
+# Review correction: optional human reset
+
+The same-side operator vocabulary uses `OnFloor(cube, bin)`, whereas the stock
+layout uses `OnGround(cube)`. The human-reset operator now selects the matching
+effect. Previously, merely enabling the reset option made Fast Downward reject the
+same-side domain with an undeclared `OnGround` predicate.
+
+Five regression cases failed before this correction and passed afterward. Real
+planner tests cover both open and closed empty grippers, ordinary floor pickup
+with reset offered, and stranded-cube recovery through a reset. This does not
+enable resets in the autonomous demonstration or benchmark.
