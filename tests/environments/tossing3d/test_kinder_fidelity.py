@@ -606,6 +606,46 @@ def test_reset_movables_leaves_the_barrier_untouched() -> None:
         env.close()
 
 
+def test_human_reset_clears_recorded_rim_support() -> None:
+    """The reset's symbolic effects agree with actual JSON-driven placement."""
+    import json
+
+    from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
+    from hitl_pmp.core.problem.tasks.types import GroundAtom
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.recovery_skills import ON_BIN_RIM, ON_FLOOR
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    try:
+        env.hard_reset()
+        observed = env.restore_plain_snapshot(
+            plain=json.loads((Path(__file__).parent / "fixtures/seed3_rim.json").read_text())
+        )
+        provider = Tossing3DSkillProvider(env=env)
+        reset = provider.human_cube_bin_reset_skill()
+        rim = GroundAtom(predicate=ON_BIN_RIM, objects=(env.cube, env.bin))
+        assert ON_BIN_RIM.holds(observed, (env.cube, env.bin))
+        assert rim in reset.delete_effects
+        method = EesMethod(
+            env=env, skill_provider=provider, seed=0, ask_for_reset_cube_bin_cost=0.001
+        )
+        plan = method.plan_to(
+            init_atoms=method.abstract_state(state=observed),
+            goal=frozenset({GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin))}),
+            costs={},
+            practicing=True,
+        )
+        assert [step.skill.name for step in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+        assert env.reset_movables()
+        after = method.abstract_state(state=env.get_current_state())
+        assert reset.add_effects <= after
+        assert reset.delete_effects.isdisjoint(after)
+    finally:
+        env.close()
+
+
 def test_ees_picks_cube_from_recorded_bin_rim() -> None:
     """Seed 3 stalled after throw 19: EES must actually grasp and lift this cube."""
     import json

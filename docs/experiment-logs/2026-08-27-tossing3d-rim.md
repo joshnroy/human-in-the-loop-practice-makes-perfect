@@ -7,7 +7,8 @@ physics tick is preserved in
 [the regression fixture](../../tests/environments/tossing3d/fixtures/seed3_rim.json).
 The cube was on the upright bin's rim, neither `OnGround` nor `InBin`.
 Before this change the regression reproduced `InteractionComplete` instead of a
-pickup. The benchmark continues unchanged in its separate worktree.
+pickup. The benchmark completed before this change; its results are preserved in
+[the transfer benchmark report](2026-08-27-tossing3d-transfer-benchmark.md).
 
 This change adds `OnBinRim` and `PickCubeFromRim` to the same-side skill provider.
 The predicate tests oriented bounding extents against the actual bin wall geometry,
@@ -38,6 +39,13 @@ scripts/with_env.sh python -m scripts.tossing3d_rim_demo \
 ```
 
 ## Tests
+
+Review correction: the optional human-reset operator now clears `OnBinRim` in
+addition to the inherited same-side `OnFloor` fix. A new regression first failed
+on the missing delete effect, then passed through real planning and physical reset
+from the saved rim state. All predicted reset add/delete effects match the resulting
+observation. This remains an optional human intervention, not part of the autonomous
+rim-pickup demonstration or the recorded reset-free benchmark.
 
 - Red: saved-state integration test raises `InteractionComplete` before the change.
 - Green: EES selects rim pickup, physically grasps and lifts the recorded cube.
