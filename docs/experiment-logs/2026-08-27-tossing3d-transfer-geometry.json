@@ -1,0 +1,14 @@
+[
+  {
+    "role": "Practice",
+    "layout": "same-side",
+    "bin_x": 0.00010074629244627431,
+    "barrier_x": 1.30032217502594
+  },
+  {
+    "role": "Evaluation",
+    "layout": "barrier",
+    "bin_x": 2.179478883743286,
+    "barrier_x": 1.3001840114593506
+  }
+]
