@@ -1,0 +1,8 @@
+{
+  "source_snapshot": "tests/environments/tossing3d/fixtures/seed3_rim.json",
+  "selected_skill": "PickCubeFromRim(robot, cube_0, bin_0, cuboid_barrier)",
+  "holding": true,
+  "cube_z": 0.5886783599853516,
+  "error": null,
+  "human_resets": 0
+}

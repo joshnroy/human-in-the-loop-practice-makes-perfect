@@ -711,7 +711,7 @@ class KinderBackend(BaseModel):
         subject = self._require_state() if state is None else state
         abstract = self._abstractor.state_abstractor(subject)
         kinder_robot = self.robot_name
-        return frozenset(
+        atoms = frozenset(
             (
                 atom.predicate.name,
                 tuple(
@@ -720,6 +720,25 @@ class KinderBackend(BaseModel):
             )
             for atom in abstract.atoms
         )
+
+        # Recovery-only extension: upstream goal membership stays untouched.
+        # Evaluate on the captured subject, not on a later live simulator state.
+        from .rim_geometry import RimGeometry
+
+        features = {
+            obj.name: {
+                name: float(subject.get(obj, name)) for name in subject.type_features[obj.type]
+            }
+            for obj in subject
+        }
+        bin_object = self._object_centric()._objects_dict[self.bin_name]  # noqa: SLF001
+        if RimGeometry.supported(
+            cube=features[self.cube_name],
+            bin_=features[self.bin_name],
+            wall_thickness=bin_object.wall_thickness,
+        ):
+            atoms |= frozenset({("OnBinRim", (self.cube_name, self.bin_name))})
+        return atoms
 
     def check_goals(self) -> bool:
         """Upstream's own verdict -- `ObjectCentricTidyBot3DEnv._check_goals()`.

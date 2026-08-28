@@ -18,8 +18,17 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     ON_GROUND,
     REACHABLE,
+    Tossing3DAtoms,
 )
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+
+ON_BIN_RIM = Predicate(
+    name="OnBinRim",
+    types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.bin_type),
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name="OnBinRim", objects=objects
+    ),
+)
 
 ON_FLOOR = Predicate(
     name="OnFloor",
@@ -50,6 +59,17 @@ class SameSideSkills:
     _inside: ClassVar[LiftedAtom] = LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin))
     _reachable: ClassVar[LiftedAtom] = LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier))
     _closed: ClassVar[LiftedAtom] = LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
+
+    _rim: ClassVar[LiftedAtom] = LiftedAtom(predicate=ON_BIN_RIM, variables=(_cube, _bin))
+
+    PICK_RIM: ClassVar[Skill] = Skill(
+        name="PickCubeFromRim",
+        parameters=(_robot, _cube, _bin, _barrier),
+        preconditions=frozenset({_empty, _rim, _reachable}),
+        add_effects=frozenset({_held}),
+        delete_effects=frozenset({_empty, _rim}),
+        param_dim=0,
+    )
 
     PICK_FLOOR: ClassVar[Skill] = Skill(
         name="PickCubeFromFloor",
@@ -89,6 +109,7 @@ class SameSideSkills:
         return (
             SameSideSkills.PICK_FLOOR,
             SameSideSkills.PICK_BIN,
+            SameSideSkills.PICK_RIM,
             SameSideSkills.TOSS,
             SameSideSkills.OPEN,
         )
@@ -114,6 +135,7 @@ class SameSideSkills:
         ids = {
             SameSideSkills.PICK_FLOOR: Tossing3DEnvironment.pick_cube_id,
             SameSideSkills.PICK_BIN: Tossing3DEnvironment.pick_cube_from_bin_id,
+            SameSideSkills.PICK_RIM: Tossing3DEnvironment.pick_cube_from_bin_id,
             SameSideSkills.OPEN: Tossing3DEnvironment.open_gripper_id,
         }
         if ground_skill.skill not in ids:

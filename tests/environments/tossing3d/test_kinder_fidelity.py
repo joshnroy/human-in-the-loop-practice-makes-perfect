@@ -604,3 +604,39 @@ def test_reset_movables_leaves_the_barrier_untouched() -> None:
         assert after == pytest.approx(before, abs=1e-9)
     finally:
         env.close()
+
+
+def test_ees_picks_cube_from_recorded_bin_rim() -> None:
+    """Seed 3 stalled after throw 19: EES must actually grasp and lift this cube."""
+    import json
+
+    from hitl_pmp.core.method.types import GroundAtom
+    from hitl_pmp.core.problem.tasks.types import Goal, Task
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    try:
+        env.hard_reset()
+        plain = json.loads((Path(__file__).parent / "fixtures/seed3_rim.json").read_text())
+        observed = env.restore_plain_snapshot(plain=plain)
+        assert not IN_BIN.holds(observed, (env.cube, env.bin))
+        assert not ON_GROUND.holds(observed, (env.cube,))
+        provider = Tossing3DSkillProvider(env=env)
+        method = EesMethod(env=env, skill_provider=provider, seed=3)
+        policy = method.get_practice_policy(
+            task=Task(
+                initial_state=observed,
+                goal=Goal(
+                    atoms=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})
+                ),
+            )
+        )
+        action = policy(observed)
+        assert action.label.startswith("PickCubeFromRim")
+        retrieved = env.take_action(action=action.action)
+        assert HOLDING.holds(retrieved, (env.robot, env.cube)), env.last_skill_error()
+        assert retrieved.get(obj=env.cube, feature_name="z") > 0.3
+    finally:
+        env.close()

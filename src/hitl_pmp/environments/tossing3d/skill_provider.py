@@ -14,7 +14,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
 from .predicates import HAND_EMPTY, HOLDING, IN_BIN, ON_GROUND, REACHABLE
-from .recovery_skills import CLOSED_EMPTY, ON_FLOOR, SameSideSkills
+from .recovery_skills import CLOSED_EMPTY, ON_BIN_RIM, ON_FLOOR, SameSideSkills
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
 from .skills import Tossing3DSkills
 
@@ -48,7 +48,7 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def predicates(self) -> tuple[Predicate, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
-            return (IN_BIN, HAND_EMPTY, HOLDING, ON_FLOOR, REACHABLE, CLOSED_EMPTY)
+            return (IN_BIN, HAND_EMPTY, HOLDING, ON_FLOOR, REACHABLE, CLOSED_EMPTY, ON_BIN_RIM)
         return (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
 
     def types(self) -> tuple[Type, ...]:

@@ -52,7 +52,9 @@ def _install_package(*, site_dir: Path, name: str, monkeypatch: pytest.MonkeyPat
     package_dir.mkdir(parents=True)
     (package_dir / "__init__.py").write_text("")
     monkeypatch.syspath_prepend(str(site_dir))
-    monkeypatch.delitem(sys.modules, name, raising=False)
+    # Register undo even when absent: a later import must be removed on teardown.
+    monkeypatch.setitem(sys.modules, name, None)
+    monkeypatch.delitem(sys.modules, name)
     importlib.invalidate_caches()
     return package_dir
 
@@ -252,3 +254,13 @@ def test_snapshot_round_trips_through_json() -> None:
     """It is written to disk and read back by whoever is diagnosing a mismatch."""
     original = ConfigSnapshot.collect(args=_args(seed=1), fd_exec_path=None)
     assert ConfigSnapshot.model_validate_json(original.model_dump_json()) == original
+
+
+def test_fake_package_import_is_removed_after_patch_context(*, tmp_path: Path) -> None:
+    """A metadata probe must not leave its fake package for later simulator tests."""
+    name = "_hitl_metadata_probe"
+    assert name not in sys.modules
+    with pytest.MonkeyPatch.context() as patch:
+        _install_package(site_dir=tmp_path, name=name, monkeypatch=patch)
+        importlib.import_module(name)
+    assert name not in sys.modules

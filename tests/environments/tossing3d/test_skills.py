@@ -456,3 +456,33 @@ def test_ees_implicitly_retrieves_after_hits_and_misses() -> None:
     assert outcomes["PickCubeFromBin"].num_successes == 1
     assert outcomes["MoveToTossLocationAndToss"].num_attempts == 2
     assert outcomes["MoveToTossLocationAndToss"].num_successes == 1
+
+
+@pytest.mark.parametrize("yaw", [0.0, 0.7, 2.1])
+def test_rim_support_uses_bin_frame_and_rejects_non_support(*, yaw: float) -> None:
+    from scipy.spatial.transform import Rotation
+
+    from hitl_pmp.environments.tossing3d.rim_geometry import RimGeometry
+
+    rotation = Rotation.from_euler("z", yaw)
+    quaternion = dict(zip(("qx", "qy", "qz", "qw"), rotation.as_quat(), strict=True))
+    bin_ = dict(
+        x=1.0, y=-0.5, z=0.0, bb_x=0.3, bb_y=0.3, bb_z=0.2, vx=0.0, vy=0.0, vz=0.0, **quaternion
+    )
+    xyz = rotation.apply([0.14, 0.0, 0.225]) + [1.0, -0.5, 0.0]
+    cube = dict(zip(("x", "y", "z"), xyz, strict=True)) | dict(
+        bb_x=0.05, bb_y=0.05, bb_z=0.05, vx=0.0, vy=0.0, vz=0.0, **quaternion
+    )
+    assert RimGeometry.supported(cube=cube, bin_=bin_, wall_thickness=0.01)
+    for changes in (
+        {"z": 0.3},
+        {"z": 0.025},
+        {"x": 3.0},
+        {"vz": 1.0},
+        {"x": bin_["x"], "y": bin_["y"]},
+    ):
+        assert not RimGeometry.supported(cube=cube | changes, bin_=bin_, wall_thickness=0.01)
+    tipped = dict(
+        zip(("qx", "qy", "qz", "qw"), Rotation.from_euler("x", np.pi).as_quat(), strict=True)
+    )
+    assert not RimGeometry.supported(cube=cube, bin_=bin_ | tipped, wall_thickness=0.01)
