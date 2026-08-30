@@ -1282,7 +1282,9 @@ def test_explicit_stop_skips_the_bootstrap_fallback() -> None:
     """
 
     class _StoppingMethod(EesMethod):
-        def select_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        def select_skill_to_practice(
+            self, *, true_atoms: frozenset[GroundAtom]
+        ) -> list[GroundSkill]:
             del true_atoms
             return [STOP_SKILL]
 
