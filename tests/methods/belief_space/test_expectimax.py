@@ -141,6 +141,32 @@ def test_shared_successor_is_evaluated_once_at_each_depth() -> None:
     assert visits == {initial: 1, successor: 1}
 
 
+def test_separate_searches_do_not_reuse_stale_cached_values() -> None:
+    state = _State(competence=0)
+    model_values = {state: 1.0}
+
+    def stop_value(*, state: _State) -> float:
+        return model_values[state]
+
+    first = solve_expectimax(
+        state=state,
+        horizon=0,
+        stop_value=stop_value,
+        actions=lambda *, state: (),
+        outcomes=lambda *, state, action: (),
+    )
+    model_values[state] = 3.0
+    second = solve_expectimax(
+        state=state,
+        horizon=0,
+        stop_value=stop_value,
+        actions=lambda *, state: (),
+        outcomes=lambda *, state, action: (),
+    )
+    assert first.value == 1.0
+    assert second.value == 3.0
+
+
 @pytest.mark.parametrize("probability", [-0.1, float("nan"), float("inf")])
 def test_rejects_invalid_probabilities(*, probability: float) -> None:
     with pytest.raises(ValueError, match="chance probability must be finite and positive"):

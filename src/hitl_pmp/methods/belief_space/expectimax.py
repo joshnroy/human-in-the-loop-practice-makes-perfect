@@ -2,6 +2,8 @@
 
 import math
 from collections.abc import Iterable
+from functools import cache
+from typing import Generic
 
 from .types import (
     ActionT,
@@ -21,7 +23,6 @@ def solve_expectimax(
     stop_value: StopValue[StateT],
     actions: AvailableActions[StateT, ActionT],
     outcomes: ChanceOutcomes[StateT, ActionT],
-    _memo: dict[tuple[StateT, int], ExpectimaxResult[ActionT]] | None = None,
 ) -> ExpectimaxResult[ActionT]:
     """Exact-enumeration counterpart of understanding/pomdp_formulation.py.
 
@@ -30,52 +31,59 @@ def solve_expectimax(
     Algorithm notes (Google Drive reference from the pseudocode):
     https://drive.google.com/drive/folders/17j47M4NUGQIoKzNOo7yvWIhw13tE7h-a
 
-    Stopping wins ties. Recursive calls cache results by (state, remaining horizon)
-    to avoid solving the same subproblem twice. Each top-level call starts a fresh
-    cache when _memo is omitted.
+    Stopping wins ties. Each call creates a solver with its own recursive cache;
+    results are never reused across separate searches.
     """
-    if horizon < 0:
-        raise ValueError(f"horizon must be non-negative, got {horizon}")
-    if _memo is None:
-        _memo = {}
-    key = (state, horizon)
-    if key in _memo:
-        return _memo[key]
+    solver = _ExpectimaxSearch(stop_value=stop_value, actions=actions, outcomes=outcomes)
+    return solver.solve(state=state, horizon=horizon)
 
-    current_best_value = stop_value(state=state)
-    current_best_action: ActionT | None = None
-    if not math.isfinite(current_best_value):
-        raise ValueError(f"stop value must be finite, got {current_best_value}")
 
-    if horizon == 0:
-        result = ExpectimaxResult[ActionT](value=current_best_value, action=current_best_action)
-        _memo[key] = result
-        return result
+class _ExpectimaxSearch(Generic[StateT, ActionT]):
+    """One search's model callbacks and memoized recursion."""
 
-    for practice_action in actions(state=state):
-        value_of_state = 0.0
-        for potential_next_state in _validated_outcomes(
-            action=practice_action,
-            branches=outcomes(state=state, action=practice_action),
-        ):
-            value_of_next_state = solve_expectimax(
-                state=potential_next_state.next_state,
-                horizon=horizon - 1,
-                stop_value=stop_value,
-                actions=actions,
-                outcomes=outcomes,
-                _memo=_memo,
-            ).value
+    def __init__(
+        self,
+        *,
+        stop_value: StopValue[StateT],
+        actions: AvailableActions[StateT, ActionT],
+        outcomes: ChanceOutcomes[StateT, ActionT],
+    ) -> None:
+        self.stop_value = stop_value
+        self.actions = actions
+        self.outcomes = outcomes
+        # Decorate the bound method per instance, rather than sharing a class-level cache.
+        self.solve = cache(self._solve)
 
-            value_of_state += potential_next_state.probability * value_of_next_state
+    def _solve(self, *, state: StateT, horizon: int) -> ExpectimaxResult[ActionT]:
+        if horizon < 0:
+            raise ValueError(f"horizon must be non-negative, got {horizon}")
 
-        if current_best_value < value_of_state:
-            current_best_value = value_of_state
-            current_best_action = practice_action
+        current_best_value = self.stop_value(state=state)
+        current_best_action: ActionT | None = None
+        if not math.isfinite(current_best_value):
+            raise ValueError(f"stop value must be finite, got {current_best_value}")
 
-    result = ExpectimaxResult(value=current_best_value, action=current_best_action)
-    _memo[key] = result
-    return result
+        if horizon == 0:
+            return ExpectimaxResult(value=current_best_value, action=current_best_action)
+
+        for practice_action in self.actions(state=state):
+            value_of_state = 0.0
+            for potential_next_state in _validated_outcomes(
+                action=practice_action,
+                branches=self.outcomes(state=state, action=practice_action),
+            ):
+                value_of_next_state = self.solve(
+                    state=potential_next_state.next_state,
+                    horizon=horizon - 1,
+                ).value
+
+                value_of_state += potential_next_state.probability * value_of_next_state
+
+            if current_best_value < value_of_state:
+                current_best_value = value_of_state
+                current_best_action = practice_action
+
+        return ExpectimaxResult(value=current_best_value, action=current_best_action)
 
 
 def _validated_outcomes(
