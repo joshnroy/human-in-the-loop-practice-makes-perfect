@@ -415,8 +415,10 @@ def _backend_whose_controller_raises(
         "move_to_toss_location_and_toss": _StubLifted(controller=_StubController(error=error))
     }
 
-    def factory(action_space) -> dict:  # noqa: PLR0917
-        del action_space
+    def factory(  # noqa: PLR0917
+        action_space, *, init_constant_state=None, pybullet_sim=None
+    ) -> dict:
+        del action_space, init_constant_state, pybullet_sim
         return lifted
 
     api = KinderApi(

@@ -7,6 +7,8 @@ reset_movables` (the *execution* half) touch MuJoCo, and those are covered separ
 `test_kinder_backend.py`/`test_environment.py`.
 """
 
+import pytest
+
 from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
@@ -87,3 +89,51 @@ def test_param_dim_is_zero_so_it_has_no_sampler() -> None:
     """This "skill" has no continuous parameters and is intercepted before
     execute_ground_skill would ever try to sample any."""
     assert _provider().human_cube_bin_reset_skill().skill.param_dim == 0
+
+
+@pytest.mark.parametrize("stranded", [False, True])
+@pytest.mark.parametrize("closed", [False, True])
+def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) -> None:
+    """Offering a reset must preserve ordinary plans and rescue stranded cubes."""
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.predicates import HAND_EMPTY, HOLDING
+    from hitl_pmp.environments.tossing3d.recovery_skills import CLOSED_EMPTY, ON_FLOOR
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    provider = Tossing3DSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=provider, seed=0, ask_for_reset_cube_bin_cost=0.001)
+    atoms = {
+        GroundAtom(
+            predicate=CLOSED_EMPTY if closed else HAND_EMPTY,
+            objects=(env.robot, env.cube) if closed else (env.robot,),
+        )
+    }
+    if not stranded:
+        atoms |= {
+            GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin)),
+            GroundAtom(predicate=REACHABLE, objects=(env.cube, env.barrier)),
+        }
+    plan = method.plan_to(
+        init_atoms=frozenset(atoms),
+        goal=frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))}),
+        costs={},
+        practicing=True,
+    )
+    names = [step.skill.name for step in plan]
+    assert names[-1] == "PickCubeFromFloor"
+    assert names.count(ASK_FOR_RESET_CUBE_BIN_ONLY_NAME) == int(stranded)
+    assert names.count("OpenGripper") == int(closed)
+
+
+def test_same_side_reset_places_cube_on_floor_in_the_declared_vocabulary() -> None:
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.recovery_skills import ON_FLOOR
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    provider = Tossing3DSkillProvider(env=env)
+    reset = provider.human_cube_bin_reset_skill()
+    assert GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin)) in reset.add_effects
+    assert {atom.predicate for atom in reset.add_effects | reset.delete_effects} <= set(
+        provider.predicates()
+    )

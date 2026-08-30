@@ -12,7 +12,9 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import Tossing3DEnvironment
+from .layout import Tossing3DLayout
 from .predicates import HAND_EMPTY, HOLDING, IN_BIN, ON_GROUND, REACHABLE
+from .recovery_skills import CLOSED_EMPTY, ON_FLOOR, SameSideSkills
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
 from .skills import Tossing3DSkills
 
@@ -32,6 +34,8 @@ class Tossing3DSkillProvider(SkillProvider):
     env: Tossing3DEnvironment
 
     def skills(self) -> tuple[Skill, ...]:
+        if self.env.layout == Tossing3DLayout.SAME_SIDE:
+            return SameSideSkills.skills()
         return (
             Tossing3DSkills.PICK_CUBE,
             Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
@@ -43,6 +47,8 @@ class Tossing3DSkillProvider(SkillProvider):
         )
 
     def predicates(self) -> tuple[Predicate, ...]:
+        if self.env.layout == Tossing3DLayout.SAME_SIDE:
+            return (IN_BIN, HAND_EMPTY, HOLDING, ON_FLOOR, REACHABLE, CLOSED_EMPTY)
         return (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
 
     def types(self) -> tuple[Type, ...]:
@@ -58,17 +64,24 @@ class Tossing3DSkillProvider(SkillProvider):
         return (env.robot, env.cube, env.bin, env.barrier)
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
+        if self.env.layout == Tossing3DLayout.SAME_SIDE:
+            return SameSideSkills.sample_params(ground_skill=ground_skill, rng=rng)
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> Action:
+        if self.env.layout == Tossing3DLayout.SAME_SIDE:
+            return SameSideSkills.compute_action(
+                ground_skill=ground_skill, params=params, state=state
+            )
         return Tossing3DSkills.compute_action(ground_skill=ground_skill, params=params, state=state)
 
     def human_cube_bin_reset_skill(self) -> GroundSkill:
         """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`
         to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot
-        untouched. Effects: `OnGround`/`Reachable` become true, `InBin` becomes
+        untouched. Effects: `OnGround` (or same-side `OnFloor`) and
+        `Reachable` become true, `InBin` becomes
         false; everything unnamed (`HandEmpty`, `Holding`) stays as it was.
 
         No precondition -- callable from any state. Used to require
@@ -108,12 +121,17 @@ class Tossing3DSkillProvider(SkillProvider):
         cube = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
         bin_ = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
         barrier = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
+        floor = (
+            LiftedAtom(predicate=ON_FLOOR, variables=(cube, bin_))
+            if env.layout == Tossing3DLayout.SAME_SIDE
+            else LiftedAtom(predicate=ON_GROUND, variables=(cube,))
+        )
         skill = Skill(
             name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
             parameters=(robot, cube, bin_, barrier),
             preconditions=frozenset(),
             add_effects=frozenset({
-                LiftedAtom(predicate=ON_GROUND, variables=(cube,)),
+                floor,
                 LiftedAtom(predicate=REACHABLE, variables=(cube, barrier)),
             }),
             delete_effects=frozenset({

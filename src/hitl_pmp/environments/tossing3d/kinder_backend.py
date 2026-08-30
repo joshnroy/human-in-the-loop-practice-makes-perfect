@@ -794,6 +794,7 @@ class KinderBackend(BaseModel):
         object_names: Sequence[str],
         params: np.ndarray | None,
         limit: int,
+        pybullet_sim: Any = None,
     ) -> ControllerRun:
         """Drive one upstream controller to termination, stepping the live simulator.
 
@@ -821,7 +822,28 @@ class KinderBackend(BaseModel):
         }
         if module not in factory:
             raise ValueError(f"unknown controller module {module!r}; known: {sorted(factory)}")
-        lifted = factory[module](self._env.action_space)
+        if module == "tossing" and key == "pick_cube" and pybullet_sim is None:
+            from kinder_models.dynamic3d.utils import PyBulletSim
+            from pybullet_helpers.geometry import Pose
+
+            obj = state.get_object_from_name(self.bin_name)
+            bin_object = self._object_centric().get_object(self.bin_name)
+            pybullet_sim = PyBulletSim(state)
+            pybullet_sim.add_bin(
+                name=self.bin_name,
+                pose=Pose(
+                    tuple(state.get(obj, f) for f in ("x", "y", "z")),
+                    tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
+                ),
+                length=bin_object.length,
+                width=bin_object.width,
+                height=bin_object.height,
+                wall_thickness=bin_object.wall_thickness,
+            )
+        kwargs = {} if pybullet_sim is None else {"pybullet_sim": pybullet_sim}
+        if module == "tossing":
+            kwargs["init_constant_state"] = state
+        lifted = factory[module](self._env.action_space, **kwargs)
         if key not in lifted:
             raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
         objects = tuple(state.get_object_from_name(name) for name in object_names)
@@ -878,7 +900,7 @@ class KinderBackend(BaseModel):
         return ControllerRun(steps=limit, terminated=False)
 
     def run_pick_cube(self) -> ControllerRun:
-        """`pick_cube` -- upstream's parameterless grasp of a cube off the ground.
+        """Run upstream's single floor-or-bin cube pickup controller.
 
         Where to stand and which grasp rotation to use are derived inside the controller
         (`PickCubeController.STANDOFF`, `upright_grasp_rotations`), so there is nothing to
@@ -886,9 +908,9 @@ class KinderBackend(BaseModel):
         array because upstream's `sample_parameters` returns `tuple()` and `reset`
         immediately `del`s it.
 
-        `disable_collision_objects` is deliberately absent: it exists on
-        `MoveToTargetGroundController.reset` and on the composed toss, not here, and
-        passing it is a `TypeError`.
+        The lifted signature remains `(robot, cube, barrier)`; upstream appends the bin
+        from `init_constant_state` as collision context. The floor and bin EES skills
+        have different symbolic predicates but dispatch through this one controller.
         """
         return self.run_controller(
             module="tossing",

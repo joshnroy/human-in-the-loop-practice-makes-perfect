@@ -365,3 +365,66 @@ def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
         Tossing3DSkills.sample_params(ground_skill=stray, rng=np.random.default_rng(0))
     with pytest.raises(ValueError, match="Unknown skill"):
         Tossing3DSkills.compute_action(ground_skill=stray, params=np.zeros(4), state=state())
+
+
+def test_same_side_plans_bin_retrieval_as_a_throw_prerequisite() -> None:
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    provider = Tossing3DSkillProvider(env=env)
+    skills = {skill.name: skill for skill in provider.skills()}
+    assert "PickCubeFromBin" in skills
+    retrieval = GroundSkill(
+        skill=skills["PickCubeFromBin"], objects=(env.robot, env.cube, env.bin, env.barrier)
+    )
+    toss = GroundSkill(
+        skill=skills["MoveToTossLocationAndToss"],
+        objects=(env.robot, env.bin, env.cube, env.barrier),
+    )
+    in_bin = GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))
+    holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
+    reachable = GroundAtom(predicate=REACHABLE, objects=(env.cube, env.barrier))
+    assert in_bin in retrieval.preconditions
+    assert in_bin in retrieval.delete_effects
+    assert holding in retrieval.add_effects
+    assert reachable not in toss.delete_effects
+    assert reachable in toss.add_effects
+
+
+@pytest.mark.parametrize(
+    "inside,closed", [(False, False), (True, False), (False, True), (True, True)]
+)
+def test_same_side_planner_recovers_from_each_landing(*, inside: bool, closed: bool) -> None:
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    provider = Tossing3DSkillProvider(env=env)
+    atoms = {("OnGround", ("cube_0",)), ("MovableIsDownX", ("cube_0", "cuboid_barrier"))}
+    if inside:
+        atoms.add(("MovableInGoalRegion", ("cube_0",)))
+    if not closed:
+        atoms.add(("HandEmpty", ("robot",)))
+    observed = state(env=env, abstract_atoms=frozenset(atoms))
+    plan = FastDownwardPlanner.plan(
+        skills=provider.skills(),
+        predicates=provider.predicates(),
+        types=provider.types(),
+        objects=provider.objects(),
+        init_atoms=SkillGrounder.abstract_state(
+            state=observed, objects=provider.objects(), predicates=provider.predicates()
+        ),
+        goal=frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))}),
+    )
+    expected = ["OpenGripper"] if closed else []
+    expected.append("PickCubeFromBin" if inside else "PickCubeFromFloor")
+    assert [step.skill.name for step in plan] == expected
+    for step in plan:
+        params = provider.sample_params(ground_skill=step, rng=np.random.default_rng(0))
+        action = provider.compute_action(ground_skill=step, params=params, state=observed)
+        assert action.shape == (5,)
+        assert (
+            action[0]
+            == {"OpenGripper": 2, "PickCubeFromFloor": 0, "PickCubeFromBin": 3}[step.skill.name]
+        )
