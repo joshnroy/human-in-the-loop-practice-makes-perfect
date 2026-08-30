@@ -32,19 +32,20 @@ from .wrapped_sampler import LearnedSkillSampler
 logger = logging.getLogger(__name__)
 
 
-class PracticeSelection(BaseModel):
-    """A selector's decision at one self-directed-practice decision point.
-
-    ``stop`` is distinct from an empty candidate tuple.  The latter means the
-    selector has no evidence yet and permits the episode's existing bootstrap
-    behavior; the former means further practice is predicted to reduce utility and
-    must end the interaction period without executing a fallback action.
-    """
-
-    model_config = ConfigDict(frozen=True)
-
-    candidates: tuple[GroundSkill, ...] = ()
-    stop: bool = False
+# Selector-only sentinel: never register it with a domain or send it to a
+# controller. An empty candidate list still permits EES's bootstrap fallback;
+# reaching STOP in the ranked list ends practice instead.
+STOP_SKILL = GroundSkill(
+    skill=Skill(
+        name="STOP",
+        parameters=(),
+        preconditions=frozenset(),
+        add_effects=frozenset(),
+        delete_effects=frozenset(),
+        param_dim=0,
+    ),
+    objects=(),
+)
 
 
 class EesMethod(Method):
@@ -715,7 +716,7 @@ class EesMethod(Method):
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return [candidate for _score, _tiebreak, candidate in scored]
 
-    def select_practice(self, *, true_atoms: frozenset[GroundAtom]) -> "PracticeSelection":
+    def select_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         """Choose whether to stop and, otherwise, rank skills to practice.
 
         EES's selection rule does not use the current state directly; reachability is
@@ -728,7 +729,7 @@ class EesMethod(Method):
         every selector, while this method owns only the decision that differs.
         """
         del true_atoms
-        return PracticeSelection(candidates=tuple(self.choose_practice_target()))
+        return self.choose_practice_target()
 
     def random_choice(self, *, ground_skills: list[GroundSkill]) -> GroundSkill:
         """Uniform pick from this Method's own RNG stream, so a seeded EesMethod
@@ -1261,10 +1262,9 @@ class _EesEpisode:
         skill while no candidate has been tried yet -- that bootstrap is what fills
         the candidate set in the first place."""
         method = self._method
-        selection = method.select_practice(true_atoms=true_atoms)
-        if selection.stop:
-            return []
-        for candidate in selection.candidates:
+        for candidate in method.select_practice(true_atoms=true_atoms):
+            if candidate == STOP_SKILL:
+                return []
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
                 return [candidate]

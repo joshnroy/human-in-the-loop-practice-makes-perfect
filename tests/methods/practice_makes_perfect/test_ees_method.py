@@ -29,8 +29,8 @@ from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillPro
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
+    STOP_SKILL,
     EesMethod,
-    PracticeSelection,
     _EesEpisode,
     _SkillAttempt,
 )
@@ -1282,9 +1282,9 @@ def test_explicit_stop_skips_the_bootstrap_fallback() -> None:
     """
 
     class _StoppingMethod(EesMethod):
-        def select_practice(self, *, true_atoms: frozenset[GroundAtom]) -> PracticeSelection:
+        def select_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
             del true_atoms
-            return PracticeSelection(stop=True)
+            return [STOP_SKILL]
 
     env = LightSwitchEnvironment(grid_size=3)
     method = _StoppingMethod(env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=0)
@@ -1295,6 +1295,9 @@ def test_explicit_stop_skips_the_bootstrap_fallback() -> None:
 
     with pytest.raises(InteractionComplete):
         method.get_practice_policy(task=task)(env.get_current_state())
+    assert STOP_SKILL.skill not in method.skills()
+    assert method.practice_target_outcomes() == {}
+    assert method.total_observations() == 0
 
 
 def _reset_build(
