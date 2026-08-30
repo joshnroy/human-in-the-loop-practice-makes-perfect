@@ -71,6 +71,13 @@ class Tossing3DCli:
         )
         fields = Tossing3DEnvironment.model_fields
         parser.add_argument(
+            "--evaluation-layout",
+            choices=[layout.value for layout in Tossing3DLayout],
+            default=None,
+            help="Evaluation scene layout; omitted means the practice layout. "
+            "Use barrier to test same-side practice on the original far-side benchmark.",
+        )
+        parser.add_argument(
             "--variant",
             default=fields["variant"].default,
             help="KINDER Tossing3D variant. Only o1 is supported: o2 needs two cubes in "
@@ -149,16 +156,12 @@ class Tossing3DCli:
         deferred; it is not free, and a sweep's memory cap has to be sized for it.
         """
         practice_problem = Tossing3DCli.build_problem(args=args)
-        # Same args, same seed, independent objects: its Tasks derives the same test
-        # scene-seed stream, so it yields exactly the test tasks the practice Tasks
-        # would have. Pinned by test_both_problems_draw_the_same_test_scene_seeds.
-        evaluation_problem = Tossing3DCli.build_problem(args=args)
-        # One writer shared by both environments so practice and evaluation interleave
-        # into a single chronological log, matching the order PracticeLoop actually
-        # runs them in (never concurrently). State capture itself is always on
-        # (KinderBackend.drain_substep_states); this only decides whether drained
-        # ticks are persisted -- gated on --output-dir, like every other run artifact,
-        # not a separate flag.
+        # The same seed stream, independent objects, and an optional explicit
+        # geometry override. Changing layout must not resample the test tasks.
+        evaluation_problem = Tossing3DCli.build_evaluation_problem(args=args)
+        # Matching layouts retain the shared chronological log. Different layouts
+        # need separate headers/files so every recorded state can be replayed in
+        # its own geometry. State capture is gated on output-dir as before.
         if args.output_dir is not None:
             state_log_writer = StateLogWriter(
                 output_path=Path(args.output_dir) / STATE_LOG_FILENAME,
@@ -172,13 +175,25 @@ class Tossing3DCli:
                 ),
             )
             practice_problem.env.attach_state_log_writer(writer=state_log_writer)
-            evaluation_problem.env.attach_state_log_writer(writer=state_log_writer)
+            if evaluation_problem.env.layout == practice_problem.env.layout:
+                evaluation_state_log_writer = state_log_writer
+            else:
+                # A replay header describes one scene. Never mix far-side ticks
+                # into a same-side log, which would silently replay wrong geometry.
+                evaluation_state_log_writer = StateLogWriter(
+                    output_path=Path(args.output_dir) / "tossing3d_evaluation_state_log.jsonl",
+                    header=state_log_writer.header.model_copy(
+                        update={"layout": evaluation_problem.env.layout}
+                    ),
+                )
+            evaluation_problem.env.attach_state_log_writer(writer=evaluation_state_log_writer)
         else:
             state_log_writer = None
+            evaluation_state_log_writer = None
         # The Method is wired to the *practice* environment deliberately: its env
         # reference is structural config (skills, predicates, object handles, all of
-        # which are ClassVars here), and the two instances are configured identically,
-        # so evaluation reads the same world.
+        # which are ClassVars here). Evaluation may change geometry, but uses the
+        # same learned samplers and observed state features, without refitting on tests.
         context = DomainContext(
             env=practice_problem.env,
             skill_provider=Tossing3DSkillProvider(env=practice_problem.env),
@@ -211,6 +226,17 @@ class Tossing3DCli:
             evaluation_problem.env.close()
             if state_log_writer is not None:
                 state_log_writer.close()
+            if evaluation_state_log_writer is not None:
+                evaluation_state_log_writer.close()
+
+    @staticmethod
+    def build_evaluation_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
+        """Keep test-task seeds fixed while optionally changing only scene layout."""
+        evaluation_args = argparse.Namespace(**vars(args))
+        evaluation_args.layout = getattr(args, "evaluation_layout", None) or getattr(
+            args, "layout", Tossing3DLayout.BARRIER
+        )
+        return Tossing3DCli.build_problem(args=evaluation_args)
 
     @staticmethod
     def build_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
