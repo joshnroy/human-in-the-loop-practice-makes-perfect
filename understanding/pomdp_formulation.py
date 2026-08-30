@@ -1,6 +1,8 @@
 """
 This contains the outline for the expectimax algorithm in https://drive.google.com/drive/folders/17j47M4NUGQIoKzNOo7yvWIhw13tE7h-a
 This is sorta-python valid pseduocode. Any undefined types should be Pydantic types
+
+See https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/290 for Tom's comments
 """
 
 import numpy as np
