@@ -1,0 +1,156 @@
+{
+  "evaluations": [
+    [
+      0,
+      1,
+      1
+    ],
+    [
+      16,
+      1,
+      1
+    ]
+  ],
+  "breakdowns": [
+    {
+      "num_online_transitions": 0,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InBin(cube_0, bin_0)",
+          "solved": true
+        }
+      ]
+    },
+    {
+      "num_online_transitions": 16,
+      "outcomes": [
+        {
+          "task_index": 0,
+          "goal": "InBin(cube_0, bin_0)",
+          "solved": true
+        }
+      ]
+    }
+  ],
+  "num_practice_resets": 0,
+  "planning_failures_per_cycle": [
+    1,
+    0
+  ],
+  "planning_attempts_per_cycle": [
+    13,
+    1
+  ],
+  "practice_outcomes_per_cycle": [
+    {
+      "MoveToTossLocationAndToss": {
+        "num_attempts": 7,
+        "num_successes": 3,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PickCubeFromBin": {
+        "num_attempts": 3,
+        "num_successes": 3,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 3,
+        "num_unparameterized_successes": 3
+      },
+      "PickCubeFromFloor": {
+        "num_attempts": 5,
+        "num_successes": 4,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 5,
+        "num_unparameterized_successes": 4
+      }
+    },
+    {
+      "MoveToTossLocationAndToss": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PickCubeFromBin": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      },
+      "PickCubeFromFloor": {
+        "num_attempts": 0,
+        "num_successes": 0,
+        "num_random_attempts": 0,
+        "num_random_successes": 0,
+        "num_informed_attempts": 0,
+        "num_informed_successes": 0,
+        "num_unparameterized_attempts": 0,
+        "num_unparameterized_successes": 0
+      }
+    }
+  ],
+  "practice_target_outcomes_per_cycle": [
+    {
+      "MoveToTossLocationAndToss": {
+        "num_scored": 8,
+        "num_declined_perfect": 0,
+        "num_selected": 8,
+        "num_unreachable": 0
+      },
+      "PickCubeFromBin": {
+        "num_scored": 7,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "PickCubeFromFloor": {
+        "num_scored": 8,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 1
+      }
+    },
+    {
+      "MoveToTossLocationAndToss": {
+        "num_scored": 0,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "PickCubeFromBin": {
+        "num_scored": 0,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      },
+      "PickCubeFromFloor": {
+        "num_scored": 0,
+        "num_declined_perfect": 0,
+        "num_selected": 0,
+        "num_unreachable": 0
+      }
+    }
+  ],
+  "num_human_interventions_recorded": 0,
+  "summed_human_cost_recorded": 0.0,
+  "task_name": "default"
+}

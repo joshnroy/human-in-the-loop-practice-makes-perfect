@@ -428,3 +428,31 @@ def test_same_side_planner_recovers_from_each_landing(*, inside: bool, closed: b
             action[0]
             == {"OpenGripper": 2, "PickCubeFromFloor": 0, "PickCubeFromBin": 3}[step.skill.name]
         )
+
+
+def test_ees_implicitly_retrieves_after_hits_and_misses() -> None:
+    """Replay observed atom states through real EES, without injecting a plan/target."""
+    from hitl_pmp.core.problem.tasks.types import Goal, Task
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    from .observations import HOLDING_ATOMS
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    provider = Tossing3DSkillProvider(env=env)
+    method = EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
+    floor = state(env=env, abstract_atoms=INITIAL_ATOMS)
+    holding = state(env=env, abstract_atoms=HOLDING_ATOMS)
+    inside = state(env=env, abstract_atoms=INITIAL_ATOMS | {("MovableInGoalRegion", ("cube_0",))})
+    task = Task(
+        initial_state=floor,
+        goal=Goal(atoms=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})),
+    )
+    policy = method.get_practice_policy(task=task)
+    actions = [policy(observed) for observed in (floor, holding, inside, holding, floor)]
+    assert [int(action.action[0]) for action in actions] == [0, 1, 3, 1, 0]
+    outcomes = method.practice_outcomes()
+    assert outcomes["PickCubeFromBin"].num_successes == 1
+    assert outcomes["MoveToTossLocationAndToss"].num_attempts == 2
+    assert outcomes["MoveToTossLocationAndToss"].num_successes == 1
