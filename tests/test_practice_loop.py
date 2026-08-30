@@ -27,6 +27,7 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.tasks import Tasks
 from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
+from hitl_pmp.loop_checkpoint import LoopCheckpoint
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 
@@ -259,6 +260,52 @@ def _build() -> tuple[_FakeProblem, _FakeMethod, Metrics]:
     problem = _FakeProblem(env=env, tasks=_FakeTasks(env=env), event_log=event_log)
     method = _FakeMethod(env=env, event_log=event_log)
     return problem, method, Metrics()
+
+
+def test_resumed_loop_skips_initialization_and_repeats_no_completed_cycle() -> None:
+    full_problem, full_method, full_metrics = _build()
+    PracticeLoop.run(
+        problem=full_problem,
+        method=full_method,
+        metrics=full_metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=2,
+    )
+    problem, method, metrics = _build()
+    saved: list[LoopCheckpoint] = []
+
+    def interrupt(progress: LoopCheckpoint) -> None:  # noqa: PLR0917
+        saved.append(progress)
+        if progress.completed_cycles == 1:
+            raise InterruptedError("simulated process interruption after checkpoint")
+
+    with pytest.raises(InterruptedError):
+        PracticeLoop.run(
+            problem=problem,
+            method=method,
+            metrics=metrics,
+            num_cycles=3,
+            max_steps_per_interaction=2,
+            num_test_tasks=2,
+            on_training_checkpoint=interrupt,
+        )
+    assert [progress.completed_cycles for progress in saved] == [0, 1]
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=3,
+        max_steps_per_interaction=2,
+        num_test_tasks=2,
+        resume=saved[-1],
+    )
+    assert metrics.model_dump_json() == full_metrics.model_dump_json()
+    assert method.end_cycle_calls == full_method.end_cycle_calls == 3
+    assert problem.tasks.test_task_count == full_problem.tasks.test_task_count == 2
+    assert problem.tasks.train_task_count == full_problem.tasks.train_task_count == 3
+    assert problem.env.hard_reset_count == 1
+    assert problem.env.pre_action_xs == full_problem.env.pre_action_xs
 
 
 def _build_split() -> tuple[_FakeProblem, _FakeProblem, _FakeMethod, Metrics]:

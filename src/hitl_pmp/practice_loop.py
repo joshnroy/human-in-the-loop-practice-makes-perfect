@@ -14,6 +14,7 @@ from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
 from hitl_pmp.core.renderer.renderer import Renderer
 from hitl_pmp.episode_traces import EpisodeTraceRecorder
+from hitl_pmp.loop_checkpoint import LoopCheckpoint
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 from hitl_pmp.recording.period_recorder import PeriodRecorder
 
@@ -311,6 +312,8 @@ class PracticeLoop:
         recorder: LoopRecorder | None = None,
         period_recorder: PeriodRecorder | None = None,
         trace_recorder: EpisodeTraceRecorder | None = None,
+        resume: LoopCheckpoint | None = None,
+        on_training_checkpoint: Callable[[LoopCheckpoint], None] | None = None,
     ) -> None:
         # Up front, before hard_reset(), so a caller that forgot the sink finds out
         # before the run mutates the environment rather than one sweep in.
@@ -388,37 +391,59 @@ class PracticeLoop:
         # a caller buys by passing a distinct one, and why every domain that has not
         # been migrated stays byte-identical by omitting it.
         eval_problem = evaluation_problem if evaluation_problem is not None else problem
-        problem.hard_reset()
-        if eval_problem is not problem:
+        if resume is not None and (
+            resume.completed_cycles > num_cycles or len(resume.test_tasks) != num_test_tasks
+        ):
+            raise ValueError("Resume progress exceeds the cycle budget or has a different test set")
+        if resume is None:
+            problem.hard_reset()
+        if resume is None and eval_problem is not problem:
             # Its own one-time reset: a fresh Environment has no current_state at all
             # until something installs one. Guarded on identity rather than called
             # unconditionally so the un-migrated path still hard-resets exactly once.
             eval_problem.hard_reset()
-        if recorder is not None:
+        if recorder is not None and resume is None:
             recorder.record_hard_reset(state=problem.get_current_state())
         # Drawn ONCE, up front -- see the class docstring's "fixed test set"
         # section for why re-sampling it per sweep corrupts the learning curve. From
         # the *evaluation* Problem: its Tasks is constructed identically to practice's,
         # so the tasks are the same ones, but they now come off a stream nothing in
         # the practice loop can advance.
-        test_tasks = [eval_problem.sample_test_task() for _ in range(num_test_tasks)]
-        num_online_transitions = 0
-        frames = PracticeLoop._evaluate(
-            problem=eval_problem,
-            method=method,
-            metrics=metrics,
-            test_tasks=test_tasks,
-            num_online_transitions=num_online_transitions,
-            renderer=renderer if 0 in rendered_sweeps else None,
-            recorder=recorder,
-            period_recorder=period_recorder,
-            sweep_index=0,
-            trace_recorder=trace_recorder,
+        test_tasks = (
+            [eval_problem.sample_test_task() for _ in range(num_test_tasks)]
+            if resume is None
+            else resume.test_tasks
         )
-        hand_over(transitions=num_online_transitions, sweep_frames=frames)
-        if on_sweep_end is not None:
-            on_sweep_end()
-        for cycle in range(num_cycles):
+        num_online_transitions = 0 if resume is None else resume.num_online_transitions
+
+        def checkpoint(*, completed_cycles: int) -> None:
+            if on_training_checkpoint is not None:
+                on_training_checkpoint(
+                    LoopCheckpoint(
+                        completed_cycles=completed_cycles,
+                        num_online_transitions=num_online_transitions,
+                        test_tasks=test_tasks,
+                    )
+                )
+
+        if resume is None:
+            frames = PracticeLoop._evaluate(
+                problem=eval_problem,
+                method=method,
+                metrics=metrics,
+                test_tasks=test_tasks,
+                num_online_transitions=num_online_transitions,
+                renderer=renderer if 0 in rendered_sweeps else None,
+                recorder=recorder,
+                period_recorder=period_recorder,
+                sweep_index=0,
+                trace_recorder=trace_recorder,
+            )
+            hand_over(transitions=num_online_transitions, sweep_frames=frames)
+            if on_sweep_end is not None:
+                on_sweep_end()
+            checkpoint(completed_cycles=0)
+        for cycle in range(0 if resume is None else resume.completed_cycles, num_cycles):
             task = PracticeLoop._sample_practice_task(
                 problem=problem, practice_reset_policy=practice_reset_policy
             )
@@ -577,6 +602,7 @@ class PracticeLoop:
             hand_over(transitions=num_online_transitions, sweep_frames=frames)
             if on_sweep_end is not None:
                 on_sweep_end()
+            checkpoint(completed_cycles=cycle + 1)
 
     @staticmethod
     def _grant_movables_reset(

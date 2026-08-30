@@ -2,7 +2,7 @@ import argparse
 import os
 import shutil
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -14,10 +14,12 @@ from hitl_pmp.core.metrics.metrics import Metrics
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream, VideoWriter
 from hitl_pmp.episode_traces import EpisodeTraceRecorder
+from hitl_pmp.loop_checkpoint import LoopCheckpoint
 from hitl_pmp.practice_loop import PracticeLoop, PracticeResetPolicy
 from hitl_pmp.recording.loop_recorder import LoopRecorder
 from hitl_pmp.recording.period_recorder import PeriodRecorder
 from hitl_pmp.results_writer.registry import RESULTS_WRITERS
+from hitl_pmp.training_checkpoint import CheckpointMethod, CheckpointTasks, TrainingCheckpoint
 
 
 class MethodRunner:
@@ -80,6 +82,40 @@ class MethodRunner:
         num_render_checkpoints: int = 1,
     ) -> Metrics:
         metrics = Metrics()
+        checkpoint_writer: TrainingCheckpoint | None = None
+        restored: dict[str, Any] | None = None
+        if getattr(args, "method", None) == "pomdp":
+            if not isinstance(method, CheckpointMethod):
+                raise ValueError("Selected POMDP method does not support checkpoints")
+            checkpoint_path = getattr(args, "checkpoint", None)
+            if (
+                checkpoint_path is None
+                and args.output_dir is not None
+                and (str(getattr(args, "practice_reset_policy", "scheduled")) == "scheduled")
+            ):
+                checkpoint_path = args.output_dir / "checkpoint.pkl"
+            resume_path = getattr(args, "resume", None)
+            if resume_path is not None and checkpoint_path is None:
+                raise ValueError("--resume needs --output-dir or --checkpoint for future recovery")
+            if checkpoint_path is not None:
+                if str(getattr(args, "practice_reset_policy", "scheduled")) != "scheduled":
+                    raise ValueError("Training checkpoints require scheduled practice resets")
+                if not isinstance(problem.tasks, CheckpointTasks) or (
+                    evaluation_problem is None
+                    or evaluation_problem is problem
+                    or not isinstance(evaluation_problem.tasks, CheckpointTasks)
+                ):
+                    raise ValueError("Tossing3D checkpoints require separate Tossing3D problems")
+                checkpoint_writer = TrainingCheckpoint(path=checkpoint_path, args=args)
+                if resume_path is not None:
+                    restored = checkpoint_writer.load(path=resume_path, method=method)
+                    checkpoint_writer.restore(
+                        saved=restored,
+                        method=method,
+                        problem=problem,
+                        evaluation_problem=evaluation_problem,
+                    )
+                    metrics = restored["metrics"]
         # Written as each sweep finishes rather than collected and written at the
         # end: holding every frame of every checkpoint until the run completes is
         # an unbounded buffer (checkpoints x episode length x frame bytes), and a
@@ -108,6 +144,8 @@ class MethodRunner:
         # Method), and the failure would be a positive delta, so no validation would
         # catch it.
         failures_recorded, attempts_recorded = method.planning_outcomes()
+        if restored is not None:
+            failures_recorded, attempts_recorded = restored["runner"]["planning"]
 
         def record_planning_outcomes() -> None:
             nonlocal failures_recorded, attempts_recorded
@@ -124,6 +162,8 @@ class MethodRunner:
         # readings differenced per window, seeded from the Method's current reading for
         # the reused-instance reason above. See Metrics.record_practice_outcomes.
         practice_recorded = method.practice_outcomes()
+        if restored is not None:
+            practice_recorded = restored["runner"]["practice"]
 
         def record_practice_outcomes() -> None:
             nonlocal practice_recorded
@@ -146,6 +186,26 @@ class MethodRunner:
         # practice execution and so cannot share the reading above: a skill EES has
         # stopped choosing keeps being executed en route to the skills it does choose.
         target_recorded = method.practice_target_outcomes()
+        if restored is not None:
+            target_recorded = restored["runner"]["targets"]
+
+        def save_training_checkpoint(progress: LoopCheckpoint) -> None:  # noqa: PLR0917
+            if checkpoint_writer is None:
+                return
+            assert isinstance(method, CheckpointMethod)
+            assert evaluation_problem is not None
+            checkpoint_writer.save(
+                progress=progress,
+                method=method,
+                problem=problem,
+                evaluation_problem=evaluation_problem,
+                metrics=metrics,
+                runner_state={
+                    "planning": (failures_recorded, attempts_recorded),
+                    "practice": practice_recorded,
+                    "targets": target_recorded,
+                },
+            )
 
         def record_practice_target_outcomes() -> None:
             nonlocal target_recorded
@@ -239,6 +299,8 @@ class MethodRunner:
         try:
             PracticeLoop.run(
                 problem=problem,
+                resume=None if restored is None else restored["progress"],
+                on_training_checkpoint=save_training_checkpoint,
                 # None for every domain that has not been migrated, which is what
                 # keeps their results byte-identical -- PracticeLoop then evaluates
                 # on `problem`, exactly as before. See its own docstring.

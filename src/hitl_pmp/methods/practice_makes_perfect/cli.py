@@ -1,4 +1,5 @@
 import argparse
+from pathlib import Path
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -172,6 +173,19 @@ class Tossing3DPomdpCli(EesCli):
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         EesCli.add_arguments(parser=parser)
+        parser.add_argument(
+            "--checkpoint",
+            type=Path,
+            default=None,
+            help="Atomic cycle-boundary recovery file; defaults to output-dir/checkpoint.pkl.",
+        )
+        parser.add_argument(
+            "--resume",
+            type=Path,
+            default=None,
+            help="Resume a trusted LOCAL checkpoint (pickle can execute code). Repeat the "
+            "original run flags and use a new output-dir; scheduled resets only.",
+        )
         parser.set_defaults(goal_pursuit_horizon=0)
         parser.add_argument(
             "--pomdp-horizon",
@@ -190,6 +204,20 @@ class Tossing3DPomdpCli(EesCli):
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
         if env_cli.__name__ != "Tossing3DCli":
             raise ValueError("--method pomdp currently supports only --env tossing3d")
+        if getattr(args, "resume", None) is not None:
+            if not args.resume.is_file():
+                raise ValueError("--resume must name an existing checkpoint file")
+            if (
+                args.output_dir is not None
+                and args.output_dir.exists()
+                and (not args.output_dir.is_dir() or any(args.output_dir.iterdir()))
+            ):
+                raise ValueError("Resume requires a new, empty --output-dir")
+        if (
+            getattr(args, "checkpoint", None) is not None
+            or getattr(args, "resume", None) is not None
+        ) and str(getattr(args, "practice_reset_policy", "scheduled")) != "scheduled":
+            raise ValueError("Training checkpoints currently require scheduled practice resets")
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,

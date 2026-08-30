@@ -296,6 +296,30 @@ class EesMethod(Method):
 
     # ------------------------------------------------------------------ domain
 
+    def checkpoint_learning_state(self) -> dict[str, Any]:
+        """Cycle-boundary learning state, including subclass beliefs and sampler RNGs.
+
+        The episode holds live environment references and is finished at this boundary;
+        the translator cache is disposable. Neither belongs in a training checkpoint.
+        All other private fields are retained so newly added learner state is not lost.
+        The caller serializes this immediately; this is not a detached snapshot.
+        """
+        assert self.__pydantic_private__ is not None
+        return {
+            key: value
+            for key, value in self.__pydantic_private__.items()
+            if key not in {"_practice_episode", "_translation_cache"}
+        }
+
+    def restore_learning_state(self, *, state: dict[str, Any]) -> None:
+        """Restore a same-schema checkpoint into a freshly configured method."""
+        if state.keys() != self.checkpoint_learning_state().keys():
+            raise ValueError("Checkpoint learner schema differs from the current method")
+        assert self.__pydantic_private__ is not None
+        self.__pydantic_private__.update(state)
+        self._practice_episode = None
+        self._translation_cache = TranslationCache()
+
     def skills(self) -> tuple[Skill, ...]:
         """This domain's lifted skills (e.g. Light Switch's four, including the
         deliberately impossible JumpToLight -- EES is supposed to *discover* it never
