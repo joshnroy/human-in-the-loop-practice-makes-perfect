@@ -240,4 +240,6 @@ class Tossing3DPomdpMethod(EesMethod):
                 f"POMDP selected inapplicable Tossing3D skill {action.name!r} in "
                 f"{environment_state.value}"
             )
+        for candidate in candidates:
+            self.record_practice_target(name=candidate.skill.name, field="scored")
         return candidates
