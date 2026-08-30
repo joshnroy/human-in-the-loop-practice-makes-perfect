@@ -25,7 +25,14 @@ def solve_expectimax(
 ) -> ExpectimaxResult[ActionT]:
     """Exact-enumeration counterpart of understanding/pomdp_formulation.py.
 
-    Stopping wins ties. The memo is shared only within one recursive search.
+    Pseudocode and review:
+    https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/290
+    Algorithm notes (Google Drive reference from the pseudocode):
+    https://drive.google.com/drive/folders/17j47M4NUGQIoKzNOo7yvWIhw13tE7h-a
+
+    Stopping wins ties. Recursive calls cache results by (state, remaining horizon)
+    to avoid solving the same subproblem twice. Each top-level call starts a fresh
+    cache when _memo is omitted.
     """
     if horizon < 0:
         raise ValueError(f"horizon must be non-negative, got {horizon}")
