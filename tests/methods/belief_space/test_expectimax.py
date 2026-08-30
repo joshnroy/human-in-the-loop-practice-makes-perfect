@@ -1,7 +1,8 @@
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from hitl_pmp.methods.belief_space.expectimax import ChanceOutcome, solve_expectimax
+from hitl_pmp.methods.belief_space.expectimax import solve_expectimax
+from hitl_pmp.methods.belief_space.types import ChanceOutcome
 
 
 class _State(BaseModel):
@@ -11,7 +12,7 @@ class _State(BaseModel):
     cost: int = 0
 
 
-def _stop_value(state: _State) -> float:  # noqa: PLR0917 (solver callback)
+def _stop_value(*, state: _State) -> float:
     return float(state.competence - state.cost)
 
 
@@ -20,8 +21,8 @@ def test_horizon_zero_stops() -> None:
         state=_State(competence=1),
         horizon=0,
         stop_value=_stop_value,
-        actions=lambda _state: ("practice",),
-        outcomes=lambda _state, _action: (
+        actions=lambda *, state: ("practice",),
+        outcomes=lambda *, state, action: (
             ChanceOutcome(probability=1.0, next_state=_State(competence=10)),
         ),
     )
@@ -30,12 +31,10 @@ def test_horizon_zero_stops() -> None:
 
 
 def test_looks_past_an_initially_unhelpful_setup_action() -> None:
-    def actions(state: _State) -> tuple[str, ...]:  # noqa: PLR0917 (solver callback)
+    def actions(*, state: _State) -> tuple[str, ...]:
         return ("setup",) if state.cost == 0 else ("practice",)
 
-    def outcomes(  # noqa: PLR0917 (solver callback)
-        state: _State, action: str
-    ) -> tuple[ChanceOutcome[_State], ...]:
+    def outcomes(*, state: _State, action: str) -> tuple[ChanceOutcome[_State], ...]:
         if action == "setup":
             return (
                 ChanceOutcome(
@@ -72,8 +71,8 @@ def test_stop_wins_an_exact_tie() -> None:
         state=_State(competence=2),
         horizon=1,
         stop_value=_stop_value,
-        actions=lambda _state: ("neutral",),
-        outcomes=lambda state, _action: (ChanceOutcome(probability=1.0, next_state=state),),
+        actions=lambda *, state: ("neutral",),
+        outcomes=lambda *, state, action: (ChanceOutcome(probability=1.0, next_state=state),),
     )
     assert result.action is None
 
@@ -92,7 +91,8 @@ def test_stop_wins_an_exact_tie() -> None:
         ),
     ],
 )
-def test_rejects_malformed_chance_distributions(  # noqa: PLR0917 (pytest parametrization)
+def test_rejects_malformed_chance_distributions(
+    *,
     branches: tuple[ChanceOutcome[_State], ...],
 ) -> None:
     with pytest.raises(ValueError):
@@ -100,6 +100,68 @@ def test_rejects_malformed_chance_distributions(  # noqa: PLR0917 (pytest parame
             state=_State(competence=0),
             horizon=1,
             stop_value=_stop_value,
-            actions=lambda _state: ("bad",),
-            outcomes=lambda _state, _action: branches,
+            actions=lambda *, state: ("bad",),
+            outcomes=lambda *, state, action: branches,
+        )
+
+
+def test_shared_successor_is_evaluated_once_at_each_depth() -> None:
+    visits: dict[_State, int] = {}
+    initial = _State(competence=0)
+    successor = _State(competence=2)
+
+    def stop_value(*, state: _State) -> float:
+        visits[state] = visits.get(state, 0) + 1
+        return _stop_value(state=state)
+
+    result = solve_expectimax(
+        state=initial,
+        horizon=1,
+        stop_value=stop_value,
+        actions=lambda *, state: ("first", "second"),
+        outcomes=lambda *, state, action: (ChanceOutcome(probability=1.0, next_state=successor),),
+    )
+    assert result.action == "first"
+    assert result.value == 2.0
+    assert visits == {initial: 1, successor: 1}
+
+
+@pytest.mark.parametrize("probability", [-0.1, float("nan"), float("inf")])
+def test_rejects_invalid_probabilities(*, probability: float) -> None:
+    with pytest.raises(ValueError, match="chance probability must be finite and positive"):
+        solve_expectimax(
+            state=_State(competence=0),
+            horizon=1,
+            stop_value=_stop_value,
+            actions=lambda *, state: ("invalid",),
+            outcomes=lambda *, state, action: (
+                ChanceOutcome(probability=probability, next_state=state),
+            ),
+        )
+
+
+def test_rejects_negative_horizon_before_evaluating_model() -> None:
+    def stop_value(*, state: _State) -> float:
+        del state
+        pytest.fail("invalid horizon must be rejected before the model is called")
+
+    with pytest.raises(ValueError, match="horizon must be non-negative"):
+        solve_expectimax(
+            state=_State(competence=0),
+            horizon=-1,
+            stop_value=stop_value,
+            actions=lambda *, state: (),
+            outcomes=lambda *, state, action: (),
+        )
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_rejects_nonfinite_stop_value(*, value: float) -> None:
+    with pytest.raises(ValueError, match="stop value must be finite"):
+        solve_expectimax(
+            state=_State(competence=0),
+            horizon=0,
+            stop_value=lambda *, state: value,
+            actions=lambda *, state: (),
+            outcomes=lambda *, state, action: (),
         )
