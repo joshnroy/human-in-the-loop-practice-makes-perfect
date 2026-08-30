@@ -29,37 +29,88 @@ def solve_expectimax(
     if horizon < 0:
         raise ValueError(f"horizon must be non-negative, got {horizon}")
 
-    memo: dict[tuple[StateT, int], ExpectimaxResult[ActionT]] = {}
+    return _solve_state(
+        state=state,
+        remaining=horizon,
+        stop_value=stop_value,
+        actions=actions,
+        outcomes=outcomes,
+        memo={},
+    )
 
-    def solve_state(*, current_state: StateT, remaining: int) -> ExpectimaxResult[ActionT]:
-        key = (current_state, remaining)
-        if key not in memo:
-            memo[key] = choose_best_action(current_state=current_state, remaining=remaining)
-        return memo[key]
 
-    def choose_best_action(*, current_state: StateT, remaining: int) -> ExpectimaxResult[ActionT]:
-        best: ExpectimaxResult[ActionT] = _stop_decision(value=stop_value(state=current_state))
-        if remaining == 0:
-            return best
-        for action in actions(state=current_state):
-            value = expected_action_value(
-                current_state=current_state, action=action, remaining=remaining
-            )
-            if value > best.value:
-                best = ExpectimaxResult(value=value, action=action)
+def _solve_state(
+    *,
+    state: StateT,
+    remaining: int,
+    stop_value: StopValue[StateT],
+    actions: AvailableActions[StateT, ActionT],
+    outcomes: ChanceOutcomes[StateT, ActionT],
+    memo: dict[tuple[StateT, int], ExpectimaxResult[ActionT]],
+) -> ExpectimaxResult[ActionT]:
+    key = (state, remaining)
+    if key not in memo:
+        memo[key] = _choose_best_action(
+            state=state,
+            remaining=remaining,
+            stop_value=stop_value,
+            actions=actions,
+            outcomes=outcomes,
+            memo=memo,
+        )
+    return memo[key]
+
+
+def _choose_best_action(
+    *,
+    state: StateT,
+    remaining: int,
+    stop_value: StopValue[StateT],
+    actions: AvailableActions[StateT, ActionT],
+    outcomes: ChanceOutcomes[StateT, ActionT],
+    memo: dict[tuple[StateT, int], ExpectimaxResult[ActionT]],
+) -> ExpectimaxResult[ActionT]:
+    best: ExpectimaxResult[ActionT] = _stop_decision(value=stop_value(state=state))
+    if remaining == 0:
         return best
-
-    def expected_action_value(*, current_state: StateT, action: ActionT, remaining: int) -> float:
-        branches = _validated_outcomes(
-            action=action, branches=outcomes(state=current_state, action=action)
+    for action in actions(state=state):
+        value = _expected_action_value(
+            state=state,
+            action=action,
+            remaining=remaining,
+            stop_value=stop_value,
+            actions=actions,
+            outcomes=outcomes,
+            memo=memo,
         )
-        return sum(
-            branch.probability
-            * solve_state(current_state=branch.next_state, remaining=remaining - 1).value
-            for branch in branches
-        )
+        if value > best.value:
+            best = ExpectimaxResult(value=value, action=action)
+    return best
 
-    return solve_state(current_state=state, remaining=horizon)
+
+def _expected_action_value(
+    *,
+    state: StateT,
+    action: ActionT,
+    remaining: int,
+    stop_value: StopValue[StateT],
+    actions: AvailableActions[StateT, ActionT],
+    outcomes: ChanceOutcomes[StateT, ActionT],
+    memo: dict[tuple[StateT, int], ExpectimaxResult[ActionT]],
+) -> float:
+    branches = _validated_outcomes(action=action, branches=outcomes(state=state, action=action))
+    return sum(
+        branch.probability
+        * _solve_state(
+            state=branch.next_state,
+            remaining=remaining - 1,
+            stop_value=stop_value,
+            actions=actions,
+            outcomes=outcomes,
+            memo=memo,
+        ).value
+        for branch in branches
+    )
 
 
 def _stop_decision(*, value: float) -> ExpectimaxResult[ActionT]:
