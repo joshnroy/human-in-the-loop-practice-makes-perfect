@@ -14,7 +14,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
 from .predicates import HAND_EMPTY, HOLDING, IN_BIN, ON_GROUND, REACHABLE
-from .recovery_skills import CLOSED_EMPTY, ON_FLOOR, SameSideSkills
+from .recovery_skills import CLOSED_EMPTY, ON_BIN_RIM, ON_FLOOR, SameSideSkills
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
 from .skills import Tossing3DSkills
 
@@ -48,7 +48,7 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def predicates(self) -> tuple[Predicate, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
-            return (IN_BIN, HAND_EMPTY, HOLDING, ON_FLOOR, REACHABLE, CLOSED_EMPTY)
+            return (IN_BIN, HAND_EMPTY, HOLDING, ON_FLOOR, REACHABLE, CLOSED_EMPTY, ON_BIN_RIM)
         return (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
 
     def types(self) -> tuple[Type, ...]:
@@ -82,7 +82,8 @@ class Tossing3DSkillProvider(SkillProvider):
         to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot
         untouched. Effects: `OnGround` (or same-side `OnFloor`) and
         `Reachable` become true, `InBin` becomes
-        false; everything unnamed (`HandEmpty`, `Holding`) stays as it was.
+        false; same-side `OnBinRim` is cleared too. Everything unnamed
+        (`HandEmpty`, `Holding`) stays as it was.
 
         No precondition -- callable from any state. Used to require
         `HandEmpty(robot)`, on the reasoning that without it the operator would
@@ -126,6 +127,9 @@ class Tossing3DSkillProvider(SkillProvider):
             if env.layout == Tossing3DLayout.SAME_SIDE
             else LiftedAtom(predicate=ON_GROUND, variables=(cube,))
         )
+        removed = {LiftedAtom(predicate=IN_BIN, variables=(cube, bin_))}
+        if env.layout == Tossing3DLayout.SAME_SIDE:
+            removed.add(LiftedAtom(predicate=ON_BIN_RIM, variables=(cube, bin_)))
         skill = Skill(
             name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
             parameters=(robot, cube, bin_, barrier),
@@ -134,9 +138,7 @@ class Tossing3DSkillProvider(SkillProvider):
                 floor,
                 LiftedAtom(predicate=REACHABLE, variables=(cube, barrier)),
             }),
-            delete_effects=frozenset({
-                LiftedAtom(predicate=IN_BIN, variables=(cube, bin_)),
-            }),
+            delete_effects=frozenset(removed),
             param_dim=0,
         )
         return GroundSkill(skill=skill, objects=(env.robot, env.cube, env.bin, env.barrier))

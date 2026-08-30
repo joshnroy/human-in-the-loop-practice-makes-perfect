@@ -604,3 +604,79 @@ def test_reset_movables_leaves_the_barrier_untouched() -> None:
         assert after == pytest.approx(before, abs=1e-9)
     finally:
         env.close()
+
+
+def test_human_reset_clears_recorded_rim_support() -> None:
+    """The reset's symbolic effects agree with actual JSON-driven placement."""
+    import json
+
+    from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
+    from hitl_pmp.core.problem.tasks.types import GroundAtom
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.recovery_skills import ON_BIN_RIM, ON_FLOOR
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    try:
+        env.hard_reset()
+        observed = env.restore_plain_snapshot(
+            plain=json.loads((Path(__file__).parent / "fixtures/seed3_rim.json").read_text())
+        )
+        provider = Tossing3DSkillProvider(env=env)
+        reset = provider.human_cube_bin_reset_skill()
+        rim = GroundAtom(predicate=ON_BIN_RIM, objects=(env.cube, env.bin))
+        assert ON_BIN_RIM.holds(observed, (env.cube, env.bin))
+        assert rim in reset.delete_effects
+        method = EesMethod(
+            env=env, skill_provider=provider, seed=0, ask_for_reset_cube_bin_cost=0.001
+        )
+        plan = method.plan_to(
+            init_atoms=method.abstract_state(state=observed),
+            goal=frozenset({GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin))}),
+            costs={},
+            practicing=True,
+        )
+        assert [step.skill.name for step in plan] == [ASK_FOR_RESET_CUBE_BIN_ONLY_NAME]
+        assert env.reset_movables()
+        after = method.abstract_state(state=env.get_current_state())
+        assert reset.add_effects <= after
+        assert reset.delete_effects.isdisjoint(after)
+    finally:
+        env.close()
+
+
+def test_ees_picks_cube_from_recorded_bin_rim() -> None:
+    """Seed 3 stalled after throw 19: EES must actually grasp and lift this cube."""
+    import json
+
+    from hitl_pmp.core.method.types import GroundAtom
+    from hitl_pmp.core.problem.tasks.types import Goal, Task
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    try:
+        env.hard_reset()
+        plain = json.loads((Path(__file__).parent / "fixtures/seed3_rim.json").read_text())
+        observed = env.restore_plain_snapshot(plain=plain)
+        assert not IN_BIN.holds(observed, (env.cube, env.bin))
+        assert not ON_GROUND.holds(observed, (env.cube,))
+        provider = Tossing3DSkillProvider(env=env)
+        method = EesMethod(env=env, skill_provider=provider, seed=3)
+        policy = method.get_practice_policy(
+            task=Task(
+                initial_state=observed,
+                goal=Goal(
+                    atoms=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})
+                ),
+            )
+        )
+        action = policy(observed)
+        assert action.label.startswith("PickCubeFromRim")
+        retrieved = env.take_action(action=action.action)
+        assert HOLDING.holds(retrieved, (env.robot, env.cube)), env.last_skill_error()
+        assert retrieved.get(obj=env.cube, feature_name="z") > 0.3
+    finally:
+        env.close()
