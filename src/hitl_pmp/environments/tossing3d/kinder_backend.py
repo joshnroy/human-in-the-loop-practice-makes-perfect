@@ -823,6 +823,8 @@ class KinderBackend(BaseModel):
         if module not in factory:
             raise ValueError(f"unknown controller module {module!r}; known: {sorted(factory)}")
         kwargs = {} if pybullet_sim is None else {"pybullet_sim": pybullet_sim}
+        if module == "tossing":
+            kwargs["init_constant_state"] = state
         lifted = factory[module](self._env.action_space, **kwargs)
         if key not in lifted:
             raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
@@ -880,7 +882,7 @@ class KinderBackend(BaseModel):
         return ControllerRun(steps=limit, terminated=False)
 
     def run_pick_cube(self) -> ControllerRun:
-        """`pick_cube` -- upstream's parameterless grasp of a cube off the ground.
+        """Run upstream's single floor-or-bin cube pickup controller.
 
         Where to stand and which grasp rotation to use are derived inside the controller
         (`PickCubeController.STANDOFF`, `upright_grasp_rotations`), so there is nothing to
@@ -888,20 +890,10 @@ class KinderBackend(BaseModel):
         array because upstream's `sample_parameters` returns `tuple()` and `reset`
         immediately `del`s it.
 
-        `disable_collision_objects` is deliberately absent: it exists on
-        `MoveToTargetGroundController.reset` and on the composed toss, not here, and
-        passing it is a `TypeError`.
+        The lifted signature remains `(robot, cube, barrier)`; upstream appends the bin
+        from `init_constant_state` as collision context. The floor and bin EES skills
+        have different symbolic predicates but dispatch through this one controller.
         """
-        return self.run_controller(
-            module="tossing",
-            key="pick_cube",
-            object_names=(self.robot_name, self.cube_name, self.barrier_name),
-            params=None,
-            limit=self.pick_step_limit,
-        )
-
-    def run_pick_cube_from_bin(self) -> ControllerRun:
-        """Provide the live bin's dimensions to upstream's collision-aware retrieval."""
         from kinder_models.dynamic3d.utils import PyBulletSim
         from pybullet_helpers.geometry import Pose
 
@@ -922,8 +914,8 @@ class KinderBackend(BaseModel):
         )
         return self.run_controller(
             module="tossing",
-            key="pick_cube_from_bin",
-            object_names=(self.robot_name, self.cube_name, self.bin_name),
+            key="pick_cube",
+            object_names=(self.robot_name, self.cube_name, self.barrier_name),
             params=None,
             limit=self.pick_step_limit,
             pybullet_sim=sim,

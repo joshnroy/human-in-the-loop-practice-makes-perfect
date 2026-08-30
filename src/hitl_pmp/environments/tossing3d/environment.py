@@ -396,7 +396,12 @@ class Tossing3DEnvironment(Environment):
         if skill_id == self.open_gripper_id:
             return "OpenGripper", (self.robot.name,)
         if skill_id == self.pick_cube_from_bin_id:
-            return "PickCubeFromBin", (self.robot.name, self.cube.name, self.bin.name)
+            return "PickCubeFromBin", (
+                self.robot.name,
+                self.cube.name,
+                self.bin.name,
+                self.barrier.name,
+            )
         return f"unknown skill id {skill_id}", ()
 
     def get_valid_actions(self) -> list[Action]:
@@ -588,7 +593,7 @@ class Tossing3DEnvironment(Environment):
             # No parameters: opening the gripper takes none, matching `run_pick_cube`.
             return [backend.run_open_gripper()]
         if skill_id == self.pick_cube_from_bin_id and self.layout is Tossing3DLayout.SAME_SIDE:
-            return [backend.run_pick_cube_from_bin()]
+            return [backend.run_pick_cube()]
         self._last_skill_error = f"unknown skill id: {skill_id}"
         return []
 
