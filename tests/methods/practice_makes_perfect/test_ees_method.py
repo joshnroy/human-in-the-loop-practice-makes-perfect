@@ -30,6 +30,7 @@ from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.lightswitch.tasks import LightSwitchTasks
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
     EesMethod,
+    PracticeSelection,
     _EesEpisode,
     _SkillAttempt,
 )
@@ -1271,6 +1272,29 @@ def test_the_committed_practice_target_is_recorded_as_selected() -> None:
     assert plan, "expected _practice_plan to commit to some candidate"
     selected = plan[-1].skill.name
     assert method.practice_target_outcomes()[selected].num_selected == 1
+
+
+def test_explicit_stop_skips_the_bootstrap_fallback() -> None:
+    """A model-based selector can stop even before any competence model exists.
+
+    This differs from EES's empty candidate list, which deliberately bootstraps by
+    executing a random applicable skill.
+    """
+
+    class _StoppingMethod(EesMethod):
+        def select_practice(self, *, true_atoms: frozenset[GroundAtom]) -> PracticeSelection:
+            del true_atoms
+            return PracticeSelection(stop=True)
+
+    env = LightSwitchEnvironment(grid_size=3)
+    method = _StoppingMethod(env=env, skill_provider=LightSwitchSkillProvider(env=env), seed=0)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    # Empty goal skips the assigned-task phase and reaches practice immediately.
+    task = Task(initial_state=task.initial_state, goal=Goal(atoms=frozenset()))
+    env.set_state(state=task.initial_state)
+
+    with pytest.raises(InteractionComplete):
+        method.get_practice_policy(task=task)(env.get_current_state())
 
 
 def _reset_build(

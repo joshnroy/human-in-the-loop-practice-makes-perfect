@@ -32,6 +32,21 @@ from .wrapped_sampler import LearnedSkillSampler
 logger = logging.getLogger(__name__)
 
 
+class PracticeSelection(BaseModel):
+    """A selector's decision at one self-directed-practice decision point.
+
+    ``stop`` is distinct from an empty candidate tuple.  The latter means the
+    selector has no evidence yet and permits the episode's existing bootstrap
+    behavior; the former means further practice is predicted to reduce utility and
+    must end the interaction period without executing a fallback action.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    candidates: tuple[GroundSkill, ...] = ()
+    stop: bool = False
+
+
 class EesMethod(Method):
     """EES (Estimate / Extrapolate / Situate) -- the "Practice Makes Perfect"
     paper's own method, ported from predicators' `active_sampler_learning`
@@ -349,6 +364,14 @@ class EesMethod(Method):
 
     def total_observations(self) -> int:
         return sum(model.num_observations for model in self._competence_models.values())
+
+    def record_action_dispatch(self, *, ground_skill: GroundSkill) -> None:
+        """Observe a practice dispatch, including human actions with no skill outcome.
+
+        The default selector has no execution-cost state. Selectors that do can
+        account here without depending on a later outcome or another policy call.
+        """
+        del ground_skill
 
     def current_competences(self) -> dict[GroundSkill, float]:
         """Every already-instantiated ground skill's `get_current_competence()` --
@@ -691,6 +714,21 @@ class EesMethod(Method):
             scored.append((score, float(self._rng.uniform()), candidate))
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return [candidate for _score, _tiebreak, candidate in scored]
+
+    def select_practice(self, *, true_atoms: frozenset[GroundAtom]) -> "PracticeSelection":
+        """Choose whether to stop and, otherwise, rank skills to practice.
+
+        EES's selection rule does not use the current state directly; reachability is
+        checked by ``_EesEpisode`` after scoring.  The state is nevertheless part of
+        this public seam because a belief-space method must choose an action from the
+        complete belief-MDP state, whose observed component is ``true_atoms``.
+
+        Keeping execution outside this hook is deliberate.  Parameter sampling,
+        outcome labelling, competence updates, and setup planning remain shared by
+        every selector, while this method owns only the decision that differs.
+        """
+        del true_atoms
+        return PracticeSelection(candidates=tuple(self.choose_practice_target()))
 
     def random_choice(self, *, ground_skills: list[GroundSkill]) -> GroundSkill:
         """Uniform pick from this Method's own RNG stream, so a seeded EesMethod
@@ -1084,6 +1122,8 @@ class _EesEpisode:
             return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)
+        if self._practicing:
+            method.record_action_dispatch(ground_skill=ground_skill)
         if ground_skill.skill.name == ASK_FOR_RESET_CUBE_BIN_ONLY_NAME:
             # Dispatch to the rescue mechanism, not execute_ground_skill -- this
             # "skill" has no controller/effects to score. self._pending stays
@@ -1221,7 +1261,10 @@ class _EesEpisode:
         skill while no candidate has been tried yet -- that bootstrap is what fills
         the candidate set in the first place."""
         method = self._method
-        for candidate in method.choose_practice_target():
+        selection = method.select_practice(true_atoms=true_atoms)
+        if selection.stop:
+            return []
+        for candidate in selection.candidates:
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
                 return [candidate]
