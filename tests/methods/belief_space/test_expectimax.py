@@ -77,6 +77,21 @@ def test_stop_wins_an_exact_tie() -> None:
     assert result.action is None
 
 
+def test_compares_actions_only_after_summing_all_outcomes() -> None:
+    result = solve_expectimax(
+        state=_State(competence=1),
+        horizon=1,
+        stop_value=_stop_value,
+        actions=lambda *, state: ("risky",),
+        outcomes=lambda *, state, action: (
+            ChanceOutcome(probability=0.5, next_state=_State(competence=4)),
+            ChanceOutcome(probability=0.5, next_state=_State(competence=-4)),
+        ),
+    )
+    assert result.action is None
+    assert result.value == 1.0
+
+
 @pytest.mark.parametrize(
     "branches",
     [
