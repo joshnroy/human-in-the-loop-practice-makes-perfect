@@ -26,6 +26,7 @@ def render_state_log(*, state_log_path: Path, output_video_path: Path) -> int:
     if reader.header is None:
         raise ValueError(f"{state_log_path} has no header line -- not a state log")
     args = argparse.Namespace(
+        layout=reader.header.layout,
         variant=reader.header.variant,
         scene_bg=reader.header.scene_bg,
         canonical_seed=reader.header.canonical_seed,

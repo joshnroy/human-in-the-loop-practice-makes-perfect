@@ -18,6 +18,7 @@ from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 from hitl_pmp.method_runner import MethodRunner
 
 from .environment import Tossing3DEnvironment
+from .layout import Tossing3DLayout
 from .problem import Tossing3DProblem
 from .renderer import Tossing3DRenderer
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF
@@ -62,9 +63,12 @@ class Tossing3DCli:
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
         """--env/--seed/--num-test-tasks/--method/--output-dir are global flags added by
         hitl_pmp/cli.py, not here -- everything below is specific to this domain."""
-        # There is deliberately no --task-config flag. It offered 'stock' against
-        # 'coincident', which came to load the same scene once the upstream bin fix landed
-        # on `Tossing3D-o1.json` itself; see `Tossing3DEnvironment.backend`.
+        parser.add_argument(
+            "--layout",
+            choices=[layout.value for layout in Tossing3DLayout],
+            default=Tossing3DLayout.BARRIER.value,
+            help="Scene layout: original barrier benchmark or same-side retrieval scene.",
+        )
         fields = Tossing3DEnvironment.model_fields
         parser.add_argument(
             "--variant",
@@ -159,6 +163,7 @@ class Tossing3DCli:
             state_log_writer = StateLogWriter(
                 output_path=Path(args.output_dir) / STATE_LOG_FILENAME,
                 header=StateLogHeader(
+                    layout=getattr(args, "layout", Tossing3DLayout.BARRIER),
                     variant=args.variant,
                     scene_bg=args.scene_bg,
                     canonical_seed=args.canonical_seed,
@@ -220,6 +225,7 @@ class Tossing3DCli:
         what lets the tests above run on CI without the optional KINDER extra.
         """
         env = Tossing3DEnvironment(
+            layout=getattr(args, "layout", Tossing3DLayout.BARRIER),
             variant=args.variant,
             scene_bg=args.scene_bg,
             canonical_seed=args.canonical_seed,

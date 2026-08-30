@@ -49,6 +49,7 @@ from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
 from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
+from .layout import Tossing3DLayout
 from .state_log import StateLogWriter
 from .types import AbstractAtom, Tossing3DState
 
@@ -160,6 +161,7 @@ class Tossing3DEnvironment(Environment):
     # than validated, exactly as Tossing Room does.
     action_space: ClassVar[Box] = Box(-np.inf, np.inf, (5,))
 
+    layout: Tossing3DLayout = Tossing3DLayout.BARRIER
     variant: str = "o1"
     scene_bg: bool = True
     # Upstream's own `test_pick_ground_toss` seed, and the one every number in this
@@ -222,6 +224,7 @@ class Tossing3DEnvironment(Environment):
             self._backend = KinderBackend(
                 env_id=f"kinder/Tossing3D-{self.variant}-v0",
                 scene_bg=self.scene_bg,
+                task_config_path=self.layout.task_config_path(),
             )
         return self._backend
 
