@@ -1,10 +1,4 @@
-"""Exact finite-horizon expectimax over a fully specified belief MDP.
-
-The solver deliberately knows nothing about robots, skills, or how a belief is
-represented.  A caller supplies the terminal utility, applicable actions, and the
-complete chance distribution for each action.  A state may therefore already contain
-the observed environment state, accumulated cost, and posterior sufficient statistics.
-"""
+"""Exact finite-horizon expectimax over a fully specified belief MDP."""
 
 from __future__ import annotations
 
