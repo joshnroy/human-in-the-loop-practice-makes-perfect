@@ -43,7 +43,7 @@ def solve_belief_space_expectimax(
     sample_values = []
     for _ in range(NUM_SAMPLES):
         sampled_theta = sample_theta_from_belief(belief_state=belief_state)
-        current_policy_value, current_policy_action = evaluate_policy(sampled_theta=sampled_theta)
+        current_policy_value = evaluate_policy(sampled_theta=sampled_theta)
 
         current_pomdp_value = score_pomdp_value_from_policy_value_and_cost(
             policy_value=current_policy_value, summed_cost=summed_cost
@@ -117,11 +117,11 @@ def sample_theta_from_belief(*, belief_state: BeliefState) -> Theta:
     raise NotImplementedError("This is a placeholder for the sampling function")
 
 
-def evaluate_policy(*, sampled_theta: Theta) -> tuple[int, int | None]:
+def evaluate_policy(*, sampled_theta: Theta) -> tuple[int]:
     """This function should take the sampled theta (which contains each skill's
-    (estimated competence, estimated learning rate, estimated cost) and solve the
-    environment MDP to find the optimal policy's value and first action. This is
-    essentially the planning step that Practice Makes Perfect implements by default."""
+    (estimated competence, estimated learning rate, estimated cost) and solve
+    the environment MDP to find the optimal policy's value. This is essentially
+    the planning step that Practice Makes Perfect implements by default."""
 
     raise NotImplementedError("This is a placeholder for the policy evaluation function")
 
