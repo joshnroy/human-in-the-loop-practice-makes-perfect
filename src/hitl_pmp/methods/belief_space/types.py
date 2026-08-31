@@ -1,8 +1,19 @@
 """The state, action, and parameter types in the belief-space pseudocode."""
 
-from typing import Protocol
+from typing import Any, Protocol
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from hitl_pmp.core.log_timing import LogTiming
+
+
+class SearchTrace(BaseModel):
+    """Actual search events, recorded without additional model calls or RNG draws."""
+
+    events: list[dict[str, Any]] = Field(default_factory=list)
+
+    def record(self, *, event: str, **fields: Any) -> None:
+        self.events.append({"event": event, **fields, **LogTiming.fields()})
 
 
 class EnvironmentState(BaseModel):

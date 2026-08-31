@@ -9,6 +9,7 @@ pin the one genuinely new behaviour: a practice step's video comes from
 `Renderer.render_frame` call -- every non-Tossing3D domain today -- when it does
 not."""
 
+import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import ClassVar
@@ -17,11 +18,13 @@ import numpy as np
 import pytest
 from pydantic import Field
 
+from hitl_pmp.core.metrics.types import PracticeSessionEnd
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
 from hitl_pmp.recording import period_recorder as period_recorder_module
 from hitl_pmp.recording.period_recorder import PeriodRecorder
+from hitl_pmp.recording.skill_chat import SkillChatOverlay
 from hitl_pmp.recording.types import LoopPhase, LoopStatus, ResetKind
 
 _BLOCK = Type(name="block", feature_names=("x",))
@@ -146,6 +149,38 @@ def _build(*, env: Environment, renderer: type[Renderer], output_dir: Path) -> P
 
 
 # --- file layout -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("reason", ["planner_stop", "session_action_cap"])
+def test_session_end_records_reason_and_terminal_video_frame(
+    *, tmp_path: Path, reason: str
+) -> None:
+    env = _FakeEnv()
+    env.hard_reset()
+    recorder = _build(env=env, renderer=_SpyRenderer, output_dir=tmp_path)
+    recorder.begin_practice(cycle_index=0, transitions=0, task="goal")
+    end = PracticeSessionEnd.model_validate({
+        "cycle_index": 0,
+        "reason": reason,
+        "actions_executed": 3,
+        "action_limit": 3,
+    })
+    recorder.record_session_end(state=_state(x=1.0), session_end=end, transitions=2)
+    recorder.end_practice()
+    records = [
+        json.loads(line) for line in (tmp_path / "practice_events.jsonl").read_text().splitlines()
+    ]
+    assert records[-1]["event"] == "practice_session_end"
+    assert records[-1]["reason"] == reason
+    assert records[-1]["actions_executed"] == 3
+    assert records[-1]["transitions"] == 2
+    expected = "PLANNER CHOSE STOP" if reason == "planner_stop" else "SESSION ACTION CAP REACHED"
+    assert expected in recorder.practice_history[-1]
+    stream = _opened[str(tmp_path / "period_videos/practice/cycle_0000.mp4")]
+    assert stream.closed
+    assert len(stream.captured) >= recorder.fps * 2
+    assert "timestamp" in records[-1]
+    assert records[-1]["elapsed_seconds"] >= 0
 
 
 def test_practice_and_evaluation_write_separate_files_named_by_index(*, tmp_path: Path) -> None:
@@ -284,4 +319,5 @@ def test_a_period_reset_frame_is_composed_with_the_shared_status_bar_overlay(
         ),
     )
     assert len(stream.captured) == recorder.reset_hold_frames
+    expected = SkillChatOverlay.compose(frame=expected, history=[], competences={})
     assert np.array_equal(stream.captured[0], expected)

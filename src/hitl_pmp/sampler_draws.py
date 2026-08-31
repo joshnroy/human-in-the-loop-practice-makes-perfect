@@ -41,6 +41,7 @@ from typing import TextIO
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import SamplerConsultation
 from hitl_pmp.core.problem.environment.types import Object, State
 
@@ -119,7 +120,7 @@ class SamplerDrawRecorder(BaseModel):
             achieved=SamplerDrawRecorder.read_features(state=state, objects=objects),
         )
         handle = self._open()
-        handle.write(draw.model_dump_json() + "\n")
+        handle.write(LogTiming.encode(record=draw.model_dump(mode="json")))
         # Per line, not per run: see the module docstring on why a file that only
         # parses after a clean exit is useless for a multi-hour run.
         handle.flush()

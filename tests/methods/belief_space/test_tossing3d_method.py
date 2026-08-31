@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -59,6 +61,18 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     assert after.pending_pick_examples == 1
 
 
+def test_competence_chart_is_read_only_and_labels_fixed_assumptions() -> None:
+    method = _build(ask_for_reset_cube_bin_cost=0.00001)
+    before = method.pomdp_state
+    values = method.practice_skill_competences()
+    assert values["PickCube (belief mean)"] == 0.5
+    assert values["OpenGripper (belief mean)"] == 0.5
+    assert values["MoveToTossLocationAndToss (belief mean)"] == before.toss_belief.mean_competence
+    assert values["ask_for_reset_cube_bin_only (fixed)"] == 1.0
+    assert "STOP" not in values
+    assert method.pomdp_state == before
+
+
 def test_toss_evidence_and_training_are_separate_until_refit() -> None:
     method = _build()
     toss = _grounding(method=method, name=TOSS_SKILL)
@@ -100,7 +114,9 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     assert method.pomdp_state.accumulated_cost == 0.25
 
 
-def test_new_practice_session_replenishes_budget_without_forgetting_learning() -> None:
+def test_new_practice_session_replenishes_budget_without_forgetting_learning(
+    *, tmp_path: Path
+) -> None:
     method = _build(pomdp_hard_budget=2, sampler_max_train_iters=2)
     pick = _grounding(method=method, name=PICK_SKILL)
     toss = _grounding(method=method, name=TOSS_SKILL)
@@ -124,10 +140,12 @@ def test_new_practice_session_replenishes_budget_without_forgetting_learning() -
     method.select_skill_to_practice(true_atoms=pick.preconditions)
     assert method.pomdp_state.accumulated_cost == 2
 
+    method.decision_log = tmp_path / "decisions.jsonl"
     method.get_practice_policy(task=task)
     assert method.pomdp_state == before.model_copy(update={"accumulated_cost": 0.0})
     assert method.sampler(skill_name=TOSS_SKILL, param_dim=4) is sampler
     assert sampler.score_inputs(sampler_inputs=[[0.0], [1.0]]) == predictions
+    assert '"event": "session_start"' in method.decision_log.read_text()
     method.record_action_cost(ground_skill=pick)
     method.select_skill_to_practice(true_atoms=pick.preconditions)
     assert method.pomdp_state.accumulated_cost == 1

@@ -119,6 +119,8 @@ def test_every_draw_is_one_json_object_per_line(*, recording_on: Path) -> None:
     assert draws, "a 2-cycle EES run consults a param_dim=1 sampler at least once"
     for draw in draws:
         assert set(draw) == {
+            "timestamp",
+            "elapsed_seconds",
             "cycle",
             "skill",
             "consultation",

@@ -119,6 +119,8 @@ def test_every_step_is_one_json_object_per_line(*, recording_on: Path) -> None:
     assert steps, "skill-oracle on a grid_size=3 board takes at least one real step"
     for step in steps:
         assert set(step) == {
+            "timestamp",
+            "elapsed_seconds",
             "checkpoint",
             "num_online_transitions",
             "task_index",

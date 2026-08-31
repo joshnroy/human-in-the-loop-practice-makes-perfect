@@ -40,6 +40,7 @@ from typing import TextIO
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import EpisodeTrace
 from hitl_pmp.core.problem.environment.types import State
 
@@ -118,7 +119,7 @@ class EpisodeTraceRecorder(BaseModel):
                 action=[float(value) for value in action.action],
                 state=EpisodeTraceRecorder._flatten_state(state=trace.states[step_index + 1]),
             )
-            handle.write(record.model_dump_json() + "\n")
+            handle.write(LogTiming.encode(record=record.model_dump(mode="json")))
         # Per episode, not per run: see the module docstring on why a file that only
         # parses after a clean exit is still useful at this granularity.
         handle.flush()

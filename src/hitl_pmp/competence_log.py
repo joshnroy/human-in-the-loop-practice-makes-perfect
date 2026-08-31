@@ -36,6 +36,7 @@ from typing import TextIO
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import GroundSkill
 
 # The sibling `--output-dir` file this writes, named the same way `stats.json`,
@@ -114,7 +115,7 @@ class CompetenceLogRecorder(BaseModel):
                 objects=tuple(obj.name for obj in ground_skill.objects),
                 competence=competence,
             )
-            handle.write(record.model_dump_json() + "\n")
+            handle.write(LogTiming.encode(record=record.model_dump(mode="json")))
         # Per checkpoint, not per run: see the module docstring on why a file that
         # only parses after a clean exit is useless for a long run.
         handle.flush()
