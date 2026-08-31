@@ -178,7 +178,8 @@ class Tossing3DPomdpCli(EesCli):
             "--pomdp-hard-budget",
             type=int,
             default=None,
-            help="Hard cumulative practice-cost budget; replaces the linear penalty.",
+            help="Hard practice-cost budget per session; replenished each cycle, not each "
+            "replan. Replaces the linear penalty.",
         )
         parser.add_argument(
             "--pomdp-num-samples",

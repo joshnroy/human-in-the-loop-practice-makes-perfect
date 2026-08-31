@@ -124,6 +124,7 @@ J(C,b) = E<sub>θ∼b projected through pending examples</sub>[G(C,θ)]</div>
 <div class="eyebrow">10 · Real execution</div><h2>Execute one skill—not the entire imagined plan.</h2>
 <ol><li>Read the actual symbolic state and current belief.</li><li>Run a fresh H-step search using the total cost already spent.</li><li>Execute only the selected skill and charge its cost.</li><li>Observe success/failure, update evidence and pending examples, then replan.</li><li>If STOP is selected, finish the practice session and process its boundary update.</li></ol>
 <div class="math">Replanning refreshes H.<br>Replanning does not reset C or replenish B.</div>
+<p>Each new practice session starts at C=0 with a fresh B, retaining learned samplers and beliefs. Human resets within a session still consume its budget.</p>
 <p>With B=10 and unit costs, ten paid actions use the entire budget. Decision 11 can choose STOP; it does not need to wait for the 150-step outer cap.</p>
 <p><code>reset=never</code> disables automatic practice resets. It does <b>not</b> disable the selectable, charged human reset skill.</p>
 </section>

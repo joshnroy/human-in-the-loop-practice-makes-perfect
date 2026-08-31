@@ -46,8 +46,11 @@ in PDF section 2.4.
   choice of g, not the general optimal frozen-MDP solve suggested by the PDF and
   pseudocode. Deployment resource cost and discounting are not included.
 - Hard budget B=150 implements the PDF's hard-budget G by excluding deterministic
-  over-budget actions. Linear cost penalty is inactive. B is cumulative across
-  replans and is not replenished at cycle boundaries.
+  over-budget actions. Linear cost penalty is inactive. Cost accumulates across
+  replans within a session; each new session starts at C=0 with a fresh B.
+  This chooses a separate practice objective per session; the PDF leaves
+  multi-session scheduling unspecified. Previously B was shared across cycles.
+  That change does not affect the single-session experiments described here.
 - H=10 is truncated receding-horizon planning. With unit costs and B=150, the PDF's
   initial effective horizon bound is 150. Consequently this configuration does
   not inherit the PDF's exact optimality guarantee.

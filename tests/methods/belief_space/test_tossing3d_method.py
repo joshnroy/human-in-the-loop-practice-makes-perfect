@@ -121,3 +121,40 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     assert reset is not None
     method.record_action_cost(ground_skill=reset)
     assert method.pomdp_state.accumulated_cost == 0.25
+
+
+def test_new_practice_session_replenishes_budget_without_forgetting_learning(
+    *, tmp_path: Path
+) -> None:
+    method = _build(pomdp_hard_budget=2, sampler_max_train_iters=2)
+    pick = _grounding(method=method, name=PICK_SKILL)
+    toss = _grounding(method=method, name=TOSS_SKILL)
+    for success in (True, False):
+        method.record_action_cost(ground_skill=pick)
+        method.observe_outcome(ground_skill=pick, success=success)
+        method.observe_sampler_outcome(
+            skill_name=TOSS_SKILL, param_dim=4, sampler_input=[float(success)], success=success
+        )
+    method.fit_samplers()
+    before = method.pomdp_state
+    sampler = method.sampler(skill_name=TOSS_SKILL, param_dim=4)
+    predictions = sampler.score_inputs(sampler_inputs=[[0.0], [1.0]])
+    state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    task = Task(initial_state=state, goal=Goal(atoms=toss.add_effects))
+    method.get_task_policy(task=task)
+    method.observe_environment_reset(state=state)
+    method.select_skill_to_practice(true_atoms=pick.preconditions)
+    assert method.pomdp_state.accumulated_cost == 2
+
+    method.decision_log = tmp_path / "decisions.jsonl"
+    method.get_practice_policy(task=task)
+    assert method.pomdp_state == before.model_copy(update={"accumulated_cost": 0.0})
+    assert method.sampler(skill_name=TOSS_SKILL, param_dim=4) is sampler
+    assert sampler.score_inputs(sampler_inputs=[[0.0], [1.0]]) == predictions
+    assert '"event": "session_start"' in method.decision_log.read_text()
+    method.record_action_cost(ground_skill=pick)
+    method.select_skill_to_practice(true_atoms=pick.preconditions)
+    assert method.pomdp_state.accumulated_cost == 1

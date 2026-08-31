@@ -7,8 +7,8 @@ from typing import Any
 from pydantic import Field, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
-from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.core.problem.tasks.types import GroundAtom
+from hitl_pmp.core.method.types import GroundSkill, Policy
+from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
     STOP_SKILL,
     EesMethod,
@@ -98,6 +98,19 @@ class Tossing3DPomdpMethod(EesMethod):
     @property
     def pomdp_state(self) -> Tossing3DBeliefState:
         return self._pomdp_state
+
+    def get_practice_policy(self, *, task: Task) -> Policy:
+        """Start a fresh session budget without resetting the learned skill state."""
+        previous_session_cost = self._pomdp_state.accumulated_cost
+        self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
+        self._practice_values.clear()
+        self.record_diagnostic(
+            event="session_start",
+            previous_session_cost=previous_session_cost,
+            summed_cost=0.0,
+            hard_budget=self.pomdp_hard_budget,
+        )
+        return super().get_practice_policy(task=task)
 
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
