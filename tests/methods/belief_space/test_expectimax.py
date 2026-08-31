@@ -4,55 +4,64 @@ from pydantic import BaseModel, Field
 from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
 from hitl_pmp.methods.belief_space.types import (
     STOP_ACTION,
-    BeliefState,
-    EnvironmentState,
-    POMDPAction,
-    Theta,
+)
+from hitl_pmp.methods.belief_space.types import (
+    BeliefState as BaseBeliefState,
+)
+from hitl_pmp.methods.belief_space.types import (
+    EnvironmentState as BaseEnvironmentState,
+)
+from hitl_pmp.methods.belief_space.types import (
+    POMDPAction as BasePOMDPAction,
+)
+from hitl_pmp.methods.belief_space.types import (
+    Theta as BaseTheta,
 )
 
 
-class _EnvironmentState(EnvironmentState):
+class EnvironmentState(BaseEnvironmentState):
     name: str
 
 
-class _BeliefState(BeliefState):
+class BeliefState(BaseBeliefState):
     value: float
 
 
-class _POMDPAction(POMDPAction):
+class POMDPAction(BasePOMDPAction):
     name: str
 
 
-class _Theta(Theta):
+class Theta(BaseTheta):
     value: float
 
 
-INITIAL = _EnvironmentState(name="initial")
-READY = _EnvironmentState(name="ready")
-SUCCESS = _EnvironmentState(name="success")
-FAILURE = _EnvironmentState(name="failure")
-SETUP = _POMDPAction(name="setup")
-PRACTICE = _POMDPAction(name="practice")
+INITIAL = EnvironmentState(name="initial")
+READY = EnvironmentState(name="ready")
+SUCCESS = EnvironmentState(name="success")
+FAILURE = EnvironmentState(name="failure")
+SETUP = POMDPAction(name="setup")
+PRACTICE = POMDPAction(name="practice")
 
 
-class _Model(BaseModel):
+class Model(BaseModel):
     transitions: dict[
-        tuple[EnvironmentState, POMDPAction], list[tuple[EnvironmentState, float, float]]
+        tuple[BaseEnvironmentState, BasePOMDPAction],
+        list[tuple[BaseEnvironmentState, float, float]],
     ] = Field(default_factory=dict)
-    beliefs: dict[EnvironmentState, BeliefState] = Field(default_factory=dict)
-    action_beliefs: dict[POMDPAction, BeliefState] = Field(default_factory=dict)
+    beliefs: dict[BaseEnvironmentState, BaseBeliefState] = Field(default_factory=dict)
+    action_beliefs: dict[BasePOMDPAction, BaseBeliefState] = Field(default_factory=dict)
     samples: list[float] = Field(default_factory=list)
-    visits: list[BeliefState] = Field(default_factory=list)
+    visits: list[BaseBeliefState] = Field(default_factory=list)
     scale: float = 1.0
 
-    def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta:
-        assert isinstance(belief_state, _BeliefState)
+    def sample_theta_from_belief(self, *, belief_state: BaseBeliefState) -> BaseTheta:
+        assert isinstance(belief_state, BeliefState)
         value = self.samples[len(self.visits)] if self.samples else belief_state.value
         self.visits.append(belief_state)
-        return _Theta(value=value)
+        return Theta(value=value)
 
-    def evaluate_policy(self, *, sampled_theta: Theta) -> float:
-        assert isinstance(sampled_theta, _Theta)
+    def evaluate_policy(self, *, sampled_theta: BaseTheta) -> float:
+        assert isinstance(sampled_theta, Theta)
         return sampled_theta.value * self.scale
 
     def score_pomdp_value_from_policy_value_and_cost(
@@ -60,16 +69,18 @@ class _Model(BaseModel):
     ) -> float:
         return policy_value - summed_cost
 
-    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[POMDPAction]:
+    def get_valid_actions(
+        self, *, environment_state: BaseEnvironmentState
+    ) -> list[BasePOMDPAction]:
         return [action for state, action in self.transitions if state == environment_state]
 
     def sample_next_states(
         self,
         *,
-        environment_state: EnvironmentState,
-        practice_action: POMDPAction,
-        belief_state: BeliefState,
-    ) -> list[tuple[EnvironmentState, float]]:
+        environment_state: BaseEnvironmentState,
+        practice_action: BasePOMDPAction,
+        belief_state: BaseBeliefState,
+    ) -> list[tuple[BaseEnvironmentState, float]]:
         return [
             (state, cost) for state, cost, _ in self.transitions[environment_state, practice_action]
         ]
@@ -77,11 +88,11 @@ class _Model(BaseModel):
     def update_belief_state(
         self,
         *,
-        belief_state: BeliefState,
-        environment_state: EnvironmentState,
-        potential_next_environment_state: EnvironmentState,
-        practice_action: POMDPAction,
-    ) -> BeliefState:
+        belief_state: BaseBeliefState,
+        environment_state: BaseEnvironmentState,
+        potential_next_environment_state: BaseEnvironmentState,
+        practice_action: BasePOMDPAction,
+    ) -> BaseBeliefState:
         return self.action_beliefs.get(
             practice_action, self.beliefs.get(potential_next_environment_state, belief_state)
         )
@@ -89,11 +100,11 @@ class _Model(BaseModel):
     def transition_probability(
         self,
         *,
-        potential_next_environment_state: EnvironmentState,
+        potential_next_environment_state: BaseEnvironmentState,
         sampled_cost: float,
-        environment_state: EnvironmentState,
-        practice_action: POMDPAction,
-        belief_state: BeliefState,
+        environment_state: BaseEnvironmentState,
+        practice_action: BasePOMDPAction,
+        belief_state: BaseBeliefState,
     ) -> float:
         return next(
             probability
@@ -103,11 +114,11 @@ class _Model(BaseModel):
 
 
 def test_horizon_zero_stops_and_subtracts_existing_cost() -> None:
-    model = _Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]})
+    model = Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]})
     assert solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.25,
-        belief_state=_BeliefState(value=1.0),
+        belief_state=BeliefState(value=1.0),
         horizon=0,
         model=model,
     ) == (0.75, STOP_ACTION)
@@ -115,11 +126,11 @@ def test_horizon_zero_stops_and_subtracts_existing_cost() -> None:
 
 
 def test_averages_theta_samples_after_policy_evaluation_and_scoring() -> None:
-    model = _Model(samples=[1.0, 3.0, 8.0], scale=2.0)
+    model = Model(samples=[1.0, 3.0, 8.0], scale=2.0)
     value, action = solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.5,
-        belief_state=_BeliefState(value=0.0),
+        belief_state=BeliefState(value=0.0),
         horizon=0,
         model=model,
         num_samples=3,
@@ -131,20 +142,20 @@ def test_averages_theta_samples_after_policy_evaluation_and_scoring() -> None:
 
 @pytest.mark.parametrize("horizon, expected", [(1, (2.0, STOP_ACTION)), (2, (3.0, SETUP))])
 def test_looks_past_an_initially_unhelpful_setup_action(
-    *, horizon: int, expected: tuple[float, POMDPAction]
+    *, horizon: int, expected: tuple[float, BasePOMDPAction]
 ) -> None:
-    model = _Model(
+    model = Model(
         transitions={
             (INITIAL, SETUP): [(READY, 1.0, 1.0)],
             (READY, PRACTICE): [(SUCCESS, 1.0, 0.75), (FAILURE, 1.0, 0.25)],
         },
-        beliefs={SUCCESS: _BeliefState(value=6.0), FAILURE: _BeliefState(value=2.0)},
+        beliefs={SUCCESS: BeliefState(value=6.0), FAILURE: BeliefState(value=2.0)},
     )
     assert (
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
-            belief_state=_BeliefState(value=2.0),
+            belief_state=BeliefState(value=2.0),
             horizon=horizon,
             model=model,
         )
@@ -156,56 +167,56 @@ def test_stop_wins_an_exact_tie() -> None:
     assert solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=_BeliefState(value=2.0),
+        belief_state=BeliefState(value=2.0),
         horizon=1,
-        model=_Model(transitions={(INITIAL, PRACTICE): [(INITIAL, 0.0, 1.0)]}),
+        model=Model(transitions={(INITIAL, PRACTICE): [(INITIAL, 0.0, 1.0)]}),
     ) == (2.0, STOP_ACTION)
 
 
 def test_compares_actions_only_after_summing_all_outcomes() -> None:
-    model = _Model(
+    model = Model(
         transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 0.5), (FAILURE, 0.0, 0.5)]},
-        beliefs={SUCCESS: _BeliefState(value=4.0), FAILURE: _BeliefState(value=-4.0)},
+        beliefs={SUCCESS: BeliefState(value=4.0), FAILURE: BeliefState(value=-4.0)},
     )
     assert solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=_BeliefState(value=1.0),
+        belief_state=BeliefState(value=1.0),
         horizon=1,
         model=model,
     ) == (1.0, STOP_ACTION)
 
 
 def test_shared_successor_is_evaluated_once_at_each_depth() -> None:
-    model = _Model(
+    model = Model(
         transitions={
             (INITIAL, SETUP): [(SUCCESS, 0.0, 1.0)],
             (INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)],
         },
-        beliefs={SUCCESS: _BeliefState(value=2.0)},
+        beliefs={SUCCESS: BeliefState(value=2.0)},
     )
     assert solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=_BeliefState(value=0.0),
+        belief_state=BeliefState(value=0.0),
         horizon=1,
         model=model,
     ) == (2.0, SETUP)
-    assert model.visits == [_BeliefState(value=0.0), _BeliefState(value=2.0)]
+    assert model.visits == [BeliefState(value=0.0), BeliefState(value=2.0)]
 
 
 def test_cache_distinguishes_accumulated_cost() -> None:
-    model = _Model(
+    model = Model(
         transitions={
             (INITIAL, SETUP): [(SUCCESS, 1.0, 1.0)],
             (INITIAL, PRACTICE): [(SUCCESS, 0.5, 1.0)],
         },
-        beliefs={SUCCESS: _BeliefState(value=2.0)},
+        beliefs={SUCCESS: BeliefState(value=2.0)},
     )
     assert solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=_BeliefState(value=0.0),
+        belief_state=BeliefState(value=0.0),
         horizon=1,
         model=model,
     ) == (1.5, PRACTICE)
@@ -213,11 +224,11 @@ def test_cache_distinguishes_accumulated_cost() -> None:
 
 
 def test_separate_searches_resample_and_do_not_reuse_stale_values() -> None:
-    model = _Model(samples=[1.0, 3.0])
+    model = Model(samples=[1.0, 3.0])
     first = solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=_BeliefState(value=0.0),
+        belief_state=BeliefState(value=0.0),
         horizon=0,
         model=model,
     )
@@ -225,7 +236,7 @@ def test_separate_searches_resample_and_do_not_reuse_stale_values() -> None:
     second = solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=_BeliefState(value=0.0),
+        belief_state=BeliefState(value=0.0),
         horizon=0,
         model=model,
     )
@@ -234,24 +245,24 @@ def test_separate_searches_resample_and_do_not_reuse_stale_values() -> None:
 
 
 def test_cache_distinguishes_beliefs_at_the_same_environment_state_and_cost() -> None:
-    model = _Model(
+    model = Model(
         transitions={
             (INITIAL, SETUP): [(SUCCESS, 0.0, 1.0)],
             (INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)],
         },
-        action_beliefs={SETUP: _BeliefState(value=1.0), PRACTICE: _BeliefState(value=2.0)},
+        action_beliefs={SETUP: BeliefState(value=1.0), PRACTICE: BeliefState(value=2.0)},
     )
     assert solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=_BeliefState(value=0.0),
+        belief_state=BeliefState(value=0.0),
         horizon=1,
         model=model,
     ) == (2.0, PRACTICE)
     assert model.visits == [
-        _BeliefState(value=0.0),
-        _BeliefState(value=1.0),
-        _BeliefState(value=2.0),
+        BeliefState(value=0.0),
+        BeliefState(value=1.0),
+        BeliefState(value=2.0),
     ]
 
 
@@ -259,9 +270,9 @@ def test_averaging_large_finite_samples_does_not_overflow() -> None:
     assert solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=_BeliefState(value=1e308),
+        belief_state=BeliefState(value=1e308),
         horizon=0,
-        model=_Model(),
+        model=Model(),
         num_samples=2,
     ) == (1e308, STOP_ACTION)
 
@@ -279,25 +290,25 @@ def test_averaging_large_finite_samples_does_not_overflow() -> None:
     ],
 )
 def test_rejects_malformed_chance_distributions(
-    *, branches: list[tuple[EnvironmentState, float, float]]
+    *, branches: list[tuple[BaseEnvironmentState, float, float]]
 ) -> None:
     with pytest.raises(ValueError):
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
-            belief_state=_BeliefState(value=0.0),
+            belief_state=BeliefState(value=0.0),
             horizon=1,
-            model=_Model(transitions={(INITIAL, PRACTICE): branches}),
+            model=Model(transitions={(INITIAL, PRACTICE): branches}),
         )
 
 
 def test_rejects_negative_horizon_before_evaluating_model() -> None:
-    model = _Model()
+    model = Model()
     with pytest.raises(ValueError, match="horizon must be non-negative"):
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
-            belief_state=_BeliefState(value=0.0),
+            belief_state=BeliefState(value=0.0),
             horizon=-1,
             model=model,
         )
@@ -310,9 +321,9 @@ def test_rejects_nonpositive_sample_count(*, num_samples: int) -> None:
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
-            belief_state=_BeliefState(value=0.0),
+            belief_state=BeliefState(value=0.0),
             horizon=0,
-            model=_Model(),
+            model=Model(),
             num_samples=num_samples,
         )
 
@@ -323,21 +334,21 @@ def test_rejects_nonfinite_stop_value(*, value: float) -> None:
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
-            belief_state=_BeliefState(value=value),
+            belief_state=BeliefState(value=value),
             horizon=0,
-            model=_Model(),
+            model=Model(),
         )
 
 
 @pytest.mark.parametrize("cost", [-1.0, float("nan"), float("inf")])
 @pytest.mark.parametrize("accumulated", [True, False])
 def test_rejects_invalid_costs(*, cost: float, accumulated: bool) -> None:
-    model = _Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, cost, 1.0)]})
+    model = Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, cost, 1.0)]})
     with pytest.raises(ValueError, match="cost must be finite and non-negative"):
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=cost if accumulated else 0.0,
-            belief_state=_BeliefState(value=0.0),
+            belief_state=BeliefState(value=0.0),
             horizon=1,
             model=model,
         )

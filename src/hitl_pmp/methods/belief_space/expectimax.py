@@ -37,7 +37,7 @@ def solve_belief_space_expectimax(
     """
     if num_samples < 1:
         raise ValueError("num_samples must be positive")
-    solver = _ExpectimaxSearch(model=model, num_samples=num_samples)
+    solver = ExpectimaxSearch(model=model, num_samples=num_samples)
     return solver.cached_solve_belief_space_expectimax(
         environment_state=environment_state,
         summed_cost=summed_cost,
@@ -46,7 +46,7 @@ def solve_belief_space_expectimax(
     )
 
 
-class _ExpectimaxSearch:
+class ExpectimaxSearch:
     """One search's model and cached recursion."""
 
     def __init__(self, *, model: BeliefSpaceModel, num_samples: int) -> None:
