@@ -1,0 +1,575 @@
+"""Finite situated practice POMDP for the canonical Tossing3D task."""
+
+from __future__ import annotations
+
+import math
+from collections.abc import Iterable
+from enum import Enum
+from itertools import product
+
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+
+from .types import BeliefState, EnvironmentState, POMDPAction, Theta
+
+PICK_SKILL = "PickCube"
+TOSS_SKILL = "MoveToTossLocationAndToss"
+OPEN_GRIPPER_SKILL = "OpenGripper"
+RESET_SKILL = "ask_for_reset_cube_bin_only"
+
+
+class Tossing3DEnvironmentState(Enum):
+    """Canonical symbolic phases that determine applicable environment skills."""
+
+    READY = "ready"
+    HOLDING = "holding"
+    UNREACHABLE_HOLDING = "unreachable_holding"
+    GRIPPER_CLOSED = "gripper_closed"
+    CLOSED_STRANDED = "closed_stranded"
+    STRANDED = "stranded"
+    SOLVED = "solved"
+    CLOSED_SOLVED = "closed_solved"
+
+
+class SkillHypothesis(Theta):
+    model_config = ConfigDict(frozen=True)
+
+    competence: float = Field(ge=0.0, le=1.0)
+    learning_rate: float = Field(ge=0.0, le=1.0)
+
+    def after_training_examples(self, *, count: int) -> SkillHypothesis:
+        if count < 0:
+            raise ValueError("training-example count must be nonnegative")
+        competence = 1.0 - (1.0 - self.competence) * (1.0 - self.learning_rate) ** count
+        return SkillHypothesis(competence=competence, learning_rate=self.learning_rate)
+
+
+class WeightedHypothesis(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    hypothesis: SkillHypothesis
+    probability: float = Field(gt=0.0, le=1.0)
+
+
+class SkillBelief(BaseModel):
+    """Posterior over a skill's competence and improvement rate."""
+
+    model_config = ConfigDict(frozen=True)
+
+    hypotheses: tuple[WeightedHypothesis, ...]
+
+    @staticmethod
+    def prior() -> SkillBelief:
+        return SkillBelief(
+            hypotheses=tuple(
+                WeightedHypothesis(
+                    hypothesis=SkillHypothesis(competence=p, learning_rate=rate),
+                    probability=1.0 / 10,
+                )
+                for p in (0.0, 0.25, 0.5, 0.75, 1.0)
+                for rate in (0.0, 0.1)
+            )
+        )
+
+    @model_validator(mode="after")
+    def _valid_distribution(self) -> SkillBelief:
+        if not self.hypotheses:
+            raise ValueError("a skill belief needs at least one hypothesis")
+        total = sum(item.probability for item in self.hypotheses)
+        if not math.isclose(total, 1.0, rel_tol=1e-9, abs_tol=1e-12):
+            raise ValueError(f"hypothesis probabilities sum to {total}, not 1")
+        return self
+
+    @property
+    def mean_competence(self) -> float:
+        return sum(item.probability * item.hypothesis.competence for item in self.hypotheses)
+
+    def condition(self, *, success: bool) -> SkillBelief:
+        """Condition on a greedy-policy outcome without pretending a refit occurred."""
+        weighted: list[tuple[SkillHypothesis, float]] = []
+        for item in self.hypotheses:
+            likelihood = item.hypothesis.competence if success else 1.0 - item.hypothesis.competence
+            mass = item.probability * likelihood
+            if mass > 0.0:
+                weighted.append((item.hypothesis, mass))
+        normalizer = sum(mass for _hypothesis, mass in weighted)
+        if normalizer <= 0.0:
+            raise ValueError(f"observation success={success} has zero probability")
+        return SkillBelief(
+            hypotheses=tuple(
+                WeightedHypothesis(hypothesis=hypothesis, probability=mass / normalizer)
+                for hypothesis, mass in weighted
+            )
+        )
+
+    def after_refit(self, *, training_examples: int) -> SkillBelief:
+        return SkillBelief(
+            hypotheses=tuple(
+                WeightedHypothesis(
+                    hypothesis=item.hypothesis.after_training_examples(count=training_examples),
+                    probability=item.probability,
+                )
+                for item in self.hypotheses
+            )
+        )
+
+
+class Tossing3DBeliefState(BeliefState):
+    """Physical state, latent-controller posterior, and paid practice cost."""
+
+    model_config = ConfigDict(frozen=True)
+
+    environment_state: Tossing3DEnvironmentState
+    toss_belief: SkillBelief
+    pick_belief: SkillBelief = Field(default_factory=SkillBelief.prior)
+    open_gripper_belief: SkillBelief = Field(default_factory=SkillBelief.prior)
+    pending_pick_examples: int = Field(default=0, ge=0)
+    pending_open_gripper_examples: int = Field(default=0, ge=0)
+    pending_training_examples: int = Field(default=0, ge=0)
+    accumulated_cost: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+
+    def transition(
+        self,
+        *,
+        environment_state: Tossing3DEnvironmentState,
+        added_cost: float,
+        toss_belief: SkillBelief | None = None,
+        added_training_examples: int = 0,
+    ) -> Tossing3DBeliefState:
+        return self.model_copy(
+            update={
+                "environment_state": environment_state,
+                "toss_belief": self.toss_belief if toss_belief is None else toss_belief,
+                "pending_training_examples": self.pending_training_examples
+                + added_training_examples,
+                "accumulated_cost": self.accumulated_cost + added_cost,
+            }
+        )
+
+    def after_refit(self) -> Tossing3DBeliefState:
+        return self.model_copy(
+            update={
+                "toss_belief": self.toss_belief.after_refit(
+                    training_examples=self.pending_training_examples
+                ),
+                "pending_training_examples": 0,
+                "pick_belief": self.pick_belief.after_refit(
+                    training_examples=self.pending_pick_examples
+                ),
+                "open_gripper_belief": self.open_gripper_belief.after_refit(
+                    training_examples=self.pending_open_gripper_examples
+                ),
+                "pending_pick_examples": 0,
+                "pending_open_gripper_examples": 0,
+            }
+        )
+
+
+class Tossing3DSearchState(EnvironmentState):
+    """Situated successor, including the observed exploration branch."""
+
+    state: Tossing3DBeliefState
+
+
+class Tossing3DAction(POMDPAction):
+    name: str
+
+
+class Tossing3DOutcome(BaseModel):
+    probability: float
+    next_state: Tossing3DBeliefState
+
+
+class Tossing3DTheta(Theta):
+    pick: SkillHypothesis
+    toss: SkillHypothesis
+    open_gripper: SkillHypothesis
+
+
+class Tossing3DPracticeModel(BaseModel):
+    """Applicable actions, situated transitions, costs, and deployment value."""
+
+    model_config = ConfigDict(frozen=True)
+
+    seed: int = 0
+    _rng: np.random.Generator = PrivateAttr()
+
+    def model_post_init(self, __context: object) -> None:
+        self._rng = np.random.default_rng(self.seed)
+
+    def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta:
+        assert isinstance(belief_state, Tossing3DBeliefState)
+        projected = belief_state.after_refit()
+        return Tossing3DTheta(
+            pick=self.sample_skill(belief=projected.pick_belief),
+            toss=self.sample_skill(belief=projected.toss_belief),
+            open_gripper=self.sample_skill(belief=projected.open_gripper_belief),
+        )
+
+    def sample_skill(self, *, belief: SkillBelief) -> SkillHypothesis:
+        index = int(
+            self._rng.choice(
+                len(belief.hypotheses),
+                p=[item.probability for item in belief.hypotheses],
+            )
+        )
+        return belief.hypotheses[index].hypothesis
+
+    def evaluate_policy(self, *, sampled_theta: Theta) -> float:
+        assert isinstance(sampled_theta, Tossing3DTheta)
+        return self._evaluate_deployment_policy(
+            environment_state=Tossing3DEnvironmentState.READY,
+            toss_competence=sampled_theta.toss.competence,
+            pick_competence=sampled_theta.pick.competence,
+            open_competence=sampled_theta.open_gripper.competence,
+            horizon=self.deployment_horizon,
+        )
+
+    def score_pomdp_value_from_policy_value_and_cost(
+        self, *, policy_value: float, summed_cost: float
+    ) -> float:
+        if self.hard_budget is not None:
+            assert summed_cost <= self.hard_budget
+            return policy_value
+        return policy_value - self.practice_cost * summed_cost
+
+    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[POMDPAction]:
+        assert isinstance(environment_state, Tossing3DSearchState)
+        state = environment_state.state
+        costs = {
+            PICK_SKILL: self.pick_cost,
+            TOSS_SKILL: self.toss_cost,
+            OPEN_GRIPPER_SKILL: self.open_gripper_cost,
+            RESET_SKILL: self.reset_cost,
+        }
+        return [
+            Tossing3DAction(name=name)
+            for name in self.actions(state)
+            for cost in [costs[name]]
+            if self.hard_budget is None
+            or (cost is not None and state.accumulated_cost + cost <= self.hard_budget)
+        ]
+
+    def sample_next_states(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float]]:
+        assert isinstance(environment_state, Tossing3DSearchState)
+        assert isinstance(practice_action, Tossing3DAction)
+        assert isinstance(belief_state, Tossing3DBeliefState)
+        # Enumerate the finite model, merging observationally identical branches.
+        return list(
+            dict.fromkeys(
+                (
+                    Tossing3DSearchState(state=outcome.next_state),
+                    outcome.next_state.accumulated_cost - belief_state.accumulated_cost,
+                )
+                for outcome in self.outcomes(belief_state, practice_action.name)
+            )
+        )
+
+    def update_belief_state(
+        self,
+        *,
+        belief_state: BeliefState,
+        environment_state: EnvironmentState,
+        potential_next_environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+    ) -> BeliefState:
+        assert isinstance(potential_next_environment_state, Tossing3DSearchState)
+        return potential_next_environment_state.state
+
+    def transition_probability(
+        self,
+        *,
+        potential_next_environment_state: EnvironmentState,
+        sampled_cost: float,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> float:
+        assert isinstance(potential_next_environment_state, Tossing3DSearchState)
+        assert isinstance(practice_action, Tossing3DAction)
+        assert isinstance(belief_state, Tossing3DBeliefState)
+        return sum(
+            outcome.probability
+            for outcome in self.outcomes(belief_state, practice_action.name)
+            if outcome.next_state == potential_next_environment_state.state
+            and outcome.next_state.accumulated_cost - belief_state.accumulated_cost == sampled_cost
+        )
+
+    practice_cost: float = Field(default=0.01, ge=0.0, allow_inf_nan=False)
+    random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
+    exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
+    pick_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
+    toss_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
+    open_gripper_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
+    reset_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    hard_budget: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    deployment_horizon: int = Field(default=4, ge=0)
+
+    @property
+    def required_skills(self) -> tuple[str, ...]:
+        return (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL)
+
+    def actions(self, state: Tossing3DBeliefState) -> Iterable[str]:  # noqa: PLR0917
+        by_state = {
+            Tossing3DEnvironmentState.READY: (PICK_SKILL,),
+            Tossing3DEnvironmentState.HOLDING: (TOSS_SKILL,),
+            Tossing3DEnvironmentState.UNREACHABLE_HOLDING: (OPEN_GRIPPER_SKILL,),
+            Tossing3DEnvironmentState.GRIPPER_CLOSED: (OPEN_GRIPPER_SKILL,),
+            Tossing3DEnvironmentState.CLOSED_STRANDED: (OPEN_GRIPPER_SKILL,),
+            Tossing3DEnvironmentState.STRANDED: (),
+            Tossing3DEnvironmentState.SOLVED: (),
+            Tossing3DEnvironmentState.CLOSED_SOLVED: (OPEN_GRIPPER_SKILL,),
+        }
+        actions = by_state[state.environment_state]
+        if self.reset_cost is not None and state.environment_state in {
+            Tossing3DEnvironmentState.CLOSED_STRANDED,
+            Tossing3DEnvironmentState.STRANDED,
+            Tossing3DEnvironmentState.SOLVED,
+            Tossing3DEnvironmentState.CLOSED_SOLVED,
+        }:
+            return (*actions, RESET_SKILL)
+        return actions
+
+    def stop_value(self, state: Tossing3DBeliefState) -> float:  # noqa: PLR0917
+        projected = state.after_refit()
+        deployment_value = sum(
+            pick.probability
+            * toss.probability
+            * opened.probability
+            * self.evaluate_policy(
+                sampled_theta=Tossing3DTheta(
+                    pick=pick.hypothesis, toss=toss.hypothesis, open_gripper=opened.hypothesis
+                )
+            )
+            for pick, toss, opened in product(
+                projected.pick_belief.hypotheses,
+                projected.toss_belief.hypotheses,
+                projected.open_gripper_belief.hypotheses,
+            )
+        )
+        return self.score_pomdp_value_from_policy_value_and_cost(
+            policy_value=deployment_value, summed_cost=state.accumulated_cost
+        )
+
+    def _evaluate_deployment_policy(
+        self,
+        *,
+        environment_state: Tossing3DEnvironmentState,
+        toss_competence: float,
+        pick_competence: float,
+        open_competence: float,
+        horizon: int,
+    ) -> float:
+        """Solve the canonical deployment MDP; human reset is unavailable at test."""
+        if environment_state is Tossing3DEnvironmentState.SOLVED:
+            return 1.0
+        if horizon == 0:
+            return 0.0
+        if environment_state is Tossing3DEnvironmentState.READY:
+            success_value = self._evaluate_deployment_policy(
+                environment_state=Tossing3DEnvironmentState.HOLDING,
+                toss_competence=toss_competence,
+                pick_competence=pick_competence,
+                open_competence=open_competence,
+                horizon=horizon - 1,
+            )
+            failure_value = self._evaluate_deployment_policy(
+                environment_state=Tossing3DEnvironmentState.GRIPPER_CLOSED,
+                toss_competence=toss_competence,
+                pick_competence=pick_competence,
+                open_competence=open_competence,
+                horizon=horizon - 1,
+            )
+            return pick_competence * success_value + (1.0 - pick_competence) * failure_value
+        if environment_state is Tossing3DEnvironmentState.GRIPPER_CLOSED:
+            return open_competence * self._evaluate_deployment_policy(
+                environment_state=Tossing3DEnvironmentState.READY,
+                toss_competence=toss_competence,
+                pick_competence=pick_competence,
+                open_competence=open_competence,
+                horizon=horizon - 1,
+            ) + (1.0 - open_competence) * self._evaluate_deployment_policy(
+                environment_state=environment_state,
+                toss_competence=toss_competence,
+                pick_competence=pick_competence,
+                open_competence=open_competence,
+                horizon=horizon - 1,
+            )
+        if environment_state is Tossing3DEnvironmentState.HOLDING:
+            return toss_competence * self._evaluate_deployment_policy(
+                environment_state=Tossing3DEnvironmentState.SOLVED,
+                toss_competence=toss_competence,
+                pick_competence=pick_competence,
+                open_competence=open_competence,
+                horizon=horizon - 1,
+            )
+        return 0.0
+
+    def outcomes(  # noqa: PLR0917
+        self, state: Tossing3DBeliefState, action: str
+    ) -> tuple[Tossing3DOutcome, ...]:
+        if action not in set(self.actions(state)):
+            raise ValueError(f"{action!r} is not applicable in {state.environment_state.value}")
+        if action == PICK_SKILL:
+            return self._binary_outcomes(
+                state=state,
+                probability=state.pick_belief.mean_competence,
+                skill_name=PICK_SKILL,
+                success_state=Tossing3DEnvironmentState.HOLDING,
+                failure_state=Tossing3DEnvironmentState.GRIPPER_CLOSED,
+                cost=self.pick_cost,
+            )
+        if action == OPEN_GRIPPER_SKILL:
+            opened = {
+                Tossing3DEnvironmentState.GRIPPER_CLOSED: Tossing3DEnvironmentState.READY,
+                Tossing3DEnvironmentState.CLOSED_STRANDED: Tossing3DEnvironmentState.STRANDED,
+                Tossing3DEnvironmentState.UNREACHABLE_HOLDING: Tossing3DEnvironmentState.STRANDED,
+                Tossing3DEnvironmentState.CLOSED_SOLVED: Tossing3DEnvironmentState.SOLVED,
+            }[state.environment_state]
+            return self._binary_outcomes(
+                state=state,
+                probability=state.open_gripper_belief.mean_competence,
+                skill_name=OPEN_GRIPPER_SKILL,
+                success_state=opened,
+                failure_state=state.environment_state,
+                cost=self.open_gripper_cost,
+            )
+        if action == RESET_SKILL:
+            assert self.reset_cost is not None
+            reset_state = (
+                Tossing3DEnvironmentState.GRIPPER_CLOSED
+                if state.environment_state
+                in {
+                    Tossing3DEnvironmentState.CLOSED_STRANDED,
+                    Tossing3DEnvironmentState.CLOSED_SOLVED,
+                }
+                else Tossing3DEnvironmentState.READY
+            )
+            return self._deterministic(
+                state=state,
+                environment_state=reset_state,
+                cost=self.reset_cost,
+            )
+        assert action == TOSS_SKILL
+        return self._toss_outcomes(state=state)
+
+    @staticmethod
+    def _deterministic(
+        *, state: Tossing3DBeliefState, environment_state: Tossing3DEnvironmentState, cost: float
+    ) -> tuple[Tossing3DOutcome, ...]:
+        return (
+            Tossing3DOutcome(
+                probability=1.0,
+                next_state=state.transition(environment_state=environment_state, added_cost=cost),
+            ),
+        )
+
+    @staticmethod
+    def _binary_outcomes(
+        *,
+        state: Tossing3DBeliefState,
+        probability: float,
+        skill_name: str,
+        success_state: Tossing3DEnvironmentState,
+        failure_state: Tossing3DEnvironmentState,
+        cost: float,
+    ) -> tuple[Tossing3DOutcome, ...]:
+        return tuple(
+            Tossing3DOutcome(
+                probability=branch_probability,
+                next_state=Tossing3DPracticeModel.observe_robot_skill(
+                    state=state.transition(
+                        environment_state=next_environment_state, added_cost=cost
+                    ),
+                    skill_name=skill_name,
+                    success=success,
+                ),
+            )
+            for success, branch_probability, next_environment_state in (
+                (True, probability, success_state),
+                (False, 1.0 - probability, failure_state),
+            )
+            if branch_probability > 0.0
+        )
+
+    @staticmethod
+    def observe_robot_skill(
+        *, state: Tossing3DBeliefState, skill_name: str, success: bool
+    ) -> Tossing3DBeliefState:
+        belief_field, count_field = {
+            PICK_SKILL: ("pick_belief", "pending_pick_examples"),
+            OPEN_GRIPPER_SKILL: ("open_gripper_belief", "pending_open_gripper_examples"),
+        }[skill_name]
+        belief = getattr(state, belief_field)
+        return state.model_copy(
+            update={
+                belief_field: belief.condition(success=success),
+                count_field: getattr(state, count_field) + 1,
+            }
+        )
+
+    def _toss_outcomes(self, *, state: Tossing3DBeliefState) -> tuple[Tossing3DOutcome, ...]:
+        branches: list[Tossing3DOutcome] = []
+        for is_random, choice_probability, success_probability in (
+            (False, 1.0 - self.exploration_epsilon, state.toss_belief.mean_competence),
+            (True, self.exploration_epsilon, self.random_toss_competence),
+        ):
+            for success, observation_probability in (
+                (True, success_probability),
+                (False, 1.0 - success_probability),
+            ):
+                probability = choice_probability * observation_probability
+                if probability <= 0.0:
+                    continue
+                belief = (
+                    state.toss_belief if is_random else state.toss_belief.condition(success=success)
+                )
+                branches.append(
+                    Tossing3DOutcome(
+                        probability=probability,
+                        next_state=state.transition(
+                            environment_state=(
+                                Tossing3DEnvironmentState.SOLVED
+                                if success
+                                else Tossing3DEnvironmentState.STRANDED
+                            ),
+                            added_cost=self.toss_cost,
+                            toss_belief=belief,
+                            added_training_examples=1,
+                        ),
+                    )
+                )
+        return tuple(branches)
+
+    def observe_toss(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        success: bool,
+        was_random_exploration: bool,
+    ) -> Tossing3DBeliefState:
+        belief = state.toss_belief
+        if not was_random_exploration:
+            belief = belief.condition(success=success)
+        return state.model_copy(update={"toss_belief": belief})
+
+    def record_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+        return state.model_copy(
+            update={"pending_training_examples": state.pending_training_examples + 1}
+        )
+
+
+def make_default_tossing3d_belief(
+    *, environment_state: Tossing3DEnvironmentState = Tossing3DEnvironmentState.READY
+) -> Tossing3DBeliefState:
+    """Independent broad priors for all robot skills; human reset is known."""
+    return Tossing3DBeliefState(
+        environment_state=environment_state,
+        toss_belief=SkillBelief.prior(),
+    )
