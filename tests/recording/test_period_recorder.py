@@ -306,6 +306,7 @@ def test_a_period_reset_frame_is_composed_with_the_shared_status_bar_overlay(
     _SpyRenderer.calls.pop()  # the probe render below must not pollute the fixture's own log
     expected_frame = _SpyRenderer.render_frame(state=_state(x=3.0), env=env, label=None)
     _SpyRenderer.calls.pop()
+    expected_frame = SkillChatOverlay.compose(frame=expected_frame, history=[], competences={})
     expected = StatusBarOverlay.compose(
         frame=expected_frame,
         status=LoopStatus(
@@ -317,7 +318,7 @@ def test_a_period_reset_frame_is_composed_with_the_shared_status_bar_overlay(
             task="InBin(cube, bin)",
             reset=ResetKind.PERIOD,
         ),
+        bar_position="top",
     )
     assert len(stream.captured) == recorder.reset_hold_frames
-    expected = SkillChatOverlay.compose(frame=expected, history=[], competences={})
     assert np.array_equal(stream.captured[0], expected)

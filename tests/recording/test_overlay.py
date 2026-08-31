@@ -130,6 +130,18 @@ def test_compose_appends_a_bar_below_the_environment_frame() -> None:
     assert composed.dtype == np.uint8
 
 
+def test_compose_can_place_the_bar_above_the_environment_frame() -> None:
+    frame = _frame()
+    composed = StatusBarOverlay.compose(
+        frame=frame,
+        status=_practice_status(),
+        bar_position="top",
+        extra_fields=(("SEED", "0"), ("SAMPLES", "100")),
+    )
+    top = StatusBarOverlay.bar_height
+    np.testing.assert_array_equal(composed[top : top + frame.shape[0], : frame.shape[1]], frame)
+
+
 def test_compose_returns_dimensions_a_video_encoder_accepts() -> None:
     """imageio-ffmpeg silently resizes (and warns) unless both dimensions are a
     multiple of its macro block size, which would make the bar's text blurry."""

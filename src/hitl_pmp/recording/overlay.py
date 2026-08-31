@@ -80,7 +80,13 @@ class StatusBarOverlay:
     _fonts: ClassVar[dict[tuple[str, int], ImageFont.FreeTypeFont]] = {}
 
     @staticmethod
-    def compose(*, frame: np.ndarray, status: LoopStatus) -> np.ndarray:
+    def compose(
+        *,
+        frame: np.ndarray,
+        status: LoopStatus,
+        bar_position: str = "bottom",
+        extra_fields: tuple[tuple[str, str], ...] = (),
+    ) -> np.ndarray:
         """The environment frame with the status bar below it and, when something
         discontinuous happened, a marker over the frame itself. Returns a new
         array; `frame` is only read."""
@@ -88,12 +94,26 @@ class StatusBarOverlay:
         canvas_width = StatusBarOverlay._rounded_up(value=max(width, StatusBarOverlay.min_width))
         canvas_height = StatusBarOverlay._rounded_up(value=height + StatusBarOverlay.bar_height)
 
+        assert bar_position in {"top", "bottom"}
+        bar_top = 0 if bar_position == "top" else height
+        frame_top = StatusBarOverlay.bar_height if bar_position == "top" else 0
         image = Image.new("RGB", (canvas_width, canvas_height), StatusBarOverlay.background)
-        image.paste(Image.fromarray(np.ascontiguousarray(frame, dtype=np.uint8)), (0, 0))
+        image.paste(Image.fromarray(np.ascontiguousarray(frame, dtype=np.uint8)), (0, frame_top))
         draw = ImageDraw.Draw(image)
-        StatusBarOverlay._draw_marker(draw=draw, status=status, height=height, width=canvas_width)
+        StatusBarOverlay._draw_marker(
+            draw=draw,
+            status=status,
+            top=frame_top,
+            height=height,
+            width=canvas_width,
+        )
         StatusBarOverlay._draw_bar(
-            draw=draw, status=status, top=height, width=canvas_width, bottom=canvas_height
+            draw=draw,
+            status=status,
+            top=bar_top,
+            width=canvas_width,
+            bottom=bar_top + StatusBarOverlay.bar_height - 1,
+            extra_fields=extra_fields,
         )
         return np.array(image, dtype=np.uint8)
 
@@ -135,7 +155,13 @@ class StatusBarOverlay:
 
     @staticmethod
     def _draw_bar(
-        *, draw: ImageDraw.ImageDraw, status: LoopStatus, top: int, width: int, bottom: int
+        *,
+        draw: ImageDraw.ImageDraw,
+        status: LoopStatus,
+        top: int,
+        width: int,
+        bottom: int,
+        extra_fields: tuple[tuple[str, str], ...] = (),
     ) -> None:
         margin = 10
         draw.rectangle([(0, top), (width, bottom)], fill=StatusBarOverlay.background)
@@ -164,7 +190,7 @@ class StatusBarOverlay:
 
         # Everything but PHASE (already the chip), wrapped over the bar's two text
         # lines so a long goal description cannot push the counters off the frame.
-        fields = [field for field in StatusBarOverlay.format_fields(status=status)][1:]
+        fields = [*extra_fields, *StatusBarOverlay.format_fields(status=status)[1:]]
         left = 2 * margin + chip_width
         StatusBarOverlay._draw_fields(
             draw=draw,
@@ -208,7 +234,7 @@ class StatusBarOverlay:
 
     @staticmethod
     def _draw_marker(
-        *, draw: ImageDraw.ImageDraw, status: LoopStatus, height: int, width: int
+        *, draw: ImageDraw.ImageDraw, status: LoopStatus, top: int, height: int, width: int
     ) -> None:
         """A reset is an instantaneous state jump and an outcome is a single frame,
         so both get marked where the viewer is already looking -- a thick border
@@ -224,7 +250,8 @@ class StatusBarOverlay:
             return
 
         thickness = 8
-        draw.rectangle([(0, 0), (width - 1, height - 1)], outline=color, width=thickness)
+        bottom = top + height - 1
+        draw.rectangle([(0, top), (width - 1, bottom)], outline=color, width=thickness)
         font = StatusBarOverlay._font(name="DejaVuSans-Bold.ttf", size=20)
         text_width = draw.textlength(caption, font=font)
         pad = 12
@@ -233,7 +260,7 @@ class StatusBarOverlay:
         # labels do) and a caption would cover them on exactly the frames a viewer
         # is looking hardest at; not centred, because Renderer.render_frame draws
         # its own action label along the bottom centre.
-        caption_bottom = max(thickness, height - thickness)
+        caption_bottom = max(top + thickness, bottom - thickness)
         caption_top = caption_bottom - 32
         left = thickness + pad
         draw.rectangle(

@@ -12,6 +12,9 @@ def test_improvement_potential_is_signed_advantage_over_stop() -> None:
         values={"STOP": 0.4, "PickCube": 0.3}
     ) == pytest.approx(-0.1)
     assert SkillChatOverlay.improvement_potential(values={"STOP": 0.4}) is None
+    assert SkillChatOverlay.improvement_potentials(
+        values={"STOP": 0.4, "PickCube": 0.5, "Reset": 0.3}
+    ) == pytest.approx({"PickCube": 0.1, "Reset": -0.1})
 
 
 def test_competence_panel_preserves_scene_and_uses_separate_space() -> None:
@@ -22,7 +25,7 @@ def test_competence_panel_preserves_scene_and_uses_separate_space() -> None:
         values={"STOP": 0.4},
         competences={"PickCube (fixed)": 0.5, "Toss (belief mean)": 0.6},
     )
-    assert rendered.shape == (640, 1280, 3)
+    assert rendered.shape == (640, 1920, 3)
     np.testing.assert_array_equal(rendered[:, :640], frame)
 
 
@@ -32,7 +35,7 @@ def test_chat_preserves_scene_and_has_constant_size() -> None:
     populated = SkillChatOverlay.compose(
         frame=frame, history=["01 PickCube", "02 HUMAN RESET cube + bin", "03 PickCube"]
     )
-    assert empty.shape == populated.shape == (640, 960, 3)
+    assert empty.shape == populated.shape == (640, 1920, 3)
     np.testing.assert_array_equal(populated[:, :640], frame)
     assert not np.array_equal(empty[:, 640:], populated[:, 640:])
 
@@ -54,6 +57,6 @@ def test_value_chart_updates_without_changing_scene_or_frame_size() -> None:
     second = SkillChatOverlay.compose(
         frame=frame, history=[], values={"STOP": 0.4, "PickCube": 0.6}
     )
-    assert first.shape == second.shape == (640, 960, 3)
+    assert first.shape == second.shape == (640, 1920, 3)
     np.testing.assert_array_equal(first[:, :640], frame)
     assert not np.array_equal(first[:, 640:], second[:, 640:])
