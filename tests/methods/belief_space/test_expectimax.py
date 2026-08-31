@@ -1,208 +1,343 @@
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, Field
 
-from hitl_pmp.methods.belief_space.expectimax import solve_expectimax
-from hitl_pmp.methods.belief_space.types import ChanceOutcome
-
-
-class _State(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    competence: int
-    cost: int = 0
-
-
-def _stop_value(*, state: _State) -> float:
-    return float(state.competence - state.cost)
+from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
+from hitl_pmp.methods.belief_space.types import (
+    STOP_ACTION,
+    BeliefState,
+    EnvironmentState,
+    POMDPAction,
+    Theta,
+)
 
 
-def test_horizon_zero_stops() -> None:
-    result = solve_expectimax(
-        state=_State(competence=1),
-        horizon=0,
-        stop_value=_stop_value,
-        actions=lambda *, state: ("practice",),
-        outcomes=lambda *, state, action: (
-            ChanceOutcome(probability=1.0, next_state=_State(competence=10)),
-        ),
-    )
-    assert result.value == 1.0
-    assert result.action is None
+class _EnvironmentState(EnvironmentState):
+    name: str
 
 
-def test_looks_past_an_initially_unhelpful_setup_action() -> None:
-    def actions(*, state: _State) -> tuple[str, ...]:
-        return ("setup",) if state.cost == 0 else ("practice",)
+class _BeliefState(BeliefState):
+    value: float
 
-    def outcomes(*, state: _State, action: str) -> tuple[ChanceOutcome[_State], ...]:
-        if action == "setup":
-            return (
-                ChanceOutcome(
-                    probability=1.0,
-                    next_state=_State(competence=state.competence, cost=1),
-                ),
-            )
-        return (
-            ChanceOutcome(probability=0.75, next_state=_State(competence=6, cost=2)),
-            ChanceOutcome(probability=0.25, next_state=_State(competence=2, cost=2)),
+
+class _POMDPAction(POMDPAction):
+    name: str
+
+
+class _Theta(Theta):
+    value: float
+
+
+INITIAL = _EnvironmentState(name="initial")
+READY = _EnvironmentState(name="ready")
+SUCCESS = _EnvironmentState(name="success")
+FAILURE = _EnvironmentState(name="failure")
+SETUP = _POMDPAction(name="setup")
+PRACTICE = _POMDPAction(name="practice")
+
+
+class _Model(BaseModel):
+    transitions: dict[
+        tuple[EnvironmentState, POMDPAction], list[tuple[EnvironmentState, float, float]]
+    ] = Field(default_factory=dict)
+    beliefs: dict[EnvironmentState, BeliefState] = Field(default_factory=dict)
+    action_beliefs: dict[POMDPAction, BeliefState] = Field(default_factory=dict)
+    samples: list[float] = Field(default_factory=list)
+    visits: list[BeliefState] = Field(default_factory=list)
+    scale: float = 1.0
+
+    def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta:
+        assert isinstance(belief_state, _BeliefState)
+        value = self.samples[len(self.visits)] if self.samples else belief_state.value
+        self.visits.append(belief_state)
+        return _Theta(value=value)
+
+    def evaluate_policy(self, *, sampled_theta: Theta) -> float:
+        assert isinstance(sampled_theta, _Theta)
+        return sampled_theta.value * self.scale
+
+    def score_pomdp_value_from_policy_value_and_cost(
+        self, *, policy_value: float, summed_cost: float
+    ) -> float:
+        return policy_value - summed_cost
+
+    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[POMDPAction]:
+        return [action for state, action in self.transitions if state == environment_state]
+
+    def sample_next_states(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float]]:
+        return [
+            (state, cost) for state, cost, _ in self.transitions[environment_state, practice_action]
+        ]
+
+    def update_belief_state(
+        self,
+        *,
+        belief_state: BeliefState,
+        environment_state: EnvironmentState,
+        potential_next_environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+    ) -> BeliefState:
+        return self.action_beliefs.get(
+            practice_action, self.beliefs.get(potential_next_environment_state, belief_state)
         )
 
-    shallow = solve_expectimax(
-        state=_State(competence=2),
-        horizon=1,
-        stop_value=_stop_value,
-        actions=actions,
-        outcomes=outcomes,
+    def transition_probability(
+        self,
+        *,
+        potential_next_environment_state: EnvironmentState,
+        sampled_cost: float,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> float:
+        return next(
+            probability
+            for state, cost, probability in self.transitions[environment_state, practice_action]
+            if state == potential_next_environment_state and cost == sampled_cost
+        )
+
+
+def test_horizon_zero_stops_and_subtracts_existing_cost() -> None:
+    model = _Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]})
+    assert solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.25,
+        belief_state=_BeliefState(value=1.0),
+        horizon=0,
+        model=model,
+    ) == (0.75, STOP_ACTION)
+    assert len(model.visits) == 1
+
+
+def test_averages_theta_samples_after_policy_evaluation_and_scoring() -> None:
+    model = _Model(samples=[1.0, 3.0, 8.0], scale=2.0)
+    value, action = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.5,
+        belief_state=_BeliefState(value=0.0),
+        horizon=0,
+        model=model,
+        num_samples=3,
     )
-    deep = solve_expectimax(
-        state=_State(competence=2),
-        horizon=2,
-        stop_value=_stop_value,
-        actions=actions,
-        outcomes=outcomes,
+    assert value == pytest.approx(7.5)
+    assert action == STOP_ACTION
+    assert len(model.visits) == 3
+
+
+@pytest.mark.parametrize("horizon, expected", [(1, (2.0, STOP_ACTION)), (2, (3.0, SETUP))])
+def test_looks_past_an_initially_unhelpful_setup_action(
+    *, horizon: int, expected: tuple[float, POMDPAction]
+) -> None:
+    model = _Model(
+        transitions={
+            (INITIAL, SETUP): [(READY, 1.0, 1.0)],
+            (READY, PRACTICE): [(SUCCESS, 1.0, 0.75), (FAILURE, 1.0, 0.25)],
+        },
+        beliefs={SUCCESS: _BeliefState(value=6.0), FAILURE: _BeliefState(value=2.0)},
     )
-    assert shallow.action is None
-    assert deep.action == "setup"
-    assert deep.value == pytest.approx(3.0)
+    assert (
+        solve_belief_space_expectimax(
+            environment_state=INITIAL,
+            summed_cost=0.0,
+            belief_state=_BeliefState(value=2.0),
+            horizon=horizon,
+            model=model,
+        )
+        == expected
+    )
 
 
 def test_stop_wins_an_exact_tie() -> None:
-    result = solve_expectimax(
-        state=_State(competence=2),
+    assert solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=_BeliefState(value=2.0),
         horizon=1,
-        stop_value=_stop_value,
-        actions=lambda *, state: ("neutral",),
-        outcomes=lambda *, state, action: (ChanceOutcome(probability=1.0, next_state=state),),
-    )
-    assert result.action is None
+        model=_Model(transitions={(INITIAL, PRACTICE): [(INITIAL, 0.0, 1.0)]}),
+    ) == (2.0, STOP_ACTION)
 
 
 def test_compares_actions_only_after_summing_all_outcomes() -> None:
-    result = solve_expectimax(
-        state=_State(competence=1),
-        horizon=1,
-        stop_value=_stop_value,
-        actions=lambda *, state: ("risky",),
-        outcomes=lambda *, state, action: (
-            ChanceOutcome(probability=0.5, next_state=_State(competence=4)),
-            ChanceOutcome(probability=0.5, next_state=_State(competence=-4)),
-        ),
+    model = _Model(
+        transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 0.5), (FAILURE, 0.0, 0.5)]},
+        beliefs={SUCCESS: _BeliefState(value=4.0), FAILURE: _BeliefState(value=-4.0)},
     )
-    assert result.action is None
-    assert result.value == 1.0
+    assert solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=_BeliefState(value=1.0),
+        horizon=1,
+        model=model,
+    ) == (1.0, STOP_ACTION)
+
+
+def test_shared_successor_is_evaluated_once_at_each_depth() -> None:
+    model = _Model(
+        transitions={
+            (INITIAL, SETUP): [(SUCCESS, 0.0, 1.0)],
+            (INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)],
+        },
+        beliefs={SUCCESS: _BeliefState(value=2.0)},
+    )
+    assert solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=_BeliefState(value=0.0),
+        horizon=1,
+        model=model,
+    ) == (2.0, SETUP)
+    assert model.visits == [_BeliefState(value=0.0), _BeliefState(value=2.0)]
+
+
+def test_cache_distinguishes_accumulated_cost() -> None:
+    model = _Model(
+        transitions={
+            (INITIAL, SETUP): [(SUCCESS, 1.0, 1.0)],
+            (INITIAL, PRACTICE): [(SUCCESS, 0.5, 1.0)],
+        },
+        beliefs={SUCCESS: _BeliefState(value=2.0)},
+    )
+    assert solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=_BeliefState(value=0.0),
+        horizon=1,
+        model=model,
+    ) == (1.5, PRACTICE)
+    assert len(model.visits) == 3
+
+
+def test_separate_searches_resample_and_do_not_reuse_stale_values() -> None:
+    model = _Model(samples=[1.0, 3.0])
+    first = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=_BeliefState(value=0.0),
+        horizon=0,
+        model=model,
+    )
+    model.scale = 2.0
+    second = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=_BeliefState(value=0.0),
+        horizon=0,
+        model=model,
+    )
+    assert first == (1.0, STOP_ACTION)
+    assert second == (6.0, STOP_ACTION)
+
+
+def test_cache_distinguishes_beliefs_at_the_same_environment_state_and_cost() -> None:
+    model = _Model(
+        transitions={
+            (INITIAL, SETUP): [(SUCCESS, 0.0, 1.0)],
+            (INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)],
+        },
+        action_beliefs={SETUP: _BeliefState(value=1.0), PRACTICE: _BeliefState(value=2.0)},
+    )
+    assert solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=_BeliefState(value=0.0),
+        horizon=1,
+        model=model,
+    ) == (2.0, PRACTICE)
+    assert model.visits == [
+        _BeliefState(value=0.0),
+        _BeliefState(value=1.0),
+        _BeliefState(value=2.0),
+    ]
+
+
+def test_averaging_large_finite_samples_does_not_overflow() -> None:
+    assert solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=_BeliefState(value=1e308),
+        horizon=0,
+        model=_Model(),
+        num_samples=2,
+    ) == (1e308, STOP_ACTION)
 
 
 @pytest.mark.parametrize(
     "branches",
     [
-        (),
-        (
-            ChanceOutcome(probability=0.4, next_state=_State(competence=1)),
-            ChanceOutcome(probability=0.4, next_state=_State(competence=2)),
-        ),
-        (
-            ChanceOutcome(probability=0.0, next_state=_State(competence=1)),
-            ChanceOutcome(probability=1.0, next_state=_State(competence=2)),
-        ),
+        [],
+        [(SUCCESS, 0.0, 0.4), (FAILURE, 0.0, 0.4)],
+        [(SUCCESS, 0.0, 0.0), (FAILURE, 0.0, 1.0)],
+        [(SUCCESS, 0.0, -0.1)],
+        [(SUCCESS, 0.0, float("nan"))],
+        [(SUCCESS, 0.0, float("inf"))],
+        [(SUCCESS, 0.0, 0.5), (SUCCESS, 0.0, 0.5)],
     ],
 )
 def test_rejects_malformed_chance_distributions(
-    *,
-    branches: tuple[ChanceOutcome[_State], ...],
+    *, branches: list[tuple[EnvironmentState, float, float]]
 ) -> None:
     with pytest.raises(ValueError):
-        solve_expectimax(
-            state=_State(competence=0),
+        solve_belief_space_expectimax(
+            environment_state=INITIAL,
+            summed_cost=0.0,
+            belief_state=_BeliefState(value=0.0),
             horizon=1,
-            stop_value=_stop_value,
-            actions=lambda *, state: ("bad",),
-            outcomes=lambda *, state, action: branches,
-        )
-
-
-def test_shared_successor_is_evaluated_once_at_each_depth() -> None:
-    visits: dict[_State, int] = {}
-    initial = _State(competence=0)
-    successor = _State(competence=2)
-
-    def stop_value(*, state: _State) -> float:
-        visits[state] = visits.get(state, 0) + 1
-        return _stop_value(state=state)
-
-    result = solve_expectimax(
-        state=initial,
-        horizon=1,
-        stop_value=stop_value,
-        actions=lambda *, state: ("first", "second"),
-        outcomes=lambda *, state, action: (ChanceOutcome(probability=1.0, next_state=successor),),
-    )
-    assert result.action == "first"
-    assert result.value == 2.0
-    assert visits == {initial: 1, successor: 1}
-
-
-def test_separate_searches_do_not_reuse_stale_cached_values() -> None:
-    state = _State(competence=0)
-    model_values = {state: 1.0}
-
-    def stop_value(*, state: _State) -> float:
-        return model_values[state]
-
-    first = solve_expectimax(
-        state=state,
-        horizon=0,
-        stop_value=stop_value,
-        actions=lambda *, state: (),
-        outcomes=lambda *, state, action: (),
-    )
-    model_values[state] = 3.0
-    second = solve_expectimax(
-        state=state,
-        horizon=0,
-        stop_value=stop_value,
-        actions=lambda *, state: (),
-        outcomes=lambda *, state, action: (),
-    )
-    assert first.value == 1.0
-    assert second.value == 3.0
-
-
-@pytest.mark.parametrize("probability", [-0.1, float("nan"), float("inf")])
-def test_rejects_invalid_probabilities(*, probability: float) -> None:
-    with pytest.raises(ValueError, match="chance probability must be finite and positive"):
-        solve_expectimax(
-            state=_State(competence=0),
-            horizon=1,
-            stop_value=_stop_value,
-            actions=lambda *, state: ("invalid",),
-            outcomes=lambda *, state, action: (
-                ChanceOutcome(probability=probability, next_state=state),
-            ),
+            model=_Model(transitions={(INITIAL, PRACTICE): branches}),
         )
 
 
 def test_rejects_negative_horizon_before_evaluating_model() -> None:
-    def stop_value(*, state: _State) -> float:
-        del state
-        pytest.fail("invalid horizon must be rejected before the model is called")
-
+    model = _Model()
     with pytest.raises(ValueError, match="horizon must be non-negative"):
-        solve_expectimax(
-            state=_State(competence=0),
+        solve_belief_space_expectimax(
+            environment_state=INITIAL,
+            summed_cost=0.0,
+            belief_state=_BeliefState(value=0.0),
             horizon=-1,
-            stop_value=stop_value,
-            actions=lambda *, state: (),
-            outcomes=lambda *, state, action: (),
+            model=model,
+        )
+    assert not model.visits
+
+
+@pytest.mark.parametrize("num_samples", [0, -1])
+def test_rejects_nonpositive_sample_count(*, num_samples: int) -> None:
+    with pytest.raises(ValueError, match="num_samples must be positive"):
+        solve_belief_space_expectimax(
+            environment_state=INITIAL,
+            summed_cost=0.0,
+            belief_state=_BeliefState(value=0.0),
+            horizon=0,
+            model=_Model(),
+            num_samples=num_samples,
         )
 
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
 def test_rejects_nonfinite_stop_value(*, value: float) -> None:
     with pytest.raises(ValueError, match="stop value must be finite"):
-        solve_expectimax(
-            state=_State(competence=0),
+        solve_belief_space_expectimax(
+            environment_state=INITIAL,
+            summed_cost=0.0,
+            belief_state=_BeliefState(value=value),
             horizon=0,
-            stop_value=lambda *, state: value,
-            actions=lambda *, state: (),
-            outcomes=lambda *, state, action: (),
+            model=_Model(),
+        )
+
+
+@pytest.mark.parametrize("cost", [-1.0, float("nan"), float("inf")])
+@pytest.mark.parametrize("accumulated", [True, False])
+def test_rejects_invalid_costs(*, cost: float, accumulated: bool) -> None:
+    model = _Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, cost, 1.0)]})
+    with pytest.raises(ValueError, match="cost must be finite and non-negative"):
+        solve_belief_space_expectimax(
+            environment_state=INITIAL,
+            summed_cost=cost if accumulated else 0.0,
+            belief_state=_BeliefState(value=0.0),
+            horizon=1,
+            model=model,
         )

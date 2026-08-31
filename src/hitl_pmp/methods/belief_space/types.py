@@ -1,44 +1,76 @@
-"""Data types and model callbacks for belief-space search."""
+"""The state, action, and parameter types in the belief-space pseudocode."""
 
-from collections.abc import Hashable, Iterable
-from typing import Generic, Protocol, TypeVar
+from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
-StateT = TypeVar("StateT", bound=Hashable)
-ActionT = TypeVar("ActionT")
-StateContraT = TypeVar("StateContraT", bound=Hashable, contravariant=True)
-ActionContraT = TypeVar("ActionContraT", contravariant=True)
-ActionCoT = TypeVar("ActionCoT", covariant=True)
 
-
-class ChanceOutcome(BaseModel, Generic[StateT]):
-    """One exactly enumerated successor of an action."""
+class EnvironmentState(BaseModel):
+    """Environment MDP state; domain subclasses supply hashable fields."""
 
     model_config = ConfigDict(frozen=True)
 
-    probability: float
-    next_state: StateT
 
-
-class ExpectimaxResult(BaseModel, Generic[ActionT]):
-    """Optimal value and first action; None means stop now."""
+class BeliefState(BaseModel):
+    """Belief over theta; domain subclasses supply hashable fields."""
 
     model_config = ConfigDict(frozen=True)
 
-    value: float
-    action: ActionT | None
+
+class POMDPAction(BaseModel):
+    """Practice action; domain subclasses supply the action's parameters."""
+
+    model_config = ConfigDict(frozen=True)
 
 
-class StopValue(Protocol[StateContraT]):
-    def __call__(self, *, state: StateContraT) -> float: ...
+class Theta(BaseModel):
+    """Sampled skill parameters used to construct and evaluate a policy."""
+
+    model_config = ConfigDict(frozen=True)
 
 
-class AvailableActions(Protocol[StateContraT, ActionCoT]):
-    def __call__(self, *, state: StateContraT) -> Iterable[ActionCoT]: ...
+STOP_ACTION = POMDPAction()
+NUM_SAMPLES = 1
 
 
-class ChanceOutcomes(Protocol[StateT, ActionContraT]):
-    def __call__(
-        self, *, state: StateT, action: ActionContraT
-    ) -> Iterable[ChanceOutcome[StateT]]: ...
+class BeliefSpaceModel(Protocol):
+    """Domain implementations of the pseudocode's seven model functions."""
+
+    def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta: ...
+
+    def evaluate_policy(self, *, sampled_theta: Theta) -> float: ...
+
+    def score_pomdp_value_from_policy_value_and_cost(
+        self, *, policy_value: float, summed_cost: float
+    ) -> float: ...
+
+    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[POMDPAction]: ...
+
+    def sample_next_states(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float]]:
+        """Return distinct successors and costs covering the transition distribution."""
+        ...
+
+    def update_belief_state(
+        self,
+        *,
+        belief_state: BeliefState,
+        environment_state: EnvironmentState,
+        potential_next_environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+    ) -> BeliefState: ...
+
+    def transition_probability(
+        self,
+        *,
+        potential_next_environment_state: EnvironmentState,
+        sampled_cost: float,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> float: ...
