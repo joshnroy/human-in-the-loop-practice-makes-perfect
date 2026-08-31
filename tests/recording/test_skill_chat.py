@@ -1,6 +1,17 @@
 import numpy as np
+import pytest
 
 from hitl_pmp.recording.skill_chat import SkillChatOverlay
+
+
+def test_improvement_potential_is_signed_advantage_over_stop() -> None:
+    assert SkillChatOverlay.improvement_potential(
+        values={"STOP": 0.4, "PickCube": 0.5, "Reset": 0.3}
+    ) == pytest.approx(0.1)
+    assert SkillChatOverlay.improvement_potential(
+        values={"STOP": 0.4, "PickCube": 0.3}
+    ) == pytest.approx(-0.1)
+    assert SkillChatOverlay.improvement_potential(values={"STOP": 0.4}) is None
 
 
 def test_competence_panel_preserves_scene_and_uses_separate_space() -> None:

@@ -93,7 +93,15 @@ class SkillChatOverlay:
         span = max(high - low, 1e-12)
         zero = left + 280 * (0.0 - low) / span
         best = max(values, key=lambda name: values[name])
-        top = 62
+        potential = SkillChatOverlay.improvement_potential(values=values)
+        label = (
+            "No affordable/applicable practice action"
+            if potential is None
+            else f"Practice minus STOP: {potential:+.6f}"
+        )
+        draw.text((left, 60), "POMDP IMPROVEMENT POTENTIAL", font=small, fill=(110, 200, 250))
+        draw.text((left, 80), label, font=small, fill=(235, 235, 245))
+        top = 108
         for name, value in values.items():
             label = "\n".join(textwrap.wrap(name, width=35))
             draw.multiline_text((left, top), label, font=small, fill=(235, 235, 245))
@@ -105,3 +113,11 @@ class SkillChatOverlay:
             draw.text((left, bar_top + 17), f"{value:.6f}", font=small, fill=color)
             top += 72
         return top
+
+    @staticmethod
+    def improvement_potential(*, values: dict[str, float]) -> float | None:
+        """Signed estimated advantage of practicing, not measured learning."""
+        practice_values = [value for name, value in values.items() if name != "STOP"]
+        if "STOP" not in values or not practice_values:
+            return None
+        return max(practice_values) - values["STOP"]
