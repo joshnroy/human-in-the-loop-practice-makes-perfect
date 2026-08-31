@@ -80,6 +80,7 @@ class PeriodRecorder(BaseModel):
     episode_skills: list[str] = Field(default_factory=list)
     practice_history: list[str] = Field(default_factory=list)
     action_values: dict[str, float] = Field(default_factory=dict)
+    competences: dict[str, float] = Field(default_factory=dict)
 
     video: VideoStream | None = None
 
@@ -93,6 +94,7 @@ class PeriodRecorder(BaseModel):
         self.phase = LoopPhase.PRACTICE
         self.practice_history = []
         self.action_values = {}
+        self.competences = {}
         self.cycle_index = cycle_index
         self.transitions = transitions
         self.task = task
@@ -306,7 +308,10 @@ class PeriodRecorder(BaseModel):
         composed = StatusBarOverlay.compose(frame=frame, status=status)
         if self.phase is LoopPhase.PRACTICE:
             composed = SkillChatOverlay.compose(
-                frame=composed, history=self.practice_history, values=self.action_values
+                frame=composed,
+                history=self.practice_history,
+                values=self.action_values,
+                competences=self.competences,
             )
         for _ in range(repeat):
             self.video.append(frame=composed)

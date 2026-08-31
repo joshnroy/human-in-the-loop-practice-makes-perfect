@@ -46,3 +46,10 @@ are buffered before writing. Search decisions additionally record
 search events also carry timestamps. Existing progress and sweep timing logs
 retain their own run-boundary clocks; use wall timestamps to align them.
 Deterministic `stats.json` remains unchanged.
+
+A separate competence panel uses a fixed 0–1 scale. It shows the current
+toss posterior mean (before any pending end-of-cycle refit), fixed pick
+competence, and the model's deterministic gripper-opening/reset assumptions.
+These are POMDP model estimates, not empirical success fractions and not the
+executor's separate EES competence estimates. STOP is not a skill competence.
+The panel is read without updating the belief or drawing samples.

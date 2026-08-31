@@ -15,12 +15,21 @@ class SkillChatOverlay:
 
     @staticmethod
     def compose(
-        *, frame: np.ndarray, history: list[str], values: dict[str, float] | None = None
+        *,
+        frame: np.ndarray,
+        history: list[str],
+        values: dict[str, float] | None = None,
+        competences: dict[str, float] | None = None,
     ) -> np.ndarray:
         height, width = frame.shape[:2]
-        canvas = Image.new("RGB", (width + SkillChatOverlay.width, height), (22, 20, 32))
+        panels = 1 if competences is None else 2
+        canvas = Image.new("RGB", (width + panels * SkillChatOverlay.width, height), (22, 20, 32))
         canvas.paste(Image.fromarray(frame), (0, 0))
         draw = ImageDraw.Draw(canvas)
+        if competences is not None:
+            SkillChatOverlay.draw_competences(
+                draw=draw, left=width + SkillChatOverlay.width + 16, estimates=competences
+            )
         font = ImageFont.load_default(size=17)
         chart_bottom = SkillChatOverlay.draw_values(
             draw=draw, left=width + 16, values=values or {}, font=font
@@ -43,6 +52,28 @@ class SkillChatOverlay:
             )
             bottom = top - 12
         return np.asarray(canvas)
+
+    @staticmethod
+    def draw_competences(
+        *, draw: ImageDraw.ImageDraw, left: int, estimates: dict[str, float]
+    ) -> None:
+        font = ImageFont.load_default(size=17)
+        small = ImageFont.load_default(size=13)
+        draw.text((left, 14), "POMDP COMPETENCES", font=font, fill=(110, 200, 250))
+        draw.text(
+            (left, 40), "Success estimates, not measured rates", font=small, fill=(190, 190, 200)
+        )
+        draw.text((left, 61), "Fixed scale: 0 to 1", font=small, fill=(190, 190, 200))
+        top = 96
+        for name, value in estimates.items():
+            assert 0.0 <= value <= 1.0
+            label = "\n".join(textwrap.wrap(name, width=34))
+            draw.multiline_text((left, top), label, font=small, fill=(235, 235, 245))
+            bar_top = top + 40
+            draw.rectangle((left, bar_top, left + 280, bar_top + 14), fill=(45, 45, 65))
+            draw.rectangle((left, bar_top, left + 280 * value, bar_top + 14), fill=(70, 160, 230))
+            draw.text((left, bar_top + 18), f"{value:.4f}", font=small, fill=(110, 200, 250))
+            top += 92
 
     @staticmethod
     def draw_values(

@@ -3,6 +3,18 @@ import numpy as np
 from hitl_pmp.recording.skill_chat import SkillChatOverlay
 
 
+def test_competence_panel_preserves_scene_and_uses_separate_space() -> None:
+    frame = np.zeros((640, 640, 3), dtype=np.uint8)
+    rendered = SkillChatOverlay.compose(
+        frame=frame,
+        history=[],
+        values={"STOP": 0.4},
+        competences={"PickCube (fixed)": 0.5, "Toss (belief mean)": 0.6},
+    )
+    assert rendered.shape == (640, 1280, 3)
+    np.testing.assert_array_equal(rendered[:, :640], frame)
+
+
 def test_chat_preserves_scene_and_has_constant_size() -> None:
     frame = np.full((640, 640, 3), 120, dtype=np.uint8)
     empty = SkillChatOverlay.compose(frame=frame, history=[])

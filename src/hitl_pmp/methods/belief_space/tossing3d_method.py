@@ -50,6 +50,16 @@ class Tossing3DPomdpMethod(EesMethod):
         """Values from the last real decision, never an extra search for rendering."""
         return dict(self._practice_values)
 
+    def practice_skill_competences(self) -> dict[str, float]:
+        estimates = {
+            PICK_SKILL + " (fixed)": self._pomdp_model.pick_competence,
+            TOSS_SKILL + " (belief mean)": self._pomdp_state.toss_belief.mean_competence,
+            OPEN_GRIPPER_SKILL + " (fixed)": 1.0,
+        }
+        if self._pomdp_model.reset_cost is not None:
+            estimates[RESET_SKILL + " (fixed)"] = 1.0
+        return estimates
+
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
         if self.decision_log is None:
             return
@@ -200,6 +210,7 @@ class Tossing3DPomdpMethod(EesMethod):
                     self._practice_values[event["action"]["name"]] = event["value"]
         self.record_diagnostic(
             event="decision",
+            competences=self.practice_skill_competences(),
             search_duration_seconds=search_duration_seconds,
             num_samples=self.pomdp_num_samples,
             atoms=sorted(str(atom) for atom in true_atoms),

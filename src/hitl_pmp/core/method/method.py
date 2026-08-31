@@ -67,6 +67,10 @@ class Method(BaseModel, abc.ABC):
         """Optional last-decision values for recording; empty when unavailable."""
         return {}
 
+    def practice_skill_competences(self) -> dict[str, float]:
+        """Optional read-only success estimates for the recording sidebar."""
+        return {}
+
     @abc.abstractmethod
     def reset_environment(self, *, start_state: State) -> bool:
         """The agent's own attempt to self-navigate to start_state, without human help.

@@ -57,6 +57,17 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     assert after.toss_belief == before.toss_belief
 
 
+def test_competence_chart_is_read_only_and_labels_fixed_assumptions() -> None:
+    method = _build(ask_for_reset_cube_bin_cost=0.00001)
+    before = method.pomdp_state
+    values = method.practice_skill_competences()
+    assert values["PickCube (fixed)"] == 0.5
+    assert values["MoveToTossLocationAndToss (belief mean)"] == before.toss_belief.mean_competence
+    assert values["ask_for_reset_cube_bin_only (fixed)"] == 1.0
+    assert "STOP" not in values
+    assert method.pomdp_state == before
+
+
 def test_toss_evidence_and_training_are_separate_until_refit() -> None:
     method = _build()
     toss = _grounding(method=method, name=TOSS_SKILL)

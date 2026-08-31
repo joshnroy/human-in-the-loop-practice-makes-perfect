@@ -285,5 +285,5 @@ def test_a_period_reset_frame_is_composed_with_the_shared_status_bar_overlay(
         ),
     )
     assert len(stream.captured) == recorder.reset_hold_frames
-    expected = SkillChatOverlay.compose(frame=expected, history=[])
+    expected = SkillChatOverlay.compose(frame=expected, history=[], competences={})
     assert np.array_equal(stream.captured[0], expected)
