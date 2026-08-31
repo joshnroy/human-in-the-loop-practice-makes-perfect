@@ -63,6 +63,10 @@ class Method(BaseModel, abc.ABC):
 
     env: Environment
 
+    def practice_action_values(self) -> dict[str, float]:
+        """Optional last-decision values for recording; empty when unavailable."""
+        return {}
+
     @abc.abstractmethod
     def reset_environment(self, *, start_state: State) -> bool:
         """The agent's own attempt to self-navigate to start_state, without human help.

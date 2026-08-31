@@ -1,11 +1,12 @@
 """CLI-facing Tossing3D method backed by situated belief-space expectimax."""
 
-import json
+import time
 from pathlib import Path
 from typing import Any
 
 from pydantic import Field, PrivateAttr
 
+from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
@@ -34,6 +35,7 @@ class Tossing3DPomdpMethod(EesMethod):
     """EES learner/executor with situated belief-space practice decisions."""
 
     pomdp_horizon: int = Field(default=3, ge=0)
+    pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_practice_cost: float = Field(default=0.001, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
@@ -42,6 +44,11 @@ class Tossing3DPomdpMethod(EesMethod):
     _pomdp_model: Tossing3DPracticeModel = PrivateAttr()
     _decision_index: int = PrivateAttr(default=0)
     _cycle_index: int = PrivateAttr(default=0)
+    _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
+
+    def practice_action_values(self) -> dict[str, float]:
+        """Values from the last real decision, never an extra search for rendering."""
+        return dict(self._practice_values)
 
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
         if self.decision_log is None:
@@ -55,7 +62,7 @@ class Tossing3DPomdpMethod(EesMethod):
             **fields,
         }
         with self.decision_log.open("a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, allow_nan=False) + "\n")
+            stream.write(LogTiming.encode(record=record))
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
@@ -173,6 +180,7 @@ class Tossing3DPomdpMethod(EesMethod):
             update={"environment_state": environment_state}
         )
         trace = SearchTrace() if self.decision_log is not None else None
+        search_started_at = time.perf_counter()
         value, action = solve_belief_space_expectimax(
             environment_state=Tossing3DSearchState(state=self._pomdp_state),
             belief_state=self._pomdp_state,
@@ -180,9 +188,20 @@ class Tossing3DPomdpMethod(EesMethod):
             horizon=self.pomdp_horizon,
             model=self._pomdp_model,
             trace=trace,
+            num_samples=self.pomdp_num_samples,
         )
+        search_duration_seconds = time.perf_counter() - search_started_at
+        self._practice_values = {}
+        if trace is not None:
+            for event in trace.events:
+                if event["node"] == 0 and event["event"] == "stop_value":
+                    self._practice_values["STOP"] = event["value"]
+                elif event["node"] == 0 and event["event"] == "action_value":
+                    self._practice_values[event["action"]["name"]] = event["value"]
         self.record_diagnostic(
             event="decision",
+            search_duration_seconds=search_duration_seconds,
+            num_samples=self.pomdp_num_samples,
             atoms=sorted(str(atom) for atom in true_atoms),
             action="STOP" if action == STOP_ACTION else action.model_dump(mode="json"),
             value=value,

@@ -38,7 +38,8 @@ def _grounding(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
 
 
 def test_selector_uses_current_symbolic_state_without_starting_simulator() -> None:
-    method = _build()
+    # Keep this seeded grounding regression independent of the CLI sampling default.
+    method = _build(pomdp_num_samples=1)
     pick = _grounding(method=method, name=PICK_SKILL)
     selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
     assert selection == [pick]

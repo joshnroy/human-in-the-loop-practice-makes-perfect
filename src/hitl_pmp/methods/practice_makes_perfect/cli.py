@@ -174,6 +174,12 @@ class Tossing3DPomdpCli(EesCli):
         EesCli.add_arguments(parser=parser)
         parser.set_defaults(goal_pursuit_horizon=0)
         parser.add_argument(
+            "--pomdp-num-samples",
+            type=int,
+            default=100,
+            help="Theta samples per unique expectimax state.",
+        )
+        parser.add_argument(
             "--pomdp-horizon",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_horizon"].default,
@@ -213,6 +219,7 @@ class Tossing3DPomdpCli(EesCli):
                     args.reproduce_predicators_explore_target_only
                 ),
                 pomdp_horizon=args.pomdp_horizon,
+                pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_practice_cost=args.pomdp_practice_cost,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"

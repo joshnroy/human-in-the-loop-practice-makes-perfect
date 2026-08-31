@@ -4,6 +4,8 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from hitl_pmp.core.log_timing import LogTiming
+
 
 class SearchTrace(BaseModel):
     """Actual search events, recorded without additional model calls or RNG draws."""
@@ -11,7 +13,7 @@ class SearchTrace(BaseModel):
     events: list[dict[str, Any]] = Field(default_factory=list)
 
     def record(self, *, event: str, **fields: Any) -> None:
-        self.events.append({"event": event, **fields})
+        self.events.append({"event": event, **fields, **LogTiming.fields()})
 
 
 class EnvironmentState(BaseModel):

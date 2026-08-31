@@ -1,10 +1,10 @@
-import json
 from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
+from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import LabeledAction, Policy
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
@@ -79,6 +79,7 @@ class PeriodRecorder(BaseModel):
     num_tasks: int | None = None
     episode_skills: list[str] = Field(default_factory=list)
     practice_history: list[str] = Field(default_factory=list)
+    action_values: dict[str, float] = Field(default_factory=dict)
 
     video: VideoStream | None = None
 
@@ -91,6 +92,7 @@ class PeriodRecorder(BaseModel):
         Tossing3D."""
         self.phase = LoopPhase.PRACTICE
         self.practice_history = []
+        self.action_values = {}
         self.cycle_index = cycle_index
         self.transitions = transitions
         self.task = task
@@ -303,7 +305,9 @@ class PeriodRecorder(BaseModel):
         )
         composed = StatusBarOverlay.compose(frame=frame, status=status)
         if self.phase is LoopPhase.PRACTICE:
-            composed = SkillChatOverlay.compose(frame=composed, history=self.practice_history)
+            composed = SkillChatOverlay.compose(
+                frame=composed, history=self.practice_history, values=self.action_values
+            )
         for _ in range(repeat):
             self.video.append(frame=composed)
 
@@ -313,10 +317,11 @@ class PeriodRecorder(BaseModel):
         self.output_dir.mkdir(parents=True, exist_ok=True)
         with (self.output_dir / "practice_events.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(
-                json.dumps({
-                    "cycle": self.cycle_index,
-                    "transitions": self.transitions,
-                    "entry": entry,
-                })
-                + "\n"
+                LogTiming.encode(
+                    record={
+                        "cycle": self.cycle_index,
+                        "transitions": self.transitions,
+                        "entry": entry,
+                    }
+                )
             )

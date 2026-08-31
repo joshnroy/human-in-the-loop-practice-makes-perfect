@@ -21,3 +21,16 @@ def test_chat_drops_oldest_entries() -> None:
         SkillChatOverlay.compose(frame=frame, history=history),
         SkillChatOverlay.compose(frame=frame, history=history[-8:]),
     )
+
+
+def test_value_chart_updates_without_changing_scene_or_frame_size() -> None:
+    frame = np.zeros((640, 640, 3), dtype=np.uint8)
+    first = SkillChatOverlay.compose(
+        frame=frame, history=[], values={"STOP": 0.5, "PickCube": -0.1}
+    )
+    second = SkillChatOverlay.compose(
+        frame=frame, history=[], values={"STOP": 0.4, "PickCube": 0.6}
+    )
+    assert first.shape == second.shape == (640, 960, 3)
+    np.testing.assert_array_equal(first[:, :640], frame)
+    assert not np.array_equal(first[:, 640:], second[:, 640:])
