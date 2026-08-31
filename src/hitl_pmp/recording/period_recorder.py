@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import LabeledAction, Policy
+from hitl_pmp.core.metrics.types import PracticeSessionEnd
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
@@ -164,7 +165,7 @@ class PeriodRecorder(BaseModel):
         self, *, state: State, step_index: int, transitions: int
     ) -> None:
         self.transitions = transitions
-        self.record_history(entry=f"{step_index + 1:02d}  STOP / interaction complete")
+        self.record_history(entry=f"{step_index + 1:02d}  interaction complete")
         self._write(
             state=state,
             status=self._status(
@@ -173,6 +174,40 @@ class PeriodRecorder(BaseModel):
                 event="INTERACTION COMPLETE — period ended early",
             ),
             repeat=self.reset_hold_frames,
+        )
+
+    def record_session_end(
+        self, *, state: State, session_end: PracticeSessionEnd, transitions: int
+    ) -> None:
+        """Save a structured terminal event without inventing an extra decision."""
+        self.transitions = transitions
+        labels = {
+            "planner_stop": "PLANNER CHOSE STOP",
+            "interaction_complete": "INTERACTION COMPLETE",
+            "session_action_cap": "SESSION ACTION CAP REACHED — no STOP decision",
+        }
+        label = labels[session_end.reason]
+        self.record_history(entry=label)
+        with (self.output_dir / "practice_events.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(
+                LogTiming.encode(
+                    record={
+                        "event": "practice_session_end",
+                        **session_end.model_dump(),
+                        "transitions": transitions,
+                    }
+                )
+            )
+        self._write(
+            state=state,
+            status=self._status(
+                step_index=(session_end.actions_executed - 1)
+                if session_end.actions_executed
+                else None,
+                num_steps=session_end.action_limit,
+                event=label,
+            ),
+            repeat=max(self.reset_hold_frames, self.fps * 2),
         )
 
     def end_practice(self) -> None:

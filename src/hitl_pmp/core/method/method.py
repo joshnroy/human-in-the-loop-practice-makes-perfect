@@ -24,6 +24,10 @@ class InteractionComplete(Exception):  # noqa: N818
 
     Distinct from `HumanCubeBinResetRequested` below -- see that docstring."""
 
+    def __init__(self, *, planner_stop: bool = False) -> None:
+        super().__init__()
+        self.planner_stop = planner_stop
+
 
 class HumanCubeBinResetRequested(Exception):  # noqa: N818
     """Raised by a practice policy asking a human for a *partial* reset:

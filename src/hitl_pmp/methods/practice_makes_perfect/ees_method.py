@@ -1254,7 +1254,7 @@ class _EesEpisode:
         method = self._method
         for candidate in method.select_skill_to_practice(true_atoms=true_atoms):
             if candidate == STOP_SKILL:
-                return []
+                raise InteractionComplete(planner_stop=True)
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
                 return [candidate]

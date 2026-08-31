@@ -1,6 +1,17 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
+
+
+class PracticeSessionEnd(BaseModel):
+    """Why a session ended; actions include human resets but exclude STOP."""
+
+    cycle_index: int
+    reason: Literal["planner_stop", "interaction_complete", "session_action_cap"]
+    actions_executed: int
+    action_limit: int
 
 
 class EvaluationBreakdown(BaseModel):
