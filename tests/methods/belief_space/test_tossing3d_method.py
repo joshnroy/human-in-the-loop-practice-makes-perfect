@@ -61,7 +61,7 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     assert after.pending_pick_examples == 1
 
 
-def test_competence_chart_is_read_only_and_labels_fixed_assumptions() -> None:
+def test_theta_charts_are_read_only_and_label_fixed_assumptions() -> None:
     method = _build(ask_for_reset_cube_bin_cost=0.00001)
     before = method.pomdp_state
     values = method.practice_skill_competences()
@@ -70,6 +70,11 @@ def test_competence_chart_is_read_only_and_labels_fixed_assumptions() -> None:
     assert values["MoveToTossLocationAndToss (belief mean)"] == before.toss_belief.mean_competence
     assert values["ask_for_reset_cube_bin_only (fixed)"] == 1.0
     assert "STOP" not in values
+    rates = method.practice_skill_learning_rates()
+    assert rates["PickCube (belief mean)"] == pytest.approx(0.05)
+    assert rates["OpenGripper (belief mean)"] == pytest.approx(0.05)
+    assert rates["MoveToTossLocationAndToss (belief mean)"] == pytest.approx(0.05)
+    assert rates["ask_for_reset_cube_bin_only (fixed)"] == 0.0
     assert method.pomdp_state == before
 
 

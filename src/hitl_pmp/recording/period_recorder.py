@@ -83,6 +83,7 @@ class PeriodRecorder(BaseModel):
     practice_history: list[str] = Field(default_factory=list)
     action_values: dict[str, float] = Field(default_factory=dict)
     competences: dict[str, float] = Field(default_factory=dict)
+    learning_rates: dict[str, float] = Field(default_factory=dict)
 
     video: VideoStream | None = None
 
@@ -97,6 +98,7 @@ class PeriodRecorder(BaseModel):
         self.practice_history = []
         self.action_values = {}
         self.competences = {}
+        self.learning_rates = {}
         self.cycle_index = cycle_index
         self.transitions = transitions
         self.task = task
@@ -347,6 +349,7 @@ class PeriodRecorder(BaseModel):
                 history=self.practice_history,
                 values=self.action_values,
                 competences=self.competences,
+                learning_rates=self.learning_rates,
             )
             composed = StatusBarOverlay.compose(
                 frame=composed,

@@ -71,6 +71,10 @@ class SkillBelief(BaseModel):
     def mean_competence(self) -> float:
         return sum(item.probability * item.hypothesis.competence for item in self.hypotheses)
 
+    @property
+    def mean_learning_rate(self) -> float:
+        return sum(item.probability * item.hypothesis.learning_rate for item in self.hypotheses)
+
     def condition(self, *, success: bool) -> SkillBelief:
         """Condition on a greedy-policy outcome without pretending a refit occurred."""
         weighted: list[tuple[SkillHypothesis, float]] = []

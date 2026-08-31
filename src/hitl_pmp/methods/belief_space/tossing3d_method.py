@@ -62,6 +62,17 @@ class Tossing3DPomdpMethod(EesMethod):
             estimates[RESET_SKILL + " (fixed)"] = 1.0
         return estimates
 
+    def practice_skill_learning_rates(self) -> dict[str, float]:
+        estimates = {
+            PICK_SKILL + " (belief mean)": self._pomdp_state.pick_belief.mean_learning_rate,
+            TOSS_SKILL + " (belief mean)": self._pomdp_state.toss_belief.mean_learning_rate,
+            OPEN_GRIPPER_SKILL
+            + " (belief mean)": self._pomdp_state.open_gripper_belief.mean_learning_rate,
+        }
+        if self._pomdp_model.reset_cost is not None:
+            estimates[RESET_SKILL + " (fixed)"] = 0.0
+        return estimates
+
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
         if self.decision_log is None:
             return

@@ -1,29 +1,16 @@
 import numpy as np
-import pytest
 
 from hitl_pmp.recording.skill_chat import SkillChatOverlay
 
 
-def test_improvement_potential_is_signed_advantage_over_stop() -> None:
-    assert SkillChatOverlay.improvement_potential(
-        values={"STOP": 0.4, "PickCube": 0.5, "Reset": 0.3}
-    ) == pytest.approx(0.1)
-    assert SkillChatOverlay.improvement_potential(
-        values={"STOP": 0.4, "PickCube": 0.3}
-    ) == pytest.approx(-0.1)
-    assert SkillChatOverlay.improvement_potential(values={"STOP": 0.4}) is None
-    assert SkillChatOverlay.improvement_potentials(
-        values={"STOP": 0.4, "PickCube": 0.5, "Reset": 0.3}
-    ) == pytest.approx({"PickCube": 0.1, "Reset": -0.1})
-
-
-def test_competence_panel_preserves_scene_and_uses_separate_space() -> None:
+def test_theta_panels_preserve_scene_and_use_separate_space() -> None:
     frame = np.zeros((640, 640, 3), dtype=np.uint8)
     rendered = SkillChatOverlay.compose(
         frame=frame,
         history=[],
         values={"STOP": 0.4},
         competences={"PickCube (fixed)": 0.5, "Toss (belief mean)": 0.6},
+        learning_rates={"PickCube (fixed)": 0.0, "Toss (belief mean)": 0.05},
     )
     assert rendered.shape == (640, 1920, 3)
     np.testing.assert_array_equal(rendered[:, :640], frame)
