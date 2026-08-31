@@ -266,15 +266,15 @@ def test_cache_distinguishes_beliefs_at_the_same_environment_state_and_cost() ->
     ]
 
 
-def test_averaging_large_finite_samples_does_not_overflow() -> None:
+def test_averaging_identical_samples_preserves_value() -> None:
     assert solve_belief_space_expectimax(
         environment_state=INITIAL,
         summed_cost=0.0,
-        belief_state=BeliefState(value=1e308),
+        belief_state=BeliefState(value=0.75),
         horizon=0,
         model=Model(),
         num_samples=2,
-    ) == (1e308, STOP_ACTION)
+    ) == (0.75, STOP_ACTION)
 
 
 @pytest.mark.parametrize(

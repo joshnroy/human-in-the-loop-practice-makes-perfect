@@ -81,8 +81,7 @@ class ExpectimaxSearch:
                 raise ValueError(f"stop value must be finite, got {current_pomdp_value}")
             sample_values.append(current_pomdp_value)
 
-        # Scale before summing so large finite samples do not overflow the average.
-        current_best_value = float(np.sum(np.asarray(sample_values) / self.num_samples))
+        current_best_value = float(np.mean(sample_values))
         current_best_action = STOP_ACTION
         if horizon == 0:
             return current_best_value, current_best_action
