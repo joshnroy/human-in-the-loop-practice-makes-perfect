@@ -186,11 +186,27 @@ class Tossing3DPracticeModel(BaseModel):
     def score_pomdp_value_from_policy_value_and_cost(
         self, *, policy_value: float, summed_cost: float
     ) -> float:
+        if self.hard_budget is not None:
+            assert summed_cost <= self.hard_budget
+            return policy_value
         return policy_value - self.practice_cost * summed_cost
 
     def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[POMDPAction]:
         assert isinstance(environment_state, Tossing3DSearchState)
-        return [Tossing3DAction(name=name) for name in self.actions(environment_state.state)]
+        state = environment_state.state
+        costs = {
+            PICK_SKILL: self.pick_cost,
+            TOSS_SKILL: self.toss_cost,
+            OPEN_GRIPPER_SKILL: self.open_gripper_cost,
+            RESET_SKILL: self.reset_cost,
+        }
+        return [
+            Tossing3DAction(name=name)
+            for name in self.actions(state)
+            for cost in [costs[name]]
+            if self.hard_budget is None
+            or (cost is not None and state.accumulated_cost + cost <= self.hard_budget)
+        ]
 
     def sample_next_states(
         self,
@@ -251,6 +267,7 @@ class Tossing3DPracticeModel(BaseModel):
     toss_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
     open_gripper_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
     reset_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    hard_budget: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     deployment_horizon: int = Field(default=4, ge=0)
 
     @property
@@ -285,7 +302,9 @@ class Tossing3DPracticeModel(BaseModel):
             toss_competence=projected.mean_competence,
             horizon=self.deployment_horizon,
         )
-        return deployment_value - self.practice_cost * state.accumulated_cost
+        return self.score_pomdp_value_from_policy_value_and_cost(
+            policy_value=deployment_value, summed_cost=state.accumulated_cost
+        )
 
     def _evaluate_deployment_policy(
         self,

@@ -1,4 +1,9 @@
 import argparse
+<<<<<<< HEAD
+=======
+import sys
+from pathlib import Path
+>>>>>>> 82560b0 (Support hard practice budgets for Tossing3D horizon sweeps)
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -174,6 +179,12 @@ class Tossing3DPomdpCli(EesCli):
         EesCli.add_arguments(parser=parser)
         parser.set_defaults(goal_pursuit_horizon=0)
         parser.add_argument(
+            "--pomdp-hard-budget",
+            type=int,
+            default=None,
+            help="Hard cumulative practice-cost budget; replaces the linear penalty.",
+        )
+        parser.add_argument(
             "--pomdp-num-samples",
             type=int,
             default=100,
@@ -196,6 +207,8 @@ class Tossing3DPomdpCli(EesCli):
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
         if env_cli.__name__ != "Tossing3DCli":
             raise ValueError("--method pomdp currently supports only --env tossing3d")
+        # Cached recursion adds interpreter frames per depth; this is not a search cutoff.
+        sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_horizon + 1000))
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,
@@ -220,6 +233,7 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_horizon=args.pomdp_horizon,
                 pomdp_num_samples=args.pomdp_num_samples,
+                pomdp_hard_budget=args.pomdp_hard_budget,
                 pomdp_practice_cost=args.pomdp_practice_cost,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"

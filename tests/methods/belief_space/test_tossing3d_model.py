@@ -19,6 +19,42 @@ from hitl_pmp.methods.belief_space.tossing3d_model import (
 from hitl_pmp.methods.belief_space.types import STOP_ACTION
 
 
+@pytest.mark.parametrize("environment_state", list(Tossing3DEnvironmentState))
+def test_hard_budget_filters_unaffordable_actions(
+    *, environment_state: Tossing3DEnvironmentState
+) -> None:
+    model = Tossing3DPracticeModel(hard_budget=2, reset_cost=1)
+    state = make_default_tossing3d_belief(environment_state=environment_state)
+    state = state.model_copy(update={"accumulated_cost": 1.0})
+    actions = model.get_valid_actions(environment_state=Tossing3DSearchState(state=state))
+    assert tuple(action.name for action in actions) == model.actions(state)
+    exhausted = state.model_copy(update={"accumulated_cost": 2.0})
+    assert model.get_valid_actions(environment_state=Tossing3DSearchState(state=exhausted)) == []
+
+
+def test_hard_budget_has_no_linear_cost_penalty() -> None:
+    model = Tossing3DPracticeModel(hard_budget=2, practice_cost=0.9)
+    assert (
+        model.score_pomdp_value_from_policy_value_and_cost(policy_value=0.5, summed_cost=2) == 0.5
+    )
+    state = make_default_tossing3d_belief()
+    assert model.stop_value(state) == model.stop_value(
+        state.model_copy(update={"accumulated_cost": 2.0})
+    )
+
+
+def test_zero_budget_stops_even_with_search_horizon_remaining() -> None:
+    state = make_default_tossing3d_belief()
+    _, action = solve_belief_space_expectimax(
+        environment_state=Tossing3DSearchState(state=state),
+        belief_state=state,
+        summed_cost=0,
+        horizon=10,
+        model=Tossing3DPracticeModel(hard_budget=0, reset_cost=1),
+    )
+    assert action == STOP_ACTION
+
+
 def test_search_protocol_charges_accumulated_cost_once() -> None:
     state = Tossing3DBeliefState(
         environment_state=Tossing3DEnvironmentState.READY,

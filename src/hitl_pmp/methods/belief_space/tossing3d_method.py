@@ -36,6 +36,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_horizon: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
+    pomdp_hard_budget: int | None = Field(default=None, ge=0)
     pomdp_practice_cost: float = Field(default=0.001, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
@@ -82,6 +83,7 @@ class Tossing3DPomdpMethod(EesMethod):
             practice_cost=self.pomdp_practice_cost,
             exploration_epsilon=self.exploration_epsilon,
             reset_cost=self.ask_for_reset_cube_bin_cost,
+            hard_budget=self.pomdp_hard_budget,
         )
         available = {skill.name for skill in self.skills()}
         missing = set(self._pomdp_model.required_skills) - available
