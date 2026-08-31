@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <title>
+   POMDP search evolution
+  </title>
+  <link href="/explorer.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <main>
+   <header>
+    <h1>
+     POMDP search evolution
+    </h1>
+    <p>
+     Replay the actual saved decisions. Values, beliefs, samples, and chance outcomes come from the logs—not a new search.
+    </p>
+   </header>
+   <div class="controls">
+    <label>
+     Seed
+     <select id="seed">
+     </select>
+    </label>
+    <button id="previous">
+     ← Previous decision
+    </button>
+    <label>
+     Decision
+     <select id="decision">
+     </select>
+    </label>
+    <button id="next">
+     Next decision →
+    </button>
+    <button id="download">
+     Download this decision
+    </button>
+   </div>
+   <div aria-live="polite" id="status" role="status">
+    Loading available seeds…
+   </div>
+   <div class="layout">
+    <aside class="panel">
+     <h2>
+      Decision values
+     </h2>
+     <div id="metadata">
+     </div>
+     <div id="values">
+     </div>
+     <h2>
+      Skill competence estimates
+     </h2>
+     <div id="competences">
+     </div>
+     <p class="note">
+      Bars show the completed decision. The tree replay below reveals when intermediate values became available.
+     </p>
+    </aside>
+    <section class="panel">
+     <h2>
+      Search tree
+     </h2>
+     <div class="controls">
+      <button id="start">
+       Start search
+      </button>
+      <button id="back">
+       ← Event
+      </button>
+      <button id="play">
+       Play search
+      </button>
+      <button id="forward">
+       Event →
+      </button>
+      <button id="finish">
+       Completed tree
+      </button>
+     </div>
+     <label for="timeline">
+      Structural event
+      <span id="event-position">
+      </span>
+     </label>
+     <input id="timeline" max="0" min="0" type="range" value="0"/>
+     <p class="note" id="event-info">
+     </p>
+     <p class="note">
+      Expand states → actions → chance outcomes. Cached states are shared. Branch links appear when their recursive evaluations return; the active node is shown separately while its parent awaits a result. Every θ sample remains available in the expandable records.
+     </p>
+     <div id="tree">
+     </div>
+     <div id="active">
+     </div>
+    </section>
+   </div>
+  </main>
+  <script defer="" src="/explorer.js">
+  </script>
+ </body>
+</html>

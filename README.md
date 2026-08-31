@@ -20,6 +20,8 @@ Fast Downward and the KINDER simulator need extra steps — see `CLAUDE.md`.
 - `tests/` — mirrors `src/hitl_pmp/` 1:1.
 - `analysis/` — post-run scripts that read a run's `--output-dir` back in and produce
   figures and tables. `analysis/` imports from `hitl_pmp`; never the reverse.
+  The [POMDP tree explorer](docs/pomdp-tree-explorer.md) serves saved decision
+  traces locally, with step-by-step replay and expandable chance branches.
 - `scripts/` — operational entrypoints that *drive* runs, notably `run_sweep.py`.
 - `docs/experiment-logs/` — dated, permanent records of experiments actually run.
 

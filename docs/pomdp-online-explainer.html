@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tossing3D POMDP — algorithm and current experiments</title>
+<style>
+:root{color-scheme:dark;--bg:#111722;--fg:#edf2fa;--muted:#b6c3d6;--accent:#8ddacb}
+*{box-sizing:border-box}body{background:var(--bg);color:var(--fg);font:18px/1.6 system-ui,sans-serif;margin:0}
+header,main,footer{max-width:1050px;margin:auto;padding:22px 30px}
+header{border-bottom:1px solid #41516a;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+header strong{margin-right:auto}a{color:#a8d5ff}button,select{font:inherit;color:var(--fg);background:#202c40;border:1px solid #687b96;border-radius:5px;padding:8px 14px}
+button{cursor:pointer}button:disabled{opacity:.4;cursor:default}nav{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+section{padding:8px 0 28px}section[hidden]{display:none}.eyebrow{color:var(--accent);font-size:14px;letter-spacing:.12em;text-transform:uppercase}
+h1,h2{font-size:clamp(28px,4vw,44px);line-height:1.18;letter-spacing:-.03em;margin:12px 0 25px}h3{font-size:23px;margin-bottom:8px}
+p,ul,ol{max-width:900px}.lead{font-size:23px}.muted,footer{color:var(--muted)}.math,pre{background:#1b2537;padding:18px 22px;border-left:3px solid var(--accent);overflow-wrap:anywhere}
+.math{font-size:21px}.note{border-left:3px solid #ffd089;padding:4px 18px;margin:24px 0}
+pre{font:15px/1.7 ui-monospace,monospace;white-space:pre-wrap}code{color:#b0e6da}
+table{border-collapse:collapse;width:100%;margin:22px 0;font-size:17px}th,td{padding:11px 12px;text-align:left;border-bottom:1px solid #41516a;vertical-align:top}
+.flow{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:18px 0}.flow span{border-bottom:2px solid var(--accent);padding:8px}.cols{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+footer{font-size:14px;border-top:1px solid #41516a}body.all section[hidden]{display:block}body.all section{border-bottom:1px solid #41516a}
+@media(max-width:650px){header,main,footer{padding:18px}.cols{grid-template-columns:1fr}table{font-size:14px}th,td{padding:8px 5px}}
+@media print{header nav,header select{display:none}section[hidden]{display:block}section{break-before:page}body{background:white;color:black}pre,.math{background:#eee;color:black}a,.muted,footer{color:#333}}
+</style>
+</head>
+<body>
+<header><strong>Tossing3D · POMDP walkthrough</strong>
+<label for="jump">Step <select id="jump" aria-label="Choose explanation step"></select></label>
+<nav><button id="prev">← Previous</button><span id="counter" aria-live="polite"></span><button id="next">Next →</button><button id="all" aria-pressed="false">Show all</button></nav>
+</header>
+<main>
+<section data-title="The question">
+<div class="eyebrow">01 · Purpose</div>
+<h1>Is another practice action worth doing?</h1>
+<p class="lead">The robot chooses between practicing an available skill, asking for a human reset, and stopping to use what it has learned.</p>
+<p>It reasons about the current physical state, uncertainty about skill success and improvement, and the remaining practice budget. The objective is predicted <em>deployment success after practice</em>—not simply getting a successful practice throw.</p>
+<div class="flow"><span>Observe state</span>→<span>Search possible futures</span>→<span>Execute one skill</span>→<span>Observe outcome and replan</span></div>
+<p class="muted">This describes implementation snapshot <code>51b2721</code> and the seed-0 H=B=10 / H=B=100 validation runs. Earlier videos with fixed PickCube and OpenGripper used a different model.</p>
+</section>
+<section data-title="What is uncertain?" hidden>
+<div class="eyebrow">02 · State and belief</div><h2>The world is observed; skill parameters are uncertain.</h2>
+<p>The symbolic physical state <b>s</b> distinguishes situations such as ready to pick, holding the cube, gripper closed, stranded, and solved. The hidden quantity is each robot skill’s parameter vector:</p>
+<div class="math">θ<sub>a</sub> = (p<sub>a</sub>, η<sub>a</sub>)<br>p<sub>a</sub>: current competence &nbsp; · &nbsp; η<sub>a</sub>: improvement rate</div>
+<table><tr><th>Skill</th><th>What the POMDP estimates</th></tr>
+<tr><td>PickCube</td><td>Posterior over competence and improvement rate</td></tr>
+<tr><td>MoveToTossLocationAndToss</td><td>Posterior over competence and improvement rate</td></tr>
+<tr><td>OpenGripper</td><td>Posterior over competence and improvement rate</td></tr>
+<tr><td>Human cube/bin reset</td><td>Known success probability 1; no learning</td></tr></table>
+<p>The search state also carries accumulated cost <b>C</b> and pending practice-example counts for each skill. Those counts matter because actual sampler refits happen at session boundaries.</p>
+</section>
+<section data-title="Initial priors" hidden>
+<div class="eyebrow">03 · Initialization</div><h2>No robot skill starts with fixed competence.</h2>
+<div class="math">p ∈ {0, 0.25, 0.5, 0.75, 1}<br>η ∈ {0, 0.1}<br>b<sub>a</sub>(p,η) = 1/10 for each of the ten pairs</div>
+<p>All three robot skills start with independent copies of this prior. Each initial mean competence is 0.5; the prior probability of η=0 is 0.5.</p>
+<p>The endpoints allow evidence to support always-successful or always-failing stationary behavior. They are possible hypotheses—not assigned outcomes for a particular skill.</p>
+<div class="note">This is still a finite, hand-chosen hypothesis family. Learning its weights does not make its coverage or calibration guaranteed. The older toss prior used only p ∈ {0.25, 0.5, 0.75}; these new runs use the expanded grid.</div>
+</section>
+<section data-title="Learning from outcomes" hidden>
+<div class="eyebrow">04 · Bayes update</div><h2>Success and failure reweight the hypotheses.</h2>
+<div class="math">b′<sub>a</sub>(p,η) =
+ b<sub>a</sub>(p,η) · p<sup>y</sup>(1−p)<sup>1−y</sup> / Z<br>
+ y = 1 for success; y = 0 for failure</div>
+<p><b>Z</b> normalizes the weights. A success favors higher p; a failure favors lower p. Only the skill that produced the observation is updated.</p>
+<p>PickCube and OpenGripper supply evidence on every observed practice attempt. Toss’s greedy-policy outcomes update its competence posterior; random exploration outcomes do not, because they were generated by a different parameter-selection policy. Toss training rows can still be collected from exploration.</p>
+<p>Held-out evaluation outcomes are <b>not</b> used as training data.</p>
+<div class="note">The update uses current p, not η directly. Distinguishing learning rates requires observations after hypothesized improvement has taken effect across session boundaries.</div>
+</section>
+<section data-title="Improvement versus controller training" hidden>
+<div class="eyebrow">05 · Learning-curve forecast</div><h2>A predicted improvement is not a controller update.</h2>
+<div class="math">p after n examples = 1 − (1−p)(1−η)<sup>n</sup></div>
+<p>For p=0.5 and one example: η=0 predicts 0.5; η=0.1 predicts 0.55. The posterior averages across such possibilities.</p>
+<p>At STOP evaluation, the model projects pending examples through this formula. At the real session boundary it advances the hypotheses; later outcomes can favor improving or stationary hypotheses.</p>
+<div class="cols"><div><h3>Toss</h3><p>Has a real trainable parameter sampler. Its refit uses collected training rows.</p></div>
+<div><h3>Pick and OpenGripper</h3><p>Remain parameter-free controllers. Their learning curves are hypotheses to test against data—not changes to their execution code.</p></div></div>
+<div class="note"><b>One-session limitation:</b> these validation runs test data flow and planning behavior. They do not provide post-refit practice observations with which to establish η≈0 for Pick/Open. At p=1, all η predict zero further improvement, so η itself is unidentifiable.</div>
+</section>
+<section data-title="Deployment value and G" hidden>
+<div class="eyebrow">06 · Terminal value</div><h2>STOP asks: “How good would deployment be now?”</h2>
+<p><code>evaluate_policy</code> computes g(θ), the predicted probability of solving a fresh deployment task under the sampled skill competences. Human reset is unavailable during this modeled deployment.</p>
+<div class="math">G(C,θ) = g(θ) if C ≤ B; otherwise −∞<br>
+J(C,b) = E<sub>θ∼b projected through pending examples</sub>[G(C,θ)]</div>
+<p><b>G is the ROI–cost function.</b> These runs use its hard-budget version. The implementation filters out actions that would exceed B, so it never needs to pass −∞ through the numerical solver.</p>
+<p>The older linear version was G(C,θ)=g(θ)−λC. <b>That penalty is inactive whenever a hard budget is configured.</b> Within budget, there is no extra reward for leaving budget unspent; STOP wins exact ties.</p>
+</section>
+<section data-title="Deployment horizon" hidden>
+<div class="eyebrow">07 · A different horizon</div><h2>Deployment lookahead stays at four skills.</h2>
+<p>The deployment horizon <b>D=4</b> is not the practice search horizon H, nor the real evaluation episode limit. It is the surrogate evaluator’s lookahead.</p>
+<p>For sampled Pick competence q, Toss competence t, and Open competence r, the modeled successful paths within four actions are:</p>
+<ol><li>Pick succeeds → Toss succeeds: probability qt.</li><li>Pick fails → Open succeeds → Pick succeeds → Toss succeeds: probability (1−q)rqt.</li></ol>
+<div class="math">g(θ) = qt[1 + (1−q)r] &nbsp; when D=4</div>
+<p>This is evaluated for each sampled joint θ—not by substituting the mean competence of every skill into a nonlinear expression.</p>
+<div class="note">D=4 is an existing modeling choice, not a demonstrated sufficient deployment horizon. Increasing H does not fix or increase D.</div>
+</section>
+<section data-title="The expectimax calculation" hidden>
+<div class="eyebrow">08 · Inside one search</div><h2>Compare stopping against every affordable action.</h2>
+<pre><code>solve_belief_space_expectimax(s, C, b, h):
+    θ[1..N] ← sample_theta_from_belief(b)
+    J ← mean(score_pomdp_value_from_policy_value_and_cost(
+                 evaluate_policy(θ[i]), C))
+    best_value, best_action ← J, STOP
+    if h == 0: return best_value, best_action
+
+    for a in get_valid_actions(s):  # applicable AND within budget
+        Q(a) ← 0
+        for (s′, c) in sample_next_states(s, a, b):
+            b′ ← update_belief_state(b, s, s′, a)
+            V′ ← solve_belief_space_expectimax(s′, C+c, b′, h−1).value
+            P ← transition_probability(s′, c, s, a, b)
+            Q(a) ← Q(a) + P × V′
+        if Q(a) &gt; best_value:
+            best_value, best_action ← Q(a), a
+    return best_value, best_action</code></pre>
+<p>This is a condensed rendering of the implemented function names. It is a max over actions and an expectation over their outcomes: <b>expectimax</b>.</p>
+<p>Successful and failed Pick/Open outcomes use their current belief means as predictive probabilities and condition the corresponding posterior in each branch. The human reset branch is deterministic in the model.</p>
+</section>
+<section data-title="What 100 samples means" hidden>
+<div class="eyebrow">09 · Approximation and caching</div><h2>100 parameter samples per unique search state.</h2>
+<p><b>N=100</b> controls the Monte Carlo estimate of STOP utility at each state. Each sample is a joint draw of Pick, Toss, and OpenGripper parameters.</p>
+<p>It is <b>not</b> 100 physical trials, 100 sampled full trajectories, or 100 branches. Despite its name, <code>sample_next_states</code> enumerates the finite successor model here, merging identical successors. Their probabilities are then summed exactly.</p>
+<p>Repeated identical search arguments share a cached result within a search. The next real decision creates a fresh search and a fresh cache, with new parameter draws.</p>
+<div class="note">Values remain noisy. Maximizing sampled estimates can favor actions that offer no true learning benefit. More samples reduce noise but do not eliminate model error or the bias introduced by maximizing noisy values.</div>
+</section>
+<section data-title="Closed-loop replanning" hidden>
+<div class="eyebrow">10 · Real execution</div><h2>Execute one skill—not the entire imagined plan.</h2>
+<ol><li>Read the actual symbolic state and current belief.</li><li>Run a fresh H-step search using the total cost already spent.</li><li>Execute only the selected skill and charge its cost.</li><li>Observe success/failure, update evidence and pending examples, then replan.</li><li>If STOP is selected, finish the practice session and process its boundary update.</li></ol>
+<div class="math">Replanning refreshes H.<br>Replanning does not reset C or replenish B.</div>
+<p>Each new practice session starts at C=0 with a fresh B, retaining learned samplers and beliefs. Human resets within a session still consume its budget.</p>
+<p>With B=10 and unit costs, ten paid actions use the entire budget. Decision 11 can choose STOP; it does not need to wait for the 150-step outer cap.</p>
+<p><code>reset=never</code> disables automatic practice resets. It does <b>not</b> disable the selectable, charged human reset skill.</p>
+</section>
+<section data-title="Exactly what is being swept" hidden>
+<div class="eyebrow">11 · Experimental design</div><h2>H and B increase together; everything below stays fixed.</h2>
+<table><tr><th>Parameter</th><th>Run A</th><th>Run B</th></tr>
+<tr><td>Practice search horizon H</td><td>10</td><td>100</td></tr>
+<tr><td>Cumulative hard budget B</td><td>10</td><td>100</td></tr>
+<tr><td>Real session cap</td><td>150 iterations</td><td>150 iterations</td></tr>
+<tr><td>Parameter samples N</td><td>100 per unique state</td><td>100 per unique state</td></tr>
+<tr><td>Modeled deployment horizon D</td><td>4</td><td>4</td></tr>
+<tr><td>Costs</td><td>1 per robot/human skill</td><td>1 per robot/human skill</td></tr>
+<tr><td>Seed / practice sessions</td><td>0 / 1</td><td>0 / 1</td></tr>
+<tr><td>Automatic reset / human reset</td><td>Never / available</td><td>Never / available</td></tr>
+<tr><td>Exploration ε / modeled random-toss success</td><td>0.5 / 0.25</td><td>0.5 / 0.25</td></tr>
+<tr><td>Evaluation</td><td>10 tasks before, 10 after</td><td>10 tasks before, 10 after</td></tr>
+<tr><td>Memory / time limits</td><td>8 GiB / no time cutoff</td><td>8 GiB / no time cutoff</td></tr></table>
+<div class="note"><b>This is a joint horizon-and-budget sweep.</b> A difference cannot be attributed to deeper planning alone, because the amount of permitted practice also changes. A horizon-only comparison would hold B fixed.</div>
+</section>
+<section data-title="Effective horizon and runtime" hidden>
+<div class="eyebrow">12 · Limits and cost</div><h2>Affordable depth is not computational feasibility.</h2>
+<div class="math">Effective remaining depth ≤ min(H, ⌊(B−C)/c<sub>min</sub>⌋)<br>Here c<sub>min</sub>=1, so depth ≤ min(H, B−C).</div>
+<p>This bound concerns a search decision. The outer session cap additionally limits real execution, but is not itself passed as the search horizon.</p>
+<p>The depth cutoff is still present. Python’s interpreter recursion limit was raised only to support the requested depth—not to remove the algorithmic horizon.</p>
+<p>The search expands outcome branches and changing beliefs at many levels. Memoization helps only when arguments match. Full diagnostics also retain every parameter sample until the root decision completes.</p>
+<div class="note">H=100 may exhaust its memory cap before producing a single action. “No time cutoff” is not “unlimited memory,” and no video can show practice before the first action has been chosen.</div>
+</section>
+<section data-title="Reading videos and trees" hidden>
+<div class="eyebrow">13 · Outputs</div><h2>Distinguish predicted value from observed learning.</h2>
+<div class="math">Displayed improvement potential = max<sub>practice action a</sub> Q(a) − J(STOP)</div>
+<p>Positive favors continuing; negative favors stopping. This is the best action’s expected downstream advantage, including possible later practice—not the learning rate η of that action.</p>
+<p>Competence bars show current posterior means before the pending-example projection. STOP utility uses projected post-session beliefs, so it need not match a simple calculation from those bars.</p>
+<p>“No affordable/applicable practice action” means there was no candidate to compare with STOP. At C=B, it means budget exhausted—not proof that additional practice would have zero benefit.</p>
+<p>The HTML tree contains the <b>complete recorded search at the STOP decision</b>, including sampled θ values, costs, probabilities, contributions, and cached successor evaluations. It is not a concatenation of every earlier decision’s tree. The JSONL retains those earlier decisions.</p>
+<ul><li><a href="/online-h10-practice/cycle_0000.mp4">H=B=10 practice video</a> · <a href="/online-h10-search-trees/">STOP tree directory</a></li>
+<li><a href="/online-h100-practice/cycle_0000.mp4">H=B=100 practice video</a> · <a href="/online-h100-search-trees/">STOP tree directory</a></li></ul>
+<p class="muted">Output links become available only if the corresponding artifact is produced.</p>
+</section>
+<section data-title="What this experiment can establish" hidden>
+<div class="eyebrow">14 · Interpretation</div><h2>A validation run, not yet a learning-curve conclusion.</h2>
+<p>Check that each action is followed by replanning, costs accumulate correctly, robot-skill beliefs respond to data, STOP is selected when appropriate, and the saved tree explains the decision.</p>
+<p>Look for repeated resets, poor state predictions, inconsistent outcome labels, or large disagreements between modeled competence and execution. These are diagnostic findings—not things to explain away with a better evaluation score.</p>
+<p>One seed and ten evaluation tasks are insufficient to establish a reliable improvement. Even a no-practice run can get different before/after scores because evaluation execution is stochastic. No significance claim is made here.</p>
+<div class="note">The most important distinction: <b>we are testing whether the system estimates and acts on learning potential coherently—not assuming that every robot skill truly improves.</b></div>
+<h3>Implementation references</h3>
+<p><code>tossing3d_model.py</code>: priors, outcomes, posterior updates, learning curves, deployment utility and budget filtering.<br>
+<code>expectimax.py</code>: recursive search, Monte Carlo STOP evaluation and caching.<br>
+<code>tossing3d_method.py</code>: real outcome updates, one-step selection, costs and STOP export.<br>
+<code>search_html.py</code>: complete trace viewer.<br>
+<code>docs/pomdp-online-beliefs.md</code>: model assumptions.</p>
+</section>
+</main>
+<footer>Implementation: 51b2721 · Experiments launched August 31, 2026 · Static explanation, not a live progress monitor. Use arrow keys or the step menu; “Show all” also supports printing.</footer>
+<script>
+const slides=[...document.querySelectorAll("main section")];
+const jump=document.getElementById("jump"),prev=document.getElementById("prev"),next=document.getElementById("next"),all=document.getElementById("all");
+slides.forEach((s,i)=>{const o=document.createElement("option");o.value=i;o.textContent=(i+1)+". "+s.dataset.title;jump.append(o)});
+let index=0;
+function show(i){index=Math.max(0,Math.min(slides.length-1,Number.isFinite(i)?i:0));slides.forEach((s,j)=>s.hidden=j!==index);jump.value=index;
+document.getElementById("counter").textContent=(index+1)+" / "+slides.length;prev.disabled=index===0;next.disabled=index===slides.length-1;
+history.replaceState(null,"","#"+(index+1));}
+prev.onclick=()=>show(index-1);next.onclick=()=>show(index+1);jump.onchange=()=>show(Number(jump.value));
+all.onclick=()=>{const active=document.body.classList.toggle("all");all.setAttribute("aria-pressed",String(active));all.textContent=active?"Show one step":"Show all"};
+window.addEventListener("hashchange",()=>show(Number(location.hash.slice(1))-1));
+document.addEventListener("keydown",e=>{if(["SELECT","INPUT","TEXTAREA","BUTTON"].includes(e.target.tagName))return;if(e.key==="ArrowRight")show(index+1);if(e.key==="ArrowLeft")show(index-1)});
+show(Number(location.hash.slice(1))-1);
+</script>
+</body></html>
