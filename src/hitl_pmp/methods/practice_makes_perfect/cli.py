@@ -1,6 +1,8 @@
 import argparse
+import sys
 
 from hitl_pmp.cli_protocols import EnvironmentCli
+from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .ees_method import EesMethod
@@ -159,6 +161,77 @@ class EesCli:
                 reproduce_predicators_explore_target_only=(
                     args.reproduce_predicators_explore_target_only
                 ),
+            ),
+            num_cycles=args.num_cycles,
+            max_steps_per_interaction=args.max_steps_per_interaction,
+        )
+
+
+class Tossing3DPomdpCli(EesCli):
+    """Exact belief-space practice selection for Tossing3D."""
+
+    @staticmethod
+    def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        EesCli.add_arguments(parser=parser)
+        parser.set_defaults(goal_pursuit_horizon=0)
+        parser.add_argument(
+            "--pomdp-hard-budget",
+            type=int,
+            default=None,
+            help="Hard practice-cost budget per session; replenished each cycle, not each "
+            "replan. Replaces the linear penalty.",
+        )
+        parser.add_argument(
+            "--pomdp-num-samples",
+            type=int,
+            default=100,
+            help="Theta samples per unique expectimax state.",
+        )
+        parser.add_argument(
+            "--pomdp-horizon",
+            type=int,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_horizon"].default,
+            help="Exact belief-space expectimax depth in future skill executions.",
+        )
+        parser.add_argument(
+            "--pomdp-practice-cost",
+            type=float,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_practice_cost"].default,
+            help="Terminal-utility penalty per practice skill execution.",
+        )
+
+    @staticmethod
+    def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        if env_cli.__name__ != "Tossing3DCli":
+            raise ValueError("--method pomdp currently supports only --env tossing3d")
+        # Cached recursion adds interpreter frames per depth; this is not a search cutoff.
+        sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_horizon + 1000))
+        draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
+        env_cli.run_method(
+            args=args,
+            method_factory=lambda ctx: Tossing3DPomdpMethod(
+                env=ctx.env,
+                skill_provider=ctx.skill_provider,
+                seed=args.seed,
+                draw_recorder=draw_recorder,
+                ask_for_reset_cube_bin_cost=args.ask_for_reset_cube_bin_cost,
+                exploration_epsilon=args.exploration_epsilon,
+                sampler_max_train_iters=args.sampler_max_train_iters,
+                goal_pursuit_horizon=args.goal_pursuit_horizon,
+                planning_timeout=args.planning_timeout,
+                competence_window_size=args.competence_window_size,
+                competence_recency_size=args.competence_recency_size,
+                reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
+                reproduce_predicators_practice_target_history=(
+                    args.reproduce_predicators_practice_target_history
+                ),
+                reproduce_predicators_explore_target_only=(
+                    args.reproduce_predicators_explore_target_only
+                ),
+                pomdp_horizon=args.pomdp_horizon,
+                pomdp_num_samples=args.pomdp_num_samples,
+                pomdp_hard_budget=args.pomdp_hard_budget,
+                pomdp_practice_cost=args.pomdp_practice_cost,
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
