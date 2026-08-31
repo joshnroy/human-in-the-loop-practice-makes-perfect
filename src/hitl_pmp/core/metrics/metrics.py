@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from hitl_pmp.core.method.types import PracticeTargetTally, SkillPracticeTally
 
-from .types import EvaluationBreakdown, TaskOutcome
+from .types import EvaluationBreakdown, PracticeSessionEnd, TaskOutcome
 
 
 class Metrics(BaseModel):
@@ -30,6 +30,7 @@ class Metrics(BaseModel):
 
     # Each tuple is (transitions, solved, total).
     evaluations: list[tuple[int, int, int]] = Field(default_factory=list)
+    practice_session_ends: list[PracticeSessionEnd] = Field(default_factory=list)
     # Per-task detail behind each evaluations entry, when the caller supplies it.
     # Defaults to empty, so every stats.json written before this field existed
     # still loads, and a caller that only has aggregate counts stays valid.

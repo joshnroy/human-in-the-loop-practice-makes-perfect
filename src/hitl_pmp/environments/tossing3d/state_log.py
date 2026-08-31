@@ -27,6 +27,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from hitl_pmp.core.log_timing import LogTiming
+
 from .layout import Tossing3DLayout
 
 
@@ -89,7 +91,7 @@ class StateLogWriter(BaseModel):
         self._write(obj=TickEvent(state={k: tuple(v) for k, v in state.items()}).model_dump())
 
     def _write(self, *, obj: dict[str, Any]) -> None:
-        self._file.write(json.dumps(obj) + "\n")
+        self._file.write(LogTiming.encode(record=obj))
         self._file.flush()
 
     def close(self) -> None:

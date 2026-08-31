@@ -8,7 +8,7 @@ import numpy as np
 
 from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete, Method
 from hitl_pmp.core.metrics.metrics import Metrics
-from hitl_pmp.core.metrics.types import TaskOutcome
+from hitl_pmp.core.metrics.types import PracticeSessionEnd, TaskOutcome
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.problem import Problem
 from hitl_pmp.core.problem.tasks.types import Task
@@ -465,10 +465,22 @@ class PracticeLoop:
                     recorder.record_period_reset(state=state)
                 if period_recorder is not None:
                     period_recorder.record_period_reset(state=state)
+            session_end = PracticeSessionEnd(
+                cycle_index=cycle,
+                reason="session_action_cap",
+                actions_executed=max_steps_per_interaction,
+                action_limit=max_steps_per_interaction,
+            )
             for step in range(max_steps_per_interaction):
                 try:
                     labeled_action = policy(state)
+                    if period_recorder is not None:
+                        period_recorder.action_values = method.practice_action_values()
+                        period_recorder.competences = method.practice_skill_competences()
                 except HumanCubeBinResetRequested as request:
+                    if period_recorder is not None:
+                        period_recorder.action_values = method.practice_action_values()
+                        period_recorder.competences = method.practice_skill_competences()
                     # The robot asked for a PARTIAL reset -- see that exception's own
                     # docstring for why this cannot describe a target_state
                     # (Problem.execute_movables_reset takes none). The period
@@ -499,7 +511,14 @@ class PracticeLoop:
                             state=state, step_index=step, transitions=num_online_transitions
                         )
                     continue
-                except InteractionComplete:
+                except InteractionComplete as completion:
+                    session_end.reason = (
+                        "planner_stop" if completion.planner_stop else "interaction_complete"
+                    )
+                    session_end.actions_executed = step
+                    if period_recorder is not None:
+                        period_recorder.action_values = method.practice_action_values()
+                        period_recorder.competences = method.practice_skill_competences()
                     # The Method has nothing further worth practicing. Ending
                     # early is normal, and the steps not taken are not charged --
                     # see InteractionComplete's own docstring for why the count is
@@ -552,7 +571,11 @@ class PracticeLoop:
                         period_recorder.record_interval_reset(
                             state=state, step_index=step, transitions=num_online_transitions
                         )
+            metrics.practice_session_ends.append(session_end)
             if period_recorder is not None:
+                period_recorder.record_session_end(
+                    state=state, session_end=session_end, transitions=num_online_transitions
+                )
                 # After the step loop, before evaluation -- the practice file is a
                 # finished, playable clip from this point on, and evaluation manages
                 # its own file (and its own substep-recording scope) independently.

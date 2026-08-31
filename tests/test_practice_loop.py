@@ -627,6 +627,7 @@ class _EarlyStoppingMethod(_FakeMethod):
 
     steps_before_stopping: int = 2
     steps_taken: int = 0
+    planner_stop: bool = False
 
     def get_practice_policy(self, *, task: Task) -> Policy:
         del task
@@ -638,19 +639,22 @@ class _EarlyStoppingMethod(_FakeMethod):
     def _early_action(self, *, state: State) -> LabeledAction:
         del state
         if self.steps_taken >= self.steps_before_stopping:
-            raise InteractionComplete
+            raise InteractionComplete(planner_stop=self.planner_stop)
         self.steps_taken += 1
         return LabeledAction(action=np.array([0.0]), label="early")
 
 
-def test_run_counts_only_the_transitions_actually_taken() -> None:
+@pytest.mark.parametrize("planner_stop", [False, True])
+def test_run_counts_only_the_transitions_actually_taken(*, planner_stop: bool) -> None:
     """Data-driven, matching predicators' `num_online_transitions += sum(
     len(result.actions) for result in interaction_results)`: an interaction period
     that ends early contributes only the steps it really took, not its budget."""
     env = _FakeEnv()
     event_log = _EventLog()
     problem = _FakeProblem(env=env, tasks=_FakeTasks(env=env), event_log=event_log)
-    method = _EarlyStoppingMethod(env=env, event_log=event_log, steps_before_stopping=2)
+    method = _EarlyStoppingMethod(
+        env=env, event_log=event_log, steps_before_stopping=2, planner_stop=planner_stop
+    )
     metrics = Metrics()
 
     PracticeLoop.run(
@@ -665,6 +669,24 @@ def test_run_counts_only_the_transitions_actually_taken() -> None:
     transitions_recorded = [transitions for transitions, _, _ in metrics.evaluations]
     # 0 before any practice, then only the 2 steps actually taken -- not 100.
     assert transitions_recorded == [0, 2]
+    expected_reason = "planner_stop" if planner_stop else "interaction_complete"
+    assert metrics.practice_session_ends[0].reason == expected_reason
+    assert metrics.practice_session_ends[0].actions_executed == 2
+
+
+def test_session_cap_is_not_a_stop_decision() -> None:
+    problem, method, metrics = _build()
+    PracticeLoop.run(
+        problem=problem,
+        method=method,
+        metrics=metrics,
+        num_cycles=2,
+        max_steps_per_interaction=3,
+        num_test_tasks=1,
+    )
+    assert [end.reason for end in metrics.practice_session_ends] == ["session_action_cap"] * 2
+    assert [end.actions_executed for end in metrics.practice_session_ends] == [3, 3]
+    assert [end.cycle_index for end in metrics.practice_session_ends] == [0, 1]
 
 
 def test_early_stopping_still_ends_the_cycle_and_evaluates() -> None:
@@ -1878,6 +1900,8 @@ def test_a_cube_bin_reset_continues_the_period_rather_than_ending() -> None:
     )
     assert metrics.num_human_interventions()[1] == 3
     assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 6]
+    assert metrics.practice_session_ends[0].reason == "session_action_cap"
+    assert metrics.practice_session_ends[0].actions_executed == 9
 
 
 def test_a_cube_bin_reset_goes_through_execute_movables_reset_not_execute_human_command() -> None:

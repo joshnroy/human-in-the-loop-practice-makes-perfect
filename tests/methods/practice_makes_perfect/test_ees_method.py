@@ -1295,8 +1295,9 @@ def test_explicit_stop_skips_the_bootstrap_fallback() -> None:
     task = Task(initial_state=task.initial_state, goal=Goal(atoms=frozenset()))
     env.set_state(state=task.initial_state)
 
-    with pytest.raises(InteractionComplete):
+    with pytest.raises(InteractionComplete) as completion:
         method.get_practice_policy(task=task)(env.get_current_state())
+    assert completion.value.planner_stop
     assert STOP_SKILL.skill not in method.skills()
     assert method.practice_target_outcomes() == {}
     assert method.total_observations() == 0

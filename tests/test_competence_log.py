@@ -133,6 +133,8 @@ def test_every_record_is_one_json_object_per_line(*, recording_on: Path) -> None
     assert records, "a 2-cycle EES run on Tossing Room practices at least one skill"
     for record in records:
         assert set(record) == {
+            "timestamp",
+            "elapsed_seconds",
             "checkpoint",
             "num_online_transitions",
             "skill",

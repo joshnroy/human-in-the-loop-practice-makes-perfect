@@ -56,7 +56,7 @@ class Tossing3DRenderer(Renderer):
     # JSON, matching `camera_width`/`camera_height`). 48 keeps the total height 528, and
     # both dimensions divisible by 16 -- ffmpeg's macro_block_size, which every renderer
     # in this repo is sized against.
-    caption_height: ClassVar[int] = 48
+    caption_height: ClassVar[int] = 64
     caption_padding: ClassVar[int] = 5
     caption_font_size: ClassVar[int] = 11
     caption_background: ClassVar[tuple[int, int, int]] = (16, 16, 16)
@@ -115,6 +115,15 @@ class Tossing3DRenderer(Renderer):
         in_region = IN_BIN.holds(state, (env.cube, env.bin))
         x_min = state.get(obj=env.bin, feature_name="x_min")
         x_max = state.get(obj=env.bin, feature_name="x_max")
+        cube_size = " x ".join(
+            f"{state.get(obj=env.cube, feature_name=name):.3f}" for name in ("bb_x", "bb_y", "bb_z")
+        )
+        goal_dimensions = (
+            state.get(obj=env.bin, feature_name=axis + "_max")
+            - state.get(obj=env.bin, feature_name=axis + "_min")
+            for axis in ("x", "y", "z")
+        )
+        goal_size = " x ".join(f"{value:.3f}" for value in goal_dimensions)
         return [
             # The scene name used to be stamped here too, because the same throw scored
             # True on the coincident config and False on stock and a viewer could not
@@ -125,6 +134,7 @@ class Tossing3DRenderer(Renderer):
             f"Tossing3D-{env.variant} | {label or 'initial state'}",
             f"cube x={x:.4f} y={y:.4f} z={z:.4f} | bin x in [{x_min:.4f}, {x_max:.4f}] "
             f"| InBin = {in_region}",
+            f"cube dimensions: {cube_size} m | scored region: {goal_size} m",
         ]
 
     @staticmethod
