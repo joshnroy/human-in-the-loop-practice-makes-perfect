@@ -3,6 +3,8 @@
 import math
 from functools import cache
 
+import numpy as np
+
 from .types import (
     NUM_SAMPLES,
     STOP_ACTION,
@@ -79,7 +81,8 @@ class ExpectimaxSearch:
                 raise ValueError(f"stop value must be finite, got {current_pomdp_value}")
             sample_values.append(current_pomdp_value)
 
-        current_best_value = sum(value / self.num_samples for value in sample_values)
+        # Scale before summing so large finite samples do not overflow the average.
+        current_best_value = float(np.sum(np.asarray(sample_values) / self.num_samples))
         current_best_action = STOP_ACTION
         if horizon == 0:
             return current_best_value, current_best_action
