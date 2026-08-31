@@ -163,6 +163,7 @@ jobs:
             tests/environments/lightswitch \
             tests/methods \
             tests/humans \
+            tests/analysis/test_pomdp_tree_explorer.py \
             tests/test_*.py
         env:
           FD_EXEC_PATH: ${{ github.workspace }}/downward

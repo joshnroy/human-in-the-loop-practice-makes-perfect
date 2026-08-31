@@ -16,6 +16,7 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
 from hitl_pmp.planning.grounding import SkillGrounder
 
 from .expectimax import solve_belief_space_expectimax
+from .search_html import SearchHtml
 from .tossing3d_model import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
@@ -227,6 +228,14 @@ class Tossing3DPomdpMethod(EesMethod):
             search=[] if trace is None else trace.events,
         )
         if action == STOP_ACTION:
+            if trace is not None and self.decision_log is not None:
+                SearchHtml.write(
+                    path=self.decision_log.parent
+                    / "search_trees"
+                    / f"cycle_{self._cycle_index:04d}_decision_{self._decision_index:04d}.html",
+                    trace=trace,
+                    budget=self.pomdp_hard_budget,
+                )
             return [STOP_SKILL]
         assert isinstance(action, Tossing3DAction)
 
