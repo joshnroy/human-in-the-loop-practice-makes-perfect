@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 from pydantic import ValidationError
@@ -69,6 +71,15 @@ def test_competence_chart_is_read_only_and_labels_fixed_assumptions() -> None:
     assert values["ask_for_reset_cube_bin_only (fixed)"] == 1.0
     assert "STOP" not in values
     assert method.pomdp_state == before
+
+
+def test_stop_exports_complete_html(*, tmp_path: Path) -> None:
+    method = _build(pomdp_hard_budget=0, decision_log=tmp_path / "decisions.jsonl")
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.select_skill_to_practice(true_atoms=pick.preconditions)
+    html = tmp_path / "search_trees" / "cycle_0000_decision_0001.html"
+    assert html.is_file()
+    assert '"budget": 0' in html.read_text()
 
 
 def test_toss_evidence_and_training_are_separate_until_refit() -> None:
