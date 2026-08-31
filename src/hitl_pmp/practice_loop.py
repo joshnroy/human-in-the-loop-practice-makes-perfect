@@ -477,10 +477,12 @@ class PracticeLoop:
                     if period_recorder is not None:
                         period_recorder.action_values = method.practice_action_values()
                         period_recorder.competences = method.practice_skill_competences()
+                        period_recorder.learning_rates = method.practice_skill_learning_rates()
                 except HumanCubeBinResetRequested as request:
                     if period_recorder is not None:
                         period_recorder.action_values = method.practice_action_values()
                         period_recorder.competences = method.practice_skill_competences()
+                        period_recorder.learning_rates = method.practice_skill_learning_rates()
                     # The robot asked for a PARTIAL reset -- see that exception's own
                     # docstring for why this cannot describe a target_state
                     # (Problem.execute_movables_reset takes none). The period
@@ -519,6 +521,7 @@ class PracticeLoop:
                     if period_recorder is not None:
                         period_recorder.action_values = method.practice_action_values()
                         period_recorder.competences = method.practice_skill_competences()
+                        period_recorder.learning_rates = method.practice_skill_learning_rates()
                     # The Method has nothing further worth practicing. Ending
                     # early is normal, and the steps not taken are not charged --
                     # see InteractionComplete's own docstring for why the count is

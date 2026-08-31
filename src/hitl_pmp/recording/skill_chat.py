@@ -24,6 +24,7 @@ class SkillChatOverlay:
         history: list[str],
         values: dict[str, float] | None = None,
         competences: dict[str, float] | None = None,
+        learning_rates: dict[str, float] | None = None,
     ) -> np.ndarray:
         height, scene_width = frame.shape[:2]
         canvas = Image.new(
@@ -34,7 +35,9 @@ class SkillChatOverlay:
         lefts = [scene_width + index * SkillChatOverlay.width + 16 for index in range(4)]
         SkillChatOverlay.draw_history(draw=draw, left=lefts[0], height=height, history=history)
         SkillChatOverlay.draw_competences(draw=draw, left=lefts[1], estimates=competences or {})
-        SkillChatOverlay.draw_improvement_potentials(draw=draw, left=lefts[2], values=values or {})
+        SkillChatOverlay.draw_learning_rates(
+            draw=draw, left=lefts[2], estimates=learning_rates or {}
+        )
         SkillChatOverlay.draw_values(draw=draw, left=lefts[3], values=values or {})
         return np.asarray(canvas)
 
@@ -61,7 +64,7 @@ class SkillChatOverlay:
         SkillChatOverlay.draw_chart(
             draw=draw,
             left=left,
-            title="POMDP COMPETENCES",
+            title="THETA 1: COMPETENCE",
             values=estimates,
             color=(70, 160, 230),
             fixed_range=(0.0, 1.0),
@@ -69,16 +72,17 @@ class SkillChatOverlay:
         )
 
     @staticmethod
-    def draw_improvement_potentials(
-        *, draw: ImageDraw.ImageDraw, left: int, values: dict[str, float]
+    def draw_learning_rates(
+        *, draw: ImageDraw.ImageDraw, left: int, estimates: dict[str, float]
     ) -> None:
         SkillChatOverlay.draw_chart(
             draw=draw,
             left=left,
-            title="POMDP IMPROVEMENT\nPOTENTIALS",
-            values=SkillChatOverlay.improvement_potentials(values=values),
+            title="THETA 2: LEARNING RATE",
+            values=estimates,
             color=(70, 200, 175),
-            precision=6,
+            fixed_range=(0.0, 1.0),
+            precision=4,
         )
 
     @staticmethod
@@ -133,17 +137,3 @@ class SkillChatOverlay:
             draw.line((zero, bar_top - 2, zero, bar_top + 16), fill=(240, 240, 240))
             draw.text((left, bar_top + 18), f"{value:.{precision}f}", font=small, fill=item_color)
             top = bar_top + 48
-
-    @staticmethod
-    def improvement_potentials(*, values: dict[str, float]) -> dict[str, float]:
-        """Per-practice-action advantage over choosing STOP now."""
-        stop = values.get("STOP")
-        if stop is None:
-            return {}
-        return {name: value - stop for name, value in values.items() if name != "STOP"}
-
-    @staticmethod
-    def improvement_potential(*, values: dict[str, float]) -> float | None:
-        """Best signed estimated advantage of practicing, for compatibility."""
-        potentials = SkillChatOverlay.improvement_potentials(values=values)
-        return max(potentials.values()) if potentials else None

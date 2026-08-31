@@ -16,7 +16,12 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
 from hitl_pmp.planning.grounding import SkillGrounder
 
 from .expectimax import solve_belief_space_expectimax
-from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, RESET_SKILL, TOSS_SKILL
+from .tossing3d_constants import (
+    OPEN_GRIPPER_SKILL,
+    PICK_SKILL,
+    RESET_SKILL,
+    TOSS_SKILL,
+)
 from .tossing3d_model import Tossing3DPracticeModel
 from .tossing3d_observation_model import (
     make_default_tossing3d_belief,
@@ -61,6 +66,17 @@ class Tossing3DPomdpMethod(EesMethod):
         }
         if self.ask_for_reset_cube_bin_cost is not None:
             estimates[RESET_SKILL + " (fixed)"] = 1.0
+        return estimates
+
+    def practice_skill_learning_rates(self) -> dict[str, float]:
+        estimates = {
+            PICK_SKILL + " (belief mean)": self._pomdp_state.pick_belief.mean_learning_rate,
+            TOSS_SKILL + " (belief mean)": self._pomdp_state.toss_belief.mean_learning_rate,
+            OPEN_GRIPPER_SKILL
+            + " (belief mean)": self._pomdp_state.open_gripper_belief.mean_learning_rate,
+        }
+        if self._pomdp_model.reset_cost is not None:
+            estimates[RESET_SKILL + " (fixed)"] = 0.0
         return estimates
 
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
