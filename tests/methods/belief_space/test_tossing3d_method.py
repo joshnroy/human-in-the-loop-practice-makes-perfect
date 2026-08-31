@@ -40,9 +40,8 @@ def _grounding(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
 def test_selector_uses_current_symbolic_state_without_starting_simulator() -> None:
     method = _build()
     pick = _grounding(method=method, name=PICK_SKILL)
-    selection = method.select_practice(true_atoms=pick.preconditions)
-    assert not selection.stop
-    assert selection.candidates == (pick,)
+    selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
+    assert selection == [pick]
     assert method.env._backend is None  # noqa: SLF001 (pin lazy simulator construction)
 
 
@@ -50,7 +49,7 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     method = _build()
     pick = _grounding(method=method, name=PICK_SKILL)
     before = method.pomdp_state
-    method.record_action_dispatch(ground_skill=pick)
+    method.record_action_cost(ground_skill=pick)
     method.observe_outcome(ground_skill=pick, success=True)
     after = method.pomdp_state
     assert after.accumulated_cost == 1.0
@@ -94,5 +93,5 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     method = _build(ask_for_reset_cube_bin_cost=0.25)
     reset = method.skill_provider.human_cube_bin_reset_skill()
     assert reset is not None
-    method.record_action_dispatch(ground_skill=reset)
+    method.record_action_cost(ground_skill=reset)
     assert method.pomdp_state.accumulated_cost == 0.25

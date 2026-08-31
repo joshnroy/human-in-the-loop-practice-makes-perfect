@@ -5,22 +5,25 @@ from pydantic import Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
+    STOP_SKILL,
     EesMethod,
-    PracticeSelection,
 )
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .expectimax import solve_expectimax
+from .expectimax import solve_belief_space_expectimax
 from .tossing3d_model import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
+    Tossing3DAction,
     Tossing3DBeliefState,
     Tossing3DEnvironmentState,
     Tossing3DPracticeModel,
+    Tossing3DSearchState,
     make_default_tossing3d_belief,
 )
+from .types import STOP_ACTION
 
 
 class Tossing3DPomdpMethod(EesMethod):
@@ -37,6 +40,7 @@ class Tossing3DPomdpMethod(EesMethod):
         super().model_post_init(__context)
         self._pomdp_state = make_default_tossing3d_belief()
         self._pomdp_model = Tossing3DPracticeModel(
+            seed=self.seed,
             practice_cost=self.pomdp_practice_cost,
             exploration_epsilon=self.exploration_epsilon,
             reset_cost=self.ask_for_reset_cube_bin_cost,
@@ -69,7 +73,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 was_random_exploration=was_random_exploration,
             )
 
-    def record_action_dispatch(self, *, ground_skill: GroundSkill) -> None:
+    def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         """Charge each attempted action immediately, including a final-step reset."""
         action_cost = {
             PICK_SKILL: self._pomdp_model.pick_cost,
@@ -126,20 +130,21 @@ class Tossing3DPomdpMethod(EesMethod):
             )
         return Tossing3DEnvironmentState.STRANDED
 
-    def select_practice(self, *, true_atoms: frozenset[GroundAtom]) -> PracticeSelection:
+    def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         environment_state = self._environment_state(true_atoms=true_atoms)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"environment_state": environment_state}
         )
-        result = solve_expectimax(
-            state=self._pomdp_state,
+        _, action = solve_belief_space_expectimax(
+            environment_state=Tossing3DSearchState(state=self._pomdp_state),
+            belief_state=self._pomdp_state,
+            summed_cost=self._pomdp_state.accumulated_cost,
             horizon=self.pomdp_horizon,
-            stop_value=self._pomdp_model.stop_value,
-            actions=self._pomdp_model.actions,
-            outcomes=self._pomdp_model.outcomes,
+            model=self._pomdp_model,
         )
-        if result.action is None:
-            return PracticeSelection(stop=True)
+        if action == STOP_ACTION:
+            return [STOP_SKILL]
+        assert isinstance(action, Tossing3DAction)
 
         skills = self.skills()
         if self.ask_for_reset_cube_bin_cost is not None:
@@ -151,12 +156,10 @@ class Tossing3DPomdpMethod(EesMethod):
             objects=self.objects(),
             true_atoms=true_atoms,
         )
-        candidates = tuple(
-            grounding for grounding in groundings if grounding.skill.name == result.action
-        )
+        candidates = [grounding for grounding in groundings if grounding.skill.name == action.name]
         if not candidates:
             raise RuntimeError(
-                f"POMDP selected inapplicable Tossing3D skill {result.action!r} in "
+                f"POMDP selected inapplicable Tossing3D skill {action.name!r} in "
                 f"{environment_state.value}"
             )
-        return PracticeSelection(candidates=candidates)
+        return candidates
