@@ -1,9 +1,5 @@
 import argparse
-<<<<<<< HEAD
-=======
 import sys
-from pathlib import Path
->>>>>>> 82560b0 (Support hard practice budgets for Tossing3D horizon sweeps)
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
