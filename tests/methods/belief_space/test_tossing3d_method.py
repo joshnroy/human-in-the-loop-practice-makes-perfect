@@ -55,13 +55,16 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     after = method.pomdp_state
     assert after.accumulated_cost == 1.0
     assert after.toss_belief == before.toss_belief
+    assert after.pick_belief.mean_competence > before.pick_belief.mean_competence
+    assert after.pending_pick_examples == 1
 
 
 def test_competence_chart_is_read_only_and_labels_fixed_assumptions() -> None:
     method = _build(ask_for_reset_cube_bin_cost=0.00001)
     before = method.pomdp_state
     values = method.practice_skill_competences()
-    assert values["PickCube (fixed)"] == 0.5
+    assert values["PickCube (belief mean)"] == 0.5
+    assert values["OpenGripper (belief mean)"] == 0.5
     assert values["MoveToTossLocationAndToss (belief mean)"] == before.toss_belief.mean_competence
     assert values["ask_for_reset_cube_bin_only (fixed)"] == 1.0
     assert "STOP" not in values

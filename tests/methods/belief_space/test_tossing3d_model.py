@@ -59,9 +59,11 @@ def test_search_protocol_charges_accumulated_cost_once() -> None:
     state = Tossing3DBeliefState(
         environment_state=Tossing3DEnvironmentState.READY,
         toss_belief=_point_belief(competence=0.8, learning_rate=0.0),
+        pick_belief=_point_belief(competence=0.5, learning_rate=0.0),
+        open_gripper_belief=_point_belief(competence=1.0, learning_rate=0.0),
         accumulated_cost=3.0,
     )
-    model = Tossing3DPracticeModel(pick_competence=0.5, practice_cost=0.1)
+    model = Tossing3DPracticeModel(practice_cost=0.1)
     value, action = solve_belief_space_expectimax(
         environment_state=Tossing3DSearchState(state=state),
         belief_state=state,
@@ -123,12 +125,72 @@ def test_only_physically_applicable_actions_are_returned() -> None:
     assert tuple(model.actions(closed)) == (OPEN_GRIPPER_SKILL,)
 
 
-def test_pick_is_a_fixed_environment_transition_not_a_learnable_arm() -> None:
+def test_pick_outcomes_update_only_its_own_posterior() -> None:
     state = make_default_tossing3d_belief()
-    outcomes = Tossing3DPracticeModel(pick_competence=0.75).outcomes(state, PICK_SKILL)
-    assert [outcome.probability for outcome in outcomes] == pytest.approx([0.75, 0.25])
+    outcomes = Tossing3DPracticeModel().outcomes(state, PICK_SKILL)
+    assert [outcome.probability for outcome in outcomes] == pytest.approx([0.5, 0.5])
     assert all(outcome.next_state.toss_belief == state.toss_belief for outcome in outcomes)
     assert all(outcome.next_state.pending_training_examples == 0 for outcome in outcomes)
+    assert all(outcome.next_state.pending_pick_examples == 1 for outcome in outcomes)
+    assert outcomes[0].next_state.pick_belief.mean_competence > state.pick_belief.mean_competence
+    assert outcomes[1].next_state.pick_belief.mean_competence < state.pick_belief.mean_competence
+
+
+@pytest.mark.parametrize("skill_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
+def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
+    state = make_default_tossing3d_belief()
+    for _ in range(20):
+        for success in [True, False] * 5:
+            state = Tossing3DPracticeModel.observe_robot_skill(
+                state=state, skill_name=skill_name, success=success
+            )
+        state = state.after_refit()
+    belief = state.pick_belief if skill_name == PICK_SKILL else state.open_gripper_belief
+    stationary_mass = sum(
+        item.probability for item in belief.hypotheses if item.hypothesis.learning_rate == 0
+    )
+    assert stationary_mass > 0.99
+    assert belief.mean_competence == pytest.approx(0.5, abs=0.01)
+
+
+def test_first_session_cannot_identify_learning_rate() -> None:
+    state = make_default_tossing3d_belief()
+    for success in [True, False] * 50:
+        state = Tossing3DPracticeModel.observe_robot_skill(
+            state=state, skill_name=PICK_SKILL, success=success
+        )
+    stationary_mass = sum(
+        item.probability
+        for item in state.pick_belief.hypotheses
+        if item.hypothesis.learning_rate == 0
+    )
+    assert stationary_mass == pytest.approx(0.5)
+
+
+def test_open_gripper_success_is_inferred_not_assumed() -> None:
+    state = make_default_tossing3d_belief(
+        environment_state=Tossing3DEnvironmentState.GRIPPER_CLOSED
+    )
+    outcomes = Tossing3DPracticeModel().outcomes(state, OPEN_GRIPPER_SKILL)
+    assert [o.probability for o in outcomes] == pytest.approx([0.5, 0.5])
+    assert outcomes[1].next_state.environment_state == state.environment_state
+    for _ in range(100):
+        state = Tossing3DPracticeModel.observe_robot_skill(
+            state=state, skill_name=OPEN_GRIPPER_SKILL, success=True
+        )
+    assert state.open_gripper_belief.mean_competence > 0.99
+    projected = state.open_gripper_belief.after_refit(training_examples=1)
+    assert projected.mean_competence - state.open_gripper_belief.mean_competence < 0.001
+
+
+def test_pending_examples_predict_improvement_without_changing_current_competence() -> None:
+    state = make_default_tossing3d_belief()
+    observed = Tossing3DPracticeModel.observe_robot_skill(
+        state=state, skill_name=PICK_SKILL, success=True
+    )
+    assert observed.pick_belief == state.pick_belief.condition(success=True)
+    assert observed.after_refit().pick_belief.mean_competence > observed.pick_belief.mean_competence
+    assert observed.after_refit().pending_pick_examples == 0
 
 
 def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
@@ -158,9 +220,11 @@ def test_stop_value_solves_deployment_chain_and_charges_cost() -> None:
     state = Tossing3DBeliefState(
         environment_state=Tossing3DEnvironmentState.STRANDED,
         toss_belief=_point_belief(competence=0.8, learning_rate=0.0),
+        pick_belief=_point_belief(competence=0.5, learning_rate=0.0),
+        open_gripper_belief=_point_belief(competence=1.0, learning_rate=0.0),
         accumulated_cost=3.0,
     )
-    model = Tossing3DPracticeModel(pick_competence=0.5, practice_cost=0.1)
+    model = Tossing3DPracticeModel(practice_cost=0.1)
     assert model.stop_value(state) == pytest.approx((0.5 + 0.5 * 0.5) * 0.8 - 0.3)
 
 

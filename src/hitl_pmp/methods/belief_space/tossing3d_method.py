@@ -53,9 +53,10 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def practice_skill_competences(self) -> dict[str, float]:
         estimates = {
-            PICK_SKILL + " (fixed)": self._pomdp_model.pick_competence,
+            PICK_SKILL + " (belief mean)": self._pomdp_state.pick_belief.mean_competence,
             TOSS_SKILL + " (belief mean)": self._pomdp_state.toss_belief.mean_competence,
-            OPEN_GRIPPER_SKILL + " (fixed)": 1.0,
+            OPEN_GRIPPER_SKILL
+            + " (belief mean)": self._pomdp_state.open_gripper_belief.mean_competence,
         }
         if self._pomdp_model.reset_cost is not None:
             estimates[RESET_SKILL + " (fixed)"] = 1.0
@@ -112,6 +113,10 @@ class Tossing3DPomdpMethod(EesMethod):
                 success=success,
                 was_random_exploration=was_random_exploration,
             )
+        elif name in {PICK_SKILL, OPEN_GRIPPER_SKILL}:
+            self._pomdp_state = self._pomdp_model.observe_robot_skill(
+                state=self._pomdp_state, skill_name=name, success=success
+            )
         self.record_diagnostic(
             event="outcome",
             skill=name,
@@ -152,7 +157,11 @@ class Tossing3DPomdpMethod(EesMethod):
             self._pomdp_state = self._pomdp_model.record_training_example(state=self._pomdp_state)
 
     def end_cycle(self) -> None:
-        """Apply latent improvement only after the real sampler has been refit."""
+        """Advance inferred learning curves at the session boundary.
+
+        For parameter-free skills this is a forecast, not a controller update.
+        Subsequent outcomes reweight improving versus stationary hypotheses.
+        """
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
         self._pomdp_state = self._pomdp_state.after_refit()
