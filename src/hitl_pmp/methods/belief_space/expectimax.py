@@ -36,8 +36,7 @@ def solve_belief_space_expectimax(
     Stopping wins ties. Each call owns a fresh recursive cache, so later searches
     resample theta and see updated model parameters.
     """
-    if num_samples < 1:
-        raise ValueError("num_samples must be positive")
+    assert num_samples >= 1, "num_samples must be positive"
     solver = ExpectimaxSearch(model=model, num_samples=num_samples)
     return solver.cached_solve_belief_space_expectimax(
         environment_state=environment_state,
@@ -64,10 +63,10 @@ class ExpectimaxSearch:
         belief_state: BeliefState,
         horizon: int,
     ) -> tuple[float, POMDPAction]:
-        if horizon < 0:
-            raise ValueError(f"horizon must be non-negative, got {horizon}")
-        if not math.isfinite(summed_cost) or summed_cost < 0:
-            raise ValueError("summed_cost must be finite and non-negative")
+        assert horizon >= 0, f"horizon must be non-negative, got {horizon}"
+        assert math.isfinite(summed_cost) and summed_cost >= 0, (
+            "summed_cost must be finite and non-negative"
+        )
 
         sample_values = []
         for _ in range(self.num_samples):
@@ -76,8 +75,9 @@ class ExpectimaxSearch:
             current_pomdp_value = self.model.score_pomdp_value_from_policy_value_and_cost(
                 policy_value=current_policy_value, summed_cost=summed_cost
             )
-            if not math.isfinite(current_pomdp_value):
-                raise ValueError(f"stop value must be finite, got {current_pomdp_value}")
+            assert math.isfinite(current_pomdp_value), (
+                f"stop value must be finite, got {current_pomdp_value}"
+            )
             sample_values.append(current_pomdp_value)
 
         current_best_value = float(np.mean(sample_values))
@@ -94,11 +94,11 @@ class ExpectimaxSearch:
                 practice_action=practice_action,
                 belief_state=belief_state,
             )
-            if not next_states:
-                raise ValueError(f"action {practice_action!r} has no chance outcomes")
+            assert next_states, f"action {practice_action!r} has no chance outcomes"
             for potential_next_environment_state, sampled_cost in next_states:
-                if not math.isfinite(sampled_cost) or sampled_cost < 0:
-                    raise ValueError("sampled_cost must be finite and non-negative")
+                assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
+                    "sampled_cost must be finite and non-negative"
+                )
                 next_belief_state = self.model.update_belief_state(
                     belief_state=belief_state,
                     environment_state=environment_state,
@@ -118,15 +118,15 @@ class ExpectimaxSearch:
                     practice_action=practice_action,
                     belief_state=belief_state,
                 )
-                if not math.isfinite(probability) or probability <= 0.0:
-                    raise ValueError(
-                        f"chance probability must be finite and positive, got {probability}"
-                    )
+                assert math.isfinite(probability) and probability > 0.0, (
+                    f"chance probability must be finite and positive, got {probability}"
+                )
                 value_of_state += probability * value_of_next_state
                 total_probability += probability
 
-            if not math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12):
-                raise ValueError(f"chance probabilities sum to {total_probability}, not 1")
+            assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
+                f"chance probabilities sum to {total_probability}, not 1"
+            )
             # Compare only after summing every successor, including negative values.
             if current_best_value < value_of_state:
                 current_best_value = value_of_state

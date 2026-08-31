@@ -291,7 +291,7 @@ def test_averaging_identical_samples_preserves_value() -> None:
 def test_rejects_invalid_chance_outcomes(
     *, branches: list[tuple[BaseEnvironmentState, float, float]]
 ) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(AssertionError):
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
@@ -319,7 +319,7 @@ def test_sampled_successors_need_not_be_distinct() -> None:
 
 def test_rejects_negative_horizon_before_evaluating_model() -> None:
     model = Model()
-    with pytest.raises(ValueError, match="horizon must be non-negative"):
+    with pytest.raises(AssertionError, match="horizon must be non-negative"):
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
@@ -332,7 +332,7 @@ def test_rejects_negative_horizon_before_evaluating_model() -> None:
 
 @pytest.mark.parametrize("num_samples", [0, -1])
 def test_rejects_nonpositive_sample_count(*, num_samples: int) -> None:
-    with pytest.raises(ValueError, match="num_samples must be positive"):
+    with pytest.raises(AssertionError, match="num_samples must be positive"):
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
@@ -345,7 +345,7 @@ def test_rejects_nonpositive_sample_count(*, num_samples: int) -> None:
 
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
 def test_rejects_nonfinite_stop_value(*, value: float) -> None:
-    with pytest.raises(ValueError, match="stop value must be finite"):
+    with pytest.raises(AssertionError, match="stop value must be finite"):
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=0.0,
@@ -359,7 +359,7 @@ def test_rejects_nonfinite_stop_value(*, value: float) -> None:
 @pytest.mark.parametrize("accumulated", [True, False])
 def test_rejects_invalid_costs(*, cost: float, accumulated: bool) -> None:
     model = Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, cost, 1.0)]})
-    with pytest.raises(ValueError, match="cost must be finite and non-negative"):
+    with pytest.raises(AssertionError, match="cost must be finite and non-negative"):
         solve_belief_space_expectimax(
             environment_state=INITIAL,
             summed_cost=cost if accumulated else 0.0,
