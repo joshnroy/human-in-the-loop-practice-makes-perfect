@@ -87,6 +87,8 @@ class ExpectimaxSearch:
 
         for practice_action in self.model.get_valid_actions(environment_state=environment_state):
             value_of_state = 0.0
+            total_probability = 0.0
+            # TODO: Should samples be drawn with or without replacement?
             next_states = self.model.sample_next_states(
                 environment_state=environment_state,
                 practice_action=practice_action,
@@ -94,8 +96,6 @@ class ExpectimaxSearch:
             )
             if not next_states:
                 raise ValueError(f"action {practice_action!r} has no chance outcomes")
-            # TODO: Clarify sampling versus enumeration and the corresponding weighting,
-            # including repeated outcomes. For now, follow the pseudocode's weighted sum.
             for potential_next_environment_state, sampled_cost in next_states:
                 if not math.isfinite(sampled_cost) or sampled_cost < 0:
                     raise ValueError("sampled_cost must be finite and non-negative")
@@ -123,6 +123,10 @@ class ExpectimaxSearch:
                         f"chance probability must be finite and positive, got {probability}"
                     )
                 value_of_state += probability * value_of_next_state
+                total_probability += probability
+
+            if not math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12):
+                raise ValueError(f"chance probabilities sum to {total_probability}, not 1")
             # Compare only after summing every successor, including negative values.
             if current_best_value < value_of_state:
                 current_best_value = value_of_state

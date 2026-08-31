@@ -281,6 +281,7 @@ def test_averaging_identical_samples_preserves_value() -> None:
     "branches",
     [
         [],
+        [(SUCCESS, 0.0, 0.4), (FAILURE, 0.0, 0.4)],
         [(SUCCESS, 0.0, 0.0), (FAILURE, 0.0, 1.0)],
         [(SUCCESS, 0.0, -0.1)],
         [(SUCCESS, 0.0, float("nan"))],
@@ -300,12 +301,9 @@ def test_rejects_invalid_chance_outcomes(
         )
 
 
-@pytest.mark.parametrize("probability", [0.4, 0.5])
-def test_sampled_successors_need_not_be_distinct_or_exhaustive(*, probability: float) -> None:
+def test_sampled_successors_need_not_be_distinct() -> None:
     model = Model(
-        transitions={
-            (INITIAL, PRACTICE): [(SUCCESS, 0.0, probability), (SUCCESS, 0.0, probability)]
-        },
+        transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 0.5), (SUCCESS, 0.0, 0.5)]},
         beliefs={SUCCESS: BeliefState(value=2.0)},
     )
     value, action = solve_belief_space_expectimax(
@@ -315,7 +313,7 @@ def test_sampled_successors_need_not_be_distinct_or_exhaustive(*, probability: f
         horizon=1,
         model=model,
     )
-    assert value == pytest.approx(2 * probability * 2.0)
+    assert value == 2.0
     assert action == PRACTICE
 
 
