@@ -281,15 +281,13 @@ def test_averaging_identical_samples_preserves_value() -> None:
     "branches",
     [
         [],
-        [(SUCCESS, 0.0, 0.4), (FAILURE, 0.0, 0.4)],
         [(SUCCESS, 0.0, 0.0), (FAILURE, 0.0, 1.0)],
         [(SUCCESS, 0.0, -0.1)],
         [(SUCCESS, 0.0, float("nan"))],
         [(SUCCESS, 0.0, float("inf"))],
-        [(SUCCESS, 0.0, 0.5), (SUCCESS, 0.0, 0.5)],
     ],
 )
-def test_rejects_malformed_chance_distributions(
+def test_rejects_invalid_chance_outcomes(
     *, branches: list[tuple[BaseEnvironmentState, float, float]]
 ) -> None:
     with pytest.raises(ValueError):
@@ -300,6 +298,25 @@ def test_rejects_malformed_chance_distributions(
             horizon=1,
             model=Model(transitions={(INITIAL, PRACTICE): branches}),
         )
+
+
+@pytest.mark.parametrize("probability", [0.4, 0.5])
+def test_sampled_successors_need_not_be_distinct_or_exhaustive(*, probability: float) -> None:
+    model = Model(
+        transitions={
+            (INITIAL, PRACTICE): [(SUCCESS, 0.0, probability), (SUCCESS, 0.0, probability)]
+        },
+        beliefs={SUCCESS: BeliefState(value=2.0)},
+    )
+    value, action = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.0),
+        horizon=1,
+        model=model,
+    )
+    assert value == pytest.approx(2 * probability * 2.0)
+    assert action == PRACTICE
 
 
 def test_rejects_negative_horizon_before_evaluating_model() -> None:

@@ -53,7 +53,7 @@ class BeliefSpaceModel(Protocol):
         practice_action: POMDPAction,
         belief_state: BeliefState,
     ) -> list[tuple[EnvironmentState, float]]:
-        """Return distinct successors and costs covering the transition distribution."""
+        """Return potential next environment states and their sampled costs."""
         ...
 
     def update_belief_state(
