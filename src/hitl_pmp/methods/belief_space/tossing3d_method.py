@@ -1,5 +1,9 @@
 """CLI-facing Tossing3D method backed by situated belief-space expectimax."""
 
+import json
+from pathlib import Path
+from typing import Any
+
 from pydantic import Field, PrivateAttr
 
 from hitl_pmp.core.method.types import GroundSkill
@@ -23,7 +27,7 @@ from .tossing3d_model import (
     Tossing3DSearchState,
     make_default_tossing3d_belief,
 )
-from .types import STOP_ACTION
+from .types import STOP_ACTION, SearchTrace
 
 
 class Tossing3DPomdpMethod(EesMethod):
@@ -32,9 +36,26 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_horizon: int = Field(default=3, ge=0)
     pomdp_practice_cost: float = Field(default=0.001, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
+    decision_log: Path | None = None
 
     _pomdp_state: Tossing3DBeliefState = PrivateAttr()
     _pomdp_model: Tossing3DPracticeModel = PrivateAttr()
+    _decision_index: int = PrivateAttr(default=0)
+    _cycle_index: int = PrivateAttr(default=0)
+
+    def record_diagnostic(self, *, event: str, **fields: Any) -> None:
+        if self.decision_log is None:
+            return
+        self.decision_log.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "event": event,
+            "seed": self.seed,
+            "cycle": self._cycle_index,
+            "decision": self._decision_index,
+            **fields,
+        }
+        with self.decision_log.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, allow_nan=False) + "\n")
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
@@ -72,6 +93,13 @@ class Tossing3DPomdpMethod(EesMethod):
                 success=success,
                 was_random_exploration=was_random_exploration,
             )
+        self.record_diagnostic(
+            event="outcome",
+            skill=name,
+            success=success,
+            random_exploration=was_random_exploration,
+            belief=self._pomdp_state.model_dump(mode="json"),
+        )
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         """Charge each attempted action immediately, including a final-step reset."""
@@ -85,6 +113,12 @@ class Tossing3DPomdpMethod(EesMethod):
             self._pomdp_state = self._pomdp_state.model_copy(
                 update={"accumulated_cost": self._pomdp_state.accumulated_cost + action_cost}
             )
+        self.record_diagnostic(
+            event="dispatch",
+            skill=ground_skill.skill.name,
+            cost=action_cost,
+            summed_cost=self._pomdp_state.accumulated_cost,
+        )
 
     def observe_sampler_outcome(
         self, *, skill_name: str, param_dim: int, sampler_input: list[float], success: bool
@@ -103,6 +137,8 @@ class Tossing3DPomdpMethod(EesMethod):
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
         self._pomdp_state = self._pomdp_state.after_refit()
+        self.record_diagnostic(event="refit", belief=self._pomdp_state.model_dump(mode="json"))
+        self._cycle_index += 1
 
     @staticmethod
     def _environment_state(*, true_atoms: frozenset[GroundAtom]) -> Tossing3DEnvironmentState:
@@ -131,16 +167,28 @@ class Tossing3DPomdpMethod(EesMethod):
         return Tossing3DEnvironmentState.STRANDED
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        self._decision_index += 1
         environment_state = self._environment_state(true_atoms=true_atoms)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"environment_state": environment_state}
         )
-        _, action = solve_belief_space_expectimax(
+        trace = SearchTrace() if self.decision_log is not None else None
+        value, action = solve_belief_space_expectimax(
             environment_state=Tossing3DSearchState(state=self._pomdp_state),
             belief_state=self._pomdp_state,
             summed_cost=self._pomdp_state.accumulated_cost,
             horizon=self.pomdp_horizon,
             model=self._pomdp_model,
+            trace=trace,
+        )
+        self.record_diagnostic(
+            event="decision",
+            atoms=sorted(str(atom) for atom in true_atoms),
+            action="STOP" if action == STOP_ACTION else action.model_dump(mode="json"),
+            value=value,
+            horizon=self.pomdp_horizon,
+            model=self._pomdp_model.model_dump(mode="json"),
+            search=[] if trace is None else trace.events,
         )
         if action == STOP_ACTION:
             return [STOP_SKILL]

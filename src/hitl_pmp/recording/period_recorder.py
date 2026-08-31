@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import ClassVar
 
@@ -10,6 +11,7 @@ from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
 
 from .overlay import StatusBarOverlay
+from .skill_chat import SkillChatOverlay
 from .types import LoopPhase, LoopStatus, ResetKind
 
 
@@ -76,6 +78,7 @@ class PeriodRecorder(BaseModel):
     task_index: int | None = None
     num_tasks: int | None = None
     episode_skills: list[str] = Field(default_factory=list)
+    practice_history: list[str] = Field(default_factory=list)
 
     video: VideoStream | None = None
 
@@ -87,6 +90,7 @@ class PeriodRecorder(BaseModel):
         class docstring for why that generalizes to a no-op on every domain but
         Tossing3D."""
         self.phase = LoopPhase.PRACTICE
+        self.practice_history = []
         self.cycle_index = cycle_index
         self.transitions = transitions
         self.task = task
@@ -117,6 +121,7 @@ class PeriodRecorder(BaseModel):
         status = self._status(
             step_index=step_index, num_steps=self.max_steps_per_interaction, skill=skill
         )
+        self.record_history(entry=f"{step_index + 1:02d}  {skill}")
         substeps = self.env.drain_substep_frames()
         rendered = self.renderer.render_substep_frames(
             frames=substeps, state=state, env=self.env, label=skill
@@ -140,6 +145,7 @@ class PeriodRecorder(BaseModel):
 
     def record_human_reset(self, *, state: State, step_index: int, transitions: int) -> None:
         self.transitions = transitions
+        self.record_history(entry=f"{step_index + 1:02d}  HUMAN RESET cube + bin")
         self._write(
             state=state,
             status=self._status(
@@ -154,6 +160,7 @@ class PeriodRecorder(BaseModel):
         self, *, state: State, step_index: int, transitions: int
     ) -> None:
         self.transitions = transitions
+        self.record_history(entry=f"{step_index + 1:02d}  STOP / interaction complete")
         self._write(
             state=state,
             status=self._status(
@@ -295,5 +302,21 @@ class PeriodRecorder(BaseModel):
             "begin_evaluation call is missing before this write."
         )
         composed = StatusBarOverlay.compose(frame=frame, status=status)
+        if self.phase is LoopPhase.PRACTICE:
+            composed = SkillChatOverlay.compose(frame=composed, history=self.practice_history)
         for _ in range(repeat):
             self.video.append(frame=composed)
+
+    def record_history(self, *, entry: str) -> None:
+        self.practice_history.append(entry)
+        self.practice_history = self.practice_history[-SkillChatOverlay.max_entries :]
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        with (self.output_dir / "practice_events.jsonl").open("a", encoding="utf-8") as stream:
+            stream.write(
+                json.dumps({
+                    "cycle": self.cycle_index,
+                    "transitions": self.transitions,
+                    "entry": entry,
+                })
+                + "\n"
+            )

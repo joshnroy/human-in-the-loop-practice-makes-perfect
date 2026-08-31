@@ -22,6 +22,7 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.renderer.renderer import Renderer, VideoStream
 from hitl_pmp.recording import period_recorder as period_recorder_module
 from hitl_pmp.recording.period_recorder import PeriodRecorder
+from hitl_pmp.recording.skill_chat import SkillChatOverlay
 from hitl_pmp.recording.types import LoopPhase, LoopStatus, ResetKind
 
 _BLOCK = Type(name="block", feature_names=("x",))
@@ -284,4 +285,5 @@ def test_a_period_reset_frame_is_composed_with_the_shared_status_bar_overlay(
         ),
     )
     assert len(stream.captured) == recorder.reset_hold_frames
+    expected = SkillChatOverlay.compose(frame=expected, history=[])
     assert np.array_equal(stream.captured[0], expected)

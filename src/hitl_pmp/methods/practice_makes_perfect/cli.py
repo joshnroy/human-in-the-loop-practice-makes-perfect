@@ -214,6 +214,11 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_horizon=args.pomdp_horizon,
                 pomdp_practice_cost=args.pomdp_practice_cost,
+                decision_log=(
+                    args.output_dir / "pomdp_decisions.jsonl"
+                    if args.output_dir is not None
+                    else None
+                ),
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
 from hitl_pmp.methods.belief_space.types import (
     STOP_ACTION,
+    SearchTrace,
 )
 from hitl_pmp.methods.belief_space.types import (
     BeliefState as BaseBeliefState,
@@ -41,6 +42,29 @@ SUCCESS = EnvironmentState(name="success")
 FAILURE = EnvironmentState(name="failure")
 SETUP = POMDPAction(name="setup")
 PRACTICE = POMDPAction(name="practice")
+
+
+def test_trace_preserves_samples_and_records_competing_values() -> None:
+    model = Model(
+        transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.1, 1.0)]},
+        beliefs={SUCCESS: BeliefState(value=0.9)},
+    )
+    traced_model = model.model_copy(deep=True)
+    trace = SearchTrace()
+    args = dict(
+        environment_state=INITIAL, summed_cost=0.0, belief_state=BeliefState(value=0.2), horizon=1
+    )
+    plain = solve_belief_space_expectimax(model=model, **args)
+    traced = solve_belief_space_expectimax(model=traced_model, trace=trace, **args)
+    assert plain == traced
+    assert model.visits == traced_model.visits
+    assert trace.events[-1]["action"] == {"name": "practice"}
+    root_values = [
+        event for event in trace.events if event["node"] == 0 and event["event"] == "action_value"
+    ]
+    assert root_values[0]["value"] == pytest.approx(0.8)
+    assert any(event["event"] == "sample" and "theta" in event for event in trace.events)
+    assert any(event["event"] == "branch" and event["probability"] == 1.0 for event in trace.events)
 
 
 class Model(BaseModel):
