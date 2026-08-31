@@ -6,9 +6,10 @@ import math
 from collections.abc import Iterable
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
-from .expectimax import ChanceOutcome
+from .types import BeliefState, EnvironmentState, POMDPAction, Theta
 
 PICK_SKILL = "PickCube"
 TOSS_SKILL = "MoveToTossLocationAndToss"
@@ -29,7 +30,7 @@ class Tossing3DEnvironmentState(Enum):
     CLOSED_SOLVED = "closed_solved"
 
 
-class SkillHypothesis(BaseModel):
+class SkillHypothesis(Theta):
     model_config = ConfigDict(frozen=True)
 
     competence: float = Field(ge=0.0, le=1.0)
@@ -99,7 +100,7 @@ class SkillBelief(BaseModel):
         )
 
 
-class Tossing3DBeliefState(BaseModel):
+class Tossing3DBeliefState(BeliefState):
     """Physical state, latent-controller posterior, and paid practice cost."""
 
     model_config = ConfigDict(frozen=True)
@@ -135,10 +136,112 @@ class Tossing3DBeliefState(BaseModel):
         )
 
 
+class Tossing3DSearchState(EnvironmentState):
+    """Situated successor, including the observed exploration branch."""
+
+    state: Tossing3DBeliefState
+
+
+class Tossing3DAction(POMDPAction):
+    name: str
+
+
+class Tossing3DOutcome(BaseModel):
+    probability: float
+    next_state: Tossing3DBeliefState
+
+
 class Tossing3DPracticeModel(BaseModel):
     """Applicable actions, situated transitions, costs, and deployment value."""
 
     model_config = ConfigDict(frozen=True)
+
+    seed: int = 0
+    _rng: np.random.Generator = PrivateAttr()
+
+    def model_post_init(self, __context: object) -> None:
+        self._rng = np.random.default_rng(self.seed)
+
+    def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta:
+        assert isinstance(belief_state, Tossing3DBeliefState)
+        projected = belief_state.toss_belief.after_refit(
+            training_examples=belief_state.pending_training_examples
+        )
+        index = int(
+            self._rng.choice(
+                len(projected.hypotheses),
+                p=[item.probability for item in projected.hypotheses],
+            )
+        )
+        return projected.hypotheses[index].hypothesis
+
+    def evaluate_policy(self, *, sampled_theta: Theta) -> float:
+        assert isinstance(sampled_theta, SkillHypothesis)
+        return self._evaluate_deployment_policy(
+            environment_state=Tossing3DEnvironmentState.READY,
+            toss_competence=sampled_theta.competence,
+            horizon=self.deployment_horizon,
+        )
+
+    def score_pomdp_value_from_policy_value_and_cost(
+        self, *, policy_value: float, summed_cost: float
+    ) -> float:
+        return policy_value - self.practice_cost * summed_cost
+
+    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[POMDPAction]:
+        assert isinstance(environment_state, Tossing3DSearchState)
+        return [Tossing3DAction(name=name) for name in self.actions(environment_state.state)]
+
+    def sample_next_states(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float]]:
+        assert isinstance(environment_state, Tossing3DSearchState)
+        assert isinstance(practice_action, Tossing3DAction)
+        assert isinstance(belief_state, Tossing3DBeliefState)
+        # Enumerate the finite model, merging observationally identical branches.
+        return list(
+            dict.fromkeys(
+                (
+                    Tossing3DSearchState(state=outcome.next_state),
+                    outcome.next_state.accumulated_cost - belief_state.accumulated_cost,
+                )
+                for outcome in self.outcomes(belief_state, practice_action.name)
+            )
+        )
+
+    def update_belief_state(
+        self,
+        *,
+        belief_state: BeliefState,
+        environment_state: EnvironmentState,
+        potential_next_environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+    ) -> BeliefState:
+        assert isinstance(potential_next_environment_state, Tossing3DSearchState)
+        return potential_next_environment_state.state
+
+    def transition_probability(
+        self,
+        *,
+        potential_next_environment_state: EnvironmentState,
+        sampled_cost: float,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> float:
+        assert isinstance(potential_next_environment_state, Tossing3DSearchState)
+        assert isinstance(practice_action, Tossing3DAction)
+        assert isinstance(belief_state, Tossing3DBeliefState)
+        return sum(
+            outcome.probability
+            for outcome in self.outcomes(belief_state, practice_action.name)
+            if outcome.next_state == potential_next_environment_state.state
+            and outcome.next_state.accumulated_cost - belief_state.accumulated_cost == sampled_cost
+        )
 
     practice_cost: float = Field(default=0.01, ge=0.0, allow_inf_nan=False)
     pick_competence: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -226,7 +329,7 @@ class Tossing3DPracticeModel(BaseModel):
 
     def outcomes(  # noqa: PLR0917
         self, state: Tossing3DBeliefState, action: str
-    ) -> tuple[ChanceOutcome[Tossing3DBeliefState], ...]:
+    ) -> tuple[Tossing3DOutcome, ...]:
         if action not in set(self.actions(state)):
             raise ValueError(f"{action!r} is not applicable in {state.environment_state.value}")
         if action == PICK_SKILL:
@@ -271,9 +374,9 @@ class Tossing3DPracticeModel(BaseModel):
     @staticmethod
     def _deterministic(
         *, state: Tossing3DBeliefState, environment_state: Tossing3DEnvironmentState, cost: float
-    ) -> tuple[ChanceOutcome[Tossing3DBeliefState], ...]:
+    ) -> tuple[Tossing3DOutcome, ...]:
         return (
-            ChanceOutcome(
+            Tossing3DOutcome(
                 probability=1.0,
                 next_state=state.transition(environment_state=environment_state, added_cost=cost),
             ),
@@ -287,9 +390,9 @@ class Tossing3DPracticeModel(BaseModel):
         success_state: Tossing3DEnvironmentState,
         failure_state: Tossing3DEnvironmentState,
         cost: float,
-    ) -> tuple[ChanceOutcome[Tossing3DBeliefState], ...]:
+    ) -> tuple[Tossing3DOutcome, ...]:
         return tuple(
-            ChanceOutcome(
+            Tossing3DOutcome(
                 probability=branch_probability,
                 next_state=state.transition(
                     environment_state=next_environment_state, added_cost=cost
@@ -302,10 +405,8 @@ class Tossing3DPracticeModel(BaseModel):
             if branch_probability > 0.0
         )
 
-    def _toss_outcomes(
-        self, *, state: Tossing3DBeliefState
-    ) -> tuple[ChanceOutcome[Tossing3DBeliefState], ...]:
-        branches: list[ChanceOutcome[Tossing3DBeliefState]] = []
+    def _toss_outcomes(self, *, state: Tossing3DBeliefState) -> tuple[Tossing3DOutcome, ...]:
+        branches: list[Tossing3DOutcome] = []
         for is_random, choice_probability, success_probability in (
             (False, 1.0 - self.exploration_epsilon, state.toss_belief.mean_competence),
             (True, self.exploration_epsilon, self.random_toss_competence),
@@ -321,7 +422,7 @@ class Tossing3DPracticeModel(BaseModel):
                     state.toss_belief if is_random else state.toss_belief.condition(success=success)
                 )
                 branches.append(
-                    ChanceOutcome(
+                    Tossing3DOutcome(
                         probability=probability,
                         next_state=state.transition(
                             environment_state=(

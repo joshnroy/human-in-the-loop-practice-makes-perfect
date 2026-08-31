@@ -1,6 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
+from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
 from hitl_pmp.methods.belief_space.tossing3d_model import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
@@ -11,9 +12,56 @@ from hitl_pmp.methods.belief_space.tossing3d_model import (
     Tossing3DBeliefState,
     Tossing3DEnvironmentState,
     Tossing3DPracticeModel,
+    Tossing3DSearchState,
     WeightedHypothesis,
     make_default_tossing3d_belief,
 )
+from hitl_pmp.methods.belief_space.types import STOP_ACTION
+
+
+def test_search_protocol_charges_accumulated_cost_once() -> None:
+    state = Tossing3DBeliefState(
+        environment_state=Tossing3DEnvironmentState.READY,
+        toss_belief=_point_belief(competence=0.8, learning_rate=0.0),
+        accumulated_cost=3.0,
+    )
+    model = Tossing3DPracticeModel(pick_competence=0.5, practice_cost=0.1)
+    value, action = solve_belief_space_expectimax(
+        environment_state=Tossing3DSearchState(state=state),
+        belief_state=state,
+        summed_cost=state.accumulated_cost,
+        horizon=3,
+        model=model,
+    )
+    assert value == pytest.approx(model.stop_value(state))
+    assert action == STOP_ACTION
+
+
+def test_search_protocol_merges_identical_exploration_successors() -> None:
+    state = Tossing3DBeliefState(
+        environment_state=Tossing3DEnvironmentState.HOLDING,
+        toss_belief=_point_belief(competence=0.5),
+    )
+    model = Tossing3DPracticeModel(random_toss_competence=0.5)
+    environment_state = Tossing3DSearchState(state=state)
+    action = model.get_valid_actions(environment_state=environment_state)[0]
+    successors = model.sample_next_states(
+        environment_state=environment_state,
+        practice_action=action,
+        belief_state=state,
+    )
+    assert len(successors) == 2
+    probabilities = [
+        model.transition_probability(
+            potential_next_environment_state=successor,
+            sampled_cost=cost,
+            environment_state=environment_state,
+            practice_action=action,
+            belief_state=state,
+        )
+        for successor, cost in successors
+    ]
+    assert probabilities == pytest.approx([0.5, 0.5])
 
 
 def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBelief:
