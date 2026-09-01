@@ -10,12 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
-from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, TOSS_SKILL
 from .tossing3d_deployment_model import evaluate_deployment_policy
 from .tossing3d_observation_model import (
-    observe_robot_skill,
-    observe_toss,
-    record_training_example,
+    SkillBeliefModel,
+    make_skill_belief_models,
     refit_belief_state,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state, transition_outcomes
@@ -44,6 +42,8 @@ class Tossing3DPracticeModel(BaseModel):
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
     ] = PrivateAttr(default_factory=dict)
     _belief_ids: dict[object, int] = PrivateAttr(default_factory=dict)
+    _skill_belief_models: dict[GroundSkill, SkillBeliefModel] = PrivateAttr(default_factory=dict)
+    _skill_belief_models_by_name: dict[str, SkillBeliefModel] = PrivateAttr(default_factory=dict)
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -63,6 +63,9 @@ class Tossing3DPracticeModel(BaseModel):
             skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
             for skill in self.ground_skills
         }
+        self._skill_belief_models, self._skill_belief_models_by_name = make_skill_belief_models(
+            ground_skills=self.ground_skills
+        )
 
     def sample_theta_from_belief(self, *, belief_state: Tossing3DBeliefState) -> Tossing3DTheta:
         return self.sample_thetas_from_belief(belief_state=belief_state, num_samples=1)[0]
@@ -113,24 +116,17 @@ class Tossing3DPracticeModel(BaseModel):
         was_random_exploration: bool,
     ) -> Tossing3DBeliefState:
         """Apply any belief observation associated with a practiced skill."""
-        name = ground_skill.skill.name
-        if name == TOSS_SKILL:
-            return observe_toss(
-                state=state,
-                success=success,
-                was_random_exploration=was_random_exploration,
-            )
-        if name in {PICK_SKILL, OPEN_GRIPPER_SKILL}:
-            return observe_robot_skill(state=state, skill_name=name, success=success)
-        return state
+        return self._skill_belief_models[ground_skill].observe_outcome(
+            state=state,
+            success=success,
+            was_random_exploration=was_random_exploration,
+        )
 
     def observe_training_example(
         self, *, state: Tossing3DBeliefState, skill_name: str
     ) -> Tossing3DBeliefState:
         """Apply any learning-curve update associated with a sampler example."""
-        if skill_name == TOSS_SKILL:
-            return record_training_example(state=state)
-        return state
+        return self._skill_belief_models_by_name[skill_name].observe_training_example(state=state)
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
         state_mask = self._atoms_mask(atoms=environment_state.true_atoms)

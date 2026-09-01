@@ -1,5 +1,7 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
+from hitl_pmp.core.method.types import GroundSkill, Skill
+from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
@@ -10,6 +12,75 @@ from hitl_pmp.methods.belief_space.types.skill_belief import (
     SkillHypothesis,
     WeightedHypothesis,
 )
+
+
+class SkillBeliefModel:
+    """Belief updates contributed by one lifted practice skill."""
+
+    def observe_outcome(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        success: bool,
+        was_random_exploration: bool,
+    ) -> Tossing3DBeliefState:
+        del success, was_random_exploration
+        return state
+
+    def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+        return state
+
+
+class RobotSkillBeliefModel(SkillBeliefModel):
+    def __init__(self, *, skill_name: str) -> None:
+        self.skill_name = skill_name
+
+    def observe_outcome(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        success: bool,
+        was_random_exploration: bool,
+    ) -> Tossing3DBeliefState:
+        del was_random_exploration
+        return observe_robot_skill(state=state, skill_name=self.skill_name, success=success)
+
+
+class TossSkillBeliefModel(SkillBeliefModel):
+    def observe_outcome(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        success: bool,
+        was_random_exploration: bool,
+    ) -> Tossing3DBeliefState:
+        return observe_toss(
+            state=state,
+            success=success,
+            was_random_exploration=was_random_exploration,
+        )
+
+    def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+        return record_training_example(state=state)
+
+
+SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
+    Tossing3DSkills.PICK_CUBE: RobotSkillBeliefModel(skill_name=PICK_SKILL),
+    Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: TossSkillBeliefModel(),
+    Tossing3DSkills.OPEN_GRIPPER: RobotSkillBeliefModel(skill_name=OPEN_GRIPPER_SKILL),
+}
+
+
+def make_skill_belief_models(
+    *, ground_skills: tuple[GroundSkill, ...]
+) -> tuple[dict[GroundSkill, SkillBeliefModel], dict[str, SkillBeliefModel]]:
+    """Associate every practice skill with explicit updates or the default no-op."""
+    by_ground_skill = {
+        ground_skill: SKILL_BELIEF_MODELS.get(ground_skill.skill, SkillBeliefModel())
+        for ground_skill in ground_skills
+    }
+    by_name = {ground_skill.skill.name: model for ground_skill, model in by_ground_skill.items()}
+    return by_ground_skill, by_name
 
 
 def make_skill_belief_prior() -> SkillBelief:
