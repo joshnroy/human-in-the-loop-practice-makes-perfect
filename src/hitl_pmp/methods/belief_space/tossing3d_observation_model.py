@@ -1,11 +1,9 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
+from typing import Literal
+
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
-from hitl_pmp.methods.belief_space.tossing3d_constants import (
-    OPEN_GRIPPER_SKILL,
-    PICK_SKILL,
-)
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
     SkillBelief,
@@ -13,9 +11,27 @@ from hitl_pmp.methods.belief_space.types.skill_belief import (
     WeightedHypothesis,
 )
 
+BeliefField = Literal["toss_belief", "pick_belief", "open_gripper_belief"]
+ExampleCountField = Literal[
+    "pending_training_examples",
+    "pending_pick_examples",
+    "pending_open_gripper_examples",
+]
+
 
 class SkillBeliefModel:
-    """Belief updates contributed by one lifted practice skill."""
+    """Configurable belief updates contributed by one lifted practice skill."""
+
+    def __init__(
+        self,
+        *,
+        belief_field: BeliefField | None = None,
+        outcome_example_field: ExampleCountField | None = None,
+        sampler_example_field: ExampleCountField | None = None,
+    ) -> None:
+        self.belief_field = belief_field
+        self.outcome_example_field = outcome_example_field
+        self.sampler_example_field = sampler_example_field
 
     def observe_outcome(
         self,
@@ -24,50 +40,35 @@ class SkillBeliefModel:
         success: bool,
         was_random_exploration: bool,
     ) -> Tossing3DBeliefState:
-        del success, was_random_exploration
-        return state
+        if self.belief_field is None or was_random_exploration:
+            return state
+        belief = condition_skill_belief(belief=getattr(state, self.belief_field), success=success)
+        update: dict[str, object] = {self.belief_field: belief}
+        if self.outcome_example_field is not None:
+            update[self.outcome_example_field] = getattr(state, self.outcome_example_field) + 1
+        return state.model_copy(update=update)
 
     def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
-        return state
-
-
-class RobotSkillBeliefModel(SkillBeliefModel):
-    def __init__(self, *, skill_name: str) -> None:
-        self.skill_name = skill_name
-
-    def observe_outcome(
-        self,
-        *,
-        state: Tossing3DBeliefState,
-        success: bool,
-        was_random_exploration: bool,
-    ) -> Tossing3DBeliefState:
-        del was_random_exploration
-        return observe_robot_skill(state=state, skill_name=self.skill_name, success=success)
-
-
-class TossSkillBeliefModel(SkillBeliefModel):
-    def observe_outcome(
-        self,
-        *,
-        state: Tossing3DBeliefState,
-        success: bool,
-        was_random_exploration: bool,
-    ) -> Tossing3DBeliefState:
-        return observe_toss(
-            state=state,
-            success=success,
-            was_random_exploration=was_random_exploration,
+        if self.sampler_example_field is None:
+            return state
+        return state.model_copy(
+            update={
+                self.sampler_example_field: getattr(state, self.sampler_example_field) + 1
+            }
         )
-
-    def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
-        return record_training_example(state=state)
 
 
 SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
-    Tossing3DSkills.PICK_CUBE: RobotSkillBeliefModel(skill_name=PICK_SKILL),
-    Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: TossSkillBeliefModel(),
-    Tossing3DSkills.OPEN_GRIPPER: RobotSkillBeliefModel(skill_name=OPEN_GRIPPER_SKILL),
+    Tossing3DSkills.PICK_CUBE: SkillBeliefModel(
+        belief_field="pick_belief", outcome_example_field="pending_pick_examples"
+    ),
+    Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: SkillBeliefModel(
+        belief_field="toss_belief", sampler_example_field="pending_training_examples"
+    ),
+    Tossing3DSkills.OPEN_GRIPPER: SkillBeliefModel(
+        belief_field="open_gripper_belief",
+        outcome_example_field="pending_open_gripper_examples",
+    ),
 }
 
 
@@ -163,35 +164,4 @@ def refit_belief_state(*, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
             "pending_pick_examples": 0,
             "pending_open_gripper_examples": 0,
         }
-    )
-
-
-def observe_robot_skill(
-    *, state: Tossing3DBeliefState, skill_name: str, success: bool
-) -> Tossing3DBeliefState:
-    belief_field, count_field = {
-        PICK_SKILL: ("pick_belief", "pending_pick_examples"),
-        OPEN_GRIPPER_SKILL: ("open_gripper_belief", "pending_open_gripper_examples"),
-    }[skill_name]
-    belief = getattr(state, belief_field)
-    return state.model_copy(
-        update={
-            belief_field: condition_skill_belief(belief=belief, success=success),
-            count_field: getattr(state, count_field) + 1,
-        }
-    )
-
-
-def observe_toss(
-    *, state: Tossing3DBeliefState, success: bool, was_random_exploration: bool
-) -> Tossing3DBeliefState:
-    belief = state.toss_belief
-    if not was_random_exploration:
-        belief = condition_skill_belief(belief=belief, success=success)
-    return state.model_copy(update={"toss_belief": belief})
-
-
-def record_training_example(*, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
-    return state.model_copy(
-        update={"pending_training_examples": state.pending_training_examples + 1}
     )

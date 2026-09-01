@@ -9,9 +9,9 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
+    SKILL_BELIEF_MODELS,
     condition_skill_belief,
     mean_competence,
-    observe_robot_skill,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
@@ -85,7 +85,6 @@ def transition_outcomes(
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
             probability=mean_competence(belief=state.pick_belief),
-            skill_name=PICK_SKILL,
             cost=action.evaluate_practice_cost(),
             effects=effects,
         )
@@ -95,7 +94,6 @@ def transition_outcomes(
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
             probability=mean_competence(belief=state.open_gripper_belief),
-            skill_name=OPEN_GRIPPER_SKILL,
             cost=action.evaluate_practice_cost(),
             effects=effects,
         )
@@ -147,7 +145,6 @@ def binary_outcomes(
     true_atoms: frozenset[GroundAtom],
     ground_skill: GroundSkill,
     probability: float,
-    skill_name: str,
     cost: float,
     effects: dict[
         GroundSkill,
@@ -165,10 +162,10 @@ def binary_outcomes(
         )
         outcomes.append((
             branch_probability,
-            observe_robot_skill(
+            SKILL_BELIEF_MODELS[ground_skill.skill].observe_outcome(
                 state=transition_belief_state(state=state, added_cost=cost),
-                skill_name=skill_name,
                 success=success,
+                was_random_exploration=False,
             ),
             next_true_atoms,
         ))

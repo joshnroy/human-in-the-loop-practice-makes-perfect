@@ -18,7 +18,6 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     make_default_tossing3d_belief,
     mean_competence,
-    observe_robot_skill,
     refit_belief_state,
     refit_skill_belief,
 )
@@ -260,10 +259,17 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
 
 @pytest.mark.parametrize("skill_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
 def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
+    model = _domain_model()
+    skill = _ground_skill(model=model, name=skill_name)
     state = make_default_tossing3d_belief()
     for _ in range(20):
         for success in [True, False] * 5:
-            state = observe_robot_skill(state=state, skill_name=skill_name, success=success)
+            state = model.observe_outcome(
+                state=state,
+                ground_skill=skill,
+                success=success,
+                was_random_exploration=False,
+            )
         state = refit_belief_state(state=state)
     belief = state.pick_belief if skill_name == PICK_SKILL else state.open_gripper_belief
     stationary_mass = sum(
@@ -274,9 +280,16 @@ def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
 
 
 def test_first_session_cannot_identify_learning_rate() -> None:
+    model = _domain_model()
+    pick = _ground_skill(model=model, name=PICK_SKILL)
     state = make_default_tossing3d_belief()
     for success in [True, False] * 50:
-        state = observe_robot_skill(state=state, skill_name=PICK_SKILL, success=success)
+        state = model.observe_outcome(
+            state=state,
+            ground_skill=pick,
+            success=success,
+            was_random_exploration=False,
+        )
     stationary_mass = sum(
         item.probability
         for item in state.pick_belief.hypotheses
@@ -301,8 +314,14 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
     )
     assert [o[0] for o in outcomes] == pytest.approx([0.5, 0.5])
     assert outcomes[1][2] == closed_atoms
+    open_gripper = _ground_skill(model=model, name=OPEN_GRIPPER_SKILL)
     for _ in range(100):
-        state = observe_robot_skill(state=state, skill_name=OPEN_GRIPPER_SKILL, success=True)
+        state = model.observe_outcome(
+            state=state,
+            ground_skill=open_gripper,
+            success=True,
+            was_random_exploration=False,
+        )
     assert mean_competence(belief=state.open_gripper_belief) > 0.99
     projected = refit_skill_belief(belief=state.open_gripper_belief, training_examples=1)
     assert (
@@ -312,12 +331,32 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
 
 
 def test_pending_examples_predict_improvement_without_changing_current_competence() -> None:
+    model = _domain_model()
+    pick = _ground_skill(model=model, name=PICK_SKILL)
     state = make_default_tossing3d_belief()
-    observed = observe_robot_skill(state=state, skill_name=PICK_SKILL, success=True)
+    observed = model.observe_outcome(
+        state=state,
+        ground_skill=pick,
+        success=True,
+        was_random_exploration=False,
+    )
     assert observed.pick_belief == condition_skill_belief(belief=state.pick_belief, success=True)
     refit = refit_belief_state(state=observed)
     assert mean_competence(belief=refit.pick_belief) > mean_competence(belief=observed.pick_belief)
     assert refit.pending_pick_examples == 0
+
+
+@pytest.mark.parametrize("skill_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
+def test_random_exploration_does_not_update_any_skill_belief(*, skill_name: str) -> None:
+    model = _domain_model()
+    state = make_default_tossing3d_belief()
+    observed = model.observe_outcome(
+        state=state,
+        ground_skill=_ground_skill(model=model, name=skill_name),
+        success=True,
+        was_random_exploration=True,
+    )
+    assert observed == state
 
 
 def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
