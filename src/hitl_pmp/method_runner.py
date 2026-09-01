@@ -414,8 +414,7 @@ class MethodRunner:
                 for label, value in (
                     ("SEED", getattr(args, "seed", None)),
                     ("SAMPLES", getattr(args, "pomdp_num_samples", None)),
-                    ("H", getattr(args, "pomdp_horizon", None)),
-                    ("B", getattr(args, "pomdp_hard_budget", None)),
+                    ("SEARCH DEPTH", getattr(args, "pomdp_search_depth", None)),
                     ("ACTION CAP", max_steps_per_interaction),
                 )
                 if value is not None

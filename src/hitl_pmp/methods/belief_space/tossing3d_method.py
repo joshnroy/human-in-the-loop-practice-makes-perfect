@@ -74,10 +74,16 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def practice_skill_learning_rates(self) -> dict[str, float]:
         estimates = {
-            PICK_SKILL + " (belief mean)": mean_learning_rate(belief=self._pomdp_state.pick_belief),
-            TOSS_SKILL + " (belief mean)": mean_learning_rate(belief=self._pomdp_state.toss_belief),
+            PICK_SKILL
+            + " (belief mean)": mean_learning_rate(
+                belief=self._pomdp_state.skill_beliefs[PICK_SKILL]
+            ),
+            TOSS_SKILL
+            + " (belief mean)": mean_learning_rate(
+                belief=self._pomdp_state.skill_beliefs[TOSS_SKILL]
+            ),
             OPEN_GRIPPER_SKILL + " (belief mean)": mean_learning_rate(
-                belief=self._pomdp_state.open_gripper_belief
+                belief=self._pomdp_state.skill_beliefs[OPEN_GRIPPER_SKILL]
             ),
         }
         if self.ask_for_reset_cube_bin_cost is not None:
