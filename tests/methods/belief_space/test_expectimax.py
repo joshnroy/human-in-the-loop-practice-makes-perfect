@@ -60,6 +60,23 @@ class Model(BaseModel):
         self.visits.append(belief_state)
         return Theta(value=value)
 
+    def sample_thetas_from_belief(
+        self, *, belief_state: BaseBeliefState, num_samples: int
+    ) -> list[BaseTheta]:
+        return [
+            self.sample_theta_from_belief(belief_state=belief_state) for _ in range(num_samples)
+        ]
+
+    def search_cache_key(
+        self,
+        *,
+        environment_state: BaseEnvironmentState,
+        summed_cost: float,
+        belief_state: BaseBeliefState,
+        horizon: int,
+    ) -> object:
+        return environment_state, summed_cost, belief_state, horizon
+
     def evaluate_policy(self, *, sampled_theta: BaseTheta) -> float:
         assert isinstance(sampled_theta, Theta)
         return sampled_theta.value * self.scale
@@ -84,6 +101,16 @@ class Model(BaseModel):
         return [
             (state, cost) for state, cost, _ in self.transitions[environment_state, practice_action]
         ]
+
+    def transition_outcomes(
+        self,
+        *,
+        environment_state: BaseEnvironmentState,
+        practice_action: BasePOMDPAction,
+        belief_state: BaseBeliefState,
+    ) -> list[tuple[BaseEnvironmentState, float, float]]:
+        del belief_state
+        return self.transitions[environment_state, practice_action]
 
     def update_belief_state(
         self,

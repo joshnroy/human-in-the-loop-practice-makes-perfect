@@ -38,6 +38,19 @@ class BeliefSpaceModel(Protocol):
 
     def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta: ...
 
+    def sample_thetas_from_belief(
+        self, *, belief_state: BeliefState, num_samples: int
+    ) -> list[Theta]: ...
+
+    def search_cache_key(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        summed_cost: float,
+        belief_state: BeliefState,
+        horizon: int,
+    ) -> object: ...
+
     def evaluate_policy(self, *, sampled_theta: Theta) -> float: ...
 
     def score_pomdp_value_from_policy_value_and_cost(
@@ -55,6 +68,14 @@ class BeliefSpaceModel(Protocol):
     ) -> list[tuple[EnvironmentState, float]]:
         """Return potential next environment states and their sampled costs."""
         ...
+
+    def transition_outcomes(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float, float]]: ...
 
     def update_belief_state(
         self,
@@ -74,28 +95,3 @@ class BeliefSpaceModel(Protocol):
         practice_action: POMDPAction,
         belief_state: BeliefState,
     ) -> float: ...
-
-
-class BatchedBeliefSpaceModel(Protocol):
-    """Optional hot-path extensions; the seven pseudocode methods remain canonical."""
-
-    def sample_thetas_from_belief(
-        self, *, belief_state: BeliefState, num_samples: int
-    ) -> list[Theta]: ...
-
-    def transition_outcomes(
-        self,
-        *,
-        environment_state: EnvironmentState,
-        practice_action: POMDPAction,
-        belief_state: BeliefState,
-    ) -> list[tuple[EnvironmentState, float, float]]: ...
-
-    def search_cache_key(
-        self,
-        *,
-        environment_state: EnvironmentState,
-        summed_cost: float,
-        belief_state: BeliefState,
-        horizon: int,
-    ) -> object: ...
