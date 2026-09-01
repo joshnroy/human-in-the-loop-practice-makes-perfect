@@ -24,6 +24,8 @@ def test_html_preserves_every_search_event_and_escapes_script_injection(*, tmp_p
         trace=trace,
     )
     trace.record(event="annotation", text="</script><script>alert(1)</script>")
+    node = next(event for event in trace.events if event["event"] == "node")
+    assert node["environment_state"]["atoms"] == []
     path = tmp_path / "trees" / "stop.html"
     SearchHtml.write(path=path, trace=trace, budget=10)
     html = path.read_text()

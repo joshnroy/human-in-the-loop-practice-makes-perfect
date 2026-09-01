@@ -6,17 +6,18 @@ not the older fixed Pick/Open prototype.
 
 ## Preserved structure
 
-The state includes physical state, cumulative cost, and belief. STOP competes with
-applicable skills. Chance branches update the belief before recursion, accumulate
-cost, and weight successor values by predictive probability. Real execution takes
-one skill and replans. Independent per-skill beliefs are an allowed factorization
-in PDF section 2.4.
+The state includes EES's symbolic atoms, cumulative cost, and belief. STOP competes
+with the exact grounded skills EES reports applicable. Chance branches update the
+belief before recursion, accumulate cost, and weight successor values by predictive
+probability. Real execution takes one unchanged EES GroundSkill and replans.
+Independent per-skill beliefs are an allowed factorization in PDF section 2.4.
 
 ## Fixed or simplified
 
-- Only Tossing3D's eight hand-written symbolic phases and three robot skills plus
-  human cube/bin reset are modeled. This is not a generic KINDER environment plugin.
-  Search applicability is narrower than the raw skill initiation sets.
+- Only Tossing3D's three robot skills plus human cube/bin reset have theta/transition
+  models. This is not yet a generic KINDER environment plugin. Applicability,
+  preconditions, successful postconditions, and the selected GroundSkill come directly
+  from EES; the POMDP does not maintain another action map.
 - Robot competence is one scalar per skill, not state-conditioned. Detailed poses
   influence the real controller but not the POMDP competence likelihood.
 - Each robot's discrete prior is uniform over p={0,.25,.5,.75,1} and eta={0,.1}.
@@ -30,8 +31,10 @@ in PDF section 2.4.
   observations. The actual uninformative sampler can differ from that idealized
   mixture. The PDF explicitly identifies exploration/deployment mismatch as open.
 - Success/failure drives robot competence inference, rather than the full
-  transition-and-cost likelihood. This is the PDF's simplified Bernoulli case,
-  but relies on the hand-written success/failure successor model being adequate.
+  transition-and-cost likelihood. This is the PDF's simplified Bernoulli case.
+  Success applies the unchanged EES GroundSkill effects. Because EES exposes no
+  failure-effect interface, a modeled failure leaves the symbolic atoms unchanged;
+  real execution replans from a fresh EES abstraction on the next step.
 - Learning-curve advancement is deferred to session boundaries. Pick/Open remain
   parameter-free controllers; inferred improvement is a forecast, not a real
   controller update. The PDF allows batched updates via pending data counters.
@@ -40,8 +43,8 @@ in PDF section 2.4.
   likelihoods. These ten independent single-session seeds cannot establish eta=0;
   competence updates immediately, but eta identification requires later-session
   observations. At p=1, all rates already predict zero further gain.
-- Deployment utility is a four-skill, goal-success surrogate from a fixed READY
-  state. It does not call the actual Fast Downward task-distribution planner for
+- Deployment utility is a four-skill, goal-success surrogate from the canonical
+  initial task state. It does not call the actual Fast Downward task-distribution planner for
   each theta sample. Human reset is excluded from modeled deployment. This is a
   choice of g, not the general optimal frozen-MDP solve suggested by the PDF and
   pseudocode. Deployment resource cost and discounting are not included.
@@ -74,8 +77,8 @@ assertions, a per-search functools cache, floating-point costs, diagnostics,
 and runtime sample configuration. The pseudocode's NUM_SAMPLES=1 is a placeholder;
 the experiment uses 100.
 
-The physical-state protocol carries a situated successor that also embeds the
-updated belief; update_belief_state retrieves it. This is an implementation
+The physical-state protocol carries EES atoms and a situated successor that also
+embeds the updated belief; update_belief_state retrieves it. This is an implementation
 convenience, not evidence that physical observations reveal the hidden theta.
 
 ## Computational and reporting limits
