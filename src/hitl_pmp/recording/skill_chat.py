@@ -1,7 +1,6 @@
 """Practice diagnostics arranged beside an unobscured environment scene."""
 
 import textwrap
-from collections.abc import Mapping
 from typing import ClassVar
 
 import numpy as np
@@ -16,6 +15,12 @@ class SkillChatOverlay:
     background: ClassVar[tuple[int, int, int]] = (22, 20, 32)
     text: ClassVar[tuple[int, int, int]] = (235, 235, 245)
     muted: ClassVar[tuple[int, int, int]] = (190, 190, 200)
+    skill_rows: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("PickCube", "PickCube"),
+        ("MoveToTossLocationAndToss", "Toss"),
+        ("OpenGripper", "OpenGripper"),
+        ("ask_for_reset_cube_bin_only", "Human Reset"),
+    )
 
     @staticmethod
     def compose(
@@ -61,7 +66,7 @@ class SkillChatOverlay:
     def draw_competences(
         *, draw: ImageDraw.ImageDraw, left: int, estimates: dict[str, float]
     ) -> None:
-        SkillChatOverlay.draw_chart(
+        SkillChatOverlay.draw_skill_chart(
             draw=draw,
             left=left,
             title="THETA 1: COMPETENCE",
@@ -75,7 +80,7 @@ class SkillChatOverlay:
     def draw_learning_rates(
         *, draw: ImageDraw.ImageDraw, left: int, estimates: dict[str, float]
     ) -> None:
-        SkillChatOverlay.draw_chart(
+        SkillChatOverlay.draw_skill_chart(
             draw=draw,
             left=left,
             title="THETA 2: LEARNING RATE",
@@ -87,53 +92,59 @@ class SkillChatOverlay:
 
     @staticmethod
     def draw_values(*, draw: ImageDraw.ImageDraw, left: int, values: dict[str, float]) -> None:
-        best = max(values, key=lambda name: values[name]) if values else None
-        colors = {name: (90, 230, 160) if name == best else (140, 110, 210) for name in values}
-        SkillChatOverlay.draw_chart(
+        SkillChatOverlay.draw_skill_chart(
             draw=draw,
             left=left,
             title="DECISION VALUES",
             values=values,
             color=(140, 110, 210),
-            colors=colors,
             precision=6,
+            include_stop=True,
         )
 
     @staticmethod
-    def draw_chart(
+    def draw_skill_chart(
         *,
         draw: ImageDraw.ImageDraw,
         left: int,
         title: str,
-        values: Mapping[str, float],
+        values: dict[str, float],
         color: tuple[int, int, int],
         precision: int,
         fixed_range: tuple[float, float] | None = None,
-        colors: Mapping[str, tuple[int, int, int]] | None = None,
+        include_stop: bool = False,
     ) -> None:
         font = ImageFont.load_default(size=17)
         small = ImageFont.load_default(size=13)
         draw.multiline_text((left, 14), title, font=font, fill=color, spacing=3)
-        if not values:
-            draw.text((left, 64), "No decision yet", font=small, fill=SkillChatOverlay.muted)
-            return
+        rows: list[tuple[str, float | None]] = [
+            (
+                label,
+                next((value for name, value in values.items() if name.startswith(prefix)), None),
+            )
+            for prefix, label in SkillChatOverlay.skill_rows
+        ]
+        if include_stop:
+            rows.append(("STOP", values.get("STOP")))
+        present = [value for _label, value in rows if value is not None]
         if fixed_range is None:
-            low = min(0.0, *values.values())
-            high = max(0.0, *values.values())
+            low = min([0.0, *present])
+            high = max([0.0, *present])
         else:
             low, high = fixed_range
         span = max(high - low, 1e-12)
         zero = left + 280 * (0.0 - low) / span
-        top = 76
-        for name, value in values.items():
-            label = "\n".join(textwrap.wrap(name, width=35))
-            draw.multiline_text((left, top), label, font=small, fill=SkillChatOverlay.text)
-            label_lines = max(1, len(label.splitlines()))
-            bar_top = top + 18 * label_lines + 6
-            end = left + 280 * (value - low) / span
-            item_color = color if colors is None else colors[name]
+        best = max(present) if present else None
+        for index, (label, value) in enumerate(rows):
+            top = 62 + index * 92
+            draw.text((left, top), label, font=small, fill=SkillChatOverlay.text)
+            bar_top = top + 23
             draw.rectangle((left, bar_top, left + 280, bar_top + 14), fill=(45, 45, 65))
+            if value is None:
+                draw.text((left, bar_top + 18), "N/A", font=small, fill=SkillChatOverlay.muted)
+                continue
+            end = left + 280 * (value - low) / span
+            item_color = (90, 230, 160) if include_stop and value == best else color
             draw.rectangle((min(zero, end), bar_top, max(zero, end), bar_top + 14), fill=item_color)
             draw.line((zero, bar_top - 2, zero, bar_top + 16), fill=(240, 240, 240))
             draw.text((left, bar_top + 18), f"{value:.{precision}f}", font=small, fill=item_color)
-            top = bar_top + 48
