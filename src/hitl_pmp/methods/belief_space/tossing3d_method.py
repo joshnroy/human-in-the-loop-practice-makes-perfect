@@ -1,5 +1,7 @@
 """CLI-facing Tossing3D method backed by situated belief-space expectimax."""
 
+from typing import cast
+
 from pydantic import Field, PrivateAttr
 
 from hitl_pmp.core.method.types import GroundSkill, Policy
@@ -11,18 +13,26 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
 from hitl_pmp.planning.grounding import SkillGrounder
 
 from .expectimax import solve_belief_space_expectimax
-from .tossing3d_model import (
+from .tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
-    Tossing3DPracticeModel,
+)
+from .tossing3d_model import Tossing3DPracticeModel
+from .tossing3d_observation_model import (
     make_default_tossing3d_belief,
-    make_tossing3d_search_state,
+    observe_robot_skill,
+    observe_toss,
+    record_training_example,
     refit_belief_state,
 )
+from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
-from .types.core import STOP_ACTION
+from .types.protocol import BeliefSpaceModel
+from .types.search_state import Tossing3DSearchState
+from .types.stop_action import STOP_ACTION, StopAction
+from .types.theta import Tossing3DTheta
 
 
 class Tossing3DPomdpMethod(EesMethod):
@@ -30,7 +40,6 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_horizon: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
-    pomdp_hard_budget: int | None = Field(default=None, ge=0)
     pomdp_practice_cost: float = Field(default=0.001, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
 
@@ -57,7 +66,6 @@ class Tossing3DPomdpMethod(EesMethod):
             practice_cost=self.pomdp_practice_cost,
             exploration_epsilon=self.exploration_epsilon,
             reset_cost=self.ask_for_reset_cube_bin_cost,
-            hard_budget=self.pomdp_hard_budget,
             ground_skills=tuple(ground_skills),
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
@@ -73,7 +81,7 @@ class Tossing3DPomdpMethod(EesMethod):
         return self._pomdp_state
 
     def get_practice_policy(self, *, task: Task) -> Policy:
-        """Start a fresh session budget without resetting the learned skill state."""
+        """Reset session cost without resetting the learned skill state."""
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
         return super().get_practice_policy(task=task)
 
@@ -87,13 +95,13 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         name = ground_skill.skill.name
         if name == TOSS_SKILL:
-            self._pomdp_state = self._pomdp_model.observe_toss(
+            self._pomdp_state = observe_toss(
                 state=self._pomdp_state,
                 success=success,
                 was_random_exploration=was_random_exploration,
             )
         elif name in {PICK_SKILL, OPEN_GRIPPER_SKILL}:
-            self._pomdp_state = self._pomdp_model.observe_robot_skill(
+            self._pomdp_state = observe_robot_skill(
                 state=self._pomdp_state, skill_name=name, success=success
             )
 
@@ -120,7 +128,7 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
         )
         if skill_name == TOSS_SKILL:
-            self._pomdp_state = self._pomdp_model.record_training_example(state=self._pomdp_state)
+            self._pomdp_state = record_training_example(state=self._pomdp_state)
 
     def end_cycle(self) -> None:
         """Advance inferred learning curves at the session boundary.
@@ -133,15 +141,21 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_state = refit_belief_state(state=self._pomdp_state)
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
-        _, action = solve_belief_space_expectimax(
-            environment_state=make_tossing3d_search_state(
-                state=self._pomdp_state, true_atoms=true_atoms
+        model: BeliefSpaceModel[
+            Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill
+        ] = self._pomdp_model
+        _, action = cast(
+            tuple[float, GroundSkill | StopAction],
+            solve_belief_space_expectimax(
+                environment_state=make_tossing3d_search_state(
+                    state=self._pomdp_state, true_atoms=true_atoms
+                ),
+                belief_state=self._pomdp_state,
+                summed_cost=self._pomdp_state.accumulated_cost,
+                horizon=self.pomdp_horizon,
+                model=model,
+                num_samples=self.pomdp_num_samples,
             ),
-            belief_state=self._pomdp_state,
-            summed_cost=self._pomdp_state.accumulated_cost,
-            horizon=self.pomdp_horizon,
-            model=self._pomdp_model,
-            num_samples=self.pomdp_num_samples,
         )
         if action == STOP_ACTION:
             return [STOP_SKILL]

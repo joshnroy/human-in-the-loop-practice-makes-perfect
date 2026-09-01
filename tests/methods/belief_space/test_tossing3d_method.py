@@ -8,10 +8,9 @@ from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
+from hitl_pmp.methods.belief_space.tossing3d_constants import PICK_SKILL, TOSS_SKILL
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
-from hitl_pmp.methods.belief_space.tossing3d_model import (
-    PICK_SKILL,
-    TOSS_SKILL,
+from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_competence,
 )
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -106,8 +105,8 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     assert method.pomdp_state.accumulated_cost == 0.25
 
 
-def test_new_practice_session_replenishes_budget_without_forgetting_learning() -> None:
-    method = _build(pomdp_hard_budget=2, sampler_max_train_iters=2)
+def test_new_practice_session_resets_cost_without_forgetting_learning() -> None:
+    method = _build(sampler_max_train_iters=2)
     pick = _grounding(method=method, name=PICK_SKILL)
     toss = _grounding(method=method, name=TOSS_SKILL)
     for success in (True, False):

@@ -175,13 +175,6 @@ class Tossing3DPomdpCli(EesCli):
         EesCli.add_arguments(parser=parser)
         parser.set_defaults(goal_pursuit_horizon=0)
         parser.add_argument(
-            "--pomdp-hard-budget",
-            type=int,
-            default=None,
-            help="Hard practice-cost budget per session; replenished each cycle, not each "
-            "replan. Replaces the linear penalty.",
-        )
-        parser.add_argument(
             "--pomdp-num-samples",
             type=int,
             default=100,
@@ -230,7 +223,6 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_horizon=args.pomdp_horizon,
                 pomdp_num_samples=args.pomdp_num_samples,
-                pomdp_hard_budget=args.pomdp_hard_budget,
                 pomdp_practice_cost=args.pomdp_practice_cost,
             ),
             num_cycles=args.num_cycles,
