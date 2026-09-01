@@ -26,6 +26,7 @@ from .tossing3d_model import Tossing3DPracticeModel
 from .tossing3d_observation_model import (
     make_default_tossing3d_belief,
     mean_competence,
+    mean_learning_rate,
     refit_belief_state,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
@@ -70,10 +71,11 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def practice_skill_learning_rates(self) -> dict[str, float]:
         estimates = {
-            PICK_SKILL + " (belief mean)": self._pomdp_state.pick_belief.mean_learning_rate,
-            TOSS_SKILL + " (belief mean)": self._pomdp_state.toss_belief.mean_learning_rate,
-            OPEN_GRIPPER_SKILL
-            + " (belief mean)": self._pomdp_state.open_gripper_belief.mean_learning_rate,
+            PICK_SKILL + " (belief mean)": mean_learning_rate(belief=self._pomdp_state.pick_belief),
+            TOSS_SKILL + " (belief mean)": mean_learning_rate(belief=self._pomdp_state.toss_belief),
+            OPEN_GRIPPER_SKILL + " (belief mean)": mean_learning_rate(
+                belief=self._pomdp_state.open_gripper_belief
+            ),
         }
         if self._pomdp_model.reset_cost is not None:
             estimates[RESET_SKILL + " (fixed)"] = 0.0
