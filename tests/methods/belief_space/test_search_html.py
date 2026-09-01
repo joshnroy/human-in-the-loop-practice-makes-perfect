@@ -15,7 +15,7 @@ def test_html_preserves_every_search_event_and_escapes_script_injection(*, tmp_p
     state = make_default_tossing3d_belief()
     trace = SearchTrace()
     solve_belief_space_expectimax(
-        environment_state=Tossing3DSearchState(state=state),
+        environment_state=Tossing3DSearchState(state=state, true_atoms=frozenset()),
         belief_state=state,
         summed_cost=0,
         horizon=3,
