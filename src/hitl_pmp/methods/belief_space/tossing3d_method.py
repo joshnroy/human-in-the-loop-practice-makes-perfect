@@ -133,10 +133,6 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_state = self._pomdp_state.after_refit()
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
-        environment_state = self._pomdp_model.environment_state_from_atoms(true_atoms=true_atoms)
-        self._pomdp_state = self._pomdp_state.model_copy(
-            update={"environment_state": environment_state}
-        )
         _, action = solve_belief_space_expectimax(
             environment_state=Tossing3DSearchState(state=self._pomdp_state, true_atoms=true_atoms),
             belief_state=self._pomdp_state,
