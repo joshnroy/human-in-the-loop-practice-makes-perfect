@@ -13,7 +13,6 @@ from hitl_pmp.methods.belief_space.tossing3d_model import (
     SkillHypothesis,
     Tossing3DAction,
     Tossing3DBeliefState,
-    Tossing3DEnvironmentState,
     Tossing3DPracticeModel,
     Tossing3DSearchState,
     WeightedHypothesis,
@@ -114,7 +113,6 @@ def test_zero_budget_stops_even_with_search_horizon_remaining() -> None:
 
 def test_search_protocol_charges_accumulated_cost_once() -> None:
     state = Tossing3DBeliefState(
-        environment_state=Tossing3DEnvironmentState.READY,
         toss_belief=_point_belief(competence=0.8, learning_rate=0.0),
         pick_belief=_point_belief(competence=0.5, learning_rate=0.0),
         open_gripper_belief=_point_belief(competence=1.0, learning_rate=0.0),
@@ -134,7 +132,6 @@ def test_search_protocol_charges_accumulated_cost_once() -> None:
 
 def test_search_protocol_merges_identical_exploration_successors() -> None:
     state = Tossing3DBeliefState(
-        environment_state=Tossing3DEnvironmentState.HOLDING,
         toss_belief=_point_belief(competence=0.5),
     )
     model = _domain_model(random_toss_competence=0.5)
@@ -179,8 +176,7 @@ def test_only_physically_applicable_actions_are_returned() -> None:
         OPEN_GRIPPER_SKILL,
         RESET_SKILL,
     }
-    holding = belief.model_copy(update={"environment_state": Tossing3DEnvironmentState.HOLDING})
-    carrying = _search_state(model=model, state=holding, action_name=TOSS_SKILL)
+    carrying = _search_state(model=model, state=belief, action_name=TOSS_SKILL)
     assert {action.name for action in model.get_valid_actions(environment_state=carrying)} == {
         TOSS_SKILL,
         OPEN_GRIPPER_SKILL,
@@ -254,9 +250,7 @@ def test_first_session_cannot_identify_learning_rate() -> None:
 
 
 def test_open_gripper_success_is_inferred_not_assumed() -> None:
-    state = make_default_tossing3d_belief(
-        environment_state=Tossing3DEnvironmentState.GRIPPER_CLOSED
-    )
+    state = make_default_tossing3d_belief()
     model = _domain_model()
     closed_atoms = frozenset(
         atom
@@ -270,7 +264,7 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
         action=_action(model=model, search_state=search_state, name=OPEN_GRIPPER_SKILL),
     )
     assert [o.probability for o in outcomes] == pytest.approx([0.5, 0.5])
-    assert outcomes[1].next_state.environment_state == state.environment_state
+    assert outcomes[1].next_true_atoms == closed_atoms
     for _ in range(100):
         state = Tossing3DPracticeModel.observe_robot_skill(
             state=state, skill_name=OPEN_GRIPPER_SKILL, success=True
@@ -291,7 +285,7 @@ def test_pending_examples_predict_improvement_without_changing_current_competenc
 
 
 def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
-    state = make_default_tossing3d_belief(environment_state=Tossing3DEnvironmentState.HOLDING)
+    state = make_default_tossing3d_belief()
     outcomes = _outcomes(
         model=_domain_model(exploration_epsilon=0.5, random_toss_competence=0.2),
         state=state,
@@ -305,7 +299,6 @@ def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
 
 def test_refit_is_deferred_until_cycle_boundary() -> None:
     state = Tossing3DBeliefState(
-        environment_state=Tossing3DEnvironmentState.HOLDING,
         toss_belief=_point_belief(competence=0.5),
         pending_training_examples=2,
     )
@@ -317,7 +310,6 @@ def test_refit_is_deferred_until_cycle_boundary() -> None:
 
 def test_stop_value_solves_deployment_chain_and_charges_cost() -> None:
     state = Tossing3DBeliefState(
-        environment_state=Tossing3DEnvironmentState.STRANDED,
         toss_belief=_point_belief(competence=0.8, learning_rate=0.0),
         pick_belief=_point_belief(competence=0.5, learning_rate=0.0),
         open_gripper_belief=_point_belief(competence=1.0, learning_rate=0.0),
@@ -328,14 +320,12 @@ def test_stop_value_solves_deployment_chain_and_charges_cost() -> None:
 
 
 def test_partial_reset_does_not_open_a_closed_gripper() -> None:
-    state = make_default_tossing3d_belief(
-        environment_state=Tossing3DEnvironmentState.CLOSED_STRANDED
-    )
+    state = make_default_tossing3d_belief()
     model = _domain_model(reset_cost=0.01)
-    reset = _outcomes(model=model, state=state, name=RESET_SKILL)[0].next_state
-    assert reset.environment_state is Tossing3DEnvironmentState.GRIPPER_CLOSED
-    opened = _outcomes(model=model, state=state, name=OPEN_GRIPPER_SKILL)[0].next_state
-    assert opened.environment_state is Tossing3DEnvironmentState.STRANDED
+    reset = _outcomes(model=model, state=state, name=RESET_SKILL)[0]
+    assert "HandEmpty" not in {atom.predicate.name for atom in reset.next_true_atoms}
+    opened = _outcomes(model=model, state=state, name=OPEN_GRIPPER_SKILL)[0]
+    assert "HandEmpty" in {atom.predicate.name for atom in opened.next_true_atoms}
 
 
 def test_invalid_configuration_is_rejected_early() -> None:
@@ -343,7 +333,6 @@ def test_invalid_configuration_is_rejected_early() -> None:
         Tossing3DPracticeModel(practice_cost=-0.1)
     with pytest.raises(ValidationError):
         Tossing3DBeliefState(
-            environment_state=Tossing3DEnvironmentState.READY,
             toss_belief=_point_belief(competence=0.5),
             accumulated_cost=float("nan"),
         )
