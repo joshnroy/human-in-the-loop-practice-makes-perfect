@@ -1,7 +1,6 @@
 """Finite-horizon belief-space expectimax."""
 
 import math
-from functools import cache
 
 import numpy as np
 
@@ -57,8 +56,39 @@ class ExpectimaxSearch:
         self.model = model
         self.num_samples = num_samples
         self.trace = trace
-        # A bound-method cache belongs to this search, not to the class or model.
-        self.cached_solve_belief_space_expectimax = cache(self.solve_belief_space_expectimax)
+        self.memo: dict[object, tuple[float, POMDPAction]] = {}
+        self.next_node = 0
+
+    def cached_solve_belief_space_expectimax(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        summed_cost: float,
+        belief_state: BeliefState,
+        horizon: int,
+    ) -> tuple[float, POMDPAction]:
+        compact_key = getattr(self.model, "search_cache_key", None)
+        key = (
+            compact_key(
+                environment_state=environment_state,
+                summed_cost=summed_cost,
+                belief_state=belief_state,
+                horizon=horizon,
+            )
+            if compact_key is not None
+            else (environment_state, summed_cost, belief_state, horizon)
+        )
+        cached = self.memo.get(key)
+        if cached is not None:
+            return cached
+        result = self.solve_belief_space_expectimax(
+            environment_state=environment_state,
+            summed_cost=summed_cost,
+            belief_state=belief_state,
+            horizon=horizon,
+        )
+        self.memo[key] = result
+        return result
 
     def solve_belief_space_expectimax(
         self,
@@ -73,7 +103,8 @@ class ExpectimaxSearch:
             "summed_cost must be finite and non-negative"
         )
 
-        node = len(self.trace.events) if self.trace is not None else 0
+        node = self.next_node
+        self.next_node += 1
         if self.trace is not None:
             self.trace.record(
                 event="node",
@@ -83,9 +114,18 @@ class ExpectimaxSearch:
                 environment_state=environment_state.model_dump(mode="json"),
                 belief_state=belief_state.model_dump(mode="json"),
             )
+        batch_sampler = getattr(self.model, "sample_thetas_from_belief", None)
+        sampled_thetas = (
+            batch_sampler(belief_state=belief_state, num_samples=self.num_samples)
+            if batch_sampler is not None
+            else [
+                self.model.sample_theta_from_belief(belief_state=belief_state)
+                for _ in range(self.num_samples)
+            ]
+        )
         sample_values = []
-        for _ in range(self.num_samples):
-            sampled_theta = self.model.sample_theta_from_belief(belief_state=belief_state)
+        policy_values = []
+        for sampled_theta in sampled_thetas:
             current_policy_value = self.model.evaluate_policy(sampled_theta=sampled_theta)
             current_pomdp_value = self.model.score_pomdp_value_from_policy_value_and_cost(
                 policy_value=current_policy_value, summed_cost=summed_cost
@@ -94,7 +134,8 @@ class ExpectimaxSearch:
                 f"stop value must be finite, got {current_pomdp_value}"
             )
             sample_values.append(current_pomdp_value)
-            if self.trace is not None:
+            policy_values.append(current_policy_value)
+            if self.trace is not None and self.trace.retain_events:
                 self.trace.record(
                     event="sample",
                     node=node,
@@ -102,6 +143,19 @@ class ExpectimaxSearch:
                     policy_value=current_policy_value,
                     pomdp_value=current_pomdp_value,
                 )
+
+        if self.trace is not None:
+            self.trace.record(
+                event="sample_summary",
+                node=node,
+                count=len(sample_values),
+                policy_value_mean=float(np.mean(policy_values)),
+                policy_value_min=float(np.min(policy_values)),
+                policy_value_max=float(np.max(policy_values)),
+                pomdp_value_mean=float(np.mean(sample_values)),
+                pomdp_value_min=float(np.min(sample_values)),
+                pomdp_value_max=float(np.max(sample_values)),
+            )
 
         current_best_value = float(np.mean(sample_values))
         current_best_action = STOP_ACTION
@@ -122,13 +176,24 @@ class ExpectimaxSearch:
             value_of_state = 0.0
             total_probability = 0.0
             # TODO: Should samples be drawn with or without replacement?
-            next_states = self.model.sample_next_states(
-                environment_state=environment_state,
-                practice_action=practice_action,
-                belief_state=belief_state,
-            )
+            outcome_sampler = getattr(self.model, "transition_outcomes", None)
+            if outcome_sampler is None:
+                next_states = [
+                    (next_state, sampled_cost, None)
+                    for next_state, sampled_cost in self.model.sample_next_states(
+                        environment_state=environment_state,
+                        practice_action=practice_action,
+                        belief_state=belief_state,
+                    )
+                ]
+            else:
+                next_states = outcome_sampler(
+                    environment_state=environment_state,
+                    practice_action=practice_action,
+                    belief_state=belief_state,
+                )
             assert next_states, f"action {practice_action!r} has no chance outcomes"
-            for potential_next_environment_state, sampled_cost in next_states:
+            for potential_next_environment_state, sampled_cost, known_probability in next_states:
                 assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
                     "sampled_cost must be finite and non-negative"
                 )
@@ -144,12 +209,16 @@ class ExpectimaxSearch:
                     belief_state=next_belief_state,
                     horizon=horizon - 1,
                 )
-                probability = self.model.transition_probability(
-                    potential_next_environment_state=potential_next_environment_state,
-                    sampled_cost=sampled_cost,
-                    environment_state=environment_state,
-                    practice_action=practice_action,
-                    belief_state=belief_state,
+                probability = (
+                    self.model.transition_probability(
+                        potential_next_environment_state=potential_next_environment_state,
+                        sampled_cost=sampled_cost,
+                        environment_state=environment_state,
+                        practice_action=practice_action,
+                        belief_state=belief_state,
+                    )
+                    if known_probability is None
+                    else known_probability
                 )
                 assert math.isfinite(probability) and probability > 0.0, (
                     f"chance probability must be finite and positive, got {probability}"

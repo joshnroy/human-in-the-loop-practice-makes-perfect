@@ -11,7 +11,10 @@ let summaries = [],
   milestones = [],
   position = 0,
   clock = null,
-  requestId = 0;
+  requestId = 0,
+  treeLayer = null,
+  treeView = {x: 0, y: 0, scale: 1},
+  dragPoint = null;
 function stopPlayback() {
   if (clock !== null) clearInterval(clock);
   clock = null;
@@ -28,19 +31,42 @@ async function get(url) {
   if (!response.ok) throw Error(await response.text());
   return response.json();
 }
-function raw(parent, label, value) {
-  const d = document.createElement('details'),
-    s = document.createElement('summary');
-  s.textContent = label;
-  d.append(s);
-  d.addEventListener('toggle', () => {
-    if (!d.open || d.dataset.built) return;
-    d.dataset.built = '1';
-    const pre = document.createElement('pre');
-    pre.textContent = JSON.stringify(value, null, 2);
-    d.append(pre);
-  });
-  parent.append(d);
+async function getDecision(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw Error(await response.text());
+  if (!response.body?.getReader) return response.json();
+  const total = Number(response.headers.get('X-Uncompressed-Content-Length')) || 0,
+    reader = response.body.getReader(), chunks = [];
+  let loaded = 0;
+  $('loading').hidden = false;
+  $('loading-progress').value = 0;
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    loaded += value.length;
+    const ratio = total ? Math.min(loaded / total, 1) : 0;
+    $('loading-progress').value = ratio;
+    $('loading-percent').textContent = total ? Math.round(ratio * 100) + '%' : (loaded / 1048576).toFixed(1) + ' MB';
+    $('loading-label').textContent = 'Loading search JSON · ' + (loaded / 1048576).toFixed(1) + (total ? ' / ' + (total / 1048576).toFixed(1) + ' MB' : ' MB');
+  }
+  const bytes = new Uint8Array(loaded);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+  $('loading-progress').value = 1;
+  $('loading-percent').textContent = '100%';
+  $('loading-label').textContent = 'Parsing loaded search JSON…';
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+function resolve(value) {
+  if (!value || typeof value !== 'object' || value.$ref === undefined || !value.$kind) return value;
+  return record?.search_interns?.[value.$kind]?.[String(value.$ref)] ?? value;
+}
+function field(event, fieldName) {
+  return resolve(event?.[fieldName]);
+}
+function expanded(event) {
+  return Object.fromEntries(Object.entries(event).map(([fieldName, value]) => [fieldName, resolve(value)]));
 }
 function bar(parent, label, value, max, isStop = false) {
   const row = document.createElement('div');
@@ -63,15 +89,16 @@ function indexTrace() {
         events: [],
         actions: new Map()
       });
-      keys.set(key(event.environment_state, event.belief_state, event.summed_cost, event.horizon), event.node);
+      keys.set(key(field(event, 'environment_state'), field(event, 'belief_state'), event.summed_cost, event.horizon), event.node);
     }
     const node = nodes.get(event.node);
     if (node) {
       node.events.push(event);
-      if (event.action && event.action !== 'STOP' && ['branch', 'action_value'].includes(event.event)) {
-        const akey = JSON.stringify(event.action);
+      const action = field(event, 'action');
+      if (action && action !== 'STOP' && ['branch', 'action_value'].includes(event.event)) {
+        const akey = JSON.stringify(action);
         if (!node.actions.has(akey)) node.actions.set(akey, {
-          action: event.action,
+          action,
           events: []
         });
         node.actions.get(akey).events.push(event);
@@ -86,70 +113,97 @@ function drawSummary() {
     values = root ? root.events.filter(e => e.event === 'stop_value' || e.event === 'action_value') : [];
   $('values').replaceChildren();
   const max = Math.max(...values.map(e => Math.abs(e.value)), .001);
-  for (const e of values) bar($('values'), e.event === 'stop_value' ? 'STOP' : name(e.action), e.value, max, e.event === 'stop_value');
+  for (const e of values) bar($('values'), e.event === 'stop_value' ? 'STOP' : name(field(e, 'action')), e.value, max, e.event === 'stop_value');
   $('competences').replaceChildren();
   for (const [skill, v] of Object.entries(record.competences ?? {})) bar($('competences'), skill, v, 1);
   $('metadata').textContent = 'Cycle ' + record.cycle + ' · decision ' + record.decision + ' · chose ' + name(record.action) + ' · H=' + record.horizon + ' · C=' + (root?.info.summed_cost ?? '?') + ' · B=' + (record.model?.hard_budget ?? 'linear') + ' · ' + number(record.search_duration_seconds) + ' seconds · ' + nodes.size + ' unique states';
 }
-function drawState(parent, id, cutoff, open = false) {
-  const node = nodes.get(id);
-  if (!node || node.info.traceIndex > cutoff) return;
-  const visible = node.events.filter(e => e.traceIndex <= cutoff),
-    choice = visible.find(e => e.event === 'choice'),
-    stop = visible.find(e => e.event === 'stop_value');
-  const d = document.createElement('details'),
-    s = document.createElement('summary');
-  const atoms = node.info.environment_state?.atoms ?? [];
-  s.textContent = 'State ' + id + ' · ' + (atoms.length ? atoms.join(', ') : '∅') + ' · h=' + node.info.horizon + ' · C=' + node.info.summed_cost + ' · V=' + number(choice?.value) + (choice ? ' → ' + name(choice.action) : ' · evaluating');
-  d.append(s);
-  parent.append(d);
-  d.addEventListener('toggle', () => {
-    if (!d.open || d.dataset.built) return;
-    d.dataset.built = '1';
-    raw(d, 'Physical state and belief', node.info);
-    raw(d, 'STOP = ' + number(stop?.value) + ' · θ samples (' + visible.filter(e => e.event === 'sample').length + ')', visible.filter(e => ['sample', 'stop_value'].includes(e.event)));
-    for (const action of node.actions.values()) {
-      const events = action.events.filter(e => e.traceIndex <= cutoff);
-      if (!events.length) continue;
-      const v = events.find(e => e.event === 'action_value'),
-        ad = document.createElement('details'),
-        as = document.createElement('summary');
-      as.textContent = name(action.action) + ' · Q=' + number(v?.value);
-      if (choice && JSON.stringify(choice.action) === JSON.stringify(action.action)) as.className = 'selected';
-      ad.append(as);
-      d.append(ad);
-      ad.addEventListener('toggle', () => {
-        if (!ad.open || ad.dataset.built) return;
-        ad.dataset.built = '1';
-        for (const b of events.filter(e => e.event === 'branch')) {
-          const bd = document.createElement('details'),
-            bs = document.createElement('summary');
-          bs.textContent = 'p=' + number(b.probability) + ' × V=' + number(b.successor_value) + ' = ' + number(b.contribution) + ' · cost ' + b.sampled_cost;
-          bd.append(bs);
-          ad.append(bd);
-          bd.addEventListener('toggle', () => {
-            if (!bd.open || bd.dataset.built) return;
-            bd.dataset.built = '1';
-            raw(bd, 'Full chance outcome', b);
-            const child = keys.get(key(b.successor, b.belief_state, b.summed_cost, b.horizon));
-            if (child === undefined) {
-              const p = document.createElement('p');
-              p.textContent = 'Successor not found in the recorded trace';
-              bd.append(p);
-            } else drawState(bd, child, cutoff, true);
-          });
-        }
-      });
-    }
-    if (choice) raw(d, 'Choice and reason', choice);else {
-      const p = document.createElement('p');
-      p.className = 'pending';
-      p.textContent = 'This node has not returned at this replay position.';
-      d.append(p);
-    }
-  });
-  d.open = open;
+function svg(tag, attributes = {}) {
+  const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [attribute, value] of Object.entries(attributes)) element.setAttribute(attribute, value);
+  return element;
 }
+function treeData(id, cutoff, seen = new Set(), budget = {left: 120, truncated: false}) {
+  const node = nodes.get(id);
+  if (!node || node.info.traceIndex > cutoff) return null;
+  if (budget.left-- <= 0) { budget.truncated = true; return null; }
+  const visible = node.events.filter(event => event.traceIndex <= cutoff), choice = visible.find(event => event.event === 'choice');
+  const state = {kind: 'state', id: 's' + id, label: 'S' + id + ' · V=' + number(choice?.value) + (choice ? ' → ' + name(field(choice, 'action')) : ' · evaluating'), data: expanded(node.info), children: []};
+  if (seen.has(id)) { state.label += ' · cached'; return state; }
+  seen.add(id);
+  for (const action of node.actions.values()) {
+    const events = action.events.filter(event => event.traceIndex <= cutoff);
+    if (!events.length) continue;
+    const value = events.find(event => event.event === 'action_value');
+    const actionNode = {kind: 'action', label: name(action.action) + ' · Q=' + number(value?.value), data: {action: action.action, events}, children: []};
+    for (const branch of events.filter(event => event.event === 'branch')) {
+      const chance = {kind: 'chance', label: 'p=' + number(branch.probability) + ' · Δ=' + number(branch.contribution), data: expanded(branch), children: []};
+      const child = keys.get(key(field(branch, 'successor'), field(branch, 'belief_state'), branch.summed_cost, branch.horizon));
+      const childNode = child === undefined ? null : treeData(child, cutoff, seen, budget);
+      if (childNode) chance.children.push(childNode);
+      actionNode.children.push(chance);
+    }
+    state.children.push(actionNode);
+  }
+  return state;
+}
+function drawDecisionTree(cutoff) {
+  const budget = {left: 120, truncated: false}, root = treeData(0, cutoff, new Set(), budget);
+  $('tree').replaceChildren();
+  if (!root) return;
+  const flat = [], links = [];
+  let nextLeaf = 0;
+  function layout(node, depth = 0) {
+    node.depth = depth;
+    flat.push(node);
+    for (const child of node.children) { links.push([node, child]); layout(child, depth + 1); }
+    node.x = node.children.length ? node.children.reduce((total, child) => total + child.x, 0) / node.children.length : 80 + nextLeaf++ * 190;
+    node.y = 55 + depth * 115;
+  }
+  layout(root);
+  $('tree').setAttribute('viewBox', '0 0 1200 700');
+  const layer = svg('g');
+  treeLayer = layer;
+  treeView = {x: 600 - root.x * .8, y: 20, scale: .8};
+  $('tree').append(layer);
+  transformTree();
+  for (const [from, to] of links) layer.append(svg('line', {x1: from.x, y1: from.y, x2: to.x, y2: to.y, class: 'tree-edge'}));
+  for (const node of flat) {
+    const group = svg('g', {transform: 'translate(' + node.x + ' ' + node.y + ')', class: 'tree-node ' + node.kind});
+    group.dataset.kind = node.kind;
+    if (node.kind === 'state') group.append(svg('circle', {r: 13}));
+    else if (node.kind === 'chance') group.append(svg('path', {d: 'M 0 -13 L 13 0 L 0 13 L -13 0 Z'}));
+    else group.append(svg('rect', {x: -18, y: -12, width: 36, height: 24, rx: 6}));
+    const label = svg('text', {x: 20, y: 5}); label.textContent = node.label; group.append(label);
+    group.onclick = () => { $('node-info').textContent = JSON.stringify(node.data, null, 2); };
+    layer.append(group);
+  }
+  $('node-info').textContent = 'Showing ' + flat.filter(node => node.kind === 'state').length + ' of ' + nodes.size + ' recorded states' + (budget.truncated ? '. Pan horizontally or replay earlier computations to inspect a smaller frontier.' : '.') + ' Click a node for its logged values.';
+}
+function transformTree() {
+  if (treeLayer) treeLayer.setAttribute('transform', 'translate(' + treeView.x + ' ' + treeView.y + ') scale(' + treeView.scale + ')');
+}
+$('tree').addEventListener('wheel', event => {
+  event.preventDefault();
+  treeView.scale = Math.max(.15, Math.min(4, treeView.scale * (event.deltaY < 0 ? 1.12 : .89)));
+  transformTree();
+});
+$('tree').addEventListener('pointerdown', event => {
+  $('tree').setPointerCapture(event.pointerId);
+  dragPoint = {x: event.clientX, y: event.clientY, pointerId: event.pointerId};
+});
+$('tree').addEventListener('pointermove', event => {
+  if (!dragPoint) return;
+  treeView.x += event.clientX - dragPoint.x;
+  treeView.y += event.clientY - dragPoint.y;
+  dragPoint = {x: event.clientX, y: event.clientY};
+  transformTree();
+});
+$('tree').addEventListener('pointerup', event => {
+  if (dragPoint) $('tree').releasePointerCapture(event.pointerId);
+  dragPoint = null;
+});
+$('tree').addEventListener('pointerleave', () => { dragPoint = null; });
 function drawReplay() {
   if (!record) return;
   const cutoff = milestones[position],
@@ -157,15 +211,7 @@ function drawReplay() {
   $('timeline').value = position;
   $('event-position').textContent = position + 1 + ' / ' + milestones.length;
   $('event-info').textContent = event ? 'Trace event ' + (cutoff + 1) + ' / ' + record.search.length + ' · ' + event.event + ' · node ' + event.node + (event.elapsed_seconds !== undefined ? ' · ' + number(event.elapsed_seconds) + ' s' : '') : '';
-  $('tree').replaceChildren();
-  $('active').replaceChildren();
-  drawState($('tree'), 0, cutoff, true);
-  if (event && event.node !== 0) {
-    const h = document.createElement('h2');
-    h.textContent = 'Active recorded node';
-    $('active').append(h);
-    drawState($('active'), event.node, cutoff, true);
-  }
+  drawDecisionTree(cutoff);
 }
 function seek(next) {
   position = Math.max(0, Math.min(milestones.length - 1, next));
@@ -179,10 +225,10 @@ async function selectDecision() {
   nodes.clear();
   keys.clear();
   $('tree').replaceChildren();
-  $('active').replaceChildren();
+  $('loading').hidden = false;
   message('Loading one complete search trace…');
   try {
-    const result = await get('/api/decision?seed=' + encodeURIComponent($('seed').value) + '&index=' + encodeURIComponent($('decision').value));
+    const result = await getDecision('/api/decision?seed=' + encodeURIComponent($('seed').value) + '&index=' + encodeURIComponent($('decision').value));
     if (generation !== requestId) return;
     record = result;
     indexTrace();
@@ -193,6 +239,7 @@ async function selectDecision() {
     $('previous').disabled = +$('decision').value === 0;
     $('next').disabled = +$('decision').value === summaries.length - 1;
     message('Complete saved search loaded. Navigate decisions or replay its structural events.');
+    $('loading').hidden = true;
   } catch (error) {
     if (generation === requestId) message('Could not load search: ' + error.message);
   }
@@ -205,7 +252,6 @@ async function selectSeed() {
   nodes.clear();
   keys.clear();
   $('tree').replaceChildren();
-  $('active').replaceChildren();
   message('Indexing this seed’s decision log. The first visit may take a moment…');
   try {
     const result = await get('/api/index?seed=' + encodeURIComponent($('seed').value));

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field, model_validator
@@ -190,27 +191,66 @@ class Tossing3DPracticeModel(BaseModel):
     seed: int = 0
     ground_skills: tuple[GroundSkill, ...] = Field(default=(), exclude=True)
     _rng: np.random.Generator = PrivateAttr()
+    _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
+    _precondition_masks: tuple[int, ...] = PrivateAttr(default=())
+    _actions: tuple[Tossing3DAction, ...] = PrivateAttr(default=())
+    _effects: dict[
+        GroundSkill,
+        tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
+    ] = PrivateAttr(default_factory=dict)
+    _belief_ids: dict[object, int] = PrivateAttr(default_factory=dict)
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
+        relevant_atoms = sorted(
+            {
+                atom
+                for skill in self.ground_skills
+                for atom in (*skill.preconditions, *skill.add_effects, *skill.delete_effects)
+            },
+            key=str,
+        )
+        self._atom_indexes = {atom: index for index, atom in enumerate(relevant_atoms)}
+        self._precondition_masks = tuple(
+            self._atoms_mask(atoms=skill.preconditions) for skill in self.ground_skills
+        )
+        self._actions = tuple(
+            Tossing3DAction(name=skill.skill.name, ground_skill=skill)
+            for skill in self.ground_skills
+        )
+        self._effects = {
+            skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
+            for skill in self.ground_skills
+        }
 
     def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta:
+        return self.sample_thetas_from_belief(belief_state=belief_state, num_samples=1)[0]
+
+    def sample_thetas_from_belief(
+        self, *, belief_state: BeliefState, num_samples: int
+    ) -> list[Theta]:
         assert isinstance(belief_state, Tossing3DBeliefState)
         projected = belief_state.after_refit()
-        return Tossing3DTheta(
-            pick=self.sample_skill(belief=projected.pick_belief),
-            toss=self.sample_skill(belief=projected.toss_belief),
-            open_gripper=self.sample_skill(belief=projected.open_gripper_belief),
-        )
+        pick = self.sample_skills(belief=projected.pick_belief, count=num_samples)
+        toss = self.sample_skills(belief=projected.toss_belief, count=num_samples)
+        opened = self.sample_skills(belief=projected.open_gripper_belief, count=num_samples)
+        return [
+            Tossing3DTheta(pick=pick[index], toss=toss[index], open_gripper=opened[index])
+            for index in range(num_samples)
+        ]
 
     def sample_skill(self, *, belief: SkillBelief) -> SkillHypothesis:
-        index = int(
+        return self.sample_skills(belief=belief, count=1)[0]
+
+    def sample_skills(self, *, belief: SkillBelief, count: int) -> list[SkillHypothesis]:
+        indexes = np.atleast_1d(
             self._rng.choice(
                 len(belief.hypotheses),
-                p=[item.probability for item in belief.hypotheses],
+                size=count,
+                p=np.fromiter((item.probability for item in belief.hypotheses), dtype=np.float64),
             )
         )
-        return belief.hypotheses[index].hypothesis
+        return [belief.hypotheses[int(index)].hypothesis for index in indexes]
 
     def evaluate_policy(self, *, sampled_theta: Theta) -> float:
         assert isinstance(sampled_theta, Tossing3DTheta)
@@ -238,14 +278,67 @@ class Tossing3DPracticeModel(BaseModel):
             OPEN_GRIPPER_SKILL: self.open_gripper_cost,
             RESET_SKILL: self.reset_cost,
         }
+        state_mask = self._atoms_mask(atoms=environment_state.true_atoms)
         return [
-            Tossing3DAction(name=ground_skill.skill.name, ground_skill=ground_skill)
-            for ground_skill in self.ground_skills
-            if ground_skill.preconditions <= environment_state.true_atoms
+            action
+            for index, (ground_skill, action) in enumerate(
+                zip(self.ground_skills, self._actions, strict=True)
+            )
+            if self._precondition_masks[index] & state_mask == self._precondition_masks[index]
             for cost in [costs[ground_skill.skill.name]]
             if self.hard_budget is None
             or (cost is not None and state.accumulated_cost + cost <= self.hard_budget)
         ]
+
+    def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
+        mask = 0
+        for atom in atoms:
+            index = self._atom_indexes.get(atom)
+            if index is not None:
+                mask |= 1 << index
+        return mask
+
+    @staticmethod
+    def _belief_signature(*, belief: SkillBelief) -> tuple[tuple[float, float, float], ...]:
+        return tuple(
+            (
+                item.hypothesis.competence,
+                item.hypothesis.learning_rate,
+                item.probability,
+            )
+            for item in belief.hypotheses
+        )
+
+    def _belief_id(self, *, belief: SkillBelief) -> int:
+        signature = self._belief_signature(belief=belief)
+        identifier = self._belief_ids.get(signature)
+        if identifier is None:
+            identifier = len(self._belief_ids)
+            self._belief_ids[signature] = identifier
+        return identifier
+
+    def search_cache_key(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        summed_cost: float,
+        belief_state: BeliefState,
+        horizon: int,
+    ) -> object:
+        assert isinstance(environment_state, Tossing3DSearchState)
+        assert isinstance(belief_state, Tossing3DBeliefState)
+        assert summed_cost == belief_state.accumulated_cost
+        return (
+            self._atoms_mask(atoms=environment_state.true_atoms),
+            self._belief_id(belief=belief_state.pick_belief),
+            self._belief_id(belief=belief_state.toss_belief),
+            self._belief_id(belief=belief_state.open_gripper_belief),
+            belief_state.pending_pick_examples,
+            belief_state.pending_training_examples,
+            belief_state.pending_open_gripper_examples,
+            belief_state.accumulated_cost,
+            horizon,
+        )
 
     def sample_next_states(
         self,
@@ -273,6 +366,30 @@ class Tossing3DPracticeModel(BaseModel):
                 )
             )
         )
+
+    def transition_outcomes(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float, float]]:
+        assert isinstance(environment_state, Tossing3DSearchState)
+        assert isinstance(practice_action, Tossing3DAction)
+        assert isinstance(belief_state, Tossing3DBeliefState)
+        merged: dict[tuple[Tossing3DSearchState, float], float] = {}
+        for outcome in self.outcomes(
+            environment_state=environment_state,
+            state=belief_state,
+            action=practice_action,
+        ):
+            next_environment = Tossing3DSearchState(
+                state=outcome.next_state, true_atoms=outcome.next_true_atoms
+            )
+            cost = outcome.next_state.accumulated_cost - belief_state.accumulated_cost
+            key = (next_environment, cost)
+            merged[key] = merged.get(key, 0.0) + outcome.probability
+        return [(*key, probability) for key, probability in merged.items()]
 
     def update_belief_state(
         self,
@@ -390,15 +507,15 @@ class Tossing3DPracticeModel(BaseModel):
             ground_skill=ground_skill,
         )
 
-    @staticmethod
     def _deterministic(
+        self,
         *,
         state: Tossing3DBeliefState,
         true_atoms: frozenset[GroundAtom],
         ground_skill: GroundSkill,
         cost: float,
     ) -> tuple[Tossing3DOutcome, ...]:
-        next_true_atoms = Tossing3DPracticeModel.apply_success_effects(
+        next_true_atoms = self.apply_success_effects(
             true_atoms=true_atoms, ground_skill=ground_skill
         )
         return (
@@ -411,8 +528,8 @@ class Tossing3DPracticeModel(BaseModel):
             ),
         )
 
-    @staticmethod
     def _binary_outcomes(
+        self,
         *,
         state: Tossing3DBeliefState,
         true_atoms: frozenset[GroundAtom],
@@ -426,9 +543,7 @@ class Tossing3DPracticeModel(BaseModel):
             if branch_probability <= 0.0:
                 continue
             next_true_atoms = (
-                Tossing3DPracticeModel.apply_success_effects(
-                    true_atoms=true_atoms, ground_skill=ground_skill
-                )
+                self.apply_success_effects(true_atoms=true_atoms, ground_skill=ground_skill)
                 if success
                 else true_atoms
             )
@@ -503,17 +618,16 @@ class Tossing3DPracticeModel(BaseModel):
                 )
         return tuple(branches)
 
-    @staticmethod
     def apply_success_effects(
-        *, true_atoms: frozenset[GroundAtom], ground_skill: GroundSkill
+        self, *, true_atoms: frozenset[GroundAtom], ground_skill: GroundSkill
     ) -> frozenset[GroundAtom]:
+        add_effects, delete_effects, ignore_effects = self._effects[ground_skill]
         kept = {
             atom
             for atom in true_atoms
-            if atom.predicate not in ground_skill.ignore_effects
-            and atom not in ground_skill.delete_effects
+            if atom.predicate not in ignore_effects and atom not in delete_effects
         }
-        return frozenset(kept | set(ground_skill.add_effects))
+        return frozenset(kept | set(add_effects))
 
     def observe_toss(
         self,

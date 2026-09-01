@@ -7,6 +7,7 @@ import subprocess
 import threading
 from http.server import HTTPServer
 from pathlib import Path
+from typing import cast
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -19,6 +20,7 @@ def test_browser_logic() -> None:
     node = shutil.which("node")
     if node is None:
         pytest.skip("Node is not installed")
+    node = cast(str, node)
     subprocess.run(
         [node, str(Path(__file__).with_name("pomdp_tree_explorer_ui.cjs"))],
         check=True,
@@ -62,6 +64,42 @@ def test_offsets_and_metadata(*, tmp_path: Path) -> None:
     with path.open("ab") as out:
         out.write(b', "search": []}\n')
     assert len(store.index(seed=0)) == 3
+
+
+def test_compressed_sidecar_stays_interned_in_decision_response(*, tmp_path: Path) -> None:
+    seed = tmp_path / "0"
+    traces = seed / "search_traces"
+    traces.mkdir(parents=True)
+    record = {
+        "event": "decision",
+        "cycle": 0,
+        "decision": 1,
+        "search": [],
+        "search_trace": "search_traces/decision.jsonl.gz",
+    }
+    (seed / "pomdp_decisions.jsonl").write_text(json.dumps(record) + "\n")
+    events = [
+        {
+            "event": "intern",
+            "kind": "state",
+            "id": 0,
+            "value": {"state": {"large": "duplicate belief"}, "atoms": ["Ready"]},
+        },
+        {
+            "event": "node",
+            "node": 0,
+            "environment_state": {"$kind": "state", "$ref": 0},
+        },
+    ]
+    with gzip.open(traces / "decision.jsonl.gz", "wt") as stream:
+        for event in events:
+            stream.write(json.dumps(event) + "\n")
+
+    response = json.loads(DecisionStore(root=tmp_path).decision(seed=0, index=0))
+
+    assert response["search_interns"] == {"state": {"0": {"atoms": ["Ready"]}}}
+    assert response["search"] == [events[1]]
+    assert len(json.dumps(response)) < 500
 
 
 @pytest.mark.parametrize(
@@ -134,6 +172,7 @@ def test_http_endpoints(*, tmp_path: Path) -> None:
                 assert json.load(response)["decisions"][0]["action"] == "STOP"
             with urlopen(base + "/api/decision?seed=0&index=0") as response:
                 assert response.headers["Content-Encoding"] == "gzip"
+                assert response.headers["X-Uncompressed-Content-Length"] == str(len(original))
                 assert gzip.decompress(response.read()) == original
             for asset in ["/", "/index.html", "/explorer.js", "/explorer.css"]:
                 with urlopen(base + asset) as response:
