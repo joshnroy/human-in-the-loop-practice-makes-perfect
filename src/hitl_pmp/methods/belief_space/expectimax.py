@@ -1,29 +1,31 @@
 """Finite-horizon belief-space expectimax."""
 
 import math
-from functools import cache
+from typing import Generic
 
 import numpy as np
 
 from .types import (
     NUM_SAMPLES,
     STOP_ACTION,
+    ActionT,
     BeliefSpaceModel,
-    BeliefState,
-    EnvironmentState,
-    POMDPAction,
+    BeliefStateT,
+    EnvironmentStateT,
+    StopAction,
+    ThetaT,
 )
 
 
 def solve_belief_space_expectimax(
     *,
-    environment_state: EnvironmentState,
+    environment_state: EnvironmentStateT,
     summed_cost: float,
-    belief_state: BeliefState,
+    belief_state: BeliefStateT,
     horizon: int,
-    model: BeliefSpaceModel,
+    model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
     num_samples: int = NUM_SAMPLES,
-) -> tuple[float, POMDPAction]:
+) -> tuple[float, ActionT | StopAction]:
     """Implementation of understanding/pomdp_formulation.py.
 
     Pseudocode and review:
@@ -46,31 +48,63 @@ def solve_belief_space_expectimax(
     )
 
 
-class ExpectimaxSearch:
+class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
     """One search's model and cached recursion."""
 
-    def __init__(self, *, model: BeliefSpaceModel, num_samples: int) -> None:
+    def __init__(
+        self,
+        *,
+        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        num_samples: int,
+    ) -> None:
         self.model = model
         self.num_samples = num_samples
-        # A bound-method cache belongs to this search, not to the class or model.
-        self.cached_solve_belief_space_expectimax = cache(self.solve_belief_space_expectimax)
+        self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
+
+    def cached_solve_belief_space_expectimax(
+        self,
+        *,
+        environment_state: EnvironmentStateT,
+        summed_cost: float,
+        belief_state: BeliefStateT,
+        horizon: int,
+    ) -> tuple[float, ActionT | StopAction]:
+        key = self.model.search_cache_key(
+            environment_state=environment_state,
+            summed_cost=summed_cost,
+            belief_state=belief_state,
+            horizon=horizon,
+        )
+        cached = self.memo.get(key)
+        if cached is not None:
+            return cached
+        result = self.solve_belief_space_expectimax(
+            environment_state=environment_state,
+            summed_cost=summed_cost,
+            belief_state=belief_state,
+            horizon=horizon,
+        )
+        self.memo[key] = result
+        return result
 
     def solve_belief_space_expectimax(
         self,
         *,
-        environment_state: EnvironmentState,
+        environment_state: EnvironmentStateT,
         summed_cost: float,
-        belief_state: BeliefState,
+        belief_state: BeliefStateT,
         horizon: int,
-    ) -> tuple[float, POMDPAction]:
+    ) -> tuple[float, ActionT | StopAction]:
         assert horizon >= 0, f"horizon must be non-negative, got {horizon}"
         assert math.isfinite(summed_cost) and summed_cost >= 0, (
             "summed_cost must be finite and non-negative"
         )
 
+        sampled_thetas = self.model.sample_thetas_from_belief(
+            belief_state=belief_state, num_samples=self.num_samples
+        )
         sample_values = []
-        for _ in range(self.num_samples):
-            sampled_theta = self.model.sample_theta_from_belief(belief_state=belief_state)
+        for sampled_theta in sampled_thetas:
             current_policy_value = self.model.evaluate_policy(sampled_theta=sampled_theta)
             current_pomdp_value = self.model.score_pomdp_value_from_policy_value_and_cost(
                 policy_value=current_policy_value, summed_cost=summed_cost
@@ -81,7 +115,7 @@ class ExpectimaxSearch:
             sample_values.append(current_pomdp_value)
 
         current_best_value = float(np.mean(sample_values))
-        current_best_action = STOP_ACTION
+        current_best_action: ActionT | StopAction = STOP_ACTION
         if horizon == 0:
             return current_best_value, current_best_action
 
@@ -89,13 +123,19 @@ class ExpectimaxSearch:
             value_of_state = 0.0
             total_probability = 0.0
             # TODO: Should samples be drawn with or without replacement?
-            next_states = self.model.sample_next_states(
+            next_states_and_probabilities = self.model.transition_outcomes(
                 environment_state=environment_state,
                 practice_action=practice_action,
                 belief_state=belief_state,
             )
-            assert next_states, f"action {practice_action!r} has no chance outcomes"
-            for potential_next_environment_state, sampled_cost in next_states:
+            assert next_states_and_probabilities, (
+                f"action {practice_action!r} has no chance outcomes"
+            )
+            for (
+                potential_next_environment_state,
+                sampled_cost,
+                probability,
+            ) in next_states_and_probabilities:
                 assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
                     "sampled_cost must be finite and non-negative"
                 )
@@ -110,13 +150,6 @@ class ExpectimaxSearch:
                     summed_cost=summed_cost + sampled_cost,
                     belief_state=next_belief_state,
                     horizon=horizon - 1,
-                )
-                probability = self.model.transition_probability(
-                    potential_next_environment_state=potential_next_environment_state,
-                    sampled_cost=sampled_cost,
-                    environment_state=environment_state,
-                    practice_action=practice_action,
-                    belief_state=belief_state,
                 )
                 assert math.isfinite(probability) and probability > 0.0, (
                     f"chance probability must be finite and positive, got {probability}"
