@@ -105,53 +105,12 @@ def _expected_stop_value(*, model: Tossing3DPracticeModel, state: Tossing3DBelie
             projected.open_gripper_belief.hypotheses,
         )
     )
-    return model.score_pomdp_value_from_policy_value_and_cost(
-        policy_value=deployment_value, summed_cost=state.accumulated_cost
-    )
+    return model.G(policy_value=deployment_value, summed_cost=state.accumulated_cost)
 
 
-def test_hard_budget_filters_unaffordable_actions() -> None:
-    model = _domain_model(hard_budget=2, reset_cost=1)
-    state = make_default_tossing3d_belief()
-    state = state.model_copy(update={"accumulated_cost": 1.0})
-    search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
-    actions = model.get_valid_actions(environment_state=search_state)
-    assert {action.skill.name for action in actions} == {
-        PICK_SKILL,
-        OPEN_GRIPPER_SKILL,
-        RESET_SKILL,
-    }
-    exhausted = state.model_copy(update={"accumulated_cost": 2.0})
-    assert (
-        model.get_valid_actions(
-            environment_state=search_state.model_copy(update={"state": exhausted})
-        )
-        == []
-    )
-
-
-def test_hard_budget_has_no_linear_cost_penalty() -> None:
-    model = Tossing3DPracticeModel(hard_budget=2, practice_cost=0.9)
-    assert (
-        model.score_pomdp_value_from_policy_value_and_cost(policy_value=0.5, summed_cost=2) == 0.5
-    )
-    state = make_default_tossing3d_belief()
-    assert _expected_stop_value(model=model, state=state) == _expected_stop_value(
-        model=model, state=state.model_copy(update={"accumulated_cost": 2.0})
-    )
-
-
-def test_zero_budget_stops_even_with_search_horizon_remaining() -> None:
-    state = make_default_tossing3d_belief()
-    model = _domain_model(hard_budget=0, reset_cost=1)
-    _, action = solve_belief_space_expectimax(
-        environment_state=_search_state(model=model, state=state, action_name=PICK_SKILL),
-        belief_state=state,
-        summed_cost=0,
-        horizon=10,
-        model=model,
-    )
-    assert action == STOP_ACTION
+def test_G_subtracts_scaled_accumulated_practice_cost() -> None:
+    model = Tossing3DPracticeModel(practice_cost=0.1)
+    assert model.G(policy_value=0.5, summed_cost=2.0) == pytest.approx(0.3)
 
 
 def test_search_protocol_charges_accumulated_cost_once() -> None:

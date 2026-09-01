@@ -78,9 +78,7 @@ class Model(BaseModel):
         assert isinstance(sampled_theta, Theta)
         return sampled_theta.value * self.scale
 
-    def score_pomdp_value_from_policy_value_and_cost(
-        self, *, policy_value: float, summed_cost: float
-    ) -> float:
+    def G(self, *, policy_value: float, summed_cost: float) -> float:
         return policy_value - summed_cost
 
     def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[Action]:

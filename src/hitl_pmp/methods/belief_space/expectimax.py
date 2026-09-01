@@ -104,7 +104,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         sample_values = []
         for sampled_theta in sampled_thetas:
             current_policy_value = self.model.evaluate_policy(sampled_theta=sampled_theta)
-            current_pomdp_value = self.model.score_pomdp_value_from_policy_value_and_cost(
+            current_pomdp_value = self.model.G(
                 policy_value=current_policy_value, summed_cost=summed_cost
             )
             assert math.isfinite(current_pomdp_value), (

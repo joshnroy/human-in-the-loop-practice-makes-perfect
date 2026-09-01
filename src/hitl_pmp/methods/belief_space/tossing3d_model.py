@@ -10,7 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
-from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, RESET_SKILL, TOSS_SKILL
 from .tossing3d_deployment_model import evaluate_deployment_policy
 from .tossing3d_observation_model import refit_belief_state
 from .tossing3d_transition_model import make_tossing3d_search_state, transition_outcomes
@@ -34,7 +33,6 @@ class Tossing3DPracticeModel(BaseModel):
     toss_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
     open_gripper_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
     reset_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
-    hard_budget: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     deployment_horizon: int = Field(default=4, ge=0)
 
     _rng: np.random.Generator = PrivateAttr()
@@ -101,32 +99,16 @@ class Tossing3DPracticeModel(BaseModel):
             horizon=self.deployment_horizon,
         )
 
-    def score_pomdp_value_from_policy_value_and_cost(
-        self, *, policy_value: float, summed_cost: float
-    ) -> float:
-        if self.hard_budget is not None:
-            assert summed_cost <= self.hard_budget
-            return policy_value
+    def G(self, *, policy_value: float, summed_cost: float) -> float:
+        """Return the PDF's ROI-minus-cost objective."""
         return policy_value - self.practice_cost * summed_cost
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
-        costs = {
-            PICK_SKILL: self.pick_cost,
-            TOSS_SKILL: self.toss_cost,
-            OPEN_GRIPPER_SKILL: self.open_gripper_cost,
-            RESET_SKILL: self.reset_cost,
-        }
         state_mask = self._atoms_mask(atoms=environment_state.true_atoms)
         return [
             ground_skill
             for index, ground_skill in enumerate(self.ground_skills)
             if self._precondition_masks[index] & state_mask == self._precondition_masks[index]
-            for cost in [costs[ground_skill.skill.name]]
-            if self.hard_budget is None
-            or (
-                cost is not None
-                and environment_state.state.accumulated_cost + cost <= self.hard_budget
-            )
         ]
 
     def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
