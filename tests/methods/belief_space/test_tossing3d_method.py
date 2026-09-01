@@ -9,7 +9,11 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
-from hitl_pmp.methods.belief_space.tossing3d_model import PICK_SKILL, TOSS_SKILL
+from hitl_pmp.methods.belief_space.tossing3d_model import (
+    PICK_SKILL,
+    TOSS_SKILL,
+    mean_competence,
+)
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -55,7 +59,7 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     after = method.pomdp_state
     assert after.accumulated_cost == 1.0
     assert after.toss_belief == before.toss_belief
-    assert after.pick_belief.mean_competence > before.pick_belief.mean_competence
+    assert mean_competence(belief=after.pick_belief) > mean_competence(belief=before.pick_belief)
     assert after.pending_pick_examples == 1
 
 
@@ -65,7 +69,9 @@ def test_toss_evidence_and_training_are_separate_until_refit() -> None:
     before = method.pomdp_state
     method.observe_outcome(ground_skill=toss, success=True, was_random_exploration=False)
     conditioned = method.pomdp_state
-    assert conditioned.toss_belief.mean_competence > before.toss_belief.mean_competence
+    assert mean_competence(belief=conditioned.toss_belief) > mean_competence(
+        belief=before.toss_belief
+    )
     assert conditioned.pending_training_examples == 0
     method.observe_sampler_outcome(
         skill_name=TOSS_SKILL, param_dim=4, sampler_input=[0.0], success=True
