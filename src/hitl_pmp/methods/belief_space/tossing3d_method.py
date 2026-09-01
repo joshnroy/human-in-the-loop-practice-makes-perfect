@@ -49,10 +49,16 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def practice_skill_competences(self) -> dict[str, float]:
         estimates = {
-            PICK_SKILL + " (belief mean)": mean_competence(belief=self._pomdp_state.pick_belief),
-            TOSS_SKILL + " (belief mean)": mean_competence(belief=self._pomdp_state.toss_belief),
+            PICK_SKILL
+            + " (belief mean)": mean_competence(
+                belief=self._pomdp_state.skill_beliefs[PICK_SKILL]
+            ),
+            TOSS_SKILL
+            + " (belief mean)": mean_competence(
+                belief=self._pomdp_state.skill_beliefs[TOSS_SKILL]
+            ),
             OPEN_GRIPPER_SKILL + " (belief mean)": mean_competence(
-                belief=self._pomdp_state.open_gripper_belief
+                belief=self._pomdp_state.skill_beliefs[OPEN_GRIPPER_SKILL]
             ),
         }
         if self.ask_for_reset_cube_bin_cost is not None:
@@ -201,7 +207,7 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         search_started_at = time.perf_counter()
         try:
-            value, action = solve_belief_space_expectimax(
+            search_result = solve_belief_space_expectimax(
                 environment_state=make_tossing3d_search_state(
                     state=self._pomdp_state, true_atoms=true_atoms
                 ),
@@ -216,6 +222,7 @@ class Tossing3DPomdpMethod(EesMethod):
             if trace is not None:
                 trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
+        value, action = search_result
         self._practice_values = {}
         if trace is not None:
             for event in trace.events:

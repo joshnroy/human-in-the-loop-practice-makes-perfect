@@ -73,7 +73,7 @@ def test_competence_chart_is_read_only_and_labels_fixed_assumptions() -> None:
     assert values["PickCube (belief mean)"] == 0.5
     assert values["OpenGripper (belief mean)"] == 0.5
     assert values["MoveToTossLocationAndToss (belief mean)"] == mean_competence(
-        belief=before.toss_belief
+        belief=before.skill_beliefs[TOSS_SKILL]
     )
     assert values["ask_for_reset_cube_bin_only (fixed)"] == 1.0
     assert "STOP" not in values
