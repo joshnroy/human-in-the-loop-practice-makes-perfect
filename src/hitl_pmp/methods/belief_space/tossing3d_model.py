@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import math
-from itertools import product
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field, model_validator
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
@@ -155,6 +154,11 @@ class Tossing3DSearchState(EnvironmentState):
 
     state: Tossing3DBeliefState
     true_atoms: frozenset[GroundAtom] = Field(exclude=True)
+
+    @computed_field
+    def atoms(self) -> tuple[str, ...]:
+        """Serializable identity for traces; true_atoms remains the executable form."""
+        return tuple(sorted(str(atom) for atom in self.true_atoms))
 
 
 class Tossing3DAction(POMDPAction):
@@ -315,27 +319,6 @@ class Tossing3DPracticeModel(BaseModel):
     hard_budget: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     deployment_horizon: int = Field(default=4, ge=0)
 
-    def stop_value(self, state: Tossing3DBeliefState) -> float:  # noqa: PLR0917
-        projected = state.after_refit()
-        deployment_value = sum(
-            pick.probability
-            * toss.probability
-            * opened.probability
-            * self.evaluate_policy(
-                sampled_theta=Tossing3DTheta(
-                    pick=pick.hypothesis, toss=toss.hypothesis, open_gripper=opened.hypothesis
-                )
-            )
-            for pick, toss, opened in product(
-                projected.pick_belief.hypotheses,
-                projected.toss_belief.hypotheses,
-                projected.open_gripper_belief.hypotheses,
-            )
-        )
-        return self.score_pomdp_value_from_policy_value_and_cost(
-            policy_value=deployment_value, summed_cost=state.accumulated_cost
-        )
-
     def _evaluate_deployment_policy(
         self,
         *,
@@ -443,9 +426,7 @@ class Tossing3DPracticeModel(BaseModel):
                     true_atoms=true_atoms, ground_skill=ground_skill
                 )
                 if success
-                else Tossing3DPracticeModel.apply_failure_effects(
-                    true_atoms=true_atoms, ground_skill=ground_skill
-                )
+                else true_atoms
             )
             outcomes.append(
                 Tossing3DOutcome(
@@ -503,9 +484,7 @@ class Tossing3DPracticeModel(BaseModel):
                 next_true_atoms = (
                     self.apply_success_effects(true_atoms=true_atoms, ground_skill=ground_skill)
                     if success
-                    else self.apply_failure_effects(
-                        true_atoms=true_atoms, ground_skill=ground_skill
-                    )
+                    else true_atoms
                 )
                 branches.append(
                     Tossing3DOutcome(
@@ -531,20 +510,6 @@ class Tossing3DPracticeModel(BaseModel):
             and atom not in ground_skill.delete_effects
         }
         return frozenset(kept | set(ground_skill.add_effects))
-
-    @staticmethod
-    def apply_failure_effects(
-        *, true_atoms: frozenset[GroundAtom], ground_skill: GroundSkill
-    ) -> frozenset[GroundAtom]:
-        """Execution-side state changes not represented by successful postconditions."""
-        if ground_skill.skill.name == PICK_SKILL:
-            return frozenset(atom for atom in true_atoms if atom.predicate.name != "HandEmpty")
-        if ground_skill.skill.name == TOSS_SKILL:
-            succeeded = Tossing3DPracticeModel.apply_success_effects(
-                true_atoms=true_atoms, ground_skill=ground_skill
-            )
-            return frozenset(atom for atom in succeeded if atom.predicate.name != "InBin")
-        return true_atoms
 
     def observe_toss(
         self,
