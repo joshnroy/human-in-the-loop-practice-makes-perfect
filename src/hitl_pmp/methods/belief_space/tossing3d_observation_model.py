@@ -1,5 +1,7 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
+from enum import Enum
+
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
@@ -10,6 +12,11 @@ from hitl_pmp.methods.belief_space.types.skill_belief import (
 )
 
 
+class PracticeExampleSource(Enum):
+    OUTCOME = "outcome"
+    SAMPLER = "sampler"
+
+
 class SkillBeliefModel:
     """Configurable belief updates contributed by one lifted practice skill."""
 
@@ -17,12 +24,10 @@ class SkillBeliefModel:
         self,
         *,
         skill: Skill | None = None,
-        examples_from_outcomes: bool = False,
-        examples_from_sampler: bool = False,
+        example_source: PracticeExampleSource | None = None,
     ) -> None:
         self.skill = skill
-        self.examples_from_outcomes = examples_from_outcomes
-        self.examples_from_sampler = examples_from_sampler
+        self.example_source = example_source
 
     def observe_outcome(
         self,
@@ -39,14 +44,14 @@ class SkillBeliefModel:
             belief=skill_beliefs[skill_name], success=success
         )
         pending_examples = dict(state.pending_examples)
-        if self.examples_from_outcomes:
+        if self.example_source == PracticeExampleSource.OUTCOME:
             pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         return state.model_copy(
             update={"skill_beliefs": skill_beliefs, "pending_examples": pending_examples}
         )
 
     def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
-        if self.skill is None or not self.examples_from_sampler:
+        if self.skill is None or self.example_source != PracticeExampleSource.SAMPLER:
             return state
         pending_examples = dict(state.pending_examples)
         skill_name = self.skill.name
@@ -56,15 +61,16 @@ class SkillBeliefModel:
 
 SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
     Tossing3DSkills.PICK_CUBE: SkillBeliefModel(
-        skill=Tossing3DSkills.PICK_CUBE, examples_from_outcomes=True
+        skill=Tossing3DSkills.PICK_CUBE,
+        example_source=PracticeExampleSource.OUTCOME,
     ),
     Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: SkillBeliefModel(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        examples_from_sampler=True,
+        example_source=PracticeExampleSource.SAMPLER,
     ),
     Tossing3DSkills.OPEN_GRIPPER: SkillBeliefModel(
         skill=Tossing3DSkills.OPEN_GRIPPER,
-        examples_from_outcomes=True,
+        example_source=PracticeExampleSource.OUTCOME,
     ),
 }
 
