@@ -57,6 +57,7 @@ class ExpectimaxSearch:
         self.num_samples = num_samples
         self.memo: dict[object, tuple[float, POMDPAction]] = {}
         self.trace = trace
+        self.next_node = 0
 
     def cached_solve_belief_space_expectimax(
         self,
@@ -111,7 +112,8 @@ class ExpectimaxSearch:
                 for _ in range(self.num_samples)
             ]
         )
-        node = len(self.trace.events) if self.trace is not None else 0
+        node = self.next_node
+        self.next_node += 1
         if self.trace is not None:
             self.trace.record(
                 event="node",
@@ -122,6 +124,7 @@ class ExpectimaxSearch:
                 belief_state=belief_state.model_dump(mode="json"),
             )
         sample_values = []
+        policy_values = []
         for sampled_theta in sampled_thetas:
             current_policy_value = self.model.evaluate_policy(sampled_theta=sampled_theta)
             current_pomdp_value = self.model.score_pomdp_value_from_policy_value_and_cost(
@@ -131,7 +134,8 @@ class ExpectimaxSearch:
                 f"stop value must be finite, got {current_pomdp_value}"
             )
             sample_values.append(current_pomdp_value)
-            if self.trace is not None:
+            policy_values.append(current_policy_value)
+            if self.trace is not None and self.trace.retain_events:
                 self.trace.record(
                     event="sample",
                     node=node,
@@ -139,6 +143,19 @@ class ExpectimaxSearch:
                     policy_value=current_policy_value,
                     pomdp_value=current_pomdp_value,
                 )
+
+        if self.trace is not None:
+            self.trace.record(
+                event="sample_summary",
+                node=node,
+                count=len(sample_values),
+                policy_value_mean=float(np.mean(policy_values)),
+                policy_value_min=float(np.min(policy_values)),
+                policy_value_max=float(np.max(policy_values)),
+                pomdp_value_mean=float(np.mean(sample_values)),
+                pomdp_value_min=float(np.min(sample_values)),
+                pomdp_value_max=float(np.max(sample_values)),
+            )
 
         current_best_value = float(np.mean(sample_values))
         current_best_action = STOP_ACTION
