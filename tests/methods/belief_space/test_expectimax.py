@@ -6,22 +6,15 @@ from hitl_pmp.methods.belief_space.types import (
     STOP_ACTION,
     StopAction,
 )
-from hitl_pmp.methods.belief_space.types import (
-    BeliefState as BaseBeliefState,
-)
-from hitl_pmp.methods.belief_space.types import (
-    EnvironmentState as BaseEnvironmentState,
-)
-from hitl_pmp.methods.belief_space.types import (
-    Theta as BaseTheta,
-)
+class EnvironmentState(BaseModel):
+    model_config = {"frozen": True}
 
-
-class EnvironmentState(BaseEnvironmentState):
     name: str
 
 
-class BeliefState(BaseBeliefState):
+class BeliefState(BaseModel):
+    model_config = {"frozen": True}
+
     value: float
 
 
@@ -31,7 +24,9 @@ class Action(BaseModel):
     name: str
 
 
-class Theta(BaseTheta):
+class Theta(BaseModel):
+    model_config = {"frozen": True}
+
     value: float
 
 
@@ -45,24 +40,24 @@ PRACTICE = Action(name="practice")
 
 class Model(BaseModel):
     transitions: dict[
-        tuple[BaseEnvironmentState, Action],
-        list[tuple[BaseEnvironmentState, float, float]],
+        tuple[EnvironmentState, Action],
+        list[tuple[EnvironmentState, float, float]],
     ] = Field(default_factory=dict)
-    beliefs: dict[BaseEnvironmentState, BaseBeliefState] = Field(default_factory=dict)
-    action_beliefs: dict[Action, BaseBeliefState] = Field(default_factory=dict)
+    beliefs: dict[EnvironmentState, BeliefState] = Field(default_factory=dict)
+    action_beliefs: dict[Action, BeliefState] = Field(default_factory=dict)
     samples: list[float] = Field(default_factory=list)
-    visits: list[BaseBeliefState] = Field(default_factory=list)
+    visits: list[BeliefState] = Field(default_factory=list)
     scale: float = 1.0
 
-    def sample_theta_from_belief(self, *, belief_state: BaseBeliefState) -> BaseTheta:
+    def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta:
         assert isinstance(belief_state, BeliefState)
         value = self.samples[len(self.visits)] if self.samples else belief_state.value
         self.visits.append(belief_state)
         return Theta(value=value)
 
     def sample_thetas_from_belief(
-        self, *, belief_state: BaseBeliefState, num_samples: int
-    ) -> list[BaseTheta]:
+        self, *, belief_state: BeliefState, num_samples: int
+    ) -> list[Theta]:
         return [
             self.sample_theta_from_belief(belief_state=belief_state) for _ in range(num_samples)
         ]
@@ -70,14 +65,14 @@ class Model(BaseModel):
     def search_cache_key(
         self,
         *,
-        environment_state: BaseEnvironmentState,
+        environment_state: EnvironmentState,
         summed_cost: float,
-        belief_state: BaseBeliefState,
+        belief_state: BeliefState,
         horizon: int,
     ) -> object:
         return environment_state, summed_cost, belief_state, horizon
 
-    def evaluate_policy(self, *, sampled_theta: BaseTheta) -> float:
+    def evaluate_policy(self, *, sampled_theta: Theta) -> float:
         assert isinstance(sampled_theta, Theta)
         return sampled_theta.value * self.scale
 
@@ -86,16 +81,16 @@ class Model(BaseModel):
     ) -> float:
         return policy_value - summed_cost
 
-    def get_valid_actions(self, *, environment_state: BaseEnvironmentState) -> list[Action]:
+    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[Action]:
         return [action for state, action in self.transitions if state == environment_state]
 
     def sample_next_states(
         self,
         *,
-        environment_state: BaseEnvironmentState,
+        environment_state: EnvironmentState,
         practice_action: Action,
-        belief_state: BaseBeliefState,
-    ) -> list[tuple[BaseEnvironmentState, float]]:
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float]]:
         return [
             (state, cost) for state, cost, _ in self.transitions[environment_state, practice_action]
         ]
@@ -103,21 +98,21 @@ class Model(BaseModel):
     def transition_outcomes(
         self,
         *,
-        environment_state: BaseEnvironmentState,
+        environment_state: EnvironmentState,
         practice_action: Action,
-        belief_state: BaseBeliefState,
-    ) -> list[tuple[BaseEnvironmentState, float, float]]:
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float, float]]:
         del belief_state
         return self.transitions[environment_state, practice_action]
 
     def update_belief_state(
         self,
         *,
-        belief_state: BaseBeliefState,
-        environment_state: BaseEnvironmentState,
-        potential_next_environment_state: BaseEnvironmentState,
+        belief_state: BeliefState,
+        environment_state: EnvironmentState,
+        potential_next_environment_state: EnvironmentState,
         practice_action: Action,
-    ) -> BaseBeliefState:
+    ) -> BeliefState:
         return self.action_beliefs.get(
             practice_action, self.beliefs.get(potential_next_environment_state, belief_state)
         )
@@ -125,11 +120,11 @@ class Model(BaseModel):
     def transition_probability(
         self,
         *,
-        potential_next_environment_state: BaseEnvironmentState,
+        potential_next_environment_state: EnvironmentState,
         sampled_cost: float,
-        environment_state: BaseEnvironmentState,
+        environment_state: EnvironmentState,
         practice_action: Action,
-        belief_state: BaseBeliefState,
+        belief_state: BeliefState,
     ) -> float:
         return next(
             probability
@@ -314,7 +309,7 @@ def test_averaging_identical_samples_preserves_value() -> None:
     ],
 )
 def test_rejects_invalid_chance_outcomes(
-    *, branches: list[tuple[BaseEnvironmentState, float, float]]
+    *, branches: list[tuple[EnvironmentState, float, float]]
 ) -> None:
     with pytest.raises(AssertionError):
         solve_belief_space_expectimax(

@@ -1,29 +1,29 @@
 """Finite-horizon belief-space expectimax."""
 
 import math
-from typing import Generic, TypeVar
+from typing import Generic
 
 import numpy as np
 
 from .types import (
     NUM_SAMPLES,
     STOP_ACTION,
+    ActionT,
+    BeliefStateT,
     BeliefSpaceModel,
-    BeliefState,
-    EnvironmentState,
+    EnvironmentStateT,
     StopAction,
+    ThetaT,
 )
-
-ActionT = TypeVar("ActionT")
 
 
 def solve_belief_space_expectimax(
     *,
-    environment_state: EnvironmentState,
+    environment_state: EnvironmentStateT,
     summed_cost: float,
-    belief_state: BeliefState,
+    belief_state: BeliefStateT,
     horizon: int,
-    model: BeliefSpaceModel[ActionT],
+    model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
     num_samples: int = NUM_SAMPLES,
 ) -> tuple[float, ActionT | StopAction]:
     """Implementation of understanding/pomdp_formulation.py.
@@ -48,10 +48,15 @@ def solve_belief_space_expectimax(
     )
 
 
-class ExpectimaxSearch(Generic[ActionT]):
+class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
     """One search's model and cached recursion."""
 
-    def __init__(self, *, model: BeliefSpaceModel[ActionT], num_samples: int) -> None:
+    def __init__(
+        self,
+        *,
+        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        num_samples: int,
+    ) -> None:
         self.model = model
         self.num_samples = num_samples
         self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
@@ -59,9 +64,9 @@ class ExpectimaxSearch(Generic[ActionT]):
     def cached_solve_belief_space_expectimax(
         self,
         *,
-        environment_state: EnvironmentState,
+        environment_state: EnvironmentStateT,
         summed_cost: float,
-        belief_state: BeliefState,
+        belief_state: BeliefStateT,
         horizon: int,
     ) -> tuple[float, ActionT | StopAction]:
         key = self.model.search_cache_key(
@@ -85,9 +90,9 @@ class ExpectimaxSearch(Generic[ActionT]):
     def solve_belief_space_expectimax(
         self,
         *,
-        environment_state: EnvironmentState,
+        environment_state: EnvironmentStateT,
         summed_cost: float,
-        belief_state: BeliefState,
+        belief_state: BeliefStateT,
         horizon: int,
     ) -> tuple[float, ActionT | StopAction]:
         assert horizon >= 0, f"horizon must be non-negative, got {horizon}"
