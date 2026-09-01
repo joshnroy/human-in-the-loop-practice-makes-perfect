@@ -115,6 +115,7 @@ class ExplorerHandler(BaseHTTPRequestHandler):
         return values
 
     def send_payload(self, *, payload: bytes, content_type: str, compress: bool = False) -> None:
+        uncompressed_length = len(payload)
         if compress:
             payload = gzip.compress(payload, compresslevel=3, mtime=0)
         self.send_response(200)
@@ -124,6 +125,7 @@ class ExplorerHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         if compress:
             self.send_header("Content-Encoding", "gzip")
+            self.send_header("X-Uncompressed-Content-Length", str(uncompressed_length))
         self.end_headers()
         self.wfile.write(payload)
 
@@ -134,6 +136,21 @@ class DecisionStore(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         self.root = self.root.resolve(strict=True)
+
+    @staticmethod
+    def compact_intern(*, kind: str, value: Any) -> Any:
+        if kind != "state" or not isinstance(value, dict):
+            return value
+        atoms = []
+        for atom in value.get("atoms", []):
+            predicate = re.search(r"Predicate\(name='([^']+)'", atom)
+            objects = re.findall(r"Object\(name='([^']+)'", atom)
+            atoms.append(
+                atom
+                if predicate is None
+                else f"{predicate.group(1)}({', '.join(dict.fromkeys(objects))})"
+            )
+        return {"atoms": atoms}
 
     def seeds(self) -> list[int]:
         return sorted(
@@ -209,9 +226,35 @@ class DecisionStore(BaseModel):
         if index < 0 or index >= len(entries):
             raise FileNotFoundError("Unknown decision index")
         entry = entries[index]
-        with self.path(seed=seed).open("rb") as stream:
+        decision_path = self.path(seed=seed)
+        with decision_path.open("rb") as stream:
             stream.seek(entry.offset)
-            return stream.read(entry.length)
+            payload = stream.read(entry.length)
+        record = json.loads(payload)
+        trace_name = record.get("search_trace")
+        if trace_name is not None:
+            trace_path = (decision_path.parent / trace_name).resolve()
+            if not trace_path.is_relative_to(decision_path.parent.resolve()):
+                raise ValueError("Search trace path escapes the seed directory")
+            interned: dict[str, dict[str, Any]] = {}
+            events = []
+            opener = gzip.open if trace_path.suffix == ".gz" else Path.open
+            with opener(trace_path, "rt", encoding="utf-8") as trace_stream:
+                for line in trace_stream:
+                    if not line.strip():
+                        continue
+                    event = json.loads(line)
+                    if event.get("event") == "intern":
+                        kind = event["kind"]
+                        interned.setdefault(kind, {})[str(event["id"])] = self.compact_intern(
+                            kind=kind, value=event["value"]
+                        )
+                        continue
+                    events.append(event)
+            record["search"] = events
+            record["search_interns"] = interned
+            payload = (json.dumps(record, separators=(",", ":")) + "\n").encode()
+        return payload
 
 
 if __name__ == "__main__":

@@ -11,9 +11,16 @@ class Element {
     this.dataset = {};
     this.style = {};
     this.listeners = {};
-    this.value = '';
+    this._value = '';
+    this.valueHistory = [];
     this.textContent = '';
   }
+  set value(v) { this._value = v; this.valueHistory.push(Number(v)); }
+  get value() { return this._value; }
+  setAttribute(name, value) { this[name] = String(value); }
+  getAttribute(name) { return this[name]; }
+  setPointerCapture(pointerId) { this.capturedPointer = pointerId; }
+  releasePointerCapture(pointerId) { this.releasedPointer = pointerId; }
   append(...items) {
     this.children.push(...items);
     if (this.tag === 'select' && this.value === '' && items[0]) this.value = String(items[0].value);
@@ -137,10 +144,11 @@ const context = vm.createContext({
       return elements[id];
     },
     createElement: tag => new Element(tag)
+    ,createElementNS: (_namespace, tag) => new Element(tag)
   },
-  fetch: async url => ({
-    ok: true,
-    json: async () => url === '/api/seeds' ? {
+  TextDecoder,
+  fetch: async url => {
+    const value = url === '/api/seeds' ? {
       seeds: [0]
     } : url.startsWith('/api/index') ? {
       decisions: [{
@@ -154,28 +162,48 @@ const context = vm.createContext({
         decision: 2,
         action: 'STOP'
       }]
-    } : JSON.parse(JSON.stringify(record))
-  })
+    } : JSON.parse(JSON.stringify(record));
+    if (!url.startsWith('/api/decision')) return {ok: true, json: async () => value};
+    const bytes = Buffer.from(JSON.stringify(value));
+    let part = 0;
+    return {
+      ok: true,
+      headers: {get: key => key.toLowerCase() === 'x-uncompressed-content-length' ? String(bytes.length) : null},
+      body: {getReader: () => ({read: async () => part++ === 0 ? {done: false, value: bytes.subarray(0, Math.floor(bytes.length / 2))} : part === 2 ? {done: false, value: bytes.subarray(Math.floor(bytes.length / 2))} : {done: true}})}
+    };
+  }
 });
 vm.runInContext(fs.readFileSync(path.join(assets, 'explorer.js'), 'utf8'), context);
 (async () => {
   for (let i = 0; i < 10; i++) await new Promise(setImmediate);
   assert.match(elements.metadata.textContent, /2 unique states/);
-  assert.equal(elements.tree.children.length, 1);
-  const root = elements.tree.children[0];
-  assert.equal(root.open, true);
-  const actionDetail = root.children.find(e => e.children?.[0]?.textContent.startsWith('PickCube · Q='));
-  assert(actionDetail);
-  actionDetail.open = true;
-  const branch = actionDetail.children[1];
-  branch.open = true;
-  assert(branch.children.some(e => e.children?.[0]?.textContent.startsWith('State 3')));
+  assert(elements['loading-progress'].valueHistory.some(value => value > 0 && value < 1));
+  assert.equal(elements['loading-progress'].value, 1);
+  const descendants = element => [element, ...element.children.flatMap(descendants)];
+  const rendered = descendants(elements.tree);
+  assert(rendered.some(e => e.dataset.kind === 'state'));
+  assert(rendered.some(e => e.dataset.kind === 'action'));
+  assert(rendered.some(e => e.dataset.kind === 'chance'));
+  assert(rendered.some(e => e.tag === 'line' || e.tag === 'path'));
+  const y = element => Number(element.transform.match(/translate\([^ ]+ ([^)]+)\)/)[1]);
+  const rootState = rendered.find(e => e.dataset.kind === 'state');
+  const actionNode = rendered.find(e => e.dataset.kind === 'action');
+  const chanceNode = rendered.find(e => e.dataset.kind === 'chance');
+  assert(y(rootState) < y(actionNode));
+  assert(y(actionNode) < y(chanceNode));
+  const layer = elements.tree.children[0], originalTransform = layer.transform;
+  const initialScale = Number(originalTransform.match(/scale\(([^)]+)\)/)[1]);
+  assert(initialScale >= .55, 'initial tree must remain readable instead of fitting every leaf');
+  elements.tree.listeners.pointerdown({pointerId: 7, clientX: 10, clientY: 10});
+  elements.tree.listeners.pointermove({pointerId: 7, clientX: 35, clientY: 45});
+  assert.notEqual(layer.transform, originalTransform);
+  assert.equal(elements.tree.capturedPointer, 7);
   elements.start.click();
-  assert.match(elements.tree.children[0].children[0].textContent, /evaluating/);
+  assert(descendants(elements.tree).some(e => /evaluating/.test(e.textContent)));
   elements.forward.click();
   assert.match(elements['event-info'].textContent, /stop_value/);
   elements.finish.click();
-  assert.match(elements.tree.children[0].children[0].textContent, /PickCube/);
+  assert(descendants(elements.tree).some(e => /PickCube/.test(e.textContent)));
   elements.next.click();
   for (let i = 0; i < 10; i++) await new Promise(setImmediate);
   assert.equal(elements.decision.value, 1);
@@ -183,7 +211,7 @@ vm.runInContext(fs.readFileSync(path.join(assets, 'explorer.js'), 'utf8'), conte
   elements.previous.click();
   for (let i = 0; i < 10; i++) await new Promise(setImmediate);
   assert.equal(elements.previous.disabled, true);
-  console.log('UI checks passed: initial load, root values, lazy chance/child expansion, replay, previous/next decision.');
+  console.log('UI checks passed: streamed loading, branching SVG tree, replay, previous/next decision.');
 })().catch(e => {
   console.error(e);
   process.exitCode = 1;

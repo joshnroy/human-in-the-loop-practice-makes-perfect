@@ -42,6 +42,10 @@
    <div aria-live="polite" id="status" role="status">
     Loading available seeds…
    </div>
+   <div id="loading" hidden>
+    <div class="loading-label"><span id="loading-label">Loading search JSON…</span><span id="loading-percent">0%</span></div>
+    <progress id="loading-progress" max="1" value="0"></progress>
+   </div>
    <div class="layout">
     <aside class="panel">
      <h2>
@@ -89,13 +93,9 @@
      <input id="timeline" max="0" min="0" type="range" value="0"/>
      <p class="note" id="event-info">
      </p>
-     <p class="note">
-      Expand states → actions → chance outcomes. Cached states are shared. Branch links appear when their recursive evaluations return; the active node is shown separately while its parent awaits a result. Every θ sample remains available in the expandable records.
-     </p>
-     <div id="tree">
-     </div>
-     <div id="active">
-     </div>
+     <p class="note">The diagram redraws after every recorded computation. Circles are states, rounded boxes are actions, and diamonds are sampled chance outcomes. Scroll to zoom and drag to pan.</p>
+     <svg aria-label="Branching POMDP decision tree" id="tree" role="img"></svg>
+     <pre id="node-info">Click a node to inspect its logged values.</pre>
     </section>
    </div>
   </main>
