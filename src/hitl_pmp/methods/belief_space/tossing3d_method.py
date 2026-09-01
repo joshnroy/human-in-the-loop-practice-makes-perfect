@@ -49,12 +49,10 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def practice_skill_competences(self) -> dict[str, float]:
         estimates = {
-            PICK_SKILL
-            + " (belief mean)": mean_competence(
+            PICK_SKILL + " (belief mean)": mean_competence(
                 belief=self._pomdp_state.skill_beliefs[PICK_SKILL]
             ),
-            TOSS_SKILL
-            + " (belief mean)": mean_competence(
+            TOSS_SKILL + " (belief mean)": mean_competence(
                 belief=self._pomdp_state.skill_beliefs[TOSS_SKILL]
             ),
             OPEN_GRIPPER_SKILL + " (belief mean)": mean_competence(
@@ -85,9 +83,7 @@ class Tossing3DPomdpMethod(EesMethod):
             return ()
         reset = self.skill_provider.human_cube_bin_reset_skill()
         assert reset is not None
-        return (
-            reset.skill.model_copy(update={"practice_cost": self.ask_for_reset_cube_bin_cost}),
-        )
+        return (reset.skill.model_copy(update={"practice_cost": self.ask_for_reset_cube_bin_cost}),)
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)

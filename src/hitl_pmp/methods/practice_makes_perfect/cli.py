@@ -192,9 +192,7 @@ class Tossing3DPomdpCli(EesCli):
         if env_cli.__name__ != "Tossing3DCli":
             raise ValueError("--method pomdp currently supports only --env tossing3d")
         # Cached recursion adds interpreter frames per depth; this is not a search cutoff.
-        sys.setrecursionlimit(
-            max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000)
-        )
+        sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,

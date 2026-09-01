@@ -132,9 +132,7 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     assert method.pomdp_state.accumulated_cost == 0.25
 
 
-def test_new_practice_session_resets_cost_without_forgetting_learning(
-    *, tmp_path: Path
-) -> None:
+def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_path: Path) -> None:
     method = _build(sampler_max_train_iters=2)
     pick = _grounding(method=method, name=PICK_SKILL)
     toss = _grounding(method=method, name=TOSS_SKILL)
