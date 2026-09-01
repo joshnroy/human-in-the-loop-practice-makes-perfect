@@ -41,10 +41,11 @@ def _domain_model(**kwargs: object) -> Tossing3DPracticeModel:
     env = Tossing3DEnvironment(scene_bg=False)
     provider = Tossing3DSkillProvider(env=env)
     skills = provider.skills()
-    if kwargs.get("reset_cost") is not None:
+    reset_cost = kwargs.pop("reset_cost", None)
+    if reset_cost is not None:
         reset = provider.human_cube_bin_reset_skill()
         assert reset is not None
-        skills = (*skills, reset.skill)
+        skills = (*skills, reset.skill.model_copy(update={"practice_cost": reset_cost}))
     ground_skills = SkillGrounder.applicable_ground_skills(
         skills=skills,
         objects=provider.objects(),
@@ -108,9 +109,9 @@ def _expected_stop_value(*, model: Tossing3DPracticeModel, state: Tossing3DBelie
     return model.G(policy_value=deployment_value, summed_cost=state.accumulated_cost)
 
 
-def test_G_subtracts_scaled_accumulated_practice_cost() -> None:
-    model = Tossing3DPracticeModel(practice_cost=0.1)
-    assert model.G(policy_value=0.5, summed_cost=2.0) == pytest.approx(0.3)
+def test_G_subtracts_accumulated_per_skill_cost() -> None:
+    model = Tossing3DPracticeModel()
+    assert model.G(policy_value=2.5, summed_cost=2.0) == pytest.approx(0.5)
 
 
 def test_search_protocol_charges_accumulated_cost_once() -> None:
@@ -120,7 +121,7 @@ def test_search_protocol_charges_accumulated_cost_once() -> None:
         open_gripper_belief=_point_belief(competence=1.0, learning_rate=0.0),
         accumulated_cost=3.0,
     )
-    model = Tossing3DPracticeModel(practice_cost=0.1)
+    model = Tossing3DPracticeModel()
     value, action = solve_belief_space_expectimax(
         environment_state=make_tossing3d_search_state(state=state, true_atoms=frozenset()),
         belief_state=state,
@@ -220,6 +221,23 @@ def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
         action.skill.name
         for action in without_reset.get_valid_actions(environment_state=without_state)
     } == {RESET_SKILL}
+
+
+def test_human_skill_uses_default_noop_belief_observers() -> None:
+    model = _domain_model(reset_cost=0.25)
+    state = make_default_tossing3d_belief()
+    reset = _ground_skill(model=model, name=RESET_SKILL)
+    assert reset.evaluate_practice_cost() == 0.25
+    assert (
+        model.observe_outcome(
+            state=state,
+            ground_skill=reset,
+            success=True,
+            was_random_exploration=False,
+        )
+        == state
+    )
+    assert model.observe_training_example(state=state, skill_name=RESET_SKILL) == state
 
 
 def test_pick_outcomes_update_only_its_own_posterior() -> None:
@@ -335,9 +353,9 @@ def test_stop_value_solves_deployment_chain_and_charges_cost() -> None:
         open_gripper_belief=_point_belief(competence=1.0, learning_rate=0.0),
         accumulated_cost=3.0,
     )
-    model = Tossing3DPracticeModel(practice_cost=0.1)
+    model = Tossing3DPracticeModel()
     assert _expected_stop_value(model=model, state=state) == pytest.approx(
-        (0.5 + 0.5 * 0.5) * 0.8 - 0.3
+        (0.5 + 0.5 * 0.5) * 0.8 - 3.0
     )
 
 
@@ -351,8 +369,6 @@ def test_partial_reset_does_not_open_a_closed_gripper() -> None:
 
 
 def test_invalid_configuration_is_rejected_early() -> None:
-    with pytest.raises(ValidationError):
-        Tossing3DPracticeModel(practice_cost=-0.1)
     with pytest.raises(ValidationError):
         Tossing3DBeliefState(
             toss_belief=_point_belief(competence=0.5),

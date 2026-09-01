@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Predicate
@@ -519,6 +519,12 @@ class Skill(BaseModel):
     # are Predicates, not LiftedAtoms -- they bind no variable to check.
     ignore_effects: frozenset[Predicate] = frozenset()
     param_dim: int
+    practice_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+
+    def evaluate_practice_cost(self) -> float:
+        """Return this skill's practice cost; subclasses may compute it dynamically."""
+        assert self.practice_cost is not None, f"Practice cost is undefined for {self.name}"
+        return self.practice_cost
 
     @model_validator(mode="after")
     def _check_variables_are_declared_parameters(self) -> Skill:
@@ -553,6 +559,9 @@ class GroundSkill(BaseModel):
 
     skill: Skill
     objects: tuple[Object, ...]
+
+    def evaluate_practice_cost(self) -> float:
+        return self.skill.evaluate_practice_cost()
 
     @model_validator(mode="after")
     def _check_objects_match_parameters(self) -> GroundSkill:

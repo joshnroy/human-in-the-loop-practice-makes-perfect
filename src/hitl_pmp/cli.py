@@ -29,11 +29,7 @@ from hitl_pmp.environments.tossingroom.cli import (
     TossingRoomCli,
 )
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
-from hitl_pmp.methods.practice_makes_perfect.cli import (
-    EesCli,
-    RandomSkillsCli,
-    Tossing3DPomdpCli,
-)
+from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
 # Registering tossing3d here costs nothing on a machine without KINDER: importing
@@ -62,7 +58,6 @@ METHODS: dict[str, type[MethodCli]] = {
     "skill-oracle": SkillOracleCli,
     "random-skills": RandomSkillsCli,
     "ees": EesCli,
-    "pomdp": Tossing3DPomdpCli,
 }
 
 

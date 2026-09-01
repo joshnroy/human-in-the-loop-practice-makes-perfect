@@ -38,9 +38,10 @@ cannot change until observations arrive after a session-boundary update. Multipl
 independent one-session seeds validate competence updates and execution, not
 identification of a zero learning rate.
 
-Each practice session starts with accumulated cost C=0 and a fresh hard budget B.
-Replanning and human resets within the session do not replenish it. Learned
-samplers, data, and beliefs persist across sessions; evaluation does not reset C.
+Each practice session starts with accumulated cost C=0. Every robot and human
+skill supplies its own cost, and G subtracts their accumulated cost from expected
+deployment value. Replanning does not reset C. Learned samplers, data, and beliefs
+persist across sessions; evaluation does not reset C.
 
 Earlier fixed-pick/open experiment results and videos describe the previous
 model and are not validation of these online beliefs.

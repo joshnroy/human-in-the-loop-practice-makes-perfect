@@ -8,7 +8,6 @@ from hitl_pmp.cli import ENVIRONMENTS, METHODS, Cli, MethodCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.tossingroom.cli import TossingRoomCli
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
-from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
 from hitl_pmp.practice_loop import PracticeResetPolicy
 
 
@@ -98,7 +97,6 @@ def test_main_runs_tossingroom_skill_oracle_end_to_end() -> None:
 
 def test_methods_registry_contains_skill_oracle() -> None:
     assert METHODS["skill-oracle"] is SkillOracleCli
-    assert METHODS["pomdp"] is Tossing3DPomdpCli
 
 
 def test_parse_args_has_no_positional_arguments() -> None:

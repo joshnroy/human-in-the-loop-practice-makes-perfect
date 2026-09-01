@@ -171,6 +171,7 @@ class Tossing3DSkills:
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
         }),
         param_dim=0,
+        practice_cost=0.001,
     )
 
     MOVE_TO_TOSS_LOCATION_AND_TOSS: ClassVar[Skill] = Skill(
@@ -193,6 +194,7 @@ class Tossing3DSkills:
             LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
         }),
         param_dim=4,
+        practice_cost=0.001,
     )
 
     # A third, robot-executed skill (not the human `ask_for_reset_cube_bin_only`): the
@@ -237,6 +239,7 @@ class Tossing3DSkills:
         add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
         delete_effects=frozenset(),
         param_dim=0,
+        practice_cost=0.001,
     )
 
     @staticmethod

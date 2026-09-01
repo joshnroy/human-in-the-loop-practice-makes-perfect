@@ -10,8 +10,14 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
+from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, TOSS_SKILL
 from .tossing3d_deployment_model import evaluate_deployment_policy
-from .tossing3d_observation_model import refit_belief_state
+from .tossing3d_observation_model import (
+    observe_robot_skill,
+    observe_toss,
+    record_training_example,
+    refit_belief_state,
+)
 from .tossing3d_transition_model import make_tossing3d_search_state, transition_outcomes
 from .types.belief_state import Tossing3DBeliefState
 from .types.search_state import Tossing3DSearchState
@@ -26,13 +32,8 @@ class Tossing3DPracticeModel(BaseModel):
 
     seed: int = 0
     ground_skills: tuple[GroundSkill, ...] = Field(default=(), exclude=True)
-    practice_cost: float = Field(default=0.01, ge=0.0, allow_inf_nan=False)
     random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
-    pick_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
-    toss_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
-    open_gripper_cost: float = Field(default=1.0, ge=0.0, allow_inf_nan=False)
-    reset_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     deployment_horizon: int = Field(default=4, ge=0)
 
     _rng: np.random.Generator = PrivateAttr()
@@ -101,7 +102,35 @@ class Tossing3DPracticeModel(BaseModel):
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         """Return the PDF's ROI-minus-cost objective."""
-        return policy_value - self.practice_cost * summed_cost
+        return policy_value - summed_cost
+
+    def observe_outcome(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        ground_skill: GroundSkill,
+        success: bool,
+        was_random_exploration: bool,
+    ) -> Tossing3DBeliefState:
+        """Apply any belief observation associated with a practiced skill."""
+        name = ground_skill.skill.name
+        if name == TOSS_SKILL:
+            return observe_toss(
+                state=state,
+                success=success,
+                was_random_exploration=was_random_exploration,
+            )
+        if name in {PICK_SKILL, OPEN_GRIPPER_SKILL}:
+            return observe_robot_skill(state=state, skill_name=name, success=success)
+        return state
+
+    def observe_training_example(
+        self, *, state: Tossing3DBeliefState, skill_name: str
+    ) -> Tossing3DBeliefState:
+        """Apply any learning-curve update associated with a sampler example."""
+        if skill_name == TOSS_SKILL:
+            return record_training_example(state=state)
+        return state
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
         state_mask = self._atoms_mask(atoms=environment_state.true_atoms)
@@ -168,10 +197,6 @@ class Tossing3DPracticeModel(BaseModel):
             action=action,
             ground_skills=self.ground_skills,
             effects=self._effects,
-            pick_cost=self.pick_cost,
-            toss_cost=self.toss_cost,
-            open_gripper_cost=self.open_gripper_cost,
-            reset_cost=self.reset_cost,
             exploration_epsilon=self.exploration_epsilon,
             random_toss_competence=self.random_toss_competence,
         )

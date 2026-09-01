@@ -74,10 +74,6 @@ def transition_outcomes(
         GroundSkill,
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
     ],
-    pick_cost: float,
-    toss_cost: float,
-    open_gripper_cost: float,
-    reset_cost: float | None,
     exploration_epsilon: float,
     random_toss_competence: float,
 ) -> tuple[TransitionBranch, ...]:
@@ -90,7 +86,7 @@ def transition_outcomes(
             ground_skill=action,
             probability=mean_competence(belief=state.pick_belief),
             skill_name=PICK_SKILL,
-            cost=pick_cost,
+            cost=action.evaluate_practice_cost(),
             effects=effects,
         )
     if action.skill.name == OPEN_GRIPPER_SKILL:
@@ -100,16 +96,15 @@ def transition_outcomes(
             ground_skill=action,
             probability=mean_competence(belief=state.open_gripper_belief),
             skill_name=OPEN_GRIPPER_SKILL,
-            cost=open_gripper_cost,
+            cost=action.evaluate_practice_cost(),
             effects=effects,
         )
     if action.skill.name == RESET_SKILL:
-        assert reset_cost is not None
         return deterministic_outcome(
             state=state,
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
-            cost=reset_cost,
+            cost=action.evaluate_practice_cost(),
             effects=effects,
         )
     assert action.skill.name == TOSS_SKILL
@@ -117,7 +112,7 @@ def transition_outcomes(
         state=state,
         true_atoms=environment_state.true_atoms,
         ground_skill=action,
-        toss_cost=toss_cost,
+        toss_cost=action.evaluate_practice_cost(),
         exploration_epsilon=exploration_epsilon,
         random_toss_competence=random_toss_competence,
         effects=effects,
