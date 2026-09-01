@@ -23,6 +23,7 @@ from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis
 from .types.theta import Tossing3DTheta
 
+
 class Tossing3DPracticeModel(BaseModel):
     """Connect Tossing3D dynamics and beliefs to the generic expectimax protocol."""
 

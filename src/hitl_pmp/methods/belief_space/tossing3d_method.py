@@ -31,8 +31,11 @@ from .tossing3d_observation_model import (
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
+from .types.protocol import BeliefSpaceModel
+from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
 from .types.stop_action import STOP_ACTION, StopAction
+from .types.theta import Tossing3DTheta
 
 
 class Tossing3DPomdpMethod(EesMethod):
@@ -77,7 +80,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 belief=self._pomdp_state.open_gripper_belief
             ),
         }
-        if self._pomdp_model.reset_cost is not None:
+        if self.ask_for_reset_cube_bin_cost is not None:
             estimates[RESET_SKILL + " (fixed)"] = 0.0
         return estimates
 
@@ -219,6 +222,12 @@ class Tossing3DPomdpMethod(EesMethod):
         trace = (
             SearchTrace(path=trace_path, retain_events=False) if trace_path is not None else None
         )
+        model: BeliefSpaceModel[
+            Tossing3DSearchState,
+            Tossing3DBeliefState,
+            Tossing3DTheta,
+            GroundSkill,
+        ] = self._pomdp_model
         search_started_at = time.perf_counter()
         try:
             search_result = solve_belief_space_expectimax(
@@ -228,7 +237,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 belief_state=self._pomdp_state,
                 summed_cost=self._pomdp_state.accumulated_cost,
                 horizon=self.pomdp_search_depth,
-                model=self._pomdp_model,
+                model=model,
                 trace=trace,
                 num_samples=self.pomdp_num_samples,
             )
