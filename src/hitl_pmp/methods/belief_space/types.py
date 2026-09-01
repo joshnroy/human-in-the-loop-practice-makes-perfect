@@ -1,6 +1,6 @@
 """The state, action, and parameter types in the belief-space pseudocode."""
 
-from typing import Protocol
+from typing import Protocol, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -17,23 +17,24 @@ class BeliefState(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
-class POMDPAction(BaseModel):
-    """Practice action; domain subclasses supply the action's parameters."""
-
-    model_config = ConfigDict(frozen=True)
-
-
 class Theta(BaseModel):
     """Sampled skill parameters used to construct and evaluate a policy."""
 
     model_config = ConfigDict(frozen=True)
 
 
-STOP_ACTION = POMDPAction()
+class StopAction(BaseModel):
+    """Sentinel selected when further practice has no value."""
+
+    model_config = ConfigDict(frozen=True)
+
+
+STOP_ACTION = StopAction()
 NUM_SAMPLES = 1
+ActionT = TypeVar("ActionT")
 
 
-class BeliefSpaceModel(Protocol):
+class BeliefSpaceModel(Protocol[ActionT]):
     """Domain implementations of the pseudocode's seven model functions."""
 
     def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta: ...
@@ -57,13 +58,13 @@ class BeliefSpaceModel(Protocol):
         self, *, policy_value: float, summed_cost: float
     ) -> float: ...
 
-    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[POMDPAction]: ...
+    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[ActionT]: ...
 
     def sample_next_states(
         self,
         *,
         environment_state: EnvironmentState,
-        practice_action: POMDPAction,
+        practice_action: ActionT,
         belief_state: BeliefState,
     ) -> list[tuple[EnvironmentState, float]]:
         """Return potential next environment states and their sampled costs."""
@@ -73,7 +74,7 @@ class BeliefSpaceModel(Protocol):
         self,
         *,
         environment_state: EnvironmentState,
-        practice_action: POMDPAction,
+        practice_action: ActionT,
         belief_state: BeliefState,
     ) -> list[tuple[EnvironmentState, float, float]]: ...
 
@@ -83,7 +84,7 @@ class BeliefSpaceModel(Protocol):
         belief_state: BeliefState,
         environment_state: EnvironmentState,
         potential_next_environment_state: EnvironmentState,
-        practice_action: POMDPAction,
+        practice_action: ActionT,
     ) -> BeliefState: ...
 
     def transition_probability(
@@ -92,6 +93,6 @@ class BeliefSpaceModel(Protocol):
         potential_next_environment_state: EnvironmentState,
         sampled_cost: float,
         environment_state: EnvironmentState,
-        practice_action: POMDPAction,
+        practice_action: ActionT,
         belief_state: BeliefState,
     ) -> float: ...

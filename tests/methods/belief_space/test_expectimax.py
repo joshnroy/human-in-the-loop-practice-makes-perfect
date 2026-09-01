@@ -4,15 +4,13 @@ from pydantic import BaseModel, Field
 from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
 from hitl_pmp.methods.belief_space.types import (
     STOP_ACTION,
+    StopAction,
 )
 from hitl_pmp.methods.belief_space.types import (
     BeliefState as BaseBeliefState,
 )
 from hitl_pmp.methods.belief_space.types import (
     EnvironmentState as BaseEnvironmentState,
-)
-from hitl_pmp.methods.belief_space.types import (
-    POMDPAction as BasePOMDPAction,
 )
 from hitl_pmp.methods.belief_space.types import (
     Theta as BaseTheta,
@@ -27,7 +25,9 @@ class BeliefState(BaseBeliefState):
     value: float
 
 
-class POMDPAction(BasePOMDPAction):
+class Action(BaseModel):
+    model_config = {"frozen": True}
+
     name: str
 
 
@@ -39,17 +39,17 @@ INITIAL = EnvironmentState(name="initial")
 READY = EnvironmentState(name="ready")
 SUCCESS = EnvironmentState(name="success")
 FAILURE = EnvironmentState(name="failure")
-SETUP = POMDPAction(name="setup")
-PRACTICE = POMDPAction(name="practice")
+SETUP = Action(name="setup")
+PRACTICE = Action(name="practice")
 
 
 class Model(BaseModel):
     transitions: dict[
-        tuple[BaseEnvironmentState, BasePOMDPAction],
+        tuple[BaseEnvironmentState, Action],
         list[tuple[BaseEnvironmentState, float, float]],
     ] = Field(default_factory=dict)
     beliefs: dict[BaseEnvironmentState, BaseBeliefState] = Field(default_factory=dict)
-    action_beliefs: dict[BasePOMDPAction, BaseBeliefState] = Field(default_factory=dict)
+    action_beliefs: dict[Action, BaseBeliefState] = Field(default_factory=dict)
     samples: list[float] = Field(default_factory=list)
     visits: list[BaseBeliefState] = Field(default_factory=list)
     scale: float = 1.0
@@ -86,16 +86,14 @@ class Model(BaseModel):
     ) -> float:
         return policy_value - summed_cost
 
-    def get_valid_actions(
-        self, *, environment_state: BaseEnvironmentState
-    ) -> list[BasePOMDPAction]:
+    def get_valid_actions(self, *, environment_state: BaseEnvironmentState) -> list[Action]:
         return [action for state, action in self.transitions if state == environment_state]
 
     def sample_next_states(
         self,
         *,
         environment_state: BaseEnvironmentState,
-        practice_action: BasePOMDPAction,
+        practice_action: Action,
         belief_state: BaseBeliefState,
     ) -> list[tuple[BaseEnvironmentState, float]]:
         return [
@@ -106,7 +104,7 @@ class Model(BaseModel):
         self,
         *,
         environment_state: BaseEnvironmentState,
-        practice_action: BasePOMDPAction,
+        practice_action: Action,
         belief_state: BaseBeliefState,
     ) -> list[tuple[BaseEnvironmentState, float, float]]:
         del belief_state
@@ -118,7 +116,7 @@ class Model(BaseModel):
         belief_state: BaseBeliefState,
         environment_state: BaseEnvironmentState,
         potential_next_environment_state: BaseEnvironmentState,
-        practice_action: BasePOMDPAction,
+        practice_action: Action,
     ) -> BaseBeliefState:
         return self.action_beliefs.get(
             practice_action, self.beliefs.get(potential_next_environment_state, belief_state)
@@ -130,7 +128,7 @@ class Model(BaseModel):
         potential_next_environment_state: BaseEnvironmentState,
         sampled_cost: float,
         environment_state: BaseEnvironmentState,
-        practice_action: BasePOMDPAction,
+        practice_action: Action,
         belief_state: BaseBeliefState,
     ) -> float:
         return next(
@@ -169,7 +167,7 @@ def test_averages_theta_samples_after_policy_evaluation_and_scoring() -> None:
 
 @pytest.mark.parametrize("horizon, expected", [(1, (2.0, STOP_ACTION)), (2, (3.0, SETUP))])
 def test_looks_past_an_initially_unhelpful_setup_action(
-    *, horizon: int, expected: tuple[float, BasePOMDPAction]
+    *, horizon: int, expected: tuple[float, Action | StopAction]
 ) -> None:
     model = Model(
         transitions={

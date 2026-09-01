@@ -1,6 +1,7 @@
 """Finite-horizon belief-space expectimax."""
 
 import math
+from typing import Generic, TypeVar
 
 import numpy as np
 
@@ -10,8 +11,10 @@ from .types import (
     BeliefSpaceModel,
     BeliefState,
     EnvironmentState,
-    POMDPAction,
+    StopAction,
 )
+
+ActionT = TypeVar("ActionT")
 
 
 def solve_belief_space_expectimax(
@@ -20,9 +23,9 @@ def solve_belief_space_expectimax(
     summed_cost: float,
     belief_state: BeliefState,
     horizon: int,
-    model: BeliefSpaceModel,
+    model: BeliefSpaceModel[ActionT],
     num_samples: int = NUM_SAMPLES,
-) -> tuple[float, POMDPAction]:
+) -> tuple[float, ActionT | StopAction]:
     """Implementation of understanding/pomdp_formulation.py.
 
     Pseudocode and review:
@@ -45,13 +48,13 @@ def solve_belief_space_expectimax(
     )
 
 
-class ExpectimaxSearch:
+class ExpectimaxSearch(Generic[ActionT]):
     """One search's model and cached recursion."""
 
-    def __init__(self, *, model: BeliefSpaceModel, num_samples: int) -> None:
+    def __init__(self, *, model: BeliefSpaceModel[ActionT], num_samples: int) -> None:
         self.model = model
         self.num_samples = num_samples
-        self.memo: dict[object, tuple[float, POMDPAction]] = {}
+        self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
 
     def cached_solve_belief_space_expectimax(
         self,
@@ -60,7 +63,7 @@ class ExpectimaxSearch:
         summed_cost: float,
         belief_state: BeliefState,
         horizon: int,
-    ) -> tuple[float, POMDPAction]:
+    ) -> tuple[float, ActionT | StopAction]:
         key = self.model.search_cache_key(
             environment_state=environment_state,
             summed_cost=summed_cost,
@@ -86,7 +89,7 @@ class ExpectimaxSearch:
         summed_cost: float,
         belief_state: BeliefState,
         horizon: int,
-    ) -> tuple[float, POMDPAction]:
+    ) -> tuple[float, ActionT | StopAction]:
         assert horizon >= 0, f"horizon must be non-negative, got {horizon}"
         assert math.isfinite(summed_cost) and summed_cost >= 0, (
             "summed_cost must be finite and non-negative"
@@ -107,7 +110,7 @@ class ExpectimaxSearch:
             sample_values.append(current_pomdp_value)
 
         current_best_value = float(np.mean(sample_values))
-        current_best_action = STOP_ACTION
+        current_best_action: ActionT | StopAction = STOP_ACTION
         if horizon == 0:
             return current_best_value, current_best_action
 
