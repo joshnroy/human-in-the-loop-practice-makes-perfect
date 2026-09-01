@@ -18,7 +18,6 @@ from .tossing3d_model import (
     TOSS_SKILL,
     Tossing3DAction,
     Tossing3DBeliefState,
-    Tossing3DEnvironmentState,
     Tossing3DPracticeModel,
     Tossing3DSearchState,
     make_default_tossing3d_belief,
@@ -41,15 +40,28 @@ class Tossing3DPomdpMethod(EesMethod):
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
         self._pomdp_state = make_default_tossing3d_belief()
+        practice_skills = self.skills()
+        if self.ask_for_reset_cube_bin_cost is not None:
+            reset = self.skill_provider.human_cube_bin_reset_skill()
+            assert reset is not None
+            practice_skills = (*practice_skills, reset.skill)
+        ground_skills = SkillGrounder.applicable_ground_skills(
+            skills=practice_skills,
+            objects=self.objects(),
+            true_atoms=SkillGrounder.all_possible_ground_atoms(
+                objects=self.objects(), predicates=self.predicates()
+            ),
+        )
         self._pomdp_model = Tossing3DPracticeModel(
             seed=self.seed,
             practice_cost=self.pomdp_practice_cost,
             exploration_epsilon=self.exploration_epsilon,
             reset_cost=self.ask_for_reset_cube_bin_cost,
             hard_budget=self.pomdp_hard_budget,
+            ground_skills=tuple(ground_skills),
         )
-        available = {skill.name for skill in self.skills()}
-        missing = set(self._pomdp_model.required_skills) - available
+        available = {ground_skill.skill.name for ground_skill in ground_skills}
+        missing = {PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
         if missing:
             raise ValueError(
                 "Tossing3DPomdpMethod requires canonical Tossing3D skills; missing "
@@ -120,39 +132,13 @@ class Tossing3DPomdpMethod(EesMethod):
         super().end_cycle()
         self._pomdp_state = self._pomdp_state.after_refit()
 
-    @staticmethod
-    def _environment_state(*, true_atoms: frozenset[GroundAtom]) -> Tossing3DEnvironmentState:
-        predicates = {atom.predicate.name for atom in true_atoms}
-        hand_empty = "HandEmpty" in predicates
-        if "InBin" in predicates:
-            return (
-                Tossing3DEnvironmentState.SOLVED
-                if hand_empty
-                else Tossing3DEnvironmentState.CLOSED_SOLVED
-            )
-        if "Holding" in predicates:
-            return (
-                Tossing3DEnvironmentState.HOLDING
-                if "Reachable" in predicates
-                else Tossing3DEnvironmentState.UNREACHABLE_HOLDING
-            )
-        if {"Reachable", "OnGround", "HandEmpty"} <= predicates:
-            return Tossing3DEnvironmentState.READY
-        if not hand_empty:
-            return (
-                Tossing3DEnvironmentState.GRIPPER_CLOSED
-                if {"Reachable", "OnGround"} <= predicates
-                else Tossing3DEnvironmentState.CLOSED_STRANDED
-            )
-        return Tossing3DEnvironmentState.STRANDED
-
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
-        environment_state = self._environment_state(true_atoms=true_atoms)
+        environment_state = self._pomdp_model.environment_state_from_atoms(true_atoms=true_atoms)
         self._pomdp_state = self._pomdp_state.model_copy(
             update={"environment_state": environment_state}
         )
         _, action = solve_belief_space_expectimax(
-            environment_state=Tossing3DSearchState(state=self._pomdp_state),
+            environment_state=Tossing3DSearchState(state=self._pomdp_state, true_atoms=true_atoms),
             belief_state=self._pomdp_state,
             summed_cost=self._pomdp_state.accumulated_cost,
             horizon=self.pomdp_horizon,
@@ -163,22 +149,5 @@ class Tossing3DPomdpMethod(EesMethod):
             return [STOP_SKILL]
         assert isinstance(action, Tossing3DAction)
 
-        skills = self.skills()
-        if self.ask_for_reset_cube_bin_cost is not None:
-            reset = self.skill_provider.human_cube_bin_reset_skill()
-            assert reset is not None
-            skills = (*skills, reset.skill)
-        groundings = SkillGrounder.applicable_ground_skills(
-            skills=skills,
-            objects=self.objects(),
-            true_atoms=true_atoms,
-        )
-        candidates = [grounding for grounding in groundings if grounding.skill.name == action.name]
-        if not candidates:
-            raise RuntimeError(
-                f"POMDP selected inapplicable Tossing3D skill {action.name!r} in "
-                f"{environment_state.value}"
-            )
-        for candidate in candidates:
-            self.record_practice_target(name=candidate.skill.name, field="scored")
-        return candidates
+        self.record_practice_target(name=action.ground_skill.skill.name, field="scored")
+        return [action.ground_skill]
