@@ -21,7 +21,6 @@ from .tossing3d_model import (
     make_tossing3d_search_state,
     refit_belief_state,
 )
-from .types.action import Tossing3DAction
 from .types.belief_state import Tossing3DBeliefState
 from .types.core import STOP_ACTION
 
@@ -146,7 +145,7 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         if action == STOP_ACTION:
             return [STOP_SKILL]
-        assert isinstance(action, Tossing3DAction)
+        assert isinstance(action, GroundSkill)
 
-        self.record_practice_target(name=action.ground_skill.skill.name, field="scored")
-        return [action.ground_skill]
+        self.record_practice_target(name=action.skill.name, field="scored")
+        return [action]
