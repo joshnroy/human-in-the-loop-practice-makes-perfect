@@ -1,6 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
+from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
 from hitl_pmp.methods.belief_space.tossing3d_model import (
     OPEN_GRIPPER_SKILL,
@@ -9,6 +11,7 @@ from hitl_pmp.methods.belief_space.tossing3d_model import (
     TOSS_SKILL,
     SkillBelief,
     SkillHypothesis,
+    Tossing3DAction,
     Tossing3DBeliefState,
     Tossing3DEnvironmentState,
     Tossing3DPracticeModel,
@@ -17,19 +20,72 @@ from hitl_pmp.methods.belief_space.tossing3d_model import (
     make_default_tossing3d_belief,
 )
 from hitl_pmp.methods.belief_space.types import STOP_ACTION
+from hitl_pmp.planning.grounding import SkillGrounder
 
 
-@pytest.mark.parametrize("environment_state", list(Tossing3DEnvironmentState))
-def test_hard_budget_filters_unaffordable_actions(
-    *, environment_state: Tossing3DEnvironmentState
-) -> None:
-    model = Tossing3DPracticeModel(hard_budget=2, reset_cost=1)
-    state = make_default_tossing3d_belief(environment_state=environment_state)
+def _domain_model(**kwargs: object) -> Tossing3DPracticeModel:
+    env = Tossing3DEnvironment(scene_bg=False)
+    provider = Tossing3DSkillProvider(env=env)
+    skills = provider.skills()
+    if kwargs.get("reset_cost") is not None:
+        reset = provider.human_cube_bin_reset_skill()
+        assert reset is not None
+        skills = (*skills, reset.skill)
+    ground_skills = SkillGrounder.applicable_ground_skills(
+        skills=skills,
+        objects=provider.objects(),
+        true_atoms=SkillGrounder.all_possible_ground_atoms(
+            objects=provider.objects(), predicates=provider.predicates()
+        ),
+    )
+    return Tossing3DPracticeModel(ground_skills=tuple(ground_skills), **kwargs)
+
+
+def _ground_skill(*, model: Tossing3DPracticeModel, name: str):
+    return next(skill for skill in model.ground_skills if skill.skill.name == name)
+
+
+def _search_state(
+    *, model: Tossing3DPracticeModel, state: Tossing3DBeliefState, action_name: str
+) -> Tossing3DSearchState:
+    return Tossing3DSearchState(
+        state=state, true_atoms=_ground_skill(model=model, name=action_name).preconditions
+    )
+
+
+def _action(
+    *, model: Tossing3DPracticeModel, search_state: Tossing3DSearchState, name: str
+) -> Tossing3DAction:
+    return next(
+        action
+        for action in model.get_valid_actions(environment_state=search_state)
+        if isinstance(action, Tossing3DAction) and action.name == name
+    )
+
+
+def _outcomes(*, model: Tossing3DPracticeModel, state: Tossing3DBeliefState, name: str):
+    search_state = _search_state(model=model, state=state, action_name=name)
+    return model.outcomes(
+        environment_state=search_state,
+        state=state,
+        action=_action(model=model, search_state=search_state, name=name),
+    )
+
+
+def test_hard_budget_filters_unaffordable_actions() -> None:
+    model = _domain_model(hard_budget=2, reset_cost=1)
+    state = make_default_tossing3d_belief()
     state = state.model_copy(update={"accumulated_cost": 1.0})
-    actions = model.get_valid_actions(environment_state=Tossing3DSearchState(state=state))
-    assert tuple(action.name for action in actions) == model.actions(state)
+    search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
+    actions = model.get_valid_actions(environment_state=search_state)
+    assert {action.name for action in actions} == {PICK_SKILL, OPEN_GRIPPER_SKILL, RESET_SKILL}
     exhausted = state.model_copy(update={"accumulated_cost": 2.0})
-    assert model.get_valid_actions(environment_state=Tossing3DSearchState(state=exhausted)) == []
+    assert (
+        model.get_valid_actions(
+            environment_state=search_state.model_copy(update={"state": exhausted})
+        )
+        == []
+    )
 
 
 def test_hard_budget_has_no_linear_cost_penalty() -> None:
@@ -45,12 +101,13 @@ def test_hard_budget_has_no_linear_cost_penalty() -> None:
 
 def test_zero_budget_stops_even_with_search_horizon_remaining() -> None:
     state = make_default_tossing3d_belief()
+    model = _domain_model(hard_budget=0, reset_cost=1)
     _, action = solve_belief_space_expectimax(
-        environment_state=Tossing3DSearchState(state=state),
+        environment_state=_search_state(model=model, state=state, action_name=PICK_SKILL),
         belief_state=state,
         summed_cost=0,
         horizon=10,
-        model=Tossing3DPracticeModel(hard_budget=0, reset_cost=1),
+        model=model,
     )
     assert action == STOP_ACTION
 
@@ -65,7 +122,7 @@ def test_search_protocol_charges_accumulated_cost_once() -> None:
     )
     model = Tossing3DPracticeModel(practice_cost=0.1)
     value, action = solve_belief_space_expectimax(
-        environment_state=Tossing3DSearchState(state=state),
+        environment_state=Tossing3DSearchState(state=state, true_atoms=frozenset()),
         belief_state=state,
         summed_cost=state.accumulated_cost,
         horizon=3,
@@ -80,9 +137,9 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
         environment_state=Tossing3DEnvironmentState.HOLDING,
         toss_belief=_point_belief(competence=0.5),
     )
-    model = Tossing3DPracticeModel(random_toss_competence=0.5)
-    environment_state = Tossing3DSearchState(state=state)
-    action = model.get_valid_actions(environment_state=environment_state)[0]
+    model = _domain_model(random_toss_competence=0.5)
+    environment_state = _search_state(model=model, state=state, action_name=TOSS_SKILL)
+    action = _action(model=model, search_state=environment_state, name=TOSS_SKILL)
     successors = model.sample_next_states(
         environment_state=environment_state,
         practice_action=action,
@@ -114,20 +171,49 @@ def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBeli
 
 
 def test_only_physically_applicable_actions_are_returned() -> None:
-    model = Tossing3DPracticeModel(reset_cost=0.2)
+    model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()
-    assert tuple(model.actions(belief)) == (PICK_SKILL,)
+    ready = _search_state(model=model, state=belief, action_name=PICK_SKILL)
+    assert {action.name for action in model.get_valid_actions(environment_state=ready)} == {
+        PICK_SKILL,
+        OPEN_GRIPPER_SKILL,
+        RESET_SKILL,
+    }
     holding = belief.model_copy(update={"environment_state": Tossing3DEnvironmentState.HOLDING})
-    assert tuple(model.actions(holding)) == (TOSS_SKILL,)
-    closed = belief.model_copy(
-        update={"environment_state": Tossing3DEnvironmentState.GRIPPER_CLOSED}
-    )
-    assert tuple(model.actions(closed)) == (OPEN_GRIPPER_SKILL,)
+    carrying = _search_state(model=model, state=holding, action_name=TOSS_SKILL)
+    assert {action.name for action in model.get_valid_actions(environment_state=carrying)} == {
+        TOSS_SKILL,
+        OPEN_GRIPPER_SKILL,
+        RESET_SKILL,
+    }
+
+
+@pytest.mark.parametrize("action_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
+def test_human_reset_uses_unchanged_ees_empty_preconditions(*, action_name: str) -> None:
+    model = _domain_model(reset_cost=1.0)
+    state = make_default_tossing3d_belief()
+    search_state = _search_state(model=model, state=state, action_name=action_name)
+    assert RESET_SKILL in {
+        action.name for action in model.get_valid_actions(environment_state=search_state)
+    }
+
+
+def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
+    with_reset = _domain_model(reset_cost=1.0)
+    without_reset = _domain_model(reset_cost=None)
+    state = make_default_tossing3d_belief()
+    with_state = _search_state(model=with_reset, state=state, action_name=PICK_SKILL)
+    without_state = _search_state(model=without_reset, state=state, action_name=PICK_SKILL)
+    assert {
+        action.name for action in with_reset.get_valid_actions(environment_state=with_state)
+    } - {
+        action.name for action in without_reset.get_valid_actions(environment_state=without_state)
+    } == {RESET_SKILL}
 
 
 def test_pick_outcomes_update_only_its_own_posterior() -> None:
     state = make_default_tossing3d_belief()
-    outcomes = Tossing3DPracticeModel().outcomes(state, PICK_SKILL)
+    outcomes = _outcomes(model=_domain_model(), state=state, name=PICK_SKILL)
     assert [outcome.probability for outcome in outcomes] == pytest.approx([0.5, 0.5])
     assert all(outcome.next_state.toss_belief == state.toss_belief for outcome in outcomes)
     assert all(outcome.next_state.pending_training_examples == 0 for outcome in outcomes)
@@ -171,7 +257,18 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
     state = make_default_tossing3d_belief(
         environment_state=Tossing3DEnvironmentState.GRIPPER_CLOSED
     )
-    outcomes = Tossing3DPracticeModel().outcomes(state, OPEN_GRIPPER_SKILL)
+    model = _domain_model()
+    closed_atoms = frozenset(
+        atom
+        for atom in _ground_skill(model=model, name=PICK_SKILL).preconditions
+        if atom.predicate.name != "HandEmpty"
+    )
+    search_state = Tossing3DSearchState(state=state, true_atoms=closed_atoms)
+    outcomes = model.outcomes(
+        environment_state=search_state,
+        state=state,
+        action=_action(model=model, search_state=search_state, name=OPEN_GRIPPER_SKILL),
+    )
     assert [o.probability for o in outcomes] == pytest.approx([0.5, 0.5])
     assert outcomes[1].next_state.environment_state == state.environment_state
     for _ in range(100):
@@ -195,8 +292,10 @@ def test_pending_examples_predict_improvement_without_changing_current_competenc
 
 def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
     state = make_default_tossing3d_belief(environment_state=Tossing3DEnvironmentState.HOLDING)
-    outcomes = Tossing3DPracticeModel(exploration_epsilon=0.5, random_toss_competence=0.2).outcomes(
-        state, TOSS_SKILL
+    outcomes = _outcomes(
+        model=_domain_model(exploration_epsilon=0.5, random_toss_competence=0.2),
+        state=state,
+        name=TOSS_SKILL,
     )
     assert sum(outcome.probability for outcome in outcomes) == pytest.approx(1.0)
     unchanged = [o for o in outcomes if o.next_state.toss_belief == state.toss_belief]
@@ -232,11 +331,10 @@ def test_partial_reset_does_not_open_a_closed_gripper() -> None:
     state = make_default_tossing3d_belief(
         environment_state=Tossing3DEnvironmentState.CLOSED_STRANDED
     )
-    model = Tossing3DPracticeModel(reset_cost=0.01)
-    reset = model.outcomes(state, RESET_SKILL)[0].next_state
+    model = _domain_model(reset_cost=0.01)
+    reset = _outcomes(model=model, state=state, name=RESET_SKILL)[0].next_state
     assert reset.environment_state is Tossing3DEnvironmentState.GRIPPER_CLOSED
-    assert tuple(model.actions(reset)) == (OPEN_GRIPPER_SKILL,)
-    opened = model.outcomes(state, OPEN_GRIPPER_SKILL)[0].next_state
+    opened = _outcomes(model=model, state=state, name=OPEN_GRIPPER_SKILL)[0].next_state
     assert opened.environment_state is Tossing3DEnvironmentState.STRANDED
 
 
