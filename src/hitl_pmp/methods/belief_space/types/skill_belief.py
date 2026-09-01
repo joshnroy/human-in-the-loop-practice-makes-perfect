@@ -2,8 +2,6 @@
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .core import Theta
-
 
 class SkillBelief(BaseModel):
     """Posterior over a skill's competence and learning rate."""
@@ -13,7 +11,7 @@ class SkillBelief(BaseModel):
     hypotheses: tuple["WeightedHypothesis", ...]
 
 
-class SkillHypothesis(Theta):
+class SkillHypothesis(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     competence: float = Field(ge=0.0, le=1.0)

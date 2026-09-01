@@ -21,13 +21,13 @@ from hitl_pmp.methods.belief_space.tossing3d_model import (
     refit_skill_belief,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
-from hitl_pmp.methods.belief_space.types.core import STOP_ACTION
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
     SkillBelief,
     SkillHypothesis,
     WeightedHypothesis,
 )
+from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION
 from hitl_pmp.methods.belief_space.types.theta import Tossing3DTheta
 from hitl_pmp.planning.grounding import SkillGrounder
 

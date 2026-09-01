@@ -11,7 +11,6 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
 from .types.belief_state import Tossing3DBeliefState
-from .types.core import BeliefState, EnvironmentState, Theta
 from .types.outcome import Tossing3DOutcome
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis, WeightedHypothesis
@@ -160,13 +159,12 @@ class Tossing3DPracticeModel(BaseModel):
             for skill in self.ground_skills
         }
 
-    def sample_theta_from_belief(self, *, belief_state: BeliefState) -> Theta:
+    def sample_theta_from_belief(self, *, belief_state: Tossing3DBeliefState) -> Tossing3DTheta:
         return self.sample_thetas_from_belief(belief_state=belief_state, num_samples=1)[0]
 
     def sample_thetas_from_belief(
-        self, *, belief_state: BeliefState, num_samples: int
-    ) -> list[Theta]:
-        assert isinstance(belief_state, Tossing3DBeliefState)
+        self, *, belief_state: Tossing3DBeliefState, num_samples: int
+    ) -> list[Tossing3DTheta]:
         projected = refit_belief_state(state=belief_state)
         pick = self.sample_skills(belief=projected.pick_belief, count=num_samples)
         toss = self.sample_skills(belief=projected.toss_belief, count=num_samples)
@@ -189,8 +187,7 @@ class Tossing3DPracticeModel(BaseModel):
         )
         return [belief.hypotheses[int(index)].hypothesis for index in indexes]
 
-    def evaluate_policy(self, *, sampled_theta: Theta) -> float:
-        assert isinstance(sampled_theta, Tossing3DTheta)
+    def evaluate_policy(self, *, sampled_theta: Tossing3DTheta) -> float:
         return self._evaluate_deployment_policy(
             toss_competence=sampled_theta.toss.competence,
             pick_competence=sampled_theta.pick.competence,
@@ -206,8 +203,7 @@ class Tossing3DPracticeModel(BaseModel):
             return policy_value
         return policy_value - self.practice_cost * summed_cost
 
-    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[GroundSkill]:
-        assert isinstance(environment_state, Tossing3DSearchState)
+    def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
         state = environment_state.state
         costs = {
             PICK_SKILL: self.pick_cost,
@@ -255,13 +251,11 @@ class Tossing3DPracticeModel(BaseModel):
     def search_cache_key(
         self,
         *,
-        environment_state: EnvironmentState,
+        environment_state: Tossing3DSearchState,
         summed_cost: float,
-        belief_state: BeliefState,
+        belief_state: Tossing3DBeliefState,
         horizon: int,
     ) -> object:
-        assert isinstance(environment_state, Tossing3DSearchState)
-        assert isinstance(belief_state, Tossing3DBeliefState)
         assert summed_cost == belief_state.accumulated_cost
         return (
             self._atoms_mask(atoms=environment_state.true_atoms),
@@ -278,12 +272,10 @@ class Tossing3DPracticeModel(BaseModel):
     def sample_next_states(
         self,
         *,
-        environment_state: EnvironmentState,
+        environment_state: Tossing3DSearchState,
         practice_action: GroundSkill,
-        belief_state: BeliefState,
-    ) -> list[tuple[EnvironmentState, float]]:
-        assert isinstance(environment_state, Tossing3DSearchState)
-        assert isinstance(belief_state, Tossing3DBeliefState)
+        belief_state: Tossing3DBeliefState,
+    ) -> list[tuple[Tossing3DSearchState, float]]:
         # Enumerate the finite model, merging observationally identical branches.
         return list(
             dict.fromkeys(
@@ -304,12 +296,10 @@ class Tossing3DPracticeModel(BaseModel):
     def transition_outcomes(
         self,
         *,
-        environment_state: EnvironmentState,
+        environment_state: Tossing3DSearchState,
         practice_action: GroundSkill,
-        belief_state: BeliefState,
-    ) -> list[tuple[EnvironmentState, float, float]]:
-        assert isinstance(environment_state, Tossing3DSearchState)
-        assert isinstance(belief_state, Tossing3DBeliefState)
+        belief_state: Tossing3DBeliefState,
+    ) -> list[tuple[Tossing3DSearchState, float, float]]:
         merged: dict[tuple[Tossing3DSearchState, float], float] = {}
         for outcome in self.outcomes(
             environment_state=environment_state,
@@ -327,26 +317,22 @@ class Tossing3DPracticeModel(BaseModel):
     def update_belief_state(
         self,
         *,
-        belief_state: BeliefState,
-        environment_state: EnvironmentState,
-        potential_next_environment_state: EnvironmentState,
+        belief_state: Tossing3DBeliefState,
+        environment_state: Tossing3DSearchState,
+        potential_next_environment_state: Tossing3DSearchState,
         practice_action: GroundSkill,
-    ) -> BeliefState:
-        assert isinstance(potential_next_environment_state, Tossing3DSearchState)
+    ) -> Tossing3DBeliefState:
         return potential_next_environment_state.state
 
     def transition_probability(
         self,
         *,
-        potential_next_environment_state: EnvironmentState,
+        potential_next_environment_state: Tossing3DSearchState,
         sampled_cost: float,
-        environment_state: EnvironmentState,
+        environment_state: Tossing3DSearchState,
         practice_action: GroundSkill,
-        belief_state: BeliefState,
+        belief_state: Tossing3DBeliefState,
     ) -> float:
-        assert isinstance(potential_next_environment_state, Tossing3DSearchState)
-        assert isinstance(environment_state, Tossing3DSearchState)
-        assert isinstance(belief_state, Tossing3DBeliefState)
         total_probability = 0.0
         for outcome in self.outcomes(
             environment_state=environment_state,

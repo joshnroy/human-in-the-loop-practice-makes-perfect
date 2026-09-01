@@ -5,16 +5,14 @@ from typing import Generic
 
 import numpy as np
 
-from .types.core import (
-    NUM_SAMPLES,
-    STOP_ACTION,
+from .types.protocol import (
     ActionT,
     BeliefSpaceModel,
     BeliefStateT,
     EnvironmentStateT,
-    StopAction,
     ThetaT,
 )
+from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
 
 
 def solve_belief_space_expectimax(

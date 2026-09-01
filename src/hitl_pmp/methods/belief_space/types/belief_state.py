@@ -1,12 +1,11 @@
 """Tossing3D belief-state data."""
 
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-from .core import BeliefState
 from .skill_belief import SkillBelief
 
 
-class Tossing3DBeliefState(BeliefState):
+class Tossing3DBeliefState(BaseModel):
     """Latent-controller posterior, pending examples, and paid practice cost."""
 
     model_config = ConfigDict(frozen=True)

@@ -1,18 +1,9 @@
-"""The state, action, and parameter types in the belief-space pseudocode."""
+"""Generic model protocol for belief-space expectimax."""
 
 from typing import Protocol, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
-
-class StopAction(BaseModel):
-    """Sentinel selected when further practice has no value."""
-
-    model_config = ConfigDict(frozen=True)
-
-
-STOP_ACTION = StopAction()
-NUM_SAMPLES = 1
 EnvironmentStateT = TypeVar("EnvironmentStateT", bound=BaseModel)
 BeliefStateT = TypeVar("BeliefStateT", bound=BaseModel)
 ThetaT = TypeVar("ThetaT", bound=BaseModel)
