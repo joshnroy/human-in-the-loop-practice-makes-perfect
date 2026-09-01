@@ -16,13 +16,14 @@ from .tossing3d_model import (
     PICK_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
-    Tossing3DAction,
-    Tossing3DBeliefState,
     Tossing3DPracticeModel,
-    Tossing3DSearchState,
     make_default_tossing3d_belief,
+    make_tossing3d_search_state,
+    refit_belief_state,
 )
-from .types import STOP_ACTION
+from .types.action import Tossing3DAction
+from .types.belief_state import Tossing3DBeliefState
+from .types.core import STOP_ACTION
 
 
 class Tossing3DPomdpMethod(EesMethod):
@@ -130,11 +131,13 @@ class Tossing3DPomdpMethod(EesMethod):
         """
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
-        self._pomdp_state = self._pomdp_state.after_refit()
+        self._pomdp_state = refit_belief_state(state=self._pomdp_state)
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         _, action = solve_belief_space_expectimax(
-            environment_state=Tossing3DSearchState(state=self._pomdp_state, true_atoms=true_atoms),
+            environment_state=make_tossing3d_search_state(
+                state=self._pomdp_state, true_atoms=true_atoms
+            ),
             belief_state=self._pomdp_state,
             summed_cost=self._pomdp_state.accumulated_cost,
             horizon=self.pomdp_horizon,
