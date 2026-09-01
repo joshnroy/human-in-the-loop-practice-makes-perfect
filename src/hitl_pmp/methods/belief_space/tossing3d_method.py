@@ -192,19 +192,32 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         self._decision_index += 1
-        trace = SearchTrace() if self.decision_log is not None else None
-        search_started_at = time.perf_counter()
-        value, action = solve_belief_space_expectimax(
-            environment_state=make_tossing3d_search_state(
-                state=self._pomdp_state, true_atoms=true_atoms
-            ),
-            belief_state=self._pomdp_state,
-            summed_cost=self._pomdp_state.accumulated_cost,
-            horizon=self.pomdp_search_depth,
-            model=self._pomdp_model,
-            trace=trace,
-            num_samples=self.pomdp_num_samples,
+        trace_path = (
+            None
+            if self.decision_log is None
+            else self.decision_log.parent
+            / "search_traces"
+            / f"cycle_{self._cycle_index:04d}_decision_{self._decision_index:04d}.jsonl.gz"
         )
+        trace = (
+            SearchTrace(path=trace_path, retain_events=False) if trace_path is not None else None
+        )
+        search_started_at = time.perf_counter()
+        try:
+            value, action = solve_belief_space_expectimax(
+                environment_state=make_tossing3d_search_state(
+                    state=self._pomdp_state, true_atoms=true_atoms
+                ),
+                belief_state=self._pomdp_state,
+                summed_cost=self._pomdp_state.accumulated_cost,
+                horizon=self.pomdp_search_depth,
+                model=self._pomdp_model,
+                trace=trace,
+                num_samples=self.pomdp_num_samples,
+            )
+        finally:
+            if trace is not None:
+                trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
         self._practice_values = {}
         if trace is not None:
@@ -224,6 +237,9 @@ class Tossing3DPomdpMethod(EesMethod):
             horizon=self.pomdp_search_depth,
             model=self._pomdp_model.model_dump(mode="json"),
             search=[] if trace is None else trace.events,
+            search_trace=None
+            if trace_path is None or self.decision_log is None
+            else str(trace_path.relative_to(self.decision_log.parent)),
         )
         if isinstance(action, StopAction):
             assert action == STOP_ACTION
