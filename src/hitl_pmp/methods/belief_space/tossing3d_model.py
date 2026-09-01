@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
+from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, TOSS_SKILL
 from .tossing3d_deployment_model import evaluate_deployment_policy
 from .tossing3d_observation_model import (
     SkillBeliefModel,
@@ -74,9 +75,15 @@ class Tossing3DPracticeModel(BaseModel):
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> list[Tossing3DTheta]:
         projected = refit_belief_state(state=belief_state)
-        pick = self.sample_skills(belief=projected.pick_belief, count=num_samples)
-        toss = self.sample_skills(belief=projected.toss_belief, count=num_samples)
-        opened = self.sample_skills(belief=projected.open_gripper_belief, count=num_samples)
+        pick = self.sample_skills(
+            belief=projected.skill_beliefs[PICK_SKILL], count=num_samples
+        )
+        toss = self.sample_skills(
+            belief=projected.skill_beliefs[TOSS_SKILL], count=num_samples
+        )
+        opened = self.sample_skills(
+            belief=projected.skill_beliefs[OPEN_GRIPPER_SKILL], count=num_samples
+        )
         return [
             Tossing3DTheta(pick=pick[index], toss=toss[index], open_gripper=opened[index])
             for index in range(num_samples)
@@ -170,12 +177,11 @@ class Tossing3DPracticeModel(BaseModel):
         assert summed_cost == belief_state.accumulated_cost
         return (
             self._atoms_mask(atoms=environment_state.true_atoms),
-            self._belief_id(belief=belief_state.pick_belief),
-            self._belief_id(belief=belief_state.toss_belief),
-            self._belief_id(belief=belief_state.open_gripper_belief),
-            belief_state.pending_pick_examples,
-            belief_state.pending_training_examples,
-            belief_state.pending_open_gripper_examples,
+            tuple(
+                (skill_name, self._belief_id(belief=belief))
+                for skill_name, belief in sorted(belief_state.skill_beliefs.items())
+            ),
+            tuple(sorted(belief_state.pending_examples.items())),
             belief_state.accumulated_cost,
             horizon,
         )
@@ -204,19 +210,21 @@ class Tossing3DPracticeModel(BaseModel):
         practice_action: GroundSkill,
         belief_state: Tossing3DBeliefState,
     ) -> list[tuple[Tossing3DSearchState, float]]:
-        return list(
-            dict.fromkeys(
-                (
-                    make_tossing3d_search_state(state=next_state, true_atoms=next_true_atoms),
-                    next_state.accumulated_cost - belief_state.accumulated_cost,
-                )
-                for _probability, next_state, next_true_atoms in self.outcomes(
-                    environment_state=environment_state,
-                    state=belief_state,
-                    action=practice_action,
-                )
+        successors: dict[object, tuple[Tossing3DSearchState, float]] = {}
+        for _probability, next_state, next_true_atoms in self.outcomes(
+            environment_state=environment_state,
+            state=belief_state,
+            action=practice_action,
+        ):
+            next_environment = make_tossing3d_search_state(
+                state=next_state, true_atoms=next_true_atoms
             )
-        )
+            cost = next_state.accumulated_cost - belief_state.accumulated_cost
+            successors[self.transition_key(environment_state=next_environment, cost=cost)] = (
+                next_environment,
+                cost,
+            )
+        return list(successors.values())
 
     def transition_outcomes(
         self,
@@ -225,7 +233,7 @@ class Tossing3DPracticeModel(BaseModel):
         practice_action: GroundSkill,
         belief_state: Tossing3DBeliefState,
     ) -> list[tuple[Tossing3DSearchState, float, float]]:
-        merged: dict[tuple[Tossing3DSearchState, float], float] = {}
+        merged: dict[object, tuple[Tossing3DSearchState, float, float]] = {}
         for probability, next_state, next_true_atoms in self.outcomes(
             environment_state=environment_state,
             state=belief_state,
@@ -235,9 +243,21 @@ class Tossing3DPracticeModel(BaseModel):
                 state=next_state, true_atoms=next_true_atoms
             )
             cost = next_state.accumulated_cost - belief_state.accumulated_cost
-            key = (next_environment, cost)
-            merged[key] = merged.get(key, 0.0) + probability
-        return [(*key, probability) for key, probability in merged.items()]
+            key = self.transition_key(environment_state=next_environment, cost=cost)
+            previous_probability = merged.get(key, (next_environment, cost, 0.0))[2]
+            merged[key] = (next_environment, cost, previous_probability + probability)
+        return list(merged.values())
+
+    @staticmethod
+    def transition_key(*, environment_state: Tossing3DSearchState, cost: float) -> object:
+        state = environment_state.state
+        return (
+            environment_state.atoms,
+            tuple(sorted(state.skill_beliefs.items())),
+            tuple(sorted(state.pending_examples.items())),
+            state.accumulated_cost,
+            cost,
+        )
 
     def update_belief_state(
         self,

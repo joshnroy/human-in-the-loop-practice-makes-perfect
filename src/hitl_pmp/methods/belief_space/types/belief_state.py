@@ -1,5 +1,7 @@
 """Tossing3D belief-state data."""
 
+from typing import Annotated
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .skill_belief import SkillBelief
@@ -10,10 +12,6 @@ class Tossing3DBeliefState(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    toss_belief: SkillBelief
-    pick_belief: SkillBelief
-    open_gripper_belief: SkillBelief
-    pending_pick_examples: int = Field(default=0, ge=0)
-    pending_open_gripper_examples: int = Field(default=0, ge=0)
-    pending_training_examples: int = Field(default=0, ge=0)
+    skill_beliefs: dict[str, SkillBelief]
+    pending_examples: dict[str, Annotated[int, Field(ge=0)]] = Field(default_factory=dict)
     accumulated_cost: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)

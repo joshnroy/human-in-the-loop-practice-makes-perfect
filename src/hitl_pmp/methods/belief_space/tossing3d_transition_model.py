@@ -37,10 +37,18 @@ def transition_belief_state(
     toss_belief: SkillBelief | None = None,
     added_training_examples: int = 0,
 ) -> Tossing3DBeliefState:
+    skill_beliefs = dict(state.skill_beliefs)
+    pending_examples = dict(state.pending_examples)
+    if toss_belief is not None:
+        skill_beliefs[TOSS_SKILL] = toss_belief
+    if added_training_examples:
+        pending_examples[TOSS_SKILL] = (
+            pending_examples.get(TOSS_SKILL, 0) + added_training_examples
+        )
     return state.model_copy(
         update={
-            "toss_belief": state.toss_belief if toss_belief is None else toss_belief,
-            "pending_training_examples": state.pending_training_examples + added_training_examples,
+            "skill_beliefs": skill_beliefs,
+            "pending_examples": pending_examples,
             "accumulated_cost": state.accumulated_cost + added_cost,
         }
     )
@@ -84,7 +92,7 @@ def transition_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
-            probability=mean_competence(belief=state.pick_belief),
+            probability=mean_competence(belief=state.skill_beliefs[PICK_SKILL]),
             cost=action.evaluate_practice_cost(),
             effects=effects,
         )
@@ -93,7 +101,7 @@ def transition_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
-            probability=mean_competence(belief=state.open_gripper_belief),
+            probability=mean_competence(belief=state.skill_beliefs[OPEN_GRIPPER_SKILL]),
             cost=action.evaluate_practice_cost(),
             effects=effects,
         )
@@ -187,7 +195,11 @@ def toss_outcomes(
 ) -> tuple[TransitionBranch, ...]:
     branches: list[TransitionBranch] = []
     for is_random, choice_probability, success_probability in (
-        (False, 1.0 - exploration_epsilon, mean_competence(belief=state.toss_belief)),
+        (
+            False,
+            1.0 - exploration_epsilon,
+            mean_competence(belief=state.skill_beliefs[TOSS_SKILL]),
+        ),
         (True, exploration_epsilon, random_toss_competence),
     ):
         for success, observation_probability in (
@@ -198,9 +210,11 @@ def toss_outcomes(
             if probability <= 0.0:
                 continue
             belief = (
-                state.toss_belief
+                state.skill_beliefs[TOSS_SKILL]
                 if is_random
-                else condition_skill_belief(belief=state.toss_belief, success=success)
+                else condition_skill_belief(
+                    belief=state.skill_beliefs[TOSS_SKILL], success=success
+                )
             )
             next_true_atoms = (
                 apply_success_effects(

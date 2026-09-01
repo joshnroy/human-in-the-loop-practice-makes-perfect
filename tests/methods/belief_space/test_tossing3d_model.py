@@ -59,6 +59,27 @@ def _ground_skill(*, model: Tossing3DPracticeModel, name: str):
     return next(skill for skill in model.ground_skills if skill.skill.name == name)
 
 
+def _belief(*, state: Tossing3DBeliefState, skill_name: str) -> SkillBelief:
+    return state.skill_beliefs[skill_name]
+
+
+def _pending_examples(*, state: Tossing3DBeliefState, skill_name: str) -> int:
+    return state.pending_examples.get(skill_name, 0)
+
+
+def _point_state(
+    *, toss: float, pick: float, open_gripper: float, accumulated_cost: float = 0.0
+) -> Tossing3DBeliefState:
+    return Tossing3DBeliefState(
+        skill_beliefs={
+            TOSS_SKILL: _point_belief(competence=toss, learning_rate=0.0),
+            PICK_SKILL: _point_belief(competence=pick, learning_rate=0.0),
+            OPEN_GRIPPER_SKILL: _point_belief(competence=open_gripper, learning_rate=0.0),
+        },
+        accumulated_cost=accumulated_cost,
+    )
+
+
 def _search_state(
     *, model: Tossing3DPracticeModel, state: Tossing3DBeliefState, action_name: str
 ) -> Tossing3DSearchState:
@@ -100,9 +121,9 @@ def _expected_stop_value(*, model: Tossing3DPracticeModel, state: Tossing3DBelie
             )
         )
         for pick, toss, opened in product(
-            projected.pick_belief.hypotheses,
-            projected.toss_belief.hypotheses,
-            projected.open_gripper_belief.hypotheses,
+            _belief(state=projected, skill_name=PICK_SKILL).hypotheses,
+            _belief(state=projected, skill_name=TOSS_SKILL).hypotheses,
+            _belief(state=projected, skill_name=OPEN_GRIPPER_SKILL).hypotheses,
         )
     )
     return model.G(policy_value=deployment_value, summed_cost=state.accumulated_cost)
@@ -114,12 +135,7 @@ def test_G_subtracts_accumulated_per_skill_cost() -> None:
 
 
 def test_search_protocol_charges_accumulated_cost_once() -> None:
-    state = Tossing3DBeliefState(
-        toss_belief=_point_belief(competence=0.8, learning_rate=0.0),
-        pick_belief=_point_belief(competence=0.5, learning_rate=0.0),
-        open_gripper_belief=_point_belief(competence=1.0, learning_rate=0.0),
-        accumulated_cost=3.0,
-    )
+    state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
     model = Tossing3DPracticeModel()
     value, action = solve_belief_space_expectimax(
         environment_state=make_tossing3d_search_state(state=state, true_atoms=frozenset()),
@@ -133,8 +149,14 @@ def test_search_protocol_charges_accumulated_cost_once() -> None:
 
 
 def test_search_protocol_merges_identical_exploration_successors() -> None:
-    state = make_default_tossing3d_belief().model_copy(
-        update={"toss_belief": _point_belief(competence=0.5)},
+    state = make_default_tossing3d_belief()
+    state = state.model_copy(
+        update={
+            "skill_beliefs": {
+                **state.skill_beliefs,
+                TOSS_SKILL: _point_belief(competence=0.5),
+            }
+        }
     )
     model = _domain_model(random_toss_competence=0.5)
     environment_state = _search_state(model=model, state=state, action_name=TOSS_SKILL)
@@ -245,14 +267,28 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
     outcomes = _outcomes(model=model, state=state, name=PICK_SKILL)
     assert [outcome[0] for outcome in outcomes] == pytest.approx([0.5, 0.5])
-    assert all(outcome[1].toss_belief == state.toss_belief for outcome in outcomes)
-    assert all(outcome[1].pending_training_examples == 0 for outcome in outcomes)
-    assert all(outcome[1].pending_pick_examples == 1 for outcome in outcomes)
-    assert mean_competence(belief=outcomes[0][1].pick_belief) > mean_competence(
-        belief=state.pick_belief
+    assert all(
+        _belief(state=outcome[1], skill_name=TOSS_SKILL)
+        == _belief(state=state, skill_name=TOSS_SKILL)
+        for outcome in outcomes
     )
-    assert mean_competence(belief=outcomes[1][1].pick_belief) < mean_competence(
-        belief=state.pick_belief
+    assert all(
+        _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 0
+        for outcome in outcomes
+    )
+    assert all(
+        _pending_examples(state=outcome[1], skill_name=PICK_SKILL) == 1
+        for outcome in outcomes
+    )
+    assert mean_competence(
+        belief=_belief(state=outcomes[0][1], skill_name=PICK_SKILL)
+    ) > mean_competence(
+        belief=_belief(state=state, skill_name=PICK_SKILL)
+    )
+    assert mean_competence(
+        belief=_belief(state=outcomes[1][1], skill_name=PICK_SKILL)
+    ) < mean_competence(
+        belief=_belief(state=state, skill_name=PICK_SKILL)
     )
     assert outcomes[1][2] == search_state.true_atoms
 
@@ -271,7 +307,7 @@ def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
                 was_random_exploration=False,
             )
         state = refit_belief_state(state=state)
-    belief = state.pick_belief if skill_name == PICK_SKILL else state.open_gripper_belief
+    belief = _belief(state=state, skill_name=skill_name)
     stationary_mass = sum(
         item.probability for item in belief.hypotheses if item.hypothesis.learning_rate == 0
     )
@@ -292,7 +328,7 @@ def test_first_session_cannot_identify_learning_rate() -> None:
         )
     stationary_mass = sum(
         item.probability
-        for item in state.pick_belief.hypotheses
+        for item in _belief(state=state, skill_name=PICK_SKILL).hypotheses
         if item.hypothesis.learning_rate == 0
     )
     assert stationary_mass == pytest.approx(0.5)
@@ -322,10 +358,11 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
             success=True,
             was_random_exploration=False,
         )
-    assert mean_competence(belief=state.open_gripper_belief) > 0.99
-    projected = refit_skill_belief(belief=state.open_gripper_belief, training_examples=1)
+    open_gripper_belief = _belief(state=state, skill_name=OPEN_GRIPPER_SKILL)
+    assert mean_competence(belief=open_gripper_belief) > 0.99
+    projected = refit_skill_belief(belief=open_gripper_belief, training_examples=1)
     assert (
-        mean_competence(belief=projected) - mean_competence(belief=state.open_gripper_belief)
+        mean_competence(belief=projected) - mean_competence(belief=open_gripper_belief)
         < 0.001
     )
 
@@ -340,10 +377,14 @@ def test_pending_examples_predict_improvement_without_changing_current_competenc
         success=True,
         was_random_exploration=False,
     )
-    assert observed.pick_belief == condition_skill_belief(belief=state.pick_belief, success=True)
+    assert _belief(state=observed, skill_name=PICK_SKILL) == condition_skill_belief(
+        belief=_belief(state=state, skill_name=PICK_SKILL), success=True
+    )
     refit = refit_belief_state(state=observed)
-    assert mean_competence(belief=refit.pick_belief) > mean_competence(belief=observed.pick_belief)
-    assert refit.pending_pick_examples == 0
+    assert mean_competence(
+        belief=_belief(state=refit, skill_name=PICK_SKILL)
+    ) > mean_competence(belief=_belief(state=observed, skill_name=PICK_SKILL))
+    assert _pending_examples(state=refit, skill_name=PICK_SKILL) == 0
 
 
 @pytest.mark.parametrize("skill_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
@@ -367,31 +408,42 @@ def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
         name=TOSS_SKILL,
     )
     assert sum(outcome[0] for outcome in outcomes) == pytest.approx(1.0)
-    unchanged = [o for o in outcomes if o[1].toss_belief == state.toss_belief]
+    unchanged = [
+        outcome
+        for outcome in outcomes
+        if _belief(state=outcome[1], skill_name=TOSS_SKILL)
+        == _belief(state=state, skill_name=TOSS_SKILL)
+    ]
     assert sum(outcome[0] for outcome in unchanged) == pytest.approx(0.5)
-    assert all(outcome[1].pending_training_examples == 1 for outcome in outcomes)
+    assert all(
+        _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 1
+        for outcome in outcomes
+    )
 
 
 def test_refit_is_deferred_until_cycle_boundary() -> None:
-    state = make_default_tossing3d_belief().model_copy(
+    state = make_default_tossing3d_belief()
+    state = state.model_copy(
         update={
-            "toss_belief": _point_belief(competence=0.5),
-            "pending_training_examples": 2,
+            "skill_beliefs": {
+                **state.skill_beliefs,
+                TOSS_SKILL: _point_belief(competence=0.5),
+            },
+            "pending_examples": {TOSS_SKILL: 2},
         },
     )
-    assert mean_competence(belief=state.toss_belief) == pytest.approx(0.5)
+    assert mean_competence(
+        belief=_belief(state=state, skill_name=TOSS_SKILL)
+    ) == pytest.approx(0.5)
     refit = refit_belief_state(state=state)
-    assert mean_competence(belief=refit.toss_belief) == pytest.approx(0.595)
-    assert refit.pending_training_examples == 0
+    assert mean_competence(
+        belief=_belief(state=refit, skill_name=TOSS_SKILL)
+    ) == pytest.approx(0.595)
+    assert _pending_examples(state=refit, skill_name=TOSS_SKILL) == 0
 
 
 def test_stop_value_solves_deployment_chain_and_charges_cost() -> None:
-    state = Tossing3DBeliefState(
-        toss_belief=_point_belief(competence=0.8, learning_rate=0.0),
-        pick_belief=_point_belief(competence=0.5, learning_rate=0.0),
-        open_gripper_belief=_point_belief(competence=1.0, learning_rate=0.0),
-        accumulated_cost=3.0,
-    )
+    state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
     model = Tossing3DPracticeModel()
     assert _expected_stop_value(model=model, state=state) == pytest.approx(
         (0.5 + 0.5 * 0.5) * 0.8 - 3.0
@@ -410,6 +462,6 @@ def test_partial_reset_does_not_open_a_closed_gripper() -> None:
 def test_invalid_configuration_is_rejected_early() -> None:
     with pytest.raises(ValidationError):
         Tossing3DBeliefState(
-            toss_belief=_point_belief(competence=0.5),
+            skill_beliefs={TOSS_SKILL: _point_belief(competence=0.5)},
             accumulated_cost=float("nan"),
         )

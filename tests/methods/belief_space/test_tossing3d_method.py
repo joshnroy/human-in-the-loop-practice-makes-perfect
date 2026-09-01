@@ -57,9 +57,11 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     method.observe_outcome(ground_skill=pick, success=True)
     after = method.pomdp_state
     assert after.accumulated_cost == 0.001
-    assert after.toss_belief == before.toss_belief
-    assert mean_competence(belief=after.pick_belief) > mean_competence(belief=before.pick_belief)
-    assert after.pending_pick_examples == 1
+    assert after.skill_beliefs[TOSS_SKILL] == before.skill_beliefs[TOSS_SKILL]
+    assert mean_competence(belief=after.skill_beliefs[PICK_SKILL]) > mean_competence(
+        belief=before.skill_beliefs[PICK_SKILL]
+    )
+    assert after.pending_examples[PICK_SKILL] == 1
 
 
 def test_toss_evidence_and_training_are_separate_until_refit() -> None:
@@ -68,14 +70,14 @@ def test_toss_evidence_and_training_are_separate_until_refit() -> None:
     before = method.pomdp_state
     method.observe_outcome(ground_skill=toss, success=True, was_random_exploration=False)
     conditioned = method.pomdp_state
-    assert mean_competence(belief=conditioned.toss_belief) > mean_competence(
-        belief=before.toss_belief
+    assert mean_competence(belief=conditioned.skill_beliefs[TOSS_SKILL]) > mean_competence(
+        belief=before.skill_beliefs[TOSS_SKILL]
     )
-    assert conditioned.pending_training_examples == 0
+    assert conditioned.pending_examples.get(TOSS_SKILL, 0) == 0
     method.observe_sampler_outcome(
         skill_name=TOSS_SKILL, param_dim=4, sampler_input=[0.0], success=True
     )
-    assert method.pomdp_state.pending_training_examples == 1
+    assert method.pomdp_state.pending_examples[TOSS_SKILL] == 1
 
 
 def test_invalid_method_configuration_is_rejected_early() -> None:
