@@ -95,7 +95,7 @@ class SkillChatOverlay:
         SkillChatOverlay.draw_skill_chart(
             draw=draw,
             left=left,
-            title="DECISION VALUES",
+            title="EXPECTIMAX VALUES v",
             values=values,
             color=(140, 110, 210),
             precision=6,
@@ -125,7 +125,7 @@ class SkillChatOverlay:
             for prefix, label in SkillChatOverlay.skill_rows
         ]
         if include_stop:
-            rows.append(("STOP", values.get("STOP")))
+            rows.append(("STOP (v_stop)", values.get("STOP")))
         present = [value for _label, value in rows if value is not None]
         if fixed_range is None:
             low = min([0.0, *present])
@@ -137,7 +137,8 @@ class SkillChatOverlay:
         best = max(present) if present else None
         for index, (label, value) in enumerate(rows):
             top = 62 + index * 92
-            draw.text((left, top), label, font=small, fill=SkillChatOverlay.text)
+            displayed_label = f"{label} (v*)" if value is not None and value == best else label
+            draw.text((left, top), displayed_label, font=small, fill=SkillChatOverlay.text)
             bar_top = top + 23
             draw.rectangle((left, bar_top, left + 280, bar_top + 14), fill=(45, 45, 65))
             if value is None:
