@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from enum import Enum
 from itertools import product
 
 import numpy as np
@@ -18,19 +17,6 @@ PICK_SKILL = "PickCube"
 TOSS_SKILL = "MoveToTossLocationAndToss"
 OPEN_GRIPPER_SKILL = "OpenGripper"
 RESET_SKILL = "ask_for_reset_cube_bin_only"
-
-
-class Tossing3DEnvironmentState(Enum):
-    """Canonical symbolic phases that determine applicable environment skills."""
-
-    READY = "ready"
-    HOLDING = "holding"
-    UNREACHABLE_HOLDING = "unreachable_holding"
-    GRIPPER_CLOSED = "gripper_closed"
-    CLOSED_STRANDED = "closed_stranded"
-    STRANDED = "stranded"
-    SOLVED = "solved"
-    CLOSED_SOLVED = "closed_solved"
 
 
 class SkillHypothesis(Theta):
@@ -117,11 +103,10 @@ class SkillBelief(BaseModel):
 
 
 class Tossing3DBeliefState(BeliefState):
-    """Physical state, latent-controller posterior, and paid practice cost."""
+    """Latent-controller posterior, pending examples, and paid practice cost."""
 
     model_config = ConfigDict(frozen=True)
 
-    environment_state: Tossing3DEnvironmentState
     toss_belief: SkillBelief
     pick_belief: SkillBelief = Field(default_factory=SkillBelief.prior)
     open_gripper_belief: SkillBelief = Field(default_factory=SkillBelief.prior)
@@ -133,14 +118,12 @@ class Tossing3DBeliefState(BeliefState):
     def transition(
         self,
         *,
-        environment_state: Tossing3DEnvironmentState,
         added_cost: float,
         toss_belief: SkillBelief | None = None,
         added_training_examples: int = 0,
     ) -> Tossing3DBeliefState:
         return self.model_copy(
             update={
-                "environment_state": environment_state,
                 "toss_belief": self.toss_belief if toss_belief is None else toss_belief,
                 "pending_training_examples": self.pending_training_examples
                 + added_training_examples,
@@ -224,7 +207,6 @@ class Tossing3DPracticeModel(BaseModel):
     def evaluate_policy(self, *, sampled_theta: Theta) -> float:
         assert isinstance(sampled_theta, Tossing3DTheta)
         return self._evaluate_deployment_policy(
-            environment_state=Tossing3DEnvironmentState.READY,
             toss_competence=sampled_theta.toss.competence,
             pick_competence=sampled_theta.pick.competence,
             open_competence=sampled_theta.open_gripper.competence,
@@ -357,56 +339,26 @@ class Tossing3DPracticeModel(BaseModel):
     def _evaluate_deployment_policy(
         self,
         *,
-        environment_state: Tossing3DEnvironmentState,
         toss_competence: float,
         pick_competence: float,
         open_competence: float,
         horizon: int,
     ) -> float:
         """Solve the canonical deployment MDP; human reset is unavailable at test."""
-        if environment_state is Tossing3DEnvironmentState.SOLVED:
-            return 1.0
-        if horizon == 0:
-            return 0.0
-        if environment_state is Tossing3DEnvironmentState.READY:
-            success_value = self._evaluate_deployment_policy(
-                environment_state=Tossing3DEnvironmentState.HOLDING,
-                toss_competence=toss_competence,
-                pick_competence=pick_competence,
-                open_competence=open_competence,
-                horizon=horizon - 1,
+        ready_value = holding_value = closed_gripper_value = 0.0
+        for _ in range(horizon):
+            previous_ready = ready_value
+            previous_holding = holding_value
+            previous_closed_gripper = closed_gripper_value
+            holding_value = toss_competence
+            ready_value = (
+                pick_competence * previous_holding
+                + (1.0 - pick_competence) * previous_closed_gripper
             )
-            failure_value = self._evaluate_deployment_policy(
-                environment_state=Tossing3DEnvironmentState.GRIPPER_CLOSED,
-                toss_competence=toss_competence,
-                pick_competence=pick_competence,
-                open_competence=open_competence,
-                horizon=horizon - 1,
+            closed_gripper_value = (
+                open_competence * previous_ready + (1.0 - open_competence) * previous_closed_gripper
             )
-            return pick_competence * success_value + (1.0 - pick_competence) * failure_value
-        if environment_state is Tossing3DEnvironmentState.GRIPPER_CLOSED:
-            return open_competence * self._evaluate_deployment_policy(
-                environment_state=Tossing3DEnvironmentState.READY,
-                toss_competence=toss_competence,
-                pick_competence=pick_competence,
-                open_competence=open_competence,
-                horizon=horizon - 1,
-            ) + (1.0 - open_competence) * self._evaluate_deployment_policy(
-                environment_state=environment_state,
-                toss_competence=toss_competence,
-                pick_competence=pick_competence,
-                open_competence=open_competence,
-                horizon=horizon - 1,
-            )
-        if environment_state is Tossing3DEnvironmentState.HOLDING:
-            return toss_competence * self._evaluate_deployment_policy(
-                environment_state=Tossing3DEnvironmentState.SOLVED,
-                toss_competence=toss_competence,
-                pick_competence=pick_competence,
-                open_competence=open_competence,
-                horizon=horizon - 1,
-            )
-        return 0.0
+        return ready_value
 
     def outcomes(
         self,
@@ -466,9 +418,6 @@ class Tossing3DPracticeModel(BaseModel):
             Tossing3DOutcome(
                 probability=1.0,
                 next_state=state.transition(
-                    environment_state=Tossing3DPracticeModel.environment_state_from_atoms(
-                        true_atoms=next_true_atoms
-                    ),
                     added_cost=cost,
                 ),
                 next_true_atoms=next_true_atoms,
@@ -503,9 +452,6 @@ class Tossing3DPracticeModel(BaseModel):
                     probability=branch_probability,
                     next_state=Tossing3DPracticeModel.observe_robot_skill(
                         state=state.transition(
-                            environment_state=Tossing3DPracticeModel.environment_state_from_atoms(
-                                true_atoms=next_true_atoms
-                            ),
                             added_cost=cost,
                         ),
                         skill_name=skill_name,
@@ -565,9 +511,6 @@ class Tossing3DPracticeModel(BaseModel):
                     Tossing3DOutcome(
                         probability=probability,
                         next_state=state.transition(
-                            environment_state=self.environment_state_from_atoms(
-                                true_atoms=next_true_atoms
-                            ),
                             added_cost=self.toss_cost,
                             toss_belief=belief,
                             added_training_examples=1,
@@ -603,34 +546,6 @@ class Tossing3DPracticeModel(BaseModel):
             return frozenset(atom for atom in succeeded if atom.predicate.name != "InBin")
         return true_atoms
 
-    @staticmethod
-    def environment_state_from_atoms(
-        *, true_atoms: frozenset[GroundAtom]
-    ) -> Tossing3DEnvironmentState:
-        predicates = {atom.predicate.name for atom in true_atoms}
-        hand_empty = "HandEmpty" in predicates
-        if "InBin" in predicates:
-            return (
-                Tossing3DEnvironmentState.SOLVED
-                if hand_empty
-                else Tossing3DEnvironmentState.CLOSED_SOLVED
-            )
-        if "Holding" in predicates:
-            return (
-                Tossing3DEnvironmentState.HOLDING
-                if "Reachable" in predicates
-                else Tossing3DEnvironmentState.UNREACHABLE_HOLDING
-            )
-        if {"Reachable", "OnGround", "HandEmpty"} <= predicates:
-            return Tossing3DEnvironmentState.READY
-        if not hand_empty:
-            return (
-                Tossing3DEnvironmentState.GRIPPER_CLOSED
-                if {"Reachable", "OnGround"} <= predicates
-                else Tossing3DEnvironmentState.CLOSED_STRANDED
-            )
-        return Tossing3DEnvironmentState.STRANDED
-
     def observe_toss(
         self,
         *,
@@ -649,11 +564,8 @@ class Tossing3DPracticeModel(BaseModel):
         )
 
 
-def make_default_tossing3d_belief(
-    *, environment_state: Tossing3DEnvironmentState = Tossing3DEnvironmentState.READY
-) -> Tossing3DBeliefState:
+def make_default_tossing3d_belief() -> Tossing3DBeliefState:
     """Independent broad priors for all robot skills; human reset is known."""
     return Tossing3DBeliefState(
-        environment_state=environment_state,
         toss_belief=SkillBelief.prior(),
     )
