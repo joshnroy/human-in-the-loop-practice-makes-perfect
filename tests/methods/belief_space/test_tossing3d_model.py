@@ -3,6 +3,7 @@ from itertools import product
 import pytest
 from pydantic import ValidationError
 
+from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
@@ -19,7 +20,6 @@ from hitl_pmp.methods.belief_space.tossing3d_model import (
     refit_belief_state,
     refit_skill_belief,
 )
-from hitl_pmp.methods.belief_space.types.action import Tossing3DAction
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.core import STOP_ACTION
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
@@ -64,11 +64,11 @@ def _search_state(
 
 def _action(
     *, model: Tossing3DPracticeModel, search_state: Tossing3DSearchState, name: str
-) -> Tossing3DAction:
+) -> GroundSkill:
     return next(
         action
         for action in model.get_valid_actions(environment_state=search_state)
-        if isinstance(action, Tossing3DAction) and action.name == name
+        if action.skill.name == name
     )
 
 
@@ -111,7 +111,11 @@ def test_hard_budget_filters_unaffordable_actions() -> None:
     state = state.model_copy(update={"accumulated_cost": 1.0})
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
     actions = model.get_valid_actions(environment_state=search_state)
-    assert {action.name for action in actions} == {PICK_SKILL, OPEN_GRIPPER_SKILL, RESET_SKILL}
+    assert {action.skill.name for action in actions} == {
+        PICK_SKILL,
+        OPEN_GRIPPER_SKILL,
+        RESET_SKILL,
+    }
     exhausted = state.model_copy(update={"accumulated_cost": 2.0})
     assert (
         model.get_valid_actions(
@@ -205,13 +209,15 @@ def test_only_physically_applicable_actions_are_returned() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()
     ready = _search_state(model=model, state=belief, action_name=PICK_SKILL)
-    assert {action.name for action in model.get_valid_actions(environment_state=ready)} == {
+    assert {action.skill.name for action in model.get_valid_actions(environment_state=ready)} == {
         PICK_SKILL,
         OPEN_GRIPPER_SKILL,
         RESET_SKILL,
     }
     carrying = _search_state(model=model, state=belief, action_name=TOSS_SKILL)
-    assert {action.name for action in model.get_valid_actions(environment_state=carrying)} == {
+    assert {
+        action.skill.name for action in model.get_valid_actions(environment_state=carrying)
+    } == {
         TOSS_SKILL,
         OPEN_GRIPPER_SKILL,
         RESET_SKILL,
@@ -234,7 +240,7 @@ def test_human_reset_uses_unchanged_ees_empty_preconditions(*, action_name: str)
     state = make_default_tossing3d_belief()
     search_state = _search_state(model=model, state=state, action_name=action_name)
     assert RESET_SKILL in {
-        action.name for action in model.get_valid_actions(environment_state=search_state)
+        action.skill.name for action in model.get_valid_actions(environment_state=search_state)
     }
 
 
@@ -245,9 +251,10 @@ def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
     with_state = _search_state(model=with_reset, state=state, action_name=PICK_SKILL)
     without_state = _search_state(model=without_reset, state=state, action_name=PICK_SKILL)
     assert {
-        action.name for action in with_reset.get_valid_actions(environment_state=with_state)
+        action.skill.name for action in with_reset.get_valid_actions(environment_state=with_state)
     } - {
-        action.name for action in without_reset.get_valid_actions(environment_state=without_state)
+        action.skill.name
+        for action in without_reset.get_valid_actions(environment_state=without_state)
     } == {RESET_SKILL}
 
 

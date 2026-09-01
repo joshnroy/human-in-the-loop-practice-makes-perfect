@@ -10,9 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
-from .types.action import Tossing3DAction
 from .types.belief_state import Tossing3DBeliefState
-from .types.core import BeliefState, EnvironmentState, POMDPAction, Theta
+from .types.core import BeliefState, EnvironmentState, Theta
 from .types.outcome import Tossing3DOutcome
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis, WeightedHypothesis
@@ -136,7 +135,6 @@ class Tossing3DPracticeModel(BaseModel):
     _rng: np.random.Generator = PrivateAttr()
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
     _precondition_masks: tuple[int, ...] = PrivateAttr(default=())
-    _actions: tuple[Tossing3DAction, ...] = PrivateAttr(default=())
     _effects: dict[
         GroundSkill,
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
@@ -156,10 +154,6 @@ class Tossing3DPracticeModel(BaseModel):
         self._atom_indexes = {atom: index for index, atom in enumerate(relevant_atoms)}
         self._precondition_masks = tuple(
             self._atoms_mask(atoms=skill.preconditions) for skill in self.ground_skills
-        )
-        self._actions = tuple(
-            Tossing3DAction(name=skill.skill.name, ground_skill=skill)
-            for skill in self.ground_skills
         )
         self._effects = {
             skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
@@ -212,7 +206,7 @@ class Tossing3DPracticeModel(BaseModel):
             return policy_value
         return policy_value - self.practice_cost * summed_cost
 
-    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[POMDPAction]:
+    def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[GroundSkill]:
         assert isinstance(environment_state, Tossing3DSearchState)
         state = environment_state.state
         costs = {
@@ -223,10 +217,8 @@ class Tossing3DPracticeModel(BaseModel):
         }
         state_mask = self._atoms_mask(atoms=environment_state.true_atoms)
         return [
-            action
-            for index, (ground_skill, action) in enumerate(
-                zip(self.ground_skills, self._actions, strict=True)
-            )
+            ground_skill
+            for index, ground_skill in enumerate(self.ground_skills)
             if self._precondition_masks[index] & state_mask == self._precondition_masks[index]
             for cost in [costs[ground_skill.skill.name]]
             if self.hard_budget is None
@@ -287,11 +279,10 @@ class Tossing3DPracticeModel(BaseModel):
         self,
         *,
         environment_state: EnvironmentState,
-        practice_action: POMDPAction,
+        practice_action: GroundSkill,
         belief_state: BeliefState,
     ) -> list[tuple[EnvironmentState, float]]:
         assert isinstance(environment_state, Tossing3DSearchState)
-        assert isinstance(practice_action, Tossing3DAction)
         assert isinstance(belief_state, Tossing3DBeliefState)
         # Enumerate the finite model, merging observationally identical branches.
         return list(
@@ -314,11 +305,10 @@ class Tossing3DPracticeModel(BaseModel):
         self,
         *,
         environment_state: EnvironmentState,
-        practice_action: POMDPAction,
+        practice_action: GroundSkill,
         belief_state: BeliefState,
     ) -> list[tuple[EnvironmentState, float, float]]:
         assert isinstance(environment_state, Tossing3DSearchState)
-        assert isinstance(practice_action, Tossing3DAction)
         assert isinstance(belief_state, Tossing3DBeliefState)
         merged: dict[tuple[Tossing3DSearchState, float], float] = {}
         for outcome in self.outcomes(
@@ -340,7 +330,7 @@ class Tossing3DPracticeModel(BaseModel):
         belief_state: BeliefState,
         environment_state: EnvironmentState,
         potential_next_environment_state: EnvironmentState,
-        practice_action: POMDPAction,
+        practice_action: GroundSkill,
     ) -> BeliefState:
         assert isinstance(potential_next_environment_state, Tossing3DSearchState)
         return potential_next_environment_state.state
@@ -351,12 +341,11 @@ class Tossing3DPracticeModel(BaseModel):
         potential_next_environment_state: EnvironmentState,
         sampled_cost: float,
         environment_state: EnvironmentState,
-        practice_action: POMDPAction,
+        practice_action: GroundSkill,
         belief_state: BeliefState,
     ) -> float:
         assert isinstance(potential_next_environment_state, Tossing3DSearchState)
         assert isinstance(environment_state, Tossing3DSearchState)
-        assert isinstance(practice_action, Tossing3DAction)
         assert isinstance(belief_state, Tossing3DBeliefState)
         total_probability = 0.0
         for outcome in self.outcomes(
@@ -412,12 +401,12 @@ class Tossing3DPracticeModel(BaseModel):
         *,
         environment_state: Tossing3DSearchState,
         state: Tossing3DBeliefState,
-        action: Tossing3DAction,
+        action: GroundSkill,
     ) -> tuple[Tossing3DOutcome, ...]:
-        ground_skill = action.ground_skill
+        ground_skill = action
         assert ground_skill in self.ground_skills
         assert ground_skill.preconditions <= environment_state.true_atoms
-        if action.name == PICK_SKILL:
+        if action.skill.name == PICK_SKILL:
             return self._binary_outcomes(
                 state=state,
                 true_atoms=environment_state.true_atoms,
@@ -426,7 +415,7 @@ class Tossing3DPracticeModel(BaseModel):
                 skill_name=PICK_SKILL,
                 cost=self.pick_cost,
             )
-        if action.name == OPEN_GRIPPER_SKILL:
+        if action.skill.name == OPEN_GRIPPER_SKILL:
             return self._binary_outcomes(
                 state=state,
                 true_atoms=environment_state.true_atoms,
@@ -435,7 +424,7 @@ class Tossing3DPracticeModel(BaseModel):
                 skill_name=OPEN_GRIPPER_SKILL,
                 cost=self.open_gripper_cost,
             )
-        if action.name == RESET_SKILL:
+        if action.skill.name == RESET_SKILL:
             assert self.reset_cost is not None
             return self._deterministic(
                 state=state,
@@ -443,7 +432,7 @@ class Tossing3DPracticeModel(BaseModel):
                 ground_skill=ground_skill,
                 cost=self.reset_cost,
             )
-        assert action.name == TOSS_SKILL
+        assert action.skill.name == TOSS_SKILL
         return self._toss_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
