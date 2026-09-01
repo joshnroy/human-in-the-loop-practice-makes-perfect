@@ -180,6 +180,17 @@ jobs:
         with:
           python-version: "3.10"
           cache: "pip"
+      - name: Cache Fast Downward
+        id: cache-fd
+        uses: actions/cache@v4
+        with:
+          path: downward
+          key: fast-downward-${{ runner.os }}-release-v1
+      - name: Build Fast Downward
+        if: steps.cache-fd.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/aibasel/downward.git
+          cd downward && ./build.py
       - name: Cache pytest cache
         uses: actions/cache@v4
         with:
@@ -190,6 +201,8 @@ jobs:
       - run: pip install -e ".[dev,tossing3d]" -e reference/kindergarden -e reference/kinder-baselines/kinder-models
       - name: Pytest — Historical Analysis tests
         run: pytest -q tests/analysis
+        env:
+          FD_EXEC_PATH: ${{ github.workspace }}/downward
 
   test-tossingroom:
     name: "test / tossingroom (2D physics)"
