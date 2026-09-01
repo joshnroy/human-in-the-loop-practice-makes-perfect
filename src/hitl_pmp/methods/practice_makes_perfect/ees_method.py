@@ -32,6 +32,22 @@ from .wrapped_sampler import LearnedSkillSampler
 logger = logging.getLogger(__name__)
 
 
+# STOP ends the practice period without executing a controller. It is not a
+# domain skill: selectors return it explicitly, while an empty candidate list
+# still allows the runner to bootstrap with a random applicable skill.
+STOP_SKILL = GroundSkill(
+    skill=Skill(
+        name="STOP",
+        parameters=(),
+        preconditions=frozenset(),
+        add_effects=frozenset(),
+        delete_effects=frozenset(),
+        param_dim=0,
+    ),
+    objects=(),
+)
+
+
 class EesMethod(Method):
     """EES (Estimate / Extrapolate / Situate) -- the "Practice Makes Perfect"
     paper's own method, ported from predicators' `active_sampler_learning`
@@ -349,6 +365,15 @@ class EesMethod(Method):
 
     def total_observations(self) -> int:
         return sum(model.num_observations for model in self._competence_models.values())
+
+    def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
+        """Account for a practice action when it is dispatched, before its outcome.
+
+        Called for robot skills and human resets, but not STOP or evaluation
+        actions. EES does not track accumulated action cost, so its default is a
+        no-op. Cost-aware methods override this independently of observe_outcome.
+        """
+        del ground_skill
 
     def current_competences(self) -> dict[GroundSkill, float]:
         """Every already-instantiated ground skill's `get_current_competence()` --
@@ -691,6 +716,19 @@ class EesMethod(Method):
             scored.append((score, float(self._rng.uniform()), candidate))
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return [candidate for _score, _tiebreak, candidate in scored]
+
+    def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        """Return practice candidates in preference order, optionally including STOP.
+
+        The runner tries candidates in order, planning any setup needed to reach
+        their preconditions. Reaching STOP ends the period; an empty list permits
+        random bootstrap. This hook selects skills but does not execute them.
+
+        EES ranks candidates from its history and leaves reachability to the runner.
+        Other methods can use true_atoms to choose based on the current state.
+        """
+        del true_atoms
+        return self.choose_practice_target()
 
     def random_choice(self, *, ground_skills: list[GroundSkill]) -> GroundSkill:
         """Uniform pick from this Method's own RNG stream, so a seeded EesMethod
@@ -1054,21 +1092,11 @@ class _EesEpisode:
             )
         if not self._plan:
             if self._practicing:
-                # Nothing left worth practicing (no candidate reachable and no
-                # applicable skill to bootstrap from). Ending the period here for
-                # free -- rather than burning the remaining budget on no-ops, or
-                # substituting a priced reset -- is what keeps the online-transition
-                # count data-driven and keeps a genuinely stuck robot ABLE to stay
-                # stuck, matching the `never` baseline with no reset skill configured
-                # at all -- see InteractionComplete. Reachable only when
-                # _practice_plan's for-loop over choose_practice_target()'s candidates
-                # never ran (no candidate has ever been scored) and its own bootstrap
-                # fallback found nothing applicable either -- see
-                # test_nothing_left_to_practice_raises_the_free_interaction_
-                # complete_even_when_configured.
+                # The selector returned STOP, or no candidate/setup/bootstrap action
+                # was available. End the period without a no-op or a paid reset.
                 logger.debug(
-                    "_EesEpisode._next_plan: no candidate reachable and no applicable "
-                    "skill to bootstrap from -- raising InteractionComplete at step #%d "
+                    "_EesEpisode._next_plan: STOP or no available practice action "
+                    "-- raising InteractionComplete at step #%d "
                     "true_atoms=%s",
                     self._debug_step_count,
                     sorted(
@@ -1084,6 +1112,9 @@ class _EesEpisode:
             return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)
+        if self._practicing:
+            # Charge the attempt now, even if no later policy call observes it.
+            method.record_action_cost(ground_skill=ground_skill)
         if ground_skill.skill.name == ASK_FOR_RESET_CUBE_BIN_ONLY_NAME:
             # Dispatch to the rescue mechanism, not execute_ground_skill -- this
             # "skill" has no controller/effects to score. self._pending stays
@@ -1217,11 +1248,13 @@ class _EesEpisode:
 
     def _practice_plan(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         """Situate: plan to the preconditions of the best-scoring candidate, then
-        execute that candidate there. Falls back to a uniformly random applicable
-        skill while no candidate has been tried yet -- that bootstrap is what fills
-        the candidate set in the first place."""
+        execute that candidate there. STOP ends the period without planning or
+        execution. If candidates are exhausted, bootstrap with a uniformly random
+        applicable skill."""
         method = self._method
-        for candidate in method.choose_practice_target():
+        for candidate in method.select_skill_to_practice(true_atoms=true_atoms):
+            if candidate == STOP_SKILL:
+                return []
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
                 return [candidate]
