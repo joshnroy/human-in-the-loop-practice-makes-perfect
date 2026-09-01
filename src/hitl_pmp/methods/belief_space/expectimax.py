@@ -207,7 +207,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                     self.trace.record(
                         event="branch",
                         node=node,
-                        action=practice_action.model_dump(mode="json"),
+                        action=practice_action.model_dump(mode="json", fallback=str),
                         successor=potential_next_environment_state.model_dump(mode="json"),
                         belief_state=next_belief_state.model_dump(mode="json"),
                         horizon=horizon - 1,
@@ -226,7 +226,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 self.trace.record(
                     event="action_value",
                     node=node,
-                    action=practice_action.model_dump(mode="json"),
+                    action=practice_action.model_dump(mode="json", fallback=str),
                     value=value_of_state,
                 )
             if current_best_value < value_of_state:
@@ -239,7 +239,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 node=node,
                 action="STOP"
                 if current_best_action == STOP_ACTION
-                else current_best_action.model_dump(mode="json"),
+                else current_best_action.model_dump(mode="json", fallback=str),
                 value=current_best_value,
                 reason="max_value_stop_wins_ties",
             )

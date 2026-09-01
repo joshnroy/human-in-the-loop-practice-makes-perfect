@@ -2,9 +2,9 @@ import pytest
 from pydantic import BaseModel, Field
 
 from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
+from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 from hitl_pmp.methods.belief_space.types.stop_action import (
     STOP_ACTION,
-    SearchTrace,
     StopAction,
 )
 

@@ -49,12 +49,9 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def practice_skill_competences(self) -> dict[str, float]:
         estimates = {
-            PICK_SKILL
-            + " (belief mean)": mean_competence(belief=self._pomdp_state.pick_belief),
-            TOSS_SKILL
-            + " (belief mean)": mean_competence(belief=self._pomdp_state.toss_belief),
-            OPEN_GRIPPER_SKILL
-            + " (belief mean)": mean_competence(
+            PICK_SKILL + " (belief mean)": mean_competence(belief=self._pomdp_state.pick_belief),
+            TOSS_SKILL + " (belief mean)": mean_competence(belief=self._pomdp_state.toss_belief),
+            OPEN_GRIPPER_SKILL + " (belief mean)": mean_competence(
                 belief=self._pomdp_state.open_gripper_belief
             ),
         }
@@ -225,14 +222,16 @@ class Tossing3DPomdpMethod(EesMethod):
                 if event["node"] == 0 and event["event"] == "stop_value":
                     self._practice_values["STOP"] = event["value"]
                 elif event["node"] == 0 and event["event"] == "action_value":
-                    self._practice_values[event["action"]["name"]] = event["value"]
+                    self._practice_values[event["action"]["skill"]["name"]] = event["value"]
         self.record_diagnostic(
             event="decision",
             competences=self.practice_skill_competences(),
             search_duration_seconds=search_duration_seconds,
             num_samples=self.pomdp_num_samples,
             atoms=sorted(str(atom) for atom in true_atoms),
-            action="STOP" if action == STOP_ACTION else action.model_dump(mode="json"),
+            action="STOP"
+            if action == STOP_ACTION
+            else action.model_dump(mode="json", fallback=str),
             value=value,
             horizon=self.pomdp_search_depth,
             model=self._pomdp_model.model_dump(mode="json"),
