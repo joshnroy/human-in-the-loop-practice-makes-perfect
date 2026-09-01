@@ -115,13 +115,19 @@ class ExpectimaxSearch:
             value_of_state = 0.0
             total_probability = 0.0
             # TODO: Should samples be drawn with or without replacement?
-            next_states = self.model.transition_outcomes(
+            next_states_and_probabilities = self.model.transition_outcomes(
                 environment_state=environment_state,
                 practice_action=practice_action,
                 belief_state=belief_state,
             )
-            assert next_states, f"action {practice_action!r} has no chance outcomes"
-            for potential_next_environment_state, sampled_cost, probability in next_states:
+            assert next_states_and_probabilities, (
+                f"action {practice_action!r} has no chance outcomes"
+            )
+            for (
+                potential_next_environment_state,
+                sampled_cost,
+                probability,
+            ) in next_states_and_probabilities:
                 assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
                     "sampled_cost must be finite and non-negative"
                 )
