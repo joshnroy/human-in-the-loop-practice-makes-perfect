@@ -74,3 +74,28 @@ class BeliefSpaceModel(Protocol):
         practice_action: POMDPAction,
         belief_state: BeliefState,
     ) -> float: ...
+
+
+class BatchedBeliefSpaceModel(Protocol):
+    """Optional hot-path extensions; the seven pseudocode methods remain canonical."""
+
+    def sample_thetas_from_belief(
+        self, *, belief_state: BeliefState, num_samples: int
+    ) -> list[Theta]: ...
+
+    def transition_outcomes(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        practice_action: POMDPAction,
+        belief_state: BeliefState,
+    ) -> list[tuple[EnvironmentState, float, float]]: ...
+
+    def search_cache_key(
+        self,
+        *,
+        environment_state: EnvironmentState,
+        summed_cost: float,
+        belief_state: BeliefState,
+        horizon: int,
+    ) -> object: ...
