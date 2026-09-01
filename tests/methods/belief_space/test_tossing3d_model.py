@@ -273,23 +273,17 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
         for outcome in outcomes
     )
     assert all(
-        _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 0
-        for outcome in outcomes
+        _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 0 for outcome in outcomes
     )
     assert all(
-        _pending_examples(state=outcome[1], skill_name=PICK_SKILL) == 1
-        for outcome in outcomes
+        _pending_examples(state=outcome[1], skill_name=PICK_SKILL) == 1 for outcome in outcomes
     )
     assert mean_competence(
         belief=_belief(state=outcomes[0][1], skill_name=PICK_SKILL)
-    ) > mean_competence(
-        belief=_belief(state=state, skill_name=PICK_SKILL)
-    )
+    ) > mean_competence(belief=_belief(state=state, skill_name=PICK_SKILL))
     assert mean_competence(
         belief=_belief(state=outcomes[1][1], skill_name=PICK_SKILL)
-    ) < mean_competence(
-        belief=_belief(state=state, skill_name=PICK_SKILL)
-    )
+    ) < mean_competence(belief=_belief(state=state, skill_name=PICK_SKILL))
     assert outcomes[1][2] == search_state.true_atoms
 
 
@@ -361,10 +355,7 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
     open_gripper_belief = _belief(state=state, skill_name=OPEN_GRIPPER_SKILL)
     assert mean_competence(belief=open_gripper_belief) > 0.99
     projected = refit_skill_belief(belief=open_gripper_belief, training_examples=1)
-    assert (
-        mean_competence(belief=projected) - mean_competence(belief=open_gripper_belief)
-        < 0.001
-    )
+    assert mean_competence(belief=projected) - mean_competence(belief=open_gripper_belief) < 0.001
 
 
 def test_pending_examples_predict_improvement_without_changing_current_competence() -> None:
@@ -381,9 +372,9 @@ def test_pending_examples_predict_improvement_without_changing_current_competenc
         belief=_belief(state=state, skill_name=PICK_SKILL), success=True
     )
     refit = refit_belief_state(state=observed)
-    assert mean_competence(
-        belief=_belief(state=refit, skill_name=PICK_SKILL)
-    ) > mean_competence(belief=_belief(state=observed, skill_name=PICK_SKILL))
+    assert mean_competence(belief=_belief(state=refit, skill_name=PICK_SKILL)) > mean_competence(
+        belief=_belief(state=observed, skill_name=PICK_SKILL)
+    )
     assert _pending_examples(state=refit, skill_name=PICK_SKILL) == 0
 
 
@@ -416,8 +407,7 @@ def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
     ]
     assert sum(outcome[0] for outcome in unchanged) == pytest.approx(0.5)
     assert all(
-        _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 1
-        for outcome in outcomes
+        _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 1 for outcome in outcomes
     )
 
 
@@ -432,13 +422,11 @@ def test_refit_is_deferred_until_cycle_boundary() -> None:
             "pending_examples": {TOSS_SKILL: 2},
         },
     )
-    assert mean_competence(
-        belief=_belief(state=state, skill_name=TOSS_SKILL)
-    ) == pytest.approx(0.5)
+    assert mean_competence(belief=_belief(state=state, skill_name=TOSS_SKILL)) == pytest.approx(0.5)
     refit = refit_belief_state(state=state)
-    assert mean_competence(
-        belief=_belief(state=refit, skill_name=TOSS_SKILL)
-    ) == pytest.approx(0.595)
+    assert mean_competence(belief=_belief(state=refit, skill_name=TOSS_SKILL)) == pytest.approx(
+        0.595
+    )
     assert _pending_examples(state=refit, skill_name=TOSS_SKILL) == 0
 
 

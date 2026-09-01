@@ -75,12 +75,8 @@ class Tossing3DPracticeModel(BaseModel):
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> list[Tossing3DTheta]:
         projected = refit_belief_state(state=belief_state)
-        pick = self.sample_skills(
-            belief=projected.skill_beliefs[PICK_SKILL], count=num_samples
-        )
-        toss = self.sample_skills(
-            belief=projected.skill_beliefs[TOSS_SKILL], count=num_samples
-        )
+        pick = self.sample_skills(belief=projected.skill_beliefs[PICK_SKILL], count=num_samples)
+        toss = self.sample_skills(belief=projected.skill_beliefs[TOSS_SKILL], count=num_samples)
         opened = self.sample_skills(
             belief=projected.skill_beliefs[OPEN_GRIPPER_SKILL], count=num_samples
         )

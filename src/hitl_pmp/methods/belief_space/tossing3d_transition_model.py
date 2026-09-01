@@ -42,9 +42,7 @@ def transition_belief_state(
     if toss_belief is not None:
         skill_beliefs[TOSS_SKILL] = toss_belief
     if added_training_examples:
-        pending_examples[TOSS_SKILL] = (
-            pending_examples.get(TOSS_SKILL, 0) + added_training_examples
-        )
+        pending_examples[TOSS_SKILL] = pending_examples.get(TOSS_SKILL, 0) + added_training_examples
     return state.model_copy(
         update={
             "skill_beliefs": skill_beliefs,
@@ -212,9 +210,7 @@ def toss_outcomes(
             belief = (
                 state.skill_beliefs[TOSS_SKILL]
                 if is_random
-                else condition_skill_belief(
-                    belief=state.skill_beliefs[TOSS_SKILL], success=success
-                )
+                else condition_skill_belief(belief=state.skill_beliefs[TOSS_SKILL], success=success)
             )
             next_true_atoms = (
                 apply_success_effects(
