@@ -99,7 +99,8 @@ function drawState(parent, id, cutoff, open = false) {
     stop = visible.find(e => e.event === 'stop_value');
   const d = document.createElement('details'),
     s = document.createElement('summary');
-  s.textContent = 'State ' + id + ' · ' + (node.info.environment_state?.state?.environment_state ?? '') + ' · h=' + node.info.horizon + ' · C=' + node.info.summed_cost + ' · V=' + number(choice?.value) + (choice ? ' → ' + name(choice.action) : ' · evaluating');
+  const atoms = node.info.environment_state?.atoms ?? [];
+  s.textContent = 'State ' + id + ' · ' + (atoms.length ? atoms.join(', ') : '∅') + ' · h=' + node.info.horizon + ' · C=' + node.info.summed_cost + ' · V=' + number(choice?.value) + (choice ? ' → ' + name(choice.action) : ' · evaluating');
   d.append(s);
   parent.append(d);
   d.addEventListener('toggle', () => {
