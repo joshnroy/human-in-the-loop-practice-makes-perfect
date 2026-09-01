@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Iterable
 from enum import Enum
 from itertools import product
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+
+from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 
 from .types import BeliefState, EnvironmentState, POMDPAction, Theta
 
@@ -166,18 +168,21 @@ class Tossing3DBeliefState(BeliefState):
 
 
 class Tossing3DSearchState(EnvironmentState):
-    """Situated successor, including the observed exploration branch."""
+    """EES symbolic state paired with the posterior state used by the search."""
 
     state: Tossing3DBeliefState
+    true_atoms: frozenset[GroundAtom] = Field(exclude=True)
 
 
 class Tossing3DAction(POMDPAction):
     name: str
+    ground_skill: GroundSkill = Field(exclude=True)
 
 
 class Tossing3DOutcome(BaseModel):
     probability: float
     next_state: Tossing3DBeliefState
+    next_true_atoms: frozenset[GroundAtom]
 
 
 class Tossing3DTheta(Theta):
@@ -192,6 +197,7 @@ class Tossing3DPracticeModel(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     seed: int = 0
+    ground_skills: tuple[GroundSkill, ...] = Field(default=(), exclude=True)
     _rng: np.random.Generator = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
@@ -243,9 +249,10 @@ class Tossing3DPracticeModel(BaseModel):
             RESET_SKILL: self.reset_cost,
         }
         return [
-            Tossing3DAction(name=name)
-            for name in self.actions(state)
-            for cost in [costs[name]]
+            Tossing3DAction(name=ground_skill.skill.name, ground_skill=ground_skill)
+            for ground_skill in self.ground_skills
+            if ground_skill.preconditions <= environment_state.true_atoms
+            for cost in [costs[ground_skill.skill.name]]
             if self.hard_budget is None
             or (cost is not None and state.accumulated_cost + cost <= self.hard_budget)
         ]
@@ -264,10 +271,16 @@ class Tossing3DPracticeModel(BaseModel):
         return list(
             dict.fromkeys(
                 (
-                    Tossing3DSearchState(state=outcome.next_state),
+                    Tossing3DSearchState(
+                        state=outcome.next_state, true_atoms=outcome.next_true_atoms
+                    ),
                     outcome.next_state.accumulated_cost - belief_state.accumulated_cost,
                 )
-                for outcome in self.outcomes(belief_state, practice_action.name)
+                for outcome in self.outcomes(
+                    environment_state=environment_state,
+                    state=belief_state,
+                    action=practice_action,
+                )
             )
         )
 
@@ -292,14 +305,23 @@ class Tossing3DPracticeModel(BaseModel):
         belief_state: BeliefState,
     ) -> float:
         assert isinstance(potential_next_environment_state, Tossing3DSearchState)
+        assert isinstance(environment_state, Tossing3DSearchState)
         assert isinstance(practice_action, Tossing3DAction)
         assert isinstance(belief_state, Tossing3DBeliefState)
-        return sum(
-            outcome.probability
-            for outcome in self.outcomes(belief_state, practice_action.name)
-            if outcome.next_state == potential_next_environment_state.state
-            and outcome.next_state.accumulated_cost - belief_state.accumulated_cost == sampled_cost
-        )
+        total_probability = 0.0
+        for outcome in self.outcomes(
+            environment_state=environment_state,
+            state=belief_state,
+            action=practice_action,
+        ):
+            if (
+                outcome.next_state == potential_next_environment_state.state
+                and outcome.next_true_atoms == potential_next_environment_state.true_atoms
+                and outcome.next_state.accumulated_cost - belief_state.accumulated_cost
+                == sampled_cost
+            ):
+                total_probability += outcome.probability
+        return total_probability
 
     practice_cost: float = Field(default=0.01, ge=0.0, allow_inf_nan=False)
     random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
@@ -310,31 +332,6 @@ class Tossing3DPracticeModel(BaseModel):
     reset_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     hard_budget: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     deployment_horizon: int = Field(default=4, ge=0)
-
-    @property
-    def required_skills(self) -> tuple[str, ...]:
-        return (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL)
-
-    def actions(self, state: Tossing3DBeliefState) -> Iterable[str]:  # noqa: PLR0917
-        by_state = {
-            Tossing3DEnvironmentState.READY: (PICK_SKILL,),
-            Tossing3DEnvironmentState.HOLDING: (TOSS_SKILL,),
-            Tossing3DEnvironmentState.UNREACHABLE_HOLDING: (OPEN_GRIPPER_SKILL,),
-            Tossing3DEnvironmentState.GRIPPER_CLOSED: (OPEN_GRIPPER_SKILL,),
-            Tossing3DEnvironmentState.CLOSED_STRANDED: (OPEN_GRIPPER_SKILL,),
-            Tossing3DEnvironmentState.STRANDED: (),
-            Tossing3DEnvironmentState.SOLVED: (),
-            Tossing3DEnvironmentState.CLOSED_SOLVED: (OPEN_GRIPPER_SKILL,),
-        }
-        actions = by_state[state.environment_state]
-        if self.reset_cost is not None and state.environment_state in {
-            Tossing3DEnvironmentState.CLOSED_STRANDED,
-            Tossing3DEnvironmentState.STRANDED,
-            Tossing3DEnvironmentState.SOLVED,
-            Tossing3DEnvironmentState.CLOSED_SOLVED,
-        }:
-            return (*actions, RESET_SKILL)
-        return actions
 
     def stop_value(self, state: Tossing3DBeliefState) -> float:  # noqa: PLR0917
         projected = state.after_refit()
@@ -411,62 +408,70 @@ class Tossing3DPracticeModel(BaseModel):
             )
         return 0.0
 
-    def outcomes(  # noqa: PLR0917
-        self, state: Tossing3DBeliefState, action: str
+    def outcomes(
+        self,
+        *,
+        environment_state: Tossing3DSearchState,
+        state: Tossing3DBeliefState,
+        action: Tossing3DAction,
     ) -> tuple[Tossing3DOutcome, ...]:
-        if action not in set(self.actions(state)):
-            raise ValueError(f"{action!r} is not applicable in {state.environment_state.value}")
-        if action == PICK_SKILL:
+        ground_skill = action.ground_skill
+        assert ground_skill in self.ground_skills
+        assert ground_skill.preconditions <= environment_state.true_atoms
+        if action.name == PICK_SKILL:
             return self._binary_outcomes(
                 state=state,
+                true_atoms=environment_state.true_atoms,
+                ground_skill=ground_skill,
                 probability=state.pick_belief.mean_competence,
                 skill_name=PICK_SKILL,
-                success_state=Tossing3DEnvironmentState.HOLDING,
-                failure_state=Tossing3DEnvironmentState.GRIPPER_CLOSED,
                 cost=self.pick_cost,
             )
-        if action == OPEN_GRIPPER_SKILL:
-            opened = {
-                Tossing3DEnvironmentState.GRIPPER_CLOSED: Tossing3DEnvironmentState.READY,
-                Tossing3DEnvironmentState.CLOSED_STRANDED: Tossing3DEnvironmentState.STRANDED,
-                Tossing3DEnvironmentState.UNREACHABLE_HOLDING: Tossing3DEnvironmentState.STRANDED,
-                Tossing3DEnvironmentState.CLOSED_SOLVED: Tossing3DEnvironmentState.SOLVED,
-            }[state.environment_state]
+        if action.name == OPEN_GRIPPER_SKILL:
             return self._binary_outcomes(
                 state=state,
+                true_atoms=environment_state.true_atoms,
+                ground_skill=ground_skill,
                 probability=state.open_gripper_belief.mean_competence,
                 skill_name=OPEN_GRIPPER_SKILL,
-                success_state=opened,
-                failure_state=state.environment_state,
                 cost=self.open_gripper_cost,
             )
-        if action == RESET_SKILL:
+        if action.name == RESET_SKILL:
             assert self.reset_cost is not None
-            reset_state = (
-                Tossing3DEnvironmentState.GRIPPER_CLOSED
-                if state.environment_state
-                in {
-                    Tossing3DEnvironmentState.CLOSED_STRANDED,
-                    Tossing3DEnvironmentState.CLOSED_SOLVED,
-                }
-                else Tossing3DEnvironmentState.READY
-            )
             return self._deterministic(
                 state=state,
-                environment_state=reset_state,
+                true_atoms=environment_state.true_atoms,
+                ground_skill=ground_skill,
                 cost=self.reset_cost,
             )
-        assert action == TOSS_SKILL
-        return self._toss_outcomes(state=state)
+        assert action.name == TOSS_SKILL
+        return self._toss_outcomes(
+            state=state,
+            true_atoms=environment_state.true_atoms,
+            ground_skill=ground_skill,
+        )
 
     @staticmethod
     def _deterministic(
-        *, state: Tossing3DBeliefState, environment_state: Tossing3DEnvironmentState, cost: float
+        *,
+        state: Tossing3DBeliefState,
+        true_atoms: frozenset[GroundAtom],
+        ground_skill: GroundSkill,
+        cost: float,
     ) -> tuple[Tossing3DOutcome, ...]:
+        next_true_atoms = Tossing3DPracticeModel.apply_success_effects(
+            true_atoms=true_atoms, ground_skill=ground_skill
+        )
         return (
             Tossing3DOutcome(
                 probability=1.0,
-                next_state=state.transition(environment_state=environment_state, added_cost=cost),
+                next_state=state.transition(
+                    environment_state=Tossing3DPracticeModel.environment_state_from_atoms(
+                        true_atoms=next_true_atoms
+                    ),
+                    added_cost=cost,
+                ),
+                next_true_atoms=next_true_atoms,
             ),
         )
 
@@ -474,29 +479,42 @@ class Tossing3DPracticeModel(BaseModel):
     def _binary_outcomes(
         *,
         state: Tossing3DBeliefState,
+        true_atoms: frozenset[GroundAtom],
+        ground_skill: GroundSkill,
         probability: float,
         skill_name: str,
-        success_state: Tossing3DEnvironmentState,
-        failure_state: Tossing3DEnvironmentState,
         cost: float,
     ) -> tuple[Tossing3DOutcome, ...]:
-        return tuple(
-            Tossing3DOutcome(
-                probability=branch_probability,
-                next_state=Tossing3DPracticeModel.observe_robot_skill(
-                    state=state.transition(
-                        environment_state=next_environment_state, added_cost=cost
+        outcomes = []
+        for success, branch_probability in ((True, probability), (False, 1.0 - probability)):
+            if branch_probability <= 0.0:
+                continue
+            next_true_atoms = (
+                Tossing3DPracticeModel.apply_success_effects(
+                    true_atoms=true_atoms, ground_skill=ground_skill
+                )
+                if success
+                else Tossing3DPracticeModel.apply_failure_effects(
+                    true_atoms=true_atoms, ground_skill=ground_skill
+                )
+            )
+            outcomes.append(
+                Tossing3DOutcome(
+                    probability=branch_probability,
+                    next_state=Tossing3DPracticeModel.observe_robot_skill(
+                        state=state.transition(
+                            environment_state=Tossing3DPracticeModel.environment_state_from_atoms(
+                                true_atoms=next_true_atoms
+                            ),
+                            added_cost=cost,
+                        ),
+                        skill_name=skill_name,
+                        success=success,
                     ),
-                    skill_name=skill_name,
-                    success=success,
-                ),
+                    next_true_atoms=next_true_atoms,
+                )
             )
-            for success, branch_probability, next_environment_state in (
-                (True, probability, success_state),
-                (False, 1.0 - probability, failure_state),
-            )
-            if branch_probability > 0.0
-        )
+        return tuple(outcomes)
 
     @staticmethod
     def observe_robot_skill(
@@ -514,7 +532,13 @@ class Tossing3DPracticeModel(BaseModel):
             }
         )
 
-    def _toss_outcomes(self, *, state: Tossing3DBeliefState) -> tuple[Tossing3DOutcome, ...]:
+    def _toss_outcomes(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        true_atoms: frozenset[GroundAtom],
+        ground_skill: GroundSkill,
+    ) -> tuple[Tossing3DOutcome, ...]:
         branches: list[Tossing3DOutcome] = []
         for is_random, choice_probability, success_probability in (
             (False, 1.0 - self.exploration_epsilon, state.toss_belief.mean_competence),
@@ -530,22 +554,82 @@ class Tossing3DPracticeModel(BaseModel):
                 belief = (
                     state.toss_belief if is_random else state.toss_belief.condition(success=success)
                 )
+                next_true_atoms = (
+                    self.apply_success_effects(true_atoms=true_atoms, ground_skill=ground_skill)
+                    if success
+                    else self.apply_failure_effects(
+                        true_atoms=true_atoms, ground_skill=ground_skill
+                    )
+                )
                 branches.append(
                     Tossing3DOutcome(
                         probability=probability,
                         next_state=state.transition(
-                            environment_state=(
-                                Tossing3DEnvironmentState.SOLVED
-                                if success
-                                else Tossing3DEnvironmentState.STRANDED
+                            environment_state=self.environment_state_from_atoms(
+                                true_atoms=next_true_atoms
                             ),
                             added_cost=self.toss_cost,
                             toss_belief=belief,
                             added_training_examples=1,
                         ),
+                        next_true_atoms=next_true_atoms,
                     )
                 )
         return tuple(branches)
+
+    @staticmethod
+    def apply_success_effects(
+        *, true_atoms: frozenset[GroundAtom], ground_skill: GroundSkill
+    ) -> frozenset[GroundAtom]:
+        kept = {
+            atom
+            for atom in true_atoms
+            if atom.predicate not in ground_skill.ignore_effects
+            and atom not in ground_skill.delete_effects
+        }
+        return frozenset(kept | set(ground_skill.add_effects))
+
+    @staticmethod
+    def apply_failure_effects(
+        *, true_atoms: frozenset[GroundAtom], ground_skill: GroundSkill
+    ) -> frozenset[GroundAtom]:
+        """Execution-side state changes not represented by successful postconditions."""
+        if ground_skill.skill.name == PICK_SKILL:
+            return frozenset(atom for atom in true_atoms if atom.predicate.name != "HandEmpty")
+        if ground_skill.skill.name == TOSS_SKILL:
+            succeeded = Tossing3DPracticeModel.apply_success_effects(
+                true_atoms=true_atoms, ground_skill=ground_skill
+            )
+            return frozenset(atom for atom in succeeded if atom.predicate.name != "InBin")
+        return true_atoms
+
+    @staticmethod
+    def environment_state_from_atoms(
+        *, true_atoms: frozenset[GroundAtom]
+    ) -> Tossing3DEnvironmentState:
+        predicates = {atom.predicate.name for atom in true_atoms}
+        hand_empty = "HandEmpty" in predicates
+        if "InBin" in predicates:
+            return (
+                Tossing3DEnvironmentState.SOLVED
+                if hand_empty
+                else Tossing3DEnvironmentState.CLOSED_SOLVED
+            )
+        if "Holding" in predicates:
+            return (
+                Tossing3DEnvironmentState.HOLDING
+                if "Reachable" in predicates
+                else Tossing3DEnvironmentState.UNREACHABLE_HOLDING
+            )
+        if {"Reachable", "OnGround", "HandEmpty"} <= predicates:
+            return Tossing3DEnvironmentState.READY
+        if not hand_empty:
+            return (
+                Tossing3DEnvironmentState.GRIPPER_CLOSED
+                if {"Reachable", "OnGround"} <= predicates
+                else Tossing3DEnvironmentState.CLOSED_STRANDED
+            )
+        return Tossing3DEnvironmentState.STRANDED
 
     def observe_toss(
         self,
