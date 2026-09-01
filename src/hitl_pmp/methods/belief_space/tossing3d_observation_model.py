@@ -1,15 +1,90 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
-from hitl_pmp.methods.belief_space.tossing3d_constants import (
-    OPEN_GRIPPER_SKILL,
-    PICK_SKILL,
-)
+from enum import Enum
+
+from hitl_pmp.core.method.types import GroundSkill, Skill
+from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
     SkillBelief,
     SkillHypothesis,
     WeightedHypothesis,
 )
+
+
+class PracticeExampleSource(Enum):
+    OUTCOME = "outcome"
+    SAMPLER = "sampler"
+
+
+class SkillBeliefModel:
+    """Configurable belief updates contributed by one lifted practice skill."""
+
+    def __init__(
+        self,
+        *,
+        skill: Skill | None = None,
+        example_source: PracticeExampleSource | None = None,
+    ) -> None:
+        self.skill = skill
+        self.example_source = example_source
+
+    def observe_outcome(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        success: bool,
+        was_random_exploration: bool,
+    ) -> Tossing3DBeliefState:
+        if self.skill is None or was_random_exploration:
+            return state
+        skill_name = self.skill.name
+        skill_beliefs = dict(state.skill_beliefs)
+        skill_beliefs[skill_name] = condition_skill_belief(
+            belief=skill_beliefs[skill_name], success=success
+        )
+        pending_examples = dict(state.pending_examples)
+        if self.example_source == PracticeExampleSource.OUTCOME:
+            pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
+        return state.model_copy(
+            update={"skill_beliefs": skill_beliefs, "pending_examples": pending_examples}
+        )
+
+    def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+        if self.skill is None or self.example_source != PracticeExampleSource.SAMPLER:
+            return state
+        pending_examples = dict(state.pending_examples)
+        skill_name = self.skill.name
+        pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
+        return state.model_copy(update={"pending_examples": pending_examples})
+
+
+SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
+    Tossing3DSkills.PICK_CUBE: SkillBeliefModel(
+        skill=Tossing3DSkills.PICK_CUBE,
+        example_source=PracticeExampleSource.OUTCOME,
+    ),
+    Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: SkillBeliefModel(
+        skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+        example_source=PracticeExampleSource.SAMPLER,
+    ),
+    Tossing3DSkills.OPEN_GRIPPER: SkillBeliefModel(
+        skill=Tossing3DSkills.OPEN_GRIPPER,
+        example_source=PracticeExampleSource.OUTCOME,
+    ),
+}
+
+
+def make_skill_belief_models(
+    *, ground_skills: tuple[GroundSkill, ...]
+) -> tuple[dict[GroundSkill, SkillBeliefModel], dict[str, SkillBeliefModel]]:
+    """Associate every practice skill with explicit updates or the default no-op."""
+    by_ground_skill = {
+        ground_skill: SKILL_BELIEF_MODELS.get(ground_skill.skill, SkillBeliefModel())
+        for ground_skill in ground_skills
+    }
+    by_name = {ground_skill.skill.name: model for ground_skill, model in by_ground_skill.items()}
+    return by_ground_skill, by_name
 
 
 def make_skill_belief_prior() -> SkillBelief:
@@ -28,9 +103,7 @@ def make_skill_belief_prior() -> SkillBelief:
 def make_default_tossing3d_belief() -> Tossing3DBeliefState:
     """Independent broad priors for all robot skills; human reset is known."""
     return Tossing3DBeliefState(
-        toss_belief=make_skill_belief_prior(),
-        pick_belief=make_skill_belief_prior(),
-        open_gripper_belief=make_skill_belief_prior(),
+        skill_beliefs={skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
     )
 
 
@@ -78,49 +151,13 @@ def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillB
 def refit_belief_state(*, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
     return state.model_copy(
         update={
-            "toss_belief": refit_skill_belief(
-                belief=state.toss_belief, training_examples=state.pending_training_examples
-            ),
-            "pick_belief": refit_skill_belief(
-                belief=state.pick_belief, training_examples=state.pending_pick_examples
-            ),
-            "open_gripper_belief": refit_skill_belief(
-                belief=state.open_gripper_belief,
-                training_examples=state.pending_open_gripper_examples,
-            ),
-            "pending_training_examples": 0,
-            "pending_pick_examples": 0,
-            "pending_open_gripper_examples": 0,
+            "skill_beliefs": {
+                skill_name: refit_skill_belief(
+                    belief=belief,
+                    training_examples=state.pending_examples.get(skill_name, 0),
+                )
+                for skill_name, belief in state.skill_beliefs.items()
+            },
+            "pending_examples": {},
         }
-    )
-
-
-def observe_robot_skill(
-    *, state: Tossing3DBeliefState, skill_name: str, success: bool
-) -> Tossing3DBeliefState:
-    belief_field, count_field = {
-        PICK_SKILL: ("pick_belief", "pending_pick_examples"),
-        OPEN_GRIPPER_SKILL: ("open_gripper_belief", "pending_open_gripper_examples"),
-    }[skill_name]
-    belief = getattr(state, belief_field)
-    return state.model_copy(
-        update={
-            belief_field: condition_skill_belief(belief=belief, success=success),
-            count_field: getattr(state, count_field) + 1,
-        }
-    )
-
-
-def observe_toss(
-    *, state: Tossing3DBeliefState, success: bool, was_random_exploration: bool
-) -> Tossing3DBeliefState:
-    belief = state.toss_belief
-    if not was_random_exploration:
-        belief = condition_skill_belief(belief=belief, success=success)
-    return state.model_copy(update={"toss_belief": belief})
-
-
-def record_training_example(*, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
-    return state.model_copy(
-        update={"pending_training_examples": state.pending_training_examples + 1}
     )
