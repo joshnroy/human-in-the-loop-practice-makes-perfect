@@ -5,16 +5,14 @@ from typing import Generic
 
 import numpy as np
 
-from .types import (
-    NUM_SAMPLES,
-    STOP_ACTION,
+from .types.protocol import (
     ActionT,
     BeliefSpaceModel,
     BeliefStateT,
     EnvironmentStateT,
-    StopAction,
     ThetaT,
 )
+from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
 
 
 def solve_belief_space_expectimax(
@@ -106,7 +104,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         sample_values = []
         for sampled_theta in sampled_thetas:
             current_policy_value = self.model.evaluate_policy(sampled_theta=sampled_theta)
-            current_pomdp_value = self.model.score_pomdp_value_from_policy_value_and_cost(
+            current_pomdp_value = self.model.G(
                 policy_value=current_policy_value, summed_cost=summed_cost
             )
             assert math.isfinite(current_pomdp_value), (

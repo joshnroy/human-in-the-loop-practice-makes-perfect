@@ -1,18 +1,9 @@
-"""The state, action, and parameter types in the belief-space pseudocode."""
+"""Generic model protocol for belief-space expectimax."""
 
 from typing import Protocol, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
-
-class StopAction(BaseModel):
-    """Sentinel selected when further practice has no value."""
-
-    model_config = ConfigDict(frozen=True)
-
-
-STOP_ACTION = StopAction()
-NUM_SAMPLES = 1
 EnvironmentStateT = TypeVar("EnvironmentStateT", bound=BaseModel)
 BeliefStateT = TypeVar("BeliefStateT", bound=BaseModel)
 ThetaT = TypeVar("ThetaT", bound=BaseModel)
@@ -39,9 +30,7 @@ class BeliefSpaceModel(Protocol[EnvironmentStateT, BeliefStateT, ThetaT, ActionT
 
     def evaluate_policy(self, *, sampled_theta: ThetaT) -> float: ...
 
-    def score_pomdp_value_from_policy_value_and_cost(
-        self, *, policy_value: float, summed_cost: float
-    ) -> float: ...
+    def G(self, *, policy_value: float, summed_cost: float) -> float: ...
 
     def get_valid_actions(self, *, environment_state: EnvironmentStateT) -> list[ActionT]: ...
 
