@@ -7,18 +7,23 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
-from hitl_pmp.methods.belief_space.tossing3d_model import (
+from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
-    Tossing3DPracticeModel,
+)
+from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
+from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     make_default_tossing3d_belief,
-    make_tossing3d_search_state,
     mean_competence,
+    observe_robot_skill,
     refit_belief_state,
     refit_skill_belief,
+)
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
+    make_tossing3d_search_state,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
@@ -263,17 +268,17 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
     model = _domain_model()
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
     outcomes = _outcomes(model=model, state=state, name=PICK_SKILL)
-    assert [outcome.probability for outcome in outcomes] == pytest.approx([0.5, 0.5])
-    assert all(outcome.next_state.toss_belief == state.toss_belief for outcome in outcomes)
-    assert all(outcome.next_state.pending_training_examples == 0 for outcome in outcomes)
-    assert all(outcome.next_state.pending_pick_examples == 1 for outcome in outcomes)
-    assert mean_competence(belief=outcomes[0].next_state.pick_belief) > mean_competence(
+    assert [outcome[0] for outcome in outcomes] == pytest.approx([0.5, 0.5])
+    assert all(outcome[1].toss_belief == state.toss_belief for outcome in outcomes)
+    assert all(outcome[1].pending_training_examples == 0 for outcome in outcomes)
+    assert all(outcome[1].pending_pick_examples == 1 for outcome in outcomes)
+    assert mean_competence(belief=outcomes[0][1].pick_belief) > mean_competence(
         belief=state.pick_belief
     )
-    assert mean_competence(belief=outcomes[1].next_state.pick_belief) < mean_competence(
+    assert mean_competence(belief=outcomes[1][1].pick_belief) < mean_competence(
         belief=state.pick_belief
     )
-    assert outcomes[1].next_true_atoms == search_state.true_atoms
+    assert outcomes[1][2] == search_state.true_atoms
 
 
 @pytest.mark.parametrize("skill_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
@@ -281,9 +286,7 @@ def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
     state = make_default_tossing3d_belief()
     for _ in range(20):
         for success in [True, False] * 5:
-            state = Tossing3DPracticeModel.observe_robot_skill(
-                state=state, skill_name=skill_name, success=success
-            )
+            state = observe_robot_skill(state=state, skill_name=skill_name, success=success)
         state = refit_belief_state(state=state)
     belief = state.pick_belief if skill_name == PICK_SKILL else state.open_gripper_belief
     stationary_mass = sum(
@@ -296,9 +299,7 @@ def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
 def test_first_session_cannot_identify_learning_rate() -> None:
     state = make_default_tossing3d_belief()
     for success in [True, False] * 50:
-        state = Tossing3DPracticeModel.observe_robot_skill(
-            state=state, skill_name=PICK_SKILL, success=success
-        )
+        state = observe_robot_skill(state=state, skill_name=PICK_SKILL, success=success)
     stationary_mass = sum(
         item.probability
         for item in state.pick_belief.hypotheses
@@ -321,12 +322,10 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
         state=state,
         action=_action(model=model, search_state=search_state, name=OPEN_GRIPPER_SKILL),
     )
-    assert [o.probability for o in outcomes] == pytest.approx([0.5, 0.5])
-    assert outcomes[1].next_true_atoms == closed_atoms
+    assert [o[0] for o in outcomes] == pytest.approx([0.5, 0.5])
+    assert outcomes[1][2] == closed_atoms
     for _ in range(100):
-        state = Tossing3DPracticeModel.observe_robot_skill(
-            state=state, skill_name=OPEN_GRIPPER_SKILL, success=True
-        )
+        state = observe_robot_skill(state=state, skill_name=OPEN_GRIPPER_SKILL, success=True)
     assert mean_competence(belief=state.open_gripper_belief) > 0.99
     projected = refit_skill_belief(belief=state.open_gripper_belief, training_examples=1)
     assert (
@@ -337,9 +336,7 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
 
 def test_pending_examples_predict_improvement_without_changing_current_competence() -> None:
     state = make_default_tossing3d_belief()
-    observed = Tossing3DPracticeModel.observe_robot_skill(
-        state=state, skill_name=PICK_SKILL, success=True
-    )
+    observed = observe_robot_skill(state=state, skill_name=PICK_SKILL, success=True)
     assert observed.pick_belief == condition_skill_belief(belief=state.pick_belief, success=True)
     refit = refit_belief_state(state=observed)
     assert mean_competence(belief=refit.pick_belief) > mean_competence(belief=observed.pick_belief)
@@ -353,10 +350,10 @@ def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
         state=state,
         name=TOSS_SKILL,
     )
-    assert sum(outcome.probability for outcome in outcomes) == pytest.approx(1.0)
-    unchanged = [o for o in outcomes if o.next_state.toss_belief == state.toss_belief]
-    assert sum(outcome.probability for outcome in unchanged) == pytest.approx(0.5)
-    assert all(outcome.next_state.pending_training_examples == 1 for outcome in outcomes)
+    assert sum(outcome[0] for outcome in outcomes) == pytest.approx(1.0)
+    unchanged = [o for o in outcomes if o[1].toss_belief == state.toss_belief]
+    assert sum(outcome[0] for outcome in unchanged) == pytest.approx(0.5)
+    assert all(outcome[1].pending_training_examples == 1 for outcome in outcomes)
 
 
 def test_refit_is_deferred_until_cycle_boundary() -> None:
@@ -389,9 +386,9 @@ def test_partial_reset_does_not_open_a_closed_gripper() -> None:
     state = make_default_tossing3d_belief()
     model = _domain_model(reset_cost=0.01)
     reset = _outcomes(model=model, state=state, name=RESET_SKILL)[0]
-    assert "HandEmpty" not in {atom.predicate.name for atom in reset.next_true_atoms}
+    assert "HandEmpty" not in {atom.predicate.name for atom in reset[2]}
     opened = _outcomes(model=model, state=state, name=OPEN_GRIPPER_SKILL)[0]
-    assert "HandEmpty" in {atom.predicate.name for atom in opened.next_true_atoms}
+    assert "HandEmpty" in {atom.predicate.name for atom in opened[2]}
 
 
 def test_invalid_configuration_is_rejected_early() -> None:
