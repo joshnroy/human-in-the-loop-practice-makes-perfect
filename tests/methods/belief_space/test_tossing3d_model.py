@@ -1,3 +1,5 @@
+from itertools import product
+
 import pytest
 from pydantic import ValidationError
 
@@ -15,6 +17,7 @@ from hitl_pmp.methods.belief_space.tossing3d_model import (
     Tossing3DBeliefState,
     Tossing3DPracticeModel,
     Tossing3DSearchState,
+    Tossing3DTheta,
     WeightedHypothesis,
     make_default_tossing3d_belief,
 )
@@ -71,6 +74,30 @@ def _outcomes(*, model: Tossing3DPracticeModel, state: Tossing3DBeliefState, nam
     )
 
 
+def _expected_stop_value(*, model: Tossing3DPracticeModel, state: Tossing3DBeliefState) -> float:
+    projected = state.after_refit()
+    deployment_value = sum(
+        pick.probability
+        * toss.probability
+        * opened.probability
+        * model.evaluate_policy(
+            sampled_theta=Tossing3DTheta(
+                pick=pick.hypothesis,
+                toss=toss.hypothesis,
+                open_gripper=opened.hypothesis,
+            )
+        )
+        for pick, toss, opened in product(
+            projected.pick_belief.hypotheses,
+            projected.toss_belief.hypotheses,
+            projected.open_gripper_belief.hypotheses,
+        )
+    )
+    return model.score_pomdp_value_from_policy_value_and_cost(
+        policy_value=deployment_value, summed_cost=state.accumulated_cost
+    )
+
+
 def test_hard_budget_filters_unaffordable_actions() -> None:
     model = _domain_model(hard_budget=2, reset_cost=1)
     state = make_default_tossing3d_belief()
@@ -93,8 +120,8 @@ def test_hard_budget_has_no_linear_cost_penalty() -> None:
         model.score_pomdp_value_from_policy_value_and_cost(policy_value=0.5, summed_cost=2) == 0.5
     )
     state = make_default_tossing3d_belief()
-    assert model.stop_value(state) == model.stop_value(
-        state.model_copy(update={"accumulated_cost": 2.0})
+    assert _expected_stop_value(model=model, state=state) == _expected_stop_value(
+        model=model, state=state.model_copy(update={"accumulated_cost": 2.0})
     )
 
 
@@ -126,7 +153,7 @@ def test_search_protocol_charges_accumulated_cost_once() -> None:
         horizon=3,
         model=model,
     )
-    assert value == pytest.approx(model.stop_value(state))
+    assert value == pytest.approx(_expected_stop_value(model=model, state=state))
     assert action == STOP_ACTION
 
 
@@ -184,6 +211,16 @@ def test_only_physically_applicable_actions_are_returned() -> None:
     }
 
 
+def test_search_state_serializes_ees_atoms_without_serializing_predicate_functions() -> None:
+    model = _domain_model()
+    state = _search_state(
+        model=model, state=make_default_tossing3d_belief(), action_name=PICK_SKILL
+    )
+    serialized = state.model_dump(mode="json")
+    assert serialized["atoms"] == sorted(str(atom) for atom in state.true_atoms)
+    assert "true_atoms" not in serialized
+
+
 @pytest.mark.parametrize("action_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
 def test_human_reset_uses_unchanged_ees_empty_preconditions(*, action_name: str) -> None:
     model = _domain_model(reset_cost=1.0)
@@ -209,13 +246,16 @@ def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
 
 def test_pick_outcomes_update_only_its_own_posterior() -> None:
     state = make_default_tossing3d_belief()
-    outcomes = _outcomes(model=_domain_model(), state=state, name=PICK_SKILL)
+    model = _domain_model()
+    search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
+    outcomes = _outcomes(model=model, state=state, name=PICK_SKILL)
     assert [outcome.probability for outcome in outcomes] == pytest.approx([0.5, 0.5])
     assert all(outcome.next_state.toss_belief == state.toss_belief for outcome in outcomes)
     assert all(outcome.next_state.pending_training_examples == 0 for outcome in outcomes)
     assert all(outcome.next_state.pending_pick_examples == 1 for outcome in outcomes)
     assert outcomes[0].next_state.pick_belief.mean_competence > state.pick_belief.mean_competence
     assert outcomes[1].next_state.pick_belief.mean_competence < state.pick_belief.mean_competence
+    assert outcomes[1].next_true_atoms == search_state.true_atoms
 
 
 @pytest.mark.parametrize("skill_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
@@ -316,7 +356,9 @@ def test_stop_value_solves_deployment_chain_and_charges_cost() -> None:
         accumulated_cost=3.0,
     )
     model = Tossing3DPracticeModel(practice_cost=0.1)
-    assert model.stop_value(state) == pytest.approx((0.5 + 0.5 * 0.5) * 0.8 - 0.3)
+    assert _expected_stop_value(model=model, state=state) == pytest.approx(
+        (0.5 + 0.5 * 0.5) * 0.8 - 0.3
+    )
 
 
 def test_partial_reset_does_not_open_a_closed_gripper() -> None:
