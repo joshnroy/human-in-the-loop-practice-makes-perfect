@@ -5,7 +5,7 @@ from typing import Generic
 
 import numpy as np
 
-from .types import (
+from .types.core import (
     NUM_SAMPLES,
     STOP_ACTION,
     ActionT,

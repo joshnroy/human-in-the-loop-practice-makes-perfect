@@ -2,7 +2,7 @@ import pytest
 from pydantic import BaseModel, Field
 
 from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
-from hitl_pmp.methods.belief_space.types import (
+from hitl_pmp.methods.belief_space.types.core import (
     STOP_ACTION,
     StopAction,
 )

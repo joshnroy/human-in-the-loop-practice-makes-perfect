@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, computed_field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
-from .types import BeliefState, EnvironmentState, POMDPAction, Theta
+from .types.action import Tossing3DAction
+from .types.belief_state import Tossing3DBeliefState
+from .types.core import BeliefState, EnvironmentState, POMDPAction, Theta
+from .types.outcome import Tossing3DOutcome
+from .types.search_state import Tossing3DSearchState
+from .types.skill_belief import SkillBelief, SkillHypothesis, WeightedHypothesis
+from .types.theta import Tossing3DTheta
 
 PICK_SKILL = "PickCube"
 TOSS_SKILL = "MoveToTossLocationAndToss"
@@ -19,164 +24,106 @@ OPEN_GRIPPER_SKILL = "OpenGripper"
 RESET_SKILL = "ask_for_reset_cube_bin_only"
 
 
-class SkillHypothesis(Theta):
-    model_config = ConfigDict(frozen=True)
-
-    competence: float = Field(ge=0.0, le=1.0)
-    learning_rate: float = Field(ge=0.0, le=1.0)
-
-    def after_training_examples(self, *, count: int) -> SkillHypothesis:
-        if count < 0:
-            raise ValueError("training-example count must be nonnegative")
-        competence = 1.0 - (1.0 - self.competence) * (1.0 - self.learning_rate) ** count
-        return SkillHypothesis(competence=competence, learning_rate=self.learning_rate)
-
-
-class WeightedHypothesis(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    hypothesis: SkillHypothesis
-    probability: float = Field(gt=0.0, le=1.0)
-
-
-class SkillBelief(BaseModel):
-    """Posterior over a skill's competence and improvement rate."""
-
-    model_config = ConfigDict(frozen=True)
-
-    hypotheses: tuple[WeightedHypothesis, ...]
-
-    @staticmethod
-    def prior() -> SkillBelief:
-        return SkillBelief(
-            hypotheses=tuple(
-                WeightedHypothesis(
-                    hypothesis=SkillHypothesis(competence=p, learning_rate=rate),
-                    probability=1.0 / 10,
-                )
-                for p in (0.0, 0.25, 0.5, 0.75, 1.0)
-                for rate in (0.0, 0.1)
+def make_skill_belief_prior() -> SkillBelief:
+    return SkillBelief(
+        hypotheses=tuple(
+            WeightedHypothesis(
+                hypothesis=SkillHypothesis(competence=competence, learning_rate=learning_rate),
+                probability=0.1,
             )
+            for competence in (0.0, 0.25, 0.5, 0.75, 1.0)
+            for learning_rate in (0.0, 0.1)
         )
+    )
 
-    @model_validator(mode="after")
-    def _valid_distribution(self) -> SkillBelief:
-        if not self.hypotheses:
-            raise ValueError("a skill belief needs at least one hypothesis")
-        total = sum(item.probability for item in self.hypotheses)
-        if not math.isclose(total, 1.0, rel_tol=1e-9, abs_tol=1e-12):
-            raise ValueError(f"hypothesis probabilities sum to {total}, not 1")
-        return self
 
-    @property
-    def mean_competence(self) -> float:
-        return sum(item.probability * item.hypothesis.competence for item in self.hypotheses)
+def mean_competence(*, belief: SkillBelief) -> float:
+    return sum(item.probability * item.hypothesis.competence for item in belief.hypotheses)
 
-    def condition(self, *, success: bool) -> SkillBelief:
-        """Condition on a greedy-policy outcome without pretending a refit occurred."""
-        weighted: list[tuple[SkillHypothesis, float]] = []
-        for item in self.hypotheses:
-            likelihood = item.hypothesis.competence if success else 1.0 - item.hypothesis.competence
-            mass = item.probability * likelihood
-            if mass > 0.0:
-                weighted.append((item.hypothesis, mass))
-        normalizer = sum(mass for _hypothesis, mass in weighted)
-        if normalizer <= 0.0:
-            raise ValueError(f"observation success={success} has zero probability")
-        return SkillBelief(
-            hypotheses=tuple(
-                WeightedHypothesis(hypothesis=hypothesis, probability=mass / normalizer)
-                for hypothesis, mass in weighted
+
+def condition_skill_belief(*, belief: SkillBelief, success: bool) -> SkillBelief:
+    """Condition on a greedy-policy outcome without pretending a refit occurred."""
+    weighted: list[tuple[SkillHypothesis, float]] = []
+    for item in belief.hypotheses:
+        likelihood = item.hypothesis.competence if success else 1.0 - item.hypothesis.competence
+        mass = item.probability * likelihood
+        if mass > 0.0:
+            weighted.append((item.hypothesis, mass))
+    normalizer = sum(mass for _hypothesis, mass in weighted)
+    if normalizer <= 0.0:
+        raise ValueError(f"observation success={success} has zero probability")
+    return SkillBelief(
+        hypotheses=tuple(
+            WeightedHypothesis(hypothesis=hypothesis, probability=mass / normalizer)
+            for hypothesis, mass in weighted
+        )
+    )
+
+
+def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillBelief:
+    assert training_examples >= 0
+    return SkillBelief(
+        hypotheses=tuple(
+            WeightedHypothesis(
+                hypothesis=SkillHypothesis(
+                    competence=1.0
+                    - (1.0 - item.hypothesis.competence)
+                    * (1.0 - item.hypothesis.learning_rate) ** training_examples,
+                    learning_rate=item.hypothesis.learning_rate,
+                ),
+                probability=item.probability,
             )
+            for item in belief.hypotheses
         )
-
-    def after_refit(self, *, training_examples: int) -> SkillBelief:
-        return SkillBelief(
-            hypotheses=tuple(
-                WeightedHypothesis(
-                    hypothesis=item.hypothesis.after_training_examples(count=training_examples),
-                    probability=item.probability,
-                )
-                for item in self.hypotheses
-            )
-        )
+    )
 
 
-class Tossing3DBeliefState(BeliefState):
-    """Latent-controller posterior, pending examples, and paid practice cost."""
-
-    model_config = ConfigDict(frozen=True)
-
-    toss_belief: SkillBelief
-    pick_belief: SkillBelief = Field(default_factory=SkillBelief.prior)
-    open_gripper_belief: SkillBelief = Field(default_factory=SkillBelief.prior)
-    pending_pick_examples: int = Field(default=0, ge=0)
-    pending_open_gripper_examples: int = Field(default=0, ge=0)
-    pending_training_examples: int = Field(default=0, ge=0)
-    accumulated_cost: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
-
-    def transition(
-        self,
-        *,
-        added_cost: float,
-        toss_belief: SkillBelief | None = None,
-        added_training_examples: int = 0,
-    ) -> Tossing3DBeliefState:
-        return self.model_copy(
-            update={
-                "toss_belief": self.toss_belief if toss_belief is None else toss_belief,
-                "pending_training_examples": self.pending_training_examples
-                + added_training_examples,
-                "accumulated_cost": self.accumulated_cost + added_cost,
-            }
-        )
-
-    def after_refit(self) -> Tossing3DBeliefState:
-        return self.model_copy(
-            update={
-                "toss_belief": self.toss_belief.after_refit(
-                    training_examples=self.pending_training_examples
-                ),
-                "pending_training_examples": 0,
-                "pick_belief": self.pick_belief.after_refit(
-                    training_examples=self.pending_pick_examples
-                ),
-                "open_gripper_belief": self.open_gripper_belief.after_refit(
-                    training_examples=self.pending_open_gripper_examples
-                ),
-                "pending_pick_examples": 0,
-                "pending_open_gripper_examples": 0,
-            }
-        )
+def transition_belief_state(
+    *,
+    state: Tossing3DBeliefState,
+    added_cost: float,
+    toss_belief: SkillBelief | None = None,
+    added_training_examples: int = 0,
+) -> Tossing3DBeliefState:
+    return state.model_copy(
+        update={
+            "toss_belief": state.toss_belief if toss_belief is None else toss_belief,
+            "pending_training_examples": state.pending_training_examples + added_training_examples,
+            "accumulated_cost": state.accumulated_cost + added_cost,
+        }
+    )
 
 
-class Tossing3DSearchState(EnvironmentState):
-    """EES symbolic state paired with the posterior state used by the search."""
+def refit_belief_state(*, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+    return state.model_copy(
+        update={
+            "toss_belief": refit_skill_belief(
+                belief=state.toss_belief,
+                training_examples=state.pending_training_examples,
+            ),
+            "pick_belief": refit_skill_belief(
+                belief=state.pick_belief,
+                training_examples=state.pending_pick_examples,
+            ),
+            "open_gripper_belief": refit_skill_belief(
+                belief=state.open_gripper_belief,
+                training_examples=state.pending_open_gripper_examples,
+            ),
+            "pending_training_examples": 0,
+            "pending_pick_examples": 0,
+            "pending_open_gripper_examples": 0,
+        }
+    )
 
-    state: Tossing3DBeliefState
-    true_atoms: frozenset[GroundAtom] = Field(exclude=True)
 
-    @computed_field
-    def atoms(self) -> tuple[str, ...]:
-        """Serializable identity for traces; true_atoms remains the executable form."""
-        return tuple(sorted(str(atom) for atom in self.true_atoms))
-
-
-class Tossing3DAction(POMDPAction):
-    name: str
-    ground_skill: GroundSkill = Field(exclude=True)
-
-
-class Tossing3DOutcome(BaseModel):
-    probability: float
-    next_state: Tossing3DBeliefState
-    next_true_atoms: frozenset[GroundAtom]
-
-
-class Tossing3DTheta(Theta):
-    pick: SkillHypothesis
-    toss: SkillHypothesis
-    open_gripper: SkillHypothesis
+def make_tossing3d_search_state(
+    *, state: Tossing3DBeliefState, true_atoms: frozenset[GroundAtom]
+) -> Tossing3DSearchState:
+    return Tossing3DSearchState(
+        state=state,
+        true_atoms=true_atoms,
+        atoms=tuple(sorted(str(atom) for atom in true_atoms)),
+    )
 
 
 class Tossing3DPracticeModel(BaseModel):
@@ -226,7 +173,7 @@ class Tossing3DPracticeModel(BaseModel):
         self, *, belief_state: BeliefState, num_samples: int
     ) -> list[Theta]:
         assert isinstance(belief_state, Tossing3DBeliefState)
-        projected = belief_state.after_refit()
+        projected = refit_belief_state(state=belief_state)
         pick = self.sample_skills(belief=projected.pick_belief, count=num_samples)
         toss = self.sample_skills(belief=projected.toss_belief, count=num_samples)
         opened = self.sample_skills(belief=projected.open_gripper_belief, count=num_samples)
@@ -350,7 +297,7 @@ class Tossing3DPracticeModel(BaseModel):
         return list(
             dict.fromkeys(
                 (
-                    Tossing3DSearchState(
+                    make_tossing3d_search_state(
                         state=outcome.next_state, true_atoms=outcome.next_true_atoms
                     ),
                     outcome.next_state.accumulated_cost - belief_state.accumulated_cost,
@@ -379,7 +326,7 @@ class Tossing3DPracticeModel(BaseModel):
             state=belief_state,
             action=practice_action,
         ):
-            next_environment = Tossing3DSearchState(
+            next_environment = make_tossing3d_search_state(
                 state=outcome.next_state, true_atoms=outcome.next_true_atoms
             )
             cost = outcome.next_state.accumulated_cost - belief_state.accumulated_cost
@@ -475,7 +422,7 @@ class Tossing3DPracticeModel(BaseModel):
                 state=state,
                 true_atoms=environment_state.true_atoms,
                 ground_skill=ground_skill,
-                probability=state.pick_belief.mean_competence,
+                probability=mean_competence(belief=state.pick_belief),
                 skill_name=PICK_SKILL,
                 cost=self.pick_cost,
             )
@@ -484,7 +431,7 @@ class Tossing3DPracticeModel(BaseModel):
                 state=state,
                 true_atoms=environment_state.true_atoms,
                 ground_skill=ground_skill,
-                probability=state.open_gripper_belief.mean_competence,
+                probability=mean_competence(belief=state.open_gripper_belief),
                 skill_name=OPEN_GRIPPER_SKILL,
                 cost=self.open_gripper_cost,
             )
@@ -517,7 +464,8 @@ class Tossing3DPracticeModel(BaseModel):
         return (
             Tossing3DOutcome(
                 probability=1.0,
-                next_state=state.transition(
+                next_state=transition_belief_state(
+                    state=state,
                     added_cost=cost,
                 ),
                 next_true_atoms=next_true_atoms,
@@ -547,7 +495,8 @@ class Tossing3DPracticeModel(BaseModel):
                 Tossing3DOutcome(
                     probability=branch_probability,
                     next_state=Tossing3DPracticeModel.observe_robot_skill(
-                        state=state.transition(
+                        state=transition_belief_state(
+                            state=state,
                             added_cost=cost,
                         ),
                         skill_name=skill_name,
@@ -569,7 +518,7 @@ class Tossing3DPracticeModel(BaseModel):
         belief = getattr(state, belief_field)
         return state.model_copy(
             update={
-                belief_field: belief.condition(success=success),
+                belief_field: condition_skill_belief(belief=belief, success=success),
                 count_field: getattr(state, count_field) + 1,
             }
         )
@@ -583,7 +532,11 @@ class Tossing3DPracticeModel(BaseModel):
     ) -> tuple[Tossing3DOutcome, ...]:
         branches: list[Tossing3DOutcome] = []
         for is_random, choice_probability, success_probability in (
-            (False, 1.0 - self.exploration_epsilon, state.toss_belief.mean_competence),
+            (
+                False,
+                1.0 - self.exploration_epsilon,
+                mean_competence(belief=state.toss_belief),
+            ),
             (True, self.exploration_epsilon, self.random_toss_competence),
         ):
             for success, observation_probability in (
@@ -594,7 +547,9 @@ class Tossing3DPracticeModel(BaseModel):
                 if probability <= 0.0:
                     continue
                 belief = (
-                    state.toss_belief if is_random else state.toss_belief.condition(success=success)
+                    state.toss_belief
+                    if is_random
+                    else condition_skill_belief(belief=state.toss_belief, success=success)
                 )
                 next_true_atoms = (
                     self.apply_success_effects(true_atoms=true_atoms, ground_skill=ground_skill)
@@ -604,7 +559,8 @@ class Tossing3DPracticeModel(BaseModel):
                 branches.append(
                     Tossing3DOutcome(
                         probability=probability,
-                        next_state=state.transition(
+                        next_state=transition_belief_state(
+                            state=state,
                             added_cost=self.toss_cost,
                             toss_belief=belief,
                             added_training_examples=1,
@@ -634,7 +590,7 @@ class Tossing3DPracticeModel(BaseModel):
     ) -> Tossing3DBeliefState:
         belief = state.toss_belief
         if not was_random_exploration:
-            belief = belief.condition(success=success)
+            belief = condition_skill_belief(belief=belief, success=success)
         return state.model_copy(update={"toss_belief": belief})
 
     def record_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
@@ -646,5 +602,7 @@ class Tossing3DPracticeModel(BaseModel):
 def make_default_tossing3d_belief() -> Tossing3DBeliefState:
     """Independent broad priors for all robot skills; human reset is known."""
     return Tossing3DBeliefState(
-        toss_belief=SkillBelief.prior(),
+        toss_belief=make_skill_belief_prior(),
+        pick_belief=make_skill_belief_prior(),
+        open_gripper_belief=make_skill_belief_prior(),
     )
