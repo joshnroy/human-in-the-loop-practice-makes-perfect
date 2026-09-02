@@ -26,6 +26,8 @@ def test_the_caption_reports_the_cube_position_the_goal_box_and_the_verdict() ->
     # this branch carries, where it used to be the bin-wide `[1.85, 2.15]`.
     assert "[1.9500, 2.1000]" in lines[1]
     assert "InBin = True" in lines[1]
+    assert "cube dimensions:" in lines[2]
+    assert "scored region:" in lines[2]
 
 
 def test_the_caption_names_the_variant_but_no_longer_a_scene_choice() -> None:

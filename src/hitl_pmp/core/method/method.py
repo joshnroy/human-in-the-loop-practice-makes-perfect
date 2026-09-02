@@ -24,6 +24,10 @@ class InteractionComplete(Exception):  # noqa: N818
 
     Distinct from `HumanCubeBinResetRequested` below -- see that docstring."""
 
+    def __init__(self, *, planner_stop: bool = False) -> None:
+        super().__init__()
+        self.planner_stop = planner_stop
+
 
 class HumanCubeBinResetRequested(Exception):  # noqa: N818
     """Raised by a practice policy asking a human for a *partial* reset:
@@ -62,6 +66,14 @@ class Method(BaseModel, abc.ABC):
     """
 
     env: Environment
+
+    def practice_action_values(self) -> dict[str, float]:
+        """Optional last-decision values for recording; empty when unavailable."""
+        return {}
+
+    def practice_skill_competences(self) -> dict[str, float]:
+        """Optional read-only success estimates for the recording sidebar."""
+        return {}
 
     @abc.abstractmethod
     def reset_environment(self, *, start_state: State) -> bool:
