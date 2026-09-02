@@ -164,14 +164,20 @@ def condition_skill_belief(*, belief: SkillBelief, success: bool) -> SkillBelief
 
 
 def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillBelief:
+    """Advance competence along a locally linear learning curve.
+
+    ``learning_rate`` is the first derivative of competence with respect to the
+    number of training examples.  Competence is a probability, so the linear
+    extrapolation is capped at one.
+    """
     assert training_examples >= 0
     if training_examples == 0:
         return belief
     if belief.estimator == "particle_filter":
         parameters, weights = belief_arrays(belief=belief)
         projected = parameters.copy()
-        projected[:, 0] = (
-            1.0 - (1.0 - projected[:, 0]) * (1.0 - projected[:, 1]) ** training_examples
+        projected[:, 0] = np.minimum(
+            1.0, projected[:, 0] + projected[:, 1] * training_examples
         )
         return belief_from_arrays(belief=belief, parameters=projected, weights=weights)
     return belief.model_copy(
@@ -179,9 +185,11 @@ def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillB
             "hypotheses": tuple(
                 WeightedHypothesis(
                     hypothesis=SkillHypothesis(
-                        competence=1.0
-                        - (1.0 - item.hypothesis.competence)
-                        * (1.0 - item.hypothesis.learning_rate) ** training_examples,
+                        competence=min(
+                            1.0,
+                            item.hypothesis.competence
+                            + item.hypothesis.learning_rate * training_examples,
+                        ),
                         learning_rate=item.hypothesis.learning_rate,
                     ),
                     probability=item.probability,
