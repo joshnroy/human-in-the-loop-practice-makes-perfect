@@ -135,14 +135,22 @@ def condition_skill_belief(*, belief: SkillBelief, success: bool) -> SkillBelief
 
 
 def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillBelief:
+    """Advance competence along a locally linear learning curve.
+
+    ``learning_rate`` is the first derivative of competence with respect to the
+    number of training examples.  Competence is a probability, so the linear
+    extrapolation is capped at one.
+    """
     assert training_examples >= 0
     return SkillBelief(
         hypotheses=tuple(
             WeightedHypothesis(
                 hypothesis=SkillHypothesis(
-                    competence=1.0
-                    - (1.0 - item.hypothesis.competence)
-                    * (1.0 - item.hypothesis.learning_rate) ** training_examples,
+                    competence=min(
+                        1.0,
+                        item.hypothesis.competence
+                        + item.hypothesis.learning_rate * training_examples,
+                    ),
                     learning_rate=item.hypothesis.learning_rate,
                 ),
                 probability=item.probability,
