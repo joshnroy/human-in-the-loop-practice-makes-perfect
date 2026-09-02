@@ -11,7 +11,7 @@ PARTICLE_DTYPE: Final = np.dtype("<f8")
 
 
 class SkillBelief(BaseModel):
-    """Posterior over a skill's competence and learning rate."""
+    """Posterior over a skill's competence and its derivative per example."""
 
     model_config = ConfigDict(frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
 
@@ -51,6 +51,8 @@ class SkillBelief(BaseModel):
 
 
 class SkillHypothesis(BaseModel):
+    """One hypothesis for ``(competence, d competence / d example)``."""
+
     model_config = ConfigDict(frozen=True)
 
     competence: float = Field(ge=0.0, le=1.0)
