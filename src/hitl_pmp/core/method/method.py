@@ -75,6 +75,10 @@ class Method(BaseModel, abc.ABC):
         """Optional read-only success estimates for the recording sidebar."""
         return {}
 
+    def practice_skill_learning_rates(self) -> dict[str, float]:
+        """Optional read-only learning-rate estimates for the recording sidebar."""
+        return {}
+
     @abc.abstractmethod
     def reset_environment(self, *, start_state: State) -> bool:
         """The agent's own attempt to self-navigate to start_state, without human help.

@@ -16,17 +16,26 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
 from hitl_pmp.planning.grounding import SkillGrounder
 
 from .expectimax import solve_belief_space_expectimax
-from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, RESET_SKILL, TOSS_SKILL
+from .tossing3d_constants import (
+    OPEN_GRIPPER_SKILL,
+    PICK_SKILL,
+    RESET_SKILL,
+    TOSS_SKILL,
+)
 from .tossing3d_model import Tossing3DPracticeModel
 from .tossing3d_observation_model import (
     make_default_tossing3d_belief,
     mean_competence,
+    mean_learning_rate,
     refit_belief_state,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
+from .types.protocol import BeliefSpaceModel
+from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
 from .types.stop_action import STOP_ACTION, StopAction
+from .types.theta import Tossing3DTheta
 
 
 class Tossing3DPomdpMethod(EesMethod):
@@ -61,6 +70,22 @@ class Tossing3DPomdpMethod(EesMethod):
         }
         if self.ask_for_reset_cube_bin_cost is not None:
             estimates[RESET_SKILL + " (fixed)"] = 1.0
+        return estimates
+
+    def practice_skill_learning_rates(self) -> dict[str, float]:
+        estimates = {
+            PICK_SKILL + " (belief mean)": mean_learning_rate(
+                belief=self._pomdp_state.skill_beliefs[PICK_SKILL]
+            ),
+            TOSS_SKILL + " (belief mean)": mean_learning_rate(
+                belief=self._pomdp_state.skill_beliefs[TOSS_SKILL]
+            ),
+            OPEN_GRIPPER_SKILL + " (belief mean)": mean_learning_rate(
+                belief=self._pomdp_state.skill_beliefs[OPEN_GRIPPER_SKILL]
+            ),
+        }
+        if self.ask_for_reset_cube_bin_cost is not None:
+            estimates[RESET_SKILL + " (fixed)"] = 0.0
         return estimates
 
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
@@ -201,6 +226,12 @@ class Tossing3DPomdpMethod(EesMethod):
         trace = (
             SearchTrace(path=trace_path, retain_events=False) if trace_path is not None else None
         )
+        model: BeliefSpaceModel[
+            Tossing3DSearchState,
+            Tossing3DBeliefState,
+            Tossing3DTheta,
+            GroundSkill,
+        ] = self._pomdp_model
         search_started_at = time.perf_counter()
         try:
             search_result = solve_belief_space_expectimax(
@@ -210,7 +241,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 belief_state=self._pomdp_state,
                 summed_cost=self._pomdp_state.accumulated_cost,
                 horizon=self.pomdp_search_depth,
-                model=self._pomdp_model,
+                model=model,
                 trace=trace,
                 num_samples=self.pomdp_num_samples,
             )

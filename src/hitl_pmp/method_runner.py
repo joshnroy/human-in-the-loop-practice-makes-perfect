@@ -409,4 +409,14 @@ class MethodRunner:
             fps=render_fps,
             num_cycles=num_cycles,
             max_steps_per_interaction=max_steps_per_interaction,
+            run_metadata=tuple(
+                (label, str(value))
+                for label, value in (
+                    ("SEED", getattr(args, "seed", None)),
+                    ("SAMPLES", getattr(args, "pomdp_num_samples", None)),
+                    ("SEARCH DEPTH", getattr(args, "pomdp_search_depth", None)),
+                    ("ACTION CAP", max_steps_per_interaction),
+                )
+                if value is not None
+            ),
         )

@@ -111,6 +111,10 @@ def mean_competence(*, belief: SkillBelief) -> float:
     return sum(item.probability * item.hypothesis.competence for item in belief.hypotheses)
 
 
+def mean_learning_rate(*, belief: SkillBelief) -> float:
+    return sum(item.probability * item.hypothesis.learning_rate for item in belief.hypotheses)
+
+
 def condition_skill_belief(*, belief: SkillBelief, success: bool) -> SkillBelief:
     """Condition on a greedy-policy outcome without pretending a refit occurred."""
     weighted: list[tuple[SkillHypothesis, float]] = []

@@ -66,6 +66,7 @@ class PeriodRecorder(BaseModel):
     fps: int
     num_cycles: int
     max_steps_per_interaction: int
+    run_metadata: tuple[tuple[str, str], ...] = ()
     reset_hold_frames: int = 6
     outcome_hold_frames: int = 4
 
@@ -82,6 +83,7 @@ class PeriodRecorder(BaseModel):
     practice_history: list[str] = Field(default_factory=list)
     action_values: dict[str, float] = Field(default_factory=dict)
     competences: dict[str, float] = Field(default_factory=dict)
+    learning_rates: dict[str, float] = Field(default_factory=dict)
 
     video: VideoStream | None = None
 
@@ -96,6 +98,7 @@ class PeriodRecorder(BaseModel):
         self.practice_history = []
         self.action_values = {}
         self.competences = {}
+        self.learning_rates = {}
         self.cycle_index = cycle_index
         self.transitions = transitions
         self.task = task
@@ -340,14 +343,22 @@ class PeriodRecorder(BaseModel):
             "PeriodRecorder._write_frame called with no file open -- a begin_practice/"
             "begin_evaluation call is missing before this write."
         )
-        composed = StatusBarOverlay.compose(frame=frame, status=status)
         if self.phase is LoopPhase.PRACTICE:
             composed = SkillChatOverlay.compose(
-                frame=composed,
+                frame=frame,
                 history=self.practice_history,
                 values=self.action_values,
                 competences=self.competences,
+                learning_rates=self.learning_rates,
             )
+            composed = StatusBarOverlay.compose(
+                frame=composed,
+                status=status.model_copy(update={"skill": None}),
+                bar_position="top",
+                extra_fields=self.run_metadata,
+            )
+        else:
+            composed = StatusBarOverlay.compose(frame=frame, status=status)
         for _ in range(repeat):
             self.video.append(frame=composed)
 

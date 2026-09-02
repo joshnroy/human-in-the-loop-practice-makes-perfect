@@ -1,4 +1,4 @@
-"""A bounded, scrolling practice-event panel beside the unobscured scene."""
+"""Practice diagnostics arranged beside an unobscured environment scene."""
 
 import textwrap
 from typing import ClassVar
@@ -8,10 +8,19 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 class SkillChatOverlay:
-    """Newest events appear at the bottom; repeated skills remain separate entries."""
+    """Compose four stable diagnostic columns to the right of the scene."""
 
     width: ClassVar[int] = 320
     max_entries: ClassVar[int] = 8
+    background: ClassVar[tuple[int, int, int]] = (22, 20, 32)
+    text: ClassVar[tuple[int, int, int]] = (235, 235, 245)
+    muted: ClassVar[tuple[int, int, int]] = (190, 190, 200)
+    skill_rows: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("PickCube", "PickCube"),
+        ("MoveToTossLocationAndToss", "Toss"),
+        ("OpenGripper", "OpenGripper"),
+        ("ask_for_reset_cube_bin_only", "Human Reset"),
+    )
 
     @staticmethod
     def compose(
@@ -20,104 +29,122 @@ class SkillChatOverlay:
         history: list[str],
         values: dict[str, float] | None = None,
         competences: dict[str, float] | None = None,
+        learning_rates: dict[str, float] | None = None,
     ) -> np.ndarray:
-        height, width = frame.shape[:2]
-        panels = 1 if competences is None else 2
-        canvas = Image.new("RGB", (width + panels * SkillChatOverlay.width, height), (22, 20, 32))
+        height, scene_width = frame.shape[:2]
+        canvas = Image.new(
+            "RGB", (scene_width + 4 * SkillChatOverlay.width, height), SkillChatOverlay.background
+        )
         canvas.paste(Image.fromarray(frame), (0, 0))
         draw = ImageDraw.Draw(canvas)
-        if competences is not None:
-            SkillChatOverlay.draw_competences(
-                draw=draw, left=width + SkillChatOverlay.width + 16, estimates=competences
-            )
+        lefts = [scene_width + index * SkillChatOverlay.width + 16 for index in range(4)]
+        SkillChatOverlay.draw_history(draw=draw, left=lefts[0], height=height, history=history)
+        SkillChatOverlay.draw_competences(draw=draw, left=lefts[1], estimates=competences or {})
+        SkillChatOverlay.draw_learning_rates(
+            draw=draw, left=lefts[2], estimates=learning_rates or {}
+        )
+        SkillChatOverlay.draw_values(draw=draw, left=lefts[3], values=values or {})
+        return np.asarray(canvas)
+
+    @staticmethod
+    def draw_history(
+        *, draw: ImageDraw.ImageDraw, left: int, height: int, history: list[str]
+    ) -> None:
         font = ImageFont.load_default(size=17)
-        chart_bottom = SkillChatOverlay.draw_values(
-            draw=draw, left=width + 16, values=values or {}, font=font
-        )
-        draw.text(
-            (width + 16, chart_bottom + 16),
-            "PRACTICE / SKILL HISTORY",
-            font=font,
-            fill=(190, 150, 255),
-        )
+        draw.text((left, 14), "SKILL HISTORY", font=font, fill=(190, 150, 255))
         bottom = height - 20
         for entry in reversed(history[-SkillChatOverlay.max_entries :]):
             lines = textwrap.wrap(entry, width=29)
             top = bottom - 23 * len(lines) - 12
-            if top < chart_bottom + 52:
+            if top < 52:
                 break
-            color = (90, 230, 160) if "RESET" in entry else (240, 235, 250)
-            draw.multiline_text(
-                (width + 16, top), "\n".join(lines), font=font, fill=color, spacing=5
-            )
+            color = (90, 230, 160) if "RESET" in entry else SkillChatOverlay.text
+            draw.multiline_text((left, top), "\n".join(lines), font=font, fill=color, spacing=5)
             bottom = top - 12
-        return np.asarray(canvas)
 
     @staticmethod
     def draw_competences(
         *, draw: ImageDraw.ImageDraw, left: int, estimates: dict[str, float]
     ) -> None:
-        font = ImageFont.load_default(size=17)
-        small = ImageFont.load_default(size=13)
-        draw.text((left, 14), "POMDP COMPETENCES", font=font, fill=(110, 200, 250))
-        draw.text(
-            (left, 40), "Success estimates, not measured rates", font=small, fill=(190, 190, 200)
+        SkillChatOverlay.draw_skill_chart(
+            draw=draw,
+            left=left,
+            title="THETA 1: COMPETENCE",
+            values=estimates,
+            color=(70, 160, 230),
+            fixed_range=(0.0, 1.0),
+            precision=4,
         )
-        draw.text((left, 61), "Fixed scale: 0 to 1", font=small, fill=(190, 190, 200))
-        top = 96
-        for name, value in estimates.items():
-            assert 0.0 <= value <= 1.0
-            label = "\n".join(textwrap.wrap(name, width=34))
-            draw.multiline_text((left, top), label, font=small, fill=(235, 235, 245))
-            bar_top = top + 40
-            draw.rectangle((left, bar_top, left + 280, bar_top + 14), fill=(45, 45, 65))
-            draw.rectangle((left, bar_top, left + 280 * value, bar_top + 14), fill=(70, 160, 230))
-            draw.text((left, bar_top + 18), f"{value:.4f}", font=small, fill=(110, 200, 250))
-            top += 92
 
     @staticmethod
-    def draw_values(
+    def draw_learning_rates(
+        *, draw: ImageDraw.ImageDraw, left: int, estimates: dict[str, float]
+    ) -> None:
+        SkillChatOverlay.draw_skill_chart(
+            draw=draw,
+            left=left,
+            title="THETA 2: LEARNING RATE",
+            values=estimates,
+            color=(70, 200, 175),
+            fixed_range=(0.0, 1.0),
+            precision=4,
+        )
+
+    @staticmethod
+    def draw_values(*, draw: ImageDraw.ImageDraw, left: int, values: dict[str, float]) -> None:
+        SkillChatOverlay.draw_skill_chart(
+            draw=draw,
+            left=left,
+            title="DECISION VALUES",
+            values=values,
+            color=(140, 110, 210),
+            precision=6,
+            include_stop=True,
+        )
+
+    @staticmethod
+    def draw_skill_chart(
         *,
         draw: ImageDraw.ImageDraw,
         left: int,
+        title: str,
         values: dict[str, float],
-        font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
-    ) -> int:
-        if not values:
-            return 0
-        draw.text((left, 14), "DECISION VALUES", font=font, fill=(190, 150, 255))
+        color: tuple[int, int, int],
+        precision: int,
+        fixed_range: tuple[float, float] | None = None,
+        include_stop: bool = False,
+    ) -> None:
+        font = ImageFont.load_default(size=17)
         small = ImageFont.load_default(size=13)
-        draw.text((left, 37), "Expected utility, including cost", font=small, fill=(190, 190, 200))
-        low = min(0.0, *values.values())
-        high = max(0.0, *values.values())
+        draw.multiline_text((left, 14), title, font=font, fill=color, spacing=3)
+        rows: list[tuple[str, float | None]] = [
+            (
+                label,
+                next((value for name, value in values.items() if name.startswith(prefix)), None),
+            )
+            for prefix, label in SkillChatOverlay.skill_rows
+        ]
+        if include_stop:
+            rows.append(("STOP", values.get("STOP")))
+        present = [value for _label, value in rows if value is not None]
+        if fixed_range is None:
+            low = min([0.0, *present])
+            high = max([0.0, *present])
+        else:
+            low, high = fixed_range
         span = max(high - low, 1e-12)
         zero = left + 280 * (0.0 - low) / span
-        best = max(values, key=lambda name: values[name])
-        potential = SkillChatOverlay.improvement_potential(values=values)
-        label = (
-            "No affordable/applicable practice action"
-            if potential is None
-            else f"Practice minus STOP: {potential:+.6f}"
-        )
-        draw.text((left, 60), "POMDP IMPROVEMENT POTENTIAL", font=small, fill=(110, 200, 250))
-        draw.text((left, 80), label, font=small, fill=(235, 235, 245))
-        top = 108
-        for name, value in values.items():
-            label = "\n".join(textwrap.wrap(name, width=35))
-            draw.multiline_text((left, top), label, font=small, fill=(235, 235, 245))
-            bar_top = top + 34
+        best = max(present) if present else None
+        for index, (label, value) in enumerate(rows):
+            top = 62 + index * 92
+            draw.text((left, top), label, font=small, fill=SkillChatOverlay.text)
+            bar_top = top + 23
+            draw.rectangle((left, bar_top, left + 280, bar_top + 14), fill=(45, 45, 65))
+            if value is None:
+                draw.text((left, bar_top + 18), "N/A", font=small, fill=SkillChatOverlay.muted)
+                continue
             end = left + 280 * (value - low) / span
-            color = (90, 230, 160) if name == best else (140, 110, 210)
-            draw.rectangle((min(zero, end), bar_top, max(zero, end), bar_top + 14), fill=color)
+            item_color = (90, 230, 160) if include_stop and value == best else color
+            draw.rectangle((min(zero, end), bar_top, max(zero, end), bar_top + 14), fill=item_color)
             draw.line((zero, bar_top - 2, zero, bar_top + 16), fill=(240, 240, 240))
-            draw.text((left, bar_top + 17), f"{value:.6f}", font=small, fill=color)
-            top += 72
-        return top
-
-    @staticmethod
-    def improvement_potential(*, values: dict[str, float]) -> float | None:
-        """Signed estimated advantage of practicing, not measured learning."""
-        practice_values = [value for name, value in values.items() if name != "STOP"]
-        if "STOP" not in values or not practice_values:
-            return None
-        return max(practice_values) - values["STOP"]
+            draw.text((left, bar_top + 18), f"{value:.{precision}f}", font=small, fill=item_color)
