@@ -1,10 +1,14 @@
 """Vectorized Liu-West particle inference for Tossing3D skill parameters."""
 
+from math import lgamma, log, pi
+
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
 from .types.skill_belief import PARTICLE_DTYPE, PARTICLE_STORAGE_VERSION, SkillBelief
 
+_LEARNING_RATE_OBSERVATION_SCALE = 0.02
+_LEARNING_RATE_OBSERVATION_DEGREES_OF_FREEDOM = 4.0
 _RESAMPLING_ESS_FRACTION = 0.5
 _LIU_WEST_SHRINKAGE = 0.98
 _RESAMPLING_STREAM_TAG = 0x524553414D504C45
@@ -58,6 +62,31 @@ def condition_particle_belief(*, belief: SkillBelief, success: bool) -> SkillBel
     return condition_and_maybe_resample(
         belief=belief, parameters=parameters, masses=weights * likelihoods
     )
+
+
+def condition_learning_rate_observation(
+    *, belief: SkillBelief, observed_learning_rate: float
+) -> SkillBelief:
+    """Condition ``eta`` on a noisy cycle-level finite-difference observation."""
+    assert belief.estimator == "particle_filter"
+    assert observed_learning_rate >= 0.0
+    degrees_of_freedom = _LEARNING_RATE_OBSERVATION_DEGREES_OF_FREEDOM
+    scale = _LEARNING_RATE_OBSERVATION_SCALE
+    log_normalizer = (
+        lgamma((degrees_of_freedom + 1.0) / 2.0)
+        - lgamma(degrees_of_freedom / 2.0)
+        - 0.5 * log(degrees_of_freedom * pi)
+        - log(scale)
+    )
+    parameters, weights = belief_arrays(belief=belief)
+    learning_rates = parameters[:, 1]
+    residuals = (observed_learning_rate - learning_rates) / scale
+    log_likelihoods = log_normalizer - (degrees_of_freedom + 1.0) / 2.0 * np.log1p(
+        residuals**2 / degrees_of_freedom
+    )
+    log_masses = np.log(weights) + log_likelihoods
+    masses = np.exp(log_masses - float(np.max(log_masses)))
+    return condition_and_maybe_resample(belief=belief, parameters=parameters, masses=masses)
 
 
 def belief_arrays(*, belief: SkillBelief) -> tuple[np.ndarray, np.ndarray]:

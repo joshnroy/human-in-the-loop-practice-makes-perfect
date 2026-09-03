@@ -15,6 +15,7 @@ from hitl_pmp.methods.belief_space.types.skill_belief import (
 from .tossing3d_particle_filter import (
     belief_arrays,
     belief_from_arrays,
+    condition_learning_rate_observation,
     condition_particle_belief,
     make_particle_belief_prior,
 )
@@ -176,9 +177,7 @@ def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillB
     if belief.estimator == "particle_filter":
         parameters, weights = belief_arrays(belief=belief)
         projected = parameters.copy()
-        projected[:, 0] = np.minimum(
-            1.0, projected[:, 0] + projected[:, 1] * training_examples
-        )
+        projected[:, 0] = np.minimum(1.0, projected[:, 0] + projected[:, 1] * training_examples)
         return belief_from_arrays(belief=belief, parameters=projected, weights=weights)
     return belief.model_copy(
         update={
@@ -200,13 +199,46 @@ def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillB
     )
 
 
-def refit_belief_state(*, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+def observed_learning_rate(
+    *, competence_before: float, competence_after: float, training_examples: int
+) -> float | None:
+    """Return the nonnegative competence increase per example for one cycle."""
+    assert training_examples >= 0
+    if training_examples == 0:
+        return None
+    return max(0.0, (competence_after - competence_before) / training_examples)
+
+
+def refit_observed_skill_belief(
+    *,
+    belief: SkillBelief,
+    training_examples: int,
+    cycle_start_competence: float | None,
+) -> SkillBelief:
+    if belief.estimator == "particle_filter" and cycle_start_competence is not None:
+        rate = observed_learning_rate(
+            competence_before=cycle_start_competence,
+            competence_after=mean_competence(belief=belief),
+            training_examples=training_examples,
+        )
+        if rate is not None:
+            belief = condition_learning_rate_observation(belief=belief, observed_learning_rate=rate)
+    return refit_skill_belief(belief=belief, training_examples=training_examples)
+
+
+def refit_belief_state(
+    *,
+    state: Tossing3DBeliefState,
+    cycle_start_competences: dict[str, float] | None = None,
+) -> Tossing3DBeliefState:
+    start_competences = cycle_start_competences or {}
     return state.model_copy(
         update={
             "skill_beliefs": {
-                skill_name: refit_skill_belief(
+                skill_name: refit_observed_skill_belief(
                     belief=belief,
                     training_examples=state.pending_examples.get(skill_name, 0),
+                    cycle_start_competence=start_competences.get(skill_name),
                 )
                 for skill_name, belief in state.skill_beliefs.items()
             },

@@ -56,6 +56,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _decision_index: int = PrivateAttr(default=0)
     _cycle_index: int = PrivateAttr(default=0)
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
+    _cycle_start_competences: dict[str, float] = PrivateAttr(default_factory=dict)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -161,6 +162,10 @@ class Tossing3DPomdpMethod(EesMethod):
         # G scores the current session, so its accumulated cost starts at zero.
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
+        self._cycle_start_competences = {
+            skill_name: mean_competence(belief=belief)
+            for skill_name, belief in self._pomdp_state.skill_beliefs.items()
+        }
         self._practice_values.clear()
         self.record_diagnostic(
             event="session_start",
@@ -227,7 +232,10 @@ class Tossing3DPomdpMethod(EesMethod):
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
-        self._pomdp_state = refit_belief_state(state=self._pomdp_state)
+        self._pomdp_state = refit_belief_state(
+            state=self._pomdp_state,
+            cycle_start_competences=self._cycle_start_competences,
+        )
         self.record_diagnostic(
             event="refit",
             belief=self._pomdp_state.model_dump(mode="json"),
