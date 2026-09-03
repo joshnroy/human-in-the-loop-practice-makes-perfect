@@ -23,6 +23,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
 )
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
     make_tossing3d_search_state,
+    render_atoms,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
@@ -245,6 +246,44 @@ def test_search_state_serializes_ees_atoms_without_serializing_predicate_functio
     serialized = state.model_dump(mode="json")
     assert serialized["atoms"] == sorted(str(atom) for atom in state.true_atoms)
     assert "true_atoms" not in serialized
+
+
+def test_search_state_reuses_rendered_atoms() -> None:
+    model = _domain_model()
+    belief = make_default_tossing3d_belief()
+    true_atoms = _ground_skill(model=model, name=PICK_SKILL).preconditions
+    render_atoms.cache_clear()
+
+    first = make_tossing3d_search_state(state=belief, true_atoms=true_atoms)
+    cache_after_first = render_atoms.cache_info()
+    second = make_tossing3d_search_state(state=belief, true_atoms=true_atoms)
+
+    assert first.atoms == second.atoms
+    assert render_atoms.cache_info().hits == cache_after_first.hits + 1
+
+
+def test_batched_policy_evaluation_matches_scalar_evaluation() -> None:
+    model = Tossing3DPracticeModel(seed=123)
+    samples = model.sample_thetas_from_belief(
+        belief_state=make_default_tossing3d_belief(), num_samples=100
+    )
+
+    assert model.evaluate_policies(sampled_thetas=samples) == pytest.approx(
+        [model.evaluate_policy(sampled_theta=sample) for sample in samples]
+    )
+
+
+def test_batched_sampling_and_evaluation_matches_individual_theta_path() -> None:
+    belief = make_default_tossing3d_belief()
+    individual_model = Tossing3DPracticeModel(seed=123)
+    batched_model = Tossing3DPracticeModel(seed=123)
+    samples = individual_model.sample_thetas_from_belief(
+        belief_state=belief, num_samples=100
+    )
+
+    assert batched_model.sample_policy_values_from_belief(
+        belief_state=belief, num_samples=100
+    ) == pytest.approx(individual_model.evaluate_policies(sampled_thetas=samples))
 
 
 @pytest.mark.parametrize("action_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])

@@ -103,9 +103,6 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             "summed_cost must be finite and non-negative"
         )
 
-        sampled_thetas = self.model.sample_thetas_from_belief(
-            belief_state=belief_state, num_samples=self.num_samples
-        )
         node = self.next_node
         self.next_node += 1
         if self.trace is not None:
@@ -117,10 +114,24 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 environment_state=environment_state.model_dump(mode="json"),
                 belief_state=belief_state.model_dump(mode="json"),
             )
+        retain_samples = self.trace is not None and self.trace.retain_events
+        sampled_thetas = (
+            self.model.sample_thetas_from_belief(
+                belief_state=belief_state, num_samples=self.num_samples
+            )
+            if retain_samples
+            else []
+        )
+        policy_values = (
+            self.model.evaluate_policies(sampled_thetas=sampled_thetas)
+            if retain_samples
+            else self.model.sample_policy_values_from_belief(
+                belief_state=belief_state, num_samples=self.num_samples
+            )
+        )
+        assert len(policy_values) == self.num_samples
         sample_values = []
-        policy_values = []
-        for sampled_theta in sampled_thetas:
-            current_policy_value = self.model.evaluate_policy(sampled_theta=sampled_theta)
+        for index, current_policy_value in enumerate(policy_values):
             current_pomdp_value = self.model.G(
                 policy_value=current_policy_value, summed_cost=summed_cost
             )
@@ -128,12 +139,12 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 f"stop value must be finite or negative infinity, got {current_pomdp_value}"
             )
             sample_values.append(current_pomdp_value)
-            policy_values.append(current_policy_value)
-            if self.trace is not None and self.trace.retain_events:
+            if retain_samples:
+                assert self.trace is not None
                 self.trace.record(
                     event="sample",
                     node=node,
-                    theta=sampled_theta.model_dump(mode="json"),
+                    theta=sampled_thetas[index].model_dump(mode="json"),
                     policy_value=current_policy_value,
                     pomdp_value=current_pomdp_value,
                 )
