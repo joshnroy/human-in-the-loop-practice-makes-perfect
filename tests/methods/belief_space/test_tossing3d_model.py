@@ -21,6 +21,11 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     refit_belief_state,
     refit_skill_belief,
 )
+from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (
+    condition_particle_belief,
+    make_particle_belief_prior,
+    particle_filter_diagnostics,
+)
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
     make_tossing3d_search_state,
     render_atoms,
@@ -219,6 +224,53 @@ def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBeli
     )
 
 
+def test_particle_prior_is_continuous_seeded_and_normalized() -> None:
+    first = make_particle_belief_prior(num_particles=128, seed=7)
+    second = make_particle_belief_prior(num_particles=128, seed=7)
+
+    assert first == second
+    assert first.estimator == "particle_filter"
+    assert len(first.hypotheses) == 128
+    assert sum(item.probability for item in first.hypotheses) == pytest.approx(1.0)
+    assert any(item.hypothesis.learning_rate not in {0.0, 0.1} for item in first.hypotheses)
+
+
+def test_particle_filter_conditions_with_bernoulli_likelihood() -> None:
+    prior = make_particle_belief_prior(num_particles=1_000, seed=9)
+    posterior = condition_particle_belief(belief=prior, success=True)
+
+    assert mean_competence(belief=posterior) > mean_competence(belief=prior)
+    assert particle_filter_diagnostics(belief=posterior).effective_sample_size > 0.0
+
+
+def test_particle_filter_resampling_is_seeded_and_reports_diagnostics() -> None:
+    prior = make_particle_belief_prior(num_particles=128, seed=11)
+    first = prior
+    second = prior
+    for _ in range(8):
+        first = condition_particle_belief(belief=first, success=True)
+        second = condition_particle_belief(belief=second, success=True)
+
+    assert first == second
+    diagnostics = particle_filter_diagnostics(belief=first)
+    assert diagnostics.resampling_count > 0
+    assert diagnostics.num_particles == 128
+
+
+def test_particle_prediction_advances_competence_but_not_learning_rate() -> None:
+    prior = make_particle_belief_prior(num_particles=128, seed=13)
+    predicted = refit_skill_belief(belief=prior, training_examples=2)
+
+    assert predicted.estimator == "particle_filter"
+    assert [item.hypothesis.learning_rate for item in predicted.hypotheses] == [
+        item.hypothesis.learning_rate for item in prior.hypotheses
+    ]
+    assert all(
+        after.hypothesis.competence >= before.hypothesis.competence
+        for before, after in zip(prior.hypotheses, predicted.hypotheses, strict=True)
+    )
+
+
 def test_only_physically_applicable_actions_are_returned() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()
@@ -268,18 +320,16 @@ def test_batched_policy_evaluation_matches_scalar_evaluation() -> None:
         belief_state=make_default_tossing3d_belief(), num_samples=100
     )
 
-    assert model.evaluate_policies(sampled_thetas=samples) == pytest.approx(
-        [model.evaluate_policy(sampled_theta=sample) for sample in samples]
-    )
+    assert model.evaluate_policies(sampled_thetas=samples) == pytest.approx([
+        model.evaluate_policy(sampled_theta=sample) for sample in samples
+    ])
 
 
 def test_batched_sampling_and_evaluation_matches_individual_theta_path() -> None:
     belief = make_default_tossing3d_belief()
     individual_model = Tossing3DPracticeModel(seed=123)
     batched_model = Tossing3DPracticeModel(seed=123)
-    samples = individual_model.sample_thetas_from_belief(
-        belief_state=belief, num_samples=100
-    )
+    samples = individual_model.sample_thetas_from_belief(belief_state=belief, num_samples=100)
 
     assert batched_model.sample_policy_values_from_belief(
         belief_state=belief, num_samples=100
@@ -513,9 +563,7 @@ def test_refit_is_deferred_until_cycle_boundary() -> None:
 def test_stop_value_solves_deployment_chain_within_hard_budget() -> None:
     state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
     model = Tossing3DPracticeModel()
-    assert _expected_stop_value(model=model, state=state) == pytest.approx(
-        (0.5 + 0.5 * 0.5) * 0.8
-    )
+    assert _expected_stop_value(model=model, state=state) == pytest.approx((0.5 + 0.5 * 0.5) * 0.8)
 
 
 def test_partial_reset_does_not_open_a_closed_gripper() -> None:

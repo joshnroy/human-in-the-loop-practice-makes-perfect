@@ -1,6 +1,10 @@
 """Skill-belief data used by the Tossing3D practice model."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+BeliefEstimator = Literal["finite_grid", "particle_filter"]
 
 
 class SkillBelief(BaseModel):
@@ -9,6 +13,9 @@ class SkillBelief(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     hypotheses: tuple["WeightedHypothesis", ...]
+    estimator: BeliefEstimator = "finite_grid"
+    resampling_count: int = Field(default=0, ge=0)
+    resampling_seed: int = Field(default=0, ge=0)
 
 
 class SkillHypothesis(BaseModel):

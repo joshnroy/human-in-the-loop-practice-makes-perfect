@@ -18,6 +18,7 @@ dependencies = [
     # declared rather than assumed.
     "pillow",
     "torch",
+    "stonesoup>=1.7,<2",
 ]
 
 [project.optional-dependencies]

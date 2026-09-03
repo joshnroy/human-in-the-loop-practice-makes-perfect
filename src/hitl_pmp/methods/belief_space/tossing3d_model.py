@@ -196,10 +196,16 @@ class Tossing3DPracticeModel(BaseModel):
         return mask
 
     @staticmethod
-    def _belief_signature(*, belief: SkillBelief) -> tuple[tuple[float, float, float], ...]:
-        return tuple(
+    def _belief_signature(*, belief: SkillBelief) -> tuple[object, ...]:
+        hypotheses = tuple(
             (item.hypothesis.competence, item.hypothesis.learning_rate, item.probability)
             for item in belief.hypotheses
+        )
+        return (
+            belief.estimator,
+            belief.resampling_count,
+            belief.resampling_seed,
+            *hypotheses,
         )
 
     def _belief_id(self, *, belief: SkillBelief) -> int:
