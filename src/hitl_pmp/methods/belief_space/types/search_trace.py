@@ -82,9 +82,7 @@ def _write_record(
     stream.write(json.dumps(streamed, allow_nan=False) + "\n")
 
 
-def _write_trace(
-    *, records: Any, result: Any, temporary_path: Path, final_path: Path
-) -> None:
+def _write_trace(*, records: Any, result: Any, temporary_path: Path, final_path: Path) -> None:
     """Drain trace records in a process that does not share the search's GIL."""
     try:
         interned: dict[tuple[str, bytes], int] = {}
