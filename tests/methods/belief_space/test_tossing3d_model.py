@@ -129,9 +129,36 @@ def _expected_stop_value(*, model: Tossing3DPracticeModel, state: Tossing3DBelie
     return model.G(policy_value=deployment_value, summed_cost=state.accumulated_cost)
 
 
-def test_G_subtracts_accumulated_per_skill_cost() -> None:
+def test_G_returns_policy_value_within_hard_budget() -> None:
     model = Tossing3DPracticeModel()
-    assert model.G(policy_value=2.5, summed_cost=2.0) == pytest.approx(0.5)
+    assert model.G(policy_value=2.5, summed_cost=150.0) == pytest.approx(2.5)
+
+
+def test_G_returns_negative_infinity_beyond_hard_budget() -> None:
+    model = Tossing3DPracticeModel()
+    assert model.G(policy_value=2.5, summed_cost=150.001) == -float("inf")
+
+
+def test_budget_does_not_change_environment_action_applicability() -> None:
+    model = _domain_model(reset_cost=1.0)
+    state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 151.0})
+    search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
+    assert model.get_valid_actions(environment_state=search_state)
+
+
+def test_search_prunes_state_beyond_hard_budget() -> None:
+    model = _domain_model(reset_cost=1.0)
+    state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 151.0})
+    search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
+    value, action = solve_belief_space_expectimax(
+        environment_state=search_state,
+        belief_state=state,
+        summed_cost=state.accumulated_cost,
+        horizon=3,
+        model=model,
+    )
+    assert value == -float("inf")
+    assert action == STOP_ACTION
 
 
 def test_search_protocol_charges_accumulated_cost_once() -> None:
@@ -430,11 +457,11 @@ def test_refit_is_deferred_until_cycle_boundary() -> None:
     assert _pending_examples(state=refit, skill_name=TOSS_SKILL) == 0
 
 
-def test_stop_value_solves_deployment_chain_and_charges_cost() -> None:
+def test_stop_value_solves_deployment_chain_within_hard_budget() -> None:
     state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
     model = Tossing3DPracticeModel()
     assert _expected_stop_value(model=model, state=state) == pytest.approx(
-        (0.5 + 0.5 * 0.5) * 0.8 - 3.0
+        (0.5 + 0.5 * 0.5) * 0.8
     )
 
 
