@@ -11,7 +11,7 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
 from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, PRACTICE_BUDGET, TOSS_SKILL
-from .tossing3d_deployment_model import evaluate_deployment_policy
+from .tossing3d_deployment_model import evaluate_deployment_policies, evaluate_deployment_policy
 from .tossing3d_observation_model import (
     SkillBeliefModel,
     make_skill_belief_models,
@@ -81,7 +81,9 @@ class Tossing3DPracticeModel(BaseModel):
             belief=projected.skill_beliefs[OPEN_GRIPPER_SKILL], count=num_samples
         )
         return [
-            Tossing3DTheta(pick=pick[index], toss=toss[index], open_gripper=opened[index])
+            Tossing3DTheta.model_construct(
+                pick=pick[index], toss=toss[index], open_gripper=opened[index]
+            )
             for index in range(num_samples)
         ]
 
@@ -105,6 +107,52 @@ class Tossing3DPracticeModel(BaseModel):
             open_competence=sampled_theta.open_gripper.competence,
             horizon=self.deployment_horizon,
         )
+
+    def evaluate_policies(self, *, sampled_thetas: list[Tossing3DTheta]) -> list[float]:
+        return evaluate_deployment_policies(
+            toss_competences=np.fromiter(
+                (theta.toss.competence for theta in sampled_thetas), dtype=np.float64
+            ),
+            pick_competences=np.fromiter(
+                (theta.pick.competence for theta in sampled_thetas), dtype=np.float64
+            ),
+            open_competences=np.fromiter(
+                (theta.open_gripper.competence for theta in sampled_thetas), dtype=np.float64
+            ),
+            horizon=self.deployment_horizon,
+        ).tolist()
+
+    def sample_policy_values_from_belief(
+        self, *, belief_state: Tossing3DBeliefState, num_samples: int
+    ) -> list[float]:
+        projected = refit_belief_state(state=belief_state)
+        competences = []
+        for skill_name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL):
+            belief = projected.skill_beliefs[skill_name]
+            indexes = np.atleast_1d(
+                self._rng.choice(
+                    len(belief.hypotheses),
+                    size=num_samples,
+                    p=np.fromiter(
+                        (item.probability for item in belief.hypotheses), dtype=np.float64
+                    ),
+                )
+            )
+            competences.append(
+                np.fromiter(
+                    (
+                        belief.hypotheses[int(index)].hypothesis.competence
+                        for index in indexes
+                    ),
+                    dtype=np.float64,
+                )
+            )
+        return evaluate_deployment_policies(
+            toss_competences=competences[1],
+            pick_competences=competences[0],
+            open_competences=competences[2],
+            horizon=self.deployment_horizon,
+        ).tolist()
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         """Return deployment value for feasible practice, otherwise negative infinity."""

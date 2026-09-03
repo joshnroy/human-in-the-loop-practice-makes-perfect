@@ -102,6 +102,18 @@ class Model(BaseModel):
         assert isinstance(sampled_theta, Theta)
         return sampled_theta.value * self.scale
 
+    def evaluate_policies(self, *, sampled_thetas: list[Theta]) -> list[float]:
+        return [self.evaluate_policy(sampled_theta=theta) for theta in sampled_thetas]
+
+    def sample_policy_values_from_belief(
+        self, *, belief_state: BeliefState, num_samples: int
+    ) -> list[float]:
+        return self.evaluate_policies(
+            sampled_thetas=self.sample_thetas_from_belief(
+                belief_state=belief_state, num_samples=num_samples
+            )
+        )
+
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         return policy_value - summed_cost
 
