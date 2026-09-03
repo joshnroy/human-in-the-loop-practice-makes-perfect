@@ -187,11 +187,6 @@ class Tossing3DPomdpCli(EesCli):
             help="Exact belief-space expectimax depth in future skill executions.",
         )
         parser.add_argument(
-            "--pomdp-record-search-traces",
-            action="store_true",
-            help="Record complete recursive search trees; potentially very large.",
-        )
-        parser.add_argument(
             "--pomdp-belief-estimator",
             choices=("finite_grid", "particle_filter"),
             default="finite_grid",
@@ -242,7 +237,6 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_record_search_traces=args.pomdp_record_search_traces,
                 pomdp_belief_estimator=args.pomdp_belief_estimator,
                 pomdp_num_particles=args.pomdp_num_particles,
-                pomdp_record_search_traces=args.pomdp_record_search_traces,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"
                     if args.output_dir is not None

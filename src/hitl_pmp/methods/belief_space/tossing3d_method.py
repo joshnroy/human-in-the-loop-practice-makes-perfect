@@ -48,7 +48,6 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_record_search_traces: bool = False
     pomdp_belief_estimator: BeliefEstimator = "finite_grid"
     pomdp_num_particles: int = Field(default=256, ge=1)
-    pomdp_record_search_traces: bool = False
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
 
