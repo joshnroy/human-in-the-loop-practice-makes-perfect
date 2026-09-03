@@ -2,13 +2,23 @@
 
 from enum import Enum
 
+import numpy as np
+
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
+    BeliefEstimator,
     SkillBelief,
     SkillHypothesis,
     WeightedHypothesis,
+)
+
+from .tossing3d_particle_filter import (
+    belief_arrays,
+    belief_from_arrays,
+    condition_particle_belief,
+    make_particle_belief_prior,
 )
 
 
@@ -100,23 +110,44 @@ def make_skill_belief_prior() -> SkillBelief:
     )
 
 
-def make_default_tossing3d_belief() -> Tossing3DBeliefState:
+def make_default_tossing3d_belief(
+    *, estimator: BeliefEstimator = "finite_grid", num_particles: int = 256, seed: int = 0
+) -> Tossing3DBeliefState:
     """Independent broad priors for all robot skills; human reset is known."""
+    if estimator == "particle_filter":
+        return Tossing3DBeliefState(
+            skill_beliefs={
+                skill.name: make_particle_belief_prior(
+                    num_particles=num_particles, seed=seed + index
+                )
+                for index, skill in enumerate(SKILL_BELIEF_MODELS)
+            }
+        )
+    if estimator != "finite_grid":
+        raise ValueError(f"unknown belief estimator: {estimator}")
     return Tossing3DBeliefState(
         skill_beliefs={skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
     )
 
 
 def mean_competence(*, belief: SkillBelief) -> float:
+    if belief.estimator == "particle_filter":
+        parameters, weights = belief_arrays(belief=belief)
+        return float(weights @ parameters[:, 0])
     return sum(item.probability * item.hypothesis.competence for item in belief.hypotheses)
 
 
 def mean_learning_rate(*, belief: SkillBelief) -> float:
+    if belief.estimator == "particle_filter":
+        parameters, weights = belief_arrays(belief=belief)
+        return float(weights @ parameters[:, 1])
     return sum(item.probability * item.hypothesis.learning_rate for item in belief.hypotheses)
 
 
 def condition_skill_belief(*, belief: SkillBelief, success: bool) -> SkillBelief:
     """Condition on a greedy-policy outcome without pretending a refit occurred."""
+    if belief.estimator == "particle_filter":
+        return condition_particle_belief(belief=belief, success=success)
     weighted: list[tuple[SkillHypothesis, float]] = []
     for item in belief.hypotheses:
         likelihood = item.hypothesis.competence if success else 1.0 - item.hypothesis.competence
@@ -136,19 +167,30 @@ def condition_skill_belief(*, belief: SkillBelief, success: bool) -> SkillBelief
 
 def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillBelief:
     assert training_examples >= 0
-    return SkillBelief(
-        hypotheses=tuple(
-            WeightedHypothesis(
-                hypothesis=SkillHypothesis(
-                    competence=1.0
-                    - (1.0 - item.hypothesis.competence)
-                    * (1.0 - item.hypothesis.learning_rate) ** training_examples,
-                    learning_rate=item.hypothesis.learning_rate,
-                ),
-                probability=item.probability,
+    if training_examples == 0:
+        return belief
+    if belief.estimator == "particle_filter":
+        parameters, weights = belief_arrays(belief=belief)
+        projected = parameters.copy()
+        projected[:, 0] = 1.0 - (1.0 - projected[:, 0]) * (
+            1.0 - projected[:, 1]
+        ) ** training_examples
+        return belief_from_arrays(belief=belief, parameters=projected, weights=weights)
+    return belief.model_copy(
+        update={
+            "hypotheses": tuple(
+                WeightedHypothesis(
+                    hypothesis=SkillHypothesis(
+                        competence=1.0
+                        - (1.0 - item.hypothesis.competence)
+                        * (1.0 - item.hypothesis.learning_rate) ** training_examples,
+                        learning_rate=item.hypothesis.learning_rate,
+                    ),
+                    probability=item.probability,
+                )
+                for item in belief.hypotheses
             )
-            for item in belief.hypotheses
-        )
+        }
     )
 
 
