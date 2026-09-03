@@ -186,6 +186,11 @@ class Tossing3DPomdpCli(EesCli):
             default=Tossing3DPomdpMethod.model_fields["pomdp_search_depth"].default,
             help="Exact belief-space expectimax depth in future skill executions.",
         )
+        parser.add_argument(
+            "--pomdp-record-search-traces",
+            action="store_true",
+            help="Record complete recursive search trees; potentially very large.",
+        )
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
@@ -217,6 +222,7 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_num_samples=args.pomdp_num_samples,
+                pomdp_record_search_traces=args.pomdp_record_search_traces,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"
                     if args.output_dir is not None

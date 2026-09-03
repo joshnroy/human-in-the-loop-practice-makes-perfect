@@ -108,6 +108,12 @@ def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "pomdp"])
     assert args.pomdp_search_depth == 3
     assert args.pomdp_num_samples == 100
+    assert not args.pomdp_record_search_traces
+
+    traced = Cli.parse_args(
+        argv=["--env", "tossing3d", "--method", "pomdp", "--pomdp-record-search-traces"]
+    )
+    assert traced.pomdp_record_search_traces
 
 
 def test_parse_args_has_no_positional_arguments() -> None:

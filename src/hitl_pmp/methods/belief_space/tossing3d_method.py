@@ -43,6 +43,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
+    pomdp_record_search_traces: bool = False
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
 
@@ -217,15 +218,13 @@ class Tossing3DPomdpMethod(EesMethod):
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         self._decision_index += 1
         trace_path = (
-            None
-            if self.decision_log is None
-            else self.decision_log.parent
+            self.decision_log.parent
             / "search_traces"
             / f"cycle_{self._cycle_index:04d}_decision_{self._decision_index:04d}.jsonl.gz"
+            if self.decision_log is not None and self.pomdp_record_search_traces
+            else None
         )
-        trace = (
-            SearchTrace(path=trace_path, retain_events=False) if trace_path is not None else None
-        )
+        trace = SearchTrace(path=trace_path, retain_events=False)
         model: BeliefSpaceModel[
             Tossing3DSearchState,
             Tossing3DBeliefState,
@@ -246,17 +245,15 @@ class Tossing3DPomdpMethod(EesMethod):
                 num_samples=self.pomdp_num_samples,
             )
         finally:
-            if trace is not None:
-                trace.close()
+            trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
         value, action = search_result
         self._practice_values = {}
-        if trace is not None:
-            for event in trace.events:
-                if event["node"] == 0 and event["event"] == "stop_value":
-                    self._practice_values["STOP"] = event["value"]
-                elif event["node"] == 0 and event["event"] == "action_value":
-                    self._practice_values[event["action"]["skill"]["name"]] = event["value"]
+        for event in trace.events:
+            if event["node"] == 0 and event["event"] == "stop_value":
+                self._practice_values["STOP"] = event["value"]
+            elif event["node"] == 0 and event["event"] == "action_value":
+                self._practice_values[event["action"]["skill"]["name"]] = event["value"]
         self.record_diagnostic(
             event="decision",
             competences=self.practice_skill_competences(),
@@ -269,7 +266,7 @@ class Tossing3DPomdpMethod(EesMethod):
             value=value,
             horizon=self.pomdp_search_depth,
             model=self._pomdp_model.model_dump(mode="json"),
-            search=[] if trace is None else trace.events,
+            search=trace.events,
             search_trace=None
             if trace_path is None or self.decision_log is None
             else str(trace_path.relative_to(self.decision_log.parent)),

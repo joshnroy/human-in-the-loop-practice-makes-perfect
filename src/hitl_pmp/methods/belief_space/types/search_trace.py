@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import multiprocessing
 import os
@@ -20,6 +21,27 @@ from hitl_pmp.core.log_timing import LogTiming
 
 _QUEUE_CAPACITY = 256
 _QUEUE_POLL_SECONDS = 0.25
+_PACKED_PARTICLE_FIELDS = frozenset({"particle_parameters", "particle_weights"})
+
+
+def compact_trace_value(*, value: Any) -> Any:
+    """Replace opaque particle buffers with stable references before IPC."""
+    if isinstance(value, dict):
+        return {
+            key: (
+                {
+                    "$packed": "omitted",
+                    "sha256": hashlib.sha256(field_value.encode("ascii")).hexdigest(),
+                    "encoded_bytes": len(field_value),
+                }
+                if key in _PACKED_PARTICLE_FIELDS and isinstance(field_value, str)
+                else compact_trace_value(value=field_value)
+            )
+            for key, field_value in value.items()
+        }
+    if isinstance(value, list):
+        return [compact_trace_value(value=item) for item in value]
+    return value
 
 
 @contextmanager
@@ -33,7 +55,7 @@ def open_trace(*, path: Path) -> Iterator[TextIO]:
 
 
 def _write_record(
-    *, stream: TextIO, interned: dict[tuple[str, str], int], record: dict[str, Any]
+    *, stream: TextIO, interned: dict[tuple[str, bytes], int], record: dict[str, Any]
 ) -> None:
     streamed = dict(record)
     for field, kind in {
@@ -46,7 +68,7 @@ def _write_record(
         if not isinstance(value, (dict, list)):
             continue
         encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
-        key = (kind, encoded)
+        key = (kind, hashlib.sha256(encoded.encode("utf-8")).digest())
         identifier = interned.get(key)
         if identifier is None:
             identifier = len(interned)
@@ -65,7 +87,7 @@ def _write_trace(
 ) -> None:
     """Drain trace records in a process that does not share the search's GIL."""
     try:
-        interned: dict[tuple[str, str], int] = {}
+        interned: dict[tuple[str, bytes], int] = {}
         with open_trace(path=temporary_path) as stream:
             while (record := records.get()) is not None:
                 _write_record(stream=stream, interned=interned, record=record)
@@ -110,7 +132,11 @@ class SearchTrace(BaseModel):
         self._writer.start()
 
     def record(self, *, event: str, **fields: Any) -> None:
-        record = {"event": event, **fields, **LogTiming.fields()}
+        record = {
+            "event": event,
+            **{key: compact_trace_value(value=value) for key, value in fields.items()},
+            **LogTiming.fields(),
+        }
         if self.retain_events or fields.get("node") == 0:
             self.events.append(record)
         if self._writer is not None:

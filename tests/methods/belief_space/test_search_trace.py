@@ -1,4 +1,4 @@
-"""Tests for lossless out-of-process expectimax trace writing."""
+"""Tests for bounded out-of-process expectimax trace writing."""
 
 import gzip
 import json
@@ -41,3 +41,27 @@ def test_search_trace_close_is_idempotent(*, tmp_path: Path) -> None:
 
     trace.close()
     trace.close()
+
+
+def test_search_trace_omits_packed_particle_buffers_before_queueing() -> None:
+    trace = SearchTrace()
+    encoded_particles = "random-looking-particle-data" * 1_000
+
+    trace.record(
+        event="node",
+        node=0,
+        belief_state={
+            "skill_beliefs": {
+                "Toss": {
+                    "particle_parameters": encoded_particles,
+                    "particle_weights": encoded_particles,
+                    "num_particles": 512,
+                }
+            }
+        },
+    )
+
+    serialized = json.dumps(trace.events)
+    assert encoded_particles not in serialized
+    assert serialized.count('"$packed": "omitted"') == 2
+    assert len(serialized) < 1_000
