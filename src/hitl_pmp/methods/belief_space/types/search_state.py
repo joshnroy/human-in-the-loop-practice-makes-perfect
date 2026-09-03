@@ -12,6 +12,6 @@ class Tossing3DSearchState(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    state: Tossing3DBeliefState
+    state: Tossing3DBeliefState = Field(exclude=True)
     true_atoms: frozenset[GroundAtom] = Field(exclude=True)
     atoms: tuple[str, ...]

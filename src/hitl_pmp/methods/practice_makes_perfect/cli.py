@@ -191,6 +191,23 @@ class Tossing3DPomdpCli(EesCli):
             action="store_true",
             help="Record complete recursive search trees; potentially very large.",
         )
+        parser.add_argument(
+            "--pomdp-belief-estimator",
+            choices=("finite_grid", "particle_filter"),
+            default="finite_grid",
+            help="Bayesian estimator for skill competence and learning rate.",
+        )
+        parser.add_argument(
+            "--pomdp-num-particles",
+            type=int,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
+            help="Particles per robot skill when using the particle-filter estimator.",
+        )
+        parser.add_argument(
+            "--pomdp-record-search-traces",
+            action="store_true",
+            help="Record complete recursive search trees; potentially very large.",
+        )
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
@@ -222,6 +239,9 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_num_samples=args.pomdp_num_samples,
+                pomdp_record_search_traces=args.pomdp_record_search_traces,
+                pomdp_belief_estimator=args.pomdp_belief_estimator,
+                pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_record_search_traces=args.pomdp_record_search_traces,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"

@@ -17,6 +17,7 @@ from .tossing3d_observation_model import (
     make_skill_belief_models,
     refit_belief_state,
 )
+from .tossing3d_particle_filter import belief_arrays
 from .tossing3d_transition_model import make_tossing3d_search_state, transition_outcomes
 from .types.belief_state import Tossing3DBeliefState
 from .types.search_state import Tossing3DSearchState
@@ -91,6 +92,16 @@ class Tossing3DPracticeModel(BaseModel):
         return self.sample_skills(belief=belief, count=1)[0]
 
     def sample_skills(self, *, belief: SkillBelief, count: int) -> list[SkillHypothesis]:
+        if belief.estimator == "particle_filter":
+            parameters, weights = belief_arrays(belief=belief)
+            indexes = np.atleast_1d(self._rng.choice(belief.num_particles, size=count, p=weights))
+            return [
+                SkillHypothesis.model_construct(
+                    competence=float(parameters[index, 0]),
+                    learning_rate=float(parameters[index, 1]),
+                )
+                for index in indexes
+            ]
         indexes = np.atleast_1d(
             self._rng.choice(
                 len(belief.hypotheses),
@@ -129,6 +140,13 @@ class Tossing3DPracticeModel(BaseModel):
         competences = []
         for skill_name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL):
             belief = projected.skill_beliefs[skill_name]
+            if belief.estimator == "particle_filter":
+                parameters, weights = belief_arrays(belief=belief)
+                indexes = np.atleast_1d(
+                    self._rng.choice(belief.num_particles, size=num_samples, p=weights)
+                )
+                competences.append(parameters[indexes, 0])
+                continue
             indexes = np.atleast_1d(
                 self._rng.choice(
                     len(belief.hypotheses),
@@ -193,10 +211,24 @@ class Tossing3DPracticeModel(BaseModel):
         return mask
 
     @staticmethod
-    def _belief_signature(*, belief: SkillBelief) -> tuple[tuple[float, float, float], ...]:
-        return tuple(
+    def _belief_signature(*, belief: SkillBelief) -> tuple[object, ...]:
+        if belief.estimator == "particle_filter":
+            return (
+                belief.estimator,
+                belief.resampling_count,
+                belief.resampling_seed,
+                belief.particle_parameters,
+                belief.particle_weights,
+            )
+        hypotheses = tuple(
             (item.hypothesis.competence, item.hypothesis.learning_rate, item.probability)
             for item in belief.hypotheses
+        )
+        return (
+            belief.estimator,
+            belief.resampling_count,
+            belief.resampling_seed,
+            *hypotheses,
         )
 
     def _belief_id(self, *, belief: SkillBelief) -> int:
