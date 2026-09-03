@@ -460,9 +460,7 @@ def test_refit_is_deferred_until_cycle_boundary() -> None:
 def test_stop_value_solves_deployment_chain_within_hard_budget() -> None:
     state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
     model = Tossing3DPracticeModel()
-    assert _expected_stop_value(model=model, state=state) == pytest.approx(
-        (0.5 + 0.5 * 0.5) * 0.8
-    )
+    assert _expected_stop_value(model=model, state=state) == pytest.approx((0.5 + 0.5 * 0.5) * 0.8)
 
 
 def test_partial_reset_does_not_open_a_closed_gripper() -> None:
