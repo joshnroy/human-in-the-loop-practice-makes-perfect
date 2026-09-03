@@ -2,8 +2,6 @@
 
 from enum import Enum
 
-import numpy as np
-
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
@@ -172,9 +170,9 @@ def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillB
     if belief.estimator == "particle_filter":
         parameters, weights = belief_arrays(belief=belief)
         projected = parameters.copy()
-        projected[:, 0] = 1.0 - (1.0 - projected[:, 0]) * (
-            1.0 - projected[:, 1]
-        ) ** training_examples
+        projected[:, 0] = (
+            1.0 - (1.0 - projected[:, 0]) * (1.0 - projected[:, 1]) ** training_examples
+        )
         return belief_from_arrays(belief=belief, parameters=projected, weights=weights)
     return belief.model_copy(
         update={

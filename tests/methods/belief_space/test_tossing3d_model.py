@@ -19,7 +19,6 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     make_default_tossing3d_belief,
     mean_competence,
-    mean_learning_rate,
     refit_belief_state,
     refit_skill_belief,
 )
@@ -549,22 +548,6 @@ def test_pending_examples_predict_improvement_without_changing_current_competenc
     assert _pending_examples(state=refit, skill_name=PICK_SKILL) == 0
 
 
-def test_learning_rate_is_competence_derivative_per_training_example() -> None:
-    belief = _point_belief(competence=0.4, learning_rate=0.1)
-
-    refit = refit_skill_belief(belief=belief, training_examples=3)
-
-    assert mean_competence(belief=refit) == pytest.approx(0.7)
-
-
-def test_derivative_learning_curve_is_clipped_at_perfect_competence() -> None:
-    belief = _point_belief(competence=0.8, learning_rate=0.1)
-
-    refit = refit_skill_belief(belief=belief, training_examples=3)
-
-    assert mean_competence(belief=refit) == pytest.approx(1.0)
-
-
 @pytest.mark.parametrize("skill_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
 def test_random_exploration_does_not_update_any_skill_belief(*, skill_name: str) -> None:
     model = _domain_model()
@@ -611,7 +594,9 @@ def test_refit_is_deferred_until_cycle_boundary() -> None:
     )
     assert mean_competence(belief=_belief(state=state, skill_name=TOSS_SKILL)) == pytest.approx(0.5)
     refit = refit_belief_state(state=state)
-    assert mean_competence(belief=_belief(state=refit, skill_name=TOSS_SKILL)) == pytest.approx(0.7)
+    assert mean_competence(belief=_belief(state=refit, skill_name=TOSS_SKILL)) == pytest.approx(
+        0.595
+    )
     assert _pending_examples(state=refit, skill_name=TOSS_SKILL) == 0
 
 
