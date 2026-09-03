@@ -140,10 +140,7 @@ class Tossing3DPracticeModel(BaseModel):
             )
             competences.append(
                 np.fromiter(
-                    (
-                        belief.hypotheses[int(index)].hypothesis.competence
-                        for index in indexes
-                    ),
+                    (belief.hypotheses[int(index)].hypothesis.competence for index in indexes),
                     dtype=np.float64,
                 )
             )

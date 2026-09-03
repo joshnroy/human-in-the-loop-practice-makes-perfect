@@ -21,12 +21,10 @@ def evaluate_deployment_policies(
         previous_closed_gripper = closed_gripper_values
         holding_values = toss_competences
         ready_values = (
-            pick_competences * previous_holding
-            + (1.0 - pick_competences) * previous_closed_gripper
+            pick_competences * previous_holding + (1.0 - pick_competences) * previous_closed_gripper
         )
         closed_gripper_values = (
-            open_competences * previous_ready
-            + (1.0 - open_competences) * previous_closed_gripper
+            open_competences * previous_ready + (1.0 - open_competences) * previous_closed_gripper
         )
     return ready_values
 
