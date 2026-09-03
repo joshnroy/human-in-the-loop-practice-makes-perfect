@@ -387,7 +387,7 @@ def test_rejects_nonpositive_sample_count(*, num_samples: int) -> None:
         )
 
 
-@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
 def test_rejects_nonfinite_stop_value(*, value: float) -> None:
     with pytest.raises(AssertionError, match="stop value must be finite"):
         solve_belief_space_expectimax(
@@ -397,6 +397,18 @@ def test_rejects_nonfinite_stop_value(*, value: float) -> None:
             horizon=0,
             model=Model(),
         )
+
+
+def test_negative_infinity_stop_value_prunes_state() -> None:
+    value, action = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=-float("inf")),
+        horizon=3,
+        model=Model(),
+    )
+    assert value == -float("inf")
+    assert action == STOP_ACTION
 
 
 @pytest.mark.parametrize("cost", [-1.0, float("nan"), float("inf")])

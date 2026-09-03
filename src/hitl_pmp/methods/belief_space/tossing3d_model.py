@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
-from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, TOSS_SKILL
+from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, PRACTICE_BUDGET, TOSS_SKILL
 from .tossing3d_deployment_model import evaluate_deployment_policy
 from .tossing3d_observation_model import (
     SkillBeliefModel,
@@ -107,8 +107,8 @@ class Tossing3DPracticeModel(BaseModel):
         )
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
-        """Return the PDF's ROI-minus-cost objective."""
-        return policy_value - summed_cost
+        """Return deployment value for feasible practice, otherwise negative infinity."""
+        return policy_value if summed_cost <= PRACTICE_BUDGET else -np.inf
 
     def observe_outcome(
         self,
