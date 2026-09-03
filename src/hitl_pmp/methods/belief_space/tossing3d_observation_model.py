@@ -2,6 +2,8 @@
 
 from enum import Enum
 
+import numpy as np
+
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
