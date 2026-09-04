@@ -1,7 +1,6 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
 from enum import Enum
-from typing import Literal
 
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
@@ -18,9 +17,6 @@ from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 from .tossing3d_constants import RESET_SKILL
-
-BeliefEstimator = Literal["finite_grid", "particle_filter"]
-
 
 class PracticeExampleSource(Enum):
     OUTCOME = "outcome"
@@ -118,24 +114,19 @@ def make_skill_belief_prior() -> WeightedHypothesisBelief:
 
 def make_default_tossing3d_belief(
     *,
-    estimator: BeliefEstimator = "particle_filter",
     num_particles: int = 256,
     seed: int = 0,
     include_human_reset: bool = False,
 ) -> Tossing3DBeliefState:
     """Independent cost priors; human-reset performance remains known."""
-    beliefs: dict[str, ConcreteSkillBelief]
-    if estimator == "finite_grid":
-        beliefs = {skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
-    else:
-        beliefs = {
-            skill.name: create_broad_particle_prior(
-                num_particles=num_particles,
-                seed=seed + index,
-            )
-            for index, skill in enumerate(SKILL_BELIEF_MODELS)
-        }
-    if include_human_reset and estimator == "particle_filter":
+    beliefs: dict[str, ConcreteSkillBelief] = {
+        skill.name: create_broad_particle_prior(
+            num_particles=num_particles,
+            seed=seed + index,
+        )
+        for index, skill in enumerate(SKILL_BELIEF_MODELS)
+    }
+    if include_human_reset:
         beliefs[RESET_SKILL] = create_fixed_performance_cost_prior(
             num_particles=num_particles,
             seed=seed + len(beliefs),

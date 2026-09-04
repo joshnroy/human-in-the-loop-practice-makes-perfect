@@ -24,7 +24,6 @@ from .tossing3d_constants import (
 )
 from .tossing3d_model import Tossing3DPracticeModel
 from .tossing3d_observation_model import (
-    BeliefEstimator,
     make_default_tossing3d_belief,
     mean_competence,
     mean_cost,
@@ -46,7 +45,6 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
-    pomdp_belief_estimator: BeliefEstimator = "particle_filter"
     pomdp_num_particles: int = Field(default=256, ge=1)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
@@ -143,7 +141,6 @@ class Tossing3DPomdpMethod(EesMethod):
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
         self._pomdp_state = make_default_tossing3d_belief(
-            estimator=self.pomdp_belief_estimator,
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
             include_human_reset=self.ask_for_reset_cube_bin_cost is not None,
@@ -189,6 +186,7 @@ class Tossing3DPomdpMethod(EesMethod):
             event="session_start",
             previous_session_cost=previous_session_cost,
             summed_cost=0.0,
+            estimated_costs=self.practice_skill_costs(),
         )
         return super().get_practice_policy(task=task)
 
@@ -200,12 +198,13 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
             was_random_exploration=was_random_exploration,
         )
+        configured_cost_observation = ground_skill.evaluate_practice_cost()
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
-            observed_cost=ground_skill.evaluate_practice_cost(),
+            observed_cost=configured_cost_observation,
         )
         self.record_diagnostic(
             event="outcome",
@@ -214,7 +213,8 @@ class Tossing3DPomdpMethod(EesMethod):
             random_exploration=was_random_exploration,
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
-            observed_cost=ground_skill.evaluate_practice_cost(),
+            configured_cost_observation=configured_cost_observation,
+            cost_observation_source="configured_practice_cost",
             estimated_costs=self.practice_skill_costs(),
         )
 
@@ -261,6 +261,7 @@ class Tossing3DPomdpMethod(EesMethod):
             event="refit",
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
+            estimated_costs=self.practice_skill_costs(),
         )
         self._cycle_index += 1
 
@@ -300,6 +301,7 @@ class Tossing3DPomdpMethod(EesMethod):
             event="decision",
             competences=self.practice_skill_competences(),
             learning_rates=self.practice_skill_learning_rates(),
+            estimated_costs=self.practice_skill_costs(),
             improvement_potentials=self.practice_skill_improvement_potentials(),
             search_duration_seconds=search_duration_seconds,
             num_samples=self.pomdp_num_samples,

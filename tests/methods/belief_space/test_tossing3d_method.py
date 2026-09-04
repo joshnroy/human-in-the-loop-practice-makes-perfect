@@ -18,6 +18,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_cost,
     mean_learning_rate,
 )
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -59,6 +60,9 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     pick = _grounding(method=method, name=PICK_SKILL)
     before = method.pomdp_state
     method.record_action_cost(ground_skill=pick)
+    dispatched = method.pomdp_state
+    assert dispatched.accumulated_cost == 0.001
+    assert dispatched.skill_beliefs == before.skill_beliefs
     method.observe_outcome(ground_skill=pick, success=True)
     after = method.pomdp_state
     assert after.accumulated_cost == 0.001
@@ -67,6 +71,11 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
         belief=before.skill_beliefs[PICK_SKILL]
     )
     assert after.pending_examples[PICK_SKILL] == 1
+    assert isinstance(after.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
+    assert isinstance(before.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
+    assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 0.001) < abs(
+        mean_cost(belief=before.skill_beliefs[PICK_SKILL]) - 0.001
+    )
 
 
 def test_theta_charts_are_read_only_and_label_fixed_assumptions() -> None:

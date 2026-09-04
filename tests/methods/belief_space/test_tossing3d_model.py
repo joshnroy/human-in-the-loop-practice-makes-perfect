@@ -280,9 +280,16 @@ def test_belief_priors_have_matching_support_and_moments() -> None:
     )
 
 
-@pytest.mark.parametrize("estimator", ["particle_filter", "finite_grid"])
-def test_belief_state_round_trips_both_representations(*, estimator: str) -> None:
-    state = make_default_tossing3d_belief(estimator=estimator, num_particles=32, seed=3)
+def test_belief_state_round_trips_particle_representation() -> None:
+    state = make_default_tossing3d_belief(num_particles=32, seed=3)
+
+    restored = Tossing3DBeliefState.model_validate_json(state.model_dump_json())
+
+    assert restored == state
+
+
+def test_belief_state_round_trips_legacy_weighted_representation() -> None:
+    state = Tossing3DBeliefState(skill_beliefs={PICK_SKILL: make_skill_belief_prior()})
 
     restored = Tossing3DBeliefState.model_validate_json(state.model_dump_json())
 

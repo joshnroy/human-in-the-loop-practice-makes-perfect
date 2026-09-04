@@ -191,7 +191,6 @@ def binary_outcomes(
                 state=transition_belief_state(state=state, added_cost=cost),
                 success=success,
                 was_random_exploration=False,
-                observed_cost=cost,
             ),
             next_true_atoms,
         ))
@@ -228,13 +227,7 @@ def toss_outcomes(
             if probability <= 0.0:
                 continue
             belief = state.skill_beliefs[TOSS_SKILL]
-            if isinstance(belief, ParticleFilterBelief):
-                belief = (
-                    belief.condition_cost(observed_cost=toss_cost)
-                    if is_random
-                    else belief.condition_execution(success=success, observed_cost=toss_cost)
-                )
-            elif not is_random:
+            if not is_random:
                 belief = condition_skill_belief(belief=belief, success=success)
             next_true_atoms = (
                 apply_success_effects(

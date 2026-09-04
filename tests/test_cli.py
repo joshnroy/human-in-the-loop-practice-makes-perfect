@@ -107,7 +107,6 @@ def test_methods_registry_contains_tossing3d_pomdp() -> None:
 def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     args = Cli.parse_args(argv=["--env", "tossing3d", "--method", "pomdp"])
     assert args.pomdp_search_depth == 3
-    assert args.pomdp_belief_estimator == "particle_filter"
     assert args.pomdp_num_particles == 256
     assert args.pomdp_num_samples == 100
 

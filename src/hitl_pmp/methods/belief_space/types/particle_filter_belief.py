@@ -116,6 +116,9 @@ class ParticleFilterBelief(SkillBelief):
         return (
             self.resampling_count,
             self.resampling_seed,
+            self.cost_min,
+            self.cost_max,
+            self.cost_observation_scale,
             self.particle_parameters,
             self.particle_weights,
         )
