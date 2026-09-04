@@ -47,18 +47,24 @@ class SkillBeliefModel:
         was_random_exploration: bool,
         observed_cost: float | None = None,
     ) -> Tossing3DBeliefState:
-        if self.skill is None or was_random_exploration:
+        if self.skill is None:
             return state
         skill_name = self.skill.name
         if skill_name not in state.skill_beliefs:
             return state
         skill_beliefs = dict(state.skill_beliefs)
         belief = skill_beliefs[skill_name]
-        skill_beliefs[skill_name] = (
-            belief.condition_execution(success=success, observed_cost=observed_cost)
-            if observed_cost is not None and isinstance(belief, ParticleFilterBelief)
-            else condition_skill_belief(belief=belief, success=success)
-        )
+        if observed_cost is not None and isinstance(belief, ParticleFilterBelief):
+            belief = (
+                belief.condition_cost(observed_cost=observed_cost)
+                if was_random_exploration
+                else belief.condition_execution(success=success, observed_cost=observed_cost)
+            )
+        elif not was_random_exploration:
+            belief = condition_skill_belief(belief=belief, success=success)
+        skill_beliefs[skill_name] = belief
+        if was_random_exploration:
+            return state.model_copy(update={"skill_beliefs": skill_beliefs})
         pending_examples = dict(state.pending_examples)
         if self.example_source == PracticeExampleSource.OUTCOME:
             pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1

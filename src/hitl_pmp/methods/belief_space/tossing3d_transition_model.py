@@ -19,9 +19,17 @@ from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
     Tossing3DBeliefState,
 )
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 
 TransitionBranch = tuple[float, Tossing3DBeliefState, frozenset[GroundAtom]]
+
+
+def estimated_action_cost(*, state: Tossing3DBeliefState, action: GroundSkill) -> float:
+    belief = state.skill_beliefs.get(action.skill.name)
+    if isinstance(belief, ParticleFilterBelief):
+        return belief.mean_cost()
+    return action.evaluate_practice_cost()
 
 
 @cache
@@ -95,13 +103,14 @@ def transition_outcomes(
 ) -> tuple[TransitionBranch, ...]:
     assert action in ground_skills
     assert action.preconditions <= environment_state.true_atoms
+    cost = estimated_action_cost(state=state, action=action)
     if action.skill.name == PICK_SKILL:
         return binary_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
             probability=mean_competence(belief=state.skill_beliefs[PICK_SKILL]),
-            cost=action.evaluate_practice_cost(),
+            cost=cost,
             effects=effects,
         )
     if action.skill.name == OPEN_GRIPPER_SKILL:
@@ -110,7 +119,7 @@ def transition_outcomes(
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
             probability=mean_competence(belief=state.skill_beliefs[OPEN_GRIPPER_SKILL]),
-            cost=action.evaluate_practice_cost(),
+            cost=cost,
             effects=effects,
         )
     if action.skill.name == RESET_SKILL:
@@ -118,7 +127,7 @@ def transition_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
-            cost=action.evaluate_practice_cost(),
+            cost=cost,
             effects=effects,
         )
     assert action.skill.name == TOSS_SKILL
@@ -126,7 +135,7 @@ def transition_outcomes(
         state=state,
         true_atoms=environment_state.true_atoms,
         ground_skill=action,
-        toss_cost=action.evaluate_practice_cost(),
+        toss_cost=cost,
         exploration_epsilon=exploration_epsilon,
         random_toss_competence=random_toss_competence,
         effects=effects,
@@ -182,6 +191,7 @@ def binary_outcomes(
                 state=transition_belief_state(state=state, added_cost=cost),
                 success=success,
                 was_random_exploration=False,
+                observed_cost=cost,
             ),
             next_true_atoms,
         ))
@@ -217,11 +227,15 @@ def toss_outcomes(
             probability = choice_probability * observation_probability
             if probability <= 0.0:
                 continue
-            belief = (
-                state.skill_beliefs[TOSS_SKILL]
-                if is_random
-                else condition_skill_belief(belief=state.skill_beliefs[TOSS_SKILL], success=success)
-            )
+            belief = state.skill_beliefs[TOSS_SKILL]
+            if isinstance(belief, ParticleFilterBelief):
+                belief = (
+                    belief.condition_cost(observed_cost=toss_cost)
+                    if is_random
+                    else belief.condition_execution(success=success, observed_cost=toss_cost)
+                )
+            elif not is_random:
+                belief = condition_skill_belief(belief=belief, success=success)
             next_true_atoms = (
                 apply_success_effects(
                     true_atoms=true_atoms, ground_skill=ground_skill, effects=effects

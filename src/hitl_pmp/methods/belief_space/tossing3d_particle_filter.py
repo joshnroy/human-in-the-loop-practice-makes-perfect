@@ -63,6 +63,18 @@ def condition_execution(*, belief: BeliefT, success: bool, observed_cost: float)
     return _condition(belief=belief, parameters=parameters, masses=masses)
 
 
+def condition_cost(*, belief: BeliefT, observed_cost: float) -> BeliefT:
+    assert observed_cost >= 0.0
+    parameters, weights = belief.arrays()
+    log_masses = np.log(weights) + _student_t_log_likelihoods(
+        observation=observed_cost,
+        hypotheses=parameters[:, 2],
+        scale=COST_OBSERVATION_SCALE,
+    )
+    masses = np.exp(log_masses - float(np.max(log_masses)))
+    return _condition(belief=belief, parameters=parameters, masses=masses)
+
+
 def condition_learning_rate(*, belief: BeliefT, observed_learning_rate: float) -> BeliefT:
     assert LEARNING_RATE_MIN <= observed_learning_rate <= LEARNING_RATE_MAX
     parameters, weights = belief.arrays()

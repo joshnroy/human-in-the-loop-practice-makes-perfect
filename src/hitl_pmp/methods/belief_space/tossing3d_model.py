@@ -93,7 +93,9 @@ class Tossing3DPracticeModel(BaseModel):
     def sample_skills(self, *, belief: SkillBelief, count: int) -> list[SkillHypothesis]:
         parameters = belief.sample(rng=self._rng, count=count)
         return [
-            SkillHypothesis.model_construct(competence=float(row[0]), learning_rate=float(row[1]))
+            SkillHypothesis.model_construct(
+                competence=float(row[0]), learning_rate=float(row[1]), cost=float(row[2])
+            )
             for row in parameters
         ]
 
