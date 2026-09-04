@@ -243,7 +243,7 @@ def test_particle_prior_is_continuous_seeded_and_normalized() -> None:
     assert first == second
     assert isinstance(first, ParticleFilterBelief)
     parameters, weights = first.arrays()
-    assert parameters.shape == (128, 2)
+    assert parameters.shape == (128, 3)
     assert weights.sum() == pytest.approx(1.0)
     assert np.all((parameters >= 0.0) & (parameters <= 1.0))
     assert np.max(parameters[:, 1]) > 0.9
@@ -269,9 +269,11 @@ def test_belief_priors_have_matching_support_and_moments() -> None:
 
     np.testing.assert_allclose(weighted_parameters.min(axis=0), [0.0, 0.0])
     np.testing.assert_allclose(weighted_parameters.max(axis=0), [1.0, 1.0])
-    np.testing.assert_allclose(weighted_parameters.mean(axis=0), particle_parameters.mean(axis=0))
     np.testing.assert_allclose(
-        weighted_parameters.var(axis=0), particle_parameters.var(axis=0), atol=0.01
+        weighted_parameters.mean(axis=0), particle_parameters[:, :2].mean(axis=0)
+    )
+    np.testing.assert_allclose(
+        weighted_parameters.var(axis=0), particle_parameters[:, :2].var(axis=0), atol=0.01
     )
 
 
@@ -302,6 +304,15 @@ def test_particle_filter_conditions_with_bernoulli_likelihood() -> None:
 
     assert mean_competence(belief=posterior) > mean_competence(belief=prior)
     assert float(posterior.diagnostics()["effective_sample_size"]) > 0.0
+
+
+def test_particle_filter_conditions_competence_and_cost_together() -> None:
+    prior = ParticleFilterBelief.broad_prior(num_particles=2_000, seed=19)
+
+    posterior = prior.condition_execution(success=True, observed_cost=0.001)
+
+    assert posterior.mean_competence() > prior.mean_competence()
+    assert abs(posterior.mean_cost() - 0.001) < abs(prior.mean_cost() - 0.001)
 
 
 def test_particle_filter_conditions_learning_rate_on_cycle_derivative() -> None:

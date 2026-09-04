@@ -39,13 +39,17 @@ class SkillBeliefModel:
         state: Tossing3DBeliefState,
         success: bool,
         was_random_exploration: bool,
+        observed_cost: float | None = None,
     ) -> Tossing3DBeliefState:
         if self.skill is None or was_random_exploration:
             return state
         skill_name = self.skill.name
         skill_beliefs = dict(state.skill_beliefs)
-        skill_beliefs[skill_name] = condition_skill_belief(
-            belief=skill_beliefs[skill_name], success=success
+        belief = skill_beliefs[skill_name]
+        skill_beliefs[skill_name] = (
+            belief.condition_execution(success=success, observed_cost=observed_cost)
+            if observed_cost is not None and isinstance(belief, ParticleFilterBelief)
+            else condition_skill_belief(belief=belief, success=success)
         )
         pending_examples = dict(state.pending_examples)
         if self.example_source == PracticeExampleSource.OUTCOME:
@@ -96,7 +100,13 @@ def make_skill_belief_prior() -> WeightedHypothesisBelief:
 
 
 def make_default_tossing3d_belief(
-    *, estimator: BeliefEstimator = "particle_filter", num_particles: int = 256, seed: int = 0
+    *,
+    estimator: BeliefEstimator = "particle_filter",
+    num_particles: int = 256,
+    seed: int = 0,
+    cost_min: float = 0.0,
+    cost_max: float = 0.01,
+    cost_observation_scale: float = 0.0001,
 ) -> Tossing3DBeliefState:
     """Independent broad priors for all robot skills; human reset is known."""
     beliefs: dict[str, ConcreteSkillBelief]
@@ -105,7 +115,11 @@ def make_default_tossing3d_belief(
     else:
         beliefs = {
             skill.name: ParticleFilterBelief.broad_prior(
-                num_particles=num_particles, seed=seed + index
+                num_particles=num_particles,
+                seed=seed + index,
+                cost_min=cost_min,
+                cost_max=cost_max,
+                cost_observation_scale=cost_observation_scale,
             )
             for index, skill in enumerate(SKILL_BELIEF_MODELS)
         }
@@ -118,6 +132,10 @@ def mean_competence(*, belief: SkillBelief) -> float:
 
 def mean_learning_rate(*, belief: SkillBelief) -> float:
     return belief.mean_learning_rate()
+
+
+def mean_cost(*, belief: ParticleFilterBelief) -> float:
+    return belief.mean_cost()
 
 
 def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:

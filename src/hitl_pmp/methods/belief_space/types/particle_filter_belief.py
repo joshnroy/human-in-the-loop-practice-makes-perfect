@@ -23,11 +23,14 @@ class ParticleFilterBelief(SkillBelief):
     particle_parameters: bytes
     particle_weights: bytes
     num_particles: int = Field(ge=1)
+    cost_min: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    cost_max: float = Field(default=0.01, gt=0.0, allow_inf_nan=False)
+    cost_observation_scale: float = Field(default=0.0001, gt=0.0, allow_inf_nan=False)
 
     @model_validator(mode="after")
     def validate_particles(self) -> "ParticleFilterBelief":
         parameters, weights = self.arrays()
-        if parameters.shape != (self.num_particles, 2) or weights.shape != (self.num_particles,):
+        if parameters.shape != (self.num_particles, 3) or weights.shape != (self.num_particles,):
             raise ValueError("particle buffers do not match num_particles")
         if not np.all(np.isfinite(parameters)):
             raise ValueError("particle parameters must be finite")
@@ -37,6 +40,10 @@ class ParticleFilterBelief(SkillBelief):
             (parameters[:, 1] >= LEARNING_RATE_MIN) & (parameters[:, 1] <= LEARNING_RATE_MAX)
         ):
             raise ValueError("particle learning rates are outside their bounds")
+        if self.cost_max <= self.cost_min:
+            raise ValueError("cost_max must be greater than cost_min")
+        if not np.all((parameters[:, 2] >= self.cost_min) & (parameters[:, 2] <= self.cost_max)):
+            raise ValueError("particle costs are outside their bounds")
         if (
             not np.all(np.isfinite(weights))
             or not np.all(weights > 0)
@@ -46,15 +53,25 @@ class ParticleFilterBelief(SkillBelief):
         return self
 
     @classmethod
-    def broad_prior(cls, *, num_particles: int, seed: int) -> "ParticleFilterBelief":
+    def broad_prior(
+        cls,
+        *,
+        num_particles: int,
+        seed: int,
+        cost_min: float = 0.0,
+        cost_max: float = 0.01,
+        cost_observation_scale: float = 0.0001,
+    ) -> "ParticleFilterBelief":
         assert num_particles >= 1
         rng = np.random.default_rng(seed)
         quantiles = (np.arange(num_particles) + 0.5) / num_particles
         competences = rng.permutation(quantiles)
         learning_rates = rng.permutation(quantiles)
+        costs = rng.permutation(quantiles)
         parameters = np.column_stack((
             COMPETENCE_MIN + competences * (COMPETENCE_MAX - COMPETENCE_MIN),
             LEARNING_RATE_MIN + learning_rates * (LEARNING_RATE_MAX - LEARNING_RATE_MIN),
+            cost_min + costs * (cost_max - cost_min),
         ))
         weights = np.full(num_particles, 1.0 / num_particles)
         return cls(
@@ -62,11 +79,14 @@ class ParticleFilterBelief(SkillBelief):
             particle_parameters=np.asarray(parameters, dtype=PARTICLE_DTYPE).tobytes(),
             particle_weights=np.asarray(weights, dtype=PARTICLE_DTYPE).tobytes(),
             num_particles=num_particles,
+            cost_min=cost_min,
+            cost_max=cost_max,
+            cost_observation_scale=cost_observation_scale,
         )
 
     def arrays(self) -> tuple[np.ndarray, np.ndarray]:
         return np.frombuffer(self.particle_parameters, dtype=PARTICLE_DTYPE).reshape(
-            -1, 2
+            -1, 3
         ), np.frombuffer(self.particle_weights, dtype=PARTICLE_DTYPE)
 
     def mean_competence(self) -> float:
@@ -77,6 +97,10 @@ class ParticleFilterBelief(SkillBelief):
         parameters, weights = self.arrays()
         return float(weights @ parameters[:, 1])
 
+    def mean_cost(self) -> float:
+        parameters, weights = self.arrays()
+        return float(weights @ parameters[:, 2])
+
     def sample(self, *, rng: np.random.Generator, count: int) -> np.ndarray:
         parameters, weights = self.arrays()
         return parameters[np.atleast_1d(rng.choice(self.num_particles, size=count, p=weights))]
@@ -85,6 +109,11 @@ class ParticleFilterBelief(SkillBelief):
         from hitl_pmp.methods.belief_space.tossing3d_particle_filter import condition_outcome
 
         return condition_outcome(belief=self, success=success)
+
+    def condition_execution(self, *, success: bool, observed_cost: float) -> "ParticleFilterBelief":
+        from hitl_pmp.methods.belief_space.tossing3d_particle_filter import condition_execution
+
+        return condition_execution(belief=self, success=success, observed_cost=observed_cost)
 
     def condition_learning_rate(self, *, observed_learning_rate: float) -> "ParticleFilterBelief":
         from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (

@@ -27,11 +27,13 @@ from .tossing3d_observation_model import (
     BeliefEstimator,
     make_default_tossing3d_belief,
     mean_competence,
+    mean_cost,
     mean_learning_rate,
     refit_belief_state,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
+from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
@@ -46,6 +48,9 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_belief_estimator: BeliefEstimator = "particle_filter"
     pomdp_num_particles: int = Field(default=256, ge=1)
+    pomdp_cost_min: float = Field(default=0.0, ge=0.0)
+    pomdp_cost_max: float = Field(default=0.01, gt=0.0)
+    pomdp_cost_observation_scale: float = Field(default=0.0001, gt=0.0)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
 
@@ -92,6 +97,13 @@ class Tossing3DPomdpMethod(EesMethod):
             estimates[RESET_SKILL + " (fixed)"] = 0.0
         return estimates
 
+    def practice_skill_costs(self) -> dict[str, float]:
+        return {
+            skill_name + " (belief mean)": mean_cost(belief=belief)
+            for skill_name, belief in self._pomdp_state.skill_beliefs.items()
+            if isinstance(belief, ParticleFilterBelief)
+        }
+
     def practice_skill_improvement_potentials(self) -> dict[str, float]:
         """Expected advantage of each applicable skill over stopping now."""
         stop_value = self._practice_values.get("STOP")
@@ -137,6 +149,9 @@ class Tossing3DPomdpMethod(EesMethod):
             estimator=self.pomdp_belief_estimator,
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
+            cost_min=self.pomdp_cost_min,
+            cost_max=self.pomdp_cost_max,
+            cost_observation_scale=self.pomdp_cost_observation_scale,
         )
         robot_skills = self.skills()
         human_skills = self.human_skills()
@@ -195,6 +210,7 @@ class Tossing3DPomdpMethod(EesMethod):
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
+            observed_cost=ground_skill.evaluate_practice_cost(),
         )
         self.record_diagnostic(
             event="outcome",
@@ -203,6 +219,8 @@ class Tossing3DPomdpMethod(EesMethod):
             random_exploration=was_random_exploration,
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
+            observed_cost=ground_skill.evaluate_practice_cost(),
+            estimated_costs=self.practice_skill_costs(),
         )
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:

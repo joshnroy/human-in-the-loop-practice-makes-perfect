@@ -21,15 +21,37 @@ def condition_outcome(*, belief: ParticleFilterBelief, success: bool) -> Particl
     return _condition(belief=belief, parameters=parameters, masses=masses)
 
 
+def condition_execution(
+    *, belief: ParticleFilterBelief, success: bool, observed_cost: float
+) -> ParticleFilterBelief:
+    """Condition competence and cost on the same completed execution."""
+    assert observed_cost >= 0.0
+    parameters, weights = belief.arrays()
+    outcome_likelihoods = parameters[:, 0] if success else 1.0 - parameters[:, 0]
+    cost_log_likelihoods = _student_t_log_likelihoods(
+        observation=observed_cost,
+        hypotheses=parameters[:, 2],
+        scale=belief.cost_observation_scale,
+    )
+    log_masses = (
+        np.log(weights)
+        + np.log(np.maximum(outcome_likelihoods, np.finfo(np.float64).tiny))
+        + cost_log_likelihoods
+    )
+    masses = np.exp(log_masses - float(np.max(log_masses)))
+    return _condition(belief=belief, parameters=parameters, masses=masses)
+
+
 def condition_learning_rate(
     *, belief: ParticleFilterBelief, observed_learning_rate: float
 ) -> ParticleFilterBelief:
     assert LEARNING_RATE_MIN <= observed_learning_rate <= LEARNING_RATE_MAX
-    dof, scale = _OBSERVATION_DOF, _OBSERVATION_SCALE
-    normalizer = lgamma((dof + 1.0) / 2.0) - lgamma(dof / 2.0) - 0.5 * log(dof * pi) - log(scale)
     parameters, weights = belief.arrays()
-    residuals = (observed_learning_rate - parameters[:, 1]) / scale
-    log_masses = np.log(weights) + normalizer - (dof + 1.0) / 2.0 * np.log1p(residuals**2 / dof)
+    log_masses = np.log(weights) + _student_t_log_likelihoods(
+        observation=observed_learning_rate,
+        hypotheses=parameters[:, 1],
+        scale=_OBSERVATION_SCALE,
+    )
     masses = np.exp(log_masses - float(np.max(log_masses)))
     return _condition(belief=belief, parameters=parameters, masses=masses)
 
@@ -67,5 +89,15 @@ def _resample(
     )
     rejuvenated[:, 0] = np.clip(rejuvenated[:, 0], COMPETENCE_MIN, COMPETENCE_MAX)
     rejuvenated[:, 1] = np.clip(rejuvenated[:, 1], LEARNING_RATE_MIN, LEARNING_RATE_MAX)
+    rejuvenated[:, 2] = np.clip(rejuvenated[:, 2], belief.cost_min, belief.cost_max)
     result = belief.from_arrays(parameters=rejuvenated, weights=np.full(count, 1.0 / count))
     return result.model_copy(update={"resampling_count": belief.resampling_count + 1})
+
+
+def _student_t_log_likelihoods(
+    *, observation: float, hypotheses: np.ndarray, scale: float
+) -> np.ndarray:
+    dof = _OBSERVATION_DOF
+    normalizer = lgamma((dof + 1.0) / 2.0) - lgamma(dof / 2.0) - 0.5 * log(dof * pi) - log(scale)
+    residuals = (observation - hypotheses) / scale
+    return normalizer - (dof + 1.0) / 2.0 * np.log1p(residuals**2 / dof)
