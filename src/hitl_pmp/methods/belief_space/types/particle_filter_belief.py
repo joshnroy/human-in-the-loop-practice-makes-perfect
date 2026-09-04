@@ -84,6 +84,42 @@ class ParticleFilterBelief(SkillBelief):
             cost_observation_scale=cost_observation_scale,
         )
 
+    @classmethod
+    def fixed_performance_cost_prior(
+        cls,
+        *,
+        num_particles: int,
+        seed: int,
+        competence: float,
+        learning_rate: float,
+        cost_min: float = 0.0,
+        cost_max: float = 0.01,
+        cost_observation_scale: float = 0.0001,
+    ) -> "ParticleFilterBelief":
+        """Keep known performance fixed while inferring an execution cost."""
+        assert COMPETENCE_MIN <= competence <= COMPETENCE_MAX
+        assert LEARNING_RATE_MIN <= learning_rate <= LEARNING_RATE_MAX
+        assert num_particles >= 1
+        rng = np.random.default_rng(seed)
+        quantiles = (np.arange(num_particles) + 0.5) / num_particles
+        costs = cost_min + rng.permutation(quantiles) * (cost_max - cost_min)
+        parameters = np.column_stack((
+            np.full(num_particles, competence),
+            np.full(num_particles, learning_rate),
+            costs,
+        ))
+        return cls(
+            resampling_seed=seed,
+            particle_parameters=np.asarray(parameters, dtype=PARTICLE_DTYPE).tobytes(),
+            particle_weights=np.full(
+                num_particles, 1.0 / num_particles, dtype=PARTICLE_DTYPE
+            ).tobytes(),
+            num_particles=num_particles,
+            cost_min=cost_min,
+            cost_max=cost_max,
+            cost_observation_scale=cost_observation_scale,
+        )
+
     def arrays(self) -> tuple[np.ndarray, np.ndarray]:
         return np.frombuffer(self.particle_parameters, dtype=PARTICLE_DTYPE).reshape(
             -1, 3

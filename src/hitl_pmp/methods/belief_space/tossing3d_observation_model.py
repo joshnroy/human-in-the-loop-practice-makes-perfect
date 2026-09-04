@@ -13,6 +13,8 @@ from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleF
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
+from .tossing3d_constants import RESET_SKILL
+
 BeliefEstimator = Literal["finite_grid", "particle_filter"]
 
 
@@ -44,6 +46,8 @@ class SkillBeliefModel:
         if self.skill is None or was_random_exploration:
             return state
         skill_name = self.skill.name
+        if skill_name not in state.skill_beliefs:
+            return state
         skill_beliefs = dict(state.skill_beliefs)
         belief = skill_beliefs[skill_name]
         skill_beliefs[skill_name] = (
@@ -88,7 +92,10 @@ def make_skill_belief_models(
 ) -> tuple[dict[GroundSkill, SkillBeliefModel], dict[str, SkillBeliefModel]]:
     """Associate every practice skill with explicit updates or the default no-op."""
     by_ground_skill = {
-        ground_skill: SKILL_BELIEF_MODELS.get(ground_skill.skill, SkillBeliefModel())
+        ground_skill: SKILL_BELIEF_MODELS.get(
+            ground_skill.skill,
+            SkillBeliefModel(skill=ground_skill.skill),
+        )
         for ground_skill in ground_skills
     }
     by_name = {ground_skill.skill.name: model for ground_skill, model in by_ground_skill.items()}
@@ -107,8 +114,9 @@ def make_default_tossing3d_belief(
     cost_min: float = 0.0,
     cost_max: float = 0.01,
     cost_observation_scale: float = 0.0001,
+    include_human_reset: bool = False,
 ) -> Tossing3DBeliefState:
-    """Independent broad priors for all robot skills; human reset is known."""
+    """Independent cost priors; human-reset performance remains known."""
     beliefs: dict[str, ConcreteSkillBelief]
     if estimator == "finite_grid":
         beliefs = {skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
@@ -123,6 +131,16 @@ def make_default_tossing3d_belief(
             )
             for index, skill in enumerate(SKILL_BELIEF_MODELS)
         }
+    if include_human_reset and estimator == "particle_filter":
+        beliefs[RESET_SKILL] = ParticleFilterBelief.fixed_performance_cost_prior(
+            num_particles=num_particles,
+            seed=seed + len(beliefs),
+            competence=1.0,
+            learning_rate=0.0,
+            cost_min=cost_min,
+            cost_max=cost_max,
+            cost_observation_scale=cost_observation_scale,
+        )
     return Tossing3DBeliefState(skill_beliefs=beliefs)
 
 

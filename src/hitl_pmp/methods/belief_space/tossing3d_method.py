@@ -152,6 +152,7 @@ class Tossing3DPomdpMethod(EesMethod):
             cost_min=self.pomdp_cost_min,
             cost_max=self.pomdp_cost_max,
             cost_observation_scale=self.pomdp_cost_observation_scale,
+            include_human_reset=self.ask_for_reset_cube_bin_cost is not None,
         )
         robot_skills = self.skills()
         human_skills = self.human_skills()
