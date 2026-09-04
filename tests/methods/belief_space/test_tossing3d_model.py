@@ -239,7 +239,15 @@ def test_particle_prior_is_continuous_seeded_and_normalized() -> None:
     parameters, weights = belief_arrays(belief=first)
     assert parameters.shape == (128, 2)
     assert weights.sum() == pytest.approx(1.0)
-    assert np.any(~np.isin(parameters[:, 1], (0.0, 0.1)))
+    assert np.all((parameters >= 0.0) & (parameters <= 1.0))
+    assert np.max(parameters[:, 1]) > 0.9
+    assert np.any(~np.isin(parameters[:, 1], (0.0, 1.0)))
+
+
+def test_finite_grid_prior_uses_full_learning_rate_range() -> None:
+    prior = make_default_tossing3d_belief().skill_beliefs[TOSS_SKILL]
+
+    assert {item.hypothesis.learning_rate for item in prior.hypotheses} == {0.0, 1.0}
 
 
 def test_particle_belief_round_trips_through_json_without_expanding_particles() -> None:
@@ -265,9 +273,14 @@ def test_particle_filter_conditions_with_bernoulli_likelihood() -> None:
 
 def test_particle_filter_conditions_learning_rate_on_cycle_derivative() -> None:
     prior = make_particle_belief_prior(num_particles=1_000, seed=10)
-    posterior = condition_learning_rate_observation(belief=prior, observed_learning_rate=0.09)
+    observed_rate = 0.09
+    posterior = condition_learning_rate_observation(
+        belief=prior, observed_learning_rate=observed_rate
+    )
 
-    assert mean_learning_rate(belief=posterior) > mean_learning_rate(belief=prior)
+    assert abs(mean_learning_rate(belief=posterior) - observed_rate) < abs(
+        mean_learning_rate(belief=prior) - observed_rate
+    )
 
 
 @pytest.mark.parametrize(
@@ -307,9 +320,10 @@ def test_cycle_refit_uses_competence_finite_difference_to_update_learning_rate()
         },
     )
 
-    assert mean_learning_rate(belief=posterior.skill_beliefs[TOSS_SKILL]) > mean_learning_rate(
-        belief=prior
-    )
+    observed_rate = 0.09
+    assert abs(
+        mean_learning_rate(belief=posterior.skill_beliefs[TOSS_SKILL]) - observed_rate
+    ) < abs(mean_learning_rate(belief=prior) - observed_rate)
     assert posterior.pending_examples == {}
 
 

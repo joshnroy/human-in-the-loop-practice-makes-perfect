@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 BeliefEstimator = Literal["finite_grid", "particle_filter"]
 PARTICLE_STORAGE_VERSION: Final[Literal[1]] = 1
 PARTICLE_DTYPE: Final = np.dtype("<f8")
+SKILL_PARAMETER_MIN: Final = 0.0
+SKILL_PARAMETER_MAX: Final = 1.0
 
 
 class SkillBelief(BaseModel):
@@ -41,7 +43,9 @@ class SkillBelief(BaseModel):
         if parameters.size != 2 * self.num_particles or weights.size != self.num_particles:
             raise ValueError("particle buffers do not match num_particles")
         parameters = parameters.reshape(-1, 2)
-        if not np.all(np.isfinite(parameters)) or not np.all((parameters >= 0) & (parameters <= 1)):
+        if not np.all(np.isfinite(parameters)) or not np.all(
+            (parameters >= SKILL_PARAMETER_MIN) & (parameters <= SKILL_PARAMETER_MAX)
+        ):
             raise ValueError("particle parameters must be finite probabilities")
         if not np.all(np.isfinite(weights)) or not np.all(weights > 0):
             raise ValueError("particle weights must be finite and positive")
@@ -55,8 +59,8 @@ class SkillHypothesis(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    competence: float = Field(ge=0.0, le=1.0)
-    learning_rate: float = Field(ge=0.0, le=1.0)
+    competence: float = Field(ge=SKILL_PARAMETER_MIN, le=SKILL_PARAMETER_MAX)
+    learning_rate: float = Field(ge=SKILL_PARAMETER_MIN, le=SKILL_PARAMETER_MAX)
 
 
 class WeightedHypothesis(BaseModel):

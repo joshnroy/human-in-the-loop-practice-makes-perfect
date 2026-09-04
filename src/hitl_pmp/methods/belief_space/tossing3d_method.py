@@ -102,6 +102,7 @@ class Tossing3DPomdpMethod(EesMethod):
             name: value - stop_value
             for name, value in self._practice_values.items()
             if name != "STOP"
+        }
 
     def particle_filter_diagnostics(self) -> dict[str, dict[str, object]]:
         return {

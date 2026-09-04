@@ -1,11 +1,21 @@
-"""Vectorized Liu-West particle inference for Tossing3D skill parameters."""
+"""Vectorized Liu-West particle inference for Tossing3D skill parameters.
+
+The shrinkage-and-jitter step follows Liu and West's original kernel method:
+https://doi.org/10.1007/978-1-4757-3437-9_10
+"""
 
 from math import lgamma, log, pi
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 
-from .types.skill_belief import PARTICLE_DTYPE, PARTICLE_STORAGE_VERSION, SkillBelief
+from .types.skill_belief import (
+    PARTICLE_DTYPE,
+    PARTICLE_STORAGE_VERSION,
+    SKILL_PARAMETER_MAX,
+    SKILL_PARAMETER_MIN,
+    SkillBelief,
+)
 
 _LEARNING_RATE_OBSERVATION_SCALE = 0.02
 _LEARNING_RATE_OBSERVATION_DEGREES_OF_FREEDOM = 4.0
@@ -26,9 +36,9 @@ def make_particle_belief_prior(*, num_particles: int, seed: int) -> SkillBelief:
     """Sample a continuous uniform prior over competence and learning rate."""
     assert num_particles >= 1
     rng = np.random.default_rng(seed)
-    parameters = rng.uniform((0.0, 0.0), (1.0, 0.1), size=(num_particles, 2)).astype(
-        PARTICLE_DTYPE, copy=False
-    )
+    parameters = rng.uniform(
+        SKILL_PARAMETER_MIN, SKILL_PARAMETER_MAX, size=(num_particles, 2)
+    ).astype(PARTICLE_DTYPE, copy=False)
     weights = np.full(num_particles, 1.0 / num_particles, dtype=PARTICLE_DTYPE)
     return SkillBelief(
         estimator="particle_filter",
@@ -69,7 +79,7 @@ def condition_learning_rate_observation(
 ) -> SkillBelief:
     """Condition ``eta`` on a noisy cycle-level finite-difference observation."""
     assert belief.estimator == "particle_filter"
-    assert observed_learning_rate >= 0.0
+    assert SKILL_PARAMETER_MIN <= observed_learning_rate <= SKILL_PARAMETER_MAX
     degrees_of_freedom = _LEARNING_RATE_OBSERVATION_DEGREES_OF_FREEDOM
     scale = _LEARNING_RATE_OBSERVATION_SCALE
     log_normalizer = (
@@ -144,8 +154,7 @@ def resample(*, belief: SkillBelief, parameters: np.ndarray, weights: np.ndarray
     covariance_root = eigenvectors @ np.diag(np.sqrt(np.maximum(eigenvalues, 0.0)))
     noise = rng.normal(size=selected.shape) @ covariance_root.T
     rejuvenated = shrinkage * selected + (1.0 - shrinkage) * mean + bandwidth * noise
-    rejuvenated[:, 0] = np.clip(rejuvenated[:, 0], 0.0, 1.0)
-    rejuvenated[:, 1] = np.clip(rejuvenated[:, 1], 0.0, 1.0)
+    rejuvenated = np.clip(rejuvenated, SKILL_PARAMETER_MIN, SKILL_PARAMETER_MAX)
     resampled = belief_from_arrays(
         belief=belief,
         parameters=rejuvenated,

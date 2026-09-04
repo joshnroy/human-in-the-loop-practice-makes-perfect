@@ -8,6 +8,8 @@ from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
+    SKILL_PARAMETER_MAX,
+    SKILL_PARAMETER_MIN,
     BeliefEstimator,
     SkillBelief,
     SkillHypothesis,
@@ -106,7 +108,7 @@ def make_skill_belief_prior() -> SkillBelief:
                 probability=0.1,
             )
             for competence in (0.0, 0.25, 0.5, 0.75, 1.0)
-            for learning_rate in (0.0, 0.1)
+            for learning_rate in (SKILL_PARAMETER_MIN, SKILL_PARAMETER_MAX)
         )
     )
 
