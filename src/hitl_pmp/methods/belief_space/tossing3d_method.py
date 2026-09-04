@@ -24,6 +24,7 @@ from .tossing3d_constants import (
 )
 from .tossing3d_model import Tossing3DPracticeModel
 from .tossing3d_observation_model import (
+    BeliefEstimator,
     make_default_tossing3d_belief,
     mean_competence,
     mean_learning_rate,
@@ -43,6 +44,8 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
+    pomdp_belief_estimator: BeliefEstimator = "particle_filter"
+    pomdp_num_particles: int = Field(default=256, ge=1)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
 
@@ -51,6 +54,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _decision_index: int = PrivateAttr(default=0)
     _cycle_index: int = PrivateAttr(default=0)
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
+    _cycle_start_competences: dict[str, float] = PrivateAttr(default_factory=dict)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -99,6 +103,12 @@ class Tossing3DPomdpMethod(EesMethod):
             if name != "STOP"
         }
 
+    def belief_diagnostics(self) -> dict[str, dict[str, object]]:
+        return {
+            skill_name: belief.diagnostics()
+            for skill_name, belief in self._pomdp_state.skill_beliefs.items()
+        }
+
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
         if self.decision_log is None:
             return
@@ -123,7 +133,11 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
-        self._pomdp_state = make_default_tossing3d_belief()
+        self._pomdp_state = make_default_tossing3d_belief(
+            estimator=self.pomdp_belief_estimator,
+            num_particles=self.pomdp_num_particles,
+            seed=self.seed,
+        )
         robot_skills = self.skills()
         human_skills = self.human_skills()
         practice_skills = (*robot_skills, *human_skills)
@@ -156,6 +170,10 @@ class Tossing3DPomdpMethod(EesMethod):
         # G scores the current session, so its accumulated cost starts at zero.
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
+        self._cycle_start_competences = {
+            skill_name: mean_competence(belief=belief)
+            for skill_name, belief in self._pomdp_state.skill_beliefs.items()
+        }
         self._practice_values.clear()
         self.record_diagnostic(
             event="session_start",
@@ -184,6 +202,7 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
             random_exploration=was_random_exploration,
             belief=self._pomdp_state.model_dump(mode="json"),
+            beliefs=self.belief_diagnostics(),
         )
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
@@ -221,8 +240,15 @@ class Tossing3DPomdpMethod(EesMethod):
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
-        self._pomdp_state = refit_belief_state(state=self._pomdp_state)
-        self.record_diagnostic(event="refit", belief=self._pomdp_state.model_dump(mode="json"))
+        self._pomdp_state = refit_belief_state(
+            state=self._pomdp_state,
+            cycle_start_competences=self._cycle_start_competences,
+        )
+        self.record_diagnostic(
+            event="refit",
+            belief=self._pomdp_state.model_dump(mode="json"),
+            beliefs=self.belief_diagnostics(),
+        )
         self._cycle_index += 1
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:

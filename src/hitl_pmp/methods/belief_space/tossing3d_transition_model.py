@@ -15,9 +15,11 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     mean_competence,
 )
-from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+from hitl_pmp.methods.belief_space.types.belief_state import (
+    ConcreteSkillBelief,
+    Tossing3DBeliefState,
+)
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
-from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 
 TransitionBranch = tuple[float, Tossing3DBeliefState, frozenset[GroundAtom]]
 
@@ -42,7 +44,7 @@ def transition_belief_state(
     *,
     state: Tossing3DBeliefState,
     added_cost: float,
-    toss_belief: SkillBelief | None = None,
+    toss_belief: ConcreteSkillBelief | None = None,
     added_training_examples: int = 0,
 ) -> Tossing3DBeliefState:
     skill_beliefs = dict(state.skill_beliefs)

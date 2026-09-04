@@ -79,9 +79,9 @@ def test_theta_charts_are_read_only_and_label_fixed_assumptions() -> None:
     assert values["ask_for_reset_cube_bin_only (fixed)"] == 1.0
     assert "STOP" not in values
     rates = method.practice_skill_learning_rates()
-    assert rates["PickCube (belief mean)"] == pytest.approx(0.05)
-    assert rates["OpenGripper (belief mean)"] == pytest.approx(0.05)
-    assert rates["MoveToTossLocationAndToss (belief mean)"] == pytest.approx(0.05)
+    assert rates["PickCube (belief mean)"] == pytest.approx(0.5)
+    assert rates["OpenGripper (belief mean)"] == pytest.approx(0.5)
+    assert rates["MoveToTossLocationAndToss (belief mean)"] == pytest.approx(0.5)
     assert rates["ask_for_reset_cube_bin_only (fixed)"] == 0.0
     assert method.pomdp_state == before
 

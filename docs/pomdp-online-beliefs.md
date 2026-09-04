@@ -1,10 +1,12 @@
 # Online skill beliefs
 
 Every robot skill has an independent posterior over competence p and learning
-rate eta. The shared discrete prior is uniform over p in {0, .25, .5, .75, 1}
-and eta in {0, .1}. Endpoints let data support always-successful or
-always-failing stationary skills; they are not fixed assumptions about any
-particular robot skill. Only human reset retains a known success probability.
+rate eta. Both parameters use the same [0, 1] range. The shared discrete prior
+is uniform over p in {0, .25, .5, .75, 1} and eta in {0, 1}; the particle prior
+is continuous uniform on [0, 1] x [0, 1]. Endpoints let data support
+always-successful or always-failing stationary skills; they are not fixed
+assumptions about any particular robot skill. Only human reset retains a known
+success probability.
 
 A policy success reweights each hypothesis by p; a failure by 1-p.
 The practice model forecasts the next session's competence as

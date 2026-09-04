@@ -1,15 +1,19 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
 from enum import Enum
+from typing import Literal
 
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
-from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
-from hitl_pmp.methods.belief_space.types.skill_belief import (
-    SkillBelief,
-    SkillHypothesis,
-    WeightedHypothesis,
+from hitl_pmp.methods.belief_space.types.belief_state import (
+    ConcreteSkillBelief,
+    Tossing3DBeliefState,
 )
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
+from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
+from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
+
+BeliefEstimator = Literal["finite_grid", "particle_filter"]
 
 
 class PracticeExampleSource(Enum):
@@ -87,78 +91,92 @@ def make_skill_belief_models(
     return by_ground_skill, by_name
 
 
-def make_skill_belief_prior() -> SkillBelief:
-    return SkillBelief(
-        hypotheses=tuple(
-            WeightedHypothesis(
-                hypothesis=SkillHypothesis(competence=competence, learning_rate=learning_rate),
-                probability=0.1,
-            )
-            for competence in (0.0, 0.25, 0.5, 0.75, 1.0)
-            for learning_rate in (0.0, 0.1)
-        )
-    )
+def make_skill_belief_prior() -> WeightedHypothesisBelief:
+    return WeightedHypothesisBelief.broad_prior()
 
 
-def make_default_tossing3d_belief() -> Tossing3DBeliefState:
+def make_default_tossing3d_belief(
+    *, estimator: BeliefEstimator = "particle_filter", num_particles: int = 256, seed: int = 0
+) -> Tossing3DBeliefState:
     """Independent broad priors for all robot skills; human reset is known."""
-    return Tossing3DBeliefState(
-        skill_beliefs={skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
-    )
+    beliefs: dict[str, ConcreteSkillBelief]
+    if estimator == "finite_grid":
+        beliefs = {skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
+    else:
+        beliefs = {
+            skill.name: ParticleFilterBelief.broad_prior(
+                num_particles=num_particles, seed=seed + index
+            )
+            for index, skill in enumerate(SKILL_BELIEF_MODELS)
+        }
+    return Tossing3DBeliefState(skill_beliefs=beliefs)
 
 
 def mean_competence(*, belief: SkillBelief) -> float:
-    return sum(item.probability * item.hypothesis.competence for item in belief.hypotheses)
+    return belief.mean_competence()
 
 
 def mean_learning_rate(*, belief: SkillBelief) -> float:
-    return sum(item.probability * item.hypothesis.learning_rate for item in belief.hypotheses)
+    return belief.mean_learning_rate()
 
 
-def condition_skill_belief(*, belief: SkillBelief, success: bool) -> SkillBelief:
+def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:
     """Condition on a greedy-policy outcome without pretending a refit occurred."""
-    weighted: list[tuple[SkillHypothesis, float]] = []
-    for item in belief.hypotheses:
-        likelihood = item.hypothesis.competence if success else 1.0 - item.hypothesis.competence
-        mass = item.probability * likelihood
-        if mass > 0.0:
-            weighted.append((item.hypothesis, mass))
-    normalizer = sum(mass for _hypothesis, mass in weighted)
-    if normalizer <= 0.0:
-        raise ValueError(f"observation success={success} has zero probability")
-    return SkillBelief(
-        hypotheses=tuple(
-            WeightedHypothesis(hypothesis=hypothesis, probability=mass / normalizer)
-            for hypothesis, mass in weighted
-        )
-    )
+    return belief.condition_outcome(success=success)
 
 
-def refit_skill_belief(*, belief: SkillBelief, training_examples: int) -> SkillBelief:
+def refit_skill_belief(
+    *, belief: ConcreteSkillBelief, training_examples: int
+) -> ConcreteSkillBelief:
+    """Advance competence along a locally linear learning curve.
+
+    ``learning_rate`` is the first derivative of competence with respect to the
+    number of training examples.  Competence is a probability, so the linear
+    extrapolation is capped at one.
+    """
+    return belief.refit(training_examples=training_examples)
+
+
+def observed_learning_rate(
+    *, competence_before: float, competence_after: float, training_examples: int
+) -> float | None:
+    """Return the nonnegative competence increase per example for one cycle."""
     assert training_examples >= 0
-    return SkillBelief(
-        hypotheses=tuple(
-            WeightedHypothesis(
-                hypothesis=SkillHypothesis(
-                    competence=1.0
-                    - (1.0 - item.hypothesis.competence)
-                    * (1.0 - item.hypothesis.learning_rate) ** training_examples,
-                    learning_rate=item.hypothesis.learning_rate,
-                ),
-                probability=item.probability,
-            )
-            for item in belief.hypotheses
+    if training_examples == 0:
+        return None
+    return max(0.0, (competence_after - competence_before) / training_examples)
+
+
+def refit_observed_skill_belief(
+    *,
+    belief: ConcreteSkillBelief,
+    training_examples: int,
+    cycle_start_competence: float | None,
+) -> ConcreteSkillBelief:
+    if cycle_start_competence is not None:
+        rate = observed_learning_rate(
+            competence_before=cycle_start_competence,
+            competence_after=mean_competence(belief=belief),
+            training_examples=training_examples,
         )
-    )
+        if rate is not None:
+            belief = belief.condition_learning_rate(observed_learning_rate=rate)
+    return refit_skill_belief(belief=belief, training_examples=training_examples)
 
 
-def refit_belief_state(*, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+def refit_belief_state(
+    *,
+    state: Tossing3DBeliefState,
+    cycle_start_competences: dict[str, float] | None = None,
+) -> Tossing3DBeliefState:
+    start_competences = cycle_start_competences or {}
     return state.model_copy(
         update={
             "skill_beliefs": {
-                skill_name: refit_skill_belief(
+                skill_name: refit_observed_skill_belief(
                     belief=belief,
                     training_examples=state.pending_examples.get(skill_name, 0),
+                    cycle_start_competence=start_competences.get(skill_name),
                 )
                 for skill_name, belief in state.skill_beliefs.items()
             },
