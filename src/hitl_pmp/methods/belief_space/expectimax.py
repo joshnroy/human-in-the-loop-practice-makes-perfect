@@ -129,15 +129,18 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             belief_state=belief_state, num_samples=self.num_samples
         )
         assert len(policy_values) == self.num_samples
-        sample_values = []
-        for current_policy_value in policy_values:
-            current_pomdp_value = self.model.G(
-                policy_value=current_policy_value, summed_cost=summed_cost
-            )
+        sample_values = np.fromiter(
+            (
+                self.model.G(policy_value=float(policy_value), summed_cost=summed_cost)
+                for policy_value in policy_values
+            ),
+            dtype=np.float64,
+            count=self.num_samples,
+        )
+        for current_pomdp_value in sample_values:
             assert not math.isnan(current_pomdp_value) and current_pomdp_value != math.inf, (
                 f"stop value must be finite or negative infinity, got {current_pomdp_value}"
             )
-            sample_values.append(current_pomdp_value)
         if self.trace is not None and node == 0:
             self.trace.record(
                 event="sample_summary",

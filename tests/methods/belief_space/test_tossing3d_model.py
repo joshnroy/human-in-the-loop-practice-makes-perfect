@@ -262,17 +262,6 @@ def test_search_state_reuses_rendered_atoms() -> None:
     assert render_atoms.cache_info().hits == cache_after_first.hits + 1
 
 
-def test_batched_policy_evaluation_matches_scalar_evaluation() -> None:
-    model = Tossing3DPracticeModel(seed=123)
-    samples = model.sample_thetas_from_belief(
-        belief_state=make_default_tossing3d_belief(), num_samples=100
-    )
-
-    assert model.evaluate_policies(sampled_thetas=samples) == pytest.approx([
-        model.evaluate_policy(sampled_theta=sample) for sample in samples
-    ])
-
-
 def test_batched_sampling_and_evaluation_matches_individual_theta_path() -> None:
     belief = make_default_tossing3d_belief()
     individual_model = Tossing3DPracticeModel(seed=123)
@@ -281,7 +270,9 @@ def test_batched_sampling_and_evaluation_matches_individual_theta_path() -> None
 
     assert batched_model.sample_policy_values_from_belief(
         belief_state=belief, num_samples=100
-    ) == pytest.approx(individual_model.evaluate_policies(sampled_thetas=samples))
+    ) == pytest.approx([
+        individual_model.evaluate_policy(sampled_theta=sample) for sample in samples
+    ])
 
 
 @pytest.mark.parametrize("action_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])

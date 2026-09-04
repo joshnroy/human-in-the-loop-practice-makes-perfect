@@ -108,23 +108,9 @@ class Tossing3DPracticeModel(BaseModel):
             horizon=self.deployment_horizon,
         )
 
-    def evaluate_policies(self, *, sampled_thetas: list[Tossing3DTheta]) -> list[float]:
-        return evaluate_deployment_policies(
-            toss_competences=np.fromiter(
-                (theta.toss.competence for theta in sampled_thetas), dtype=np.float64
-            ),
-            pick_competences=np.fromiter(
-                (theta.pick.competence for theta in sampled_thetas), dtype=np.float64
-            ),
-            open_competences=np.fromiter(
-                (theta.open_gripper.competence for theta in sampled_thetas), dtype=np.float64
-            ),
-            horizon=self.deployment_horizon,
-        ).tolist()
-
     def sample_policy_values_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
-    ) -> list[float]:
+    ) -> np.ndarray:
         projected = refit_belief_state(state=belief_state)
         competences = []
         for skill_name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL):
@@ -149,7 +135,7 @@ class Tossing3DPracticeModel(BaseModel):
             pick_competences=competences[0],
             open_competences=competences[2],
             horizon=self.deployment_horizon,
-        ).tolist()
+        )
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         """Return deployment value for feasible practice, otherwise negative infinity."""
