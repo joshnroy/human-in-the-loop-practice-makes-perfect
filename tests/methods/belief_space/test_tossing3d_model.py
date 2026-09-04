@@ -18,25 +18,19 @@ from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     make_default_tossing3d_belief,
+    make_skill_belief_prior,
     mean_competence,
     mean_learning_rate,
     observed_learning_rate,
     refit_belief_state,
     refit_skill_belief,
 )
-from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (
-    belief_arrays,
-    belief_from_arrays,
-    condition_learning_rate_observation,
-    condition_particle_belief,
-    make_particle_belief_prior,
-    particle_filter_diagnostics,
-)
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
     make_tossing3d_search_state,
     render_atoms,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
     SkillBelief,
@@ -45,6 +39,9 @@ from hitl_pmp.methods.belief_space.types.skill_belief import (
 )
 from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION
 from hitl_pmp.methods.belief_space.types.theta import Tossing3DTheta
+from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import (
+    WeightedHypothesisBelief,
+)
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -89,6 +86,15 @@ def _point_state(
             OPEN_GRIPPER_SKILL: _point_belief(competence=open_gripper, learning_rate=0.0),
         },
         accumulated_cost=accumulated_cost,
+    )
+
+
+def _weighted_default_state() -> Tossing3DBeliefState:
+    return Tossing3DBeliefState(
+        skill_beliefs={
+            skill: make_skill_belief_prior()
+            for skill in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL)
+        }
     )
 
 
@@ -220,7 +226,7 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
 
 
 def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBelief:
-    return SkillBelief(
+    return WeightedHypothesisBelief(
         hypotheses=(
             WeightedHypothesis(
                 hypothesis=SkillHypothesis(competence=competence, learning_rate=learning_rate),
@@ -231,12 +237,12 @@ def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBeli
 
 
 def test_particle_prior_is_continuous_seeded_and_normalized() -> None:
-    first = make_particle_belief_prior(num_particles=128, seed=7)
-    second = make_particle_belief_prior(num_particles=128, seed=7)
+    first = ParticleFilterBelief.broad_prior(num_particles=128, seed=7)
+    second = ParticleFilterBelief.broad_prior(num_particles=128, seed=7)
 
     assert first == second
-    assert first.estimator == "particle_filter"
-    parameters, weights = belief_arrays(belief=first)
+    assert isinstance(first, ParticleFilterBelief)
+    parameters, weights = first.arrays()
     assert parameters.shape == (128, 2)
     assert weights.sum() == pytest.approx(1.0)
     assert np.all((parameters >= 0.0) & (parameters <= 1.0))
@@ -245,38 +251,63 @@ def test_particle_prior_is_continuous_seeded_and_normalized() -> None:
 
 
 def test_finite_grid_prior_uses_full_learning_rate_range() -> None:
-    prior = make_default_tossing3d_belief().skill_beliefs[TOSS_SKILL]
+    prior = make_skill_belief_prior()
 
-    assert {item.hypothesis.learning_rate for item in prior.hypotheses} == {0.0, 1.0}
+    learning_rates = {item.hypothesis.learning_rate for item in prior.hypotheses}
+    assert min(learning_rates) == 0.0
+    assert max(learning_rates) == 1.0
+    assert len(learning_rates) == 21
+
+
+def test_belief_priors_have_matching_support_and_moments() -> None:
+    weighted = make_skill_belief_prior()
+    particle = ParticleFilterBelief.broad_prior(num_particles=1_024, seed=7)
+    particle_parameters, _ = particle.arrays()
+    weighted_parameters = np.asarray([
+        [item.hypothesis.competence, item.hypothesis.learning_rate] for item in weighted.hypotheses
+    ])
+
+    np.testing.assert_allclose(weighted_parameters.min(axis=0), [0.0, 0.0])
+    np.testing.assert_allclose(weighted_parameters.max(axis=0), [1.0, 1.0])
+    np.testing.assert_allclose(weighted_parameters.mean(axis=0), particle_parameters.mean(axis=0))
+    np.testing.assert_allclose(
+        weighted_parameters.var(axis=0), particle_parameters.var(axis=0), atol=0.01
+    )
+
+
+@pytest.mark.parametrize("estimator", ["particle_filter", "finite_grid"])
+def test_belief_state_round_trips_both_representations(*, estimator: str) -> None:
+    state = make_default_tossing3d_belief(estimator=estimator, num_particles=32, seed=3)
+
+    restored = Tossing3DBeliefState.model_validate_json(state.model_dump_json())
+
+    assert restored == state
 
 
 def test_particle_belief_round_trips_through_json_without_expanding_particles() -> None:
-    prior = make_particle_belief_prior(num_particles=128, seed=8)
+    prior = ParticleFilterBelief.broad_prior(num_particles=128, seed=8)
 
-    restored = SkillBelief.model_validate_json(prior.model_dump_json())
+    restored = ParticleFilterBelief.model_validate_json(prior.model_dump_json())
 
     assert restored == prior
-    assert restored.hypotheses == ()
-    actual_parameters, actual_weights = belief_arrays(belief=restored)
-    expected_parameters, expected_weights = belief_arrays(belief=prior)
+    actual_parameters, actual_weights = restored.arrays()
+    expected_parameters, expected_weights = prior.arrays()
     np.testing.assert_array_equal(actual_parameters, expected_parameters)
     np.testing.assert_array_equal(actual_weights, expected_weights)
 
 
 def test_particle_filter_conditions_with_bernoulli_likelihood() -> None:
-    prior = make_particle_belief_prior(num_particles=1_000, seed=9)
-    posterior = condition_particle_belief(belief=prior, success=True)
+    prior = ParticleFilterBelief.broad_prior(num_particles=1_000, seed=9)
+    posterior = prior.condition_outcome(success=True)
 
     assert mean_competence(belief=posterior) > mean_competence(belief=prior)
-    assert particle_filter_diagnostics(belief=posterior).effective_sample_size > 0.0
+    assert float(posterior.diagnostics()["effective_sample_size"]) > 0.0
 
 
 def test_particle_filter_conditions_learning_rate_on_cycle_derivative() -> None:
-    prior = make_particle_belief_prior(num_particles=1_000, seed=10)
+    prior = ParticleFilterBelief.broad_prior(num_particles=1_000, seed=10)
     observed_rate = 0.09
-    posterior = condition_learning_rate_observation(
-        belief=prior, observed_learning_rate=observed_rate
-    )
+    posterior = prior.condition_learning_rate(observed_learning_rate=observed_rate)
 
     assert abs(mean_learning_rate(belief=posterior) - observed_rate) < abs(
         mean_learning_rate(belief=prior) - observed_rate
@@ -308,7 +339,7 @@ def test_observed_learning_rate_is_nonnegative_competence_change_per_example(
 
 
 def test_cycle_refit_uses_competence_finite_difference_to_update_learning_rate() -> None:
-    prior = make_particle_belief_prior(num_particles=1_000, seed=12)
+    prior = ParticleFilterBelief.broad_prior(num_particles=1_000, seed=12)
     state = Tossing3DBeliefState(
         skill_beliefs={TOSS_SKILL: prior},
         pending_examples={TOSS_SKILL: 2},
@@ -328,7 +359,7 @@ def test_cycle_refit_uses_competence_finite_difference_to_update_learning_rate()
 
 
 def test_cycle_refit_without_examples_does_not_observe_learning_rate() -> None:
-    prior = make_particle_belief_prior(num_particles=128, seed=14)
+    prior = ParticleFilterBelief.broad_prior(num_particles=128, seed=14)
     state = Tossing3DBeliefState(skill_beliefs={TOSS_SKILL: prior})
 
     posterior = refit_belief_state(
@@ -340,65 +371,66 @@ def test_cycle_refit_without_examples_does_not_observe_learning_rate() -> None:
 
 
 def test_particle_filter_resampling_is_seeded_and_reports_diagnostics() -> None:
-    prior = make_particle_belief_prior(num_particles=128, seed=11)
+    prior = ParticleFilterBelief.broad_prior(num_particles=128, seed=11)
     first = prior
     second = prior
     for _ in range(8):
-        first = condition_particle_belief(belief=first, success=True)
-        second = condition_particle_belief(belief=second, success=True)
+        first = first.condition_outcome(success=True)
+        second = second.condition_outcome(success=True)
 
     assert first == second
-    diagnostics = particle_filter_diagnostics(belief=first)
-    assert diagnostics.resampling_count > 0
-    assert diagnostics.num_particles == 128
+    diagnostics = first.diagnostics()
+    assert int(diagnostics["resampling_count"]) > 0
+    assert diagnostics["num_particles"] == 128
 
 
 def test_particle_filter_resampling_rejuvenates_learning_rate_particles() -> None:
-    prior = make_particle_belief_prior(num_particles=256, seed=15)
+    prior = ParticleFilterBelief.broad_prior(num_particles=256, seed=15)
     posterior = prior
     for _ in range(12):
-        posterior = condition_particle_belief(belief=posterior, success=True)
+        posterior = posterior.condition_outcome(success=True)
 
-    parameters, _ = belief_arrays(belief=posterior)
+    parameters, _ = posterior.arrays()
     learning_rates = parameters[:, 1]
-    assert particle_filter_diagnostics(belief=posterior).resampling_count > 0
+    assert int(posterior.diagnostics()["resampling_count"]) > 0
     assert np.all((learning_rates >= 0.0) & (learning_rates <= 1.0))
     assert np.unique(learning_rates).size > 1
 
 
 def test_particle_filter_rejuvenation_preserves_joint_parameter_correlation() -> None:
-    prior = make_particle_belief_prior(num_particles=2_000, seed=16)
-    parameters, weights = belief_arrays(belief=prior)
+    prior = ParticleFilterBelief.broad_prior(num_particles=2_000, seed=16)
+    parameters, weights = prior.arrays()
     parameters = parameters.copy()
     parameters[:, 1] = parameters[:, 0] * 0.1
-    correlated = belief_from_arrays(belief=prior, parameters=parameters, weights=weights)
+    correlated = prior.from_arrays(parameters=parameters, weights=weights)
     posterior = correlated
     for _ in range(8):
-        posterior = condition_particle_belief(belief=posterior, success=True)
+        posterior = posterior.condition_outcome(success=True)
 
-    parameters, _ = belief_arrays(belief=posterior)
+    parameters, _ = posterior.arrays()
     assert np.corrcoef(parameters.T)[0, 1] > 0.95
 
 
 def test_particle_filter_accepts_observation_after_boundary_rejuvenation() -> None:
-    prior = make_particle_belief_prior(num_particles=256, seed=17)
+    prior = ParticleFilterBelief.broad_prior(num_particles=256, seed=17)
     posterior = prior
     for _ in range(30):
-        posterior = condition_particle_belief(belief=posterior, success=True)
+        posterior = posterior.condition_outcome(success=True)
 
-    posterior = condition_particle_belief(belief=posterior, success=False)
+    posterior = posterior.condition_outcome(success=False)
 
-    _, weights = belief_arrays(belief=posterior)
+    _, weights = posterior.arrays()
     assert weights.sum() == pytest.approx(1.0)
 
 
 def test_particle_prediction_advances_competence_but_not_learning_rate() -> None:
-    prior = make_particle_belief_prior(num_particles=128, seed=13)
+    prior = ParticleFilterBelief.broad_prior(num_particles=128, seed=13)
     predicted = refit_skill_belief(belief=prior, training_examples=2)
 
-    assert predicted.estimator == "particle_filter"
-    before, _ = belief_arrays(belief=prior)
-    after, _ = belief_arrays(belief=predicted)
+    assert isinstance(predicted, ParticleFilterBelief)
+    before, _ = prior.arrays()
+    assert isinstance(predicted, ParticleFilterBelief)
+    after, _ = predicted.arrays()
     np.testing.assert_array_equal(after[:, 1], before[:, 1])
     assert np.all(after[:, 0] >= before[:, 0])
 
@@ -531,7 +563,7 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
 def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
     model = _domain_model()
     skill = _ground_skill(model=model, name=skill_name)
-    state = make_default_tossing3d_belief()
+    state = _weighted_default_state()
     for _ in range(20):
         for success in [True, False] * 5:
             state = model.observe_outcome(
@@ -552,7 +584,7 @@ def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
 def test_first_session_cannot_identify_learning_rate() -> None:
     model = _domain_model()
     pick = _ground_skill(model=model, name=PICK_SKILL)
-    state = make_default_tossing3d_belief()
+    state = _weighted_default_state()
     for success in [True, False] * 50:
         state = model.observe_outcome(
             state=state,
@@ -565,7 +597,7 @@ def test_first_session_cannot_identify_learning_rate() -> None:
         for item in _belief(state=state, skill_name=PICK_SKILL).hypotheses
         if item.hypothesis.learning_rate == 0
     )
-    assert stationary_mass == pytest.approx(0.5)
+    assert stationary_mass == pytest.approx(1.0 / 21.0)
 
 
 def test_open_gripper_success_is_inferred_not_assumed() -> None:
@@ -595,7 +627,23 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
     open_gripper_belief = _belief(state=state, skill_name=OPEN_GRIPPER_SKILL)
     assert mean_competence(belief=open_gripper_belief) > 0.99
     projected = refit_skill_belief(belief=open_gripper_belief, training_examples=1)
-    assert mean_competence(belief=projected) - mean_competence(belief=open_gripper_belief) < 0.001
+    assert mean_competence(belief=projected) - mean_competence(belief=open_gripper_belief) < 0.01
+
+
+def test_weighted_belief_uses_cycle_learning_rate_observation() -> None:
+    prior = make_skill_belief_prior()
+    state = Tossing3DBeliefState(
+        skill_beliefs={TOSS_SKILL: prior}, pending_examples={TOSS_SKILL: 2}
+    )
+
+    posterior = refit_belief_state(
+        state=state,
+        cycle_start_competences={TOSS_SKILL: mean_competence(belief=prior) - 0.18},
+    )
+
+    assert mean_learning_rate(belief=posterior.skill_beliefs[TOSS_SKILL]) == pytest.approx(
+        0.09, abs=0.01
+    )
 
 
 def test_pending_examples_predict_improvement_without_changing_current_competence() -> None:

@@ -1,167 +1,71 @@
-"""Vectorized Liu-West particle inference for Tossing3D skill parameters.
-
-The shrinkage-and-jitter step follows Liu and West's original kernel method:
-https://doi.org/10.1007/978-1-4757-3437-9_10
-"""
+"""Vectorized Liu-West inference for particle-filter beliefs."""
 
 from math import lgamma, log, pi
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
 
-from .types.skill_belief import (
-    PARTICLE_DTYPE,
-    PARTICLE_STORAGE_VERSION,
-    SKILL_PARAMETER_MAX,
-    SKILL_PARAMETER_MIN,
-    SkillBelief,
-)
+from .types.particle_filter_belief import ParticleFilterBelief
+from .types.skill_belief import COMPETENCE_MAX, COMPETENCE_MIN, LEARNING_RATE_MAX, LEARNING_RATE_MIN
 
-_LEARNING_RATE_OBSERVATION_SCALE = 0.02
-_LEARNING_RATE_OBSERVATION_DEGREES_OF_FREEDOM = 4.0
-_RESAMPLING_ESS_FRACTION = 0.5
-_LIU_WEST_SHRINKAGE = 0.98
-_RESAMPLING_STREAM_TAG = 0x524553414D504C45
+_OBSERVATION_SCALE = 0.02
+_OBSERVATION_DOF = 4.0
+_ESS_FRACTION = 0.5
+_SHRINKAGE = 0.98
+_STREAM_TAG = 0x524553414D504C45
 
 
-class ParticleFilterDiagnostics(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    num_particles: int = Field(ge=1)
-    effective_sample_size: float = Field(gt=0.0)
-    resampling_count: int = Field(ge=0)
-
-
-def make_particle_belief_prior(*, num_particles: int, seed: int) -> SkillBelief:
-    """Sample a continuous uniform prior over competence and learning rate."""
-    assert num_particles >= 1
-    rng = np.random.default_rng(seed)
-    parameters = rng.uniform(
-        SKILL_PARAMETER_MIN, SKILL_PARAMETER_MAX, size=(num_particles, 2)
-    ).astype(PARTICLE_DTYPE, copy=False)
-    weights = np.full(num_particles, 1.0 / num_particles, dtype=PARTICLE_DTYPE)
-    return SkillBelief(
-        estimator="particle_filter",
-        resampling_seed=seed,
-        particle_parameters=parameters.tobytes(),
-        particle_weights=weights.tobytes(),
-        num_particles=num_particles,
-        particle_storage_version=PARTICLE_STORAGE_VERSION,
-    )
-
-
-def effective_sample_size(*, belief: SkillBelief) -> float:
-    _, weights = belief_arrays(belief=belief)
-    return float(1.0 / np.dot(weights, weights))
-
-
-def particle_filter_diagnostics(*, belief: SkillBelief) -> ParticleFilterDiagnostics:
-    return ParticleFilterDiagnostics(
-        num_particles=belief.num_particles,
-        effective_sample_size=effective_sample_size(belief=belief),
-        resampling_count=belief.resampling_count,
-    )
-
-
-def condition_particle_belief(*, belief: SkillBelief, success: bool) -> SkillBelief:
-    """Apply the Bernoulli likelihood and ESS-triggered systematic resampling."""
-    assert belief.estimator == "particle_filter"
-    parameters, weights = belief_arrays(belief=belief)
+def condition_outcome(*, belief: ParticleFilterBelief, success: bool) -> ParticleFilterBelief:
+    parameters, weights = belief.arrays()
     likelihoods = parameters[:, 0] if success else 1.0 - parameters[:, 0]
-    likelihoods = np.maximum(likelihoods, np.finfo(np.float64).tiny)
-    return condition_and_maybe_resample(
-        belief=belief, parameters=parameters, masses=weights * likelihoods
-    )
+    masses = weights * np.maximum(likelihoods, np.finfo(np.float64).tiny)
+    return _condition(belief=belief, parameters=parameters, masses=masses)
 
 
-def condition_learning_rate_observation(
-    *, belief: SkillBelief, observed_learning_rate: float
-) -> SkillBelief:
-    """Condition ``eta`` on a noisy cycle-level finite-difference observation."""
-    assert belief.estimator == "particle_filter"
-    assert SKILL_PARAMETER_MIN <= observed_learning_rate <= SKILL_PARAMETER_MAX
-    degrees_of_freedom = _LEARNING_RATE_OBSERVATION_DEGREES_OF_FREEDOM
-    scale = _LEARNING_RATE_OBSERVATION_SCALE
-    log_normalizer = (
-        lgamma((degrees_of_freedom + 1.0) / 2.0)
-        - lgamma(degrees_of_freedom / 2.0)
-        - 0.5 * log(degrees_of_freedom * pi)
-        - log(scale)
-    )
-    parameters, weights = belief_arrays(belief=belief)
-    learning_rates = parameters[:, 1]
-    residuals = (observed_learning_rate - learning_rates) / scale
-    log_likelihoods = log_normalizer - (degrees_of_freedom + 1.0) / 2.0 * np.log1p(
-        residuals**2 / degrees_of_freedom
-    )
-    log_masses = np.log(weights) + log_likelihoods
+def condition_learning_rate(
+    *, belief: ParticleFilterBelief, observed_learning_rate: float
+) -> ParticleFilterBelief:
+    assert LEARNING_RATE_MIN <= observed_learning_rate <= LEARNING_RATE_MAX
+    dof, scale = _OBSERVATION_DOF, _OBSERVATION_SCALE
+    normalizer = lgamma((dof + 1.0) / 2.0) - lgamma(dof / 2.0) - 0.5 * log(dof * pi) - log(scale)
+    parameters, weights = belief.arrays()
+    residuals = (observed_learning_rate - parameters[:, 1]) / scale
+    log_masses = np.log(weights) + normalizer - (dof + 1.0) / 2.0 * np.log1p(residuals**2 / dof)
     masses = np.exp(log_masses - float(np.max(log_masses)))
-    return condition_and_maybe_resample(belief=belief, parameters=parameters, masses=masses)
+    return _condition(belief=belief, parameters=parameters, masses=masses)
 
 
-def belief_arrays(*, belief: SkillBelief) -> tuple[np.ndarray, np.ndarray]:
-    assert belief.estimator == "particle_filter"
-    parameters = np.frombuffer(belief.particle_parameters, dtype=PARTICLE_DTYPE).reshape(-1, 2)
-    weights = np.frombuffer(belief.particle_weights, dtype=PARTICLE_DTYPE)
-    return parameters, weights
-
-
-def condition_and_maybe_resample(
-    *, belief: SkillBelief, parameters: np.ndarray, masses: np.ndarray
-) -> SkillBelief:
+def _condition(
+    *, belief: ParticleFilterBelief, parameters: np.ndarray, masses: np.ndarray
+) -> ParticleFilterBelief:
     normalizer = float(np.sum(masses))
     if not np.isfinite(normalizer) or normalizer <= 0.0:
         raise ValueError("observation has zero probability")
     weights = masses / normalizer
-    if 1.0 / float(np.dot(weights, weights)) >= len(weights) * _RESAMPLING_ESS_FRACTION:
-        return belief_from_arrays(belief=belief, parameters=parameters, weights=weights)
-    return resample(belief=belief, parameters=parameters, weights=weights)
+    if 1.0 / float(np.dot(weights, weights)) >= len(weights) * _ESS_FRACTION:
+        return belief.from_arrays(parameters=parameters, weights=weights)
+    return _resample(belief=belief, parameters=parameters, weights=weights)
 
 
-def belief_from_arrays(
-    *, belief: SkillBelief, parameters: np.ndarray, weights: np.ndarray
-) -> SkillBelief:
-    return belief.model_copy(
-        update={
-            "particle_parameters": np.ascontiguousarray(parameters, dtype=PARTICLE_DTYPE).tobytes(),
-            "particle_weights": np.ascontiguousarray(weights, dtype=PARTICLE_DTYPE).tobytes(),
-            "num_particles": len(weights),
-            "particle_storage_version": PARTICLE_STORAGE_VERSION,
-        }
-    )
-
-
-def resample(*, belief: SkillBelief, parameters: np.ndarray, weights: np.ndarray) -> SkillBelief:
-    """Systematically resample and Liu-West rejuvenate the continuous parameters."""
-    num_particles = len(weights)
+def _resample(
+    *, belief: ParticleFilterBelief, parameters: np.ndarray, weights: np.ndarray
+) -> ParticleFilterBelief:
+    count = len(weights)
     rng = np.random.default_rng(
-        np.random.SeedSequence([
-            belief.resampling_seed,
-            belief.resampling_count,
-            _RESAMPLING_STREAM_TAG,
-        ])
+        np.random.SeedSequence([belief.resampling_seed, belief.resampling_count, _STREAM_TAG])
     )
-    positions = (rng.random() + np.arange(num_particles)) / num_particles
+    positions = (rng.random() + np.arange(count)) / count
     indices = np.searchsorted(np.cumsum(weights), positions, side="right")
-
     mean = np.average(parameters, axis=0, weights=weights)
     centered = parameters - mean
     covariance = (centered * weights[:, np.newaxis]).T @ centered
-    shrinkage = _LIU_WEST_SHRINKAGE
-    bandwidth = np.sqrt(1.0 - shrinkage**2)
-    selected = parameters[indices]
     eigenvalues, eigenvectors = np.linalg.eigh(covariance)
-    covariance_root = eigenvectors @ np.diag(np.sqrt(np.maximum(eigenvalues, 0.0)))
-    noise = rng.normal(size=selected.shape) @ covariance_root.T
-    rejuvenated = shrinkage * selected + (1.0 - shrinkage) * mean + bandwidth * noise
-    rejuvenated = np.clip(rejuvenated, SKILL_PARAMETER_MIN, SKILL_PARAMETER_MAX)
-    resampled = belief_from_arrays(
-        belief=belief,
-        parameters=rejuvenated,
-        weights=np.full(num_particles, 1.0 / num_particles),
+    root = eigenvectors @ np.diag(np.sqrt(np.maximum(eigenvalues, 0.0)))
+    selected = parameters[indices]
+    noise = rng.normal(size=selected.shape) @ root.T
+    rejuvenated = (
+        _SHRINKAGE * selected + (1.0 - _SHRINKAGE) * mean + np.sqrt(1.0 - _SHRINKAGE**2) * noise
     )
-    return resampled.model_copy(
-        update={
-            "resampling_count": belief.resampling_count + 1,
-        }
-    )
+    rejuvenated[:, 0] = np.clip(rejuvenated[:, 0], COMPETENCE_MIN, COMPETENCE_MAX)
+    rejuvenated[:, 1] = np.clip(rejuvenated[:, 1], LEARNING_RATE_MIN, LEARNING_RATE_MAX)
+    result = belief.from_arrays(parameters=rejuvenated, weights=np.full(count, 1.0 / count))
+    return result.model_copy(update={"resampling_count": belief.resampling_count + 1})

@@ -189,14 +189,14 @@ class Tossing3DPomdpCli(EesCli):
         parser.add_argument(
             "--pomdp-belief-estimator",
             choices=("finite_grid", "particle_filter"),
-            default="finite_grid",
+            default="particle_filter",
             help="Bayesian estimator for skill competence and learning rate.",
         )
         parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
-            help="Particles per robot skill when using the particle-filter estimator.",
+            help="Particles per robot skill.",
         )
 
     @staticmethod
