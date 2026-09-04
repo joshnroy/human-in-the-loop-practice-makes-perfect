@@ -165,7 +165,7 @@ def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
     )
     before = method.pomdp_state.skill_beliefs[RESET_SKILL]
 
-    method.observe_outcome(ground_skill=reset, success=True)
+    method.record_action_cost(ground_skill=reset)
 
     after = method.pomdp_state.skill_beliefs[RESET_SKILL]
     assert mean_competence(belief=after) == 1.0

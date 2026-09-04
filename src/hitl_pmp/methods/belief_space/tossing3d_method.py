@@ -221,14 +221,22 @@ class Tossing3DPomdpMethod(EesMethod):
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         """Charge each attempted action immediately, including a final-step reset."""
         action_cost = ground_skill.evaluate_practice_cost()
-        self._pomdp_state = self._pomdp_state.model_copy(
-            update={"accumulated_cost": self._pomdp_state.accumulated_cost + action_cost}
-        )
+        updates: dict[str, object] = {
+            "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
+        }
+        if ground_skill.skill.name == RESET_SKILL:
+            skill_beliefs = dict(self._pomdp_state.skill_beliefs)
+            reset_belief = skill_beliefs[RESET_SKILL]
+            assert isinstance(reset_belief, ParticleFilterBelief)
+            skill_beliefs[RESET_SKILL] = reset_belief.condition_cost(observed_cost=action_cost)
+            updates["skill_beliefs"] = skill_beliefs
+        self._pomdp_state = self._pomdp_state.model_copy(update=updates)
         self.record_diagnostic(
             event="dispatch",
             skill=ground_skill.skill.name,
             cost=action_cost,
             summed_cost=self._pomdp_state.accumulated_cost,
+            estimated_costs=self.practice_skill_costs(),
         )
 
     def observe_sampler_outcome(
