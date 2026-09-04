@@ -41,7 +41,7 @@ SETUP = Action(name="setup")
 PRACTICE = Action(name="practice")
 
 
-def test_trace_preserves_samples_and_records_competing_values() -> None:
+def test_trace_preserves_search_result_and_records_compact_root_values() -> None:
     model = Model(
         transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.1, 1.0)]},
         beliefs={SUCCESS: BeliefState(value=0.9)},
@@ -55,13 +55,18 @@ def test_trace_preserves_samples_and_records_competing_values() -> None:
     traced = solve_belief_space_expectimax(model=traced_model, trace=trace, **args)
     assert plain == traced
     assert model.visits == traced_model.visits
-    assert trace.events[-1]["action"] == {"name": "practice"}
+    choice = next(event for event in trace.events if event["event"] == "choice")
+    assert choice["action"] == {"name": "practice"}
     root_values = [
         event for event in trace.events if event["node"] == 0 and event["event"] == "action_value"
     ]
     assert root_values[0]["value"] == pytest.approx(0.8)
-    assert any(event["event"] == "sample" and "theta" in event for event in trace.events)
     assert any(event["event"] == "branch" and event["probability"] == 1.0 for event in trace.events)
+    assert not any(event["event"] == "sample" for event in trace.events)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["expanded_nodes"] == 2
+    assert summary["action_evaluations"] == 1
+    assert summary["chance_outcomes"] == 1
 
 
 class Model(BaseModel):

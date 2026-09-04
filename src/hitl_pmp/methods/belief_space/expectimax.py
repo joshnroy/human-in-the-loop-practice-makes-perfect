@@ -40,12 +40,24 @@ def solve_belief_space_expectimax(
     """
     assert num_samples >= 1, "num_samples must be positive"
     solver = ExpectimaxSearch(model=model, num_samples=num_samples, trace=trace)
-    return solver.cached_solve_belief_space_expectimax(
+    result = solver.cached_solve_belief_space_expectimax(
         environment_state=environment_state,
         summed_cost=summed_cost,
         belief_state=belief_state,
         horizon=horizon,
     )
+    if trace is not None:
+        trace.record(
+            event="search_summary",
+            node=0,
+            expanded_nodes=solver.next_node,
+            cache_requests=solver.cache_requests,
+            cache_hits=solver.cache_hits,
+            action_evaluations=solver.action_evaluations,
+            chance_outcomes=solver.chance_outcomes,
+            nodes_by_horizon=dict(sorted(solver.nodes_by_horizon.items(), reverse=True)),
+        )
+    return result
 
 
 class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
@@ -63,6 +75,11 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
         self.trace = trace
         self.next_node = 0
+        self.cache_requests = 0
+        self.cache_hits = 0
+        self.action_evaluations = 0
+        self.chance_outcomes = 0
+        self.nodes_by_horizon: dict[int, int] = {}
 
     def cached_solve_belief_space_expectimax(
         self,
@@ -72,6 +89,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         belief_state: BeliefStateT,
         horizon: int,
     ) -> tuple[float, ActionT | StopAction]:
+        self.cache_requests += 1
         key = self.model.search_cache_key(
             environment_state=environment_state,
             summed_cost=summed_cost,
@@ -80,6 +98,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         )
         cached = self.memo.get(key)
         if cached is not None:
+            self.cache_hits += 1
             return cached
         result = self.solve_belief_space_expectimax(
             environment_state=environment_state,
@@ -105,33 +124,13 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
 
         node = self.next_node
         self.next_node += 1
-        if self.trace is not None:
-            self.trace.record(
-                event="node",
-                node=node,
-                horizon=horizon,
-                summed_cost=summed_cost,
-                environment_state=environment_state.model_dump(mode="json"),
-                belief_state=belief_state.model_dump(mode="json"),
-            )
-        retain_samples = self.trace is not None and self.trace.retain_events
-        sampled_thetas = (
-            self.model.sample_thetas_from_belief(
-                belief_state=belief_state, num_samples=self.num_samples
-            )
-            if retain_samples
-            else []
-        )
-        policy_values = (
-            self.model.evaluate_policies(sampled_thetas=sampled_thetas)
-            if retain_samples
-            else self.model.sample_policy_values_from_belief(
-                belief_state=belief_state, num_samples=self.num_samples
-            )
+        self.nodes_by_horizon[horizon] = self.nodes_by_horizon.get(horizon, 0) + 1
+        policy_values = self.model.sample_policy_values_from_belief(
+            belief_state=belief_state, num_samples=self.num_samples
         )
         assert len(policy_values) == self.num_samples
         sample_values = []
-        for index, current_policy_value in enumerate(policy_values):
+        for current_policy_value in policy_values:
             current_pomdp_value = self.model.G(
                 policy_value=current_policy_value, summed_cost=summed_cost
             )
@@ -139,17 +138,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 f"stop value must be finite or negative infinity, got {current_pomdp_value}"
             )
             sample_values.append(current_pomdp_value)
-            if retain_samples:
-                assert self.trace is not None
-                self.trace.record(
-                    event="sample",
-                    node=node,
-                    theta=sampled_thetas[index].model_dump(mode="json"),
-                    policy_value=current_policy_value,
-                    pomdp_value=current_pomdp_value,
-                )
-
-        if self.trace is not None:
+        if self.trace is not None and node == 0:
             self.trace.record(
                 event="sample_summary",
                 node=node,
@@ -164,10 +153,10 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
 
         current_best_value = float(np.mean(sample_values))
         current_best_action: ActionT | StopAction = STOP_ACTION
-        if self.trace is not None:
+        if self.trace is not None and node == 0:
             self.trace.record(event="stop_value", node=node, value=current_best_value)
         if current_best_value == -math.inf:
-            if self.trace is not None:
+            if self.trace is not None and node == 0:
                 self.trace.record(
                     event="choice",
                     node=node,
@@ -177,7 +166,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 )
             return current_best_value, current_best_action
         if horizon == 0:
-            if self.trace is not None:
+            if self.trace is not None and node == 0:
                 self.trace.record(
                     event="choice",
                     node=node,
@@ -188,6 +177,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             return current_best_value, current_best_action
 
         for practice_action in self.model.get_valid_actions(environment_state=environment_state):
+            self.action_evaluations += 1
             value_of_state = 0.0
             total_probability = 0.0
             # TODO: Should samples be drawn with or without replacement?
@@ -199,6 +189,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             assert next_states_and_probabilities, (
                 f"action {practice_action!r} has no chance outcomes"
             )
+            self.chance_outcomes += len(next_states_and_probabilities)
             for (
                 potential_next_environment_state,
                 sampled_cost,
@@ -224,13 +215,11 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 )
                 value_of_state += probability * value_of_next_state
                 total_probability += probability
-                if self.trace is not None:
+                if self.trace is not None and node == 0:
                     self.trace.record(
                         event="branch",
                         node=node,
                         action=practice_action.model_dump(mode="json", fallback=str),
-                        successor=potential_next_environment_state.model_dump(mode="json"),
-                        belief_state=next_belief_state.model_dump(mode="json"),
                         horizon=horizon - 1,
                         summed_cost=summed_cost + sampled_cost,
                         sampled_cost=sampled_cost,
@@ -243,7 +232,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 f"chance probabilities sum to {total_probability}, not 1"
             )
             # Compare only after summing every successor, including negative values.
-            if self.trace is not None:
+            if self.trace is not None and node == 0:
                 self.trace.record(
                     event="action_value",
                     node=node,
@@ -254,7 +243,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 current_best_value = value_of_state
                 current_best_action = practice_action
 
-        if self.trace is not None:
+        if self.trace is not None and node == 0:
             self.trace.record(
                 event="choice",
                 node=node,

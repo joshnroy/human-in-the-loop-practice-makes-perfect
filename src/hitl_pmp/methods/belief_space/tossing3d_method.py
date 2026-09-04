@@ -43,7 +43,6 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
-    pomdp_record_search_traces: bool = False
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
 
@@ -88,6 +87,17 @@ class Tossing3DPomdpMethod(EesMethod):
         if self.ask_for_reset_cube_bin_cost is not None:
             estimates[RESET_SKILL + " (fixed)"] = 0.0
         return estimates
+
+    def practice_skill_improvement_potentials(self) -> dict[str, float]:
+        """Expected advantage of each applicable skill over stopping now."""
+        stop_value = self._practice_values.get("STOP")
+        if stop_value is None:
+            return {}
+        return {
+            name: value - stop_value
+            for name, value in self._practice_values.items()
+            if name != "STOP"
+        }
 
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
         if self.decision_log is None:
@@ -217,14 +227,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         self._decision_index += 1
-        trace_path = (
-            self.decision_log.parent
-            / "search_traces"
-            / f"cycle_{self._cycle_index:04d}_decision_{self._decision_index:04d}.jsonl.gz"
-            if self.decision_log is not None and self.pomdp_record_search_traces
-            else None
-        )
-        trace = SearchTrace(path=trace_path, retain_events=False)
+        trace = SearchTrace()
         model: BeliefSpaceModel[
             Tossing3DSearchState,
             Tossing3DBeliefState,
@@ -257,6 +260,8 @@ class Tossing3DPomdpMethod(EesMethod):
         self.record_diagnostic(
             event="decision",
             competences=self.practice_skill_competences(),
+            learning_rates=self.practice_skill_learning_rates(),
+            improvement_potentials=self.practice_skill_improvement_potentials(),
             search_duration_seconds=search_duration_seconds,
             num_samples=self.pomdp_num_samples,
             atoms=sorted(str(atom) for atom in true_atoms),
@@ -267,9 +272,6 @@ class Tossing3DPomdpMethod(EesMethod):
             horizon=self.pomdp_search_depth,
             model=self._pomdp_model.model_dump(mode="json"),
             search=trace.events,
-            search_trace=None
-            if trace_path is None or self.decision_log is None
-            else str(trace_path.relative_to(self.decision_log.parent)),
         )
         if isinstance(action, StopAction):
             assert action == STOP_ACTION
