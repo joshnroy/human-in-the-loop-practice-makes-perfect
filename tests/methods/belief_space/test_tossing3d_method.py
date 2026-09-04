@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -170,3 +171,17 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
     method.record_action_cost(ground_skill=pick)
     method.select_skill_to_practice(true_atoms=pick.preconditions)
     assert method.pomdp_state.accumulated_cost == 0.001
+    decision = json.loads(method.decision_log.read_text().splitlines()[-1])
+    assert set(decision["learning_rates"]) == {
+        "PickCube (belief mean)",
+        "MoveToTossLocationAndToss (belief mean)",
+        "OpenGripper (belief mean)",
+    }
+    assert decision["improvement_potentials"]
+    stop_value = method.practice_action_values()["STOP"]
+    for skill_name, potential in decision["improvement_potentials"].items():
+        assert potential == pytest.approx(method.practice_action_values()[skill_name] - stop_value)
+    summary = next(event for event in decision["search"] if event["event"] == "search_summary")
+    assert summary["expanded_nodes"] > 0
+    assert summary["cache_requests"] >= summary["expanded_nodes"]
+    assert summary["chance_outcomes"] > 0

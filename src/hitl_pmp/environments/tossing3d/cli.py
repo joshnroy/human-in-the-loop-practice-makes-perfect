@@ -115,7 +115,7 @@ class Tossing3DCli:
             "standoffs solve is a property of the scene's geometry, not a constant of "
             "this domain, so it stays overridable.",
         )
-        parser.set_defaults(scene_bg=True)
+        parser.set_defaults(scene_bg=True, defer_rendering=False)
 
     @staticmethod
     def run_method(
@@ -201,7 +201,9 @@ class Tossing3DCli:
                 env=practice_problem.env, throw_standoff=args.oracle_throw_standoff
             ),
         )
-        renderer: type[Renderer] | None = Tossing3DRenderer if args.output_dir is not None else None
+        renderer: type[Renderer] | None = (
+            Tossing3DRenderer if args.output_dir is not None and not args.defer_rendering else None
+        )
         try:
             MethodRunner.run(
                 args=args,

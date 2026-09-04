@@ -88,6 +88,17 @@ class Tossing3DPomdpMethod(EesMethod):
             estimates[RESET_SKILL + " (fixed)"] = 0.0
         return estimates
 
+    def practice_skill_improvement_potentials(self) -> dict[str, float]:
+        """Expected advantage of each applicable skill over stopping now."""
+        stop_value = self._practice_values.get("STOP")
+        if stop_value is None:
+            return {}
+        return {
+            name: value - stop_value
+            for name, value in self._practice_values.items()
+            if name != "STOP"
+        }
+
     def record_diagnostic(self, *, event: str, **fields: Any) -> None:
         if self.decision_log is None:
             return
@@ -216,16 +227,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         self._decision_index += 1
-        trace_path = (
-            None
-            if self.decision_log is None
-            else self.decision_log.parent
-            / "search_traces"
-            / f"cycle_{self._cycle_index:04d}_decision_{self._decision_index:04d}.jsonl.gz"
-        )
-        trace = (
-            SearchTrace(path=trace_path, retain_events=False) if trace_path is not None else None
-        )
+        trace = SearchTrace()
         model: BeliefSpaceModel[
             Tossing3DSearchState,
             Tossing3DBeliefState,
@@ -246,20 +248,20 @@ class Tossing3DPomdpMethod(EesMethod):
                 num_samples=self.pomdp_num_samples,
             )
         finally:
-            if trace is not None:
-                trace.close()
+            trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
         value, action = search_result
         self._practice_values = {}
-        if trace is not None:
-            for event in trace.events:
-                if event["node"] == 0 and event["event"] == "stop_value":
-                    self._practice_values["STOP"] = event["value"]
-                elif event["node"] == 0 and event["event"] == "action_value":
-                    self._practice_values[event["action"]["skill"]["name"]] = event["value"]
+        for event in trace.events:
+            if event["node"] == 0 and event["event"] == "stop_value":
+                self._practice_values["STOP"] = event["value"]
+            elif event["node"] == 0 and event["event"] == "action_value":
+                self._practice_values[event["action"]["skill"]["name"]] = event["value"]
         self.record_diagnostic(
             event="decision",
             competences=self.practice_skill_competences(),
+            learning_rates=self.practice_skill_learning_rates(),
+            improvement_potentials=self.practice_skill_improvement_potentials(),
             search_duration_seconds=search_duration_seconds,
             num_samples=self.pomdp_num_samples,
             atoms=sorted(str(atom) for atom in true_atoms),
@@ -269,10 +271,7 @@ class Tossing3DPomdpMethod(EesMethod):
             value=value,
             horizon=self.pomdp_search_depth,
             model=self._pomdp_model.model_dump(mode="json"),
-            search=[] if trace is None else trace.events,
-            search_trace=None
-            if trace_path is None or self.decision_log is None
-            else str(trace_path.relative_to(self.decision_log.parent)),
+            search=trace.events,
         )
         if isinstance(action, StopAction):
             assert action == STOP_ACTION

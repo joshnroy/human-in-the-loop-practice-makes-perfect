@@ -191,6 +191,10 @@ class Tossing3DPomdpCli(EesCli):
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
         if env_cli.__name__ != "Tossing3DCli":
             raise ValueError("--method pomdp currently supports only --env tossing3d")
+        # Preserve replayable simulator states, but do not render or encode frames in
+        # the training process. POMDP runs reconstruct their diagnostic videos from
+        # the state and decision logs after the experiment finishes.
+        args.defer_rendering = True
         # Cached recursion adds interpreter frames per depth; this is not a search cutoff.
         sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)

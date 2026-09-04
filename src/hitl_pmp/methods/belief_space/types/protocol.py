@@ -2,6 +2,8 @@
 
 from typing import Protocol, TypeVar
 
+import numpy as np
+import numpy.typing as npt
 from pydantic import BaseModel
 
 EnvironmentStateT = TypeVar("EnvironmentStateT", bound=BaseModel)
@@ -29,6 +31,10 @@ class BeliefSpaceModel(Protocol[EnvironmentStateT, BeliefStateT, ThetaT, ActionT
     ) -> object: ...
 
     def evaluate_policy(self, *, sampled_theta: ThetaT) -> float: ...
+
+    def sample_policy_values_from_belief(
+        self, *, belief_state: BeliefStateT, num_samples: int
+    ) -> npt.NDArray[np.float64]: ...
 
     def G(self, *, policy_value: float, summed_cost: float) -> float: ...
 

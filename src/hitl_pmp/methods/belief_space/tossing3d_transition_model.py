@@ -1,5 +1,7 @@
 """Symbolic practice transitions for Tossing3D."""
 
+from functools import cache
+
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
@@ -20,13 +22,19 @@ from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 TransitionBranch = tuple[float, Tossing3DBeliefState, frozenset[GroundAtom]]
 
 
+@cache
+def render_atoms(*, true_atoms: frozenset[GroundAtom]) -> tuple[str, ...]:
+    """Render each immutable symbolic state once for diagnostics."""
+    return tuple(sorted(str(atom) for atom in true_atoms))
+
+
 def make_tossing3d_search_state(
     *, state: Tossing3DBeliefState, true_atoms: frozenset[GroundAtom]
 ) -> Tossing3DSearchState:
     return Tossing3DSearchState(
         state=state,
         true_atoms=true_atoms,
-        atoms=tuple(sorted(str(atom) for atom in true_atoms)),
+        atoms=render_atoms(true_atoms=true_atoms),
     )
 
 

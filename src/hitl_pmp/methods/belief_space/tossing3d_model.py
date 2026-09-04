@@ -11,7 +11,7 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
 from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, PRACTICE_BUDGET, TOSS_SKILL
-from .tossing3d_deployment_model import evaluate_deployment_policy
+from .tossing3d_deployment_model import evaluate_deployment_policies, evaluate_deployment_policy
 from .tossing3d_observation_model import (
     SkillBeliefModel,
     make_skill_belief_models,
@@ -81,7 +81,9 @@ class Tossing3DPracticeModel(BaseModel):
             belief=projected.skill_beliefs[OPEN_GRIPPER_SKILL], count=num_samples
         )
         return [
-            Tossing3DTheta(pick=pick[index], toss=toss[index], open_gripper=opened[index])
+            Tossing3DTheta.model_construct(
+                pick=pick[index], toss=toss[index], open_gripper=opened[index]
+            )
             for index in range(num_samples)
         ]
 
@@ -103,6 +105,35 @@ class Tossing3DPracticeModel(BaseModel):
             toss_competence=sampled_theta.toss.competence,
             pick_competence=sampled_theta.pick.competence,
             open_competence=sampled_theta.open_gripper.competence,
+            horizon=self.deployment_horizon,
+        )
+
+    def sample_policy_values_from_belief(
+        self, *, belief_state: Tossing3DBeliefState, num_samples: int
+    ) -> np.ndarray:
+        projected = refit_belief_state(state=belief_state)
+        competences = []
+        for skill_name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL):
+            belief = projected.skill_beliefs[skill_name]
+            indexes = np.atleast_1d(
+                self._rng.choice(
+                    len(belief.hypotheses),
+                    size=num_samples,
+                    p=np.fromiter(
+                        (item.probability for item in belief.hypotheses), dtype=np.float64
+                    ),
+                )
+            )
+            competences.append(
+                np.fromiter(
+                    (belief.hypotheses[int(index)].hypothesis.competence for index in indexes),
+                    dtype=np.float64,
+                )
+            )
+        return evaluate_deployment_policies(
+            toss_competences=competences[1],
+            pick_competences=competences[0],
+            open_competences=competences[2],
             horizon=self.deployment_horizon,
         )
 
