@@ -124,8 +124,8 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             current_pomdp_value = self.model.G(
                 policy_value=current_policy_value, summed_cost=summed_cost
             )
-            assert math.isfinite(current_pomdp_value), (
-                f"stop value must be finite, got {current_pomdp_value}"
+            assert not math.isnan(current_pomdp_value) and current_pomdp_value != math.inf, (
+                f"stop value must be finite or negative infinity, got {current_pomdp_value}"
             )
             sample_values.append(current_pomdp_value)
             policy_values.append(current_policy_value)
@@ -155,6 +155,16 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         current_best_action: ActionT | StopAction = STOP_ACTION
         if self.trace is not None:
             self.trace.record(event="stop_value", node=node, value=current_best_value)
+        if current_best_value == -math.inf:
+            if self.trace is not None:
+                self.trace.record(
+                    event="choice",
+                    node=node,
+                    action="STOP",
+                    value=current_best_value,
+                    reason="objective_infeasible",
+                )
+            return current_best_value, current_best_action
         if horizon == 0:
             if self.trace is not None:
                 self.trace.record(
