@@ -1,7 +1,6 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
 from enum import Enum
-from typing import Literal
 
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
@@ -18,8 +17,6 @@ from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 from .tossing3d_constants import RESET_SKILL
-
-BeliefEstimator = Literal["finite_grid", "particle_filter"]
 
 
 class PracticeExampleSource(Enum):
@@ -47,18 +44,24 @@ class SkillBeliefModel:
         was_random_exploration: bool,
         observed_cost: float | None = None,
     ) -> Tossing3DBeliefState:
-        if self.skill is None or was_random_exploration:
+        if self.skill is None:
             return state
         skill_name = self.skill.name
         if skill_name not in state.skill_beliefs:
             return state
         skill_beliefs = dict(state.skill_beliefs)
         belief = skill_beliefs[skill_name]
-        skill_beliefs[skill_name] = (
-            belief.condition_execution(success=success, observed_cost=observed_cost)
-            if observed_cost is not None and isinstance(belief, ParticleFilterBelief)
-            else condition_skill_belief(belief=belief, success=success)
-        )
+        if observed_cost is not None and isinstance(belief, ParticleFilterBelief):
+            belief = (
+                belief.condition_cost(observed_cost=observed_cost)
+                if was_random_exploration
+                else belief.condition_execution(success=success, observed_cost=observed_cost)
+            )
+        elif not was_random_exploration:
+            belief = condition_skill_belief(belief=belief, success=success)
+        skill_beliefs[skill_name] = belief
+        if was_random_exploration:
+            return state.model_copy(update={"skill_beliefs": skill_beliefs})
         pending_examples = dict(state.pending_examples)
         if self.example_source == PracticeExampleSource.OUTCOME:
             pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
@@ -112,24 +115,19 @@ def make_skill_belief_prior() -> WeightedHypothesisBelief:
 
 def make_default_tossing3d_belief(
     *,
-    estimator: BeliefEstimator = "particle_filter",
     num_particles: int = 256,
     seed: int = 0,
     include_human_reset: bool = False,
 ) -> Tossing3DBeliefState:
     """Independent cost priors; human-reset performance remains known."""
-    beliefs: dict[str, ConcreteSkillBelief]
-    if estimator == "finite_grid":
-        beliefs = {skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
-    else:
-        beliefs = {
-            skill.name: create_broad_particle_prior(
-                num_particles=num_particles,
-                seed=seed + index,
-            )
-            for index, skill in enumerate(SKILL_BELIEF_MODELS)
-        }
-    if include_human_reset and estimator == "particle_filter":
+    beliefs: dict[str, ConcreteSkillBelief] = {
+        skill.name: create_broad_particle_prior(
+            num_particles=num_particles,
+            seed=seed + index,
+        )
+        for index, skill in enumerate(SKILL_BELIEF_MODELS)
+    }
+    if include_human_reset:
         beliefs[RESET_SKILL] = create_fixed_performance_cost_prior(
             num_particles=num_particles,
             seed=seed + len(beliefs),

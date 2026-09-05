@@ -187,12 +187,6 @@ class Tossing3DPomdpCli(EesCli):
             help="Exact belief-space expectimax depth in future skill executions.",
         )
         parser.add_argument(
-            "--pomdp-belief-estimator",
-            choices=("finite_grid", "particle_filter"),
-            default="particle_filter",
-            help="Bayesian estimator for skill competence and learning rate.",
-        )
-        parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
@@ -233,7 +227,6 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_num_samples=args.pomdp_num_samples,
-                pomdp_belief_estimator=args.pomdp_belief_estimator,
                 pomdp_num_particles=args.pomdp_num_particles,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"

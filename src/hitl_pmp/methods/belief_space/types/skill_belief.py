@@ -20,6 +20,7 @@ class SkillHypothesis(BaseModel):
     model_config = ConfigDict(frozen=True)
     competence: float = Field(ge=COMPETENCE_MIN, le=COMPETENCE_MAX)
     learning_rate: float = Field(ge=LEARNING_RATE_MIN, le=LEARNING_RATE_MAX)
+    cost: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
 
 
 class WeightedHypothesis(BaseModel):

@@ -9,6 +9,7 @@ from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import Self
 
 from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (
+    condition_cost,
     condition_execution,
     condition_learning_rate,
     condition_outcome,
@@ -84,6 +85,9 @@ class ParticleFilterBelief(SkillBelief):
 
     def condition_execution(self, *, success: bool, observed_cost: float) -> Self:
         return condition_execution(belief=self, success=success, observed_cost=observed_cost)
+
+    def condition_cost(self, *, observed_cost: float) -> Self:
+        return condition_cost(belief=self, observed_cost=observed_cost)
 
     def condition_learning_rate(self, *, observed_learning_rate: float) -> Self:
         return condition_learning_rate(belief=self, observed_learning_rate=observed_learning_rate)
