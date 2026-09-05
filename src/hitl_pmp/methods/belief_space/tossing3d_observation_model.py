@@ -18,6 +18,7 @@ from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import Weigh
 
 from .tossing3d_constants import RESET_SKILL
 
+
 class PracticeExampleSource(Enum):
     OUTCOME = "outcome"
     SAMPLER = "sampler"

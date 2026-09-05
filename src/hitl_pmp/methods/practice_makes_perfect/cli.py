@@ -192,18 +192,6 @@ class Tossing3DPomdpCli(EesCli):
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
             help="Particles per robot skill.",
         )
-        parser.add_argument(
-            "--pomdp-cost-max",
-            type=float,
-            default=Tossing3DPomdpMethod.model_fields["pomdp_cost_max"].default,
-            help="Upper bound of the natural-unit execution-cost prior.",
-        )
-        parser.add_argument(
-            "--pomdp-cost-observation-scale",
-            type=float,
-            default=Tossing3DPomdpMethod.model_fields["pomdp_cost_observation_scale"].default,
-            help="Student-t scale for observed natural-unit execution costs.",
-        )
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
@@ -240,8 +228,6 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
-                pomdp_cost_max=args.pomdp_cost_max,
-                pomdp_cost_observation_scale=args.pomdp_cost_observation_scale,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"
                     if args.output_dir is not None
