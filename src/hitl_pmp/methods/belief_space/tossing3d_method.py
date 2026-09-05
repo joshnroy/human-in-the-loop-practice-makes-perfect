@@ -48,9 +48,6 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_belief_estimator: BeliefEstimator = "particle_filter"
     pomdp_num_particles: int = Field(default=256, ge=1)
-    pomdp_cost_min: float = Field(default=0.0, ge=0.0)
-    pomdp_cost_max: float = Field(default=0.01, gt=0.0)
-    pomdp_cost_observation_scale: float = Field(default=0.0001, gt=0.0)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
 
@@ -149,9 +146,6 @@ class Tossing3DPomdpMethod(EesMethod):
             estimator=self.pomdp_belief_estimator,
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
-            cost_min=self.pomdp_cost_min,
-            cost_max=self.pomdp_cost_max,
-            cost_observation_scale=self.pomdp_cost_observation_scale,
             include_human_reset=self.ask_for_reset_cube_bin_cost is not None,
         )
         robot_skills = self.skills()

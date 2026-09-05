@@ -111,9 +111,6 @@ def make_default_tossing3d_belief(
     estimator: BeliefEstimator = "particle_filter",
     num_particles: int = 256,
     seed: int = 0,
-    cost_min: float = 0.0,
-    cost_max: float = 0.01,
-    cost_observation_scale: float = 0.0001,
     include_human_reset: bool = False,
 ) -> Tossing3DBeliefState:
     """Independent cost priors; human-reset performance remains known."""
@@ -125,9 +122,6 @@ def make_default_tossing3d_belief(
             skill.name: ParticleFilterBelief.broad_prior(
                 num_particles=num_particles,
                 seed=seed + index,
-                cost_min=cost_min,
-                cost_max=cost_max,
-                cost_observation_scale=cost_observation_scale,
             )
             for index, skill in enumerate(SKILL_BELIEF_MODELS)
         }
@@ -137,9 +131,6 @@ def make_default_tossing3d_belief(
             seed=seed + len(beliefs),
             competence=1.0,
             learning_rate=0.0,
-            cost_min=cost_min,
-            cost_max=cost_max,
-            cost_observation_scale=cost_observation_scale,
         )
     return Tossing3DBeliefState(skill_beliefs=beliefs)
 
