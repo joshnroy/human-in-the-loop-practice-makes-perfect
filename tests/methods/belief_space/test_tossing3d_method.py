@@ -11,10 +11,12 @@ from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
-from hitl_pmp.methods.belief_space.tossing3d_constants import PICK_SKILL, TOSS_SKILL
+from hitl_pmp.methods.belief_space.tossing3d_constants import PICK_SKILL, RESET_SKILL, TOSS_SKILL
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_competence,
+    mean_cost,
+    mean_learning_rate,
 )
 from hitl_pmp.planning.grounding import SkillGrounder
 
@@ -136,6 +138,32 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     )
     method.record_action_cost(ground_skill=reset)
     assert method.pomdp_state.accumulated_cost == 0.25
+
+
+def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
+    observed_cost = 0.00001
+    method = _build(ask_for_reset_cube_bin_cost=observed_cost)
+    reset_skill = method.human_skills()[0]
+    reset = next(
+        skill
+        for skill in SkillGrounder.applicable_ground_skills(
+            skills=(reset_skill,),
+            objects=method.objects(),
+            true_atoms=SkillGrounder.all_possible_ground_atoms(
+                objects=method.objects(), predicates=method.predicates()
+            ),
+        )
+    )
+    before = method.pomdp_state.skill_beliefs[RESET_SKILL]
+
+    method.observe_outcome(ground_skill=reset, success=True)
+
+    after = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    assert mean_competence(belief=after) == 1.0
+    assert mean_learning_rate(belief=after) == 0.0
+    assert abs(mean_cost(belief=after) - observed_cost) < abs(
+        mean_cost(belief=before) - observed_cost
+    )
 
 
 def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_path: Path) -> None:
