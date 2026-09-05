@@ -9,7 +9,11 @@ from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
     Tossing3DBeliefState,
 )
-from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
+    ParticleFilterBelief,
+    create_broad_particle_prior,
+    create_fixed_performance_cost_prior,
+)
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
@@ -119,14 +123,14 @@ def make_default_tossing3d_belief(
         beliefs = {skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
     else:
         beliefs = {
-            skill.name: ParticleFilterBelief.broad_prior(
+            skill.name: create_broad_particle_prior(
                 num_particles=num_particles,
                 seed=seed + index,
             )
             for index, skill in enumerate(SKILL_BELIEF_MODELS)
         }
     if include_human_reset and estimator == "particle_filter":
-        beliefs[RESET_SKILL] = ParticleFilterBelief.fixed_performance_cost_prior(
+        beliefs[RESET_SKILL] = create_fixed_performance_cost_prior(
             num_particles=num_particles,
             seed=seed + len(beliefs),
             competence=1.0,

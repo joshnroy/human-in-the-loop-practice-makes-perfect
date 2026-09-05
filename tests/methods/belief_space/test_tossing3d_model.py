@@ -30,7 +30,10 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
     render_atoms,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
-from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
+    ParticleFilterBelief,
+    create_broad_particle_prior,
+)
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
     SkillBelief,
@@ -237,8 +240,8 @@ def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBeli
 
 
 def test_particle_prior_is_continuous_seeded_and_normalized() -> None:
-    first = ParticleFilterBelief.broad_prior(num_particles=128, seed=7)
-    second = ParticleFilterBelief.broad_prior(num_particles=128, seed=7)
+    first = create_broad_particle_prior(num_particles=128, seed=7)
+    second = create_broad_particle_prior(num_particles=128, seed=7)
 
     assert first == second
     assert isinstance(first, ParticleFilterBelief)
@@ -261,7 +264,7 @@ def test_finite_grid_prior_uses_full_learning_rate_range() -> None:
 
 def test_belief_priors_have_matching_support_and_moments() -> None:
     weighted = make_skill_belief_prior()
-    particle = ParticleFilterBelief.broad_prior(num_particles=1_024, seed=7)
+    particle = create_broad_particle_prior(num_particles=1_024, seed=7)
     particle_parameters, _ = particle.arrays()
     weighted_parameters = np.asarray([
         [item.hypothesis.competence, item.hypothesis.learning_rate] for item in weighted.hypotheses
@@ -287,7 +290,7 @@ def test_belief_state_round_trips_both_representations(*, estimator: str) -> Non
 
 
 def test_particle_belief_round_trips_through_json_without_expanding_particles() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=128, seed=8)
+    prior = create_broad_particle_prior(num_particles=128, seed=8)
 
     restored = ParticleFilterBelief.model_validate_json(prior.model_dump_json())
 
@@ -299,7 +302,7 @@ def test_particle_belief_round_trips_through_json_without_expanding_particles() 
 
 
 def test_particle_filter_conditions_with_bernoulli_likelihood() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=1_000, seed=9)
+    prior = create_broad_particle_prior(num_particles=1_000, seed=9)
     posterior = prior.condition_outcome(success=True)
 
     assert mean_competence(belief=posterior) > mean_competence(belief=prior)
@@ -307,7 +310,7 @@ def test_particle_filter_conditions_with_bernoulli_likelihood() -> None:
 
 
 def test_particle_filter_conditions_competence_and_cost_together() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=2_000, seed=19)
+    prior = create_broad_particle_prior(num_particles=2_000, seed=19)
 
     posterior = prior.condition_execution(success=True, observed_cost=0.001)
 
@@ -316,7 +319,7 @@ def test_particle_filter_conditions_competence_and_cost_together() -> None:
 
 
 def test_particle_filter_conditions_learning_rate_on_cycle_derivative() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=1_000, seed=10)
+    prior = create_broad_particle_prior(num_particles=1_000, seed=10)
     observed_rate = 0.09
     posterior = prior.condition_learning_rate(observed_learning_rate=observed_rate)
 
@@ -350,7 +353,7 @@ def test_observed_learning_rate_is_nonnegative_competence_change_per_example(
 
 
 def test_cycle_refit_uses_competence_finite_difference_to_update_learning_rate() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=1_000, seed=12)
+    prior = create_broad_particle_prior(num_particles=1_000, seed=12)
     state = Tossing3DBeliefState(
         skill_beliefs={TOSS_SKILL: prior},
         pending_examples={TOSS_SKILL: 2},
@@ -370,7 +373,7 @@ def test_cycle_refit_uses_competence_finite_difference_to_update_learning_rate()
 
 
 def test_cycle_refit_without_examples_does_not_observe_learning_rate() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=128, seed=14)
+    prior = create_broad_particle_prior(num_particles=128, seed=14)
     state = Tossing3DBeliefState(skill_beliefs={TOSS_SKILL: prior})
 
     posterior = refit_belief_state(
@@ -382,7 +385,7 @@ def test_cycle_refit_without_examples_does_not_observe_learning_rate() -> None:
 
 
 def test_particle_filter_resampling_is_seeded_and_reports_diagnostics() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=128, seed=11)
+    prior = create_broad_particle_prior(num_particles=128, seed=11)
     first = prior
     second = prior
     for _ in range(8):
@@ -396,7 +399,7 @@ def test_particle_filter_resampling_is_seeded_and_reports_diagnostics() -> None:
 
 
 def test_particle_filter_resampling_rejuvenates_learning_rate_particles() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=256, seed=15)
+    prior = create_broad_particle_prior(num_particles=256, seed=15)
     posterior = prior
     for _ in range(12):
         posterior = posterior.condition_outcome(success=True)
@@ -409,7 +412,7 @@ def test_particle_filter_resampling_rejuvenates_learning_rate_particles() -> Non
 
 
 def test_particle_filter_rejuvenation_preserves_joint_parameter_correlation() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=2_000, seed=16)
+    prior = create_broad_particle_prior(num_particles=2_000, seed=16)
     parameters, weights = prior.arrays()
     parameters = parameters.copy()
     parameters[:, 1] = parameters[:, 0] * 0.1
@@ -423,7 +426,7 @@ def test_particle_filter_rejuvenation_preserves_joint_parameter_correlation() ->
 
 
 def test_particle_filter_accepts_observation_after_boundary_rejuvenation() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=256, seed=17)
+    prior = create_broad_particle_prior(num_particles=256, seed=17)
     posterior = prior
     for _ in range(30):
         posterior = posterior.condition_outcome(success=True)
@@ -435,7 +438,7 @@ def test_particle_filter_accepts_observation_after_boundary_rejuvenation() -> No
 
 
 def test_particle_prediction_advances_competence_but_not_learning_rate() -> None:
-    prior = ParticleFilterBelief.broad_prior(num_particles=128, seed=13)
+    prior = create_broad_particle_prior(num_particles=128, seed=13)
     predicted = refit_skill_belief(belief=prior, training_examples=2)
 
     assert isinstance(predicted, ParticleFilterBelief)

@@ -58,62 +58,6 @@ class ParticleFilterBelief(SkillBelief):
             raise ValueError("particle weights must be positive, finite, and sum to one")
         return self
 
-    @classmethod
-    def broad_prior(
-        cls,
-        *,
-        num_particles: int,
-        seed: int,
-    ) -> Self:
-        assert num_particles >= 1
-        rng = np.random.default_rng(seed)
-        quantiles = (np.arange(num_particles) + 0.5) / num_particles
-        competences = rng.permutation(quantiles)
-        learning_rates = rng.permutation(quantiles)
-        costs = rng.permutation(quantiles)
-        parameters = np.column_stack((
-            COMPETENCE_MIN + competences * (COMPETENCE_MAX - COMPETENCE_MIN),
-            LEARNING_RATE_MIN + learning_rates * (LEARNING_RATE_MAX - LEARNING_RATE_MIN),
-            COST_MIN + costs * (COST_MAX - COST_MIN),
-        ))
-        weights = np.full(num_particles, 1.0 / num_particles)
-        return cls(
-            resampling_seed=seed,
-            particle_parameters=np.asarray(parameters, dtype=PARTICLE_DTYPE).tobytes(),
-            particle_weights=np.asarray(weights, dtype=PARTICLE_DTYPE).tobytes(),
-            num_particles=num_particles,
-        )
-
-    @classmethod
-    def fixed_performance_cost_prior(
-        cls,
-        *,
-        num_particles: int,
-        seed: int,
-        competence: float,
-        learning_rate: float,
-    ) -> Self:
-        """Keep known performance fixed while inferring an execution cost."""
-        assert COMPETENCE_MIN <= competence <= COMPETENCE_MAX
-        assert LEARNING_RATE_MIN <= learning_rate <= LEARNING_RATE_MAX
-        assert num_particles >= 1
-        rng = np.random.default_rng(seed)
-        quantiles = (np.arange(num_particles) + 0.5) / num_particles
-        costs = COST_MIN + rng.permutation(quantiles) * (COST_MAX - COST_MIN)
-        parameters = np.column_stack((
-            np.full(num_particles, competence),
-            np.full(num_particles, learning_rate),
-            costs,
-        ))
-        return cls(
-            resampling_seed=seed,
-            particle_parameters=np.asarray(parameters, dtype=PARTICLE_DTYPE).tobytes(),
-            particle_weights=np.full(
-                num_particles, 1.0 / num_particles, dtype=PARTICLE_DTYPE
-            ).tobytes(),
-            num_particles=num_particles,
-        )
-
     def arrays(self) -> tuple[np.ndarray, np.ndarray]:
         return np.frombuffer(self.particle_parameters, dtype=PARTICLE_DTYPE).reshape(
             -1, 3
@@ -182,3 +126,50 @@ class ParticleFilterBelief(SkillBelief):
                 "num_particles": len(weights),
             }
         )
+
+
+def create_broad_particle_prior(*, num_particles: int, seed: int) -> ParticleFilterBelief:
+    assert num_particles >= 1
+    rng = np.random.default_rng(seed)
+    quantiles = (np.arange(num_particles) + 0.5) / num_particles
+    parameters = np.column_stack((
+        COMPETENCE_MIN + rng.permutation(quantiles) * (COMPETENCE_MAX - COMPETENCE_MIN),
+        LEARNING_RATE_MIN + rng.permutation(quantiles) * (LEARNING_RATE_MAX - LEARNING_RATE_MIN),
+        COST_MIN + rng.permutation(quantiles) * (COST_MAX - COST_MIN),
+    ))
+    return ParticleFilterBelief(
+        resampling_seed=seed,
+        particle_parameters=np.asarray(parameters, dtype=PARTICLE_DTYPE).tobytes(),
+        particle_weights=np.full(
+            num_particles, 1.0 / num_particles, dtype=PARTICLE_DTYPE
+        ).tobytes(),
+        num_particles=num_particles,
+    )
+
+
+def create_fixed_performance_cost_prior(
+    *,
+    num_particles: int,
+    seed: int,
+    competence: float,
+    learning_rate: float,
+) -> ParticleFilterBelief:
+    """Keep known performance fixed while inferring an execution cost."""
+    assert COMPETENCE_MIN <= competence <= COMPETENCE_MAX
+    assert LEARNING_RATE_MIN <= learning_rate <= LEARNING_RATE_MAX
+    assert num_particles >= 1
+    rng = np.random.default_rng(seed)
+    quantiles = (np.arange(num_particles) + 0.5) / num_particles
+    parameters = np.column_stack((
+        np.full(num_particles, competence),
+        np.full(num_particles, learning_rate),
+        COST_MIN + rng.permutation(quantiles) * (COST_MAX - COST_MIN),
+    ))
+    return ParticleFilterBelief(
+        resampling_seed=seed,
+        particle_parameters=np.asarray(parameters, dtype=PARTICLE_DTYPE).tobytes(),
+        particle_weights=np.full(
+            num_particles, 1.0 / num_particles, dtype=PARTICLE_DTYPE
+        ).tobytes(),
+        num_particles=num_particles,
+    )
