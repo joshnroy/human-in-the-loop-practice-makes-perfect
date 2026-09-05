@@ -27,11 +27,13 @@ from .tossing3d_observation_model import (
     BeliefEstimator,
     make_default_tossing3d_belief,
     mean_competence,
+    mean_cost,
     mean_learning_rate,
     refit_belief_state,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
+from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
@@ -92,6 +94,13 @@ class Tossing3DPomdpMethod(EesMethod):
             estimates[RESET_SKILL + " (fixed)"] = 0.0
         return estimates
 
+    def practice_skill_costs(self) -> dict[str, float]:
+        return {
+            skill_name + " (belief mean)": mean_cost(belief=belief)
+            for skill_name, belief in self._pomdp_state.skill_beliefs.items()
+            if isinstance(belief, ParticleFilterBelief)
+        }
+
     def practice_skill_improvement_potentials(self) -> dict[str, float]:
         """Expected advantage of each applicable skill over stopping now."""
         stop_value = self._practice_values.get("STOP")
@@ -137,6 +146,7 @@ class Tossing3DPomdpMethod(EesMethod):
             estimator=self.pomdp_belief_estimator,
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
+            include_human_reset=self.ask_for_reset_cube_bin_cost is not None,
         )
         robot_skills = self.skills()
         human_skills = self.human_skills()
@@ -195,6 +205,7 @@ class Tossing3DPomdpMethod(EesMethod):
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
+            observed_cost=ground_skill.evaluate_practice_cost(),
         )
         self.record_diagnostic(
             event="outcome",
@@ -203,6 +214,8 @@ class Tossing3DPomdpMethod(EesMethod):
             random_exploration=was_random_exploration,
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
+            observed_cost=ground_skill.evaluate_practice_cost(),
+            estimated_costs=self.practice_skill_costs(),
         )
 
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:

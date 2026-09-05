@@ -9,9 +9,15 @@ from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
     Tossing3DBeliefState,
 )
-from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
+    ParticleFilterBelief,
+    create_broad_particle_prior,
+    create_fixed_performance_cost_prior,
+)
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
+
+from .tossing3d_constants import RESET_SKILL
 
 BeliefEstimator = Literal["finite_grid", "particle_filter"]
 
@@ -39,13 +45,19 @@ class SkillBeliefModel:
         state: Tossing3DBeliefState,
         success: bool,
         was_random_exploration: bool,
+        observed_cost: float | None = None,
     ) -> Tossing3DBeliefState:
         if self.skill is None or was_random_exploration:
             return state
         skill_name = self.skill.name
+        if skill_name not in state.skill_beliefs:
+            return state
         skill_beliefs = dict(state.skill_beliefs)
-        skill_beliefs[skill_name] = condition_skill_belief(
-            belief=skill_beliefs[skill_name], success=success
+        belief = skill_beliefs[skill_name]
+        skill_beliefs[skill_name] = (
+            belief.condition_execution(success=success, observed_cost=observed_cost)
+            if observed_cost is not None and isinstance(belief, ParticleFilterBelief)
+            else condition_skill_belief(belief=belief, success=success)
         )
         pending_examples = dict(state.pending_examples)
         if self.example_source == PracticeExampleSource.OUTCOME:
@@ -84,7 +96,10 @@ def make_skill_belief_models(
 ) -> tuple[dict[GroundSkill, SkillBeliefModel], dict[str, SkillBeliefModel]]:
     """Associate every practice skill with explicit updates or the default no-op."""
     by_ground_skill = {
-        ground_skill: SKILL_BELIEF_MODELS.get(ground_skill.skill, SkillBeliefModel())
+        ground_skill: SKILL_BELIEF_MODELS.get(
+            ground_skill.skill,
+            SkillBeliefModel(skill=ground_skill.skill),
+        )
         for ground_skill in ground_skills
     }
     by_name = {ground_skill.skill.name: model for ground_skill, model in by_ground_skill.items()}
@@ -96,19 +111,31 @@ def make_skill_belief_prior() -> WeightedHypothesisBelief:
 
 
 def make_default_tossing3d_belief(
-    *, estimator: BeliefEstimator = "particle_filter", num_particles: int = 256, seed: int = 0
+    *,
+    estimator: BeliefEstimator = "particle_filter",
+    num_particles: int = 256,
+    seed: int = 0,
+    include_human_reset: bool = False,
 ) -> Tossing3DBeliefState:
-    """Independent broad priors for all robot skills; human reset is known."""
+    """Independent cost priors; human-reset performance remains known."""
     beliefs: dict[str, ConcreteSkillBelief]
     if estimator == "finite_grid":
         beliefs = {skill.name: make_skill_belief_prior() for skill in SKILL_BELIEF_MODELS}
     else:
         beliefs = {
-            skill.name: ParticleFilterBelief.broad_prior(
-                num_particles=num_particles, seed=seed + index
+            skill.name: create_broad_particle_prior(
+                num_particles=num_particles,
+                seed=seed + index,
             )
             for index, skill in enumerate(SKILL_BELIEF_MODELS)
         }
+    if include_human_reset and estimator == "particle_filter":
+        beliefs[RESET_SKILL] = create_fixed_performance_cost_prior(
+            num_particles=num_particles,
+            seed=seed + len(beliefs),
+            competence=1.0,
+            learning_rate=0.0,
+        )
     return Tossing3DBeliefState(skill_beliefs=beliefs)
 
 
@@ -118,6 +145,10 @@ def mean_competence(*, belief: SkillBelief) -> float:
 
 def mean_learning_rate(*, belief: SkillBelief) -> float:
     return belief.mean_learning_rate()
+
+
+def mean_cost(*, belief: ParticleFilterBelief) -> float:
+    return belief.mean_cost()
 
 
 def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:

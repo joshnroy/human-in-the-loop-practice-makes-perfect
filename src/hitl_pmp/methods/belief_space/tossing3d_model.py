@@ -132,12 +132,14 @@ class Tossing3DPracticeModel(BaseModel):
         ground_skill: GroundSkill,
         success: bool,
         was_random_exploration: bool,
+        observed_cost: float | None = None,
     ) -> Tossing3DBeliefState:
         """Apply any belief observation associated with a practiced skill."""
         return self._skill_belief_models[ground_skill].observe_outcome(
             state=state,
             success=success,
             was_random_exploration=was_random_exploration,
+            observed_cost=observed_cost,
         )
 
     def observe_training_example(
