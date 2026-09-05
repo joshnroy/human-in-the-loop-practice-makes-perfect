@@ -20,6 +20,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     make_default_tossing3d_belief,
     make_skill_belief_prior,
     mean_competence,
+    mean_cost,
     mean_learning_rate,
     observed_learning_rate,
     refit_belief_state,
@@ -280,9 +281,16 @@ def test_belief_priors_have_matching_support_and_moments() -> None:
     )
 
 
-@pytest.mark.parametrize("estimator", ["particle_filter", "finite_grid"])
-def test_belief_state_round_trips_both_representations(*, estimator: str) -> None:
-    state = make_default_tossing3d_belief(estimator=estimator, num_particles=32, seed=3)
+def test_belief_state_round_trips_particle_representation() -> None:
+    state = make_default_tossing3d_belief(num_particles=32, seed=3)
+
+    restored = Tossing3DBeliefState.model_validate_json(state.model_dump_json())
+
+    assert restored == state
+
+
+def test_belief_state_round_trips_legacy_weighted_representation() -> None:
+    state = Tossing3DBeliefState(skill_beliefs={PICK_SKILL: make_skill_belief_prior()})
 
     restored = Tossing3DBeliefState.model_validate_json(state.model_dump_json())
 
@@ -316,6 +324,28 @@ def test_particle_filter_conditions_competence_and_cost_together() -> None:
 
     assert posterior.mean_competence() > prior.mean_competence()
     assert abs(posterior.mean_cost() - 0.001) < abs(prior.mean_cost() - 0.001)
+
+
+def test_sampled_theta_contains_joint_cost_particle() -> None:
+    model = _domain_model()
+    state = make_default_tossing3d_belief(num_particles=128, seed=19)
+
+    theta = model.sample_theta_from_belief(belief_state=state)
+
+    assert 0.0 <= theta.pick.cost <= 0.01
+    assert 0.0 <= theta.toss.cost <= 0.01
+    assert 0.0 <= theta.open_gripper.cost <= 0.01
+
+
+def test_search_transition_uses_certainty_equivalent_mean_cost() -> None:
+    state = make_default_tossing3d_belief(num_particles=128, seed=21)
+    model = _domain_model()
+
+    outcomes = _outcomes(model=model, state=state, name=PICK_SKILL)
+
+    costs = {next_state.accumulated_cost - state.accumulated_cost for _, next_state, _ in outcomes}
+    assert len(costs) == 1
+    assert next(iter(costs)) == pytest.approx(mean_cost(belief=state.skill_beliefs[PICK_SKILL]))
 
 
 def test_particle_filter_conditions_learning_rate_on_cycle_derivative() -> None:
@@ -717,13 +747,11 @@ def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
         name=TOSS_SKILL,
     )
     assert sum(outcome[0] for outcome in outcomes) == pytest.approx(1.0)
-    unchanged = [
-        outcome
-        for outcome in outcomes
-        if _belief(state=outcome[1], skill_name=TOSS_SKILL)
-        == _belief(state=state, skill_name=TOSS_SKILL)
-    ]
-    assert sum(outcome[0] for outcome in unchanged) == pytest.approx(0.5)
+    belief_probability: dict[SkillBelief, float] = {}
+    for probability, next_state, _ in outcomes:
+        belief = _belief(state=next_state, skill_name=TOSS_SKILL)
+        belief_probability[belief] = belief_probability.get(belief, 0.0) + probability
+    assert any(probability == pytest.approx(0.5) for probability in belief_probability.values())
     assert all(
         _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 1 for outcome in outcomes
     )

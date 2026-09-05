@@ -18,6 +18,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_cost,
     mean_learning_rate,
 )
+from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -59,6 +60,9 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     pick = _grounding(method=method, name=PICK_SKILL)
     before = method.pomdp_state
     method.record_action_cost(ground_skill=pick)
+    dispatched = method.pomdp_state
+    assert dispatched.accumulated_cost == 0.001
+    assert dispatched.skill_beliefs == before.skill_beliefs
     method.observe_outcome(ground_skill=pick, success=True)
     after = method.pomdp_state
     assert after.accumulated_cost == 0.001
@@ -67,6 +71,11 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
         belief=before.skill_beliefs[PICK_SKILL]
     )
     assert after.pending_examples[PICK_SKILL] == 1
+    assert isinstance(after.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
+    assert isinstance(before.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
+    assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 0.001) < abs(
+        mean_cost(belief=before.skill_beliefs[PICK_SKILL]) - 0.001
+    )
 
 
 def test_theta_charts_are_read_only_and_label_fixed_assumptions() -> None:
@@ -124,7 +133,7 @@ def test_default_practice_policy_does_not_bypass_a_pomdp_stop() -> None:
 
 
 def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
-    method = _build(ask_for_reset_cube_bin_cost=0.25)
+    method = _build(ask_for_reset_cube_bin_cost=0.005)
     reset_skill = method.human_skills()[0]
     reset = next(
         skill
@@ -137,7 +146,7 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
         )
     )
     method.record_action_cost(ground_skill=reset)
-    assert method.pomdp_state.accumulated_cost == 0.25
+    assert method.pomdp_state.accumulated_cost == 0.005
 
 
 def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
@@ -156,7 +165,7 @@ def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
     )
     before = method.pomdp_state.skill_beliefs[RESET_SKILL]
 
-    method.observe_outcome(ground_skill=reset, success=True)
+    method.record_action_cost(ground_skill=reset)
 
     after = method.pomdp_state.skill_beliefs[RESET_SKILL]
     assert mean_competence(belief=after) == 1.0
@@ -164,6 +173,11 @@ def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
     assert abs(mean_cost(belief=after) - observed_cost) < abs(
         mean_cost(belief=before) - observed_cost
     )
+
+
+def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="cost observations must be at most"):
+        _build(ask_for_reset_cube_bin_cost=0.25)
 
 
 def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_path: Path) -> None:
