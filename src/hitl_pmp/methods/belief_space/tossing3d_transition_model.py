@@ -26,6 +26,13 @@ TransitionBranch = tuple[float, Tossing3DBeliefState, frozenset[GroundAtom]]
 
 
 def estimated_action_cost(*, state: Tossing3DBeliefState, action: GroundSkill) -> float:
+    """Use a certainty-equivalent posterior cost during tractable tree search.
+
+    Real executions update the full cost posterior. Expanding cost-observation
+    branches here would multiply the already exponential outcome tree by the
+    particle count at every depth, so planning deliberately uses its posterior
+    mean and holds that estimate fixed within one search.
+    """
     belief = state.skill_beliefs.get(action.skill.name)
     if isinstance(belief, ParticleFilterBelief):
         return belief.mean_cost()

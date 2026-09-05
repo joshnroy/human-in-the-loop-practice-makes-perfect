@@ -133,7 +133,7 @@ def test_default_practice_policy_does_not_bypass_a_pomdp_stop() -> None:
 
 
 def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
-    method = _build(ask_for_reset_cube_bin_cost=0.25)
+    method = _build(ask_for_reset_cube_bin_cost=0.005)
     reset_skill = method.human_skills()[0]
     reset = next(
         skill
@@ -146,7 +146,7 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
         )
     )
     method.record_action_cost(ground_skill=reset)
-    assert method.pomdp_state.accumulated_cost == 0.25
+    assert method.pomdp_state.accumulated_cost == 0.005
 
 
 def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
@@ -173,6 +173,11 @@ def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
     assert abs(mean_cost(belief=after) - observed_cost) < abs(
         mean_cost(belief=before) - observed_cost
     )
+
+
+def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="cost observations must be at most"):
+        _build(ask_for_reset_cube_bin_cost=0.25)
 
 
 def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_path: Path) -> None:

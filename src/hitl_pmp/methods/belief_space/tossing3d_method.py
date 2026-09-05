@@ -36,6 +36,7 @@ from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
+from .types.skill_belief import COST_MAX
 from .types.stop_action import STOP_ACTION, StopAction
 from .types.theta import Tossing3DTheta
 
@@ -167,6 +168,9 @@ class Tossing3DPomdpMethod(EesMethod):
             f"{sorted(missing)} from {sorted(available)}"
         )
         assert all(skill.skill.practice_cost is not None for skill in ground_skills)
+        assert all(skill.evaluate_practice_cost() <= COST_MAX for skill in ground_skills), (
+            f"POMDP cost observations must be at most {COST_MAX}"
+        )
 
     @property
     def pomdp_state(self) -> Tossing3DBeliefState:

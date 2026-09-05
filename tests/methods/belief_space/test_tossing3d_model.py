@@ -20,6 +20,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     make_default_tossing3d_belief,
     make_skill_belief_prior,
     mean_competence,
+    mean_cost,
     mean_learning_rate,
     observed_learning_rate,
     refit_belief_state,
@@ -336,7 +337,7 @@ def test_sampled_theta_contains_joint_cost_particle() -> None:
     assert 0.0 <= theta.open_gripper.cost <= 0.01
 
 
-def test_search_transition_uses_estimated_cost() -> None:
+def test_search_transition_uses_certainty_equivalent_mean_cost() -> None:
     state = make_default_tossing3d_belief(num_particles=128, seed=21)
     model = _domain_model()
 
@@ -344,7 +345,7 @@ def test_search_transition_uses_estimated_cost() -> None:
 
     costs = {next_state.accumulated_cost - state.accumulated_cost for _, next_state, _ in outcomes}
     assert len(costs) == 1
-    assert next(iter(costs)) == pytest.approx(0.005)
+    assert next(iter(costs)) == pytest.approx(mean_cost(belief=state.skill_beliefs[PICK_SKILL]))
 
 
 def test_particle_filter_conditions_learning_rate_on_cycle_derivative() -> None:
