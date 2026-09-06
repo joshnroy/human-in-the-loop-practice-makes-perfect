@@ -514,18 +514,16 @@ class PracticeLoop:
                         )
                     continue
                 except InteractionComplete as completion:
-                    session_end.reason = (
-                        "planner_stop" if completion.planner_stop else "interaction_complete"
-                    )
+                    if completion.planner_stop:
+                        session_end.reason = "planner_stop"
+                    else:
+                        session_end.reason = "interaction_complete"
                     session_end.actions_executed = step
                     if period_recorder is not None:
                         period_recorder.action_values = method.practice_action_values()
                         period_recorder.competences = method.practice_skill_competences()
                         period_recorder.learning_rates = method.practice_skill_learning_rates()
-                    # The Method has nothing further worth practicing. Ending
-                    # early is normal, and the steps not taken are not charged --
-                    # see InteractionComplete's own docstring for why the count is
-                    # data-driven rather than budget-driven.
+                    # Ending early is normal, and steps not taken are not charged.
                     if recorder is not None:
                         recorder.record_interaction_complete(
                             state=state, step_index=step, transitions=num_online_transitions

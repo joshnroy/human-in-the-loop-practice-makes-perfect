@@ -18,9 +18,10 @@ from .types import (
 
 
 class InteractionComplete(Exception):  # noqa: N818
-    """Raised by a practice policy with nothing further worth doing, ending the
-    period early so the online-transition count stays data-driven, not
-    budget-driven. Not an error, hence no `Error` suffix (ruff N818 waiver).
+    """Raised by a practice policy to end the period before its step limit.
+
+    This means nothing further is worth doing, so the transition count is data-driven.
+    Not an error, hence no `Error` suffix (ruff N818 waiver).
 
     Distinct from `HumanCubeBinResetRequested` below -- see that docstring."""
 

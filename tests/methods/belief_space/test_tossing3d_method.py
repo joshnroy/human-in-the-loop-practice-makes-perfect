@@ -11,7 +11,11 @@ from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
-from hitl_pmp.methods.belief_space.tossing3d_constants import PICK_SKILL, RESET_SKILL, TOSS_SKILL
+from hitl_pmp.methods.belief_space.tossing3d_constants import (
+    PICK_SKILL,
+    RESET_SKILL,
+    TOSS_SKILL,
+)
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_competence,
@@ -55,17 +59,25 @@ def test_selector_uses_current_symbolic_state_without_starting_simulator() -> No
     assert method.env._backend is None  # noqa: SLF001 (pin lazy simulator construction)
 
 
+def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:
+    method = _build()
+    assert {skill.evaluate_practice_cost() for skill in method.skills()} == {1.0}
+    assert {
+        skill.evaluate_practice_cost() for skill in Tossing3DSkillProvider(env=method.env).skills()
+    } == {1.0}
+
+
 def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     method = _build()
     pick = _grounding(method=method, name=PICK_SKILL)
     before = method.pomdp_state
     method.record_action_cost(ground_skill=pick)
     dispatched = method.pomdp_state
-    assert dispatched.accumulated_cost == 0.001
+    assert dispatched.accumulated_cost == 1.0
     assert dispatched.skill_beliefs == before.skill_beliefs
     method.observe_outcome(ground_skill=pick, success=True)
     after = method.pomdp_state
-    assert after.accumulated_cost == 0.001
+    assert after.accumulated_cost == 1.0
     assert after.skill_beliefs[TOSS_SKILL] == before.skill_beliefs[TOSS_SKILL]
     assert mean_competence(belief=after.skill_beliefs[PICK_SKILL]) > mean_competence(
         belief=before.skill_beliefs[PICK_SKILL]
@@ -73,9 +85,17 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     assert after.pending_examples[PICK_SKILL] == 1
     assert isinstance(after.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
     assert isinstance(before.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
-    assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 0.001) < abs(
-        mean_cost(belief=before.skill_beliefs[PICK_SKILL]) - 0.001
+    assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 1.0) < abs(
+        mean_cost(belief=before.skill_beliefs[PICK_SKILL]) - 1.0
     )
+
+
+def test_record_action_cost_only_records_realized_cost() -> None:
+    method = _build()
+    pick = _grounding(method=method, name=PICK_SKILL)
+    for _ in range(21):
+        method.record_action_cost(ground_skill=pick)
+    assert method.pomdp_state.accumulated_cost == 21.0
 
 
 def test_theta_charts_are_read_only_and_label_fixed_assumptions() -> None:
@@ -177,7 +197,7 @@ def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
 
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
     with pytest.raises(ValidationError, match="cost observations must be at most"):
-        _build(ask_for_reset_cube_bin_cost=0.25)
+        _build(ask_for_reset_cube_bin_cost=20.01)
 
 
 def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_path: Path) -> None:
@@ -202,7 +222,7 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
     method.get_task_policy(task=task)
     method.observe_environment_reset(state=state)
     method.select_skill_to_practice(true_atoms=pick.preconditions)
-    assert method.pomdp_state.accumulated_cost == 0.002
+    assert method.pomdp_state.accumulated_cost == 2.0
 
     method.decision_log = tmp_path / "decisions.jsonl"
     method.get_practice_policy(task=task)
@@ -212,7 +232,7 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
     assert '"event": "session_start"' in method.decision_log.read_text()
     method.record_action_cost(ground_skill=pick)
     method.select_skill_to_practice(true_atoms=pick.preconditions)
-    assert method.pomdp_state.accumulated_cost == 0.001
+    assert method.pomdp_state.accumulated_cost == 1.0
     decision = json.loads(method.decision_log.read_text().splitlines()[-1])
     assert set(decision["learning_rates"]) == {
         "PickCube (belief mean)",
