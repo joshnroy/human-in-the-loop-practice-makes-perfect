@@ -168,6 +168,18 @@ class Tossing3DPomdpCli(EesCli):
             help="Exact belief-space expectimax depth in future skill executions.",
         )
         parser.add_argument(
+            "--pomdp-solver",
+            choices=("expectimax", "determinized"),
+            default=Tossing3DPomdpMethod.model_fields["pomdp_solver"].default,
+            help="Belief-space traversal: exact expectimax or sampled best-first search.",
+        )
+        parser.add_argument(
+            "--pomdp-max-expansions",
+            type=int,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_max_expansions"].default,
+            help="Node-expansion budget for the determinized solver (independent of depth).",
+        )
+        parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
@@ -221,6 +233,8 @@ class Tossing3DPomdpCli(EesCli):
                     args.reproduce_predicators_explore_target_only
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
+                pomdp_solver=args.pomdp_solver,
+                pomdp_max_expansions=args.pomdp_max_expansions,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),
