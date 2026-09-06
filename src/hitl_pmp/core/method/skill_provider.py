@@ -100,8 +100,9 @@ class SkillProvider(BaseModel, abc.ABC):
 
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         """A domain-specific ground skill for `HumanCubeBinResetRequested`: offered
-        to `EesMethod`'s planner as a mid-plan step, priced by `plan_to` itself
-        (`--ask-for-reset-cube-bin-cost`), not here.
+        to `EesMethod`'s planner as a mid-plan step. A concrete provider may give
+        the skill a canonical `practice_cost`; `--ask-for-reset-cube-bin-cost`
+        overrides it for an experiment.
 
         This skill's effect -- "the objects a human could tidy up are back in place" --
         can only be written in terms of *this domain's own* predicates, so each

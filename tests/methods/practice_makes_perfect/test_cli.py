@@ -8,7 +8,11 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
+from hitl_pmp.methods.practice_makes_perfect.cli import (
+    EesCli,
+    RandomSkillsCli,
+    Tossing3DPomdpCli,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -150,6 +154,13 @@ def test_ees_accepts_the_reset_skill_cost_flag() -> None:
     EesCli.add_arguments(parser=parser)
     args = parser.parse_args(["--ask-for-reset-cube-bin-cost", "0.134"])
     assert args.ask_for_reset_cube_bin_cost == pytest.approx(0.134)
+
+
+def test_pomdp_uses_the_shared_optional_reset_cost_override() -> None:
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args([])
+    assert args.ask_for_reset_cube_bin_cost is None
 
 
 def test_random_skills_does_not_register_the_reset_skill_cost_flag() -> None:

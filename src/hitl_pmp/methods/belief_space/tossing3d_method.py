@@ -73,7 +73,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 belief=self._pomdp_state.skill_beliefs[OPEN_GRIPPER_SKILL]
             ),
         }
-        if self.ask_for_reset_cube_bin_cost is not None:
+        if RESET_SKILL in self._pomdp_state.skill_beliefs:
             estimates[RESET_SKILL + " (fixed)"] = 1.0
         return estimates
 
@@ -89,7 +89,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 belief=self._pomdp_state.skill_beliefs[OPEN_GRIPPER_SKILL]
             ),
         }
-        if self.ask_for_reset_cube_bin_cost is not None:
+        if RESET_SKILL in self._pomdp_state.skill_beliefs:
             estimates[RESET_SKILL + " (fixed)"] = 0.0
         return estimates
 
@@ -132,11 +132,11 @@ class Tossing3DPomdpMethod(EesMethod):
             stream.write(LogTiming.encode(record=record))
 
     def human_skills(self) -> tuple[Skill, ...]:
-        """Configured human-executed skills available during practice."""
-        if self.ask_for_reset_cube_bin_cost is None:
-            return ()
+        """Use the same provider skill and optional cost override as EES."""
         reset = self.skill_provider.human_cube_bin_reset_skill()
         assert reset is not None
+        if self.ask_for_reset_cube_bin_cost is None:
+            return (reset.skill,)
         return (reset.skill.model_copy(update={"practice_cost": self.ask_for_reset_cube_bin_cost}),)
 
     def model_post_init(self, __context: object) -> None:
@@ -144,7 +144,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
-            include_human_reset=self.ask_for_reset_cube_bin_cost is not None,
+            include_human_reset=bool(self.human_skills()),
         )
         robot_skills = self.skills()
         human_skills = self.human_skills()

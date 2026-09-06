@@ -60,9 +60,8 @@ class EesCli:
             "domain's own predicates. Configuring this against a domain whose "
             "SkillProvider.human_cube_bin_reset_skill() has nothing to offer (every "
             "domain but Tossing3D today) is a misconfiguration plan_to reports rather "
-            "than silently ignores. Omitted (the default, None) means the skill is not "
-            "offered to the planner at all, so a run takes exactly the code path it "
-            "took before this skill existed.",
+            "than silently ignores. Omitted uses the domain skill's canonical cost "
+            "when one is defined; otherwise the skill is not offered.",
         )
         parser.add_argument(
             "--exploration-epsilon",

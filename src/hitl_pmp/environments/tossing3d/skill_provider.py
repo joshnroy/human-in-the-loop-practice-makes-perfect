@@ -140,6 +140,7 @@ class Tossing3DSkillProvider(SkillProvider):
             }),
             delete_effects=frozenset(removed),
             param_dim=0,
+            practice_cost=5.0,
         )
         return GroundSkill(skill=skill, objects=(env.robot, env.cube, env.bin, env.barrier))
 

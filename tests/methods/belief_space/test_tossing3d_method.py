@@ -238,6 +238,7 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
         "PickCube (belief mean)",
         "MoveToTossLocationAndToss (belief mean)",
         "OpenGripper (belief mean)",
+        "ask_for_reset_cube_bin_only (fixed)",
     }
     assert decision["improvement_potentials"]
     stop_value = method.practice_action_values()["STOP"]

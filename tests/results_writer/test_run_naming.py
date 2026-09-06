@@ -14,6 +14,7 @@ import argparse
 
 import pytest
 
+from hitl_pmp.cli import Cli
 from hitl_pmp.results_writer.run_naming import RunNamer
 
 
@@ -61,8 +62,21 @@ def test_the_name_carries_environment_method_arm_and_seed() -> None:
     """The whole point: a reader can tell what a run was from the run list, without
     opening it."""
     assert RunNamer.name(args=Namespaces.ees_tossingroom()) == (
-        "tossingroom-ees-oneway-split-never-cube-bin-reset-cost-none-c100-seed3"
+        "tossingroom-ees-oneway-split-never-c100-seed3"
     )
+
+
+def test_canonical_and_explicit_human_reset_costs_have_the_same_name() -> None:
+    canonical = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    explicit = RunNamer.name(
+        args=Namespaces.ees_tossingroom(env="tossing3d", ask_for_reset_cube_bin_cost=5.0)
+    )
+    assert canonical == explicit
+
+
+def test_non_tossing3d_ees_name_omits_inapplicable_reset_cost() -> None:
+    args = Cli.parse_args(argv=["--env", "lightswitch", "--method", "ees"])
+    assert "cube-bin-reset-cost" not in RunNamer.name(args=args)
 
 
 def test_the_seed_sorts_last() -> None:

@@ -163,4 +163,11 @@ class RunNameField(BaseModel):
     # word of its own, so naming both states is the only way a run says which ledge it
     # ran on rather than leaving a reader to infer it from a missing token.
     toggle: tuple[str, str] | None = None
+    # Some optional overrides have a canonical effective value when omitted. Naming
+    # that value makes an omitted override and an equivalent explicit override share
+    # one run identity.
+    none_token: str | None = None
+    # Include a domain-specific axis only when another resolved field selects the
+    # domain that gives it meaning.
+    when: tuple[str, object] | None = None
     optional: bool = False
