@@ -18,15 +18,19 @@ from .types import (
 
 
 class InteractionComplete(Exception):  # noqa: N818
-    """Raised by a practice policy with nothing further worth doing, ending the
-    period early so the online-transition count stays data-driven, not
-    budget-driven. Not an error, hence no `Error` suffix (ruff N818 waiver).
+    """Raised by a practice policy to end the period before its step limit.
+
+    Ordinarily this means nothing further is worth doing, so the transition count is
+    data-driven. ``budget_exhausted`` distinguishes a hard feasibility boundary from
+    that model/planner decision. Not an error, hence no `Error` suffix (ruff N818
+    waiver).
 
     Distinct from `HumanCubeBinResetRequested` below -- see that docstring."""
 
-    def __init__(self, *, planner_stop: bool = False) -> None:
+    def __init__(self, *, planner_stop: bool = False, budget_exhausted: bool = False) -> None:
         super().__init__()
         self.planner_stop = planner_stop
+        self.budget_exhausted = budget_exhausted
 
 
 class HumanCubeBinResetRequested(Exception):  # noqa: N818

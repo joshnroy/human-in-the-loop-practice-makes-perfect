@@ -12,8 +12,8 @@ COMPETENCE_MAX: Final = 1.0
 LEARNING_RATE_MIN: Final = 0.0
 LEARNING_RATE_MAX: Final = 1.0
 COST_MIN: Final = 0.0
-COST_MAX: Final = 0.01
-COST_OBSERVATION_SCALE: Final = 0.0001
+COST_MAX: Final = 20.0
+COST_OBSERVATION_SCALE: Final = 0.1
 
 
 class SkillHypothesis(BaseModel):

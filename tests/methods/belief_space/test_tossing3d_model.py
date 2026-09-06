@@ -153,24 +153,24 @@ def _expected_stop_value(*, model: Tossing3DPracticeModel, state: Tossing3DBelie
 
 def test_G_returns_policy_value_within_hard_budget() -> None:
     model = Tossing3DPracticeModel()
-    assert model.G(policy_value=2.5, summed_cost=150.0) == pytest.approx(2.5)
+    assert model.G(policy_value=2.5, summed_cost=20.0) == pytest.approx(2.5)
 
 
 def test_G_returns_negative_infinity_beyond_hard_budget() -> None:
     model = Tossing3DPracticeModel()
-    assert model.G(policy_value=2.5, summed_cost=150.001) == -float("inf")
+    assert model.G(policy_value=2.5, summed_cost=20.001) == -float("inf")
 
 
 def test_budget_does_not_change_environment_action_applicability() -> None:
     model = _domain_model(reset_cost=1.0)
-    state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 151.0})
+    state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 21.0})
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
     assert model.get_valid_actions(environment_state=search_state)
 
 
 def test_search_prunes_state_beyond_hard_budget() -> None:
     model = _domain_model(reset_cost=1.0)
-    state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 151.0})
+    state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 21.0})
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
     value, action = solve_belief_space_expectimax(
         environment_state=search_state,
@@ -249,7 +249,8 @@ def test_particle_prior_is_continuous_seeded_and_normalized() -> None:
     parameters, weights = first.arrays()
     assert parameters.shape == (128, 3)
     assert weights.sum() == pytest.approx(1.0)
-    assert np.all((parameters >= 0.0) & (parameters <= 1.0))
+    assert np.all((parameters[:, :2] >= 0.0) & (parameters[:, :2] <= 1.0))
+    assert np.all((parameters[:, 2] >= 0.0) & (parameters[:, 2] <= 20.0))
     assert np.max(parameters[:, 1]) > 0.9
     assert np.any(~np.isin(parameters[:, 1], (0.0, 1.0)))
 
@@ -320,10 +321,10 @@ def test_particle_filter_conditions_with_bernoulli_likelihood() -> None:
 def test_particle_filter_conditions_competence_and_cost_together() -> None:
     prior = create_broad_particle_prior(num_particles=2_000, seed=19)
 
-    posterior = prior.condition_execution(success=True, observed_cost=0.001)
+    posterior = prior.condition_execution(success=True, observed_cost=1.0)
 
     assert posterior.mean_competence() > prior.mean_competence()
-    assert abs(posterior.mean_cost() - 0.001) < abs(prior.mean_cost() - 0.001)
+    assert abs(posterior.mean_cost() - 1.0) < abs(prior.mean_cost() - 1.0)
 
 
 def test_sampled_theta_contains_joint_cost_particle() -> None:
@@ -332,9 +333,9 @@ def test_sampled_theta_contains_joint_cost_particle() -> None:
 
     theta = model.sample_theta_from_belief(belief_state=state)
 
-    assert 0.0 <= theta.pick.cost <= 0.01
-    assert 0.0 <= theta.toss.cost <= 0.01
-    assert 0.0 <= theta.open_gripper.cost <= 0.01
+    assert 0.0 <= theta.pick.cost <= 20.0
+    assert 0.0 <= theta.toss.cost <= 20.0
+    assert 0.0 <= theta.open_gripper.cost <= 20.0
 
 
 def test_search_transition_uses_certainty_equivalent_mean_cost() -> None:

@@ -9,7 +9,9 @@ class PracticeSessionEnd(BaseModel):
     """Why a session ended; actions include human resets but exclude STOP."""
 
     cycle_index: int
-    reason: Literal["planner_stop", "interaction_complete", "session_action_cap"]
+    reason: Literal[
+        "planner_stop", "interaction_complete", "budget_exhausted", "session_action_cap"
+    ]
     actions_executed: int
     action_limit: int
 
