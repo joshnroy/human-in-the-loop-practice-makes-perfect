@@ -115,6 +115,13 @@ class Tossing3DCli:
             "standoffs solve is a property of the scene's geometry, not a constant of "
             "this domain, so it stays overridable.",
         )
+        parser.add_argument(
+            "--human-reset-practice-cost",
+            type=float,
+            default=Tossing3DSkillProvider.model_fields["human_reset_practice_cost"].default,
+            help="Cost of Tossing3D's provider-owned human cube/bin reset skill, in "
+            "robot-action equivalents.",
+        )
         parser.set_defaults(scene_bg=True, defer_rendering=False)
 
     @staticmethod
@@ -196,7 +203,10 @@ class Tossing3DCli:
         # same learned samplers and observed state features, without refitting on tests.
         context = DomainContext(
             env=practice_problem.env,
-            skill_provider=Tossing3DSkillProvider(env=practice_problem.env),
+            skill_provider=Tossing3DSkillProvider(
+                env=practice_problem.env,
+                human_reset_practice_cost=args.human_reset_practice_cost,
+            ),
             oracle=Tossing3DOracle(
                 env=practice_problem.env, throw_standoff=args.oracle_throw_standoff
             ),
@@ -264,8 +274,8 @@ class Tossing3DCli:
         # Wired for the same reason tossingroom's own build_problem wires it:
         # --method ees's ask_for_reset_cube_bin_only ground skill needs a real
         # HumanOracle on the practice Problem, or PracticeLoop.run refuses up front the
-        # moment its cost flag is configured. This function builds both the practice
-        # and evaluation Problem (called twice, see above), so both get one -- harmless
+        # moment the provider makes that skill available. This function builds both
+        # the practice and evaluation Problem (called twice, see above), so both get one -- harmless
         # on the evaluation side, since no evaluation policy can ever raise a
         # human-help exception in the first place, and harmless for every other
         # Method/config, since a HumanOracle that is never asked costs nothing and

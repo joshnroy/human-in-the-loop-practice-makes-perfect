@@ -11,9 +11,9 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
-    SKILL_BELIEF_MODELS,
     condition_skill_belief,
     mean_competence,
+    skill_belief_model,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
@@ -130,10 +130,11 @@ def transition_outcomes(
             effects=effects,
         )
     if action.skill.name == RESET_SKILL:
-        return deterministic_outcome(
+        return binary_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
+            probability=mean_competence(belief=state.skill_beliefs[RESET_SKILL]),
             cost=cost,
             effects=effects,
         )
@@ -146,28 +147,6 @@ def transition_outcomes(
         exploration_epsilon=exploration_epsilon,
         random_toss_competence=random_toss_competence,
         effects=effects,
-    )
-
-
-def deterministic_outcome(
-    *,
-    state: Tossing3DBeliefState,
-    true_atoms: frozenset[GroundAtom],
-    ground_skill: GroundSkill,
-    cost: float,
-    effects: dict[
-        GroundSkill,
-        tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
-    ],
-) -> tuple[TransitionBranch, ...]:
-    return (
-        (
-            1.0,
-            transition_belief_state(state=state, added_cost=cost),
-            apply_success_effects(
-                true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
-            ),
-        ),
     )
 
 
@@ -194,7 +173,7 @@ def binary_outcomes(
         )
         outcomes.append((
             branch_probability,
-            SKILL_BELIEF_MODELS[ground_skill.skill].observe_outcome(
+            skill_belief_model(ground_skill=ground_skill).observe_outcome(
                 state=transition_belief_state(state=state, added_cost=cost),
                 success=success,
                 was_random_exploration=False,

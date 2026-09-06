@@ -16,7 +16,7 @@ def test_recipe_uses_ees_and_keeps_practice_continuous(*, tmp_path: Path) -> Non
     assert args.layout == "same-side"
     assert args.practice_reset_policy == "never"
     assert args.practice_reset_interval is None
-    assert args.ask_for_reset_cube_bin_cost is None
+    assert args.human_reset_practice_cost == 5.0
     assert args.num_cycles == 2
     assert args.max_steps_per_interaction == 8
     assert args.record_sampler_draws

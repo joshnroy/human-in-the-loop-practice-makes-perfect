@@ -151,8 +151,8 @@ class Method(BaseModel, abc.ABC):
 
         Concrete `False` by default, for the same reason as `end_cycle`: no baseline
         built so far asks for anything, and none of them should need boilerplate to say
-        so. `EesMethod` overrides it, True exactly when its `ask_for_reset_cube_bin_cost`
-        ground-skill cost flag is configured -- see that class."""
+        so. `EesMethod` overrides it based on whether its domain provides the reset
+        ground skill -- see that class."""
         return False
 
     def observe_help_granted(self, *, state: State) -> None:

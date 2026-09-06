@@ -36,7 +36,7 @@ class Namespaces:
             "practice_reset_policy": "never",
             "two_way_ledge": False,
             "unsplit_skills": False,
-            "ask_for_reset_cube_bin_cost": None,
+            "human_reset_practice_cost": 5.0,
             "num_cycles": 100,
         }
         fields.update(overrides)
@@ -66,17 +66,21 @@ def test_the_name_carries_environment_method_arm_and_seed() -> None:
     )
 
 
-def test_canonical_and_explicit_human_reset_costs_have_the_same_name() -> None:
-    canonical = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
-    explicit = RunNamer.name(
-        args=Namespaces.ees_tossingroom(env="tossing3d", ask_for_reset_cube_bin_cost=5.0)
-    )
-    assert canonical == explicit
+def test_default_human_reset_cost_is_named() -> None:
+    name = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    assert "human-reset-cost-5-0" in name
+
+
+def test_missing_tossing3d_human_reset_cost_raises() -> None:
+    args = Namespaces.ees_tossingroom(env="tossing3d")
+    del args.human_reset_practice_cost
+    with pytest.raises(ValueError, match="human-reset-practice-cost"):
+        RunNamer.name(args=args)
 
 
 def test_non_tossing3d_ees_name_omits_inapplicable_reset_cost() -> None:
     args = Cli.parse_args(argv=["--env", "lightswitch", "--method", "ees"])
-    assert "cube-bin-reset-cost" not in RunNamer.name(args=args)
+    assert "human-reset-cost" not in RunNamer.name(args=args)
 
 
 def test_the_seed_sorts_last() -> None:
@@ -120,7 +124,7 @@ def test_names_are_url_and_path_safe() -> None:
     """A run name ends up in a URL and in offline directory names, so it stays
     lowercase `[a-z0-9-]` regardless of what a flag's value looked like -- a float cost
     is the case worth pinning here, since "0.134" contains a "." _slug must strip."""
-    name = RunNamer.name(args=Namespaces.ees_tossingroom(ask_for_reset_cube_bin_cost=0.134))
+    name = RunNamer.name(args=Namespaces.ees_tossingroom(human_reset_practice_cost=0.134))
     assert name == name.lower()
     assert set(name) <= set("abcdefghijklmnopqrstuvwxyz0123456789-")
 

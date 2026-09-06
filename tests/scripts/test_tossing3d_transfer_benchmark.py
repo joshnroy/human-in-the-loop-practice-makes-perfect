@@ -20,7 +20,7 @@ def test_standard_budget_and_far_side_tests(*, tmp_path: Path) -> None:
         assert args.evaluation_layout == "barrier"
         assert args.practice_reset_policy == "never"
         assert args.practice_reset_interval is None
-        assert args.ask_for_reset_cube_bin_cost is None
+        assert args.human_reset_practice_cost == 5.0
         assert args.sampler_max_train_iters == 10000
         assert args.goal_pursuit_horizon is None
         assert args.output_dir == tmp_path / "ees" / str(run.seed)

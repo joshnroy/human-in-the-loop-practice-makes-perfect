@@ -46,23 +46,6 @@ class EesCli:
         # 10 cycles = predicators' num_online_learning_cycles default; 150 steps =
         # the paper's stated Light Switch free-period length.
         PracticeCycleCli.add_arguments(parser=parser, default_num_cycles=10, default_max_steps=150)
-        # EES can ask for a human via a real, planner-priced ground skill.
-        # RandomSkillsCli has no planner, so it doesn't register this.
-        parser.add_argument(
-            "--ask-for-reset-cube-bin-cost",
-            type=float,
-            default=EesMethod.model_fields["ask_for_reset_cube_bin_cost"].default,
-            help="Cost of the ask_for_reset_cube_bin_only ground skill: a mid-plan "
-            "step, priced against a competence-based ceiling (see EesMethod.plan_to), "
-            "built by the domain's own SkillProvider -- its effect (reposition "
-            "whichever objects this domain calls 'movable, not the robot' to a "
-            "freshly sampled ground pose) can only be written in terms of that "
-            "domain's own predicates. Configuring this against a domain whose "
-            "SkillProvider.human_cube_bin_reset_skill() has nothing to offer (every "
-            "domain but Tossing3D today) is a misconfiguration plan_to reports rather "
-            "than silently ignores. Omitted uses the domain skill's canonical cost "
-            "when one is defined; otherwise the skill is not offered.",
-        )
         parser.add_argument(
             "--exploration-epsilon",
             type=float,
@@ -146,7 +129,6 @@ class EesCli:
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 draw_recorder=draw_recorder,
-                ask_for_reset_cube_bin_cost=args.ask_for_reset_cube_bin_cost,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
@@ -210,7 +192,6 @@ class Tossing3DPomdpCli(EesCli):
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 draw_recorder=draw_recorder,
-                ask_for_reset_cube_bin_cost=args.ask_for_reset_cube_bin_cost,
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,

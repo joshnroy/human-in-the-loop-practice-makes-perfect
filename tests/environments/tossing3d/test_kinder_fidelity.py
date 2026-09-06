@@ -623,14 +623,12 @@ def test_human_reset_clears_recorded_rim_support() -> None:
         observed = env.restore_plain_snapshot(
             plain=json.loads((Path(__file__).parent / "fixtures/seed3_rim.json").read_text())
         )
-        provider = Tossing3DSkillProvider(env=env)
+        provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=0.001)
         reset = provider.human_cube_bin_reset_skill()
         rim = GroundAtom(predicate=ON_BIN_RIM, objects=(env.cube, env.bin))
         assert ON_BIN_RIM.holds(observed, (env.cube, env.bin))
         assert rim in reset.delete_effects
-        method = EesMethod(
-            env=env, skill_provider=provider, seed=0, ask_for_reset_cube_bin_cost=0.001
-        )
+        method = EesMethod(env=env, skill_provider=provider, seed=0)
         plan = method.plan_to(
             init_atoms=method.abstract_state(state=observed),
             goal=frozenset({GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin))}),

@@ -100,9 +100,8 @@ class SkillProvider(BaseModel, abc.ABC):
 
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         """A domain-specific ground skill for `HumanCubeBinResetRequested`: offered
-        to `EesMethod`'s planner as a mid-plan step. A concrete provider may give
-        the skill a canonical `practice_cost`; `--ask-for-reset-cube-bin-cost`
-        overrides it for an experiment.
+        to `EesMethod`'s planner as a mid-plan step. A concrete provider must give
+        the skill a `practice_cost`; domain configuration owns any experiment override.
 
         This skill's effect -- "the objects a human could tidy up are back in place" --
         can only be written in terms of *this domain's own* predicates, so each
@@ -112,7 +111,7 @@ class SkillProvider(BaseModel, abc.ABC):
         `GroundSkill.skill.name` must equal `ASK_FOR_RESET_CUBE_BIN_ONLY_NAME`
         exactly (`_EesEpisode.step` intercepts on it). `None` default: most domains
         have no robot/non-robot distinction to offer, and `plan_to` never adds the
-        skill regardless of the cost flag when this returns `None`."""
+        skill when this returns `None`."""
         return None
 
 

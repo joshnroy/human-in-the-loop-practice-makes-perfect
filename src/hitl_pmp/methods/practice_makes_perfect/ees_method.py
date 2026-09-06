@@ -105,12 +105,10 @@ class EesMethod(Method):
        reason scoring is cheap enough to do per candidate per step.
 
     **Asking for help is a real ground skill this Method's planner can select, not
-    a harness-side wrapper.** A mid-plan skill (see `plan_to`), priced by its own
-    required-when-present cost flag rather than the competence model
-    (`UnconditionalHumanOracle` always succeeds, so there's nothing to learn --
-    only a price to set). `None` (default) keeps a run byte-identical to before
-    it existed. `ask_for_reset_cube_bin_only` is built by the domain's own
-    `SkillProvider`, since its effects reference that domain's own predicates."""
+    a harness-side wrapper.** The domain's own `SkillProvider` builds this mid-plan
+    skill (see `plan_to`) and supplies its required cost, since both its effects and
+    configuration belong to that domain. Providers that return `None` do not offer
+    `ask_for_reset_cube_bin_only`."""
 
     env: Environment
     skill_provider: SkillProvider
@@ -233,13 +231,6 @@ class EesMethod(Method):
     # Running at the paper config's 100000 reproduces predicators' own score
     # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
     sampler_max_train_iters: int = 10000
-
-    # Cost of ask_for_reset_cube_bin_only -- resets whichever objects the
-    # domain's SkillProvider calls "movable, not the robot" (Tossing3D:
-    # cube_0/bin_0), robot untouched. `None` keeps a run byte-identical.
-    # Domain-dependent: configuring this against a domain with no such skill is
-    # a misconfiguration plan_to reports, not silently ignores.
-    ask_for_reset_cube_bin_cost: float | None = None
 
     _rng: np.random.Generator = PrivateAttr()
     _competence_models: dict[GroundSkill, OptimisticSkillCompetenceModel] = PrivateAttr()
@@ -458,9 +449,8 @@ class EesMethod(Method):
         so caching can't change the plan).
 
         During practice, a provider-supplied `ask_for_reset_cube_bin_only` is added
-        to `skills`/`ground_skill_costs` at its canonical cost. A configured
-        `ask_for_reset_cube_bin_cost` overrides that cost for a sweep. `practicing`
-        defaults to False, so a robot being scored must
+        to `skills`/`ground_skill_costs` at its required provider-owned cost.
+        `practicing` defaults to False, so a robot being scored must
         never get to ask a human for help, so `get_task_policy`'s evaluation
         episodes (`practicing=False`, unlike `get_practice_policy`'s) and
         `refresh_planning_progress_plans`' speculative scoring pass (never a real
@@ -482,53 +472,26 @@ class EesMethod(Method):
         unrescued" possible."""
         skills = self.skills()
         ground_skill_costs = costs
-        reset_costs_by_name: dict[str, float] = {}
+        cube_bin_ground_skill: GroundSkill | None = None
         if practicing:
-            # Gated on the domain: None means this SkillProvider has nothing to
-            # offer, a misconfiguration worth reporting.
             cube_bin_ground_skill = self.skill_provider.human_cube_bin_reset_skill()
-            if cube_bin_ground_skill is None and self.ask_for_reset_cube_bin_cost is not None:
-                raise ValueError(
-                    "ask_for_reset_cube_bin_cost is configured, but "
-                    f"{type(self.skill_provider).__name__}.human_cube_bin_reset_skill() "
-                    "returned None -- this domain has no notion of 'the robot' distinct "
-                    "from 'everything else' that a partial reset could exploit, so this "
-                    "flag cannot be honoured here."
-                )
-            if cube_bin_ground_skill is not None and (
-                self.ask_for_reset_cube_bin_cost is not None
-                or cube_bin_ground_skill.skill.practice_cost is not None
-            ):
-                reset_cost = (
-                    self.ask_for_reset_cube_bin_cost
-                    if self.ask_for_reset_cube_bin_cost is not None
-                    else cube_bin_ground_skill.evaluate_practice_cost()
-                )
-                cube_bin_ground_skill = cube_bin_ground_skill.model_copy(
-                    update={
-                        "skill": cube_bin_ground_skill.skill.model_copy(
-                            update={"practice_cost": reset_cost}
-                        )
-                    }
-                )
+            if cube_bin_ground_skill is not None:
+                reset_cost = cube_bin_ground_skill.evaluate_practice_cost()
                 skills = (*skills, cube_bin_ground_skill.skill)
                 ground_skill_costs = {**ground_skill_costs, cube_bin_ground_skill: reset_cost}
-                reset_costs_by_name[ASK_FOR_RESET_CUBE_BIN_ONLY_NAME] = reset_cost
 
         plan = self._plan_or_raise(
             skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs
         )
-        if not reset_costs_by_name:
+        if cube_bin_ground_skill is None:
             return plan
-        used = [
-            ground_skill for ground_skill in plan if ground_skill.skill.name in reset_costs_by_name
-        ]
+        used = [ground_skill for ground_skill in plan if ground_skill == cube_bin_ground_skill]
         if not used:
             return plan
         # Position doesn't matter for the ceiling check, only that a reset
         # appears; `used[0]` is representative (a second reset back-to-back
         # would itself be pure waste, so at most one is ever load-bearing).
-        reset_cost = reset_costs_by_name[used[0].skill.name]
+        reset_cost = cube_bin_ground_skill.evaluate_practice_cost()
         ceiling = max(costs.values(), default=self.default_cost())
         if reset_cost <= ceiling:
             return plan
@@ -827,11 +790,8 @@ class EesMethod(Method):
     # ------------------------------------------------------------------ policy
 
     def may_request_human_help(self) -> bool:
-        """Whether this domain supplies a costed human-reset skill."""
-        reset = self.skill_provider.human_cube_bin_reset_skill()
-        return self.ask_for_reset_cube_bin_cost is not None or (
-            reset is not None and reset.skill.practice_cost is not None
-        )
+        """Whether this domain supplies a human-reset skill."""
+        return self.skill_provider.human_cube_bin_reset_skill() is not None
 
     def get_task_policy(self, *, task: Task) -> Policy:
         """Evaluation: plan to the goal with current competences and execute
@@ -1133,11 +1093,7 @@ class _EesEpisode:
             # Dispatch to the rescue mechanism, not execute_ground_skill -- this
             # "skill" has no controller/effects to score. self._pending stays
             # untouched: nothing here for observe_pending to settle.
-            reset_cost = ground_skill.skill.practice_cost
-            if reset_cost is None:
-                reset_cost = method.ask_for_reset_cube_bin_cost
-            assert reset_cost is not None
-            raise HumanCubeBinResetRequested(cost=reset_cost)
+            raise HumanCubeBinResetRequested(cost=ground_skill.evaluate_practice_cost())
         # By default every skill executed during practice explores (epsilon-greedy).
         # Under reproduce_predicators_explore_target_only, only the practice target
         # does -- the prefix that navigates to it uses the greedy learned sampler,
