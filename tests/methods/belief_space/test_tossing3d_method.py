@@ -23,6 +23,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_learning_rate,
 )
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
+from hitl_pmp.methods.practice_makes_perfect.ees_method import STOP_SKILL
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -97,6 +98,24 @@ def test_record_action_cost_only_records_realized_cost() -> None:
     for _ in range(21):
         method.record_action_cost(ground_skill=pick)
     assert method.pomdp_state.accumulated_cost == 21.0
+
+
+def test_hard_budget_infeasibility_is_json_safe_in_decision_log(*, tmp_path: Path) -> None:
+    method = _build(pomdp_search_depth=1, pomdp_num_samples=1)
+    method.decision_log = tmp_path / "decisions.jsonl"
+    pick = _grounding(method=method, name=PICK_SKILL)
+    for _ in range(21):
+        method.record_action_cost(ground_skill=pick)
+
+    assert method.select_skill_to_practice(true_atoms=pick.preconditions) == [STOP_SKILL]
+
+    decision = json.loads(method.decision_log.read_text().splitlines()[-1])
+    assert decision["event"] == "decision"
+    assert decision["value"] is None
+    assert decision["value_status"] == "negative_infinity"
+    stop_value = next(event for event in decision["search"] if event["event"] == "stop_value")
+    assert stop_value["value"] is None
+    assert stop_value["value_status"] == "negative_infinity"
 
 
 def test_theta_charts_are_read_only_and_show_reset_beliefs() -> None:

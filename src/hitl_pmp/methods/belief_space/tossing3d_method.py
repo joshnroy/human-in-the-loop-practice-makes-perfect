@@ -1,6 +1,9 @@
 """Tossing3D method backed by situated belief-space expectimax."""
 
+import math
 import time
+from collections.abc import Mapping, Sequence
+from numbers import Real
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +43,43 @@ from .types.search_trace import SearchTrace
 from .types.skill_belief import COST_MAX
 from .types.stop_action import STOP_ACTION, StopAction
 from .types.theta import Tossing3DTheta
+
+
+def _nonfinite_status(*, value: float) -> str | None:
+    if math.isfinite(value):
+        return None
+    if math.isnan(value):
+        return "not_a_number"
+    return "positive_infinity" if value > 0 else "negative_infinity"
+
+
+def _json_safe_diagnostic(*, value: Any) -> Any:
+    """Replace non-finite diagnostic floats with null and an explicit status.
+
+    Mapping values retain their original key and gain ``<key>_status``. A bare value
+    in a sequence is represented by the same two-field shape, ``value`` and
+    ``value_status``. Solver state remains untouched; this is only the persisted log
+    representation.
+    """
+    if isinstance(value, Mapping):
+        safe: dict[Any, Any] = {}
+        statuses: dict[str, str] = {}
+        for key, item in value.items():
+            status = _nonfinite_status(value=float(item)) if isinstance(item, Real) else None
+            if status is None:
+                safe[key] = _json_safe_diagnostic(value=item)
+            else:
+                safe[key] = None
+                statuses[f"{key}_status"] = status
+        safe.update(statuses)
+        return safe
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_json_safe_diagnostic(value=item) for item in value]
+    if isinstance(value, Real):
+        status = _nonfinite_status(value=float(value))
+        if status is not None:
+            return {"value": None, "value_status": status}
+    return value
 
 
 class Tossing3DPomdpMethod(EesMethod):
@@ -112,7 +152,7 @@ class Tossing3DPomdpMethod(EesMethod):
             **fields,
         }
         with self.decision_log.open("a", encoding="utf-8") as stream:
-            stream.write(LogTiming.encode(record=record))
+            stream.write(LogTiming.encode(record=_json_safe_diagnostic(value=record)))
 
     def human_skills(self) -> tuple[Skill, ...]:
         """Use the same provider-owned reset skill and cost as EES."""
