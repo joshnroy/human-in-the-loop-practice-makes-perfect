@@ -61,6 +61,19 @@ def test_selector_uses_current_symbolic_state_without_starting_simulator() -> No
     assert method.env._backend is None  # noqa: SLF001 (pin lazy simulator construction)
 
 
+def test_determinized_selector_is_seeded_and_does_not_start_simulator() -> None:
+    methods = [
+        _build(pomdp_num_samples=1, pomdp_solver="determinized", pomdp_max_expansions=4)
+        for _ in range(2)
+    ]
+    selections = []
+    for method in methods:
+        pick = _grounding(method=method, name=PICK_SKILL)
+        selections.append(method.select_skill_to_practice(true_atoms=pick.preconditions))
+        assert method.env._backend is None  # noqa: SLF001
+    assert selections[0] == selections[1]
+
+
 def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:
     method = _build()
     assert {skill.evaluate_practice_cost() for skill in method.skills()} == {1.0}
@@ -160,6 +173,10 @@ def test_toss_evidence_and_training_are_separate_until_refit() -> None:
 def test_invalid_method_configuration_is_rejected_early() -> None:
     with pytest.raises(ValidationError):
         _build(pomdp_search_depth=-1)
+    with pytest.raises(ValidationError):
+        _build(pomdp_max_expansions=-1)
+    with pytest.raises(ValidationError):
+        _build(pomdp_solver="unknown")
 
 
 def test_default_practice_policy_does_not_bypass_a_pomdp_stop() -> None:

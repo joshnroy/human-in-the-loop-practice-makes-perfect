@@ -5,7 +5,7 @@ import time
 from collections.abc import Mapping, Sequence
 from numbers import Real
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, PrivateAttr
 
@@ -19,6 +19,7 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
 )
 from hitl_pmp.planning.grounding import SkillGrounder
 
+from .determinized import solve_belief_space_determinized
 from .expectimax import solve_belief_space_expectimax
 from .tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
@@ -86,6 +87,8 @@ class Tossing3DPomdpMethod(EesMethod):
     """EES learner/executor with situated belief-space practice decisions."""
 
     pomdp_search_depth: int = Field(default=3, ge=0)
+    pomdp_solver: Literal["expectimax", "determinized"] = "expectimax"
+    pomdp_max_expansions: int = Field(default=100, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_num_particles: int = Field(default=256, ge=1)
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
@@ -332,21 +335,35 @@ class Tossing3DPomdpMethod(EesMethod):
         ] = self._pomdp_model
         search_started_at = time.perf_counter()
         try:
-            search_result = solve_belief_space_expectimax(
-                environment_state=make_tossing3d_search_state(
-                    state=self._pomdp_state, true_atoms=true_atoms
-                ),
-                belief_state=self._pomdp_state,
-                summed_cost=self._pomdp_state.accumulated_cost,
-                horizon=self.pomdp_search_depth,
-                model=model,
-                trace=trace,
-                num_samples=self.pomdp_num_samples,
+            search_state = make_tossing3d_search_state(
+                state=self._pomdp_state, true_atoms=true_atoms
             )
+            if self.pomdp_solver == "expectimax":
+                expectimax_result = solve_belief_space_expectimax(
+                    environment_state=search_state,
+                    belief_state=self._pomdp_state,
+                    summed_cost=self._pomdp_state.accumulated_cost,
+                    horizon=self.pomdp_search_depth,
+                    model=model,
+                    trace=trace,
+                    num_samples=self.pomdp_num_samples,
+                )
+                value, action = expectimax_result
+            else:
+                determinized_result = solve_belief_space_determinized(
+                    environment_state=search_state,
+                    belief_state=self._pomdp_state,
+                    summed_cost=self._pomdp_state.accumulated_cost,
+                    model=model,
+                    max_expansions=self.pomdp_max_expansions,
+                    seed=self.seed + self._decision_index,
+                    trace=trace,
+                    num_samples=self.pomdp_num_samples,
+                )
+                value, action = determinized_result
         finally:
             trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
-        value, action = search_result
         self._practice_values = {}
         for event in trace.events:
             if event["node"] == 0 and event["event"] == "stop_value":
@@ -368,6 +385,10 @@ class Tossing3DPomdpMethod(EesMethod):
             else action.model_dump(mode="json", fallback=str),
             value=value,
             horizon=self.pomdp_search_depth,
+            solver=self.pomdp_solver,
+            max_expansions=(
+                self.pomdp_max_expansions if self.pomdp_solver == "determinized" else None
+            ),
             model=self._pomdp_model.model_dump(mode="json"),
             search=trace.events,
         )
