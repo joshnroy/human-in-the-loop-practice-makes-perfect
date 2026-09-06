@@ -11,7 +11,6 @@ from hitl_pmp.methods.belief_space.types.belief_state import (
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
     ParticleFilterBelief,
     create_broad_particle_prior,
-    create_fixed_performance_cost_prior,
 )
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
@@ -94,15 +93,25 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
 }
 
 
+def skill_belief_model(*, ground_skill: GroundSkill) -> SkillBeliefModel:
+    """Return the update contract for one provider-supplied ground skill."""
+    if ground_skill.skill.name == RESET_SKILL:
+        return SkillBeliefModel(
+            skill=ground_skill.skill,
+            example_source=PracticeExampleSource.OUTCOME,
+        )
+    return SKILL_BELIEF_MODELS.get(
+        ground_skill.skill,
+        SkillBeliefModel(skill=ground_skill.skill),
+    )
+
+
 def make_skill_belief_models(
     *, ground_skills: tuple[GroundSkill, ...]
 ) -> tuple[dict[GroundSkill, SkillBeliefModel], dict[str, SkillBeliefModel]]:
     """Associate every practice skill with explicit updates or the default no-op."""
     by_ground_skill = {
-        ground_skill: SKILL_BELIEF_MODELS.get(
-            ground_skill.skill,
-            SkillBeliefModel(skill=ground_skill.skill),
-        )
+        ground_skill: skill_belief_model(ground_skill=ground_skill)
         for ground_skill in ground_skills
     }
     by_name = {ground_skill.skill.name: model for ground_skill, model in by_ground_skill.items()}
@@ -119,7 +128,7 @@ def make_default_tossing3d_belief(
     seed: int = 0,
     include_human_reset: bool = False,
 ) -> Tossing3DBeliefState:
-    """Independent cost priors; human-reset performance remains known."""
+    """Independent broad joint priors for every modeled practice skill."""
     beliefs: dict[str, ConcreteSkillBelief] = {
         skill.name: create_broad_particle_prior(
             num_particles=num_particles,
@@ -128,11 +137,9 @@ def make_default_tossing3d_belief(
         for index, skill in enumerate(SKILL_BELIEF_MODELS)
     }
     if include_human_reset:
-        beliefs[RESET_SKILL] = create_fixed_performance_cost_prior(
+        beliefs[RESET_SKILL] = create_broad_particle_prior(
             num_particles=num_particles,
             seed=seed + len(beliefs),
-            competence=1.0,
-            learning_rate=0.0,
         )
     return Tossing3DBeliefState(skill_beliefs=beliefs)
 

@@ -91,6 +91,15 @@ def test_param_dim_is_zero_so_it_has_no_sampler() -> None:
     assert _provider().human_cube_bin_reset_skill().skill.param_dim == 0
 
 
+def test_human_reset_cost_is_five_robot_action_equivalents() -> None:
+    assert _provider().human_cube_bin_reset_skill().evaluate_practice_cost() == 5.0
+
+
+def test_human_reset_cost_is_provider_configuration() -> None:
+    provider = Tossing3DSkillProvider(env=Tossing3DEnvironment(), human_reset_practice_cost=0.125)
+    assert provider.human_cube_bin_reset_skill().evaluate_practice_cost() == 0.125
+
+
 @pytest.mark.parametrize("stranded", [False, True])
 @pytest.mark.parametrize("closed", [False, True])
 def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) -> None:
@@ -101,8 +110,8 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
     from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
-    provider = Tossing3DSkillProvider(env=env)
-    method = EesMethod(env=env, skill_provider=provider, seed=0, ask_for_reset_cube_bin_cost=0.001)
+    provider = Tossing3DSkillProvider(env=env, human_reset_practice_cost=0.001)
+    method = EesMethod(env=env, skill_provider=provider, seed=0)
     atoms = {
         GroundAtom(
             predicate=CLOSED_EMPTY if closed else HAND_EMPTY,

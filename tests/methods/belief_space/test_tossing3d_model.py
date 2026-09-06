@@ -185,7 +185,9 @@ def test_search_prunes_state_beyond_hard_budget() -> None:
 
 def test_search_chooses_stop_when_every_continuation_crosses_hard_budget() -> None:
     model = _domain_model(reset_cost=1.0)
-    state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 20.0})
+    state = make_default_tossing3d_belief(include_human_reset=True).model_copy(
+        update={"accumulated_cost": 20.0}
+    )
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
     value, action = solve_belief_space_expectimax(
         environment_state=search_state,
@@ -576,21 +578,62 @@ def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
     } == {RESET_SKILL}
 
 
-def test_human_skill_uses_default_noop_belief_observers() -> None:
+def test_human_reset_observation_updates_its_joint_belief_and_training_count() -> None:
     model = _domain_model(reset_cost=0.25)
-    state = make_default_tossing3d_belief()
+    state = make_default_tossing3d_belief(include_human_reset=True)
     reset = _ground_skill(model=model, name=RESET_SKILL)
     assert reset.evaluate_practice_cost() == 0.25
-    assert (
-        model.observe_outcome(
-            state=state,
-            ground_skill=reset,
-            success=True,
-            was_random_exploration=False,
-        )
-        == state
+    observed = model.observe_outcome(
+        state=state,
+        ground_skill=reset,
+        success=True,
+        was_random_exploration=False,
+        observed_cost=0.25,
     )
-    assert model.observe_training_example(state=state, skill_name=RESET_SKILL) == state
+    assert mean_competence(belief=observed.skill_beliefs[RESET_SKILL]) > mean_competence(
+        belief=state.skill_beliefs[RESET_SKILL]
+    )
+    assert abs(mean_cost(belief=observed.skill_beliefs[RESET_SKILL]) - 0.25) < abs(
+        mean_cost(belief=state.skill_beliefs[RESET_SKILL]) - 0.25
+    )
+    assert observed.pending_examples[RESET_SKILL] == 1
+
+
+def test_human_reset_transition_uses_inferred_success_probability() -> None:
+    model = _domain_model(reset_cost=0.25)
+    state = make_default_tossing3d_belief(include_human_reset=True)
+    outcomes = _outcomes(model=model, state=state, name=RESET_SKILL)
+    competence = mean_competence(belief=state.skill_beliefs[RESET_SKILL])
+    assert [outcome[0] for outcome in outcomes] == pytest.approx([competence, 1.0 - competence])
+    assert outcomes[0][2] != outcomes[1][2]
+    estimated_cost = mean_cost(belief=state.skill_beliefs[RESET_SKILL])
+    assert all(outcome[1].accumulated_cost == pytest.approx(estimated_cost) for outcome in outcomes)
+    assert all(outcome[1].pending_examples[RESET_SKILL] == 1 for outcome in outcomes)
+
+
+def test_human_reset_cycle_observation_updates_learning_rate() -> None:
+    model = _domain_model(reset_cost=0.25)
+    reset = _ground_skill(model=model, name=RESET_SKILL)
+    state = make_default_tossing3d_belief(include_human_reset=True)
+    start_competence = mean_competence(belief=state.skill_beliefs[RESET_SKILL])
+    observed = model.observe_outcome(
+        state=state,
+        ground_skill=reset,
+        success=True,
+        was_random_exploration=False,
+        observed_cost=0.25,
+    )
+    observed_rate = mean_competence(belief=observed.skill_beliefs[RESET_SKILL]) - start_competence
+    before_rate = mean_learning_rate(belief=observed.skill_beliefs[RESET_SKILL])
+
+    refit = refit_belief_state(
+        state=observed,
+        cycle_start_competences={RESET_SKILL: start_competence},
+    )
+
+    after_rate = mean_learning_rate(belief=refit.skill_beliefs[RESET_SKILL])
+    assert abs(after_rate - observed_rate) < abs(before_rate - observed_rate)
+    assert RESET_SKILL not in refit.pending_examples
 
 
 def test_pick_outcomes_update_only_its_own_posterior() -> None:
@@ -797,7 +840,7 @@ def test_stop_value_solves_deployment_chain_within_hard_budget() -> None:
 
 
 def test_partial_reset_does_not_open_a_closed_gripper() -> None:
-    state = make_default_tossing3d_belief()
+    state = make_default_tossing3d_belief(include_human_reset=True)
     model = _domain_model(reset_cost=0.01)
     reset = _outcomes(model=model, state=state, name=RESET_SKILL)[0]
     assert "HandEmpty" not in {atom.predicate.name for atom in reset[2]}

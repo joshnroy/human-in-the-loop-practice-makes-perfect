@@ -28,10 +28,11 @@ from hitl_pmp.planning.grounding import SkillGrounder
 
 def _build(**kwargs: object) -> Tossing3DPomdpMethod:
     env = Tossing3DEnvironment(scene_bg=False)
+    reset_cost = float(kwargs.pop("human_reset_practice_cost", 5.0))
     config = {"pomdp_search_depth": 2, **kwargs}
     return Tossing3DPomdpMethod(
         env=env,
-        skill_provider=Tossing3DSkillProvider(env=env),
+        skill_provider=Tossing3DSkillProvider(env=env, human_reset_practice_cost=reset_cost),
         seed=0,
         **config,
     )
@@ -98,8 +99,8 @@ def test_record_action_cost_only_records_realized_cost() -> None:
     assert method.pomdp_state.accumulated_cost == 21.0
 
 
-def test_theta_charts_are_read_only_and_label_fixed_assumptions() -> None:
-    method = _build(ask_for_reset_cube_bin_cost=0.00001)
+def test_theta_charts_are_read_only_and_show_reset_beliefs() -> None:
+    method = _build(human_reset_practice_cost=0.00001)
     before = method.pomdp_state
     values = method.practice_skill_competences()
     assert values["PickCube (belief mean)"] == 0.5
@@ -107,13 +108,17 @@ def test_theta_charts_are_read_only_and_label_fixed_assumptions() -> None:
     assert values["MoveToTossLocationAndToss (belief mean)"] == mean_competence(
         belief=before.skill_beliefs[TOSS_SKILL]
     )
-    assert values["ask_for_reset_cube_bin_only (fixed)"] == 1.0
+    assert values["ask_for_reset_cube_bin_only (belief mean)"] == mean_competence(
+        belief=before.skill_beliefs[RESET_SKILL]
+    )
     assert "STOP" not in values
     rates = method.practice_skill_learning_rates()
     assert rates["PickCube (belief mean)"] == pytest.approx(0.5)
     assert rates["OpenGripper (belief mean)"] == pytest.approx(0.5)
     assert rates["MoveToTossLocationAndToss (belief mean)"] == pytest.approx(0.5)
-    assert rates["ask_for_reset_cube_bin_only (fixed)"] == 0.0
+    assert rates["ask_for_reset_cube_bin_only (belief mean)"] == mean_learning_rate(
+        belief=before.skill_beliefs[RESET_SKILL]
+    )
     assert method.pomdp_state == before
 
 
@@ -153,7 +158,7 @@ def test_default_practice_policy_does_not_bypass_a_pomdp_stop() -> None:
 
 
 def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
-    method = _build(ask_for_reset_cube_bin_cost=0.005)
+    method = _build(human_reset_practice_cost=0.005)
     reset_skill = method.human_skills()[0]
     reset = next(
         skill
@@ -169,9 +174,9 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     assert method.pomdp_state.accumulated_cost == 0.005
 
 
-def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
+def test_completed_human_reset_jointly_updates_performance_cost_and_training() -> None:
     observed_cost = 0.00001
-    method = _build(ask_for_reset_cube_bin_cost=observed_cost)
+    method = _build(human_reset_practice_cost=observed_cost)
     reset_skill = method.human_skills()[0]
     reset = next(
         skill
@@ -186,18 +191,27 @@ def test_human_reset_cost_is_estimated_without_learning_performance() -> None:
     before = method.pomdp_state.skill_beliefs[RESET_SKILL]
 
     method.record_action_cost(ground_skill=reset)
+    after_dispatch = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    assert after_dispatch == before
+    reset_state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    method.observe_help_granted(state=reset_state)
 
     after = method.pomdp_state.skill_beliefs[RESET_SKILL]
-    assert mean_competence(belief=after) == 1.0
-    assert mean_learning_rate(belief=after) == 0.0
+    assert isinstance(before, ParticleFilterBelief)
+    assert after == before.condition_execution(success=True, observed_cost=observed_cost)
+    assert mean_competence(belief=after) > mean_competence(belief=before)
     assert abs(mean_cost(belief=after) - observed_cost) < abs(
         mean_cost(belief=before) - observed_cost
     )
+    assert method.pomdp_state.pending_examples[RESET_SKILL] == 1
 
 
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
     with pytest.raises(ValidationError, match="cost observations must be at most"):
-        _build(ask_for_reset_cube_bin_cost=20.01)
+        _build(human_reset_practice_cost=20.01)
 
 
 def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_path: Path) -> None:
@@ -238,6 +252,7 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
         "PickCube (belief mean)",
         "MoveToTossLocationAndToss (belief mean)",
         "OpenGripper (belief mean)",
+        "ask_for_reset_cube_bin_only (belief mean)",
     }
     assert decision["improvement_potentials"]
     stop_value = method.practice_action_values()["STOP"]

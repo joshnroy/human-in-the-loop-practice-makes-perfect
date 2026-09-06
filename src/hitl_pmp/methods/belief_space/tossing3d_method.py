@@ -8,6 +8,7 @@ from pydantic import Field, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import GroundSkill, Policy, Skill
+from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
     STOP_SKILL,
@@ -56,42 +57,23 @@ class Tossing3DPomdpMethod(EesMethod):
     _cycle_index: int = PrivateAttr(default=0)
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _cycle_start_competences: dict[str, float] = PrivateAttr(default_factory=dict)
+    _pending_human_reset: GroundSkill | None = PrivateAttr(default=None)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
         return dict(self._practice_values)
 
     def practice_skill_competences(self) -> dict[str, float]:
-        estimates = {
-            PICK_SKILL + " (belief mean)": mean_competence(
-                belief=self._pomdp_state.skill_beliefs[PICK_SKILL]
-            ),
-            TOSS_SKILL + " (belief mean)": mean_competence(
-                belief=self._pomdp_state.skill_beliefs[TOSS_SKILL]
-            ),
-            OPEN_GRIPPER_SKILL + " (belief mean)": mean_competence(
-                belief=self._pomdp_state.skill_beliefs[OPEN_GRIPPER_SKILL]
-            ),
+        return {
+            skill_name + " (belief mean)": mean_competence(belief=belief)
+            for skill_name, belief in self._pomdp_state.skill_beliefs.items()
         }
-        if self.ask_for_reset_cube_bin_cost is not None:
-            estimates[RESET_SKILL + " (fixed)"] = 1.0
-        return estimates
 
     def practice_skill_learning_rates(self) -> dict[str, float]:
-        estimates = {
-            PICK_SKILL + " (belief mean)": mean_learning_rate(
-                belief=self._pomdp_state.skill_beliefs[PICK_SKILL]
-            ),
-            TOSS_SKILL + " (belief mean)": mean_learning_rate(
-                belief=self._pomdp_state.skill_beliefs[TOSS_SKILL]
-            ),
-            OPEN_GRIPPER_SKILL + " (belief mean)": mean_learning_rate(
-                belief=self._pomdp_state.skill_beliefs[OPEN_GRIPPER_SKILL]
-            ),
+        return {
+            skill_name + " (belief mean)": mean_learning_rate(belief=belief)
+            for skill_name, belief in self._pomdp_state.skill_beliefs.items()
         }
-        if self.ask_for_reset_cube_bin_cost is not None:
-            estimates[RESET_SKILL + " (fixed)"] = 0.0
-        return estimates
 
     def practice_skill_costs(self) -> dict[str, float]:
         return {
@@ -132,19 +114,17 @@ class Tossing3DPomdpMethod(EesMethod):
             stream.write(LogTiming.encode(record=record))
 
     def human_skills(self) -> tuple[Skill, ...]:
-        """Configured human-executed skills available during practice."""
-        if self.ask_for_reset_cube_bin_cost is None:
-            return ()
+        """Use the same provider-owned reset skill and cost as EES."""
         reset = self.skill_provider.human_cube_bin_reset_skill()
         assert reset is not None
-        return (reset.skill.model_copy(update={"practice_cost": self.ask_for_reset_cube_bin_cost}),)
+        return (reset.skill,)
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
-            include_human_reset=self.ask_for_reset_cube_bin_cost is not None,
+            include_human_reset=bool(self.human_skills()),
         )
         robot_skills = self.skills()
         human_skills = self.human_skills()
@@ -229,17 +209,39 @@ class Tossing3DPomdpMethod(EesMethod):
             "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
         }
         if ground_skill.skill.name == RESET_SKILL:
-            skill_beliefs = dict(self._pomdp_state.skill_beliefs)
-            reset_belief = skill_beliefs[RESET_SKILL]
-            assert isinstance(reset_belief, ParticleFilterBelief)
-            skill_beliefs[RESET_SKILL] = reset_belief.condition_cost(observed_cost=action_cost)
-            updates["skill_beliefs"] = skill_beliefs
+            self._pending_human_reset = ground_skill
         self._pomdp_state = self._pomdp_state.model_copy(update=updates)
         self.record_diagnostic(
             event="dispatch",
             skill=ground_skill.skill.name,
             cost=action_cost,
             summed_cost=self._pomdp_state.accumulated_cost,
+            estimated_costs=self.practice_skill_costs(),
+        )
+
+    def observe_help_granted(self, *, state: State) -> None:
+        """Condition one completed reset on its joint success and cost observation."""
+        super().observe_help_granted(state=state)
+        reset = self._pending_human_reset
+        assert reset is not None, "human reset completion observed without a dispatched reset"
+        observed_cost = reset.evaluate_practice_cost()
+        self._pomdp_state = self._pomdp_model.observe_outcome(
+            state=self._pomdp_state,
+            ground_skill=reset,
+            success=True,
+            was_random_exploration=False,
+            observed_cost=observed_cost,
+        )
+        self._pending_human_reset = None
+        self.record_diagnostic(
+            event="outcome",
+            skill=RESET_SKILL,
+            success=True,
+            random_exploration=False,
+            belief=self._pomdp_state.model_dump(mode="json"),
+            beliefs=self.belief_diagnostics(),
+            configured_cost_observation=observed_cost,
+            cost_observation_source="configured_practice_cost",
             estimated_costs=self.practice_skill_costs(),
         )
 

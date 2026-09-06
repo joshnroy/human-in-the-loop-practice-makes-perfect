@@ -8,7 +8,11 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
-from hitl_pmp.methods.practice_makes_perfect.cli import EesCli, RandomSkillsCli
+from hitl_pmp.methods.practice_makes_perfect.cli import (
+    EesCli,
+    RandomSkillsCli,
+    Tossing3DPomdpCli,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -135,21 +139,25 @@ def test_ees_run_completes_end_to_end_through_the_cli(
     assert re.search(r"success rate: \d+/5", capsys.readouterr().out)
 
 
-def test_ees_registers_the_reset_skill_cost_flag_defaulting_to_none() -> None:
-    """`None` is what keeps a run byte-identical to before the ground skill existed:
-    EesMethod.may_request_human_help is then False and plan_to never offers it to
-    the planner -- see that class's own docstring."""
+def test_ees_does_not_register_domain_owned_reset_cost() -> None:
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
     args = parser.parse_args([])
-    assert args.ask_for_reset_cube_bin_cost is None
+    assert not hasattr(args, "human_reset_practice_cost")
 
 
-def test_ees_accepts_the_reset_skill_cost_flag() -> None:
+def test_ees_rejects_the_retired_method_level_reset_cost_flag() -> None:
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)
-    args = parser.parse_args(["--ask-for-reset-cube-bin-cost", "0.134"])
-    assert args.ask_for_reset_cube_bin_cost == pytest.approx(0.134)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--ask-for-reset-cube-bin-cost", "0.134"])
+
+
+def test_pomdp_does_not_register_domain_owned_reset_cost() -> None:
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args([])
+    assert not hasattr(args, "human_reset_practice_cost")
 
 
 def test_random_skills_does_not_register_the_reset_skill_cost_flag() -> None:
@@ -161,27 +169,15 @@ def test_random_skills_does_not_register_the_reset_skill_cost_flag() -> None:
     assert not hasattr(args, "ask_for_reset_cube_bin_cost")
 
 
-def test_an_asking_ees_run_on_a_domain_with_no_human_fails_before_it_starts() -> None:
-    """End to end through the real CLI: configuring the cost flag makes EesMethod
-    declare it may ask, and PracticeLoop refuses up front because Light Switch wires no
-    HumanOracle. Fails at construction rather than a cycle in, which is the whole point
-    of validating on the Method's declaration instead of on a per-step poll."""
-    args = Cli.parse_args(
-        argv=[
-            "--env",
-            "lightswitch",
-            "--method",
-            "ees",
-            "--ask-for-reset-cube-bin-cost",
-            "0.1",
-            "--num-cycles",
-            "1",
-            "--max-steps-per-interaction",
-            "4",
-            "--num-test-tasks",
-            "1",
-        ]
-    )
-    assert not hasattr(args, "human_reset_target")
-    with pytest.raises(ValueError, match="HumanOracle"):
-        EesCli.run(args=args, env_cli=LightSwitchCli)
+def test_non_tossing3d_cli_rejects_the_domain_owned_reset_cost() -> None:
+    with pytest.raises(SystemExit):
+        Cli.parse_args(
+            argv=[
+                "--env",
+                "lightswitch",
+                "--method",
+                "ees",
+                "--human-reset-practice-cost",
+                "0.1",
+            ]
+        )

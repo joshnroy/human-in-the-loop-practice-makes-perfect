@@ -1,6 +1,7 @@
 """The two injection seams a domain-agnostic `Method` needs from Tossing3D."""
 
 import numpy as np
+from pydantic import Field
 
 from hitl_pmp.core.method.skill_provider import (
     ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
@@ -32,6 +33,7 @@ class Tossing3DSkillProvider(SkillProvider):
     """
 
     env: Tossing3DEnvironment
+    human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
@@ -140,6 +142,7 @@ class Tossing3DSkillProvider(SkillProvider):
             }),
             delete_effects=frozenset(removed),
             param_dim=0,
+            practice_cost=self.human_reset_practice_cost,
         )
         return GroundSkill(skill=skill, objects=(env.robot, env.cube, env.bin, env.barrier))
 

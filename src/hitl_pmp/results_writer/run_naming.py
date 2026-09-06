@@ -47,13 +47,13 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
     # Global, so never absent. Rendered bare ("never"/"scheduled"): its values are
     # self-describing and this is the axis most sweeps are built around.
     RunNameField(dest="practice_reset_policy"),
-    # EES's own flag (methods/help_seeking.py's --ask-for-help/HelpSeekingTrigger is
-    # retired -- asking for help is now a ground skill EES's own planner selects, not a
-    # harness-side trigger; see ees_method.py). `optional=True` for the same reason
-    # `ask_for_help` was: absent on --method skill-oracle/random-skills, which register
-    # no such flag at all, and on any --env whose SkillProvider has no
-    # human_cube_bin_reset_skill to offer (every domain but Tossing3D today).
-    RunNameField(dest="ask_for_reset_cube_bin_cost", prefix="cube-bin-reset-cost-", optional=True),
+    # Tossing3D owns the human-reset skill and its configurable cost. The environment
+    # field is absent everywhere else, and `env` already distinguishes that absence.
+    RunNameField(
+        dest="human_reset_practice_cost",
+        prefix="human-reset-cost-",
+        when=("env", "tossing3d"),
+    ),
     # A method flag, absent on --method skill-oracle. The literal cycle count rather
     # than a multiple of the default: expressing it as "1x"/"10x" would mean carrying a
     # copy of `--num-cycles`'s default here, which is exactly the kind of duplicated
@@ -97,6 +97,10 @@ class RunNamer:
     @staticmethod
     def _token(*, field: RunNameField, args: argparse.Namespace) -> str | None:
         """One field's contribution, or None when it is legitimately absent."""
+        if field.when is not None:
+            condition_dest, condition_value = field.when
+            if getattr(args, condition_dest) != condition_value:
+                return None
         if not hasattr(args, field.dest):
             if field.optional:
                 return None
@@ -110,6 +114,8 @@ class RunNamer:
                 "under one name."
             )
         value = getattr(args, field.dest)
+        if value is None and field.none_token is not None:
+            return field.none_token
         if field.toggle is not None:
             when_true, when_false = field.toggle
             return when_true if value else when_false

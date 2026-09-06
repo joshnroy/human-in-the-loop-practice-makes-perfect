@@ -12,6 +12,7 @@ from hitl_pmp.cli import ENVIRONMENTS, Cli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import ORACLE_THROW_STANDOFF
+from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
 
@@ -51,6 +52,15 @@ def test_the_defaults_are_read_off_the_models_rather_than_re_literalled() -> Non
     assert args.scene_bg is True
     assert args.test_env_seed_offset == Tossing3DTasks.model_fields["test_env_seed_offset"].default
     assert args.oracle_throw_standoff == ORACLE_THROW_STANDOFF
+    assert (
+        args.human_reset_practice_cost
+        == Tossing3DSkillProvider.model_fields["human_reset_practice_cost"].default
+    )
+
+
+def test_human_reset_practice_cost_is_overridable() -> None:
+    args = _build_parser().parse_args(["--human-reset-practice-cost", "0.125"])
+    assert args.human_reset_practice_cost == pytest.approx(0.125)
 
 
 def test_there_is_no_scene_selection_flag() -> None:
@@ -120,7 +130,7 @@ def test_build_problem_wires_the_v0_human_oracle() -> None:
     no intervention was needed". `--method ees`'s `ask_for_reset_cube_bin_only` ground
     skill is exactly that intervention becoming representable -- and needs a real
     `HumanOracle` wired here, in the CLI's own composition root, or `PracticeLoop.run`
-    refuses any run that configures its cost flag before it starts
+    refuses a run whose provider makes the skill available before it starts
     (`Method.may_request_human_help` is True but `Problem.human` is None).
     `UnconditionalHumanOracle` matches `tossingroom`'s own `TossingRoomCli.build_problem`
     wiring."""
