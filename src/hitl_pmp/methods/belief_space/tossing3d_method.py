@@ -7,7 +7,6 @@ from typing import Any
 from pydantic import Field, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
-from hitl_pmp.core.method.method import InteractionComplete
 from hitl_pmp.core.method.types import GroundSkill, Policy, Skill
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
@@ -20,7 +19,6 @@ from .expectimax import solve_belief_space_expectimax
 from .tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
-    PRACTICE_BUDGET,
     RESET_SKILL,
     TOSS_SKILL,
 )
@@ -227,15 +225,6 @@ class Tossing3DPomdpMethod(EesMethod):
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         """Charge each attempted action immediately, including a final-step reset."""
         action_cost = ground_skill.evaluate_practice_cost()
-        if self._pomdp_state.accumulated_cost + action_cost > PRACTICE_BUDGET:
-            self.record_diagnostic(
-                event="budget_exhausted",
-                blocked_skill=ground_skill.skill.name,
-                action_cost=action_cost,
-                summed_cost=self._pomdp_state.accumulated_cost,
-                practice_budget=PRACTICE_BUDGET,
-            )
-            raise InteractionComplete(budget_exhausted=True)
         updates: dict[str, object] = {
             "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
         }
@@ -320,15 +309,6 @@ class Tossing3DPomdpMethod(EesMethod):
                 self._practice_values["STOP"] = event["value"]
             elif event["node"] == 0 and event["event"] == "action_value":
                 self._practice_values[event["action"]["skill"]["name"]] = event["value"]
-        budget_blocked_action: str | None = None
-        if (
-            isinstance(action, GroundSkill)
-            and self._pomdp_state.accumulated_cost + action.evaluate_practice_cost()
-            > PRACTICE_BUDGET
-        ):
-            budget_blocked_action = action.skill.name
-            action = STOP_ACTION
-            value = self._practice_values["STOP"]
         self.record_diagnostic(
             event="decision",
             competences=self.practice_skill_competences(),
@@ -342,7 +322,6 @@ class Tossing3DPomdpMethod(EesMethod):
             if action == STOP_ACTION
             else action.model_dump(mode="json", fallback=str),
             value=value,
-            budget_blocked_action=budget_blocked_action,
             horizon=self.pomdp_search_depth,
             model=self._pomdp_model.model_dump(mode="json"),
             search=trace.events,

@@ -187,7 +187,6 @@ class PeriodRecorder(BaseModel):
         labels = {
             "planner_stop": "PLANNER CHOSE STOP",
             "interaction_complete": "INTERACTION COMPLETE",
-            "budget_exhausted": "PRACTICE BUDGET EXHAUSTED",
             "session_action_cap": "SESSION ACTION CAP REACHED — no STOP decision",
         }
         label = labels[session_end.reason]

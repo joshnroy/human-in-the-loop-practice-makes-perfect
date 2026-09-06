@@ -183,6 +183,21 @@ def test_search_prunes_state_beyond_hard_budget() -> None:
     assert action == STOP_ACTION
 
 
+def test_search_chooses_stop_when_every_continuation_crosses_hard_budget() -> None:
+    model = _domain_model(reset_cost=1.0)
+    state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 20.0})
+    search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
+    value, action = solve_belief_space_expectimax(
+        environment_state=search_state,
+        belief_state=state,
+        summed_cost=state.accumulated_cost,
+        horizon=1,
+        model=model,
+    )
+    assert np.isfinite(value)
+    assert action == STOP_ACTION
+
+
 def test_search_protocol_charges_accumulated_cost_once() -> None:
     state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
     model = Tossing3DPracticeModel()

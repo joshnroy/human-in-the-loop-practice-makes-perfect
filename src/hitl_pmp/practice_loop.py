@@ -514,9 +514,7 @@ class PracticeLoop:
                         )
                     continue
                 except InteractionComplete as completion:
-                    if completion.budget_exhausted:
-                        session_end.reason = "budget_exhausted"
-                    elif completion.planner_stop:
+                    if completion.planner_stop:
                         session_end.reason = "planner_stop"
                     else:
                         session_end.reason = "interaction_complete"

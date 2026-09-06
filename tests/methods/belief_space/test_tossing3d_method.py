@@ -90,14 +90,12 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     )
 
 
-def test_dispatch_cannot_exceed_the_hard_practice_budget() -> None:
+def test_record_action_cost_only_records_realized_cost() -> None:
     method = _build()
     pick = _grounding(method=method, name=PICK_SKILL)
-    for _ in range(20):
+    for _ in range(21):
         method.record_action_cost(ground_skill=pick)
-    with pytest.raises(InteractionComplete) as exc_info:
-        method.record_action_cost(ground_skill=pick)
-    assert exc_info.value.budget_exhausted
+    assert method.pomdp_state.accumulated_cost == 21.0
 
 
 def test_theta_charts_are_read_only_and_label_fixed_assumptions() -> None:
