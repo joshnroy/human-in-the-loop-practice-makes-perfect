@@ -158,6 +158,14 @@ def test_pomdp_does_not_register_domain_owned_reset_cost() -> None:
     Tossing3DPomdpCli.add_arguments(parser=parser)
     args = parser.parse_args([])
     assert not hasattr(args, "human_reset_practice_cost")
+    assert args.pomdp_linear_cost_lambda is None
+
+
+def test_pomdp_accepts_linear_cost_coefficient() -> None:
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args(["--pomdp-linear-cost-lambda", "0.03"])
+    assert args.pomdp_linear_cost_lambda == pytest.approx(0.03)
 
 
 def test_random_skills_does_not_register_the_reset_skill_cost_flag() -> None:

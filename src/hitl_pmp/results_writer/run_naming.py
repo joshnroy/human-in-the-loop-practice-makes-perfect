@@ -54,6 +54,12 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
         prefix="human-reset-cost-",
         when=("env", "tossing3d"),
     ),
+    RunNameField(
+        dest="pomdp_linear_cost_lambda",
+        prefix="linear-lambda-",
+        none_token="hard-budget",
+        optional=True,
+    ),
     # A method flag, absent on --method skill-oracle. The literal cycle count rather
     # than a multiple of the default: expressing it as "1x"/"10x" would mean carrying a
     # copy of `--num-cycles`'s default here, which is exactly the kind of duplicated

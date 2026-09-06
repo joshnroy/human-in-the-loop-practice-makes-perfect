@@ -48,6 +48,7 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_num_particles: int = Field(default=256, ge=1)
+    pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
 
@@ -140,6 +141,7 @@ class Tossing3DPomdpMethod(EesMethod):
             seed=self.seed,
             exploration_epsilon=self.exploration_epsilon,
             ground_skills=tuple(ground_skills),
+            linear_cost_lambda=self.pomdp_linear_cost_lambda,
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         missing = {PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
@@ -317,6 +319,7 @@ class Tossing3DPomdpMethod(EesMethod):
             learning_rates=self.practice_skill_learning_rates(),
             estimated_costs=self.practice_skill_costs(),
             improvement_potentials=self.practice_skill_improvement_potentials(),
+            summed_cost=self._pomdp_state.accumulated_cost,
             search_duration_seconds=search_duration_seconds,
             num_samples=self.pomdp_num_samples,
             atoms=sorted(str(atom) for atom in true_atoms),

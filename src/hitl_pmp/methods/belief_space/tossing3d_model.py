@@ -34,6 +34,7 @@ class Tossing3DPracticeModel(BaseModel):
     random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
     deployment_horizon: int = Field(default=4, ge=0)
+    linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
 
     _rng: np.random.Generator = PrivateAttr()
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
@@ -124,7 +125,9 @@ class Tossing3DPracticeModel(BaseModel):
         )
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
-        """Return deployment value for feasible practice, otherwise negative infinity."""
+        """Apply either the PDF's hard-budget or linear-cost objective."""
+        if self.linear_cost_lambda is not None:
+            return policy_value - self.linear_cost_lambda * summed_cost
         return policy_value if summed_cost <= PRACTICE_BUDGET else -np.inf
 
     def observe_outcome(
