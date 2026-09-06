@@ -161,6 +161,21 @@ def test_G_returns_negative_infinity_beyond_hard_budget() -> None:
     assert model.G(policy_value=2.5, summed_cost=20.001) == -float("inf")
 
 
+def test_G_subtracts_linear_cost() -> None:
+    model = Tossing3DPracticeModel(linear_cost_lambda=0.01)
+    assert model.G(policy_value=0.8, summed_cost=5.0) == pytest.approx(0.75)
+
+
+def test_linear_G_has_no_hard_budget() -> None:
+    model = Tossing3DPracticeModel(linear_cost_lambda=0.01)
+    assert model.G(policy_value=0.8, summed_cost=25.0) == pytest.approx(0.55)
+
+
+def test_zero_linear_cost_lambda_is_unconstrained() -> None:
+    model = Tossing3DPracticeModel(linear_cost_lambda=0.0)
+    assert model.G(policy_value=0.8, summed_cost=1_000_000.0) == pytest.approx(0.8)
+
+
 def test_budget_does_not_change_environment_action_applicability() -> None:
     model = _domain_model(reset_cost=1.0)
     state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 21.0})
@@ -202,7 +217,7 @@ def test_search_chooses_stop_when_every_continuation_crosses_hard_budget() -> No
 
 def test_search_protocol_charges_accumulated_cost_once() -> None:
     state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
-    model = Tossing3DPracticeModel()
+    model = Tossing3DPracticeModel(linear_cost_lambda=0.01)
     value, action = solve_belief_space_expectimax(
         environment_state=make_tossing3d_search_state(state=state, true_atoms=frozenset()),
         belief_state=state,
@@ -833,10 +848,13 @@ def test_refit_is_deferred_until_cycle_boundary() -> None:
     assert _pending_examples(state=refit, skill_name=TOSS_SKILL) == 0
 
 
-def test_stop_value_solves_deployment_chain_within_hard_budget() -> None:
+def test_stop_value_solves_deployment_chain_and_charges_linear_cost() -> None:
     state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
-    model = Tossing3DPracticeModel()
-    assert _expected_stop_value(model=model, state=state) == pytest.approx((0.5 + 0.5 * 0.5) * 0.8)
+    model = Tossing3DPracticeModel(linear_cost_lambda=0.01)
+    deployment_value = (0.5 + 0.5 * 0.5) * 0.8
+    assert _expected_stop_value(model=model, state=state) == pytest.approx(
+        deployment_value - 0.01 * 3.0
+    )
 
 
 def test_partial_reset_does_not_open_a_closed_gripper() -> None:

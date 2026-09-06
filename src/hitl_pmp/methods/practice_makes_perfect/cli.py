@@ -173,6 +173,13 @@ class Tossing3DPomdpCli(EesCli):
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
             help="Particles per robot skill.",
         )
+        parser.add_argument(
+            "--pomdp-linear-cost-lambda",
+            type=float,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_linear_cost_lambda"].default,
+            help="Select linear G(C, theta) = g(theta) - lambda * C with this "
+            "coefficient. Omit to use hard-budget G with B=20 instead.",
+        )
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
@@ -208,6 +215,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
+                pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"
                     if args.output_dir is not None

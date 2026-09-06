@@ -159,3 +159,23 @@ def test_two_methods_on_one_environment_do_not_collide() -> None:
     assert RunNamer.name(args=Namespaces.skill_oracle_lightswitch()) != RunNamer.name(
         args=Namespaces.ees_tossingroom(env="lightswitch", method="skill-oracle")
     )
+
+
+def test_pomdp_lambda_sweep_arms_have_distinct_names() -> None:
+    low = RunNamer.name(
+        args=Namespaces.ees_tossingroom(method="pomdp", pomdp_linear_cost_lambda=0.001)
+    )
+    high = RunNamer.name(
+        args=Namespaces.ees_tossingroom(method="pomdp", pomdp_linear_cost_lambda=0.1)
+    )
+    assert low != high
+    assert "-linear-lambda-0-001-" in low
+    assert "-linear-lambda-0-1-" in high
+
+
+def test_omitted_linear_lambda_names_the_effective_hard_budget_objective() -> None:
+    name = RunNamer.name(
+        args=Namespaces.ees_tossingroom(method="pomdp", pomdp_linear_cost_lambda=None)
+    )
+    assert "-hard-budget-" in name
+    assert "linear-lambda-none" not in name
