@@ -13,6 +13,7 @@ from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (
     condition_execution,
     condition_learning_rate,
     condition_outcome,
+    make_rng,
 )
 
 from .skill_belief import (
@@ -110,8 +111,10 @@ class ParticleFilterBelief(SkillBelief):
         if process_noise_std == 0.0:
             return self
         parameters, weights = self.arrays()
-        rng = np.random.default_rng(
-            np.random.SeedSequence([self.resampling_seed, self.process_transition_count, 0x455441])
+        rng = make_rng(
+            seed=self.resampling_seed,
+            stream=self.process_transition_count,
+            tag=0x455441,
         )
         transitioned = parameters.copy()
         proposals = transitioned[:, 1] + rng.normal(0.0, process_noise_std, size=self.num_particles)
