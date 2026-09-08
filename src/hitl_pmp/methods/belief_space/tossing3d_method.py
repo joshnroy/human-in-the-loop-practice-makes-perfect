@@ -18,6 +18,7 @@ from hitl_pmp.planning.grounding import SkillGrounder
 
 from .expectimax import solve_belief_space_expectimax
 from .tossing3d_constants import (
+    LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     RESET_SKILL,
@@ -29,6 +30,7 @@ from .tossing3d_observation_model import (
     mean_competence,
     mean_cost,
     mean_learning_rate,
+    observed_learning_rates,
     refit_belief_state,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
@@ -48,7 +50,9 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_num_particles: int = Field(default=256, ge=1)
-    pomdp_learning_rate_process_noise_std: float = Field(default=0.0, ge=0.0)
+    pomdp_learning_rate_process_noise_std: float = Field(
+        default=LEARNING_RATE_PROCESS_NOISE_STD, ge=0.0
+    )
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
@@ -270,6 +274,14 @@ class Tossing3DPomdpMethod(EesMethod):
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
+        learning_rate_observations = observed_learning_rates(
+            state=self._pomdp_state,
+            cycle_start_competences=self._cycle_start_competences,
+        )
+        learning_rate_observation_counts = {
+            skill_name: self._pomdp_state.pending_examples[skill_name]
+            for skill_name in learning_rate_observations
+        }
         self._pomdp_state = refit_belief_state(
             state=self._pomdp_state,
             cycle_start_competences=self._cycle_start_competences,
@@ -280,6 +292,8 @@ class Tossing3DPomdpMethod(EesMethod):
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             estimated_costs=self.practice_skill_costs(),
+            learning_rate_observations=learning_rate_observations,
+            learning_rate_observation_counts=learning_rate_observation_counts,
         )
         self._cycle_index += 1
 

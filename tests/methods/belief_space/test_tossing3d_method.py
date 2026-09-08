@@ -262,3 +262,25 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
     assert summary["expanded_nodes"] > 0
     assert summary["cache_requests"] >= summary["expanded_nodes"]
     assert summary["chance_outcomes"] > 0
+
+
+def test_end_cycle_logs_exact_learning_rate_observations(
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    method = _build()
+    method.decision_log = tmp_path / "decisions.jsonl"
+    method._cycle_start_competences = {  # noqa: SLF001 - exercise cycle boundary logging
+        name: belief.mean_competence() for name, belief in method.pomdp_state.skill_beliefs.items()
+    }
+    method._pomdp_state = method.pomdp_state.model_copy(  # noqa: SLF001
+        update={"pending_examples": {PICK_SKILL: 1}}
+    )
+    monkeypatch.setattr(Tossing3DPomdpMethod, "observe_environment_reset", lambda self, **_: None)
+    monkeypatch.setattr(Tossing3DEnvironment, "get_current_state", lambda self: object())
+
+    method.end_cycle()
+
+    refit = json.loads(method.decision_log.read_text().splitlines()[-1])
+    assert refit["event"] == "refit"
+    assert refit["learning_rate_observations"] == {PICK_SKILL: 0.0}
+    assert refit["learning_rate_observation_counts"] == {PICK_SKILL: 1}

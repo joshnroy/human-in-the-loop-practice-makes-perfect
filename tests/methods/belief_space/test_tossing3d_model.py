@@ -23,6 +23,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_cost,
     mean_learning_rate,
     observed_learning_rate,
+    observed_learning_rates,
     refit_belief_state,
     refit_skill_belief,
 )
@@ -413,6 +414,19 @@ def test_observed_learning_rate_is_nonnegative_competence_change_per_example(
         assert observed is None
     else:
         assert observed == pytest.approx(expected)
+
+
+def test_observed_learning_rates_reports_exact_cycle_observations() -> None:
+    state = _point_state(toss=0.7, pick=0.6, open_gripper=1.0).model_copy(
+        update={"pending_examples": {TOSS_SKILL: 2, PICK_SKILL: 0}}
+    )
+
+    observations = observed_learning_rates(
+        state=state,
+        cycle_start_competences={TOSS_SKILL: 0.5, PICK_SKILL: 0.4},
+    )
+
+    assert observations == {TOSS_SKILL: pytest.approx(0.1)}
 
 
 def test_cycle_refit_uses_competence_finite_difference_to_update_learning_rate() -> None:
