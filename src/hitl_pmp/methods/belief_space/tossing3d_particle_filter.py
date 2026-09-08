@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from math import lgamma, log, pi
 from typing import Protocol, TypeVar
 
@@ -29,6 +30,12 @@ class ParticleBelief(Protocol):
 
 
 BeliefT = TypeVar("BeliefT", bound=ParticleBelief)
+
+
+class ExecutionObservation(Protocol):
+    success: bool | None
+    observed_cost: float | None
+
 
 _OBSERVATION_SCALE = 0.02
 _OBSERVATION_DOF = 4.0
@@ -71,6 +78,28 @@ def condition_execution(*, belief: BeliefT, success: bool, observed_cost: float)
         + np.log(np.maximum(outcome_likelihoods, np.finfo(np.float64).tiny))
         + cost_log_likelihoods
     )
+    masses = np.exp(log_masses - float(np.max(log_masses)))
+    return _condition(belief=belief, parameters=parameters, masses=masses)
+
+
+def condition_executions(
+    *, belief: BeliefT, observations: Sequence[ExecutionObservation]
+) -> BeliefT:
+    """Apply a cycle's joint execution likelihood and resample at most once."""
+    if not observations:
+        return belief
+    parameters, weights = belief.arrays()
+    log_masses = np.log(weights)
+    for observation in observations:
+        if observation.success is not None:
+            likelihoods = parameters[:, 0] if observation.success else 1.0 - parameters[:, 0]
+            log_masses += np.log(np.maximum(likelihoods, np.finfo(np.float64).tiny))
+        if observation.observed_cost is not None:
+            log_masses += _student_t_log_likelihoods(
+                observation=observation.observed_cost,
+                hypotheses=parameters[:, 2],
+                scale=COST_OBSERVATION_SCALE,
+            )
     masses = np.exp(log_masses - float(np.max(log_masses)))
     return _condition(belief=belief, parameters=parameters, masses=masses)
 

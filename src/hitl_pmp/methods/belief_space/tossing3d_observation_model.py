@@ -6,6 +6,7 @@ from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
+    SkillExecutionObservation,
     Tossing3DBeliefState,
 )
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
@@ -48,24 +49,34 @@ class SkillBeliefModel:
         skill_name = self.skill.name
         if skill_name not in state.skill_beliefs:
             return state
-        skill_beliefs = dict(state.skill_beliefs)
-        belief = skill_beliefs[skill_name]
-        if observed_cost is not None and isinstance(belief, ParticleFilterBelief):
-            belief = (
-                belief.condition_cost(observed_cost=observed_cost)
-                if was_random_exploration
-                else belief.condition_execution(success=success, observed_cost=observed_cost)
+        if was_random_exploration and observed_cost is None:
+            return state
+        pending_observations = dict(state.pending_execution_observations)
+        observation = SkillExecutionObservation(
+            success=None if was_random_exploration else success,
+            observed_cost=observed_cost,
+        )
+        prior = pending_observations.get(skill_name, ())
+        pending_observations[skill_name] = tuple(
+            sorted(
+                (*prior, observation),
+                key=lambda item: (
+                    item.success is None,
+                    item.success is True,
+                    -1.0 if item.observed_cost is None else item.observed_cost,
+                ),
             )
-        elif not was_random_exploration:
-            belief = condition_skill_belief(belief=belief, success=success)
-        skill_beliefs[skill_name] = belief
+        )
         if was_random_exploration:
-            return state.model_copy(update={"skill_beliefs": skill_beliefs})
+            return state.model_copy(update={"pending_execution_observations": pending_observations})
         pending_examples = dict(state.pending_examples)
         if self.example_source == PracticeExampleSource.OUTCOME:
             pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         return state.model_copy(
-            update={"skill_beliefs": skill_beliefs, "pending_examples": pending_examples}
+            update={
+                "pending_execution_observations": pending_observations,
+                "pending_examples": pending_examples,
+            }
         )
 
     def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
@@ -161,6 +172,19 @@ def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> Con
     return belief.condition_outcome(success=success)
 
 
+def condition_execution_observations(
+    *, belief: ConcreteSkillBelief, observations: tuple[SkillExecutionObservation, ...]
+) -> ConcreteSkillBelief:
+    """Condition on a cycle's evidence while preserving each joint particle."""
+    if isinstance(belief, ParticleFilterBelief):
+        return belief.condition_executions(observations=observations)
+    conditioned = belief
+    for observation in observations:
+        if observation.success is not None:
+            conditioned = conditioned.condition_outcome(success=observation.success)
+    return conditioned
+
+
 def refit_skill_belief(
     *, belief: ConcreteSkillBelief, training_examples: int
 ) -> ConcreteSkillBelief:
@@ -196,9 +220,13 @@ def observed_learning_rates(
         start = start_competences.get(skill_name)
         if start is None:
             continue
+        conditioned = condition_execution_observations(
+            belief=belief,
+            observations=state.pending_execution_observations.get(skill_name, ()),
+        )
         observation = observed_learning_rate(
             competence_before=start,
-            competence_after=mean_competence(belief=belief),
+            competence_after=mean_competence(belief=conditioned),
             training_examples=training_examples,
         )
         if observation is not None:
@@ -211,7 +239,12 @@ def refit_observed_skill_belief(
     belief: ConcreteSkillBelief,
     training_examples: int,
     cycle_start_competence: float | None,
+    execution_observations: tuple[SkillExecutionObservation, ...] = (),
 ) -> ConcreteSkillBelief:
+    belief = condition_execution_observations(
+        belief=belief,
+        observations=execution_observations,
+    )
     if cycle_start_competence is not None:
         rate = observed_learning_rate(
             competence_before=cycle_start_competence,
@@ -237,6 +270,7 @@ def refit_belief_state(
             belief=belief,
             training_examples=state.pending_examples.get(skill_name, 0),
             cycle_start_competence=start_competences.get(skill_name),
+            execution_observations=state.pending_execution_observations.get(skill_name, ()),
         )
         refitted = refitted.advance_learning_rate(process_noise_std=learning_rate_process_noise_std)
         refitted_beliefs[skill_name] = refitted
@@ -244,5 +278,6 @@ def refit_belief_state(
         update={
             "skill_beliefs": refitted_beliefs,
             "pending_examples": {},
+            "pending_execution_observations": {},
         }
     )

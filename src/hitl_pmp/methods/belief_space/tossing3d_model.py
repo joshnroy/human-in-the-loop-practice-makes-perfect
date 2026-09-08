@@ -197,6 +197,18 @@ class Tossing3DPracticeModel(BaseModel):
                 for skill_name, belief in sorted(belief_state.skill_beliefs.items())
             ),
             tuple(sorted(belief_state.pending_examples.items())),
+            tuple(
+                (
+                    skill_name,
+                    tuple(
+                        (observation.success, observation.observed_cost)
+                        for observation in observations
+                    ),
+                )
+                for skill_name, observations in sorted(
+                    belief_state.pending_execution_observations.items()
+                )
+            ),
             belief_state.accumulated_cost,
             horizon,
         )
@@ -270,6 +282,7 @@ class Tossing3DPracticeModel(BaseModel):
             environment_state.atoms,
             tuple(sorted(state.skill_beliefs.items())),
             tuple(sorted(state.pending_examples.items())),
+            tuple(sorted(state.pending_execution_observations.items())),
             state.accumulated_cost,
             cost,
         )

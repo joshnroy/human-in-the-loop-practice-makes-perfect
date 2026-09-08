@@ -16,7 +16,6 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
 )
 from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
-    condition_skill_belief,
     make_default_tossing3d_belief,
     make_skill_belief_prior,
     mean_competence,
@@ -31,7 +30,10 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import (
     make_tossing3d_search_state,
     render_atoms,
 )
-from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+from hitl_pmp.methods.belief_space.types.belief_state import (
+    SkillExecutionObservation,
+    Tossing3DBeliefState,
+)
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
     ParticleFilterBelief,
     create_broad_particle_prior,
@@ -248,7 +250,7 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
         practice_action=action,
         belief_state=state,
     )
-    assert len(successors) == 2
+    assert len(successors) == 4
     probabilities = [
         model.transition_probability(
             potential_next_environment_state=successor,
@@ -259,7 +261,7 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
         )
         for successor, cost in successors
     ]
-    assert probabilities == pytest.approx([0.5, 0.5])
+    assert probabilities == pytest.approx([0.25] * 4)
 
 
 def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBelief:
@@ -447,6 +449,128 @@ def test_cycle_refit_uses_competence_finite_difference_to_update_learning_rate()
         mean_learning_rate(belief=posterior.skill_beliefs[TOSS_SKILL]) - observed_rate
     ) < abs(mean_learning_rate(belief=prior) - observed_rate)
     assert posterior.pending_examples == {}
+
+
+def test_execution_evidence_is_deferred_until_cycle_refit() -> None:
+    model = _domain_model()
+    pick = _ground_skill(model=model, name=PICK_SKILL)
+    prior_state = make_default_tossing3d_belief(num_particles=1_000, seed=31)
+
+    pending_state = model.observe_outcome(
+        state=prior_state,
+        ground_skill=pick,
+        success=True,
+        was_random_exploration=False,
+        observed_cost=1.0,
+    )
+
+    assert pending_state.skill_beliefs[PICK_SKILL] == prior_state.skill_beliefs[PICK_SKILL]
+    assert len(pending_state.pending_execution_observations[PICK_SKILL]) == 1
+    posterior_state = refit_belief_state(
+        state=pending_state,
+        cycle_start_competences={
+            PICK_SKILL: mean_competence(belief=prior_state.skill_beliefs[PICK_SKILL])
+        },
+    )
+    assert mean_competence(belief=posterior_state.skill_beliefs[PICK_SKILL]) > mean_competence(
+        belief=prior_state.skill_beliefs[PICK_SKILL]
+    )
+    assert abs(mean_cost(belief=posterior_state.skill_beliefs[PICK_SKILL]) - 1.0) < abs(
+        mean_cost(belief=prior_state.skill_beliefs[PICK_SKILL]) - 1.0
+    )
+    assert posterior_state.pending_execution_observations == {}
+
+
+def test_cycle_refit_applies_one_learning_rate_observation_from_batched_evidence() -> None:
+    model = _domain_model()
+    pick = _ground_skill(model=model, name=PICK_SKILL)
+    prior_state = make_default_tossing3d_belief(num_particles=2_000, seed=32)
+    pending_state = prior_state
+    for success in (True, True, False):
+        pending_state = model.observe_outcome(
+            state=pending_state,
+            ground_skill=pick,
+            success=success,
+            was_random_exploration=False,
+            observed_cost=1.0,
+        )
+    prior = prior_state.skill_beliefs[PICK_SKILL]
+    execution_posterior = prior.condition_executions(
+        observations=pending_state.pending_execution_observations[PICK_SKILL]
+    )
+    expected_observation = observed_learning_rate(
+        competence_before=mean_competence(belief=prior),
+        competence_after=mean_competence(belief=execution_posterior),
+        training_examples=3,
+    )
+    assert expected_observation is not None
+    expected = execution_posterior.condition_learning_rate(
+        observed_learning_rate=expected_observation
+    ).refit(training_examples=3)
+
+    posterior_state = refit_belief_state(
+        state=pending_state,
+        cycle_start_competences={PICK_SKILL: mean_competence(belief=prior)},
+    )
+
+    assert posterior_state.skill_beliefs[PICK_SKILL] == expected
+
+
+def test_cycle_refit_with_zero_invocations_skips_eta_observation() -> None:
+    prior = create_broad_particle_prior(num_particles=256, seed=33)
+    cost_only = SkillExecutionObservation(observed_cost=1.0)
+    state = Tossing3DBeliefState(
+        skill_beliefs={PICK_SKILL: prior},
+        pending_execution_observations={PICK_SKILL: (cost_only,)},
+    )
+
+    posterior = refit_belief_state(
+        state=state,
+        cycle_start_competences={PICK_SKILL: mean_competence(belief=prior) - 0.4},
+    )
+
+    assert posterior.skill_beliefs[PICK_SKILL] == prior.condition_executions(
+        observations=(cost_only,)
+    )
+
+
+def test_one_batched_likelihood_matches_one_non_resampling_sequential_update() -> None:
+    prior = create_broad_particle_prior(num_particles=1_000, seed=35)
+    observation = SkillExecutionObservation(success=True)
+
+    batched = prior.condition_executions(observations=(observation,))
+    sequential = prior.condition_outcome(success=True)
+
+    batched_parameters, batched_weights = batched.arrays()
+    sequential_parameters, sequential_weights = sequential.arrays()
+    assert np.array_equal(batched_parameters, sequential_parameters)
+    assert np.allclose(batched_weights, sequential_weights, rtol=1e-14, atol=0.0)
+    assert batched.resampling_count == sequential.resampling_count == 0
+
+
+def test_batched_cycle_update_is_deterministic() -> None:
+    model = _domain_model()
+    pick = _ground_skill(model=model, name=PICK_SKILL)
+    initial = make_default_tossing3d_belief(num_particles=256, seed=34)
+
+    def update() -> Tossing3DBeliefState:
+        state = initial
+        for success in (True, False, True, True):
+            state = model.observe_outcome(
+                state=state,
+                ground_skill=pick,
+                success=success,
+                was_random_exploration=False,
+                observed_cost=1.0,
+            )
+        return refit_belief_state(
+            state=state,
+            cycle_start_competences={
+                PICK_SKILL: mean_competence(belief=initial.skill_beliefs[PICK_SKILL])
+            },
+        )
+
+    assert update() == update()
 
 
 def test_cycle_refit_without_examples_does_not_observe_learning_rate() -> None:
@@ -655,7 +779,7 @@ def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
     } == {RESET_SKILL}
 
 
-def test_human_reset_observation_updates_its_joint_belief_and_training_count() -> None:
+def test_human_reset_observation_defers_its_joint_belief_and_counts_training() -> None:
     model = _domain_model(reset_cost=0.25)
     state = make_default_tossing3d_belief(include_human_reset=True)
     reset = _ground_skill(model=model, name=RESET_SKILL)
@@ -667,12 +791,9 @@ def test_human_reset_observation_updates_its_joint_belief_and_training_count() -
         was_random_exploration=False,
         observed_cost=0.25,
     )
-    assert mean_competence(belief=observed.skill_beliefs[RESET_SKILL]) > mean_competence(
-        belief=state.skill_beliefs[RESET_SKILL]
-    )
-    assert abs(mean_cost(belief=observed.skill_beliefs[RESET_SKILL]) - 0.25) < abs(
-        mean_cost(belief=state.skill_beliefs[RESET_SKILL]) - 0.25
-    )
+    assert observed.skill_beliefs[RESET_SKILL] == state.skill_beliefs[RESET_SKILL]
+    assert observed.pending_execution_observations[RESET_SKILL][0].success is True
+    assert observed.pending_execution_observations[RESET_SKILL][0].observed_cost == 0.25
     assert observed.pending_examples[RESET_SKILL] == 1
 
 
@@ -730,12 +851,13 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
     assert all(
         _pending_examples(state=outcome[1], skill_name=PICK_SKILL) == 1 for outcome in outcomes
     )
-    assert mean_competence(
-        belief=_belief(state=outcomes[0][1], skill_name=PICK_SKILL)
-    ) > mean_competence(belief=_belief(state=state, skill_name=PICK_SKILL))
-    assert mean_competence(
-        belief=_belief(state=outcomes[1][1], skill_name=PICK_SKILL)
-    ) < mean_competence(belief=_belief(state=state, skill_name=PICK_SKILL))
+    assert all(
+        _belief(state=outcome[1], skill_name=PICK_SKILL)
+        == _belief(state=state, skill_name=PICK_SKILL)
+        for outcome in outcomes
+    )
+    assert outcomes[0][1].pending_execution_observations[PICK_SKILL][0].success is True
+    assert outcomes[1][1].pending_execution_observations[PICK_SKILL][0].success is False
     assert outcomes[1][2] == search_state.true_atoms
 
 
@@ -804,6 +926,14 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
             success=True,
             was_random_exploration=False,
         )
+    state = refit_belief_state(
+        state=state,
+        cycle_start_competences={
+            OPEN_GRIPPER_SKILL: mean_competence(
+                belief=make_default_tossing3d_belief().skill_beliefs[OPEN_GRIPPER_SKILL]
+            )
+        },
+    )
     open_gripper_belief = _belief(state=state, skill_name=OPEN_GRIPPER_SKILL)
     assert mean_competence(belief=open_gripper_belief) > 0.99
     projected = refit_skill_belief(belief=open_gripper_belief, training_examples=1)
@@ -836,8 +966,8 @@ def test_pending_examples_predict_improvement_without_changing_current_competenc
         success=True,
         was_random_exploration=False,
     )
-    assert _belief(state=observed, skill_name=PICK_SKILL) == condition_skill_belief(
-        belief=_belief(state=state, skill_name=PICK_SKILL), success=True
+    assert _belief(state=observed, skill_name=PICK_SKILL) == _belief(
+        state=state, skill_name=PICK_SKILL
     )
     refit = refit_belief_state(state=observed)
     assert mean_competence(belief=_belief(state=refit, skill_name=PICK_SKILL)) > mean_competence(
@@ -883,11 +1013,17 @@ def test_toss_random_exploration_does_not_condition_policy_belief() -> None:
         name=TOSS_SKILL,
     )
     assert sum(outcome[0] for outcome in outcomes) == pytest.approx(1.0)
-    belief_probability: dict[SkillBelief, float] = {}
-    for probability, next_state, _ in outcomes:
-        belief = _belief(state=next_state, skill_name=TOSS_SKILL)
-        belief_probability[belief] = belief_probability.get(belief, 0.0) + probability
-    assert any(probability == pytest.approx(0.5) for probability in belief_probability.values())
+    random_probability = sum(
+        probability
+        for probability, next_state, _ in outcomes
+        if TOSS_SKILL not in next_state.pending_execution_observations
+    )
+    assert random_probability == pytest.approx(0.5)
+    assert all(
+        _belief(state=next_state, skill_name=TOSS_SKILL)
+        == _belief(state=state, skill_name=TOSS_SKILL)
+        for _, next_state, _ in outcomes
+    )
     assert all(
         _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 1 for outcome in outcomes
     )

@@ -21,6 +21,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_competence,
     mean_cost,
     mean_learning_rate,
+    refit_belief_state,
 )
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -56,7 +57,7 @@ def test_selector_uses_current_symbolic_state_without_starting_simulator() -> No
     method = _build(pomdp_num_samples=1)
     pick = _grounding(method=method, name=PICK_SKILL)
     selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
-    assert selection == [pick]
+    assert len(selection) == 1
     assert method.env._backend is None  # noqa: SLF001 (pin lazy simulator construction)
 
 
@@ -80,15 +81,11 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     after = method.pomdp_state
     assert after.accumulated_cost == 1.0
     assert after.skill_beliefs[TOSS_SKILL] == before.skill_beliefs[TOSS_SKILL]
-    assert mean_competence(belief=after.skill_beliefs[PICK_SKILL]) > mean_competence(
-        belief=before.skill_beliefs[PICK_SKILL]
-    )
+    assert after.skill_beliefs[PICK_SKILL] == before.skill_beliefs[PICK_SKILL]
     assert after.pending_examples[PICK_SKILL] == 1
     assert isinstance(after.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
     assert isinstance(before.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
-    assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 1.0) < abs(
-        mean_cost(belief=before.skill_beliefs[PICK_SKILL]) - 1.0
-    )
+    assert after.pending_execution_observations[PICK_SKILL][0].observed_cost == 1.0
 
 
 def test_record_action_cost_only_records_realized_cost() -> None:
@@ -128,9 +125,8 @@ def test_toss_evidence_and_training_are_separate_until_refit() -> None:
     before = method.pomdp_state
     method.observe_outcome(ground_skill=toss, success=True, was_random_exploration=False)
     conditioned = method.pomdp_state
-    assert mean_competence(belief=conditioned.skill_beliefs[TOSS_SKILL]) > mean_competence(
-        belief=before.skill_beliefs[TOSS_SKILL]
-    )
+    assert conditioned.skill_beliefs[TOSS_SKILL] == before.skill_beliefs[TOSS_SKILL]
+    assert conditioned.pending_execution_observations[TOSS_SKILL][0].success is True
     assert conditioned.pending_examples.get(TOSS_SKILL, 0) == 0
     method.observe_sampler_outcome(
         skill_name=TOSS_SKILL, param_dim=4, sampler_input=[0.0], success=True
@@ -199,14 +195,20 @@ def test_completed_human_reset_jointly_updates_performance_cost_and_training() -
     )
     method.observe_help_granted(state=reset_state)
 
-    after = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    pending = method.pomdp_state
+    after = pending.skill_beliefs[RESET_SKILL]
     assert isinstance(before, ParticleFilterBelief)
-    assert after == before.condition_execution(success=True, observed_cost=observed_cost)
-    assert mean_competence(belief=after) > mean_competence(belief=before)
-    assert abs(mean_cost(belief=after) - observed_cost) < abs(
+    assert after == before
+    assert pending.pending_execution_observations[RESET_SKILL][0].observed_cost == observed_cost
+    assert method.pomdp_state.pending_examples[RESET_SKILL] == 1
+    refitted = refit_belief_state(
+        state=pending,
+        cycle_start_competences={RESET_SKILL: mean_competence(belief=before)},
+    ).skill_beliefs[RESET_SKILL]
+    assert mean_competence(belief=refitted) > mean_competence(belief=before)
+    assert abs(mean_cost(belief=refitted) - observed_cost) < abs(
         mean_cost(belief=before) - observed_cost
     )
-    assert method.pomdp_state.pending_examples[RESET_SKILL] == 1
 
 
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:

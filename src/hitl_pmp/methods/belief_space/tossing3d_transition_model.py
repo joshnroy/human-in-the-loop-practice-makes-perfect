@@ -11,7 +11,6 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
-    condition_skill_belief,
     mean_competence,
     skill_belief_model,
 )
@@ -212,9 +211,6 @@ def toss_outcomes(
             probability = choice_probability * observation_probability
             if probability <= 0.0:
                 continue
-            belief = state.skill_beliefs[TOSS_SKILL]
-            if not is_random:
-                belief = condition_skill_belief(belief=belief, success=success)
             next_true_atoms = (
                 apply_success_effects(
                     true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
@@ -222,14 +218,16 @@ def toss_outcomes(
                 if success
                 else true_atoms
             )
-            branches.append((
-                probability,
-                transition_belief_state(
-                    state=state,
-                    added_cost=toss_cost,
-                    toss_belief=belief,
-                    added_training_examples=1,
-                ),
-                next_true_atoms,
-            ))
+            next_state = transition_belief_state(
+                state=state,
+                added_cost=toss_cost,
+                added_training_examples=1,
+            )
+            if not is_random:
+                next_state = skill_belief_model(ground_skill=ground_skill).observe_outcome(
+                    state=next_state,
+                    success=success,
+                    was_random_exploration=False,
+                )
+            branches.append((probability, next_state, next_true_atoms))
     return tuple(branches)

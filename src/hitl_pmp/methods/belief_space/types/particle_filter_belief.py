@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Final
 
 import numpy as np
@@ -9,8 +10,10 @@ from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import Self
 
 from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (
+    ExecutionObservation,
     condition_cost,
     condition_execution,
+    condition_executions,
     condition_learning_rate,
     condition_outcome,
     make_rng,
@@ -88,6 +91,9 @@ class ParticleFilterBelief(SkillBelief):
 
     def condition_execution(self, *, success: bool, observed_cost: float) -> Self:
         return condition_execution(belief=self, success=success, observed_cost=observed_cost)
+
+    def condition_executions(self, *, observations: Sequence[ExecutionObservation]) -> Self:
+        return condition_executions(belief=self, observations=observations)
 
     def condition_cost(self, *, observed_cost: float) -> Self:
         return condition_cost(belief=self, observed_cost=observed_cost)
