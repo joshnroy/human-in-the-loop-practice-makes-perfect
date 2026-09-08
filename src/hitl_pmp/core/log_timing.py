@@ -32,9 +32,7 @@ def _replace_non_finite_floats(*, value: Any) -> Any:
             return "NaN"
         return "Infinity" if value > 0 else "-Infinity"
     if isinstance(value, dict):
-        return {
-            key: _replace_non_finite_floats(value=item) for key, item in value.items()
-        }
+        return {key: _replace_non_finite_floats(value=item) for key, item in value.items()}
     if isinstance(value, list):
         return [_replace_non_finite_floats(value=item) for item in value]
     if isinstance(value, tuple):

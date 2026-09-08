@@ -14,9 +14,7 @@ def test_event_timing_is_utc_and_monotonic() -> None:
 
 def test_nested_non_finite_diagnostics_are_valid_json() -> None:
     record = json.loads(
-        LogTiming.encode(
-            record={"value": -float("inf"), "search": [{"bound": float("inf")}]}
-        )
+        LogTiming.encode(record={"value": -float("inf"), "search": [{"bound": float("inf")}]})
     )
 
     assert record["value"] == "-Infinity"
