@@ -204,18 +204,22 @@ def refit_belief_state(
     *,
     state: Tossing3DBeliefState,
     cycle_start_competences: dict[str, float] | None = None,
+    learning_rate_process_noise_std: float = 0.0,
 ) -> Tossing3DBeliefState:
+    assert learning_rate_process_noise_std >= 0.0
     start_competences = cycle_start_competences or {}
+    refitted_beliefs: dict[str, ConcreteSkillBelief] = {}
+    for skill_name, belief in state.skill_beliefs.items():
+        refitted = refit_observed_skill_belief(
+            belief=belief,
+            training_examples=state.pending_examples.get(skill_name, 0),
+            cycle_start_competence=start_competences.get(skill_name),
+        )
+        refitted = refitted.advance_learning_rate(process_noise_std=learning_rate_process_noise_std)
+        refitted_beliefs[skill_name] = refitted
     return state.model_copy(
         update={
-            "skill_beliefs": {
-                skill_name: refit_observed_skill_belief(
-                    belief=belief,
-                    training_examples=state.pending_examples.get(skill_name, 0),
-                    cycle_start_competence=start_competences.get(skill_name),
-                )
-                for skill_name, belief in state.skill_beliefs.items()
-            },
+            "skill_beliefs": refitted_beliefs,
             "pending_examples": {},
         }
     )

@@ -512,6 +512,54 @@ def test_particle_prediction_advances_competence_but_not_learning_rate() -> None
     assert np.all(after[:, 0] >= before[:, 0])
 
 
+def test_learning_rate_process_transition_is_seeded_and_changes_only_eta() -> None:
+    prior = create_broad_particle_prior(num_particles=256, seed=23)
+
+    first = prior.advance_learning_rate(process_noise_std=0.05)
+    second = prior.advance_learning_rate(process_noise_std=0.05)
+
+    assert first == second
+    before, before_weights = prior.arrays()
+    after, after_weights = first.arrays()
+    np.testing.assert_array_equal(after[:, 0], before[:, 0])
+    np.testing.assert_array_equal(after[:, 2], before[:, 2])
+    np.testing.assert_array_equal(after_weights, before_weights)
+    assert np.any(after[:, 1] != before[:, 1])
+    assert np.all((after[:, 1] >= 0.0) & (after[:, 1] <= 1.0))
+    assert first.process_transition_count == 1
+
+
+def test_learning_rate_process_transition_advances_replayable_random_stream() -> None:
+    prior = create_broad_particle_prior(num_particles=256, seed=25)
+    first = prior.advance_learning_rate(process_noise_std=0.05)
+    second = first.advance_learning_rate(process_noise_std=0.05)
+    reloaded = ParticleFilterBelief.model_validate_json(first.model_dump_json())
+    replayed_second = reloaded.advance_learning_rate(process_noise_std=0.05)
+
+    first_parameters, _ = first.arrays()
+    second_parameters, _ = second.arrays()
+    replayed_parameters, _ = replayed_second.arrays()
+    assert second.process_transition_count == 2
+    assert np.any(second_parameters[:, 1] != first_parameters[:, 1])
+    np.testing.assert_array_equal(replayed_parameters, second_parameters)
+    assert not np.any(np.isin(second_parameters[:, 1], (0.0, 1.0)))
+
+
+def test_cycle_refit_applies_learning_rate_process_noise_without_examples() -> None:
+    prior = create_broad_particle_prior(num_particles=128, seed=24)
+    state = Tossing3DBeliefState(skill_beliefs={TOSS_SKILL: prior})
+
+    posterior = refit_belief_state(
+        state=state,
+        learning_rate_process_noise_std=0.05,
+    )
+
+    before, _ = prior.arrays()
+    after, _ = posterior.skill_beliefs[TOSS_SKILL].arrays()
+    np.testing.assert_array_equal(after[:, 0], before[:, 0])
+    assert np.any(after[:, 1] != before[:, 1])
+
+
 def test_only_physically_applicable_actions_are_returned() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()

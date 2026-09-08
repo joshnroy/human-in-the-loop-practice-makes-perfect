@@ -174,6 +174,14 @@ class Tossing3DPomdpCli(EesCli):
             help="Particles per robot skill.",
         )
         parser.add_argument(
+            "--pomdp-learning-rate-process-noise-std",
+            type=float,
+            default=Tossing3DPomdpMethod.model_fields[
+                "pomdp_learning_rate_process_noise_std"
+            ].default,
+            help="Standard deviation of the per-cycle Gaussian random walk on eta.",
+        )
+        parser.add_argument(
             "--pomdp-linear-cost-lambda",
             type=float,
             default=Tossing3DPomdpMethod.model_fields["pomdp_linear_cost_lambda"].default,
@@ -215,6 +223,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
+                pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"

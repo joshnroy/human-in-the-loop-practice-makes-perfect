@@ -37,6 +37,18 @@ _SHRINKAGE = 0.98
 _STREAM_TAG = 0x524553414D504C45
 
 
+def make_rng(*, seed: int, stream: int, tag: int) -> np.random.Generator:
+    """Create one reproducible random stream derived from the experiment seed."""
+    return np.random.default_rng(np.random.SeedSequence([seed, stream, tag]))
+
+
+def reflect_into_interval(*, values: np.ndarray, lower: float, upper: float) -> np.ndarray:
+    """Reflect values at finite bounds instead of accumulating mass on them."""
+    width = upper - lower
+    assert width > 0.0
+    return lower + width - np.abs((values - lower) % (2.0 * width) - width)
+
+
 def condition_outcome(*, belief: BeliefT, success: bool) -> BeliefT:
     parameters, weights = belief.arrays()
     likelihoods = parameters[:, 0] if success else 1.0 - parameters[:, 0]
@@ -99,8 +111,10 @@ def _condition(*, belief: BeliefT, parameters: np.ndarray, masses: np.ndarray) -
 
 def _resample(*, belief: BeliefT, parameters: np.ndarray, weights: np.ndarray) -> BeliefT:
     count = len(weights)
-    rng = np.random.default_rng(
-        np.random.SeedSequence([belief.resampling_seed, belief.resampling_count, _STREAM_TAG])
+    rng = make_rng(
+        seed=belief.resampling_seed,
+        stream=belief.resampling_count,
+        tag=_STREAM_TAG,
     )
     positions = (rng.random() + np.arange(count)) / count
     indices = np.searchsorted(np.cumsum(weights), positions, side="right")

@@ -113,6 +113,12 @@ class WeightedHypothesisBelief(SkillBelief):
             )
         )
 
+    def advance_learning_rate(self, *, process_noise_std: float) -> "WeightedHypothesisBelief":
+        assert process_noise_std >= 0.0
+        if process_noise_std > 0.0:
+            raise NotImplementedError("process noise requires a particle-filter belief")
+        return self
+
     def diagnostics(self) -> dict[str, object]:
         return {"representation": "weighted_hypotheses", "num_hypotheses": len(self.hypotheses)}
 
