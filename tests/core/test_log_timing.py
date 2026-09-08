@@ -10,3 +10,12 @@ def test_event_timing_is_utc_and_monotonic() -> None:
     assert first["event"] == "first"
     assert second["elapsed_seconds"] >= first["elapsed_seconds"] >= 0
     assert datetime.fromisoformat(first["timestamp"]).utcoffset().total_seconds() == 0
+
+
+def test_nested_non_finite_diagnostics_are_valid_json() -> None:
+    record = json.loads(
+        LogTiming.encode(record={"value": -float("inf"), "search": [{"bound": float("inf")}]})
+    )
+
+    assert record["value"] == "-Infinity"
+    assert record["search"] == [{"bound": "Infinity"}]

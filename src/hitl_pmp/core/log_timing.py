@@ -1,6 +1,7 @@
 """Comparable write timestamps for event logs within one process."""
 
 import json
+import math
 import time
 from datetime import datetime, timezone
 from typing import Any, ClassVar
@@ -20,4 +21,20 @@ class LogTiming:
 
     @staticmethod
     def encode(*, record: dict[str, Any]) -> str:
-        return json.dumps({**record, **LogTiming.fields()}, allow_nan=False) + "\n"
+        payload = _replace_non_finite_floats(value={**record, **LogTiming.fields()})
+        return json.dumps(payload, allow_nan=False) + "\n"
+
+
+def _replace_non_finite_floats(*, value: Any) -> Any:
+    """Represent non-finite diagnostic values without emitting invalid JSON."""
+    if isinstance(value, float) and not math.isfinite(value):
+        if math.isnan(value):
+            return "NaN"
+        return "Infinity" if value > 0 else "-Infinity"
+    if isinstance(value, dict):
+        return {key: _replace_non_finite_floats(value=item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_replace_non_finite_floats(value=item) for item in value]
+    if isinstance(value, tuple):
+        return [_replace_non_finite_floats(value=item) for item in value]
+    return value
