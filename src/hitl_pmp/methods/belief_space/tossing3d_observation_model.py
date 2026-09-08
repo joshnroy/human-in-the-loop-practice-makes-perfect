@@ -183,6 +183,29 @@ def observed_learning_rate(
     return max(0.0, (competence_after - competence_before) / training_examples)
 
 
+def observed_learning_rates(
+    *,
+    state: Tossing3DBeliefState,
+    cycle_start_competences: dict[str, float] | None = None,
+) -> dict[str, float]:
+    """Return the exact per-skill observations used at a cycle boundary."""
+    start_competences = cycle_start_competences or {}
+    observations: dict[str, float] = {}
+    for skill_name, belief in state.skill_beliefs.items():
+        training_examples = state.pending_examples.get(skill_name, 0)
+        start = start_competences.get(skill_name)
+        if start is None:
+            continue
+        observation = observed_learning_rate(
+            competence_before=start,
+            competence_after=mean_competence(belief=belief),
+            training_examples=training_examples,
+        )
+        if observation is not None:
+            observations[skill_name] = observation
+    return observations
+
+
 def refit_observed_skill_belief(
     *,
     belief: ConcreteSkillBelief,

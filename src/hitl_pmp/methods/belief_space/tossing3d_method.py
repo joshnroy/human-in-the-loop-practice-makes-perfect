@@ -29,6 +29,7 @@ from .tossing3d_observation_model import (
     mean_competence,
     mean_cost,
     mean_learning_rate,
+    observed_learning_rates,
     refit_belief_state,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
@@ -270,6 +271,14 @@ class Tossing3DPomdpMethod(EesMethod):
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
+        learning_rate_observations = observed_learning_rates(
+            state=self._pomdp_state,
+            cycle_start_competences=self._cycle_start_competences,
+        )
+        learning_rate_observation_counts = {
+            skill_name: self._pomdp_state.pending_examples[skill_name]
+            for skill_name in learning_rate_observations
+        }
         self._pomdp_state = refit_belief_state(
             state=self._pomdp_state,
             cycle_start_competences=self._cycle_start_competences,
@@ -280,6 +289,8 @@ class Tossing3DPomdpMethod(EesMethod):
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             estimated_costs=self.practice_skill_costs(),
+            learning_rate_observations=learning_rate_observations,
+            learning_rate_observation_counts=learning_rate_observation_counts,
         )
         self._cycle_index += 1
 
