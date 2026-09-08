@@ -31,6 +31,7 @@ PARTICLE_DTYPE: Final = np.dtype("<f8")
 class ParticleFilterBelief(SkillBelief):
     model_config = ConfigDict(frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
     resampling_count: int = Field(default=0, ge=0)
+    process_transition_count: int = Field(default=0, ge=0)
     resampling_seed: int = Field(default=0, ge=0)
     particle_parameters: bytes
     particle_weights: bytes
@@ -103,6 +104,27 @@ class ParticleFilterBelief(SkillBelief):
         )
         return self.from_arrays(parameters=projected, weights=weights)
 
+    def advance_learning_rate(self, *, process_noise_std: float) -> Self:
+        """Apply one Gaussian random-walk transition to the latent learning rate."""
+        assert process_noise_std >= 0.0
+        if process_noise_std == 0.0:
+            return self
+        parameters, weights = self.arrays()
+        rng = np.random.default_rng(
+            np.random.SeedSequence([self.resampling_seed, self.process_transition_count, 0x455441])
+        )
+        transitioned = parameters.copy()
+        proposals = transitioned[:, 1] + rng.normal(0.0, process_noise_std, size=self.num_particles)
+        width = LEARNING_RATE_MAX - LEARNING_RATE_MIN
+        transitioned[:, 1] = (
+            LEARNING_RATE_MIN
+            + width
+            - np.abs((proposals - LEARNING_RATE_MIN) % (2.0 * width) - width)
+        )
+        return self.from_arrays(parameters=transitioned, weights=weights).model_copy(
+            update={"process_transition_count": self.process_transition_count + 1}
+        )
+
     def diagnostics(self) -> dict[str, object]:
         _, weights = self.arrays()
         return {
@@ -110,11 +132,13 @@ class ParticleFilterBelief(SkillBelief):
             "num_particles": self.num_particles,
             "effective_sample_size": float(1.0 / np.dot(weights, weights)),
             "resampling_count": self.resampling_count,
+            "process_transition_count": self.process_transition_count,
         }
 
     def signature(self) -> tuple[object, ...]:
         return (
             self.resampling_count,
+            self.process_transition_count,
             self.resampling_seed,
             self.particle_parameters,
             self.particle_weights,

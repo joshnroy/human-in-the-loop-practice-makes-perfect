@@ -48,6 +48,7 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_num_particles: int = Field(default=256, ge=1)
+    pomdp_learning_rate_process_noise_std: float = Field(default=0.0, ge=0.0)
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
@@ -272,6 +273,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_state = refit_belief_state(
             state=self._pomdp_state,
             cycle_start_competences=self._cycle_start_competences,
+            learning_rate_process_noise_std=self.pomdp_learning_rate_process_noise_std,
         )
         self.record_diagnostic(
             event="refit",
