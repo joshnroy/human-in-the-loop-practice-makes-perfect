@@ -14,6 +14,7 @@ from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (
     condition_learning_rate,
     condition_outcome,
     make_rng,
+    reflect_into_interval,
 )
 
 from .skill_belief import (
@@ -118,11 +119,10 @@ class ParticleFilterBelief(SkillBelief):
         )
         transitioned = parameters.copy()
         proposals = transitioned[:, 1] + rng.normal(0.0, process_noise_std, size=self.num_particles)
-        width = LEARNING_RATE_MAX - LEARNING_RATE_MIN
-        transitioned[:, 1] = (
-            LEARNING_RATE_MIN
-            + width
-            - np.abs((proposals - LEARNING_RATE_MIN) % (2.0 * width) - width)
+        transitioned[:, 1] = reflect_into_interval(
+            values=proposals,
+            lower=LEARNING_RATE_MIN,
+            upper=LEARNING_RATE_MAX,
         )
         return self.from_arrays(parameters=transitioned, weights=weights).model_copy(
             update={"process_transition_count": self.process_transition_count + 1}

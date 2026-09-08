@@ -42,6 +42,13 @@ def make_rng(*, seed: int, stream: int, tag: int) -> np.random.Generator:
     return np.random.default_rng(np.random.SeedSequence([seed, stream, tag]))
 
 
+def reflect_into_interval(*, values: np.ndarray, lower: float, upper: float) -> np.ndarray:
+    """Reflect values at finite bounds instead of accumulating mass on them."""
+    width = upper - lower
+    assert width > 0.0
+    return lower + width - np.abs((values - lower) % (2.0 * width) - width)
+
+
 def condition_outcome(*, belief: BeliefT, success: bool) -> BeliefT:
     parameters, weights = belief.arrays()
     likelihoods = parameters[:, 0] if success else 1.0 - parameters[:, 0]
