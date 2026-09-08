@@ -6,13 +6,16 @@ atoms, selected action, value, model configuration, and full expectimax trace.
 Dispatches, observed outcomes, and end-of-cycle refits are separate records.
 
 Inside a decision, node 0 is the root. `stop_value` is the immediate stopping
-value; `action_value` gives each competing action's expected value. `sample`
+value; `action_value` gives each fully evaluated competing action's expected value.
+`chance_prune` records an action whose admissible optimistic bound could not beat
+the incumbent, including how many chance outcomes were skipped. `sample`
 records the actual theta and policy/cost-adjusted values used. `branch`
 records successor state, posterior, probability, cost, recursive value and
 weighted contribution. A successor is identified by state, belief, accumulated
 cost and remaining horizon; cached successors reuse their existing node.
 `choice` distinguishes a horizon leaf from a value-maximizing decision. STOP
 wins ties. Tracing does not call the model again or consume extra randomness.
+The search summary counts pruned actions and chance outcomes.
 
 Practice MP4s have a right-hand scrolling event panel. It preserves repeated
 skills, marks human resets, and marks early interaction completion. The latest

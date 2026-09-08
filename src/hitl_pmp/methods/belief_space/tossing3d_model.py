@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import hashlib
+from collections.abc import Callable, Iterable
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
@@ -123,6 +124,48 @@ class Tossing3DPracticeModel(BaseModel):
             open_competences=competences[2],
             horizon=self.deployment_horizon,
         )
+
+    def start_search_policy_sampler(
+        self,
+    ) -> Callable[..., np.ndarray]:
+        """Create a resampled search-local sampler independent of traversal order."""
+        search_seed = int(self._rng.integers(0, np.iinfo(np.uint64).max, dtype=np.uint64))
+
+        def sample(*, belief_state: Tossing3DBeliefState, num_samples: int) -> np.ndarray:
+            hasher = hashlib.blake2b(digest_size=8)
+            hasher.update(search_seed.to_bytes(8, "little"))
+            for skill_name, belief in sorted(belief_state.skill_beliefs.items()):
+                components = (skill_name, type(belief).__name__, *belief.signature())
+                for component in components:
+                    serialized = (
+                        component if isinstance(component, bytes) else repr(component).encode()
+                    )
+                    hasher.update(len(serialized).to_bytes(8, "little"))
+                    hasher.update(serialized)
+            pending = repr(tuple(sorted(belief_state.pending_examples.items()))).encode()
+            hasher.update(len(pending).to_bytes(8, "little"))
+            hasher.update(pending)
+            digest = hasher.digest()
+            rng = np.random.default_rng(int.from_bytes(digest, "little"))
+            projected = refit_belief_state(state=belief_state)
+            competences = [
+                projected.skill_beliefs[skill_name].sample(rng=rng, count=num_samples)[:, 0]
+                for skill_name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL)
+            ]
+            return evaluate_deployment_policies(
+                toss_competences=competences[1],
+                pick_competences=competences[0],
+                open_competences=competences[2],
+                horizon=self.deployment_horizon,
+            )
+
+        return sample
+
+    def pomdp_value_upper_bound(self, *, summed_cost: float) -> float:
+        """Upper-bound every continuation from a state at ``summed_cost``."""
+        if self.linear_cost_lambda is not None:
+            return 1.0 - self.linear_cost_lambda * summed_cost
+        return 1.0 if summed_cost <= PRACTICE_BUDGET else -np.inf
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         """Apply either the PDF's hard-budget or linear-cost objective."""

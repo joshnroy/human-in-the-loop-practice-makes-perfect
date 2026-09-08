@@ -177,6 +177,75 @@ class Model(BaseModel):
         )
 
 
+class BoundedModel(Model):
+    linear_cost_lambda: float | None = None
+    hard_budget: float = 20.0
+
+    def G(self, *, policy_value: float, summed_cost: float) -> float:
+        if self.linear_cost_lambda is not None:
+            return policy_value - self.linear_cost_lambda * summed_cost
+        return policy_value if summed_cost <= self.hard_budget else -float("inf")
+
+    def pomdp_value_upper_bound(self, *, summed_cost: float) -> float:
+        if self.linear_cost_lambda is not None:
+            return 1.0 - self.linear_cost_lambda * summed_cost
+        return 1.0 if summed_cost <= self.hard_budget else -float("inf")
+
+
+@pytest.mark.parametrize("linear_cost_lambda", [None, 0.1])
+def test_admissible_chance_pruning_preserves_value_and_action(
+    *, linear_cost_lambda: float | None
+) -> None:
+    transitions = {
+        (INITIAL, PRACTICE): [(FAILURE, 0.0, 0.5), (SUCCESS, 0.0, 0.5)],
+    }
+    kwargs = dict(
+        transitions=transitions,
+        beliefs={FAILURE: BeliefState(value=0.0), SUCCESS: BeliefState(value=1.0)},
+        linear_cost_lambda=linear_cost_lambda,
+    )
+    exhaustive = BoundedModel(**kwargs)
+    bounded = BoundedModel(**kwargs)
+    trace = SearchTrace()
+    args = dict(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.8),
+        horizon=1,
+    )
+
+    expected = solve_belief_space_expectimax(model=exhaustive, enable_pruning=False, **args)
+    actual = solve_belief_space_expectimax(model=bounded, trace=trace, **args)
+
+    assert actual == expected == (0.8, STOP_ACTION)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["pruned_actions"] == 1
+    assert summary["pruned_chance_outcomes"] == 1
+    assert len(bounded.visits) < len(exhaustive.visits)
+
+
+def test_action_upper_bounds_order_likely_winner_and_skip_loser() -> None:
+    transitions = {
+        (INITIAL, SETUP): [(READY, 5.0, 1.0)],
+        (INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)],
+    }
+    beliefs = {READY: BeliefState(value=0.4), SUCCESS: BeliefState(value=0.9)}
+    exhaustive = BoundedModel(transitions=transitions, beliefs=beliefs, linear_cost_lambda=0.1)
+    bounded = BoundedModel(transitions=transitions, beliefs=beliefs, linear_cost_lambda=0.1)
+    args = dict(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.0),
+        horizon=1,
+    )
+
+    expected = solve_belief_space_expectimax(model=exhaustive, enable_pruning=False, **args)
+    actual = solve_belief_space_expectimax(model=bounded, **args)
+
+    assert actual == expected == (0.9, PRACTICE)
+    assert bounded.visits == [BeliefState(value=0.0), BeliefState(value=0.9)]
+
+
 def test_horizon_zero_stops_and_subtracts_existing_cost() -> None:
     model = Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]})
     assert solve_belief_space_expectimax(

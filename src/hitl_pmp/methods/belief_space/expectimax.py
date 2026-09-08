@@ -1,7 +1,8 @@
 """Finite-horizon belief-space expectimax."""
 
 import math
-from typing import Generic
+from collections.abc import Callable
+from typing import Generic, cast
 
 import numpy as np
 
@@ -25,6 +26,7 @@ def solve_belief_space_expectimax(
     model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
     num_samples: int = NUM_SAMPLES,
     trace: SearchTrace | None = None,
+    enable_pruning: bool = True,
 ) -> tuple[float, ActionT | StopAction]:
     """Implementation of understanding/pomdp_formulation.py.
 
@@ -39,7 +41,9 @@ def solve_belief_space_expectimax(
     resample theta and see updated model parameters.
     """
     assert num_samples >= 1, "num_samples must be positive"
-    solver = ExpectimaxSearch(model=model, num_samples=num_samples, trace=trace)
+    solver = ExpectimaxSearch(
+        model=model, num_samples=num_samples, trace=trace, enable_pruning=enable_pruning
+    )
     result = solver.cached_solve_belief_space_expectimax(
         environment_state=environment_state,
         summed_cost=summed_cost,
@@ -55,6 +59,8 @@ def solve_belief_space_expectimax(
             cache_hits=solver.cache_hits,
             action_evaluations=solver.action_evaluations,
             chance_outcomes=solver.chance_outcomes,
+            pruned_actions=solver.pruned_actions,
+            pruned_chance_outcomes=solver.pruned_chance_outcomes,
             nodes_by_horizon=dict(sorted(solver.nodes_by_horizon.items(), reverse=True)),
         )
     return result
@@ -69,16 +75,27 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
         num_samples: int,
         trace: SearchTrace | None = None,
+        enable_pruning: bool = True,
     ) -> None:
         self.model = model
         self.num_samples = num_samples
         self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
         self.trace = trace
+        sampler_factory = getattr(model, "start_search_policy_sampler", None)
+        self.search_sampler = (
+            sampler_factory() if sampler_factory else model.sample_policy_values_from_belief
+        )
+        upper_bound = getattr(model, "pomdp_value_upper_bound", None)
+        self.upper_bound: Callable[..., float] | None = (
+            cast(Callable[..., float], upper_bound) if enable_pruning and upper_bound else None
+        )
         self.next_node = 0
         self.cache_requests = 0
         self.cache_hits = 0
         self.action_evaluations = 0
         self.chance_outcomes = 0
+        self.pruned_actions = 0
+        self.pruned_chance_outcomes = 0
         self.nodes_by_horizon: dict[int, int] = {}
 
     def cached_solve_belief_space_expectimax(
@@ -125,9 +142,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         node = self.next_node
         self.next_node += 1
         self.nodes_by_horizon[horizon] = self.nodes_by_horizon.get(horizon, 0) + 1
-        policy_values = self.model.sample_policy_values_from_belief(
-            belief_state=belief_state, num_samples=self.num_samples
-        )
+        policy_values = self.search_sampler(belief_state=belief_state, num_samples=self.num_samples)
         assert len(policy_values) == self.num_samples
         sample_values = np.fromiter(
             (
@@ -179,28 +194,75 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 )
             return current_best_value, current_best_action
 
-        for practice_action in self.model.get_valid_actions(environment_state=environment_state):
-            self.action_evaluations += 1
-            value_of_state = 0.0
+        action_outcomes = [
+            (
+                practice_action,
+                self.model.transition_outcomes(
+                    environment_state=environment_state,
+                    practice_action=practice_action,
+                    belief_state=belief_state,
+                ),
+            )
+            for practice_action in self.model.get_valid_actions(environment_state=environment_state)
+        ]
+        for practice_action, outcomes in action_outcomes:
+            assert outcomes, f"action {practice_action!r} has no chance outcomes"
             total_probability = 0.0
-            # TODO: Should samples be drawn with or without replacement?
-            next_states_and_probabilities = self.model.transition_outcomes(
-                environment_state=environment_state,
-                practice_action=practice_action,
-                belief_state=belief_state,
-            )
-            assert next_states_and_probabilities, (
-                f"action {practice_action!r} has no chance outcomes"
-            )
-            self.chance_outcomes += len(next_states_and_probabilities)
-            for (
-                potential_next_environment_state,
-                sampled_cost,
-                probability,
-            ) in next_states_and_probabilities:
+            for _next_state, sampled_cost, probability in outcomes:
                 assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
                     "sampled_cost must be finite and non-negative"
                 )
+                assert math.isfinite(probability) and probability > 0.0, (
+                    f"chance probability must be finite and positive, got {probability}"
+                )
+                total_probability += probability
+            assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
+                f"chance probabilities sum to {total_probability}, not 1"
+            )
+        if self.upper_bound is not None:
+            # A strong incumbent makes later chance branches easier to reject. This
+            # objective-only ordering does not inspect or update any belief.
+            action_outcomes.sort(
+                key=lambda item: self._chance_upper_bound(
+                    outcomes=item[1], summed_cost=summed_cost
+                ),
+                reverse=True,
+            )
+
+        for practice_action, next_states_and_probabilities in action_outcomes:
+            self.action_evaluations += 1
+            self.chance_outcomes += len(next_states_and_probabilities)
+            if self.upper_bound is not None:
+                action_upper_bound = self._chance_upper_bound(
+                    outcomes=next_states_and_probabilities, summed_cost=summed_cost
+                )
+                if action_upper_bound <= current_best_value:
+                    self.pruned_actions += 1
+                    self.pruned_chance_outcomes += len(next_states_and_probabilities)
+                    if self.trace is not None and node == 0:
+                        self.trace.record(
+                            event="chance_prune",
+                            node=node,
+                            action=practice_action.model_dump(mode="json", fallback=str),
+                            optimistic_value=action_upper_bound,
+                            incumbent_value=current_best_value,
+                            skipped_outcomes=len(next_states_and_probabilities),
+                        )
+                    continue
+            value_of_state = 0.0
+            total_probability = 0.0
+            action_was_pruned = False
+            # TODO: Should samples be drawn with or without replacement?
+            if self.upper_bound is not None:
+                next_states_and_probabilities = sorted(
+                    next_states_and_probabilities,
+                    key=lambda outcome: self.upper_bound(summed_cost=summed_cost + outcome[1]),
+                )
+            for outcome_index, (
+                potential_next_environment_state,
+                sampled_cost,
+                probability,
+            ) in enumerate(next_states_and_probabilities):
                 next_belief_state = self.model.update_belief_state(
                     belief_state=belief_state,
                     environment_state=environment_state,
@@ -212,9 +274,6 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                     summed_cost=summed_cost + sampled_cost,
                     belief_state=next_belief_state,
                     horizon=horizon - 1,
-                )
-                assert math.isfinite(probability) and probability > 0.0, (
-                    f"chance probability must be finite and positive, got {probability}"
                 )
                 value_of_state += probability * value_of_next_state
                 total_probability += probability
@@ -231,18 +290,38 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                         contribution=probability * value_of_next_state,
                     )
 
-            assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
-                f"chance probabilities sum to {total_probability}, not 1"
-            )
+                if self.upper_bound is not None:
+                    remaining = next_states_and_probabilities[outcome_index + 1 :]
+                    optimistic_value = value_of_state + self._chance_upper_bound(
+                        outcomes=remaining, summed_cost=summed_cost
+                    )
+                    if remaining and optimistic_value <= current_best_value:
+                        self.pruned_actions += 1
+                        self.pruned_chance_outcomes += len(remaining)
+                        action_was_pruned = True
+                        if self.trace is not None and node == 0:
+                            self.trace.record(
+                                event="chance_prune",
+                                node=node,
+                                action=practice_action.model_dump(mode="json", fallback=str),
+                                optimistic_value=optimistic_value,
+                                incumbent_value=current_best_value,
+                                skipped_outcomes=len(remaining),
+                            )
+                        break
+
+            assert action_was_pruned or math.isclose(
+                total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12
+            ), f"chance probabilities sum to {total_probability}, not 1"
             # Compare only after summing every successor, including negative values.
-            if self.trace is not None and node == 0:
+            if self.trace is not None and node == 0 and not action_was_pruned:
                 self.trace.record(
                     event="action_value",
                     node=node,
                     action=practice_action.model_dump(mode="json", fallback=str),
                     value=value_of_state,
                 )
-            if current_best_value < value_of_state:
+            if not action_was_pruned and current_best_value < value_of_state:
                 current_best_value = value_of_state
                 current_best_action = practice_action
 
@@ -257,3 +336,15 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 reason="max_value_stop_wins_ties",
             )
         return current_best_value, current_best_action
+
+    def _chance_upper_bound(
+        self,
+        *,
+        outcomes: list[tuple[EnvironmentStateT, float, float]],
+        summed_cost: float,
+    ) -> float:
+        assert self.upper_bound is not None
+        return sum(
+            probability * self.upper_bound(summed_cost=summed_cost + sampled_cost)
+            for _state, sampled_cost, probability in outcomes
+        )

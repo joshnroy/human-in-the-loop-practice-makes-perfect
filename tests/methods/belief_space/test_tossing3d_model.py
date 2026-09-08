@@ -617,6 +617,51 @@ def test_batched_sampling_and_evaluation_matches_individual_theta_path() -> None
     ])
 
 
+def test_search_sampling_is_keyed_by_belief_instead_of_traversal_order() -> None:
+    model = Tossing3DPracticeModel(seed=123)
+    belief = make_default_tossing3d_belief(num_particles=128, seed=7)
+    sampler = model.start_search_policy_sampler()
+
+    first = sampler(belief_state=belief, num_samples=100)
+    model.sample_policy_values_from_belief(belief_state=belief, num_samples=17)
+    second = sampler(belief_state=belief, num_samples=100)
+    next_search = model.start_search_policy_sampler()
+    third = next_search(belief_state=belief, num_samples=100)
+
+    assert second == pytest.approx(first)
+    assert third != pytest.approx(first)
+
+
+@pytest.mark.parametrize("linear_cost_lambda", [None, 0.01])
+def test_tossing3d_pruning_matches_exhaustive_search(*, linear_cost_lambda: float | None) -> None:
+    state = make_default_tossing3d_belief(num_particles=64, seed=11)
+    exhaustive_model = _domain_model(linear_cost_lambda=linear_cost_lambda)
+    bounded_model = _domain_model(linear_cost_lambda=linear_cost_lambda)
+    exhaustive_state = _search_state(model=exhaustive_model, state=state, action_name=PICK_SKILL)
+    bounded_state = _search_state(model=bounded_model, state=state, action_name=PICK_SKILL)
+
+    exhaustive = solve_belief_space_expectimax(
+        environment_state=exhaustive_state,
+        belief_state=state,
+        summed_cost=0.0,
+        horizon=4,
+        model=exhaustive_model,
+        enable_pruning=False,
+    )
+    bounded = solve_belief_space_expectimax(
+        environment_state=bounded_state,
+        belief_state=state,
+        summed_cost=0.0,
+        horizon=4,
+        model=bounded_model,
+    )
+
+    assert bounded[0] == exhaustive[0]
+    bounded_name = "STOP" if bounded[1] == STOP_ACTION else bounded[1].skill.name
+    exhaustive_name = "STOP" if exhaustive[1] == STOP_ACTION else exhaustive[1].skill.name
+    assert bounded_name == exhaustive_name
+
+
 @pytest.mark.parametrize("action_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
 def test_human_reset_uses_unchanged_ees_empty_preconditions(*, action_name: str) -> None:
     model = _domain_model(reset_cost=1.0)
