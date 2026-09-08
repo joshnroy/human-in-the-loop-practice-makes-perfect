@@ -270,8 +270,7 @@ def test_end_cycle_logs_exact_learning_rate_observations(
     method = _build()
     method.decision_log = tmp_path / "decisions.jsonl"
     method._cycle_start_competences = {  # noqa: SLF001 - exercise cycle boundary logging
-        name: belief.mean_competence()
-        for name, belief in method.pomdp_state.skill_beliefs.items()
+        name: belief.mean_competence() for name, belief in method.pomdp_state.skill_beliefs.items()
     }
     method._pomdp_state = method.pomdp_state.model_copy(  # noqa: SLF001
         update={"pending_examples": {PICK_SKILL: 1}}
