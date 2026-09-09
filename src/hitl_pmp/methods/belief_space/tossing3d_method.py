@@ -49,7 +49,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_num_samples: int = Field(default=100, ge=1)
-    pomdp_num_particles: int = Field(default=256, ge=1)
+    pomdp_num_particles: int = Field(default=1024, ge=1)
     pomdp_learning_rate_process_noise_std: float = Field(
         default=LEARNING_RATE_PROCESS_NOISE_STD, ge=0.0
     )
