@@ -1,17 +1,17 @@
-"""Compare planner runtime with the number of nodes expanded.
+"""Compare exact expectimax with compute-bounded determinized A*.
 
-This deliberately uses a small, dependency-free synthetic belief-space model so
-the traversal algorithms are measured without simulator or policy-evaluation
-noise. Each action has two chance outcomes; determinized A* samples one while
-expectimax enumerates both.
+Exact expectimax is not an anytime algorithm: interrupting its recursive chance
+sum does not yield an unbiased action value. We therefore run it to completion
+at a reference horizon, then give A* either the same node or elapsed-time budget.
+A* itself has no depth limit.
 """
 
 import argparse
 import csv
 import statistics
 import time
-import tracemalloc
 from pathlib import Path
+from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -42,7 +42,7 @@ class BenchmarkAction(BaseModel):
 
 
 class BenchmarkModel:
-    """Three actions and two equiprobable, non-merging outcomes per action."""
+    """Three actions, two chance outcomes, and a depth-six value peak."""
 
     actions = [BenchmarkAction(index=index) for index in range(3)]
 
@@ -81,9 +81,12 @@ class BenchmarkModel:
         practice_action: BenchmarkAction,
     ) -> BenchmarkBelief:
         del environment_state
+        depth = len(potential_next_environment_state.path) // 2
+        direction = 1.0 if depth <= 6 else -1.0
         outcome_bonus = 0.002 if potential_next_environment_state.path.endswith("R") else 0.0
         return BenchmarkBelief(
-            value=belief_state.value + 0.01 * (practice_action.index + 1) + outcome_bonus
+            value=belief_state.value
+            + direction * (0.01 * (practice_action.index + 1) + outcome_bonus)
         )
 
     def search_cache_key(
@@ -97,115 +100,169 @@ class BenchmarkModel:
         return environment_state, summed_cost, belief_state, horizon
 
 
-def _summary(*, trace: SearchTrace) -> dict[str, object]:
+def _summary(*, trace: SearchTrace) -> dict[str, Any]:
     return next(event for event in trace.events if event["event"] == "search_summary")
 
 
-def benchmark(*, horizons: list[int], repeats: int, output: Path) -> None:
-    rows: list[dict[str, int | float | str]] = []
-    model = BenchmarkModel()
-    for horizon in horizons:
-        for planner_name in ("expectimax", "determinized_astar"):
-            timings: list[float] = []
-            node_counts: list[int] = []
-            generated_counts: list[int] = []
-            max_frontiers: list[int] = []
-            max_depths: list[int] = []
-            peak_bytes: list[int] = []
-            termination_reasons: list[str] = []
-            actions: list[int | str] = []
-            for repeat in range(repeats):
-                trace = SearchTrace()
-                if planner_name == "expectimax":
-                    planner = ExpectimaxPlanner[
-                        BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
-                    ]()
-                else:
-                    planner = DeterminizedAStarPlanner[
-                        BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
-                    ](max_expansions=10**7, seed=repeat)
-                tracemalloc.start()
-                started = time.perf_counter()
-                _, action = planner.solve(
-                    environment_state=BenchmarkState(),
-                    summed_cost=0.0,
-                    belief_state=BenchmarkBelief(),
-                    horizon=horizon,
-                    model=model,  # type: ignore[arg-type]
-                    num_samples=1,
-                    trace=trace,
-                )
-                timings.append(time.perf_counter() - started)
-                _, peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
-                summary = _summary(trace=trace)
-                node_counts.append(int(summary["expanded_nodes"]))
-                generated_counts.append(int(summary["generated_nodes"]))
-                max_frontiers.append(int(summary.get("max_frontier_size", 0)))
-                max_depths.append(int(summary["max_depth_reached"]))
-                peak_bytes.append(peak)
-                termination_reasons.append(str(summary["termination_reason"]))
-                actions.append(getattr(action, "index", "STOP"))
-            rows.append({
-                "planner": planner_name,
-                "horizon": horizon,
-                "repeats": repeats,
-                "mean_seconds": statistics.mean(timings),
-                "stdev_seconds": statistics.stdev(timings) if repeats > 1 else 0.0,
-                "mean_expanded_nodes": statistics.mean(node_counts),
-                "mean_generated_nodes": statistics.mean(generated_counts),
-                "mean_max_frontier": statistics.mean(max_frontiers),
-                "mean_effective_depth": statistics.mean(max_depths),
-                "mean_peak_kib": statistics.mean(peak_bytes) / 1024,
-                "termination_reasons": ",".join(sorted(set(termination_reasons))),
-                "selected_first_actions": ",".join(str(action) for action in actions),
-            })
+def _run(*, planner: Any, horizon: int) -> dict[str, Any]:
+    trace = SearchTrace()
+    started = time.perf_counter()
+    value, action = planner.solve(
+        environment_state=BenchmarkState(),
+        summed_cost=0.0,
+        belief_state=BenchmarkBelief(),
+        horizon=horizon,
+        model=BenchmarkModel(),
+        num_samples=1,
+        trace=trace,
+    )
+    elapsed = time.perf_counter() - started
+    summary = _summary(trace=trace)
+    return {
+        "elapsed_seconds": elapsed,
+        "expanded_nodes": int(summary["expanded_nodes"]),
+        "generated_nodes": int(summary["generated_nodes"]),
+        "max_depth_reached": int(summary["max_depth_reached"]),
+        "termination_reason": str(summary["termination_reason"]),
+        "value": float(value),
+        "action": getattr(action, "index", "STOP"),
+    }
+
+
+def _aggregate(
+    *, mode: str, planner: str, runs: list[dict[str, Any]], reference: dict[str, Any]
+) -> dict[str, Any]:
+    values = [float(run["value"]) for run in runs]
+    return {
+        "budget_mode": mode,
+        "planner": planner,
+        "repeats": len(runs),
+        "mean_seconds": statistics.mean(float(run["elapsed_seconds"]) for run in runs),
+        "stdev_seconds": (
+            statistics.stdev(float(run["elapsed_seconds"]) for run in runs)
+            if len(runs) > 1
+            else 0.0
+        ),
+        "mean_expanded_nodes": statistics.mean(int(run["expanded_nodes"]) for run in runs),
+        "mean_generated_nodes": statistics.mean(int(run["generated_nodes"]) for run in runs),
+        "mean_max_depth": statistics.mean(int(run["max_depth_reached"]) for run in runs),
+        "mean_value": statistics.mean(values),
+        "mean_absolute_value_error": statistics.mean(
+            abs(value - float(reference["value"])) for value in values
+        ),
+        "action_agreement_rate": statistics.mean(
+            run["action"] == reference["action"] for run in runs
+        ),
+        "termination_reasons": ",".join(sorted({str(run["termination_reason"]) for run in runs})),
+    }
+
+
+def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dict[str, Any]]:
+    exact_runs = [
+        _run(
+            planner=ExpectimaxPlanner[
+                BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
+            ](),
+            horizon=reference_horizon,
+        )
+        for _ in range(repeats)
+    ]
+    reference = {
+        "value": statistics.mean(float(run["value"]) for run in exact_runs),
+        "action": exact_runs[0]["action"],
+    }
+    node_budget = round(statistics.mean(int(run["expanded_nodes"]) for run in exact_runs))
+    time_budget = statistics.median(float(run["elapsed_seconds"]) for run in exact_runs)
+    node_runs = [
+        _run(
+            planner=DeterminizedAStarPlanner[
+                BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
+            ](max_expansions=node_budget, seed=repeat),
+            horizon=reference_horizon,
+        )
+        for repeat in range(repeats)
+    ]
+    time_runs = [
+        _run(
+            planner=DeterminizedAStarPlanner[
+                BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
+            ](max_seconds=time_budget, seed=repeat),
+            horizon=reference_horizon,
+        )
+        for repeat in range(repeats)
+    ]
+    common = {
+        "node_budget": node_budget,
+        "time_budget_seconds": time_budget,
+        "reference_horizon": reference_horizon,
+    }
+    rows = [
+        {
+            **_aggregate(
+                mode="reference_complete",
+                planner="expectimax",
+                runs=exact_runs,
+                reference=reference,
+            ),
+            **common,
+        },
+        {
+            **_aggregate(
+                mode="fixed_node_budget",
+                planner="determinized_astar",
+                runs=node_runs,
+                reference=reference,
+            ),
+            **common,
+        },
+        {
+            **_aggregate(
+                mode="fixed_wall_clock_budget",
+                planner="determinized_astar",
+                runs=time_runs,
+                reference=reference,
+            ),
+            **common,
+        },
+    ]
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    figure, axis = plt.subplots(figsize=(7.2, 4.8), constrained_layout=True)
-    for planner_name, marker in (("expectimax", "o"), ("determinized_astar", "s")):
-        planner_rows = [row for row in rows if row["planner"] == planner_name]
-        axis.plot(
-            [float(row["mean_expanded_nodes"]) for row in planner_rows],
-            [1000 * float(row["mean_seconds"]) for row in planner_rows],
-            marker=marker,
-            label=planner_name.replace("_", " "),
-        )
-        for row in planner_rows:
-            axis.annotate(
-                f"H={row['horizon']}",
-                (float(row["mean_expanded_nodes"]), 1000 * float(row["mean_seconds"])),
-                xytext=(4, 4),
-                textcoords="offset points",
-                fontsize=8,
-            )
-    axis.set_xscale("log")
-    axis.set_yscale("log")
-    axis.set_xlabel("Expanded nodes (mean)")
-    axis.set_ylabel("Wall-clock time (ms, mean)")
-    axis.set_title("Belief-space planner traversal sweep")
-    axis.grid(alpha=0.25, which="both")
-    axis.legend()
+    figure, axes = plt.subplots(1, 2, figsize=(10.5, 4.3), constrained_layout=True)
+    axes[0].bar(
+        ["exact\nreference", "A*\nnode-matched"],
+        [1000 * float(row["mean_seconds"]) for row in rows[:2]],
+        color=["#4c78a8", "#f58518"],
+    )
+    axes[0].set_ylabel("Wall-clock time (ms)")
+    axes[0].set_title("Runtime at reference node budget")
+    axes[1].bar(
+        ["exact\nreference", "A*\ntime-matched"],
+        [float(rows[0]["mean_expanded_nodes"]), float(rows[2]["mean_expanded_nodes"])],
+        color=["#4c78a8", "#54a24b"],
+    )
+    axes[1].set_ylabel("Expanded nodes")
+    axes[1].set_title("Nodes at reference time budget")
+    for axis in axes:
+        axis.grid(axis="y", alpha=0.25)
+    figure.suptitle("Compute-budgeted planner comparison")
     figure.savefig(output.with_suffix(".png"), dpi=180)
     plt.close(figure)
-    for row in rows:
-        print(row)
+    return rows
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--max-horizon", type=int, default=6)
+    parser.add_argument("--reference-horizon", type=int, default=6)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    benchmark(
-        horizons=list(range(1, args.max_horizon + 1)),
-        repeats=args.repeats,
-        output=args.output,
-    )
+    for row in benchmark(
+        reference_horizon=args.reference_horizon, repeats=args.repeats, output=args.output
+    ):
+        print(row)
 
 
 if __name__ == "__main__":

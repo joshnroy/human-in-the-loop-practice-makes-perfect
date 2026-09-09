@@ -105,7 +105,6 @@ def test_best_first_returns_first_action_on_best_discovered_path() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        horizon=2,
         max_expansions=2,
         num_samples=1,
         seed=4,
@@ -125,7 +124,6 @@ def test_samples_one_weighted_outcome_per_action_reproducibly() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        horizon=1,
         max_expansions=1,
         num_samples=1,
         seed=7,
@@ -150,7 +148,6 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        horizon=1,
         max_expansions=1,
         num_samples=1,
         seed=0,
@@ -183,7 +180,6 @@ def test_merged_node_propagates_deeper_value_to_every_root_action() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        horizon=2,
         max_expansions=2,
         num_samples=1,
         seed=0,
@@ -205,7 +201,6 @@ def test_zero_expansions_stops_and_invalid_budget_is_rejected() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        horizon=1,
         num_samples=1,
         seed=0,
     )
@@ -214,6 +209,8 @@ def test_zero_expansions_stops_and_invalid_budget_is_rejected() -> None:
         solve_belief_space_determinized(max_expansions=-1, **args)
     with pytest.raises(AssertionError, match="max_seconds"):
         solve_belief_space_determinized(max_expansions=1, max_seconds=-1.0, **args)
+    with pytest.raises(AssertionError, match="at least one compute budget"):
+        solve_belief_space_determinized(max_expansions=None, max_seconds=None, **args)
 
 
 def test_zero_time_budget_returns_stop_with_summary() -> None:
@@ -223,7 +220,6 @@ def test_zero_time_budget_returns_stop_with_summary() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=Model(),
-        horizon=2,
         max_expansions=10,
         max_seconds=0.0,
         num_samples=1,
@@ -237,7 +233,7 @@ def test_zero_time_budget_returns_stop_with_summary() -> None:
     assert summary["termination_reason"] == "time_budget"
 
 
-def test_horizon_limits_expansion_depth() -> None:
+def test_optional_safety_guard_limits_expansion_depth() -> None:
     model = Model(
         transitions={
             (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
@@ -251,8 +247,8 @@ def test_horizon_limits_expansion_depth() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        horizon=1,
         max_expansions=10,
+        safety_max_depth=1,
         num_samples=1,
         seed=0,
     ) == (pytest.approx(0.6), RIGHT)
@@ -289,3 +285,28 @@ def test_generic_heuristic_controls_frontier_order() -> None:
 
     assert value == pytest.approx(0.9)
     assert action == LEFT
+
+
+def test_planner_compute_budget_is_independent_of_expectimax_horizon() -> None:
+    model = Model(
+        transitions={
+            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
+            (HIGH, FINISH): [(GOAL, 0.0, 1.0)],
+        },
+        beliefs={HIGH: BeliefState(value=0.6), GOAL: BeliefState(value=0.9)},
+    )
+    planner = DeterminizedAStarPlanner[EnvironmentState, BeliefState, BaseModel, Action](
+        max_expansions=2, seed=0
+    )
+
+    value, action = planner.solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=0,
+        model=model,  # type: ignore[arg-type]
+        num_samples=1,
+    )
+
+    assert value == pytest.approx(0.9)
+    assert action == RIGHT

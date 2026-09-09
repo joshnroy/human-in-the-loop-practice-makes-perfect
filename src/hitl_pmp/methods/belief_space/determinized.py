@@ -89,9 +89,9 @@ def solve_belief_space_determinized(
     summed_cost: float,
     belief_state: BeliefStateT,
     model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-    horizon: int,
-    max_expansions: int,
+    max_expansions: int | None = None,
     max_seconds: float | None = None,
+    safety_max_depth: int | None = None,
     seed: int,
     heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] = zero_heuristic,
     path_cost: DeterminizedPathCost[
@@ -105,14 +105,22 @@ def solve_belief_space_determinized(
     Each action samples one successor from the model's complete outcome
     distribution. Nodes are ordered by ``-stop_value + heuristic(node)``: the
     negative sign converts this maximization problem to A*'s lowest-cost-first
-    convention. The supplied seed controls chance-outcome determinization; any
-    additional model sampling remains controlled by the experiment's master-seeded model.
+    convention. Search ends at the expansion or wall-clock budget, whichever
+    comes first. ``safety_max_depth`` is only an emergency guard and is not a
+    search budget. The supplied seed controls chance-outcome determinization;
+    any additional model sampling remains controlled by the experiment's
+    master-seeded model.
     """
-    assert max_expansions >= 0, "max_expansions must be non-negative"
-    assert horizon >= 0, "horizon must be non-negative"
+    assert max_expansions is None or max_expansions >= 0, "max_expansions must be non-negative"
+    assert safety_max_depth is None or safety_max_depth >= 0, (
+        "safety_max_depth must be non-negative"
+    )
     assert num_samples >= 1, "num_samples must be positive"
     assert max_seconds is None or (math.isfinite(max_seconds) and max_seconds >= 0.0), (
         "max_seconds must be finite and non-negative"
+    )
+    assert max_expansions is not None or max_seconds is not None, (
+        "at least one compute budget is required"
     )
     assert math.isfinite(summed_cost) and summed_cost >= 0, (
         "summed_cost must be finite and non-negative"
@@ -158,7 +166,10 @@ def solve_belief_space_determinized(
         environment_state=environment_state,
         summed_cost=summed_cost,
         belief_state=belief_state,
-        horizon=horizon,
+        # Determinized search is compute-bounded, not horizon-bounded. The
+        # model protocol still accepts a remaining-horizon discriminator for
+        # exact expectimax; zero is the canonical depth-independent sentinel.
+        horizon=0,
     )
     values_by_key = {root_key: root_value}
     costs_by_key = {root_key: 0.0}
@@ -244,7 +255,7 @@ def solve_belief_space_determinized(
     # A hard-budget G can reject the root with -inf. Since execution costs are
     # non-negative, deeper nodes cannot restore feasibility.
     while frontier:
-        if expanded_nodes >= max_expansions:
+        if max_expansions is not None and expanded_nodes >= max_expansions:
             termination_reason = "expansion_budget"
             break
         if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
@@ -276,7 +287,7 @@ def solve_belief_space_determinized(
             best_value = current_value
             best_action = current_first_action
 
-        if current_depth >= horizon:
+        if safety_max_depth is not None and current_depth >= safety_max_depth:
             continue
 
         for action in model.get_valid_actions(environment_state=current_environment):
@@ -316,7 +327,7 @@ def solve_belief_space_determinized(
                 environment_state=next_environment,
                 summed_cost=next_cost,
                 belief_state=next_belief,
-                horizon=horizon - next_depth,
+                horizon=0,
             )
             cached_value = values_by_key.get(key)
             if cached_value is not None:
@@ -423,7 +434,7 @@ def solve_belief_space_determinized(
             frontier_nodes=len(frontier),
             max_frontier_size=max_frontier_size,
             max_depth_reached=max_depth_reached,
-            horizon=horizon,
+            safety_max_depth=safety_max_depth,
             max_expansions=max_expansions,
             max_seconds=max_seconds,
             elapsed_seconds=time.perf_counter() - started_at,
@@ -435,16 +446,17 @@ def solve_belief_space_determinized(
 class DeterminizedAStarPlanner(
     BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
 ):
-    """Algorithm-3-style determinized search with an injected generic heuristic."""
+    """Compute-bounded Algorithm-3 search with an injected generic heuristic."""
 
     name = "determinized_astar"
 
     def __init__(
         self,
         *,
-        max_expansions: int,
+        max_expansions: int | None = None,
         seed: int,
         max_seconds: float | None = None,
+        safety_max_depth: int | None = None,
         heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] = zero_heuristic,
         path_cost: DeterminizedPathCost[
             EnvironmentStateT, BeliefStateT, ActionT
@@ -453,6 +465,7 @@ class DeterminizedAStarPlanner(
         self.max_expansions = max_expansions
         self.seed = seed
         self.max_seconds = max_seconds
+        self.safety_max_depth = safety_max_depth
         self.heuristic = heuristic
         self.path_cost = path_cost
 
@@ -467,14 +480,17 @@ class DeterminizedAStarPlanner(
         num_samples: int = NUM_SAMPLES,
         trace: SearchTrace | None = None,
     ) -> tuple[float, ActionT | StopAction]:
+        # ``horizon`` belongs to the shared interface for exact expectimax. It
+        # deliberately does not bound this compute-budgeted planner.
+        del horizon
         return solve_belief_space_determinized(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
-            horizon=horizon,
             model=model,
             max_expansions=self.max_expansions,
             max_seconds=self.max_seconds,
+            safety_max_depth=self.safety_max_depth,
             seed=self.seed,
             heuristic=self.heuristic,
             path_cost=self.path_cost,

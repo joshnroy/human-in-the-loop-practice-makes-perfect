@@ -368,7 +368,7 @@ class Tossing3DPomdpMethod(EesMethod):
             if action == STOP_ACTION
             else action.model_dump(mode="json", fallback=str),
             value=value,
-            horizon=self.pomdp_search_depth,
+            horizon=self.pomdp_search_depth if planner.name == "expectimax" else None,
             solver=planner.name,
             max_expansions=(
                 planner.max_expansions if isinstance(planner, DeterminizedAStarPlanner) else None
