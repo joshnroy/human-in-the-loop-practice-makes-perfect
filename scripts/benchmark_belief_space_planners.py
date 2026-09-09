@@ -121,9 +121,11 @@ def _run(*, planner: Any, horizon: int) -> dict[str, Any]:
     return {
         "elapsed_seconds": elapsed,
         "expanded_nodes": int(summary["expanded_nodes"]),
+        "evaluated_nodes": int(summary["evaluated_nodes"]),
         "generated_nodes": int(summary["generated_nodes"]),
         "max_depth_reached": int(summary["max_depth_reached"]),
         "termination_reason": str(summary["termination_reason"]),
+        "time_budget_overshoot_seconds": float(summary.get("time_budget_overshoot_seconds") or 0.0),
         "value": float(value),
         "action": getattr(action, "index", "STOP"),
     }
@@ -144,8 +146,12 @@ def _aggregate(
             else 0.0
         ),
         "mean_expanded_nodes": statistics.mean(int(run["expanded_nodes"]) for run in runs),
+        "mean_evaluated_nodes": statistics.mean(int(run["evaluated_nodes"]) for run in runs),
         "mean_generated_nodes": statistics.mean(int(run["generated_nodes"]) for run in runs),
         "mean_max_depth": statistics.mean(int(run["max_depth_reached"]) for run in runs),
+        "mean_time_budget_overshoot_seconds": statistics.mean(
+            float(run["time_budget_overshoot_seconds"]) for run in runs
+        ),
         "mean_value": statistics.mean(values),
         "mean_absolute_value_error": statistics.mean(
             abs(value - float(reference["value"])) for value in values
@@ -171,31 +177,8 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
         "value": statistics.mean(float(run["value"]) for run in exact_runs),
         "action": exact_runs[0]["action"],
     }
-    node_budget = round(statistics.mean(int(run["expanded_nodes"]) for run in exact_runs))
-    time_budget = statistics.median(float(run["elapsed_seconds"]) for run in exact_runs)
-    node_runs = [
-        _run(
-            planner=DeterminizedAStarPlanner[
-                BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
-            ](max_expansions=node_budget, seed=repeat),
-            horizon=reference_horizon,
-        )
-        for repeat in range(repeats)
-    ]
-    time_runs = [
-        _run(
-            planner=DeterminizedAStarPlanner[
-                BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
-            ](max_seconds=time_budget, seed=repeat),
-            horizon=reference_horizon,
-        )
-        for repeat in range(repeats)
-    ]
-    common = {
-        "node_budget": node_budget,
-        "time_budget_seconds": time_budget,
-        "reference_horizon": reference_horizon,
-    }
+    reference_nodes = round(statistics.mean(int(run["evaluated_nodes"]) for run in exact_runs))
+    reference_seconds = statistics.median(float(run["elapsed_seconds"]) for run in exact_runs)
     rows = [
         {
             **_aggregate(
@@ -204,48 +187,96 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
                 runs=exact_runs,
                 reference=reference,
             ),
-            **common,
-        },
-        {
+            "budget_fraction": 1.0,
+            "node_budget": reference_nodes,
+            "time_budget_seconds": reference_seconds,
+            "reference_horizon": reference_horizon,
+        }
+    ]
+    for fraction in (0.01, 0.05, 0.1, 0.25, 0.5, 1.0):
+        node_budget = max(1, round(reference_nodes * fraction))
+        node_runs = [
+            _run(
+                planner=DeterminizedAStarPlanner[
+                    BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
+                ](max_evaluated_nodes=node_budget, seed=repeat),
+                horizon=reference_horizon,
+            )
+            for repeat in range(repeats)
+        ]
+        rows.append({
             **_aggregate(
                 mode="fixed_node_budget",
                 planner="determinized_astar",
                 runs=node_runs,
                 reference=reference,
             ),
-            **common,
-        },
-        {
+            "budget_fraction": fraction,
+            "node_budget": node_budget,
+            "time_budget_seconds": "",
+            "reference_horizon": reference_horizon,
+        })
+    for fraction in (0.1, 0.25, 0.5, 1.0):
+        time_budget = reference_seconds * fraction
+        time_runs = [
+            _run(
+                planner=DeterminizedAStarPlanner[
+                    BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
+                ](max_seconds=time_budget, seed=repeat),
+                horizon=reference_horizon,
+            )
+            for repeat in range(repeats)
+        ]
+        rows.append({
             **_aggregate(
                 mode="fixed_wall_clock_budget",
                 planner="determinized_astar",
                 runs=time_runs,
                 reference=reference,
             ),
-            **common,
-        },
-    ]
+            "budget_fraction": fraction,
+            "node_budget": "",
+            "time_budget_seconds": time_budget,
+            "reference_horizon": reference_horizon,
+        })
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    figure, axes = plt.subplots(1, 2, figsize=(10.5, 4.3), constrained_layout=True)
-    axes[0].bar(
-        ["exact\nreference", "A*\nnode-matched"],
-        [1000 * float(row["mean_seconds"]) for row in rows[:2]],
-        color=["#4c78a8", "#f58518"],
+    figure, axes = plt.subplots(2, 2, figsize=(10.5, 7.5), constrained_layout=True)
+    node_rows = [row for row in rows if row["budget_mode"] == "fixed_node_budget"]
+    time_rows = [row for row in rows if row["budget_mode"] == "fixed_wall_clock_budget"]
+    axes[0, 0].plot(
+        [float(row["node_budget"]) for row in node_rows],
+        [1000 * float(row["mean_seconds"]) for row in node_rows],
+        marker="o",
     )
-    axes[0].set_ylabel("Wall-clock time (ms)")
-    axes[0].set_title("Runtime at reference node budget")
-    axes[1].bar(
-        ["exact\nreference", "A*\ntime-matched"],
-        [float(rows[0]["mean_expanded_nodes"]), float(rows[2]["mean_expanded_nodes"])],
-        color=["#4c78a8", "#54a24b"],
+    axes[0, 0].set_ylabel("Wall-clock time (ms)")
+    axes[0, 0].set_title("Fixed evaluated-node budgets")
+    axes[1, 0].plot(
+        [float(row["node_budget"]) for row in node_rows],
+        [float(row["mean_absolute_value_error"]) for row in node_rows],
+        marker="o",
     )
-    axes[1].set_ylabel("Expanded nodes")
-    axes[1].set_title("Nodes at reference time budget")
-    for axis in axes:
+    axes[1, 0].set_xlabel("Evaluated-node budget")
+    axes[1, 0].set_ylabel("Absolute score difference")
+    axes[0, 1].plot(
+        [1000 * float(row["time_budget_seconds"]) for row in time_rows],
+        [float(row["mean_evaluated_nodes"]) for row in time_rows],
+        marker="o",
+    )
+    axes[0, 1].set_ylabel("Evaluated nodes")
+    axes[0, 1].set_title("Fixed wall-clock budgets")
+    axes[1, 1].plot(
+        [1000 * float(row["time_budget_seconds"]) for row in time_rows],
+        [float(row["action_agreement_rate"]) for row in time_rows],
+        marker="o",
+    )
+    axes[1, 1].set_ylabel("Exact-action agreement")
+    axes[1, 1].set_ylim(-0.02, 1.02)
+    axes[1, 1].set_xlabel("Wall-clock budget (ms)")
+    for axis in axes.flat:
         axis.grid(axis="y", alpha=0.25)
     figure.suptitle("Compute-budgeted planner comparison")
     figure.savefig(output.with_suffix(".png"), dpi=180)

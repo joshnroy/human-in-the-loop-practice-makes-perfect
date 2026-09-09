@@ -53,7 +53,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_solver: Literal["expectimax", "determinized"] = "expectimax"
-    pomdp_max_expansions: int = Field(default=100, ge=0)
+    pomdp_max_evaluated_nodes: int = Field(default=100, ge=1)
     pomdp_max_search_seconds: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     pomdp_planner: (
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
@@ -332,7 +332,7 @@ class Tossing3DPomdpMethod(EesMethod):
                 planner = ExpectimaxPlanner()
             else:
                 planner = DeterminizedAStarPlanner(
-                    max_expansions=self.pomdp_max_expansions,
+                    max_evaluated_nodes=self.pomdp_max_evaluated_nodes,
                     seed=self.seed + self._decision_index,
                     max_seconds=self.pomdp_max_search_seconds,
                 )
@@ -370,8 +370,10 @@ class Tossing3DPomdpMethod(EesMethod):
             value=value,
             horizon=self.pomdp_search_depth if planner.name == "expectimax" else None,
             solver=planner.name,
-            max_expansions=(
-                planner.max_expansions if isinstance(planner, DeterminizedAStarPlanner) else None
+            max_evaluated_nodes=(
+                planner.max_evaluated_nodes
+                if isinstance(planner, DeterminizedAStarPlanner)
+                else None
             ),
             max_search_seconds=(
                 planner.max_seconds if isinstance(planner, DeterminizedAStarPlanner) else None

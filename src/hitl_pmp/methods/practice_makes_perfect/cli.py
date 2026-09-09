@@ -174,10 +174,10 @@ class Tossing3DPomdpCli(EesCli):
             help="Belief-space traversal: exact expectimax or sampled best-first search.",
         )
         parser.add_argument(
-            "--pomdp-max-expansions",
+            "--pomdp-max-evaluated-nodes",
             type=int,
-            default=Tossing3DPomdpMethod.model_fields["pomdp_max_expansions"].default,
-            help="Node-expansion budget for the determinized solver (independent of depth).",
+            default=Tossing3DPomdpMethod.model_fields["pomdp_max_evaluated_nodes"].default,
+            help="Unique state-value evaluation budget for determinized search.",
         )
         parser.add_argument(
             "--pomdp-max-search-seconds",
@@ -240,7 +240,7 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
-                pomdp_max_expansions=args.pomdp_max_expansions,
+                pomdp_max_evaluated_nodes=args.pomdp_max_evaluated_nodes,
                 pomdp_max_search_seconds=args.pomdp_max_search_seconds,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,

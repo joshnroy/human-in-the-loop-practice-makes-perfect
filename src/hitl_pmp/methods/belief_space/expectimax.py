@@ -56,6 +56,7 @@ def solve_belief_space_expectimax(
             solver="expectimax",
             horizon=horizon,
             expanded_nodes=solver.next_node,
+            evaluated_nodes=solver.next_node,
             generated_nodes=max(0, solver.cache_requests - 1),
             cache_requests=solver.cache_requests,
             cache_hits=solver.cache_hits,

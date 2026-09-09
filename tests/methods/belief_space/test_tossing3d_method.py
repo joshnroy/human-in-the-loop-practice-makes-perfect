@@ -65,7 +65,7 @@ def test_selector_uses_current_symbolic_state_without_starting_simulator() -> No
 
 def test_determinized_selector_is_seeded_and_does_not_start_simulator() -> None:
     methods = [
-        _build(pomdp_num_samples=1, pomdp_solver="determinized", pomdp_max_expansions=4)
+        _build(pomdp_num_samples=1, pomdp_solver="determinized", pomdp_max_evaluated_nodes=4)
         for _ in range(2)
     ]
     selections = []
@@ -179,7 +179,7 @@ def test_invalid_method_configuration_is_rejected_early() -> None:
     with pytest.raises(ValidationError):
         _build(pomdp_search_depth=-1)
     with pytest.raises(ValidationError):
-        _build(pomdp_max_expansions=-1)
+        _build(pomdp_max_evaluated_nodes=0)
     with pytest.raises(ValidationError):
         _build(pomdp_solver="unknown")
 

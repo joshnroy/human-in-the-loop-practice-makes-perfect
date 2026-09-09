@@ -89,7 +89,7 @@ def solve_belief_space_determinized(
     summed_cost: float,
     belief_state: BeliefStateT,
     model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-    max_expansions: int | None = None,
+    max_evaluated_nodes: int | None = None,
     max_seconds: float | None = None,
     safety_max_depth: int | None = None,
     seed: int,
@@ -111,7 +111,9 @@ def solve_belief_space_determinized(
     any additional model sampling remains controlled by the experiment's
     master-seeded model.
     """
-    assert max_expansions is None or max_expansions >= 0, "max_expansions must be non-negative"
+    assert max_evaluated_nodes is None or max_evaluated_nodes >= 1, (
+        "max_evaluated_nodes must be positive"
+    )
     assert safety_max_depth is None or safety_max_depth >= 0, (
         "safety_max_depth must be non-negative"
     )
@@ -119,7 +121,7 @@ def solve_belief_space_determinized(
     assert max_seconds is None or (math.isfinite(max_seconds) and max_seconds >= 0.0), (
         "max_seconds must be finite and non-negative"
     )
-    assert max_expansions is not None or max_seconds is not None, (
+    assert max_evaluated_nodes is not None or max_seconds is not None, (
         "at least one compute budget is required"
     )
     assert math.isfinite(summed_cost) and summed_cost >= 0, (
@@ -255,8 +257,8 @@ def solve_belief_space_determinized(
     # A hard-budget G can reject the root with -inf. Since execution costs are
     # non-negative, deeper nodes cannot restore feasibility.
     while frontier:
-        if max_expansions is not None and expanded_nodes >= max_expansions:
-            termination_reason = "expansion_budget"
+        if max_evaluated_nodes is not None and len(values_by_key) >= max_evaluated_nodes:
+            termination_reason = "evaluated_node_budget"
             break
         if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
             termination_reason = "time_budget"
@@ -291,6 +293,9 @@ def solve_belief_space_determinized(
             continue
 
         for action in model.get_valid_actions(environment_state=current_environment):
+            if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
+                termination_reason = "time_budget"
+                break
             action_evaluations += 1
             outcomes = model.transition_outcomes(
                 environment_state=current_environment,
@@ -334,6 +339,12 @@ def solve_belief_space_determinized(
                 merged_nodes += 1
                 value = cached_value
             else:
+                if max_evaluated_nodes is not None and len(values_by_key) >= max_evaluated_nodes:
+                    termination_reason = "evaluated_node_budget"
+                    break
+                if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
+                    termination_reason = "time_budget"
+                    break
                 value = stop_value(state=next_belief, cost=next_cost)
                 values_by_key[key] = value
                 provenance_by_key[key] = []
@@ -435,9 +446,13 @@ def solve_belief_space_determinized(
             max_frontier_size=max_frontier_size,
             max_depth_reached=max_depth_reached,
             safety_max_depth=safety_max_depth,
-            max_expansions=max_expansions,
+            evaluated_nodes=len(values_by_key),
+            max_evaluated_nodes=max_evaluated_nodes,
             max_seconds=max_seconds,
-            elapsed_seconds=time.perf_counter() - started_at,
+            elapsed_seconds=(elapsed_seconds := time.perf_counter() - started_at),
+            time_budget_overshoot_seconds=(
+                max(0.0, elapsed_seconds - max_seconds) if max_seconds is not None else None
+            ),
             termination_reason=termination_reason,
         )
     return best_value, best_action
@@ -453,7 +468,7 @@ class DeterminizedAStarPlanner(
     def __init__(
         self,
         *,
-        max_expansions: int | None = None,
+        max_evaluated_nodes: int | None = None,
         seed: int,
         max_seconds: float | None = None,
         safety_max_depth: int | None = None,
@@ -462,7 +477,7 @@ class DeterminizedAStarPlanner(
             EnvironmentStateT, BeliefStateT, ActionT
         ] = objective_delta_path_cost,
     ) -> None:
-        self.max_expansions = max_expansions
+        self.max_evaluated_nodes = max_evaluated_nodes
         self.seed = seed
         self.max_seconds = max_seconds
         self.safety_max_depth = safety_max_depth
@@ -488,7 +503,7 @@ class DeterminizedAStarPlanner(
             summed_cost=summed_cost,
             belief_state=belief_state,
             model=model,
-            max_expansions=self.max_expansions,
+            max_evaluated_nodes=self.max_evaluated_nodes,
             max_seconds=self.max_seconds,
             safety_max_depth=self.safety_max_depth,
             seed=self.seed,
