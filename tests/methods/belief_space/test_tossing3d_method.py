@@ -210,6 +210,40 @@ def test_completed_human_reset_jointly_updates_performance_cost_and_training() -
     assert method.pomdp_state.pending_examples[RESET_SKILL] == 1
 
 
+def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
+    method = _build()
+    reset_skill = next(
+        skill for skill in method.human_skills() if skill.name == NON_HUMAN_RESET_SKILL
+    )
+    reset = next(
+        skill
+        for skill in SkillGrounder.applicable_ground_skills(
+            skills=(reset_skill,),
+            objects=method.objects(),
+            true_atoms=SkillGrounder.all_possible_ground_atoms(
+                objects=method.objects(), predicates=method.predicates()
+            ),
+        )
+    )
+    human_before = method.pomdp_state.skill_beliefs[RESET_SKILL]
+    automatic_before = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
+
+    method.record_action_cost(ground_skill=reset)
+    method.observe_help_granted(
+        state=Tossing3DState(
+            data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+            abstract_atoms=frozenset(),
+        )
+    )
+
+    automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
+    assert automatic_after == automatic_before.condition_execution(
+        success=True, observed_cost=5.0
+    )
+    assert method.pomdp_state.skill_beliefs[RESET_SKILL] == human_before
+    assert method.pomdp_state.pending_examples[NON_HUMAN_RESET_SKILL] == 1
+
+
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
     with pytest.raises(ValidationError, match="cost observations must be at most"):
         _build(human_reset_practice_cost=20.01)
