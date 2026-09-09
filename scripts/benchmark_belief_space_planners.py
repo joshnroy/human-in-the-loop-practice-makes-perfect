@@ -1,15 +1,16 @@
 """Compare exact expectimax with compute-bounded determinized A*.
 
-Exact expectimax is not an anytime algorithm: interrupting its recursive chance
-sum does not yield an unbiased action value. We therefore run it to completion
-at a reference horizon, then give A* either the same node or elapsed-time budget.
+Exact expectimax is first run to completion to establish its reference action,
+value, evaluated-node count, and runtime. Both planners are then rerun through
+the same budgeted interface: once with that exact node budget and once with the
+same half-reference wall-clock deadline. Interrupted expectimax retains only
+STOP and completely evaluated root actions; partial chance sums are discarded.
 A* itself has no depth limit.
 """
 
 import argparse
 import csv
 import statistics
-import time
 from pathlib import Path
 from typing import Any
 
@@ -106,7 +107,6 @@ def _summary(*, trace: SearchTrace) -> dict[str, Any]:
 
 def _run(*, planner: Any, horizon: int) -> dict[str, Any]:
     trace = SearchTrace()
-    started = time.perf_counter()
     value, action = planner.solve(
         environment_state=BenchmarkState(),
         summed_cost=0.0,
@@ -116,10 +116,9 @@ def _run(*, planner: Any, horizon: int) -> dict[str, Any]:
         num_samples=1,
         trace=trace,
     )
-    elapsed = time.perf_counter() - started
     summary = _summary(trace=trace)
     return {
-        "elapsed_seconds": elapsed,
+        "elapsed_seconds": float(summary["elapsed_seconds"]),
         "expanded_nodes": int(summary["expanded_nodes"]),
         "evaluated_nodes": int(summary["evaluated_nodes"]),
         "generated_nodes": int(summary["generated_nodes"]),
@@ -135,11 +134,15 @@ def _aggregate(
     *, mode: str, planner: str, runs: list[dict[str, Any]], reference: dict[str, Any]
 ) -> dict[str, Any]:
     values = [float(run["value"]) for run in runs]
+    elapsed = [float(run["elapsed_seconds"]) for run in runs]
     return {
         "budget_mode": mode,
         "planner": planner,
         "repeats": len(runs),
         "mean_seconds": statistics.mean(float(run["elapsed_seconds"]) for run in runs),
+        "median_seconds": statistics.median(elapsed),
+        "q1_seconds": float(np.quantile(elapsed, 0.25)),
+        "q3_seconds": float(np.quantile(elapsed, 0.75)),
         "stdev_seconds": (
             statistics.stdev(float(run["elapsed_seconds"]) for run in runs)
             if len(runs) > 1
@@ -179,104 +182,70 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
     }
     reference_nodes = round(statistics.mean(int(run["evaluated_nodes"]) for run in exact_runs))
     reference_seconds = statistics.median(float(run["elapsed_seconds"]) for run in exact_runs)
-    rows = [
-        {
-            **_aggregate(
-                mode="reference_complete",
-                planner="expectimax",
-                runs=exact_runs,
-                reference=reference,
-            ),
-            "budget_fraction": 1.0,
-            "node_budget": reference_nodes,
-            "time_budget_seconds": reference_seconds,
-            "reference_horizon": reference_horizon,
-        }
-    ]
-    for fraction in (0.01, 0.05, 0.1, 0.25, 0.5, 1.0):
-        node_budget = max(1, round(reference_nodes * fraction))
-        node_runs = [
-            _run(
-                planner=DeterminizedAStarPlanner[
-                    BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
-                ](max_evaluated_nodes=node_budget, seed=repeat),
-                horizon=reference_horizon,
+    wall_clock_budget = reference_seconds * 0.5
+    paired_runs: dict[tuple[str, str], list[dict[str, Any]]] = {
+        (mode, planner): []
+        for mode in ("fixed_node_budget", "fixed_wall_clock_budget")
+        for planner in ("expectimax", "determinized_astar")
+    }
+
+    def make_planner(*, mode: str, planner: str, repeat: int) -> Any:
+        node_limit = reference_nodes if mode == "fixed_node_budget" else None
+        time_limit = wall_clock_budget if mode == "fixed_wall_clock_budget" else None
+        if planner == "expectimax":
+            return ExpectimaxPlanner[
+                BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
+            ](max_evaluated_nodes=node_limit, max_seconds=time_limit)
+        return DeterminizedAStarPlanner[
+            BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
+        ](max_evaluated_nodes=node_limit, max_seconds=time_limit, seed=repeat)
+
+    # Alternate execution order within every paired repetition to reduce drift.
+    for mode in ("fixed_node_budget", "fixed_wall_clock_budget"):
+        for repeat in range(repeats):
+            order = (
+                ("expectimax", "determinized_astar")
+                if repeat % 2 == 0
+                else ("determinized_astar", "expectimax")
             )
-            for repeat in range(repeats)
-        ]
+            for planner in order:
+                paired_runs[mode, planner].append(
+                    _run(
+                        planner=make_planner(mode=mode, planner=planner, repeat=repeat),
+                        horizon=reference_horizon,
+                    )
+                )
+    rows = []
+    for (mode, planner), runs in paired_runs.items():
         rows.append({
-            **_aggregate(
-                mode="fixed_node_budget",
-                planner="determinized_astar",
-                runs=node_runs,
-                reference=reference,
-            ),
-            "budget_fraction": fraction,
-            "node_budget": node_budget,
-            "time_budget_seconds": "",
+            **_aggregate(mode=mode, planner=planner, runs=runs, reference=reference),
+            "node_budget": reference_nodes if mode == "fixed_node_budget" else "",
+            "time_budget_seconds": (wall_clock_budget if mode == "fixed_wall_clock_budget" else ""),
             "reference_horizon": reference_horizon,
-        })
-    for fraction in (0.1, 0.25, 0.5, 1.0):
-        time_budget = reference_seconds * fraction
-        time_runs = [
-            _run(
-                planner=DeterminizedAStarPlanner[
-                    BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
-                ](max_seconds=time_budget, seed=repeat),
-                horizon=reference_horizon,
-            )
-            for repeat in range(repeats)
-        ]
-        rows.append({
-            **_aggregate(
-                mode="fixed_wall_clock_budget",
-                planner="determinized_astar",
-                runs=time_runs,
-                reference=reference,
-            ),
-            "budget_fraction": fraction,
-            "node_budget": "",
-            "time_budget_seconds": time_budget,
-            "reference_horizon": reference_horizon,
+            "reference_value": reference["value"],
+            "reference_action": reference["action"],
         })
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    figure, axes = plt.subplots(2, 2, figsize=(10.5, 7.5), constrained_layout=True)
+    figure, axes = plt.subplots(1, 2, figsize=(10.5, 4.3), constrained_layout=True)
     node_rows = [row for row in rows if row["budget_mode"] == "fixed_node_budget"]
     time_rows = [row for row in rows if row["budget_mode"] == "fixed_wall_clock_budget"]
-    axes[0, 0].plot(
-        [float(row["node_budget"]) for row in node_rows],
+    axes[0].bar(
+        [str(row["planner"]).replace("_", " ") for row in node_rows],
         [1000 * float(row["mean_seconds"]) for row in node_rows],
-        marker="o",
     )
-    axes[0, 0].set_ylabel("Wall-clock time (ms)")
-    axes[0, 0].set_title("Fixed evaluated-node budgets")
-    axes[1, 0].plot(
-        [float(row["node_budget"]) for row in node_rows],
-        [float(row["mean_absolute_value_error"]) for row in node_rows],
-        marker="o",
-    )
-    axes[1, 0].set_xlabel("Evaluated-node budget")
-    axes[1, 0].set_ylabel("Absolute score difference")
-    axes[0, 1].plot(
-        [1000 * float(row["time_budget_seconds"]) for row in time_rows],
+    axes[0].set_ylabel("Wall-clock time (ms)")
+    axes[0].set_title(f"Same node budget: {reference_nodes:,}")
+    axes[1].bar(
+        [str(row["planner"]).replace("_", " ") for row in time_rows],
         [float(row["mean_evaluated_nodes"]) for row in time_rows],
-        marker="o",
     )
-    axes[0, 1].set_ylabel("Evaluated nodes")
-    axes[0, 1].set_title("Fixed wall-clock budgets")
-    axes[1, 1].plot(
-        [1000 * float(row["time_budget_seconds"]) for row in time_rows],
-        [float(row["action_agreement_rate"]) for row in time_rows],
-        marker="o",
-    )
-    axes[1, 1].set_ylabel("Exact-action agreement")
-    axes[1, 1].set_ylim(-0.02, 1.02)
-    axes[1, 1].set_xlabel("Wall-clock budget (ms)")
-    for axis in axes.flat:
+    axes[1].set_ylabel("Evaluated nodes")
+    axes[1].set_title(f"Same time budget: {1000 * wall_clock_budget:.1f} ms")
+    for axis in axes:
         axis.grid(axis="y", alpha=0.25)
     figure.suptitle("Compute-budgeted planner comparison")
     figure.savefig(output.with_suffix(".png"), dpi=180)

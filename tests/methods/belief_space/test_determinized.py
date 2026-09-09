@@ -156,7 +156,7 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
 
     assert result == (pytest.approx(0.8), LEFT)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["expanded_nodes"] == 1
+    assert summary["expanded_nodes"] == 2
     assert summary["generated_nodes"] == 2
     assert summary["unique_nodes"] == 2
     assert summary["merged_nodes"] == 1

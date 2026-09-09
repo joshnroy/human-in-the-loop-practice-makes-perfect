@@ -257,9 +257,6 @@ def solve_belief_space_determinized(
     # A hard-budget G can reject the root with -inf. Since execution costs are
     # non-negative, deeper nodes cannot restore feasibility.
     while frontier:
-        if max_evaluated_nodes is not None and len(values_by_key) >= max_evaluated_nodes:
-            termination_reason = "evaluated_node_budget"
-            break
         if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
             termination_reason = "time_budget"
             break
@@ -341,7 +338,10 @@ def solve_belief_space_determinized(
             else:
                 if max_evaluated_nodes is not None and len(values_by_key) >= max_evaluated_nodes:
                     termination_reason = "evaluated_node_budget"
-                    break
+                    # The evaluation budget limits expensive G/stop-value
+                    # calls, not graph traversal. Continue consuming already
+                    # evaluated/cache-hit nodes, matching expectimax semantics.
+                    continue
                 if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
                     termination_reason = "time_budget"
                     break

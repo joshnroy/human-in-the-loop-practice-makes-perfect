@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 import pytest
 from pydantic import BaseModel, Field
@@ -53,7 +55,9 @@ def test_trace_preserves_search_result_and_records_compact_root_values() -> None
         environment_state=INITIAL, summed_cost=0.0, belief_state=BeliefState(value=0.2), horizon=1
     )
     plain = solve_belief_space_expectimax(model=model, **args)
-    traced = solve_belief_space_expectimax(model=traced_model, trace=trace, **args)
+    traced = solve_belief_space_expectimax(
+        model=traced_model, trace=trace, max_evaluated_nodes=2, **args
+    )
     assert plain == traced
     assert model.visits == traced_model.visits
     choice = next(event for event in trace.events if event["event"] == "choice")
@@ -443,3 +447,158 @@ def test_rejects_invalid_costs(*, cost: float, accumulated: bool) -> None:
             horizon=1,
             model=model,
         )
+
+
+def test_node_budget_discards_an_incomplete_root_chance_sum() -> None:
+    model = Model(
+        transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 0.5), (FAILURE, 0.0, 0.5)]},
+        beliefs={
+            SUCCESS: BeliefState(value=1.0),
+            FAILURE: BeliefState(value=0.0),
+        },
+    )
+    trace = SearchTrace()
+
+    result = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=1,
+        model=model,
+        max_evaluated_nodes=2,
+        trace=trace,
+    )
+
+    assert result == (pytest.approx(0.2), STOP_ACTION)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["evaluated_nodes"] == 2
+    assert summary["termination_reason"] == "evaluated_node_budget"
+    assert not any(event["event"] == "action_value" for event in trace.events)
+
+
+def test_zero_time_budget_returns_root_stop_incumbent() -> None:
+    trace = SearchTrace()
+    result = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=1,
+        model=Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]}),
+        max_seconds=0.0,
+        trace=trace,
+    )
+
+    assert result == (pytest.approx(0.2), STOP_ACTION)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["evaluated_nodes"] == 1
+    assert summary["termination_reason"] == "time_budget"
+
+
+def test_node_budget_one_evaluates_only_the_root() -> None:
+    trace = SearchTrace()
+    result = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=1,
+        model=Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]}),
+        max_evaluated_nodes=1,
+        trace=trace,
+    )
+    assert result == (pytest.approx(0.2), STOP_ACTION)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["evaluated_nodes"] == 1
+
+
+def test_exact_full_tree_node_budget_completes_normally() -> None:
+    trace = SearchTrace()
+    result = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=1,
+        model=Model(
+            transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]},
+            beliefs={SUCCESS: BeliefState(value=0.8)},
+        ),
+        max_evaluated_nodes=2,
+        trace=trace,
+    )
+    assert result == (pytest.approx(0.8), PRACTICE)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["evaluated_nodes"] == 2
+    assert summary["termination_reason"] == "horizon_or_objective_exhausted"
+
+
+def test_budget_retains_a_complete_root_action_before_interruption() -> None:
+    trace = SearchTrace()
+    result = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=1,
+        model=Model(
+            transitions={
+                (INITIAL, SETUP): [(READY, 0.0, 1.0)],
+                (INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)],
+            },
+            beliefs={
+                READY: BeliefState(value=0.7),
+                SUCCESS: BeliefState(value=0.9),
+            },
+        ),
+        max_evaluated_nodes=2,
+        trace=trace,
+    )
+    assert result == (pytest.approx(0.7), SETUP)
+    action_values = [event for event in trace.events if event["event"] == "action_value"]
+    assert [event["action"] for event in action_values] == [{"name": "setup"}]
+
+
+def test_deep_interruption_does_not_leak_a_partial_value_to_the_root() -> None:
+    trace = SearchTrace()
+    result = solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=2,
+        model=Model(
+            transitions={
+                (INITIAL, SETUP): [(READY, 0.0, 1.0)],
+                (READY, PRACTICE): [(SUCCESS, 0.0, 0.5), (FAILURE, 0.0, 0.5)],
+            },
+            beliefs={
+                READY: BeliefState(value=0.4),
+                SUCCESS: BeliefState(value=1.0),
+                FAILURE: BeliefState(value=0.0),
+            },
+        ),
+        max_evaluated_nodes=3,
+        trace=trace,
+    )
+    assert result == (pytest.approx(0.2), STOP_ACTION)
+    assert not any(event["event"] == "action_value" for event in trace.events)
+
+
+def test_expensive_root_evaluation_reports_time_budget_overshoot() -> None:
+    class SlowModel(Model):
+        def sample_policy_values_from_belief(
+            self, *, belief_state: BeliefState, num_samples: int
+        ) -> np.ndarray:
+            time.sleep(0.005)
+            return super().sample_policy_values_from_belief(
+                belief_state=belief_state, num_samples=num_samples
+            )
+
+    trace = SearchTrace()
+    solve_belief_space_expectimax(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=0,
+        model=SlowModel(),
+        max_seconds=0.0,
+        trace=trace,
+    )
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["time_budget_overshoot_seconds"] >= 0.005
