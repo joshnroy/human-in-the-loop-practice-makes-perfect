@@ -237,9 +237,7 @@ def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
     )
 
     automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
-    assert automatic_after == automatic_before.condition_execution(
-        success=True, observed_cost=5.0
-    )
+    assert automatic_after == automatic_before.condition_execution(success=True, observed_cost=5.0)
     assert method.pomdp_state.skill_beliefs[RESET_SKILL] == human_before
     assert method.pomdp_state.pending_examples[NON_HUMAN_RESET_SKILL] == 1
 
