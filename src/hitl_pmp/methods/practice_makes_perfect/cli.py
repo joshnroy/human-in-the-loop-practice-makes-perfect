@@ -184,9 +184,7 @@ class Tossing3DPomdpCli(EesCli):
         parser.add_argument(
             "--pomdp-competence-process-noise-std",
             type=float,
-            default=Tossing3DPomdpMethod.model_fields[
-                "pomdp_competence_process_noise_std"
-            ].default,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_competence_process_noise_std"].default,
             help="Per-example competence process-noise standard deviation, scaled by sqrt(N).",
         )
         parser.add_argument(

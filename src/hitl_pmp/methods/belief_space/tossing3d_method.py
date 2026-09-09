@@ -54,9 +54,7 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_learning_rate_process_noise_std: float = Field(
         default=LEARNING_RATE_PROCESS_NOISE_STD, ge=0.0
     )
-    pomdp_competence_process_noise_std: float = Field(
-        default=COMPETENCE_PROCESS_NOISE_STD, ge=0.0
-    )
+    pomdp_competence_process_noise_std: float = Field(default=COMPETENCE_PROCESS_NOISE_STD, ge=0.0)
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None

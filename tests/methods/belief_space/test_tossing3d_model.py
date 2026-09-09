@@ -593,9 +593,7 @@ def test_cycle_refit_applies_competence_noise_only_with_examples() -> None:
     prior_parameters, _ = prior.arrays()
     noisy_parameters, _ = noisy.skill_beliefs[TOSS_SKILL].arrays()
     unchanged_parameters, _ = unchanged.skill_beliefs[TOSS_SKILL].arrays()
-    deterministic = np.clip(
-        prior_parameters[:, 0] + 4 * prior_parameters[:, 1], 0.0, 1.0
-    )
+    deterministic = np.clip(prior_parameters[:, 0] + 4 * prior_parameters[:, 1], 0.0, 1.0)
     assert np.any(noisy_parameters[:, 0] != deterministic)
     assert noisy.skill_beliefs[TOSS_SKILL].competence_transition_count == 1
     np.testing.assert_array_equal(unchanged_parameters[:, 0], prior_parameters[:, 0])
