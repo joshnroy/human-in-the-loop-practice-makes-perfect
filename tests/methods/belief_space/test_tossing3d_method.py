@@ -11,6 +11,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
+from hitl_pmp.methods.belief_space.planner import BeliefSpacePlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
     PICK_SKILL,
@@ -24,6 +25,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_learning_rate,
 )
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
+from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION, StopAction
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -72,6 +74,27 @@ def test_determinized_selector_is_seeded_and_does_not_start_simulator() -> None:
         selections.append(method.select_skill_to_practice(true_atoms=pick.preconditions))
         assert method.env._backend is None  # noqa: SLF001
     assert selections[0] == selections[1]
+
+
+def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
+    class InjectedPlanner(BeliefSpacePlanner):  # type: ignore[type-arg]
+        name = "injected"
+        calls = 0
+
+        def solve(self, **kwargs: object) -> tuple[float, StopAction]:  # type: ignore[override]
+            del kwargs
+            self.calls += 1
+            return 0.25, STOP_ACTION
+
+    planner = InjectedPlanner()
+    decision_log = tmp_path / "injected.jsonl"
+    method = _build(pomdp_planner=planner, decision_log=decision_log)
+    pick = _grounding(method=method, name=PICK_SKILL)
+
+    assert method.select_skill_to_practice(true_atoms=pick.preconditions)[0].skill.name == "STOP"
+    assert planner.calls == 1
+    decision = json.loads(decision_log.read_text().splitlines()[-1])
+    assert decision["solver"] == "injected"
 
 
 def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:

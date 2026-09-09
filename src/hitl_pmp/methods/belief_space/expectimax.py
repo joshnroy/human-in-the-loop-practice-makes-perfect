@@ -1,10 +1,12 @@
 """Finite-horizon belief-space expectimax."""
 
 import math
+import time
 from typing import Generic
 
 import numpy as np
 
+from .planner import BeliefSpacePlanner
 from .types.protocol import (
     ActionT,
     BeliefSpaceModel,
@@ -39,6 +41,7 @@ def solve_belief_space_expectimax(
     resample theta and see updated model parameters.
     """
     assert num_samples >= 1, "num_samples must be positive"
+    started_at = time.perf_counter()
     solver = ExpectimaxSearch(model=model, num_samples=num_samples, trace=trace)
     result = solver.cached_solve_belief_space_expectimax(
         environment_state=environment_state,
@@ -50,12 +53,20 @@ def solve_belief_space_expectimax(
         trace.record(
             event="search_summary",
             node=0,
+            solver="expectimax",
+            horizon=horizon,
             expanded_nodes=solver.next_node,
+            generated_nodes=max(0, solver.cache_requests - 1),
             cache_requests=solver.cache_requests,
             cache_hits=solver.cache_hits,
             action_evaluations=solver.action_evaluations,
             chance_outcomes=solver.chance_outcomes,
             nodes_by_horizon=dict(sorted(solver.nodes_by_horizon.items(), reverse=True)),
+            max_depth_reached=(
+                horizon - min(solver.nodes_by_horizon) if solver.nodes_by_horizon else 0
+            ),
+            elapsed_seconds=time.perf_counter() - started_at,
+            termination_reason="horizon_or_objective_exhausted",
         )
     return result
 
@@ -257,3 +268,30 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 reason="max_value_stop_wins_ties",
             )
         return current_best_value, current_best_action
+
+
+class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
+    """Injectable adapter for the reference recursive expectimax solver."""
+
+    name = "expectimax"
+
+    def solve(
+        self,
+        *,
+        environment_state: EnvironmentStateT,
+        summed_cost: float,
+        belief_state: BeliefStateT,
+        horizon: int,
+        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        num_samples: int = NUM_SAMPLES,
+        trace: SearchTrace | None = None,
+    ) -> tuple[float, ActionT | StopAction]:
+        return solve_belief_space_expectimax(
+            environment_state=environment_state,
+            summed_cost=summed_cost,
+            belief_state=belief_state,
+            horizon=horizon,
+            model=model,
+            num_samples=num_samples,
+            trace=trace,
+        )

@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, PrivateAttr
+from pydantic import ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import GroundSkill, Policy, Skill
@@ -16,8 +16,9 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
 )
 from hitl_pmp.planning.grounding import SkillGrounder
 
-from .determinized import solve_belief_space_determinized
-from .expectimax import solve_belief_space_expectimax
+from .determinized import DeterminizedAStarPlanner
+from .expectimax import ExpectimaxPlanner
+from .planner import BeliefSpacePlanner
 from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
@@ -48,9 +49,16 @@ from .types.theta import Tossing3DTheta
 class Tossing3DPomdpMethod(EesMethod):
     """EES learner/executor with situated belief-space practice decisions."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_solver: Literal["expectimax", "determinized"] = "expectimax"
     pomdp_max_expansions: int = Field(default=100, ge=0)
+    pomdp_max_search_seconds: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    pomdp_planner: (
+        BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
+        | None
+    ) = Field(default=None, exclude=True, repr=False)
     pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_num_particles: int = Field(default=1024, ge=1)
     pomdp_learning_rate_process_noise_std: float = Field(
@@ -312,29 +320,30 @@ class Tossing3DPomdpMethod(EesMethod):
             search_state = make_tossing3d_search_state(
                 state=self._pomdp_state, true_atoms=true_atoms
             )
-            if self.pomdp_solver == "expectimax":
-                expectimax_result = solve_belief_space_expectimax(
-                    environment_state=search_state,
-                    belief_state=self._pomdp_state,
-                    summed_cost=self._pomdp_state.accumulated_cost,
-                    horizon=self.pomdp_search_depth,
-                    model=model,
-                    trace=trace,
-                    num_samples=self.pomdp_num_samples,
-                )
-                value, action = expectimax_result
+            if self.pomdp_planner is not None:
+                planner = self.pomdp_planner
+            elif self.pomdp_solver == "expectimax":
+                planner: BeliefSpacePlanner[
+                    Tossing3DSearchState,
+                    Tossing3DBeliefState,
+                    Tossing3DTheta,
+                    GroundSkill,
+                ] = ExpectimaxPlanner()
             else:
-                determinized_result = solve_belief_space_determinized(
-                    environment_state=search_state,
-                    belief_state=self._pomdp_state,
-                    summed_cost=self._pomdp_state.accumulated_cost,
-                    model=model,
+                planner = DeterminizedAStarPlanner(
                     max_expansions=self.pomdp_max_expansions,
                     seed=self.seed + self._decision_index,
-                    trace=trace,
-                    num_samples=self.pomdp_num_samples,
+                    max_seconds=self.pomdp_max_search_seconds,
                 )
-                value, action = determinized_result
+            value, action = planner.solve(
+                environment_state=search_state,
+                belief_state=self._pomdp_state,
+                summed_cost=self._pomdp_state.accumulated_cost,
+                horizon=self.pomdp_search_depth,
+                model=model,
+                trace=trace,
+                num_samples=self.pomdp_num_samples,
+            )
         finally:
             trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
@@ -359,9 +368,12 @@ class Tossing3DPomdpMethod(EesMethod):
             else action.model_dump(mode="json", fallback=str),
             value=value,
             horizon=self.pomdp_search_depth,
-            solver=self.pomdp_solver,
+            solver=planner.name,
             max_expansions=(
-                self.pomdp_max_expansions if self.pomdp_solver == "determinized" else None
+                planner.max_expansions if isinstance(planner, DeterminizedAStarPlanner) else None
+            ),
+            max_search_seconds=(
+                planner.max_seconds if isinstance(planner, DeterminizedAStarPlanner) else None
             ),
             model=self._pomdp_model.model_dump(mode="json"),
             search=trace.events,

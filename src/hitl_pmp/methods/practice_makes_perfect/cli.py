@@ -180,6 +180,12 @@ class Tossing3DPomdpCli(EesCli):
             help="Node-expansion budget for the determinized solver (independent of depth).",
         )
         parser.add_argument(
+            "--pomdp-max-search-seconds",
+            type=float,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_max_search_seconds"].default,
+            help="Optional wall-clock budget for each determinized search.",
+        )
+        parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
@@ -235,6 +241,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
                 pomdp_max_expansions=args.pomdp_max_expansions,
+                pomdp_max_search_seconds=args.pomdp_max_search_seconds,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),

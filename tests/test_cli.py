@@ -112,6 +112,7 @@ def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     assert args.pomdp_learning_rate_process_noise_std == 0.05
     assert args.pomdp_solver == "expectimax"
     assert args.pomdp_max_expansions == 100
+    assert args.pomdp_max_search_seconds is None
 
 
 def test_tossing3d_pomdp_cli_accepts_determinized_solver() -> None:
