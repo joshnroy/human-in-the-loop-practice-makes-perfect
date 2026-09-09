@@ -80,6 +80,33 @@ class Tossing3DSkillProvider(SkillProvider):
             )
         return Tossing3DSkills.compute_action(ground_skill=ground_skill, params=params, state=state)
 
+    def oracle_sampler_input(
+        self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float] | None:
+        """Describe a toss in the robot frame, independent of world layout.
+
+        The composed toss controller chooses a base pose relative to its target bin.
+        Absolute scene coordinates therefore expose the classifier to a nuisance
+        variable: rotating the complete task changes every world pose without changing
+        the controller's local problem. For the toss only, use the bin displacement in
+        the robot's planar frame followed by the four controller parameters.
+        """
+        toss_skills = (
+            Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+            SameSideSkills.TOSS,
+        )
+        if ground_skill.skill not in toss_skills:
+            return None
+        robot, bin_, _, _ = ground_skill.objects
+        dx = state.get(obj=bin_, feature_name="x") - state.get(obj=robot, feature_name="pos_base_x")
+        dy = state.get(obj=bin_, feature_name="y") - state.get(obj=robot, feature_name="pos_base_y")
+        yaw = state.get(obj=robot, feature_name="pos_base_rot")
+        cosine = float(np.cos(yaw))
+        sine = float(np.sin(yaw))
+        forward = cosine * dx + sine * dy
+        lateral = -sine * dx + cosine * dy
+        return [1.0, forward, lateral, *(float(param) for param in params)]
+
     def human_cube_bin_reset_skill(self) -> GroundSkill:
         """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`
         to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot

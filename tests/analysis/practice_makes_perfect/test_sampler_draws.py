@@ -22,6 +22,7 @@ def _draw(
         consultation=pool,
         success=success,
         params=[value],
+        sampler_input=[1.0, value],
         achieved={"robot.pos_base_x": 1.0 + value, "bin.x": 2.5},
     ).model_dump_json()
 
@@ -45,6 +46,22 @@ def test_load_run_reads_every_draw_in_order(*, tmp_path: Path) -> None:
     draws = SamplerDrawAnalysis.load_run(run_dir=run)
     assert [d.cycle for d in draws] == [0, 1]
     assert [d.params[0] for d in draws] == [0.5, 1.3]
+
+
+def test_load_run_accepts_records_from_before_sampler_input_was_logged(*, tmp_path: Path) -> None:
+    run = tmp_path / "ees" / "0"
+    run.mkdir(parents=True)
+    old_record = {
+        "cycle": 0,
+        "skill": "MoveToThrowPose",
+        "consultation": "informed",
+        "success": True,
+        "params": [0.5],
+        "achieved": {"bin.x": 2.5},
+    }
+    (run / SAMPLER_DRAWS_FILENAME).write_text(json.dumps(old_record) + "\n")
+    [loaded] = SamplerDrawAnalysis.load_run(run_dir=run)
+    assert loaded.sampler_input is None
 
 
 def test_a_truncated_trailing_line_does_not_break_the_read(*, tmp_path: Path) -> None:
@@ -147,6 +164,7 @@ def test_achieved_reads_a_post_action_feature_and_skips_draws_without_it(*, tmp_
         consultation="informed",
         success=True,
         params=[0.7],
+        sampler_input=[1.0, 0.7],
         achieved={"bin.x": 2.5},
     ).model_dump_json()
     (run / SAMPLER_DRAWS_FILENAME).write_text(with_feature + "\n" + without + "\n")

@@ -21,6 +21,7 @@ its last complete draw:
 | `consultation` | the `SamplerConsultation` pool -- `informed`, `epsilon_random`, `uninformative` |
 | `success` | did the ground skill's add effects hold afterwards |
 | `params` | the chosen continuous parameters, as drawn |
+| `sampler_input` | the exact decision-time classifier row that was scored |
 | `achieved` | post-action features of the ground skill's own objects, `"<object>.<feature>"` |
 
 `consultation` is never `no_sampler`: a `param_dim == 0` skill never reaches a sampler, so it
@@ -104,6 +105,7 @@ class SamplerDrawRecorder(BaseModel):
         consultation: SamplerConsultation,
         success: bool,
         params: list[float],
+        sampler_input: list[float],
         state: State,
         objects: tuple[Object, ...],
     ) -> None:
@@ -117,6 +119,7 @@ class SamplerDrawRecorder(BaseModel):
             consultation=consultation.value,
             success=success,
             params=params,
+            sampler_input=sampler_input,
             achieved=SamplerDrawRecorder.read_features(state=state, objects=objects),
         )
         handle = self._open()
@@ -168,4 +171,9 @@ class SamplerDraw(BaseModel):
     consultation: str
     success: bool
     params: list[float]
+    # Exact decision-time feature row scored and later used for training. Reconstructing
+    # it from ``achieved`` would be wrong because that state is post-transition.
+    # Optional only so post-run readers can still open records written before this
+    # field existed. The live recorder always supplies it.
+    sampler_input: list[float] | None = None
     achieved: dict[str, float]
