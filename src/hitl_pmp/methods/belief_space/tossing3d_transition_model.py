@@ -7,7 +7,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
-    RESET_SKILL,
+    RESET_SKILLS,
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
@@ -129,12 +129,12 @@ def transition_outcomes(
             cost=cost,
             effects=effects,
         )
-    if action.skill.name == RESET_SKILL:
+    if action.skill.name in RESET_SKILLS:
         return binary_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
-            probability=mean_competence(belief=state.skill_beliefs[RESET_SKILL]),
+            probability=mean_competence(belief=state.skill_beliefs[action.skill.name]),
             cost=cost,
             effects=effects,
         )

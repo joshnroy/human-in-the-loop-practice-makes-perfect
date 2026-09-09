@@ -15,7 +15,7 @@ from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
-from .tossing3d_constants import RESET_SKILL
+from .tossing3d_constants import RESET_SKILLS
 
 
 class PracticeExampleSource(Enum):
@@ -95,7 +95,7 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
 
 def skill_belief_model(*, ground_skill: GroundSkill) -> SkillBeliefModel:
     """Return the update contract for one provider-supplied ground skill."""
-    if ground_skill.skill.name == RESET_SKILL:
+    if ground_skill.skill.name in RESET_SKILLS:
         return SkillBeliefModel(
             skill=ground_skill.skill,
             example_source=PracticeExampleSource.OUTCOME,
@@ -127,6 +127,7 @@ def make_default_tossing3d_belief(
     num_particles: int = 256,
     seed: int = 0,
     include_human_reset: bool = False,
+    additional_skill_names: tuple[str, ...] = (),
 ) -> Tossing3DBeliefState:
     """Independent broad joint priors for every modeled practice skill."""
     beliefs: dict[str, ConcreteSkillBelief] = {
@@ -136,8 +137,13 @@ def make_default_tossing3d_belief(
         )
         for index, skill in enumerate(SKILL_BELIEF_MODELS)
     }
+    skill_names = list(additional_skill_names)
     if include_human_reset:
-        beliefs[RESET_SKILL] = create_broad_particle_prior(
+        from .tossing3d_constants import RESET_SKILL
+
+        skill_names.append(RESET_SKILL)
+    for skill_name in dict.fromkeys(skill_names):
+        beliefs[skill_name] = create_broad_particle_prior(
             num_particles=num_particles,
             seed=seed + len(beliefs),
         )
