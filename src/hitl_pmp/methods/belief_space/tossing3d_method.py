@@ -18,6 +18,7 @@ from hitl_pmp.planning.grounding import SkillGrounder
 
 from .expectimax import solve_belief_space_expectimax
 from .tossing3d_constants import (
+    COMPETENCE_PROCESS_NOISE_STD,
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
@@ -52,6 +53,9 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_num_particles: int = Field(default=256, ge=1)
     pomdp_learning_rate_process_noise_std: float = Field(
         default=LEARNING_RATE_PROCESS_NOISE_STD, ge=0.0
+    )
+    pomdp_competence_process_noise_std: float = Field(
+        default=COMPETENCE_PROCESS_NOISE_STD, ge=0.0
     )
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
@@ -286,6 +290,7 @@ class Tossing3DPomdpMethod(EesMethod):
             state=self._pomdp_state,
             cycle_start_competences=self._cycle_start_competences,
             learning_rate_process_noise_std=self.pomdp_learning_rate_process_noise_std,
+            competence_process_noise_std=self.pomdp_competence_process_noise_std,
         )
         self.record_diagnostic(
             event="refit",

@@ -574,6 +574,35 @@ def test_cycle_refit_applies_learning_rate_process_noise_without_examples() -> N
     assert np.any(after[:, 1] != before[:, 1])
 
 
+def test_cycle_refit_applies_competence_noise_only_with_examples() -> None:
+    prior = create_broad_particle_prior(num_particles=128, seed=26)
+    practiced = Tossing3DBeliefState(
+        skill_beliefs={TOSS_SKILL: prior}, pending_examples={TOSS_SKILL: 4}
+    )
+    idle = Tossing3DBeliefState(skill_beliefs={TOSS_SKILL: prior})
+
+    noisy = refit_belief_state(
+        state=practiced,
+        competence_process_noise_std=0.05,
+    )
+    unchanged = refit_belief_state(
+        state=idle,
+        competence_process_noise_std=0.05,
+    )
+
+    prior_parameters, _ = prior.arrays()
+    noisy_parameters, _ = noisy.skill_beliefs[TOSS_SKILL].arrays()
+    unchanged_parameters, _ = unchanged.skill_beliefs[TOSS_SKILL].arrays()
+    deterministic = np.clip(
+        prior_parameters[:, 0] + 4 * prior_parameters[:, 1], 0.0, 1.0
+    )
+    assert np.any(noisy_parameters[:, 0] != deterministic)
+    assert noisy.skill_beliefs[TOSS_SKILL].competence_transition_count == 1
+    np.testing.assert_array_equal(unchanged_parameters[:, 0], prior_parameters[:, 0])
+    assert unchanged.skill_beliefs[TOSS_SKILL].competence_transition_count == 0
+    assert np.all((noisy_parameters[:, 0] >= 0.0) & (noisy_parameters[:, 0] <= 1.0))
+
+
 def test_only_physically_applicable_actions_are_returned() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()

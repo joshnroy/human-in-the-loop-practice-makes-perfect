@@ -34,6 +34,7 @@ class ParticleFilterBelief(SkillBelief):
     model_config = ConfigDict(frozen=True, ser_json_bytes="base64", val_json_bytes="base64")
     resampling_count: int = Field(default=0, ge=0)
     process_transition_count: int = Field(default=0, ge=0)
+    competence_transition_count: int = Field(default=0, ge=0)
     resampling_seed: int = Field(default=0, ge=0)
     particle_parameters: bytes
     particle_weights: bytes
@@ -128,6 +129,33 @@ class ParticleFilterBelief(SkillBelief):
             update={"process_transition_count": self.process_transition_count + 1}
         )
 
+    def advance_competence(self, *, process_noise_std: float, training_examples: int) -> Self:
+        """Apply per-example learning variability after a practiced-skill refit."""
+        assert process_noise_std >= 0.0
+        assert training_examples >= 0
+        if process_noise_std == 0.0 or training_examples == 0:
+            return self
+        parameters, weights = self.arrays()
+        rng = make_rng(
+            seed=self.resampling_seed,
+            stream=self.competence_transition_count,
+            tag=0x4B41505041,
+        )
+        transitioned = parameters.copy()
+        proposals = transitioned[:, 0] + rng.normal(
+            0.0,
+            process_noise_std * np.sqrt(training_examples),
+            size=self.num_particles,
+        )
+        transitioned[:, 0] = reflect_into_interval(
+            values=proposals,
+            lower=COMPETENCE_MIN,
+            upper=COMPETENCE_MAX,
+        )
+        return self.from_arrays(parameters=transitioned, weights=weights).model_copy(
+            update={"competence_transition_count": self.competence_transition_count + 1}
+        )
+
     def diagnostics(self) -> dict[str, object]:
         _, weights = self.arrays()
         return {
@@ -136,12 +164,14 @@ class ParticleFilterBelief(SkillBelief):
             "effective_sample_size": float(1.0 / np.dot(weights, weights)),
             "resampling_count": self.resampling_count,
             "process_transition_count": self.process_transition_count,
+            "competence_transition_count": self.competence_transition_count,
         }
 
     def signature(self) -> tuple[object, ...]:
         return (
             self.resampling_count,
             self.process_transition_count,
+            self.competence_transition_count,
             self.resampling_seed,
             self.particle_parameters,
             self.particle_weights,

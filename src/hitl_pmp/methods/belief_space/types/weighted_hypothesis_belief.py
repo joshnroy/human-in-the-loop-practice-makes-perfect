@@ -119,6 +119,15 @@ class WeightedHypothesisBelief(SkillBelief):
             raise NotImplementedError("process noise requires a particle-filter belief")
         return self
 
+    def advance_competence(
+        self, *, process_noise_std: float, training_examples: int
+    ) -> "WeightedHypothesisBelief":
+        assert process_noise_std >= 0.0
+        assert training_examples >= 0
+        if process_noise_std > 0.0 and training_examples > 0:
+            raise NotImplementedError("process noise requires a particle-filter belief")
+        return self
+
     def diagnostics(self) -> dict[str, object]:
         return {"representation": "weighted_hypotheses", "num_hypotheses": len(self.hypotheses)}
 

@@ -110,6 +110,7 @@ def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     assert args.pomdp_num_particles == 256
     assert args.pomdp_num_samples == 100
     assert args.pomdp_learning_rate_process_noise_std == 0.05
+    assert args.pomdp_competence_process_noise_std == 0.05
 
 
 def test_parse_args_has_no_positional_arguments() -> None:
