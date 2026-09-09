@@ -12,10 +12,12 @@ from typing_extensions import Self
 from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (
     ExecutionObservation,
     condition_cost,
+    condition_cycle_evidence,
     condition_execution,
     condition_executions,
     condition_learning_rate,
     condition_outcome,
+    cycle_learning_rate_observation,
     make_rng,
     reflect_into_interval,
 )
@@ -94,6 +96,34 @@ class ParticleFilterBelief(SkillBelief):
 
     def condition_executions(self, *, observations: Sequence[ExecutionObservation]) -> Self:
         return condition_executions(belief=self, observations=observations)
+
+    def condition_cycle_evidence(
+        self,
+        *,
+        observations: Sequence[ExecutionObservation],
+        competence_before: float,
+        training_examples: int,
+    ) -> tuple[Self, float | None]:
+        return condition_cycle_evidence(
+            belief=self,
+            observations=observations,
+            competence_before=competence_before,
+            training_examples=training_examples,
+        )
+
+    def cycle_learning_rate_observation(
+        self,
+        *,
+        observations: Sequence[ExecutionObservation],
+        competence_before: float,
+        training_examples: int,
+    ) -> float | None:
+        return cycle_learning_rate_observation(
+            belief=self,
+            observations=observations,
+            competence_before=competence_before,
+            training_examples=training_examples,
+        )
 
     def condition_cost(self, *, observed_cost: float) -> Self:
         return condition_cost(belief=self, observed_cost=observed_cost)

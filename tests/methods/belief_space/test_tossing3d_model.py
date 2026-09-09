@@ -495,18 +495,13 @@ def test_cycle_refit_applies_one_learning_rate_observation_from_batched_evidence
             observed_cost=1.0,
         )
     prior = prior_state.skill_beliefs[PICK_SKILL]
-    execution_posterior = prior.condition_executions(
-        observations=pending_state.pending_execution_observations[PICK_SKILL]
-    )
-    expected_observation = observed_learning_rate(
+    expected, expected_observation = prior.condition_cycle_evidence(
+        observations=pending_state.pending_execution_observations[PICK_SKILL],
         competence_before=mean_competence(belief=prior),
-        competence_after=mean_competence(belief=execution_posterior),
         training_examples=3,
     )
     assert expected_observation is not None
-    expected = execution_posterior.condition_learning_rate(
-        observed_learning_rate=expected_observation
-    ).refit(training_examples=3)
+    expected = expected.refit(training_examples=3)
 
     posterior_state = refit_belief_state(
         state=pending_state,
@@ -514,6 +509,47 @@ def test_cycle_refit_applies_one_learning_rate_observation_from_batched_evidence
     )
 
     assert posterior_state.skill_beliefs[PICK_SKILL] == expected
+
+
+def test_cycle_evidence_performs_at_most_one_resampling_step() -> None:
+    prior = create_broad_particle_prior(num_particles=256, seed=321)
+    observations = tuple(
+        SkillExecutionObservation(success=True, observed_cost=1.0) for _ in range(20)
+    )
+
+    posterior, _ = prior.condition_cycle_evidence(
+        observations=observations,
+        competence_before=mean_competence(belief=prior),
+        training_examples=len(observations),
+    )
+
+    assert posterior.resampling_count - prior.resampling_count <= 1
+
+
+def test_joint_cycle_update_preserves_low_eta_support_for_eta_observation() -> None:
+    prior = create_broad_particle_prior(num_particles=400, seed=322)
+    parameters, weights = prior.arrays()
+    parameters = parameters.copy()
+    parameters[:200, 0] = 0.8
+    parameters[:200, 1] = 0.01
+    parameters[200:, 0] = 0.9
+    parameters[200:, 1] = 0.9
+    belief = prior.from_arrays(parameters=parameters, weights=weights)
+    observations = (SkillExecutionObservation(success=True),)
+    execution_only = belief.condition_executions(observations=observations)
+    competence_before = mean_competence(belief=execution_only)
+
+    posterior, observed_rate = belief.condition_cycle_evidence(
+        observations=observations,
+        competence_before=competence_before,
+        training_examples=1,
+    )
+    posterior_parameters, posterior_weights = posterior.arrays()
+
+    assert observed_rate == pytest.approx(0.0, abs=1e-14)
+    assert mean_learning_rate(belief=posterior) < mean_learning_rate(belief=belief)
+    assert float(np.sum(posterior_weights[posterior_parameters[:, 1] < 0.1])) > 0.5
+    assert posterior.resampling_count - belief.resampling_count <= 1
 
 
 def test_cycle_refit_with_zero_invocations_skips_eta_observation() -> None:

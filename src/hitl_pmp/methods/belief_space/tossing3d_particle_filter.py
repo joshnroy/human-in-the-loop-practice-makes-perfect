@@ -104,6 +104,103 @@ def condition_executions(
     return _condition(belief=belief, parameters=parameters, masses=masses)
 
 
+def condition_cycle_evidence(
+    *,
+    belief: BeliefT,
+    observations: Sequence[ExecutionObservation],
+    competence_before: float,
+    training_examples: int,
+) -> tuple[BeliefT, float | None]:
+    """Jointly condition on all evidence from one practice cycle.
+
+    Execution evidence first defines a provisional (non-resampled) posterior
+    used to derive the cycle-level learning-rate observation.  Its likelihood
+    is then multiplied into the same joint particle masses before the single
+    ESS check, preventing an execution-only resample from depleting eta support.
+    """
+    assert training_examples >= 0
+    parameters, weights = belief.arrays()
+    log_masses = _execution_log_masses(
+        parameters=parameters,
+        weights=weights,
+        observations=observations,
+    )
+    observed_learning_rate: float | None = None
+    if training_examples > 0:
+        provisional_weights = _normalize_log_masses(log_masses=log_masses)
+        competence_after = float(np.dot(provisional_weights, parameters[:, 0]))
+        observed_learning_rate = max(
+            LEARNING_RATE_MIN,
+            min(
+                LEARNING_RATE_MAX,
+                (competence_after - competence_before) / training_examples,
+            ),
+        )
+        log_masses += _student_t_log_likelihoods(
+            observation=observed_learning_rate,
+            hypotheses=parameters[:, 1],
+            scale=_OBSERVATION_SCALE,
+        )
+    masses = np.exp(log_masses - float(np.max(log_masses)))
+    return (
+        _condition(belief=belief, parameters=parameters, masses=masses),
+        observed_learning_rate,
+    )
+
+
+def cycle_learning_rate_observation(
+    *,
+    belief: BeliefT,
+    observations: Sequence[ExecutionObservation],
+    competence_before: float,
+    training_examples: int,
+) -> float | None:
+    """Derive eta's observation without resampling or modifying the belief."""
+    assert training_examples >= 0
+    if training_examples == 0:
+        return None
+    parameters, weights = belief.arrays()
+    log_masses = _execution_log_masses(
+        parameters=parameters,
+        weights=weights,
+        observations=observations,
+    )
+    provisional_weights = _normalize_log_masses(log_masses=log_masses)
+    competence_after = float(np.dot(provisional_weights, parameters[:, 0]))
+    return max(
+        LEARNING_RATE_MIN,
+        min(LEARNING_RATE_MAX, (competence_after - competence_before) / training_examples),
+    )
+
+
+def _execution_log_masses(
+    *,
+    parameters: np.ndarray,
+    weights: np.ndarray,
+    observations: Sequence[ExecutionObservation],
+) -> np.ndarray:
+    log_masses = np.log(weights)
+    for observation in observations:
+        if observation.success is not None:
+            likelihoods = parameters[:, 0] if observation.success else 1.0 - parameters[:, 0]
+            log_masses += np.log(np.maximum(likelihoods, np.finfo(np.float64).tiny))
+        if observation.observed_cost is not None:
+            log_masses += _student_t_log_likelihoods(
+                observation=observation.observed_cost,
+                hypotheses=parameters[:, 2],
+                scale=COST_OBSERVATION_SCALE,
+            )
+    return log_masses
+
+
+def _normalize_log_masses(*, log_masses: np.ndarray) -> np.ndarray:
+    masses = np.exp(log_masses - float(np.max(log_masses)))
+    normalizer = float(np.sum(masses))
+    if not np.isfinite(normalizer) or normalizer <= 0.0:
+        raise ValueError("observation has zero probability")
+    return masses / normalizer
+
+
 def condition_cost(*, belief: BeliefT, observed_cost: float) -> BeliefT:
     assert observed_cost >= 0.0
     parameters, weights = belief.arrays()

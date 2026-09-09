@@ -220,9 +220,18 @@ def observed_learning_rates(
         start = start_competences.get(skill_name)
         if start is None:
             continue
+        execution_observations = state.pending_execution_observations.get(skill_name, ())
+        if isinstance(belief, ParticleFilterBelief):
+            observation = belief.cycle_learning_rate_observation(
+                observations=execution_observations,
+                competence_before=start,
+                training_examples=training_examples,
+            )
+            if observation is not None:
+                observations[skill_name] = observation
+            continue
         conditioned = condition_execution_observations(
-            belief=belief,
-            observations=state.pending_execution_observations.get(skill_name, ()),
+            belief=belief, observations=execution_observations
         )
         observation = observed_learning_rate(
             competence_before=start,
@@ -241,6 +250,13 @@ def refit_observed_skill_belief(
     cycle_start_competence: float | None,
     execution_observations: tuple[SkillExecutionObservation, ...] = (),
 ) -> ConcreteSkillBelief:
+    if isinstance(belief, ParticleFilterBelief) and cycle_start_competence is not None:
+        belief, _ = belief.condition_cycle_evidence(
+            observations=execution_observations,
+            competence_before=cycle_start_competence,
+            training_examples=training_examples,
+        )
+        return refit_skill_belief(belief=belief, training_examples=training_examples)
     belief = condition_execution_observations(
         belief=belief,
         observations=execution_observations,
