@@ -10,7 +10,7 @@ from __future__ import annotations
 import heapq
 import math
 import time
-from typing import Generic, Protocol
+from typing import Generic, Protocol, TypeVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
@@ -48,7 +48,10 @@ def zero_heuristic(*, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStat
     return 0.0
 
 
-class DeterminizedPathCost(Protocol[EnvironmentStateT, BeliefStateT, ActionT]):
+PathActionT = TypeVar("PathActionT", contravariant=True)
+
+
+class DeterminizedPathCost(Protocol[EnvironmentStateT, BeliefStateT, PathActionT]):
     """Incremental cost used to relax paths through the determinized graph."""
 
     def __call__(
@@ -56,7 +59,7 @@ class DeterminizedPathCost(Protocol[EnvironmentStateT, BeliefStateT, ActionT]):
         *,
         parent: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
         child: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-        action: ActionT,
+        action: PathActionT,
         outcome_probability: float,
         sampled_cost: float,
     ) -> float: ...

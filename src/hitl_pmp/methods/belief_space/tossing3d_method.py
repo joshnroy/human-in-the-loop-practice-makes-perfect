@@ -315,6 +315,12 @@ class Tossing3DPomdpMethod(EesMethod):
             Tossing3DTheta,
             GroundSkill,
         ] = self._pomdp_model
+        planner: BeliefSpacePlanner[
+            Tossing3DSearchState,
+            Tossing3DBeliefState,
+            Tossing3DTheta,
+            GroundSkill,
+        ]
         search_started_at = time.perf_counter()
         try:
             search_state = make_tossing3d_search_state(
@@ -323,12 +329,7 @@ class Tossing3DPomdpMethod(EesMethod):
             if self.pomdp_planner is not None:
                 planner = self.pomdp_planner
             elif self.pomdp_solver == "expectimax":
-                planner: BeliefSpacePlanner[
-                    Tossing3DSearchState,
-                    Tossing3DBeliefState,
-                    Tossing3DTheta,
-                    GroundSkill,
-                ] = ExpectimaxPlanner()
+                planner = ExpectimaxPlanner()
             else:
                 planner = DeterminizedAStarPlanner(
                     max_expansions=self.pomdp_max_expansions,
