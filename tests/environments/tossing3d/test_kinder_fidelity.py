@@ -635,7 +635,10 @@ def test_human_reset_clears_recorded_rim_support() -> None:
         assert env.reset_movables()
         after = method.abstract_state(state=env.get_current_state())
         assert reset.add_effects <= after
-        assert reset.delete_effects.isdisjoint(after)
+        # The one lifted STRIPS reset deletes both possible values of each
+        # functional side predicate, then re-adds the selected destination. Add
+        # effects win, matching both the in-memory transition and PDDL semantics.
+        assert (reset.delete_effects - reset.add_effects).isdisjoint(after)
     finally:
         env.close()
 

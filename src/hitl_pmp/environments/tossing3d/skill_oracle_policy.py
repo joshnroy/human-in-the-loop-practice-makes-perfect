@@ -141,7 +141,12 @@ class SkillOraclePolicy:
         action = Tossing3DSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )
-        objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
+        # Side objects are planner bookkeeping, not physical controller arguments.
+        # Keep them out of the human-facing overlay so recordings retain the same
+        # skill labels as before side-aware planning.
+        objects_desc = ", ".join(
+            obj.name for obj in ground_skill.objects if obj.type != Tossing3DSides.type
+        )
         label = f"{ground_skill.skill.name}({objects_desc})"
         if params.size > 0:
             label += f", params={[round(float(value), 2) for value in params]}"
