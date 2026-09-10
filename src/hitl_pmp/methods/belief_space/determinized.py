@@ -10,77 +10,72 @@ from __future__ import annotations
 import heapq
 import math
 import time
-from typing import Generic, Protocol, TypeVar
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict
 
 from .planner import BeliefSpacePlanner
+from .types.determinized import (
+    DeterminizedHeuristic,
+    DeterminizedPathCost,
+    DeterminizedSearchNode,
+)
 from .types.protocol import ActionT, BeliefSpaceModel, BeliefStateT, EnvironmentStateT, ThetaT
 from .types.search_trace import SearchTrace
 from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
 
 
-class DeterminizedSearchNode(BaseModel, Generic[EnvironmentStateT, BeliefStateT]):
-    """Generic node information exposed to an injected A* heuristic."""
+class DeterminizedAStarPlanner(
+    BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
+):
+    """Compute-bounded Algorithm-3 search with an injected generic heuristic."""
 
-    model_config = ConfigDict(frozen=True)
+    name = "determinized_astar"
 
-    environment_state: EnvironmentStateT
-    belief_state: BeliefStateT
-    summed_cost: float
-    depth: int
-    stop_value: float
-    path_cost: float
-
-
-class DeterminizedHeuristic(Protocol[EnvironmentStateT, BeliefStateT]):
-    """Additional estimated cost-to-go used to order the A* frontier."""
-
-    def __call__(
-        self, *, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]
-    ) -> float: ...
-
-
-def zero_heuristic(*, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
-    """Neutral default: order the frontier only by accumulated path cost."""
-    del node
-    return 0.0
-
-
-PathActionT = TypeVar("PathActionT", contravariant=True)
-
-
-class DeterminizedPathCost(Protocol[EnvironmentStateT, BeliefStateT, PathActionT]):
-    """Incremental cost used to relax paths through the determinized graph."""
-
-    def __call__(
+    def __init__(
         self,
         *,
-        parent: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-        child: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-        action: PathActionT,
-        outcome_probability: float,
-        sampled_cost: float,
-    ) -> float: ...
+        max_evaluated_nodes: int | None = None,
+        seed: int,
+        max_seconds: float | None = None,
+        safety_max_depth: int | None = None,
+        heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] | None = None,
+        path_cost: DeterminizedPathCost[EnvironmentStateT, BeliefStateT, ActionT] | None = None,
+    ) -> None:
+        self.max_evaluated_nodes = max_evaluated_nodes
+        self.seed = seed
+        self.max_seconds = max_seconds
+        self.safety_max_depth = safety_max_depth
+        self.heuristic = heuristic or zero_heuristic
+        self.path_cost = path_cost or objective_delta_path_cost
 
-
-def objective_delta_path_cost(
-    *,
-    parent: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-    child: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-    action: ActionT,
-    outcome_probability: float,
-    sampled_cost: float,
-) -> float:
-    """Convert improvement in the supplied objective ``G`` to A* path cost.
-
-    The differences telescope, so minimizing accumulated cost selects the
-    discovered node with the largest stop/deployment value. Domains may inject
-    another additive path-cost model without changing the planner.
-    """
-    del action, outcome_probability, sampled_cost
-    return parent.stop_value - child.stop_value
+    def solve(
+        self,
+        *,
+        environment_state: EnvironmentStateT,
+        summed_cost: float,
+        belief_state: BeliefStateT,
+        horizon: int,
+        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        num_samples: int = NUM_SAMPLES,
+        trace: SearchTrace | None = None,
+    ) -> tuple[float, ActionT | StopAction]:
+        # ``horizon`` belongs to the shared interface for exact expectimax. It
+        # deliberately does not bound this compute-budgeted planner.
+        del horizon
+        return solve_belief_space_determinized(
+            environment_state=environment_state,
+            summed_cost=summed_cost,
+            belief_state=belief_state,
+            model=model,
+            max_evaluated_nodes=self.max_evaluated_nodes,
+            max_seconds=self.max_seconds,
+            safety_max_depth=self.safety_max_depth,
+            seed=self.seed,
+            heuristic=self.heuristic,
+            path_cost=self.path_cost,
+            num_samples=num_samples,
+            trace=trace,
+        )
 
 
 def solve_belief_space_determinized(
@@ -93,10 +88,8 @@ def solve_belief_space_determinized(
     max_seconds: float | None = None,
     safety_max_depth: int | None = None,
     seed: int,
-    heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] = zero_heuristic,
-    path_cost: DeterminizedPathCost[
-        EnvironmentStateT, BeliefStateT, ActionT
-    ] = objective_delta_path_cost,
+    heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] | None = None,
+    path_cost: DeterminizedPathCost[EnvironmentStateT, BeliefStateT, ActionT] | None = None,
     num_samples: int = NUM_SAMPLES,
     trace: SearchTrace | None = None,
 ) -> tuple[float, ActionT | StopAction]:
@@ -127,25 +120,14 @@ def solve_belief_space_determinized(
     assert math.isfinite(summed_cost) and summed_cost >= 0, (
         "summed_cost must be finite and non-negative"
     )
+    heuristic = heuristic or zero_heuristic
+    path_cost = path_cost or objective_delta_path_cost
     rng = np.random.default_rng(seed)
     started_at = time.perf_counter()
 
-    def stop_value(*, state: BeliefStateT, cost: float) -> float:
-        policy_values = model.sample_policy_values_from_belief(
-            belief_state=state, num_samples=num_samples
-        )
-        assert len(policy_values) == num_samples
-        values = np.fromiter(
-            (model.G(policy_value=float(value), summed_cost=cost) for value in policy_values),
-            dtype=np.float64,
-            count=num_samples,
-        )
-        assert all(not math.isnan(value) and value != math.inf for value in values), (
-            "stop values must be finite or negative infinity"
-        )
-        return float(np.mean(values))
-
-    root_value = stop_value(state=belief_state, cost=summed_cost)
+    root_value = _stop_value(
+        model=model, belief_state=belief_state, summed_cost=summed_cost, num_samples=num_samples
+    )
     best_value = root_value
     best_path_cost = 0.0
     best_action: ActionT | StopAction = STOP_ACTION
@@ -189,50 +171,15 @@ def solve_belief_space_determinized(
     reopened_nodes = 0
     termination_reason = "frontier_exhausted"
 
-    def add_provenance(*, key: object, actions: list[ActionT]) -> None:
-        """Credit a shared descendant to every root action that can reach it."""
-        pending = [(key, action) for action in actions]
-        while pending:
-            current_key, action = pending.pop()
-            provenance = provenance_by_key[current_key]
-            if action in provenance:
-                continue
-            provenance.append(action)
-            root_values[action] = max(
-                root_values.get(action, -math.inf), values_by_key[current_key]
-            )
-            pending.extend((child_key, action) for child_key in children_by_key[current_key])
-
-    def priority_for(
-        *,
-        state: EnvironmentStateT,
-        belief: BeliefStateT,
-        cost: float,
-        depth: int,
-        value: float,
-        path_cost_so_far: float,
-    ) -> float:
-        estimate = heuristic(
-            node=DeterminizedSearchNode(
-                environment_state=state,
-                belief_state=belief,
-                summed_cost=cost,
-                depth=depth,
-                stop_value=value,
-                path_cost=path_cost_so_far,
-            )
-        )
-        assert math.isfinite(estimate), "heuristic must return a finite value"
-        return path_cost_so_far + estimate
-
     if trace is not None:
         trace.record(event="stop_value", node=0, value=root_value)
 
     if root_value != -math.inf:
-        root_priority = priority_for(
-            state=environment_state,
-            belief=belief_state,
-            cost=summed_cost,
+        root_priority = _priority_for(
+            heuristic=heuristic,
+            environment_state=environment_state,
+            belief_state=belief_state,
+            summed_cost=summed_cost,
             depth=0,
             value=root_value,
             path_cost_so_far=0.0,
@@ -301,18 +248,8 @@ def solve_belief_space_determinized(
             )
             assert outcomes, f"action {action!r} has no chance outcomes"
             chance_outcomes += len(outcomes)
-            probabilities = np.fromiter((outcome[2] for outcome in outcomes), dtype=np.float64)
-            assert np.all(np.isfinite(probabilities)) and np.all(probabilities > 0.0), (
-                "chance probabilities must be finite and positive"
-            )
-            total_probability = float(np.sum(probabilities))
-            assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
-                f"chance probabilities sum to {total_probability}, not 1"
-            )
-            outcome_index = int(rng.choice(len(outcomes), p=probabilities / total_probability))
-            next_environment, sampled_cost, outcome_probability = outcomes[outcome_index]
-            assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
-                "sampled_cost must be finite and non-negative"
+            next_environment, sampled_cost, outcome_probability = _sample_outcome(
+                rng=rng, outcomes=outcomes, action=action
             )
             next_cost = current_cost + sampled_cost
             next_depth = current_depth + 1
@@ -345,13 +282,25 @@ def solve_belief_space_determinized(
                 if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
                     termination_reason = "time_budget"
                     break
-                value = stop_value(state=next_belief, cost=next_cost)
+                value = _stop_value(
+                    model=model,
+                    belief_state=next_belief,
+                    summed_cost=next_cost,
+                    num_samples=num_samples,
+                )
                 values_by_key[key] = value
                 provenance_by_key[key] = []
                 children_by_key[key] = []
             if key not in children_by_key[current_key]:
                 children_by_key[current_key].append(key)
-            add_provenance(key=key, actions=first_actions)
+            _add_provenance(
+                key=key,
+                actions=first_actions,
+                provenance_by_key=provenance_by_key,
+                root_values=root_values,
+                values_by_key=values_by_key,
+                children_by_key=children_by_key,
+            )
             if value == -math.inf:
                 continue
             parent_node = DeterminizedSearchNode(
@@ -393,10 +342,11 @@ def solve_belief_space_determinized(
             heapq.heappush(
                 frontier,
                 (
-                    priority_for(
-                        state=next_environment,
-                        belief=next_belief,
-                        cost=next_cost,
+                    _priority_for(
+                        heuristic=heuristic,
+                        environment_state=next_environment,
+                        belief_state=next_belief,
+                        summed_cost=next_cost,
                         depth=next_depth,
                         value=value,
                         path_cost_so_far=next_path_cost,
@@ -458,57 +408,118 @@ def solve_belief_space_determinized(
     return best_value, best_action
 
 
-class DeterminizedAStarPlanner(
-    BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
-):
-    """Compute-bounded Algorithm-3 search with an injected generic heuristic."""
+def zero_heuristic(*, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
+    """Neutral default: order the frontier only by accumulated path cost."""
+    del node
+    return 0.0
 
-    name = "determinized_astar"
 
-    def __init__(
-        self,
-        *,
-        max_evaluated_nodes: int | None = None,
-        seed: int,
-        max_seconds: float | None = None,
-        safety_max_depth: int | None = None,
-        heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] = zero_heuristic,
-        path_cost: DeterminizedPathCost[
-            EnvironmentStateT, BeliefStateT, ActionT
-        ] = objective_delta_path_cost,
-    ) -> None:
-        self.max_evaluated_nodes = max_evaluated_nodes
-        self.seed = seed
-        self.max_seconds = max_seconds
-        self.safety_max_depth = safety_max_depth
-        self.heuristic = heuristic
-        self.path_cost = path_cost
+def objective_delta_path_cost(
+    *,
+    parent: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
+    child: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
+    action: ActionT,
+    outcome_probability: float,
+    sampled_cost: float,
+) -> float:
+    """Convert improvement in the supplied objective ``G`` to A* path cost.
 
-    def solve(
-        self,
-        *,
-        environment_state: EnvironmentStateT,
-        summed_cost: float,
-        belief_state: BeliefStateT,
-        horizon: int,
-        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-        num_samples: int = NUM_SAMPLES,
-        trace: SearchTrace | None = None,
-    ) -> tuple[float, ActionT | StopAction]:
-        # ``horizon`` belongs to the shared interface for exact expectimax. It
-        # deliberately does not bound this compute-budgeted planner.
-        del horizon
-        return solve_belief_space_determinized(
+    The differences telescope, so minimizing accumulated cost selects the
+    discovered node with the largest stop/deployment value. Domains may inject
+    another additive path-cost model without changing the planner.
+    """
+    del action, outcome_probability, sampled_cost
+    return parent.stop_value - child.stop_value
+
+
+def _stop_value(
+    *,
+    model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+    belief_state: BeliefStateT,
+    summed_cost: float,
+    num_samples: int,
+) -> float:
+    """Estimate the value of stopping from one belief-space state."""
+    policy_values = model.sample_policy_values_from_belief(
+        belief_state=belief_state, num_samples=num_samples
+    )
+    assert len(policy_values) == num_samples
+    values = np.fromiter(
+        (model.G(policy_value=float(value), summed_cost=summed_cost) for value in policy_values),
+        dtype=np.float64,
+        count=num_samples,
+    )
+    assert all(not math.isnan(value) and value != math.inf for value in values), (
+        "stop values must be finite or negative infinity"
+    )
+    return float(np.mean(values))
+
+
+def _priority_for(
+    *,
+    heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT],
+    environment_state: EnvironmentStateT,
+    belief_state: BeliefStateT,
+    summed_cost: float,
+    depth: int,
+    value: float,
+    path_cost_so_far: float,
+) -> float:
+    """Build and score the public node view used by an injected heuristic."""
+    estimate = heuristic(
+        node=DeterminizedSearchNode(
             environment_state=environment_state,
-            summed_cost=summed_cost,
             belief_state=belief_state,
-            model=model,
-            max_evaluated_nodes=self.max_evaluated_nodes,
-            max_seconds=self.max_seconds,
-            safety_max_depth=self.safety_max_depth,
-            seed=self.seed,
-            heuristic=self.heuristic,
-            path_cost=self.path_cost,
-            num_samples=num_samples,
-            trace=trace,
+            summed_cost=summed_cost,
+            depth=depth,
+            stop_value=value,
+            path_cost=path_cost_so_far,
         )
+    )
+    assert math.isfinite(estimate), "heuristic must return a finite value"
+    return path_cost_so_far + estimate
+
+
+def _sample_outcome(
+    *,
+    rng: np.random.Generator,
+    outcomes: list[tuple[EnvironmentStateT, float, float]],
+    action: ActionT,
+) -> tuple[EnvironmentStateT, float, float]:
+    """Validate a chance distribution and sample one determinized successor."""
+    assert outcomes, f"action {action!r} has no chance outcomes"
+    probabilities = np.fromiter((outcome[2] for outcome in outcomes), dtype=np.float64)
+    assert np.all(np.isfinite(probabilities)) and np.all(probabilities > 0.0), (
+        "chance probabilities must be finite and positive"
+    )
+    total_probability = float(np.sum(probabilities))
+    assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
+        f"chance probabilities sum to {total_probability}, not 1"
+    )
+    outcome_index = int(rng.choice(len(outcomes), p=probabilities / total_probability))
+    outcome = outcomes[outcome_index]
+    assert math.isfinite(outcome[1]) and outcome[1] >= 0, (
+        "sampled_cost must be finite and non-negative"
+    )
+    return outcome
+
+
+def _add_provenance(
+    *,
+    key: object,
+    actions: list[ActionT],
+    provenance_by_key: dict[object, list[ActionT]],
+    root_values: dict[ActionT, float],
+    values_by_key: dict[object, float],
+    children_by_key: dict[object, list[object]],
+) -> None:
+    """Credit a shared descendant to every root action that reaches it."""
+    pending = [(key, action) for action in actions]
+    while pending:
+        current_key, action = pending.pop()
+        provenance = provenance_by_key[current_key]
+        if action in provenance:
+            continue
+        provenance.append(action)
+        root_values[action] = max(root_values.get(action, -math.inf), values_by_key[current_key])
+        pending.extend((child_key, action) for child_key in children_by_key[current_key])
