@@ -272,9 +272,10 @@ class Tossing3DSkills:
         """Realize a (ground skill, parameters) pair as this domain's five-slot vector.
 
         `state` is unused: unlike Light Switch, whose skills compute a delta against the
-        robot's current position, every parameter here is absolute (a standoff from the
-        bin, a yaw about it, a joint-path speed, a millisecond) and is interpreted by
-        upstream's controller against whatever state it is reset from.
+        robot's current position, every parameter here is already expressed in the
+        controller's local coordinates: a standoff from the bin, a yaw about the bin,
+        a joint-path speed, and a release time. The first two therefore describe the
+        composed move relative to its target rather than in world coordinates.
         """
         del state
         skill = ground_skill.skill

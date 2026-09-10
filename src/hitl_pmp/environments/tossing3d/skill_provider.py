@@ -89,7 +89,10 @@ class Tossing3DSkillProvider(SkillProvider):
         Absolute scene coordinates therefore expose the classifier to a nuisance
         variable: rotating the complete task changes every world pose without changing
         the controller's local problem. For the toss only, use the bin displacement in
-        the robot's planar frame followed by the four controller parameters.
+        the robot's planar frame followed by the four controller parameters. The move
+        portion is relative too: ``params[0]`` is standoff from the bin and ``params[1]``
+        is yaw about the bin, so a rigid scene rotation leaves both unchanged. Only the
+        observed world-frame displacement needs the explicit rotation below.
         """
         toss_skills = (
             Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,

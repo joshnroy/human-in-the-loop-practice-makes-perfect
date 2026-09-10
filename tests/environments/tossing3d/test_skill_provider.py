@@ -43,7 +43,7 @@ def test_toss_sampler_input_is_robot_frame_bin_displacement_then_params() -> Non
     ) == pytest.approx([1.0, 0.4, -1.5, 1.3, -0.01, 125.0, 760.0])
 
 
-def test_toss_sampler_input_is_invariant_to_a_rigid_half_turn() -> None:
+def test_toss_sampler_input_and_relative_move_params_are_invariant_to_a_rigid_half_turn() -> None:
     params = np.array([1.35, 0.0, 140.0, 792.0])
     original = state(base_x=0.15, base_y=-0.25, base_rot=0.2, bin_x=2.0)
     rotated = state(base_x=-0.15, base_y=0.25, base_rot=0.2 + np.pi, bin_x=-2.0)
