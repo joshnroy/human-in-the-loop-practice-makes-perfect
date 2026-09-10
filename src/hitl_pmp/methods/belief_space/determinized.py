@@ -79,9 +79,15 @@ class DeterminizedAStarPlanner(
         )
         started_at = time.perf_counter()
 
-        root_value = self.stop_value(
-            model=model, belief_state=belief_state, summed_cost=summed_cost, num_samples=num_samples
+        root_value = model.J(
+            belief_state=belief_state, summed_cost=summed_cost, num_samples=num_samples
         )
+        assert not math.isnan(root_value) and root_value != math.inf, (
+            "root J(C, b) must be finite or negative infinity"
+        )
+        # Algorithm 3 line 26 returns the path to the minimum-g node in Open U Closed.
+        # Popped nodes leave Open and Closed stores only keys, so retain that minimum
+        # and its return information instead of storing every complete search path.
         best_g = 0.0  # Algorithm 3's cumulative search cost g.
         best_value = root_value
         best_action: ActionT | StopAction = STOP_ACTION
@@ -115,6 +121,8 @@ class DeterminizedAStarPlanner(
             trace.record(event="stop_value", node=0, value=root_value)
 
         if root_value != -math.inf:
+            # The queue entry contains Algorithm 3's (b_0, g=0), plus only the
+            # metadata needed for cache lookup, line-26 path recovery, and diagnostics.
             heapq.heappush(
                 open_nodes,
                 DeterminizedSearchQueueEntry(
@@ -135,51 +143,51 @@ class DeterminizedAStarPlanner(
         # Since execution costs are non-negative, deeper nodes cannot restore feasibility.
         # Algorithm 3: while Open != empty and iterations < H.
         while open_nodes and iterations < self.max_iterations:
-            current = heapq.heappop(open_nodes)
+            current_node = heapq.heappop(open_nodes)
             iterations += 1
             # Algorithm 3, lines 5 and 9: pop lowest(Open), then skip Closed nodes.
-            if current.key in closed:
+            if current_node.key in closed:
                 continue
             # Algorithm 3, line 12: add b to Closed.
-            closed.add(current.key)
-            diagnostics.observe_expansion(depth=current.depth)
+            closed.add(current_node.key)
+            diagnostics.observe_expansion(depth=current_node.depth)
 
             # Algorithm 3: for action a applicable in belief b.
-            for action in model.get_valid_actions(environment_state=current.environment_state):
+            for action in model.get_valid_actions(environment_state=current_node.environment_state):
                 diagnostics.action_transitions_evaluated += 1
-                # Algorithm 3, lines 14-15 -- the determinization step: draw next
-                # states and observations. The model exposes their joint distribution,
-                # from which this search samples one joint outcome for the edge.
-                outcomes = model.transition_outcomes(
-                    environment_state=current.environment_state,
+                # Algorithm 3, lines 14-15 -- the determinization step. Each entry is
+                # one possible joint (next environment state, realized cost,
+                # observation probability), not a latent particle. Sampling one entry
+                # jointly selects the next state from line 14 and observation from line 15.
+                joint_transition_outcomes = model.transition_outcomes(
+                    environment_state=current_node.environment_state,
                     practice_action=action,
-                    belief_state=current.belief_state,
+                    belief_state=current_node.belief_state,
                 )
-                diagnostics.chance_outcomes_enumerated += len(outcomes)
-                sampled_outcome = self.sample_outcome(outcomes=outcomes, action=action)
-                next_environment, sampled_cost, estimated_observation_probability = sampled_outcome
-                next_cost = current.summed_cost + sampled_cost
-                next_depth = current.depth + 1
+                diagnostics.chance_outcomes_enumerated += len(joint_transition_outcomes)
+                (
+                    next_environment_state,
+                    sampled_cost,
+                    estimated_observation_probability,
+                ) = self.sample_outcome(outcomes=joint_transition_outcomes, action=action)
+                next_cost = current_node.summed_cost + sampled_cost
+                next_depth = current_node.depth + 1
                 # Algorithm 3, line 16: b' <- Branch(b, a, o).
-                next_belief = model.update_belief_state(
-                    belief_state=current.belief_state,
-                    environment_state=current.environment_state,
-                    potential_next_environment_state=next_environment,
+                next_belief = model.compute_next_belief_state(
+                    belief_state=current_node.belief_state,
+                    environment_state=current_node.environment_state,
+                    potential_next_environment_state=next_environment_state,
                     practice_action=action,
                 )
                 diagnostics.generated_successors += 1
-                first_action = action if current.depth == 0 else current.first_action
-                key = model.search_cache_key(
-                    environment_state=next_environment,
-                    summed_cost=next_cost,
-                    belief_state=next_belief,
-                    horizon=None,
-                )
-                value = self.cached_stop_value(
-                    key=key,
+                # Only a root edge establishes the first action. Descendants inherit
+                # it so line 26 can return the first action on the selected path.
+                first_action = action if current_node.depth == 0 else current_node.first_action
+                key, value = self.compute_and_cache_stop_value(
                     values_by_key=values_by_key,
                     diagnostics=diagnostics,
                     model=model,
+                    environment_state=next_environment_state,
                     belief_state=next_belief,
                     summed_cost=next_cost,
                     num_samples=num_samples,
@@ -196,7 +204,7 @@ class DeterminizedAStarPlanner(
                 # Adding it separately would double-count action cost. Algorithm
                 # 3's other lambda weights observation surprise; it is a distinct
                 # hyperparameter from our linear-G cost coefficient.
-                estimated_reward = value - current.stop_value  # Algorithm 3: r_hat.
+                estimated_reward = value - current_node.stop_value  # Algorithm 3: r_hat.
                 # Algorithm 3, line 18: p_hat is the probability of the particular
                 # observation selected by determinization. Its negative log is
                 # conventionally called surprisal: likely outcomes add less cost.
@@ -204,18 +212,18 @@ class DeterminizedAStarPlanner(
                     estimated_observation_probability
                 )  # Algorithm 3: -lambda*log(p_hat).
                 child = DeterminizedSearchNode(
-                    environment_state=next_environment,
+                    environment_state=next_environment_state,
                     belief_state=next_belief,
                     summed_cost=next_cost,
                     depth=next_depth,
                     stop_value=value,
-                    g=current.g,
+                    g=current_node.g,
                 )
                 # Algorithm 3, line 18: self.heuristic returns the complete alpha*h_hat term.
                 heuristic_cost = self.heuristic(node=child)
                 assert math.isfinite(heuristic_cost), "heuristic must return a finite value"
                 next_path_cost = (
-                    current.g - estimated_reward + observation_surprise + heuristic_cost
+                    current_node.g - estimated_reward + observation_surprise + heuristic_cost
                 )  # Algorithm 3: g'.
                 # Algorithm 3, lines 20-22: insert b' only for a newly discovered
                 # or strictly cheaper path.
@@ -233,7 +241,7 @@ class DeterminizedAStarPlanner(
                     DeterminizedSearchQueueEntry(
                         g=next_path_cost,
                         sequence=sequence,
-                        environment_state=next_environment,
+                        environment_state=next_environment_state,
                         belief_state=next_belief,
                         summed_cost=next_cost,
                         depth=next_depth,
@@ -284,58 +292,47 @@ class DeterminizedAStarPlanner(
         return best_value, best_action
 
     def heuristic(self, *, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
-        """Return Algorithm 3's complete ``alpha * h_hat`` term.
+        """Generic hook used at line 19 where Algorithm 3 adds ``alpha * h_hat``.
 
-        The paper uses belief entropy for ``h_hat``. Per the intended generic-planner
-        design, this initial implementation sets ``alpha=0`` and therefore contributes
-        zero without baking a domain-specific entropy representation into the planner.
+        This implementation currently returns zero; it does not compute the paper's
+        entropy heuristic. The method is the single place where a later generic
+        heuristic will be implemented.
         """
         del node
         return 0.0
 
-    def stop_value(
+    def compute_and_cache_stop_value(
         self,
         *,
+        values_by_key: dict[object, float],
+        diagnostics: DeterminizedSearchDiagnostics,
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        environment_state: EnvironmentStateT,
         belief_state: BeliefStateT,
         summed_cost: float,
         num_samples: int,
-    ) -> float:
-        """Call the model's PDF objective ``J(C, b)``."""
+    ) -> tuple[object, float]:
+        """Return the belief key and cached J(C, b), computing J on a cache miss."""
+        key = model.search_cache_key(
+            environment_state=environment_state,
+            summed_cost=summed_cost,
+            belief_state=belief_state,
+            horizon=None,
+        )
+        cached_value = values_by_key.get(key)
+        if cached_value is not None:
+            diagnostics.merged_nodes += 1
+            return key, cached_value
         value = model.J(
             belief_state=belief_state,
             summed_cost=summed_cost,
             num_samples=num_samples,
         )
         assert not math.isnan(value) and value != math.inf, (
-            "stop value must be finite or negative infinity"
-        )
-        return value
-
-    def cached_stop_value(
-        self,
-        *,
-        key: object,
-        values_by_key: dict[object, float],
-        diagnostics: DeterminizedSearchDiagnostics,
-        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-        belief_state: BeliefStateT,
-        summed_cost: float,
-        num_samples: int,
-    ) -> float:
-        """Return cached J(C, b), evaluating it once for a new belief key."""
-        cached_value = values_by_key.get(key)
-        if cached_value is not None:
-            diagnostics.merged_nodes += 1
-            return cached_value
-        value = self.stop_value(
-            model=model,
-            belief_state=belief_state,
-            summed_cost=summed_cost,
-            num_samples=num_samples,
+            "J(C, b) must be finite or negative infinity"
         )
         values_by_key[key] = value
-        return value
+        return key, value
 
     def sample_outcome(
         self,

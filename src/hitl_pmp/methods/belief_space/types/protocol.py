@@ -60,7 +60,7 @@ class BeliefSpaceModel(Protocol[EnvironmentStateT, BeliefStateT, ThetaT, ActionT
         belief_state: BeliefStateT,
     ) -> list[tuple[EnvironmentStateT, float, float]]: ...
 
-    def update_belief_state(
+    def compute_next_belief_state(
         self,
         *,
         belief_state: BeliefStateT,

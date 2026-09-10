@@ -213,7 +213,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
                     "sampled_cost must be finite and non-negative"
                 )
-                next_belief_state = self.model.update_belief_state(
+                next_belief_state = self.model.compute_next_belief_state(
                     belief_state=belief_state,
                     environment_state=environment_state,
                     potential_next_environment_state=potential_next_environment_state,

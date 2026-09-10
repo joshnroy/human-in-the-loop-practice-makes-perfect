@@ -288,7 +288,7 @@ class Tossing3DPracticeModel(BaseModel):
             cost,
         )
 
-    def update_belief_state(
+    def compute_next_belief_state(
         self,
         *,
         belief_state: Tossing3DBeliefState,

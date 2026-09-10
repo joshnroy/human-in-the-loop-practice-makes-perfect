@@ -150,7 +150,7 @@ class Model(BaseModel):
         del belief_state
         return self.transitions[environment_state, practice_action]
 
-    def update_belief_state(
+    def compute_next_belief_state(
         self,
         *,
         belief_state: BeliefState,
