@@ -224,18 +224,6 @@ ROBOT_AT_SIDE = Predicate(
     holds=lambda state, objects: objects[2] == Tossing3DSides.robot,
 )
 
-OPPOSITE_SIDES = Predicate(
-    name="OppositeSides",
-    types=(Tossing3DSides.type, Tossing3DSides.type),
-    holds=lambda _state, objects: (
-        objects
-        == (
-            Tossing3DSides.robot,
-            Tossing3DSides.opposite,
-        )
-    ),
-)
-
 CUBE_AT_SIDE = Predicate(
     name="CubeAtSide",
     types=(

@@ -22,7 +22,6 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    OPPOSITE_SIDES,
     ROBOT_AT_SIDE,
 )
 from .recovery_skills import CLOSED_EMPTY, ON_BIN_RIM, ON_FLOOR, SameSideSkills
@@ -46,7 +45,6 @@ class Tossing3DSkillProvider(SkillProvider):
 
     env: Tossing3DEnvironment
     human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
-    non_human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
@@ -72,7 +70,6 @@ class Tossing3DSkillProvider(SkillProvider):
                 NOT_HOLDING,
                 CLOSED_EMPTY,
                 ON_BIN_RIM,
-                OPPOSITE_SIDES,
                 ROBOT_AT_SIDE,
                 CUBE_AT_SIDE,
                 BIN_AT_SIDE,
@@ -83,7 +80,6 @@ class Tossing3DSkillProvider(SkillProvider):
             HOLDING,
             NOT_HOLDING,
             ON_GROUND,
-            OPPOSITE_SIDES,
             ROBOT_AT_SIDE,
             CUBE_AT_SIDE,
             BIN_AT_SIDE,
@@ -144,11 +140,7 @@ class Tossing3DSkillProvider(SkillProvider):
         typed side facts become true, `InBin` becomes false; same-side `OnBinRim`
         is cleared too. ``HandEmpty`` stays as it was.
 
-        ``NotHolding(robot, cube)`` is an explicit positive complement because this
-        framework has no negative preconditions. It keeps the reset available for a
-        commanded-closed empty gripper while preventing the physically invalid case
-        where moving the cube would break an active grasp. The remaining static
-        preconditions only bind the robot-relative side objects. The singular API
+        The static precondition binds the robot-relative side object. The singular API
         preserves each layout's historical bin destination; planners use the plural
         API below to choose either destination."""
         resets = self.human_cube_bin_reset_skills()
@@ -174,7 +166,6 @@ class Tossing3DSkillProvider(SkillProvider):
         bin_ = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
         barrier = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
         robot_side = Variable(name="robot_side", type=Tossing3DSides.type)
-        opposite_side = Variable(name="opposite_side", type=Tossing3DSides.type)
         bin_destination = Variable(name="bin_destination", type=Tossing3DSides.type)
         floor = (
             LiftedAtom(predicate=ON_FLOOR, variables=(cube, bin_))
@@ -192,17 +183,12 @@ class Tossing3DSkillProvider(SkillProvider):
                 bin_,
                 barrier,
                 robot_side,
-                opposite_side,
                 bin_destination,
             ),
             preconditions=frozenset({
                 LiftedAtom(
                     predicate=ROBOT_AT_SIDE,
                     variables=(robot, barrier, robot_side),
-                ),
-                LiftedAtom(
-                    predicate=OPPOSITE_SIDES,
-                    variables=(robot_side, opposite_side),
                 ),
                 LiftedAtom(predicate=NOT_HOLDING, variables=(robot, cube)),
             }),
@@ -218,27 +204,8 @@ class Tossing3DSkillProvider(SkillProvider):
                     variables=(bin_, barrier, bin_destination),
                 ),
             }),
-            delete_effects=frozenset(
-                removed
-                | {
-                    LiftedAtom(
-                        predicate=CUBE_AT_SIDE,
-                        variables=(cube, barrier, robot_side),
-                    ),
-                    LiftedAtom(
-                        predicate=CUBE_AT_SIDE,
-                        variables=(cube, barrier, opposite_side),
-                    ),
-                    LiftedAtom(
-                        predicate=BIN_AT_SIDE,
-                        variables=(bin_, barrier, robot_side),
-                    ),
-                    LiftedAtom(
-                        predicate=BIN_AT_SIDE,
-                        variables=(bin_, barrier, opposite_side),
-                    ),
-                }
-            ),
+            delete_effects=frozenset(removed),
+            ignore_effects=frozenset({CUBE_AT_SIDE, BIN_AT_SIDE}),
             param_dim=0,
             practice_cost=self.human_reset_practice_cost,
         )
@@ -251,7 +218,6 @@ class Tossing3DSkillProvider(SkillProvider):
                     env.bin,
                     env.barrier,
                     Tossing3DSides.robot,
-                    Tossing3DSides.opposite,
                     side,
                 ),
             )
@@ -265,30 +231,8 @@ class Tossing3DSkillProvider(SkillProvider):
         Tossing3DSides.parse(name=destination.name)
         return destination.name
 
-    def non_human_cube_bin_reset_skill(self) -> GroundSkill:
-        """Automatic reset with the same mechanics as the human reset.
-
-        Its distinct identity gives the belief-space model an independent joint
-        competence/learning-rate/cost posterior while preserving identical symbolic
-        applicability and outcomes.
-        """
-        human_reset = self.human_cube_bin_reset_skill()
-        return human_reset.model_copy(
-            update={
-                "skill": human_reset.skill.model_copy(
-                    update={
-                        "name": "non_human_reset_cube_bin_only",
-                        "practice_cost": self.non_human_reset_practice_cost,
-                    }
-                )
-            }
-        )
-
     def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
-        return (
-            *self.human_cube_bin_reset_skills(),
-            self.non_human_cube_bin_reset_skill(),
-        )
+        return self.human_cube_bin_reset_skills()
 
 
 class Tossing3DOracle(OraclePolicyProvider):

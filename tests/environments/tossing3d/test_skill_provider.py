@@ -17,7 +17,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    OPPOSITE_SIDES,
     ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
@@ -112,7 +111,6 @@ def test_reset_groundings_bind_a_typed_destination_side() -> None:
             env.bin,
             env.barrier,
             Tossing3DSides.robot,
-            Tossing3DSides.opposite,
             destination,
         )
         for destination in Tossing3DSides.objects()
@@ -164,10 +162,6 @@ def test_the_ground_precondition_only_binds_the_robot_side() -> None:
             predicate=ROBOT_AT_SIDE,
             objects=(env.robot, env.barrier, Tossing3DSides.robot),
         ),
-        GroundAtom(
-            predicate=OPPOSITE_SIDES,
-            objects=(Tossing3DSides.robot, Tossing3DSides.opposite),
-        ),
         GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
     })
 
@@ -200,16 +194,9 @@ def test_delete_effects_remove_in_bin_since_the_fresh_position_cannot_score() ->
     } <= ground.delete_effects
 
 
-def test_reset_replaces_both_possible_side_facts_without_quantified_effects() -> None:
+def test_reset_replaces_existing_side_facts_with_quantified_ignore_effects() -> None:
     ground = _provider().human_cube_bin_reset_skill()
-    assert ground.ignore_effects == frozenset()
-    assert {
-        GroundAtom(
-            predicate=CUBE_AT_SIDE,
-            objects=(ground.objects[1], ground.objects[3], side),
-        )
-        for side in Tossing3DSides.objects()
-    } <= ground.delete_effects
+    assert ground.ignore_effects == frozenset({CUBE_AT_SIDE, BIN_AT_SIDE})
 
 
 def test_the_operator_requires_not_holding_and_does_not_claim_the_gripper_opens() -> None:
@@ -233,19 +220,10 @@ def test_human_reset_cost_is_five_robot_action_equivalents() -> None:
     assert _provider().human_cube_bin_reset_skill().evaluate_practice_cost() == 5.0
 
 
-def test_non_human_reset_duplicates_reset_mechanics_with_independent_identity() -> None:
+def test_human_reset_has_two_bin_destination_groundings() -> None:
     provider = _provider()
-    human = provider.human_cube_bin_reset_skill()
-    automatic = provider.non_human_cube_bin_reset_skill()
-
-    assert automatic.skill.name == "non_human_reset_cube_bin_only"
-    assert automatic.evaluate_practice_cost() == 5.0
-    assert automatic.objects == human.objects
-    assert automatic.preconditions == human.preconditions
-    assert automatic.add_effects == human.add_effects
-    assert automatic.delete_effects == human.delete_effects
     human_destinations = provider.human_cube_bin_reset_skills()
-    assert provider.movables_reset_skills() == (*human_destinations, automatic)
+    assert provider.movables_reset_skills() == human_destinations
     assert {reset.objects[-1].name for reset in human_destinations} == {
         "robot_side",
         "opposite_side",
@@ -277,10 +255,6 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
         GroundAtom(
             predicate=ROBOT_AT_SIDE,
             objects=(env.robot, env.barrier, Tossing3DSides.robot),
-        ),
-        GroundAtom(
-            predicate=OPPOSITE_SIDES,
-            objects=(Tossing3DSides.robot, Tossing3DSides.opposite),
         ),
         GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
     }

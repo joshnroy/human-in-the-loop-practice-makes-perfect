@@ -13,7 +13,6 @@ from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvide
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.planner import BeliefSpacePlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
-    NON_HUMAN_RESET_SKILL,
     PICK_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
@@ -290,38 +289,6 @@ def test_completed_human_reset_jointly_updates_performance_cost_and_training() -
     assert method.pomdp_state.pending_examples[RESET_SKILL] == 1
 
 
-def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
-    method = _build()
-    reset_skill = next(
-        skill for skill in method.human_skills() if skill.name == NON_HUMAN_RESET_SKILL
-    )
-    reset = next(
-        skill
-        for skill in SkillGrounder.applicable_ground_skills(
-            skills=(reset_skill,),
-            objects=method.objects(),
-            true_atoms=SkillGrounder.all_possible_ground_atoms(
-                objects=method.objects(), predicates=method.predicates()
-            ),
-        )
-    )
-    human_before = method.pomdp_state.skill_beliefs[RESET_SKILL]
-    automatic_before = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
-
-    method.record_action_cost(ground_skill=reset)
-    method.observe_help_granted(
-        state=Tossing3DState(
-            data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
-            abstract_atoms=frozenset(),
-        )
-    )
-
-    automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
-    assert automatic_after == automatic_before.condition_execution(success=True, observed_cost=5.0)
-    assert method.pomdp_state.skill_beliefs[RESET_SKILL] == human_before
-    assert method.pomdp_state.pending_examples[NON_HUMAN_RESET_SKILL] == 1
-
-
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
     with pytest.raises(ValidationError, match="cost observations must be at most"):
         _build(human_reset_practice_cost=20.01)
@@ -366,7 +333,6 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
         "MoveToTossLocationAndToss (belief mean)",
         "OpenGripper (belief mean)",
         "ask_for_reset_cube_bin_only (belief mean)",
-        "non_human_reset_cube_bin_only (belief mean)",
     }
     assert decision["improvement_potentials"]
     stop_value = method.practice_action_values()["STOP"]
@@ -398,17 +364,3 @@ def test_end_cycle_logs_exact_learning_rate_observations(
     assert refit["event"] == "refit"
     assert refit["learning_rate_observations"] == {PICK_SKILL: 0.0}
     assert refit["learning_rate_observation_counts"] == {PICK_SKILL: 1}
-
-
-def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
-    method = _build()
-    human = method.pomdp_state.skill_beliefs[RESET_SKILL]
-    automatic = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
-
-    assert isinstance(human, ParticleFilterBelief)
-    assert isinstance(automatic, ParticleFilterBelief)
-    assert human.particle_parameters != automatic.particle_parameters
-    assert set(method.practice_skill_costs()) >= {
-        f"{RESET_SKILL} (belief mean)",
-        f"{NON_HUMAN_RESET_SKILL} (belief mean)",
-    }

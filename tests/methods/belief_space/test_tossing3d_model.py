@@ -14,7 +14,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    OPPOSITE_SIDES,
     ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
@@ -127,10 +126,6 @@ def _search_state(
     )
     invariants = {
         robot_side,
-        GroundAtom(
-            predicate=OPPOSITE_SIDES,
-            objects=(Tossing3DSides.robot, Tossing3DSides.opposite),
-        ),
     }
     if all(atom.predicate != HOLDING for atom in action.preconditions):
         invariants.add(GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)))
