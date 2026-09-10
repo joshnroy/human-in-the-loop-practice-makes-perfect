@@ -244,7 +244,7 @@ def _hand_built_place_cup_state_and_skill() -> tuple[State, GroundSkill]:
     return state, place
 
 
-def test_oracle_sampler_input_pins_the_predicators_layout_and_converts_placement() -> None:
+def test_hand_selected_feature_transform_pins_layout_and_converts_placement() -> None:
     """The exact oracle vector predicators emits for a PlaceCup*OnTable skill:
     [1.0, table_radius, sticky, sticky_region_x_offset, sticky_region_y_offset,
      sticky_region_radius, table_x, table_y, place_x, place_y]
@@ -254,7 +254,9 @@ def test_oracle_sampler_input_pins_the_predicators_layout_and_converts_placement
     # u = 0.5, theta = 0: dist = 0.5 * (table_radius 0.2 - size 0.1) = 0.05;
     # place_x = 0.5 + 0.05*cos(0) = 0.55, place_y = 0.5 + 0.05*sin(0) = 0.5.
     params = np.array([0.5, 0.0])
-    row = BallRingSkills.oracle_sampler_input(ground_skill=place, state=state, params=params)
+    row = BallRingSkills.hand_selected_feature_transform(
+        ground_skill=place, state=state, params=params
+    )
     assert row == pytest.approx([1.0, 0.2, 1.0, 0.03, -0.04, 0.07, 0.5, 0.5, 0.55, 0.5])
 
 
@@ -263,13 +265,15 @@ def test_oracle_place_coordinates_match_the_action_the_skill_commands() -> None:
     the same (x, y) the realized action actually commands."""
     state, place = _hand_built_place_cup_state_and_skill()
     params = np.array([0.37, 1.1])
-    row = BallRingSkills.oracle_sampler_input(ground_skill=place, state=state, params=params)
+    row = BallRingSkills.hand_selected_feature_transform(
+        ground_skill=place, state=state, params=params
+    )
     action = BallRingSkills._place_on_table_action(ground_skill=place, params=params, state=state)
     assert row is not None
     assert (row[-2], row[-1]) == pytest.approx((float(action[3]), float(action[4])))
 
 
-def test_oracle_sampler_input_is_none_for_place_ball_on_table() -> None:
+def test_hand_selected_feature_transform_is_none_for_place_ball_on_table() -> None:
     """PlaceBallOnTable has 'Ball' not 'Cup' in its name -> "all" features, not oracle."""
     state, _ = _hand_built_place_cup_state_and_skill()
     table = Object(name="sticky-table-0", type=E.table_type)
@@ -277,14 +281,14 @@ def test_oracle_sampler_input_is_none_for_place_ball_on_table() -> None:
         skill=BallRingSkills.PLACE_BALL_ON_TABLE, objects=(E.robot, E.ball, E.cup, table)
     )
     assert (
-        BallRingSkills.oracle_sampler_input(
+        BallRingSkills.hand_selected_feature_transform(
             ground_skill=place_ball, state=state, params=np.array([0.5, 0.0])
         )
         is None
     )
 
 
-def test_oracle_sampler_input_is_none_for_a_pick_skill() -> None:
+def test_hand_selected_feature_transform_is_none_for_a_pick_skill() -> None:
     table = Object(name="sticky-table-0", type=E.table_type)
     state, _ = _hand_built_place_cup_state_and_skill()
     pick = GroundSkill(
@@ -292,7 +296,9 @@ def test_oracle_sampler_input_is_none_for_a_pick_skill() -> None:
         objects=(E.robot, E.cup, E.ball, table),
     )
     assert (
-        BallRingSkills.oracle_sampler_input(ground_skill=pick, state=state, params=np.zeros(0))
+        BallRingSkills.hand_selected_feature_transform(
+            ground_skill=pick, state=state, params=np.zeros(0)
+        )
         is None
     )
 

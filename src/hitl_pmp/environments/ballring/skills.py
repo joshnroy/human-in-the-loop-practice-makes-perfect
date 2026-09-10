@@ -521,7 +521,7 @@ class BallRingSkills:
         (`dist = uniform(0, table_radius - size); x = table_x + dist*cos(theta)`).
 
         Factored out so the raw action (`_place_on_table_action`) and the oracle
-        sampler input (`oracle_sampler_input`) convert `(u, theta)` the *same* way --
+        sampler input (`hand_selected_feature_transform`) convert `(u, theta)` the *same* way --
         the oracle classifier is trained/scored on these placement coordinates, so
         they must match the coordinates the action actually commands.
 
@@ -550,7 +550,7 @@ class BallRingSkills:
         return np.array([1.0, 3.0, 0.0, x, y])  # 3.0 = place onto table
 
     @staticmethod
-    def oracle_sampler_input(
+    def hand_selected_feature_transform(
         *, ground_skill: GroundSkill, state: State, params: np.ndarray
     ) -> list[float] | None:
         """Ball-Ring's oracle feature selection for the learned sampler --

@@ -30,7 +30,7 @@ def test_provider_objects_match_the_objects_in_a_sampled_state() -> None:
     assert set(BallRingSkillProvider(env=env).objects()) == set(state.data)
 
 
-def test_provider_routes_oracle_sampler_input_to_the_skills() -> None:
+def test_provider_routes_hand_selected_feature_transform_to_the_skills() -> None:
     """The domain-agnostic Method reaches oracle feature selection only through the
     provider hook, so the provider must delegate to BallRingSkills (and return None
     for a non-cup-place skill, i.e. fall back to "all")."""
@@ -43,12 +43,17 @@ def test_provider_routes_oracle_sampler_input_to_the_skills() -> None:
         objects=(env.robot, env.ball, env.cup, table),
     )
     params = np.array([0.4, 0.7])
-    assert provider.oracle_sampler_input(
+    assert provider.hand_selected_feature_transform(
         ground_skill=place_cup, state=state, params=params
-    ) == BallRingSkills.oracle_sampler_input(ground_skill=place_cup, state=state, params=params)
+    ) == BallRingSkills.hand_selected_feature_transform(
+        ground_skill=place_cup, state=state, params=params
+    )
 
     nav = GroundSkill(skill=BallRingSkills.NAVIGATE_TO_TABLE, objects=(env.robot, table))
-    assert provider.oracle_sampler_input(ground_skill=nav, state=state, params=np.zeros(0)) is None
+    assert (
+        provider.hand_selected_feature_transform(ground_skill=nav, state=state, params=np.zeros(0))
+        is None
+    )
 
 
 def test_oracle_solves_a_sampled_test_task_within_the_horizon() -> None:

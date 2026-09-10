@@ -80,7 +80,7 @@ class Tossing3DSkillProvider(SkillProvider):
             )
         return Tossing3DSkills.compute_action(ground_skill=ground_skill, params=params, state=state)
 
-    def oracle_sampler_input(
+    def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
     ) -> list[float] | None:
         """Describe a toss by robot-frame bin displacement and controller parameters.

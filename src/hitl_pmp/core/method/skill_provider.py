@@ -78,10 +78,10 @@ class SkillProvider(BaseModel, abc.ABC):
         reading whatever the state provides (object positions, etc.)."""
         raise NotImplementedError
 
-    def oracle_sampler_input(
+    def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
     ) -> list[float] | None:
-        """Optional per-domain "oracle feature selection" for the learned sampler's
+        """Optional per-domain hand-selected features for the learned sampler's
         classifier input -- predicators'
         `active_sampler_learning_feature_selection = "oracle"` branch of
         `utils.construct_active_sampler_input`.
@@ -91,8 +91,9 @@ class SkillProvider(BaseModel, abc.ABC):
         `None` to fall back to the default `"all"` layout
         (`[1.0] + concat(state[obj] for obj) + params`) the caller builds itself.
 
-        Non-abstract with a `None` default so a domain that does no oracle feature
-        selection (e.g. Light Switch) needs no override and is left exactly as it was.
+        Non-abstract with a `None` default so a domain that does no hand-selected
+        feature selection (e.g. Light Switch) needs no override and is left exactly
+        as it was.
         A concrete provider that overrides this must build the row consistently for
         both a training observation and a candidate being scored -- i.e. it is a pure
         function of `(ground_skill, state, params)`."""

@@ -34,7 +34,7 @@ def test_toss_sampler_input_is_robot_frame_bin_displacement_then_params() -> Non
     scene = state(env=env, base_x=0.2, base_y=-0.4, base_rot=np.pi / 2, bin_x=1.7)
     # observation() fixes bin y at zero: world displacement is (1.5, 0.4), which
     # becomes (forward=0.4, lateral=-1.5) for a robot facing +y.
-    assert Tossing3DSkillProvider(env=env).oracle_sampler_input(
+    assert Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
         ground_skill=_toss(env=env), state=scene, params=params
     ) == pytest.approx([1.0, 0.4, -1.5, 1.3, -0.01, 125.0, 760.0])
 
@@ -45,10 +45,12 @@ def test_toss_sampler_input_and_relative_move_params_are_invariant_to_a_rigid_ha
     params = np.array([1.35, 0.0, 140.0, 792.0])
     original = state(env=env, base_x=0.15, base_rot=0.2, bin_x=2.0)
     rotated = state(env=env, base_x=-0.15, base_rot=0.2 + np.pi, bin_x=-2.0)
-    assert provider.oracle_sampler_input(
+    assert provider.hand_selected_feature_transform(
         ground_skill=_toss(env=env), state=rotated, params=params
     ) == pytest.approx(
-        provider.oracle_sampler_input(ground_skill=_toss(env=env), state=original, params=params)
+        provider.hand_selected_feature_transform(
+            ground_skill=_toss(env=env), state=original, params=params
+        )
     )
 
 
@@ -61,7 +63,7 @@ def test_same_side_toss_uses_the_same_relative_feature_layout() -> None:
         skill=SameSideSkills.TOSS,
         objects=(env.robot, env.bin, env.cube, env.barrier),
     )
-    row = Tossing3DSkillProvider(env=env).oracle_sampler_input(
+    row = Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
         ground_skill=toss,
         state=state(env=env, base_x=0.0, base_y=0.0, base_rot=np.pi, bin_x=-2.0),
         params=np.array([1.35, 0.0, 140.0, 792.0]),
@@ -76,7 +78,9 @@ def test_non_toss_skills_keep_the_generic_sampler_input_fallback() -> None:
         objects=(env.robot, env.cube, env.barrier),
     )
     assert (
-        _provider().oracle_sampler_input(ground_skill=pick, state=state(), params=np.zeros(0))
+        _provider().hand_selected_feature_transform(
+            ground_skill=pick, state=state(), params=np.zeros(0)
+        )
         is None
     )
 

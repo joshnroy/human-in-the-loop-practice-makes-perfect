@@ -380,7 +380,7 @@ class LearnedSkillSampler(BaseModel):
 
         This is only the *default* ("all") row layout: the caller (`EesMethod`) is
         what actually builds each classifier input row, so a domain that does oracle
-        feature selection (`SkillProvider.oracle_sampler_input`) supplies a curated
+        feature selection (`SkillProvider.hand_selected_feature_transform`) supplies a curated
         row instead. Either way the sampler below consumes an already-built row, so it
         stays domain-agnostic about which features a row contains.
         """
