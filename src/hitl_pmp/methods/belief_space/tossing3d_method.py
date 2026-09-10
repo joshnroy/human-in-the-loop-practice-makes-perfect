@@ -46,6 +46,29 @@ from .types.stop_action import STOP_ACTION, StopAction
 from .types.theta import Tossing3DTheta
 
 
+def make_belief_space_planner(
+    *,
+    planner: (
+        BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
+        | None
+    ),
+    solver: Literal["expectimax", "determinized_astar"],
+    max_iterations: int,
+    seed: int,
+    observation_probability_weight: float,
+) -> BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]:
+    """Return the injected planner or construct the configured planner once."""
+    if planner is not None:
+        return planner
+    if solver == "expectimax":
+        return ExpectimaxPlanner()
+    return DeterminizedAStarPlanner(
+        max_iterations=max_iterations,
+        seed=seed,
+        observation_probability_weight=observation_probability_weight,
+    )
+
+
 class Tossing3DPomdpMethod(EesMethod):
     """EES learner/executor with situated belief-space practice decisions."""
 
@@ -54,9 +77,7 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
-    pomdp_observation_probability_weight: float = Field(
-        default=0.1, ge=0.0, allow_inf_nan=False
-    )
+    pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     pomdp_planner: (
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
         | None
@@ -77,15 +98,6 @@ class Tossing3DPomdpMethod(EesMethod):
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _cycle_start_competences: dict[str, float] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
-    _determinized_planner: (
-        DeterminizedAStarPlanner[
-            Tossing3DSearchState,
-            Tossing3DBeliefState,
-            Tossing3DTheta,
-            GroundSkill,
-        ]
-        | None
-    ) = PrivateAttr(default=None)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -168,12 +180,13 @@ class Tossing3DPomdpMethod(EesMethod):
             ground_skills=tuple(ground_skills),
             linear_cost_lambda=self.pomdp_linear_cost_lambda,
         )
-        if self.pomdp_solver == "determinized_astar":
-            self._determinized_planner = DeterminizedAStarPlanner(
-                max_iterations=self.pomdp_max_search_iterations,
-                seed=self.seed,
-                observation_probability_weight=self.pomdp_observation_probability_weight,
-            )
+        self.pomdp_planner = make_belief_space_planner(
+            planner=self.pomdp_planner,
+            solver=self.pomdp_solver,
+            max_iterations=self.pomdp_max_search_iterations,
+            seed=self.seed,
+            observation_probability_weight=self.pomdp_observation_probability_weight,
+        )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         missing = {PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
         assert not missing, (
@@ -332,24 +345,13 @@ class Tossing3DPomdpMethod(EesMethod):
             Tossing3DTheta,
             GroundSkill,
         ] = self._pomdp_model
-        planner: BeliefSpacePlanner[
-            Tossing3DSearchState,
-            Tossing3DBeliefState,
-            Tossing3DTheta,
-            GroundSkill,
-        ]
+        planner = self.pomdp_planner
+        assert planner is not None
         search_started_at = time.perf_counter()
         try:
             search_state = make_tossing3d_search_state(
                 state=self._pomdp_state, true_atoms=true_atoms
             )
-            if self.pomdp_planner is not None:
-                planner = self.pomdp_planner
-            elif self.pomdp_solver == "expectimax":
-                planner = ExpectimaxPlanner()
-            else:
-                assert self._determinized_planner is not None
-                planner = self._determinized_planner
             value, action = planner.solve(
                 environment_state=search_state,
                 belief_state=self._pomdp_state,
