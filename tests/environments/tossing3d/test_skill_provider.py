@@ -1,10 +1,6 @@
-"""Offline tests for `Tossing3DSkillProvider.human_cube_bin_reset_skill`: the
-`ask_for_reset_cube_bin_only` ground skill Tossing3D offers `EesMethod`'s planner.
+"""Offline tests for Tossing3D's sampler features and reset skills.
 
-No simulator needed -- like `test_skills.py`'s two lifted skills, the operator model is
-plain Python objects; only `KinderBackend.reset_cube_and_bin`/`Tossing3DEnvironment.
-reset_movables` (the *execution* half) touch MuJoCo, and those are covered separately in
-`test_kinder_backend.py`/`test_environment.py`.
+Only reset execution touches MuJoCo; the feature and symbolic contracts are plain Python.
 """
 
 import numpy as np
@@ -25,8 +21,7 @@ def _provider() -> Tossing3DSkillProvider:
     return Tossing3DSkillProvider(env=Tossing3DEnvironment())
 
 
-def _toss() -> GroundSkill:
-    env = Tossing3DEnvironment()
+def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
         objects=(env.robot, env.bin, env.cube, env.barrier),
@@ -34,27 +29,26 @@ def _toss() -> GroundSkill:
 
 
 def test_toss_sampler_input_is_robot_frame_bin_displacement_then_params() -> None:
+    env = Tossing3DEnvironment()
     params = np.array([1.3, -0.01, 125.0, 760.0])
-    scene = state(base_x=0.2, base_y=-0.4, base_rot=np.pi / 2, bin_x=1.7)
+    scene = state(env=env, base_x=0.2, base_y=-0.4, base_rot=np.pi / 2, bin_x=1.7)
     # observation() fixes bin y at zero: world displacement is (1.5, 0.4), which
     # becomes (forward=0.4, lateral=-1.5) for a robot facing +y.
-    assert _provider().oracle_sampler_input(
-        ground_skill=_toss(), state=scene, params=params
+    assert Tossing3DSkillProvider(env=env).oracle_sampler_input(
+        ground_skill=_toss(env=env), state=scene, params=params
     ) == pytest.approx([1.0, 0.4, -1.5, 1.3, -0.01, 125.0, 760.0])
 
 
 def test_toss_sampler_input_and_relative_move_params_are_invariant_to_a_rigid_half_turn() -> None:
+    env = Tossing3DEnvironment()
+    provider = Tossing3DSkillProvider(env=env)
     params = np.array([1.35, 0.0, 140.0, 792.0])
-    original = state(base_x=0.15, base_y=-0.25, base_rot=0.2, bin_x=2.0)
-    rotated = state(base_x=-0.15, base_y=0.25, base_rot=0.2 + np.pi, bin_x=-2.0)
-    # Both observations use bin y=0. Rotating the original scene also leaves zero
-    # unchanged only when base_y is zero, so set the y coordinates explicitly below.
-    original.set(obj=Tossing3DEnvironment.bin, feature_name="y", feature_val=0.4)
-    rotated.set(obj=Tossing3DEnvironment.bin, feature_name="y", feature_val=-0.4)
-    assert _provider().oracle_sampler_input(
-        ground_skill=_toss(), state=rotated, params=params
+    original = state(env=env, base_x=0.15, base_rot=0.2, bin_x=2.0)
+    rotated = state(env=env, base_x=-0.15, base_rot=0.2 + np.pi, bin_x=-2.0)
+    assert provider.oracle_sampler_input(
+        ground_skill=_toss(env=env), state=rotated, params=params
     ) == pytest.approx(
-        _provider().oracle_sampler_input(ground_skill=_toss(), state=original, params=params)
+        provider.oracle_sampler_input(ground_skill=_toss(env=env), state=original, params=params)
     )
 
 

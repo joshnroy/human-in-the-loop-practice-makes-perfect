@@ -126,7 +126,6 @@ def test_every_draw_is_one_json_object_per_line(*, recording_on: Path) -> None:
             "consultation",
             "success",
             "params",
-            "sampler_input",
             "achieved",
         }
 
@@ -141,9 +140,6 @@ def test_draws_carry_the_chosen_parameters_and_the_post_action_state(*, recordin
         params = draw["params"]
         assert isinstance(params, list) and len(params) == 1
         assert all(isinstance(p, float) for p in params)
-        sampler_input = draw["sampler_input"]
-        assert isinstance(sampler_input, list) and sampler_input
-        assert all(isinstance(value, float) for value in sampler_input)
         achieved = draw["achieved"]
         # Keyed "<object>.<feature>" over the ground skill's own objects, so a
         # domain-agnostic reader can recover any feature the skill touched.

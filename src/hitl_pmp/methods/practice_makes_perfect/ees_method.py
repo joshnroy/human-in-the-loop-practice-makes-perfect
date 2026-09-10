@@ -1184,7 +1184,6 @@ class _EesEpisode:
                     consultation=attempt.consultation,
                     success=success,
                     params=attempt.params,
-                    sampler_input=attempt.sampler_input,
                     state=state,
                     objects=self._pending.objects,
                 )

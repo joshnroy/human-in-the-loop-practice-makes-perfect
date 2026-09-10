@@ -83,16 +83,11 @@ class Tossing3DSkillProvider(SkillProvider):
     def oracle_sampler_input(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
     ) -> list[float] | None:
-        """Describe a toss in the robot frame, independent of world layout.
+        """Describe a toss by robot-frame bin displacement and controller parameters.
 
-        The composed toss controller chooses a base pose relative to its target bin.
-        Absolute scene coordinates therefore expose the classifier to a nuisance
-        variable: rotating the complete task changes every world pose without changing
-        the controller's local problem. For the toss only, use the bin displacement in
-        the robot's planar frame followed by the four controller parameters. The move
-        portion is relative too: ``params[0]`` is standoff from the bin and ``params[1]``
-        is yaw about the bin, so a rigid scene rotation leaves both unchanged. Only the
-        observed world-frame displacement needs the explicit rotation below.
+        The parameters are already relative to the bin: standoff, yaw offset, joint
+        speed, and release time. Expressing the observed displacement in the robot frame
+        makes the full sampler row invariant to rigid changes in scene pose.
         """
         toss_skills = (
             Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
