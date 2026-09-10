@@ -36,6 +36,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     OPPOSITE_SIDES,
     ROBOT_AT_SIDE,
 )
+from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skills import (
     MAX_TOSS_ROTATION,
@@ -430,6 +431,16 @@ def test_same_side_uses_canonical_toss_and_supports_bin_retrieval() -> None:
     assert cube_side in retrieval.preconditions
     assert cube_side in toss.add_effects
     assert toss.skill is Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
+
+
+def test_same_side_robot_skills_cost_one() -> None:
+    assert {skill.evaluate_practice_cost() for skill in SameSideSkills.skills()} == {1.0}
+
+
+def test_same_side_toss_requires_robot_and_bin_on_the_bound_side() -> None:
+    predicates = {atom.predicate for atom in SameSideSkills.TOSS.preconditions}
+    assert ROBOT_AT_SIDE in predicates
+    assert BIN_AT_SIDE in predicates
 
 
 @pytest.mark.parametrize(

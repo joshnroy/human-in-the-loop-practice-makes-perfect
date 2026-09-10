@@ -23,6 +23,7 @@ from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
+    PICK_SKILLS,
     RESET_SKILLS,
     TOSS_SKILL,
 )
@@ -190,7 +191,9 @@ class Tossing3DPomdpMethod(EesMethod):
             observation_probability_weight=self.pomdp_observation_probability_weight,
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
-        missing = {PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
+        missing = {TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
+        if not (available & PICK_SKILLS):
+            missing.add(PICK_SKILL)
         assert not missing, (
             "Tossing3DPomdpMethod requires canonical Tossing3D skills; missing "
             f"{sorted(missing)} from {sorted(available)}"

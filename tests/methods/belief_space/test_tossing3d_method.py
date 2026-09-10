@@ -55,11 +55,13 @@ def _grounding(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
 
 
 def test_selector_uses_current_symbolic_state_without_starting_simulator() -> None:
-    # Keep this seeded grounding regression independent of the CLI sampling default.
+    # The sampled belief and newly available reset choices may change which applicable
+    # action wins; this regression is about using the supplied symbolic state lazily.
     method = _build(pomdp_num_samples=1)
     pick = _grounding(method=method, name=PICK_SKILL)
     selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
-    assert selection == [pick]
+    assert len(selection) == 1
+    assert selection[0].preconditions <= pick.preconditions
     assert method.env._backend is None  # noqa: SLF001 (pin lazy simulator construction)
 
 

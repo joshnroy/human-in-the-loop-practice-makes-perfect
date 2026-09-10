@@ -8,6 +8,7 @@ from hitl_pmp.environments.tossing3d.predicates import IN_BIN
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
+    PICK_SKILLS,
     RESET_SKILLS,
     TOSS_SKILL,
 )
@@ -141,7 +142,7 @@ def transition_outcomes(
     assert action in ground_skills
     assert action.preconditions <= environment_state.true_atoms
     cost = estimated_action_cost(state=state, action=action)
-    if action.skill.name == PICK_SKILL:
+    if action.skill.name in PICK_SKILLS:
         return binary_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
