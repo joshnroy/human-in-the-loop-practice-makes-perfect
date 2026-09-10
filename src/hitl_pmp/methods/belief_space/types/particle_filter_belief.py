@@ -160,13 +160,21 @@ class ParticleFilterBelief(SkillBelief):
 
 
 def create_broad_particle_prior(*, num_particles: int, seed: int) -> ParticleFilterBelief:
+    """Create independent stratified marginals for the joint skill parameters.
+
+    Competence follows the Beta(10, 1) prior specified by the original EES
+    formulation. Learning rate is uniform because EES does not model it as a latent
+    variable. Cost follows ``20 * Beta(1, 9)`` (mean 2); cost is likewise an extension
+    of EES and this weakly informative prior favors robot-action-scale costs without
+    excluding the full supported interval.
+    """
     assert num_particles >= 1
     rng = np.random.default_rng(seed)
     quantiles = (np.arange(num_particles) + 0.5) / num_particles
     parameters = np.column_stack((
-        COMPETENCE_MIN + rng.permutation(quantiles) * (COMPETENCE_MAX - COMPETENCE_MIN),
+        rng.permutation(quantiles) ** (1.0 / 10.0),
         LEARNING_RATE_MIN + rng.permutation(quantiles) * (LEARNING_RATE_MAX - LEARNING_RATE_MIN),
-        COST_MIN + rng.permutation(quantiles) * (COST_MAX - COST_MIN),
+        COST_MAX * (1.0 - (1.0 - rng.permutation(quantiles)) ** (1.0 / 9.0)),
     ))
     return ParticleFilterBelief(
         resampling_seed=seed,
@@ -194,7 +202,7 @@ def create_fixed_performance_cost_prior(
     parameters = np.column_stack((
         np.full(num_particles, competence),
         np.full(num_particles, learning_rate),
-        COST_MIN + rng.permutation(quantiles) * (COST_MAX - COST_MIN),
+        COST_MAX * (1.0 - (1.0 - rng.permutation(quantiles)) ** (1.0 / 9.0)),
     ))
     return ParticleFilterBelief(
         resampling_seed=seed,

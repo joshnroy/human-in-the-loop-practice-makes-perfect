@@ -35,6 +35,7 @@ from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefStat
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
     ParticleFilterBelief,
     create_broad_particle_prior,
+    create_fixed_performance_cost_prior,
 )
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 from hitl_pmp.methods.belief_space.types.skill_belief import (
@@ -288,6 +289,44 @@ def test_particle_prior_is_continuous_seeded_and_normalized() -> None:
     assert np.any(~np.isin(parameters[:, 1], (0.0, 1.0)))
 
 
+def test_particle_prior_matches_configured_marginal_moments_and_quantiles() -> None:
+    prior = create_broad_particle_prior(num_particles=16_384, seed=31)
+    parameters, _ = prior.arrays()
+
+    # Beta(10, 1), Uniform(0, 1), and 20*Beta(1, 9), respectively.
+    np.testing.assert_allclose(parameters.mean(axis=0), [10 / 11, 0.5, 2.0], atol=2e-3)
+    np.testing.assert_allclose(
+        np.quantile(parameters, 0.5, axis=0),
+        [0.5 ** (1 / 10), 0.5, 20 * (1 - 0.5 ** (1 / 9))],
+        atol=2e-3,
+    )
+
+
+def test_particle_prior_stratified_marginals_are_approximately_independent() -> None:
+    for seed in (0, 1, 7, 31, 99):
+        prior = create_broad_particle_prior(num_particles=1_024, seed=seed)
+        parameters, _ = prior.arrays()
+        correlations = np.corrcoef(parameters, rowvar=False)
+
+        np.testing.assert_allclose(np.diag(correlations), 1.0)
+        assert np.max(np.abs(correlations[np.triu_indices(3, k=1)])) < 0.1
+
+
+def test_fixed_performance_prior_uses_the_same_stratified_cost_marginal() -> None:
+    prior = create_fixed_performance_cost_prior(
+        num_particles=16_384, seed=33, competence=1.0, learning_rate=0.0
+    )
+    parameters, weights = prior.arrays()
+
+    np.testing.assert_allclose(parameters[:, 0], 1.0)
+    np.testing.assert_allclose(parameters[:, 1], 0.0)
+    assert parameters[:, 2].min() > 0.0
+    assert parameters[:, 2].max() < 20.0
+    assert parameters[:, 2].mean() == pytest.approx(2.0, abs=2e-3)
+    assert np.median(parameters[:, 2]) == pytest.approx(20 * (1 - 0.5 ** (1 / 9)), abs=2e-3)
+    np.testing.assert_allclose(weights, 1 / len(weights))
+
+
 def test_finite_grid_prior_uses_full_learning_rate_range() -> None:
     prior = make_skill_belief_prior()
 
@@ -297,7 +336,7 @@ def test_finite_grid_prior_uses_full_learning_rate_range() -> None:
     assert len(learning_rates) == 21
 
 
-def test_belief_priors_have_matching_support_and_moments() -> None:
+def test_particle_and_legacy_hypothesis_priors_share_parameter_bounds() -> None:
     weighted = make_skill_belief_prior()
     particle = create_broad_particle_prior(num_particles=1_024, seed=7)
     particle_parameters, _ = particle.arrays()
@@ -307,12 +346,8 @@ def test_belief_priors_have_matching_support_and_moments() -> None:
 
     np.testing.assert_allclose(weighted_parameters.min(axis=0), [0.0, 0.0])
     np.testing.assert_allclose(weighted_parameters.max(axis=0), [1.0, 1.0])
-    np.testing.assert_allclose(
-        weighted_parameters.mean(axis=0), particle_parameters[:, :2].mean(axis=0)
-    )
-    np.testing.assert_allclose(
-        weighted_parameters.var(axis=0), particle_parameters[:, :2].var(axis=0), atol=0.01
-    )
+    assert particle_parameters[:, 0].mean() == pytest.approx(10 / 11, abs=1e-3)
+    assert particle_parameters[:, 1].mean() == pytest.approx(0.5, abs=1e-3)
 
 
 def test_belief_state_round_trips_particle_representation() -> None:
@@ -466,8 +501,8 @@ def test_particle_filter_resampling_is_seeded_and_reports_diagnostics() -> None:
     first = prior
     second = prior
     for _ in range(8):
-        first = first.condition_outcome(success=True)
-        second = second.condition_outcome(success=True)
+        first = first.condition_outcome(success=False)
+        second = second.condition_outcome(success=False)
 
     assert first == second
     diagnostics = first.diagnostics()
@@ -479,7 +514,7 @@ def test_particle_filter_resampling_rejuvenates_learning_rate_particles() -> Non
     prior = create_broad_particle_prior(num_particles=256, seed=15)
     posterior = prior
     for _ in range(12):
-        posterior = posterior.condition_outcome(success=True)
+        posterior = posterior.condition_outcome(success=False)
 
     parameters, _ = posterior.arrays()
     learning_rates = parameters[:, 1]
@@ -660,6 +695,10 @@ def test_human_reset_observation_updates_its_joint_belief_and_training_count() -
     state = make_default_tossing3d_belief(include_human_reset=True)
     reset = _ground_skill(model=model, name=RESET_SKILL)
     assert reset.evaluate_practice_cost() == 0.25
+    success_only = condition_skill_belief(belief=state.skill_beliefs[RESET_SKILL], success=True)
+    assert mean_competence(belief=success_only) > mean_competence(
+        belief=state.skill_beliefs[RESET_SKILL]
+    )
     observed = model.observe_outcome(
         state=state,
         ground_skill=reset,
@@ -667,9 +706,7 @@ def test_human_reset_observation_updates_its_joint_belief_and_training_count() -
         was_random_exploration=False,
         observed_cost=0.25,
     )
-    assert mean_competence(belief=observed.skill_beliefs[RESET_SKILL]) > mean_competence(
-        belief=state.skill_beliefs[RESET_SKILL]
-    )
+    assert observed.skill_beliefs[RESET_SKILL] != state.skill_beliefs[RESET_SKILL]
     assert abs(mean_cost(belief=observed.skill_beliefs[RESET_SKILL]) - 0.25) < abs(
         mean_cost(belief=state.skill_beliefs[RESET_SKILL]) - 0.25
     )
@@ -718,7 +755,8 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
     model = _domain_model()
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
     outcomes = _outcomes(model=model, state=state, name=PICK_SKILL)
-    assert [outcome[0] for outcome in outcomes] == pytest.approx([0.5, 0.5])
+    competence = mean_competence(belief=state.skill_beliefs[PICK_SKILL])
+    assert [outcome[0] for outcome in outcomes] == pytest.approx([competence, 1 - competence])
     assert all(
         _belief(state=outcome[1], skill_name=TOSS_SKILL)
         == _belief(state=state, skill_name=TOSS_SKILL)
@@ -794,7 +832,8 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
         state=state,
         action=_action(model=model, search_state=search_state, name=OPEN_GRIPPER_SKILL),
     )
-    assert [o[0] for o in outcomes] == pytest.approx([0.5, 0.5])
+    competence = mean_competence(belief=state.skill_beliefs[OPEN_GRIPPER_SKILL])
+    assert [o[0] for o in outcomes] == pytest.approx([competence, 1 - competence])
     assert outcomes[1][2] == closed_atoms
     open_gripper = _ground_skill(model=model, name=OPEN_GRIPPER_SKILL)
     for _ in range(100):

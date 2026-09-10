@@ -104,8 +104,8 @@ def test_theta_charts_are_read_only_and_show_reset_beliefs() -> None:
     method = _build(human_reset_practice_cost=0.00001)
     before = method.pomdp_state
     values = method.practice_skill_competences()
-    assert values["PickCube (belief mean)"] == 0.5
-    assert values["OpenGripper (belief mean)"] == 0.5
+    assert values["PickCube (belief mean)"] == pytest.approx(10 / 11, abs=1e-3)
+    assert values["OpenGripper (belief mean)"] == pytest.approx(10 / 11, abs=1e-3)
     assert values["MoveToTossLocationAndToss (belief mean)"] == mean_competence(
         belief=before.skill_beliefs[TOSS_SKILL]
     )
