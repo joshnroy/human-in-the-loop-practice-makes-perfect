@@ -15,6 +15,10 @@ import numpy as np
 
 from .planner import BeliefSpacePlanner
 from .types.determinized import (
+    DeterminizedNodeCacheInfo,
+    DeterminizedNodeDiagnosticInfo,
+    DeterminizedPathRecoveryInfo,
+    DeterminizedSearchBelief,
     DeterminizedSearchDiagnostics,
     DeterminizedSearchNode,
     DeterminizedSearchQueueEntry,
@@ -88,8 +92,10 @@ class DeterminizedAStarPlanner(
         # Algorithm 3 line 26 returns the path to the minimum-g node in Open U Closed.
         # Popped nodes leave Open and Closed stores only keys, so retain that minimum
         # and its return information instead of storing every complete search path.
+        # ``best_g`` selects the path; ``best_objective_value`` is that node's J(C, b),
+        # which the common BeliefSpacePlanner interface returns alongside the action.
         best_g = 0.0  # Algorithm 3's cumulative search cost g.
-        best_value = root_value
+        best_objective_value = root_value
         best_action: ActionT | StopAction = STOP_ACTION
         # Algorithm 3, line 3: Open <- {(b0, g=0)}.
         open_nodes: list[
@@ -126,43 +132,47 @@ class DeterminizedAStarPlanner(
             heapq.heappush(
                 open_nodes,
                 DeterminizedSearchQueueEntry(
+                    belief=DeterminizedSearchBelief(
+                        environment_state=environment_state,
+                        belief_state=belief_state,
+                        summed_cost=summed_cost,
+                    ),
                     g=0.0,
-                    sequence=sequence,
-                    environment_state=environment_state,
-                    belief_state=belief_state,
-                    summed_cost=summed_cost,
-                    depth=0,
-                    key=root_key,
-                    stop_value=root_value,
-                    first_action=STOP_ACTION,
+                    diagnostic_info=DeterminizedNodeDiagnosticInfo(depth=0),
+                    cache_info=DeterminizedNodeCacheInfo(
+                        key=root_key,
+                        stop_value=root_value,
+                        queue_sequence=sequence,
+                    ),
+                    path_recovery_info=DeterminizedPathRecoveryInfo(first_action=STOP_ACTION),
                 ),
             )
             diagnostics.observe_frontier(size=1)
 
-        # A hard-budget G(C, theta) can make J(C, b) negative infinity at the root.
-        # Since execution costs are non-negative, deeper nodes cannot restore feasibility.
         # Algorithm 3: while Open != empty and iterations < H.
         while open_nodes and iterations < self.max_iterations:
             current_node = heapq.heappop(open_nodes)
             iterations += 1
             # Algorithm 3, lines 5 and 9: pop lowest(Open), then skip Closed nodes.
-            if current_node.key in closed:
+            if current_node.cache_info.key in closed:
                 continue
             # Algorithm 3, line 12: add b to Closed.
-            closed.add(current_node.key)
-            diagnostics.observe_expansion(depth=current_node.depth)
+            closed.add(current_node.cache_info.key)
+            diagnostics.observe_expansion(depth=current_node.diagnostic_info.depth)
 
             # Algorithm 3: for action a applicable in belief b.
-            for action in model.get_valid_actions(environment_state=current_node.environment_state):
+            for action in model.get_valid_actions(
+                environment_state=current_node.belief.environment_state
+            ):
                 diagnostics.action_transitions_evaluated += 1
                 # Algorithm 3, lines 14-15 -- the determinization step. Each entry is
                 # one possible joint (next environment state, realized cost,
                 # observation probability), not a latent particle. Sampling one entry
                 # jointly selects the next state from line 14 and observation from line 15.
                 joint_transition_outcomes = model.transition_outcomes(
-                    environment_state=current_node.environment_state,
+                    environment_state=current_node.belief.environment_state,
                     practice_action=action,
-                    belief_state=current_node.belief_state,
+                    belief_state=current_node.belief.belief_state,
                 )
                 diagnostics.chance_outcomes_enumerated += len(joint_transition_outcomes)
                 (
@@ -170,19 +180,23 @@ class DeterminizedAStarPlanner(
                     sampled_cost,
                     estimated_observation_probability,
                 ) = self.sample_outcome(outcomes=joint_transition_outcomes, action=action)
-                next_cost = current_node.summed_cost + sampled_cost
-                next_depth = current_node.depth + 1
+                next_cost = current_node.belief.summed_cost + sampled_cost
+                next_depth = current_node.diagnostic_info.depth + 1
                 # Algorithm 3, line 16: b' <- Branch(b, a, o).
                 next_belief = model.compute_next_belief_state(
-                    belief_state=current_node.belief_state,
-                    environment_state=current_node.environment_state,
+                    belief_state=current_node.belief.belief_state,
+                    environment_state=current_node.belief.environment_state,
                     potential_next_environment_state=next_environment_state,
                     practice_action=action,
                 )
                 diagnostics.generated_successors += 1
                 # Only a root edge establishes the first action. Descendants inherit
                 # it so line 26 can return the first action on the selected path.
-                first_action = action if current_node.depth == 0 else current_node.first_action
+                first_action = (
+                    action
+                    if current_node.diagnostic_info.depth == 0
+                    else current_node.path_recovery_info.first_action
+                )
                 key, value = self.compute_and_cache_stop_value(
                     values_by_key=values_by_key,
                     diagnostics=diagnostics,
@@ -204,7 +218,7 @@ class DeterminizedAStarPlanner(
                 # Adding it separately would double-count action cost. Algorithm
                 # 3's other lambda weights observation surprise; it is a distinct
                 # hyperparameter from our linear-G cost coefficient.
-                estimated_reward = value - current_node.stop_value  # Algorithm 3: r_hat.
+                estimated_reward = value - current_node.cache_info.stop_value  # Algorithm 3: r_hat.
                 # Algorithm 3, line 18: p_hat is the probability of the particular
                 # observation selected by determinization. Its negative log is
                 # conventionally called surprisal: likely outcomes add less cost.
@@ -227,30 +241,34 @@ class DeterminizedAStarPlanner(
                 )  # Algorithm 3: g'.
                 # Algorithm 3, lines 20-22: insert b' only for a newly discovered
                 # or strictly cheaper path.
-                previous_path_cost = cost.get(key)
-                if previous_path_cost is not None and previous_path_cost <= next_path_cost:
-                    continue
-                cost[key] = next_path_cost
-                if next_path_cost < best_g:
-                    best_g = next_path_cost
-                    best_value = value
-                    best_action = first_action
-                sequence += 1
-                heapq.heappush(
-                    open_nodes,
-                    DeterminizedSearchQueueEntry(
-                        g=next_path_cost,
-                        sequence=sequence,
-                        environment_state=next_environment_state,
-                        belief_state=next_belief,
-                        summed_cost=next_cost,
-                        depth=next_depth,
-                        key=key,
-                        stop_value=value,
-                        first_action=first_action,
-                    ),
-                )
-                diagnostics.observe_frontier(size=len(open_nodes))
+                if key not in cost or next_path_cost < cost[key]:
+                    cost[key] = next_path_cost
+                    if next_path_cost < best_g:
+                        best_g = next_path_cost
+                        best_objective_value = value
+                        best_action = first_action
+                    sequence += 1
+                    heapq.heappush(
+                        open_nodes,
+                        DeterminizedSearchQueueEntry(
+                            belief=DeterminizedSearchBelief(
+                                environment_state=next_environment_state,
+                                belief_state=next_belief,
+                                summed_cost=next_cost,
+                            ),
+                            g=next_path_cost,
+                            diagnostic_info=DeterminizedNodeDiagnosticInfo(depth=next_depth),
+                            cache_info=DeterminizedNodeCacheInfo(
+                                key=key,
+                                stop_value=value,
+                                queue_sequence=sequence,
+                            ),
+                            path_recovery_info=DeterminizedPathRecoveryInfo(
+                                first_action=first_action
+                            ),
+                        ),
+                    )
+                    diagnostics.observe_frontier(size=len(open_nodes))
 
         if open_nodes and iterations >= self.max_iterations:
             diagnostics.termination_reason = "iteration_budget"
@@ -265,7 +283,7 @@ class DeterminizedAStarPlanner(
                 action="STOP"
                 if best_action == STOP_ACTION
                 else best_action.model_dump(mode="json", fallback=str),
-                value=best_value,
+                value=best_objective_value,
                 reason="minimum_g_sampled_path_stop_wins_ties",
             )
             trace.record(
@@ -289,7 +307,7 @@ class DeterminizedAStarPlanner(
                 search_elapsed_seconds=time.perf_counter() - started_at,
                 termination_reason=diagnostics.termination_reason,
             )
-        return best_value, best_action
+        return best_objective_value, best_action
 
     def heuristic(self, *, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
         """Generic hook used at line 19 where Algorithm 3 adds ``alpha * h_hat``.

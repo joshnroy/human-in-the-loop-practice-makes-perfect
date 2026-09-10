@@ -8,35 +8,66 @@ from .protocol import ActionT, BeliefStateT, EnvironmentStateT
 from .stop_action import StopAction
 
 
+class DeterminizedSearchBelief(
+    BaseModel,
+    Generic[EnvironmentStateT, BeliefStateT],
+):
+    """Our factored representation of Algorithm 3's belief ``b``."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    environment_state: EnvironmentStateT
+    belief_state: BeliefStateT
+    summed_cost: float
+
+
+class DeterminizedNodeDiagnosticInfo(BaseModel):
+    """Per-node information used only for diagnostics."""
+
+    model_config = ConfigDict(frozen=True)
+
+    depth: int
+
+
+class DeterminizedNodeCacheInfo(BaseModel):
+    """Bookkeeping used for Closed/Cost lookup and cached J(C, b)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    key: object
+    stop_value: float
+    queue_sequence: int
+
+
+class DeterminizedPathRecoveryInfo(BaseModel, Generic[ActionT]):
+    """Minimal path data needed to return Algorithm 3's first action."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    first_action: ActionT | StopAction
+
+
 class DeterminizedSearchQueueEntry(
     BaseModel,
     Generic[EnvironmentStateT, BeliefStateT, ActionT],
 ):
-    """Algorithm 3's ``(b, g)`` plus path-recovery and cache metadata.
-
-    In this implementation, ``b`` is represented by ``environment_state``,
-    ``belief_state``, and ``summed_cost``. The remaining fields are bookkeeping:
-    ``key`` supports Closed/Cost lookup, ``stop_value`` caches J(C, b), ``depth``
-    supports diagnostics/heuristics, and ``first_action`` recovers Algorithm 3's
-    line-26 answer without retaining complete paths.
-    """
+    """Recursive representation of Algorithm 3's ``(b, g)`` and bookkeeping."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
+    belief: DeterminizedSearchBelief[EnvironmentStateT, BeliefStateT]
     g: float
-    sequence: int
-    environment_state: EnvironmentStateT
-    belief_state: BeliefStateT
-    summed_cost: float
-    depth: int
-    key: object
-    stop_value: float
-    first_action: ActionT | StopAction
+    diagnostic_info: DeterminizedNodeDiagnosticInfo
+    cache_info: DeterminizedNodeCacheInfo
+    path_recovery_info: DeterminizedPathRecoveryInfo[ActionT]
 
     def __lt__(self, other: object, /) -> bool:  # noqa: PLR0917
         if not isinstance(other, DeterminizedSearchQueueEntry):
             return NotImplemented
-        return (self.g, self.sequence) < (other.g, other.sequence)
+        return (self.g, self.cache_info.queue_sequence) < (
+            other.g,
+            other.cache_info.queue_sequence,
+        )
 
 
 class DeterminizedSearchNode(BaseModel, Generic[EnvironmentStateT, BeliefStateT]):
