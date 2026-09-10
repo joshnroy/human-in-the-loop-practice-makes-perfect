@@ -5,10 +5,10 @@ from pydantic import BaseModel, Field
 from hitl_pmp.methods.belief_space.determinized import (
     DeterminizedAStarPlanner,
     DeterminizedSearchNode,
+    heuristic,
     solve_belief_space_determinized_astar,
 )
 from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
-from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION
 
 
 class EnvironmentState(BaseModel):
@@ -105,9 +105,9 @@ def test_best_first_returns_first_action_on_best_discovered_path() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        max_stop_value_evaluations=5,
+        max_iterations=5,
         num_samples=1,
-        seed=4,
+        rng=np.random.default_rng(4),
     )
 
     assert value == pytest.approx(0.9)
@@ -124,15 +124,14 @@ def test_samples_one_weighted_outcome_per_action_reproducibly() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        max_stop_value_evaluations=2,
+        max_iterations=2,
         num_samples=1,
-        seed=7,
     )
 
-    assert solve_belief_space_determinized_astar(**args) == solve_belief_space_determinized_astar(
-        **args
-    )
-    assert solve_belief_space_determinized_astar(**args) == (pytest.approx(0.8), LEFT)
+    first = solve_belief_space_determinized_astar(rng=np.random.default_rng(7), **args)
+    second = solve_belief_space_determinized_astar(rng=np.random.default_rng(7), **args)
+    assert first == second
+    assert first == (pytest.approx(0.8), LEFT)
 
 
 def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> None:
@@ -150,9 +149,9 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        max_stop_value_evaluations=3,
+        max_iterations=3,
         num_samples=1,
-        seed=0,
+        rng=np.random.default_rng(0),
         trace=trace,
     )
 
@@ -182,9 +181,9 @@ def test_merged_node_propagates_deeper_value_to_every_root_action() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        max_stop_value_evaluations=4,
+        max_iterations=4,
         num_samples=1,
-        seed=0,
+        rng=np.random.default_rng(0),
         trace=trace,
     )
 
@@ -196,7 +195,7 @@ def test_merged_node_propagates_deeper_value_to_every_root_action() -> None:
     assert action_values == {"left": pytest.approx(0.9), "right": pytest.approx(0.9)}
 
 
-def test_zero_expansions_stops_and_invalid_budget_is_rejected() -> None:
+def test_nonpositive_iteration_budget_is_rejected() -> None:
     model = Model()
     args = dict(
         environment_state=ROOT,
@@ -204,43 +203,15 @@ def test_zero_expansions_stops_and_invalid_budget_is_rejected() -> None:
         belief_state=BeliefState(value=0.2),
         model=model,
         num_samples=1,
-        seed=0,
+        rng=np.random.default_rng(0),
     )
     with pytest.raises(AssertionError, match="positive"):
-        solve_belief_space_determinized_astar(max_stop_value_evaluations=0, **args)
+        solve_belief_space_determinized_astar(max_iterations=0, **args)
     with pytest.raises(AssertionError, match="positive"):
-        solve_belief_space_determinized_astar(max_stop_value_evaluations=-1, **args)
-    with pytest.raises(AssertionError, match="max_seconds"):
-        solve_belief_space_determinized_astar(
-            max_stop_value_evaluations=1, max_seconds=-1.0, **args
-        )
-    with pytest.raises(AssertionError, match="at least one compute budget"):
-        solve_belief_space_determinized_astar(
-            max_stop_value_evaluations=None, max_seconds=None, **args
-        )
+        solve_belief_space_determinized_astar(max_iterations=-1, **args)
 
 
-def test_zero_time_budget_returns_stop_with_summary() -> None:
-    trace = SearchTrace()
-    result = solve_belief_space_determinized_astar(
-        environment_state=ROOT,
-        summed_cost=0.0,
-        belief_state=BeliefState(value=0.2),
-        model=Model(),
-        max_stop_value_evaluations=10,
-        max_seconds=0.0,
-        num_samples=1,
-        seed=0,
-        trace=trace,
-    )
-
-    assert result == (0.2, STOP_ACTION)
-    summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["expanded_nodes"] == 0
-    assert summary["termination_reason"] == "time_budget"
-
-
-def test_stop_value_budget_terminates_before_generating_more_successors() -> None:
+def test_one_iteration_expands_only_the_root() -> None:
     model = Model(
         transitions={(ROOT, LEFT): [(HIGH, 0.0, 1.0)]},
         beliefs={HIGH: BeliefState(value=0.8)},
@@ -252,50 +223,33 @@ def test_stop_value_budget_terminates_before_generating_more_successors() -> Non
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        max_stop_value_evaluations=1,
+        max_iterations=1,
         num_samples=1,
-        seed=0,
+        rng=np.random.default_rng(0),
         trace=trace,
     )
 
-    assert result == (0.2, STOP_ACTION)
+    assert result == (0.8, LEFT)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["stop_value_evaluations"] == 1
-    assert summary["generated_successors"] == 0
-    assert summary["termination_reason"] == "stop_value_evaluation_budget"
+    assert summary["iterations"] == 1
+    assert summary["generated_successors"] == 1
+    assert summary["termination_reason"] == "iteration_budget"
 
 
-def test_generic_heuristic_controls_frontier_order() -> None:
-    model = Model(
-        transitions={
-            (ROOT, LEFT): [(LOW, 0.0, 1.0)],
-            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
-            (LOW, FINISH): [(GOAL, 0.0, 1.0)],
-        },
-        beliefs={
-            LOW: BeliefState(value=0.3),
-            HIGH: BeliefState(value=0.6),
-            GOAL: BeliefState(value=0.9),
-        },
+def test_generic_heuristic_adds_no_domain_knowledge() -> None:
+    assert (
+        heuristic(
+            node=DeterminizedSearchNode(
+                environment_state=ROOT,
+                belief_state=BeliefState(value=0.2),
+                summed_cost=0.0,
+                depth=0,
+                stop_value=0.2,
+                path_cost=0.0,
+            )
+        )
+        == 0.0
     )
-
-    def prefer_low(*, node: DeterminizedSearchNode[EnvironmentState, BeliefState]) -> float:
-        return -1.0 if node.environment_state == LOW else 0.0
-
-    planner = DeterminizedAStarPlanner[EnvironmentState, BeliefState, BaseModel, Action](
-        max_stop_value_evaluations=5, seed=0, heuristic=prefer_low
-    )
-    value, action = planner.solve(
-        environment_state=ROOT,
-        summed_cost=0.0,
-        belief_state=BeliefState(value=0.2),
-        horizon=2,
-        model=model,  # type: ignore[arg-type]
-        num_samples=1,
-    )
-
-    assert value == pytest.approx(0.9)
-    assert action == LEFT
 
 
 def test_planner_compute_budget_is_independent_of_expectimax_horizon() -> None:
@@ -307,7 +261,7 @@ def test_planner_compute_budget_is_independent_of_expectimax_horizon() -> None:
         beliefs={HIGH: BeliefState(value=0.6), GOAL: BeliefState(value=0.9)},
     )
     planner = DeterminizedAStarPlanner[EnvironmentState, BeliefState, BaseModel, Action](
-        max_stop_value_evaluations=3, seed=0
+        max_iterations=3, seed=0
     )
 
     value, action = planner.solve(

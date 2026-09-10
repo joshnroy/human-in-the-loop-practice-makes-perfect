@@ -1,8 +1,8 @@
-"""Bounded best-first search through a sampled belief-space determinization.
+"""Iteration-bounded best-first search through a belief-space determinization.
 
-The traversal follows the open/closed/cost structure of Algorithm 3 in Curtis
-et al. (2025), while leaving the heuristic domain-independent and injectable:
-https://proceedings.mlr.press/v305/curtis25a.html
+The traversal follows Algorithm 3 in Curtis et al. (2025), while leaving the
+heuristic domain-independent:
+https://drive.google.com/file/d/1_yxDfN1BDxr7jvdZEnyZJcUyP1QnyLRr/view?pli=1
 """
 
 from __future__ import annotations
@@ -10,35 +10,58 @@ from __future__ import annotations
 import heapq
 import math
 import time
+from typing import Generic
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict
 
 from .planner import BeliefSpacePlanner
-from .types.determinized import DeterminizedHeuristic, DeterminizedSearchNode
+from .types.determinized import DeterminizedSearchNode
 from .types.protocol import ActionT, BeliefSpaceModel, BeliefStateT, EnvironmentStateT, ThetaT
 from .types.search_trace import SearchTrace
 from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
 
 
+class _QueueEntry(
+    BaseModel,
+    Generic[EnvironmentStateT, BeliefStateT, ActionT],
+):
+    """One entry in Algorithm 3's ``Open`` priority queue."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
+
+    priority: float
+    sequence: int
+    path_cost: float
+    environment_state: EnvironmentStateT
+    belief_state: BeliefStateT
+    summed_cost: float
+    depth: int
+    key: object
+    stop_value: float
+    first_action: ActionT | StopAction
+
+    def __lt__(self, other: object, /) -> bool:  # noqa: PLR0917
+        if not isinstance(other, _QueueEntry):
+            return NotImplemented
+        return (self.priority, self.sequence) < (other.priority, other.sequence)
+
+
 class DeterminizedAStarPlanner(
     BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
 ):
-    """Compute-bounded Algorithm-3 search with an injected generic heuristic."""
+    """Algorithm-3 search using the module's generic heuristic."""
 
     name = "determinized_astar"
 
     def __init__(
         self,
         *,
-        max_stop_value_evaluations: int | None = None,
+        max_iterations: int,
         seed: int,
-        max_seconds: float | None = None,
-        heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] | None = None,
     ) -> None:
-        self.max_stop_value_evaluations = max_stop_value_evaluations
-        self.seed = seed
-        self.max_seconds = max_seconds
-        self.heuristic = heuristic or zero_heuristic
+        self.max_iterations = max_iterations
+        self.rng = np.random.default_rng(seed)
 
     def solve(
         self,
@@ -52,17 +75,15 @@ class DeterminizedAStarPlanner(
         trace: SearchTrace | None = None,
     ) -> tuple[float, ActionT | StopAction]:
         # ``horizon`` belongs to the shared interface for exact expectimax. It
-        # deliberately does not bound this compute-budgeted planner.
+        # deliberately does not bound this iteration-budgeted planner.
         del horizon
         return solve_belief_space_determinized_astar(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
             model=model,
-            max_stop_value_evaluations=self.max_stop_value_evaluations,
-            max_seconds=self.max_seconds,
-            seed=self.seed,
-            heuristic=self.heuristic,
+            max_iterations=self.max_iterations,
+            rng=self.rng,
             num_samples=num_samples,
             trace=trace,
         )
@@ -74,10 +95,8 @@ def solve_belief_space_determinized_astar(
     summed_cost: float,
     belief_state: BeliefStateT,
     model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-    max_stop_value_evaluations: int | None = None,
-    max_seconds: float | None = None,
-    seed: int,
-    heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] | None = None,
+    max_iterations: int,
+    rng: np.random.Generator,
     num_samples: int = NUM_SAMPLES,
     trace: SearchTrace | None = None,
 ) -> tuple[float, ActionT | StopAction]:
@@ -87,28 +106,18 @@ def solve_belief_space_determinized_astar(
     successor from the model's complete outcome distribution. A fixed seed and
     fixed traversal order are reproducible; changing the traversal order can
     assign random draws to different edges. Nodes are ordered by accumulated
-    objective loss plus the injected heuristic. Search ends at the stop-value
-    evaluation or wall-clock budget, whichever comes first.
+    objective loss plus ``heuristic``. As in Algorithm 3, ``max_iterations``
+    bounds the number of priority-queue iterations (pops), not search depth.
 
     Additional model sampling remains controlled by the experiment's
-    master-seeded model. At least one compute budget is required, so cyclic
-    search spaces do not require a separate depth cutoff.
+    master-seeded model. The iteration limit bounds cyclic search spaces without
+    imposing a depth cutoff or wall-clock stopping condition.
     """
-    assert max_stop_value_evaluations is None or max_stop_value_evaluations >= 1, (
-        "max_stop_value_evaluations must be positive"
-    )
+    assert max_iterations >= 1, "max_iterations must be positive"
     assert num_samples >= 1, "num_samples must be positive"
-    assert max_seconds is None or (math.isfinite(max_seconds) and max_seconds >= 0.0), (
-        "max_seconds must be finite and non-negative"
-    )
-    assert max_stop_value_evaluations is not None or max_seconds is not None, (
-        "at least one compute budget is required"
-    )
     assert math.isfinite(summed_cost) and summed_cost >= 0, (
         "summed_cost must be finite and non-negative"
     )
-    heuristic = heuristic or zero_heuristic
-    rng = np.random.default_rng(seed)
     started_at = time.perf_counter()
 
     root_value = _stop_value(
@@ -117,20 +126,8 @@ def solve_belief_space_determinized_astar(
     best_value = root_value
     best_action: ActionT | StopAction = STOP_ACTION
     root_values: dict[ActionT, float] = {}
-    frontier: list[
-        tuple[
-            float,
-            int,
-            float,
-            EnvironmentStateT,
-            BeliefStateT,
-            float,
-            int,
-            object,
-            float,
-            ActionT | StopAction,
-        ]
-    ] = []
+    # Algorithm 3: Open <- {(b0, g=0)}.
+    frontier: list[_QueueEntry[EnvironmentStateT, BeliefStateT, ActionT]] = []
     root_key = model.search_cache_key(
         environment_state=environment_state,
         summed_cost=summed_cost,
@@ -140,9 +137,12 @@ def solve_belief_space_determinized_astar(
         # exact expectimax; zero is the canonical depth-independent sentinel.
         horizon=0,
     )
+    # Our sampled stopping objective J(C, b), cached per belief-space node.
     values_by_key = {root_key: root_value}
-    queued_keys = {root_key}
+    # Algorithm 3: Closed.
     expanded_keys: set[object] = set()
+    # Algorithm 3: Cost <- {b0: 0}.
+    cost_by_key = {root_key: 0.0}
     provenance_by_key: dict[object, set[ActionT]] = {root_key: set()}
     children_by_key: dict[object, set[object]] = {root_key: set()}
     expanded_nodes = 0
@@ -154,6 +154,7 @@ def solve_belief_space_determinized_astar(
     sequence = 0
     max_frontier_size = 0
     max_depth_reached = 0
+    iterations = 0
     termination_reason = "frontier_exhausted"
 
     if trace is not None:
@@ -161,7 +162,6 @@ def solve_belief_space_determinized_astar(
 
     if root_value != -math.inf:
         root_priority = _priority_for(
-            heuristic=heuristic,
             environment_state=environment_state,
             belief_state=belief_state,
             summed_cost=summed_cost,
@@ -171,83 +171,62 @@ def solve_belief_space_determinized_astar(
         )
         heapq.heappush(
             frontier,
-            (
-                root_priority,
-                sequence,
-                0.0,
-                environment_state,
-                belief_state,
-                summed_cost,
-                0,
-                root_key,
-                root_value,
-                STOP_ACTION,
+            _QueueEntry(
+                priority=root_priority,
+                sequence=sequence,
+                path_cost=0.0,
+                environment_state=environment_state,
+                belief_state=belief_state,
+                summed_cost=summed_cost,
+                depth=0,
+                key=root_key,
+                stop_value=root_value,
+                first_action=STOP_ACTION,
             ),
         )
         max_frontier_size = 1
 
     # A hard-budget G(C, theta) can make J(C, b) negative infinity at the root.
     # Since execution costs are non-negative, deeper nodes cannot restore feasibility.
-    while frontier:
-        if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
-            termination_reason = "time_budget"
-            break
-        if (
-            max_stop_value_evaluations is not None
-            and len(values_by_key) >= max_stop_value_evaluations
-        ):
-            termination_reason = "stop_value_evaluation_budget"
-            break
-        (
-            _priority,
-            _sequence,
-            current_path_cost,
-            current_environment,
-            current_belief,
-            current_cost,
-            current_depth,
-            current_key,
-            current_value,
-            current_first_action,
-        ) = heapq.heappop(frontier)
+    # Algorithm 3: while Open != empty and iterations < H.
+    while frontier and iterations < max_iterations:
+        current = heapq.heappop(frontier)
+        iterations += 1
         traversed_nodes += 1
-        queued_keys.discard(current_key)
-        if current_key in expanded_keys:
+        # Algorithm 3, lines 5 and 9: pop lowest(Open), then skip Closed nodes.
+        if current.key in expanded_keys:
             continue
-        expanded_keys.add(current_key)
+        # Algorithm 3, line 12: add b to Closed.
+        expanded_keys.add(current.key)
         expanded_nodes += 1
-        max_depth_reached = max(max_depth_reached, current_depth)
+        max_depth_reached = max(max_depth_reached, current.depth)
 
-        for action in model.get_valid_actions(environment_state=current_environment):
-            if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
-                termination_reason = "time_budget"
-                break
-            if (
-                max_stop_value_evaluations is not None
-                and len(values_by_key) >= max_stop_value_evaluations
-            ):
-                termination_reason = "stop_value_evaluation_budget"
-                break
+        # Algorithm 3: for action a applicable in belief b.
+        for action in model.get_valid_actions(environment_state=current.environment_state):
             action_transitions_evaluated += 1
+            # Algorithm 3, lines 14-15: draw next states and observations. The
+            # domain model exposes their joint distribution; determinization
+            # samples one joint outcome for this edge.
             outcomes = model.transition_outcomes(
-                environment_state=current_environment,
+                environment_state=current.environment_state,
                 practice_action=action,
-                belief_state=current_belief,
+                belief_state=current.belief_state,
             )
             chance_outcomes_enumerated += len(outcomes)
             sampled_outcome = _sample_outcome(rng=rng, outcomes=outcomes, action=action)
             next_environment, sampled_cost, _outcome_probability = sampled_outcome
-            next_cost = current_cost + sampled_cost
-            next_depth = current_depth + 1
+            next_cost = current.summed_cost + sampled_cost
+            next_depth = current.depth + 1
+            # Algorithm 3, line 16: b' <- Branch(b, a, o).
             next_belief = model.update_belief_state(
-                belief_state=current_belief,
-                environment_state=current_environment,
+                belief_state=current.belief_state,
+                environment_state=current.environment_state,
                 potential_next_environment_state=next_environment,
                 practice_action=action,
             )
             generated_successors += 1
-            first_action = action if current_depth == 0 else current_first_action
-            first_actions = {action} if current_depth == 0 else provenance_by_key[current_key]
+            first_action = action if current.depth == 0 else current.first_action
+            first_actions = {action} if current.depth == 0 else provenance_by_key[current.key]
             key = model.search_cache_key(
                 environment_state=next_environment,
                 summed_cost=next_cost,
@@ -259,9 +238,6 @@ def solve_belief_space_determinized_astar(
                 merged_nodes += 1
                 value = cached_value
             else:
-                if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
-                    termination_reason = "time_budget"
-                    break
                 value = _stop_value(
                     model=model,
                     belief_state=next_belief,
@@ -271,7 +247,7 @@ def solve_belief_space_determinized_astar(
                 values_by_key[key] = value
                 provenance_by_key[key] = set()
                 children_by_key[key] = set()
-            children_by_key[current_key].add(key)
+            children_by_key[current.key].add(key)
             _add_provenance(
                 key=key,
                 actions=first_actions,
@@ -282,21 +258,25 @@ def solve_belief_space_determinized_astar(
             )
             if value == -math.inf:
                 continue
-            # Objective differences telescope along the path, converting this
-            # maximization problem to A*'s lowest-cost-first convention.
-            next_path_cost = current_path_cost + current_value - value
+            # Algorithm 3, lines 17-19: update g'. Our model's J(C, b)
+            # already combines expected deployment value and action cost, so
+            # J(current) - J(child) is the corresponding incremental search
+            # cost. These differences telescope along a path.
+            next_path_cost = current.path_cost + current.stop_value - value
             if value > best_value:
                 best_value = value
                 best_action = first_action
-            if key in expanded_keys or key in queued_keys:
+            # Algorithm 3, lines 20-22: insert b' only for a newly discovered
+            # or strictly cheaper path.
+            previous_path_cost = cost_by_key.get(key)
+            if previous_path_cost is not None and previous_path_cost <= next_path_cost:
                 continue
-            queued_keys.add(key)
+            cost_by_key[key] = next_path_cost
             sequence += 1
             heapq.heappush(
                 frontier,
-                (
-                    _priority_for(
-                        heuristic=heuristic,
+                _QueueEntry(
+                    priority=_priority_for(
                         environment_state=next_environment,
                         belief_state=next_belief,
                         summed_cost=next_cost,
@@ -304,21 +284,21 @@ def solve_belief_space_determinized_astar(
                         value=value,
                         path_cost_so_far=next_path_cost,
                     ),
-                    sequence,
-                    next_path_cost,
-                    next_environment,
-                    next_belief,
-                    next_cost,
-                    next_depth,
-                    key,
-                    value,
-                    first_action,
+                    sequence=sequence,
+                    path_cost=next_path_cost,
+                    environment_state=next_environment,
+                    belief_state=next_belief,
+                    summed_cost=next_cost,
+                    depth=next_depth,
+                    key=key,
+                    stop_value=value,
+                    first_action=first_action,
                 ),
             )
             max_frontier_size = max(max_frontier_size, len(frontier))
 
-        if termination_reason in {"time_budget", "stop_value_evaluation_budget"}:
-            break
+    if frontier and iterations >= max_iterations:
+        termination_reason = "iteration_budget"
 
     if trace is not None:
         for action, value in root_values.items():
@@ -328,6 +308,8 @@ def solve_belief_space_determinized_astar(
                 action=action.model_dump(mode="json", fallback=str),
                 value=value,
             )
+        # Algorithm 3, line 26: the minimum-g node is equivalent here to the
+        # maximum-J node because the incremental costs telescope from J(b0).
         trace.record(
             event="choice",
             node=0,
@@ -351,20 +333,17 @@ def solve_belief_space_determinized_astar(
             frontier_nodes=len(frontier),
             max_frontier_size=max_frontier_size,
             max_depth_reached=max_depth_reached,
+            iterations=iterations,
+            max_iterations=max_iterations,
             stop_value_evaluations=len(values_by_key),
-            max_stop_value_evaluations=max_stop_value_evaluations,
-            max_seconds=max_seconds,
-            search_elapsed_seconds=(elapsed_seconds := time.perf_counter() - started_at),
-            time_budget_overshoot_seconds=(
-                max(0.0, elapsed_seconds - max_seconds) if max_seconds is not None else None
-            ),
+            search_elapsed_seconds=time.perf_counter() - started_at,
             termination_reason=termination_reason,
         )
     return best_value, best_action
 
 
-def zero_heuristic(*, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
-    """Neutral default: order the frontier only by accumulated path cost."""
+def heuristic(*, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
+    """Estimate remaining cost; this generic default adds no domain knowledge."""
     del node
     return 0.0
 
@@ -398,7 +377,6 @@ def _stop_value(
 
 def _priority_for(
     *,
-    heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT],
     environment_state: EnvironmentStateT,
     belief_state: BeliefStateT,
     summed_cost: float,
@@ -406,7 +384,7 @@ def _priority_for(
     value: float,
     path_cost_so_far: float,
 ) -> float:
-    """Build and score the public node view used by an injected heuristic."""
+    """Build and score the node view used by :func:`heuristic`."""
     estimate = heuristic(
         node=DeterminizedSearchNode(
             environment_state=environment_state,

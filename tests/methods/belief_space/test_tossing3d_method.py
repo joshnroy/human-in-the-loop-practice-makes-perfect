@@ -68,7 +68,7 @@ def test_determinized_selector_is_seeded_and_does_not_start_simulator() -> None:
         _build(
             pomdp_num_samples=1,
             pomdp_solver="determinized_astar",
-            pomdp_max_stop_value_evaluations=4,
+            pomdp_max_search_iterations=4,
         )
         for _ in range(2)
     ]
@@ -183,7 +183,7 @@ def test_invalid_method_configuration_is_rejected_early() -> None:
     with pytest.raises(ValidationError):
         _build(pomdp_search_depth=-1)
     with pytest.raises(ValidationError):
-        _build(pomdp_max_stop_value_evaluations=0)
+        _build(pomdp_max_search_iterations=0)
     with pytest.raises(ValidationError):
         _build(pomdp_solver="unknown")
 

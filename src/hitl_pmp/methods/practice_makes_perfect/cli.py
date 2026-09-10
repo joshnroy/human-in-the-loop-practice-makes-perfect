@@ -174,16 +174,10 @@ class Tossing3DPomdpCli(EesCli):
             help="Belief-space traversal: exact expectimax or sampled best-first search.",
         )
         parser.add_argument(
-            "--pomdp-max-stop-value-evaluations",
+            "--pomdp-max-search-iterations",
             type=int,
-            default=Tossing3DPomdpMethod.model_fields["pomdp_max_stop_value_evaluations"].default,
-            help="Monte Carlo stop-value evaluation budget for determinized A*.",
-        )
-        parser.add_argument(
-            "--pomdp-max-search-seconds",
-            type=float,
-            default=Tossing3DPomdpMethod.model_fields["pomdp_max_search_seconds"].default,
-            help="Optional wall-clock budget for each determinized search.",
+            default=Tossing3DPomdpMethod.model_fields["pomdp_max_search_iterations"].default,
+            help="Priority-queue iterations per determinized A* search (Algorithm 3's H).",
         )
         parser.add_argument(
             "--pomdp-num-particles",
@@ -241,8 +235,7 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
-                pomdp_max_stop_value_evaluations=args.pomdp_max_stop_value_evaluations,
-                pomdp_max_search_seconds=args.pomdp_max_search_seconds,
+                pomdp_max_search_iterations=args.pomdp_max_search_iterations,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),

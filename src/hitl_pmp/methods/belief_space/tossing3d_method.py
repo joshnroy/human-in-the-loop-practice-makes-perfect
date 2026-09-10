@@ -53,8 +53,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
-    pomdp_max_stop_value_evaluations: int = Field(default=100, ge=1)
-    pomdp_max_search_seconds: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    pomdp_max_search_iterations: int = Field(default=100, ge=1)
     pomdp_planner: (
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
         | None
@@ -75,6 +74,15 @@ class Tossing3DPomdpMethod(EesMethod):
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _cycle_start_competences: dict[str, float] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
+    _determinized_planner: (
+        DeterminizedAStarPlanner[
+            Tossing3DSearchState,
+            Tossing3DBeliefState,
+            Tossing3DTheta,
+            GroundSkill,
+        ]
+        | None
+    ) = PrivateAttr(default=None)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -157,6 +165,11 @@ class Tossing3DPomdpMethod(EesMethod):
             ground_skills=tuple(ground_skills),
             linear_cost_lambda=self.pomdp_linear_cost_lambda,
         )
+        if self.pomdp_solver == "determinized_astar":
+            self._determinized_planner = DeterminizedAStarPlanner(
+                max_iterations=self.pomdp_max_search_iterations,
+                seed=self.seed,
+            )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         missing = {PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
         assert not missing, (
@@ -331,11 +344,8 @@ class Tossing3DPomdpMethod(EesMethod):
             elif self.pomdp_solver == "expectimax":
                 planner = ExpectimaxPlanner()
             else:
-                planner = DeterminizedAStarPlanner(
-                    max_stop_value_evaluations=self.pomdp_max_stop_value_evaluations,
-                    seed=_pair_seed(seed=self.seed, index=self._decision_index),
-                    max_seconds=self.pomdp_max_search_seconds,
-                )
+                assert self._determinized_planner is not None
+                planner = self._determinized_planner
             value, action = planner.solve(
                 environment_state=search_state,
                 belief_state=self._pomdp_state,
@@ -370,13 +380,8 @@ class Tossing3DPomdpMethod(EesMethod):
             value=value,
             horizon=self.pomdp_search_depth if planner.name == "expectimax" else None,
             solver=planner.name,
-            max_stop_value_evaluations=(
-                planner.max_stop_value_evaluations
-                if isinstance(planner, DeterminizedAStarPlanner)
-                else None
-            ),
-            max_search_seconds=(
-                planner.max_seconds if isinstance(planner, DeterminizedAStarPlanner) else None
+            max_search_iterations=(
+                planner.max_iterations if isinstance(planner, DeterminizedAStarPlanner) else None
             ),
             model=self._pomdp_model.model_dump(mode="json"),
             search=trace.events,
@@ -387,10 +392,3 @@ class Tossing3DPomdpMethod(EesMethod):
 
         self.record_practice_target(name=action.skill.name, field="scored")
         return [action]
-
-
-def _pair_seed(*, seed: int, index: int) -> int:
-    """Uniquely derive a decision stream from one non-negative experiment seed."""
-    assert seed >= 0 and index >= 0
-    total = seed + index
-    return total * (total + 1) // 2 + index
