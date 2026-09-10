@@ -11,6 +11,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
+from hitl_pmp.methods.belief_space.planner import BeliefSpacePlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
     PICK_SKILL,
@@ -24,6 +25,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_learning_rate,
 )
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
+from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION, StopAction
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -59,6 +61,44 @@ def test_selector_uses_current_symbolic_state_without_starting_simulator() -> No
     selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
     assert selection == [pick]
     assert method.env._backend is None  # noqa: SLF001 (pin lazy simulator construction)
+
+
+def test_determinized_selector_is_seeded_and_does_not_start_simulator() -> None:
+    methods = [
+        _build(
+            pomdp_num_samples=1,
+            pomdp_solver="determinized_astar",
+            pomdp_max_search_iterations=4,
+        )
+        for _ in range(2)
+    ]
+    selections = []
+    for method in methods:
+        pick = _grounding(method=method, name=PICK_SKILL)
+        selections.append(method.select_skill_to_practice(true_atoms=pick.preconditions))
+        assert method.env._backend is None  # noqa: SLF001
+    assert selections[0] == selections[1]
+
+
+def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
+    class InjectedPlanner(BeliefSpacePlanner):  # type: ignore[type-arg]
+        name = "injected"
+        calls = 0
+
+        def solve(self, **kwargs: object) -> tuple[float, StopAction]:  # type: ignore[override]
+            del kwargs
+            self.calls += 1
+            return 0.25, STOP_ACTION
+
+    planner = InjectedPlanner()
+    decision_log = tmp_path / "injected.jsonl"
+    method = _build(pomdp_planner=planner, decision_log=decision_log)
+    pick = _grounding(method=method, name=PICK_SKILL)
+
+    assert method.select_skill_to_practice(true_atoms=pick.preconditions)[0].skill.name == "STOP"
+    assert planner.calls == 1
+    decision = json.loads(decision_log.read_text().splitlines()[-1])
+    assert decision["solver"] == "injected"
 
 
 def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:
@@ -142,6 +182,12 @@ def test_toss_evidence_and_training_are_separate_until_refit() -> None:
 def test_invalid_method_configuration_is_rejected_early() -> None:
     with pytest.raises(ValidationError):
         _build(pomdp_search_depth=-1)
+    with pytest.raises(ValidationError):
+        _build(pomdp_max_search_iterations=0)
+    with pytest.raises(ValidationError):
+        _build(pomdp_observation_probability_weight=-0.1)
+    with pytest.raises(ValidationError):
+        _build(pomdp_solver="unknown")
 
 
 def test_default_practice_policy_does_not_bypass_a_pomdp_stop() -> None:
@@ -295,7 +341,7 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
     summary = next(event for event in decision["search"] if event["event"] == "search_summary")
     assert summary["expanded_nodes"] > 0
     assert summary["cache_requests"] >= summary["expanded_nodes"]
-    assert summary["chance_outcomes"] > 0
+    assert summary["chance_outcomes_enumerated"] > 0
 
 
 def test_end_cycle_logs_exact_learning_rate_observations(

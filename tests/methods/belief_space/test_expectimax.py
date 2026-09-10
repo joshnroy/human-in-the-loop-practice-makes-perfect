@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from pydantic import BaseModel, Field
 
-from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
+from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 from hitl_pmp.methods.belief_space.types.stop_action import (
     STOP_ACTION,
@@ -52,8 +52,8 @@ def test_trace_preserves_search_result_and_records_compact_root_values() -> None
     args = dict(
         environment_state=INITIAL, summed_cost=0.0, belief_state=BeliefState(value=0.2), horizon=1
     )
-    plain = solve_belief_space_expectimax(model=model, **args)
-    traced = solve_belief_space_expectimax(model=traced_model, trace=trace, **args)
+    plain = ExpectimaxPlanner().solve(model=model, **args)
+    traced = ExpectimaxPlanner().solve(model=traced_model, trace=trace, **args)
     assert plain == traced
     assert model.visits == traced_model.visits
     choice = next(event for event in trace.events if event["event"] == "choice")
@@ -65,9 +65,10 @@ def test_trace_preserves_search_result_and_records_compact_root_values() -> None
     assert any(event["event"] == "branch" and event["probability"] == 1.0 for event in trace.events)
     assert not any(event["event"] == "sample" for event in trace.events)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["expanded_nodes"] == 2
-    assert summary["action_evaluations"] == 1
-    assert summary["chance_outcomes"] == 1
+    assert summary["expanded_nodes"] == 1
+    assert summary["stop_value_evaluations"] == 2
+    assert summary["action_transitions_evaluated"] == 1
+    assert summary["chance_outcomes_enumerated"] == 1
 
 
 class Model(BaseModel):
@@ -100,7 +101,7 @@ class Model(BaseModel):
         environment_state: EnvironmentState,
         summed_cost: float,
         belief_state: BeliefState,
-        horizon: int,
+        horizon: int | None,
     ) -> object:
         return environment_state, summed_cost, belief_state, horizon
 
@@ -149,7 +150,7 @@ class Model(BaseModel):
         del belief_state
         return self.transitions[environment_state, practice_action]
 
-    def update_belief_state(
+    def compute_next_belief_state(
         self,
         *,
         belief_state: BeliefState,
@@ -179,7 +180,7 @@ class Model(BaseModel):
 
 def test_horizon_zero_stops_and_subtracts_existing_cost() -> None:
     model = Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]})
-    assert solve_belief_space_expectimax(
+    assert ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.25,
         belief_state=BeliefState(value=1.0),
@@ -191,7 +192,7 @@ def test_horizon_zero_stops_and_subtracts_existing_cost() -> None:
 
 def test_averages_theta_samples_after_policy_evaluation_and_scoring() -> None:
     model = Model(samples=[1.0, 3.0, 8.0], scale=2.0)
-    value, action = solve_belief_space_expectimax(
+    value, action = ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.5,
         belief_state=BeliefState(value=0.0),
@@ -216,7 +217,7 @@ def test_looks_past_an_initially_unhelpful_setup_action(
         beliefs={SUCCESS: BeliefState(value=6.0), FAILURE: BeliefState(value=2.0)},
     )
     assert (
-        solve_belief_space_expectimax(
+        ExpectimaxPlanner().solve(
             environment_state=INITIAL,
             summed_cost=0.0,
             belief_state=BeliefState(value=2.0),
@@ -228,7 +229,7 @@ def test_looks_past_an_initially_unhelpful_setup_action(
 
 
 def test_stop_wins_an_exact_tie() -> None:
-    assert solve_belief_space_expectimax(
+    assert ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=2.0),
@@ -242,7 +243,7 @@ def test_compares_actions_only_after_summing_all_outcomes() -> None:
         transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 0.5), (FAILURE, 0.0, 0.5)]},
         beliefs={SUCCESS: BeliefState(value=4.0), FAILURE: BeliefState(value=-4.0)},
     )
-    assert solve_belief_space_expectimax(
+    assert ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=1.0),
@@ -259,7 +260,7 @@ def test_shared_successor_is_evaluated_once_at_each_depth() -> None:
         },
         beliefs={SUCCESS: BeliefState(value=2.0)},
     )
-    assert solve_belief_space_expectimax(
+    assert ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.0),
@@ -277,7 +278,7 @@ def test_cache_distinguishes_accumulated_cost() -> None:
         },
         beliefs={SUCCESS: BeliefState(value=2.0)},
     )
-    assert solve_belief_space_expectimax(
+    assert ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.0),
@@ -289,7 +290,7 @@ def test_cache_distinguishes_accumulated_cost() -> None:
 
 def test_separate_searches_resample_and_do_not_reuse_stale_values() -> None:
     model = Model(samples=[1.0, 3.0])
-    first = solve_belief_space_expectimax(
+    first = ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.0),
@@ -297,7 +298,7 @@ def test_separate_searches_resample_and_do_not_reuse_stale_values() -> None:
         model=model,
     )
     model.scale = 2.0
-    second = solve_belief_space_expectimax(
+    second = ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.0),
@@ -316,7 +317,7 @@ def test_cache_distinguishes_beliefs_at_the_same_environment_state_and_cost() ->
         },
         action_beliefs={SETUP: BeliefState(value=1.0), PRACTICE: BeliefState(value=2.0)},
     )
-    assert solve_belief_space_expectimax(
+    assert ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.0),
@@ -331,7 +332,7 @@ def test_cache_distinguishes_beliefs_at_the_same_environment_state_and_cost() ->
 
 
 def test_averaging_identical_samples_preserves_value() -> None:
-    assert solve_belief_space_expectimax(
+    assert ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.75),
@@ -356,7 +357,7 @@ def test_rejects_invalid_chance_outcomes(
     *, branches: list[tuple[EnvironmentState, float, float]]
 ) -> None:
     with pytest.raises(AssertionError):
-        solve_belief_space_expectimax(
+        ExpectimaxPlanner().solve(
             environment_state=INITIAL,
             summed_cost=0.0,
             belief_state=BeliefState(value=0.0),
@@ -370,7 +371,7 @@ def test_sampled_successors_need_not_be_distinct() -> None:
         transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 0.5), (SUCCESS, 0.0, 0.5)]},
         beliefs={SUCCESS: BeliefState(value=2.0)},
     )
-    value, action = solve_belief_space_expectimax(
+    value, action = ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.0),
@@ -384,7 +385,7 @@ def test_sampled_successors_need_not_be_distinct() -> None:
 def test_rejects_negative_horizon_before_evaluating_model() -> None:
     model = Model()
     with pytest.raises(AssertionError, match="horizon must be non-negative"):
-        solve_belief_space_expectimax(
+        ExpectimaxPlanner().solve(
             environment_state=INITIAL,
             summed_cost=0.0,
             belief_state=BeliefState(value=0.0),
@@ -397,7 +398,7 @@ def test_rejects_negative_horizon_before_evaluating_model() -> None:
 @pytest.mark.parametrize("num_samples", [0, -1])
 def test_rejects_nonpositive_sample_count(*, num_samples: int) -> None:
     with pytest.raises(AssertionError, match="num_samples must be positive"):
-        solve_belief_space_expectimax(
+        ExpectimaxPlanner().solve(
             environment_state=INITIAL,
             summed_cost=0.0,
             belief_state=BeliefState(value=0.0),
@@ -410,7 +411,7 @@ def test_rejects_nonpositive_sample_count(*, num_samples: int) -> None:
 @pytest.mark.parametrize("value", [float("nan"), float("inf")])
 def test_rejects_nonfinite_stop_value(*, value: float) -> None:
     with pytest.raises(AssertionError, match="stop value must be finite"):
-        solve_belief_space_expectimax(
+        ExpectimaxPlanner().solve(
             environment_state=INITIAL,
             summed_cost=0.0,
             belief_state=BeliefState(value=value),
@@ -420,7 +421,7 @@ def test_rejects_nonfinite_stop_value(*, value: float) -> None:
 
 
 def test_negative_infinity_stop_value_prunes_state() -> None:
-    value, action = solve_belief_space_expectimax(
+    value, action = ExpectimaxPlanner().solve(
         environment_state=INITIAL,
         summed_cost=0.0,
         belief_state=BeliefState(value=-float("inf")),
@@ -436,7 +437,7 @@ def test_negative_infinity_stop_value_prunes_state() -> None:
 def test_rejects_invalid_costs(*, cost: float, accumulated: bool) -> None:
     model = Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, cost, 1.0)]})
     with pytest.raises(AssertionError, match="cost must be finite and non-negative"):
-        solve_belief_space_expectimax(
+        ExpectimaxPlanner().solve(
             environment_state=INITIAL,
             summed_cost=cost if accumulated else 0.0,
             belief_state=BeliefState(value=0.0),

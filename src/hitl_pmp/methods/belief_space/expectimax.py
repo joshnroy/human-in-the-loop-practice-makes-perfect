@@ -1,10 +1,11 @@
 """Finite-horizon belief-space expectimax."""
 
 import math
-from typing import Generic
+import time
 
 import numpy as np
 
+from .planner import BeliefSpacePlanner
 from .types.protocol import (
     ActionT,
     BeliefSpaceModel,
@@ -16,17 +17,8 @@ from .types.search_trace import SearchTrace
 from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
 
 
-def solve_belief_space_expectimax(
-    *,
-    environment_state: EnvironmentStateT,
-    summed_cost: float,
-    belief_state: BeliefStateT,
-    horizon: int,
-    model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-    num_samples: int = NUM_SAMPLES,
-    trace: SearchTrace | None = None,
-) -> tuple[float, ActionT | StopAction]:
-    """Implementation of understanding/pomdp_formulation.py.
+class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
+    """Implementation of ``understanding/pomdp_formulation.py``.
 
     Pseudocode and review:
     https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/290
@@ -34,52 +26,77 @@ def solve_belief_space_expectimax(
     https://drive.google.com/drive/folders/17j47M4NUGQIoKzNOo7yvWIhw13tE7h-a
 
     Model methods have the pseudocode's names and keyword arguments. Costs and
-    policy values allow floats. Theta is sampled num_samples times per unique search state.
-    Stopping wins ties. Each call owns a fresh recursive cache, so later searches
-    resample theta and see updated model parameters.
+    policy values allow floats. Theta is sampled ``num_samples`` times per unique
+    search state. Stopping wins ties. The complete tree is evaluated through
+    ``horizon`` with no node or wall-clock stopping condition. Each call owns a
+    fresh recursive cache, so later searches resample theta and see updated model
+    parameters.
     """
-    assert num_samples >= 1, "num_samples must be positive"
-    solver = ExpectimaxSearch(model=model, num_samples=num_samples, trace=trace)
-    result = solver.cached_solve_belief_space_expectimax(
-        environment_state=environment_state,
-        summed_cost=summed_cost,
-        belief_state=belief_state,
-        horizon=horizon,
-    )
-    if trace is not None:
-        trace.record(
-            event="search_summary",
-            node=0,
-            expanded_nodes=solver.next_node,
-            cache_requests=solver.cache_requests,
-            cache_hits=solver.cache_hits,
-            action_evaluations=solver.action_evaluations,
-            chance_outcomes=solver.chance_outcomes,
-            nodes_by_horizon=dict(sorted(solver.nodes_by_horizon.items(), reverse=True)),
-        )
-    return result
 
+    name = "expectimax"
 
-class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
-    """One search's model and cached recursion."""
-
-    def __init__(
+    def solve(
         self,
         *,
+        environment_state: EnvironmentStateT,
+        summed_cost: float,
+        belief_state: BeliefStateT,
+        horizon: int,
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-        num_samples: int,
+        num_samples: int = NUM_SAMPLES,
         trace: SearchTrace | None = None,
-    ) -> None:
+    ) -> tuple[float, ActionT | StopAction]:
+        """Return the exact finite-horizon value and first action."""
+        assert num_samples >= 1, "num_samples must be positive"
+        assert horizon >= 0, f"horizon must be non-negative, got {horizon}"
+        assert math.isfinite(summed_cost) and summed_cost >= 0, (
+            "summed_cost must be finite and non-negative"
+        )
+
         self.model = model
         self.num_samples = num_samples
-        self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
         self.trace = trace
+        self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
         self.next_node = 0
+        self.expanded_nodes = 0
         self.cache_requests = 0
         self.cache_hits = 0
-        self.action_evaluations = 0
-        self.chance_outcomes = 0
+        self.action_transitions_evaluated = 0
+        self.chance_outcomes_enumerated = 0
         self.nodes_by_horizon: dict[int, int] = {}
+        started_at = time.perf_counter()
+
+        result = self.cached_solve_belief_space_expectimax(
+            environment_state=environment_state,
+            summed_cost=summed_cost,
+            belief_state=belief_state,
+            horizon=horizon,
+        )
+        if trace is not None:
+            trace.record(
+                event="search_summary",
+                node=0,
+                solver=self.name,
+                horizon=horizon,
+                expanded_nodes=self.expanded_nodes,
+                traversed_nodes=self.cache_requests,
+                generated_successors=max(0, self.cache_requests - 1),
+                unique_nodes=self.next_node,
+                stop_value_evaluations=self.next_node,
+                frontier_nodes=0,
+                max_frontier_size=0,
+                cache_requests=self.cache_requests,
+                cache_hits=self.cache_hits,
+                action_transitions_evaluated=self.action_transitions_evaluated,
+                chance_outcomes_enumerated=self.chance_outcomes_enumerated,
+                nodes_by_horizon=dict(sorted(self.nodes_by_horizon.items(), reverse=True)),
+                max_depth_reached=(
+                    horizon - min(self.nodes_by_horizon) if self.nodes_by_horizon else 0
+                ),
+                search_elapsed_seconds=time.perf_counter() - started_at,
+                termination_reason="horizon_or_objective_exhausted",
+            )
+        return result
 
     def cached_solve_belief_space_expectimax(
         self,
@@ -117,11 +134,6 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         belief_state: BeliefStateT,
         horizon: int,
     ) -> tuple[float, ActionT | StopAction]:
-        assert horizon >= 0, f"horizon must be non-negative, got {horizon}"
-        assert math.isfinite(summed_cost) and summed_cost >= 0, (
-            "summed_cost must be finite and non-negative"
-        )
-
         node = self.next_node
         self.next_node += 1
         self.nodes_by_horizon[horizon] = self.nodes_by_horizon.get(horizon, 0) + 1
@@ -137,10 +149,9 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             dtype=np.float64,
             count=self.num_samples,
         )
-        for current_pomdp_value in sample_values:
-            assert not math.isnan(current_pomdp_value) and current_pomdp_value != math.inf, (
-                f"stop value must be finite or negative infinity, got {current_pomdp_value}"
-            )
+        assert all(not math.isnan(value) and value != math.inf for value in sample_values), (
+            "stop value must be finite or negative infinity"
+        )
         if self.trace is not None and node == 0:
             self.trace.record(
                 event="sample_summary",
@@ -179,8 +190,9 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 )
             return current_best_value, current_best_action
 
+        self.expanded_nodes += 1
         for practice_action in self.model.get_valid_actions(environment_state=environment_state):
-            self.action_evaluations += 1
+            self.action_transitions_evaluated += 1
             value_of_state = 0.0
             total_probability = 0.0
             # TODO: Should samples be drawn with or without replacement?
@@ -192,7 +204,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             assert next_states_and_probabilities, (
                 f"action {practice_action!r} has no chance outcomes"
             )
-            self.chance_outcomes += len(next_states_and_probabilities)
+            self.chance_outcomes_enumerated += len(next_states_and_probabilities)
             for (
                 potential_next_environment_state,
                 sampled_cost,
@@ -201,7 +213,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
                     "sampled_cost must be finite and non-negative"
                 )
-                next_belief_state = self.model.update_belief_state(
+                next_belief_state = self.model.compute_next_belief_state(
                     belief_state=belief_state,
                     environment_state=environment_state,
                     potential_next_environment_state=potential_next_environment_state,
@@ -250,9 +262,11 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             self.trace.record(
                 event="choice",
                 node=node,
-                action="STOP"
-                if current_best_action == STOP_ACTION
-                else current_best_action.model_dump(mode="json", fallback=str),
+                action=(
+                    "STOP"
+                    if current_best_action == STOP_ACTION
+                    else current_best_action.model_dump(mode="json", fallback=str)
+                ),
                 value=current_best_value,
                 reason="max_value_stop_wins_ties",
             )

@@ -12,8 +12,8 @@ def test_search_trace_retains_compact_root_events() -> None:
         expanded_nodes=12,
         cache_requests=20,
         cache_hits=8,
-        action_evaluations=15,
-        chance_outcomes=30,
+        action_transitions_evaluated=15,
+        chance_outcomes_enumerated=30,
         nodes_by_horizon={2: 1, 1: 3, 0: 8},
     )
 

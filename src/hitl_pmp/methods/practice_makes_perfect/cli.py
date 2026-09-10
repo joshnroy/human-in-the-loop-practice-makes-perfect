@@ -168,6 +168,26 @@ class Tossing3DPomdpCli(EesCli):
             help="Exact belief-space expectimax depth in future skill executions.",
         )
         parser.add_argument(
+            "--pomdp-solver",
+            choices=("expectimax", "determinized_astar"),
+            default=Tossing3DPomdpMethod.model_fields["pomdp_solver"].default,
+            help="Belief-space traversal: exact expectimax or sampled best-first search.",
+        )
+        parser.add_argument(
+            "--pomdp-max-search-iterations",
+            type=int,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_max_search_iterations"].default,
+            help="Priority-queue iterations per determinized A* search (Algorithm 3's H).",
+        )
+        parser.add_argument(
+            "--pomdp-observation-probability-weight",
+            type=float,
+            default=Tossing3DPomdpMethod.model_fields[
+                "pomdp_observation_probability_weight"
+            ].default,
+            help="Algorithm 3 weight on the negative log probability of a sampled observation.",
+        )
+        parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
@@ -198,7 +218,8 @@ class Tossing3DPomdpCli(EesCli):
         # the state and decision logs after the experiment finishes.
         args.defer_rendering = True
         # Cached recursion adds interpreter frames per depth; this is not a search cutoff.
-        sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
+        if args.pomdp_solver == "expectimax":
+            sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,
@@ -221,6 +242,9 @@ class Tossing3DPomdpCli(EesCli):
                     args.reproduce_predicators_explore_target_only
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
+                pomdp_solver=args.pomdp_solver,
+                pomdp_max_search_iterations=args.pomdp_max_search_iterations,
+                pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),

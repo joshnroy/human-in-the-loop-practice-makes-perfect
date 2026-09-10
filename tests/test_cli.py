@@ -110,6 +110,29 @@ def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     assert args.pomdp_num_particles == 1024
     assert args.pomdp_num_samples == 100
     assert args.pomdp_learning_rate_process_noise_std == 0.05
+    assert args.pomdp_solver == "expectimax"
+    assert args.pomdp_max_search_iterations == 100
+    assert args.pomdp_observation_probability_weight == 0.1
+
+
+def test_tossing3d_pomdp_cli_accepts_determinized_solver() -> None:
+    args = Cli.parse_args(
+        argv=[
+            "--env",
+            "tossing3d",
+            "--method",
+            "pomdp",
+            "--pomdp-solver",
+            "determinized_astar",
+            "--pomdp-max-search-iterations",
+            "17",
+            "--pomdp-observation-probability-weight",
+            "0.25",
+        ]
+    )
+    assert args.pomdp_solver == "determinized_astar"
+    assert args.pomdp_max_search_iterations == 17
+    assert args.pomdp_observation_probability_weight == 0.25
 
 
 def test_parse_args_has_no_positional_arguments() -> None:

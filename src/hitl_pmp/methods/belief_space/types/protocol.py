@@ -27,7 +27,7 @@ class BeliefSpaceModel(Protocol[EnvironmentStateT, BeliefStateT, ThetaT, ActionT
         environment_state: EnvironmentStateT,
         summed_cost: float,
         belief_state: BeliefStateT,
-        horizon: int,
+        horizon: int | None,
     ) -> object: ...
 
     def evaluate_policy(self, *, sampled_theta: ThetaT) -> float: ...
@@ -37,6 +37,8 @@ class BeliefSpaceModel(Protocol[EnvironmentStateT, BeliefStateT, ThetaT, ActionT
     ) -> npt.NDArray[np.float64]: ...
 
     def G(self, *, policy_value: float, summed_cost: float) -> float: ...
+
+    def J(self, *, belief_state: BeliefStateT, summed_cost: float, num_samples: int) -> float: ...
 
     def get_valid_actions(self, *, environment_state: EnvironmentStateT) -> list[ActionT]: ...
 
@@ -58,7 +60,7 @@ class BeliefSpaceModel(Protocol[EnvironmentStateT, BeliefStateT, ThetaT, ActionT
         belief_state: BeliefStateT,
     ) -> list[tuple[EnvironmentStateT, float, float]]: ...
 
-    def update_belief_state(
+    def compute_next_belief_state(
         self,
         *,
         belief_state: BeliefStateT,
