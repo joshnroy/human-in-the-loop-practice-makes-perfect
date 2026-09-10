@@ -34,13 +34,14 @@ from .skills import Tossing3DSkills
 class Tossing3DSkillProvider(SkillProvider):
     """Tossing3D's `SkillProvider`, mirroring `TossingRoomSkillProvider`.
 
-    `objects()` is a fixed four: upstream's task JSON names exactly one cube, one bin and
-    one barrier, plus the robot. There is no configuration that changes the cast -- `o2`
-    would add a second cube, and this domain does not support it (see the README).
+    `objects()` is a fixed six: upstream's task JSON names exactly one cube, one bin and
+    one barrier, plus the robot; two featureless symbolic side objects let STRIPS actions
+    bind a reset destination. There is no configuration that changes the physical cast --
+    `o2` would add a second cube, and this domain does not support it (see the README).
 
-    It was five until the goal region stopped being a symbolic object. The scored box is
-    still in the `State`, carried on the bin (see `predicates.py`'s module docstring); it
-    is simply not something a planner binds a variable to, because no skill can act on it.
+    The goal region is not a symbolic object. Its scored box remains in the `State`,
+    carried on the bin (see `predicates.py`'s module docstring); it is not something a
+    planner binds a variable to because no skill can act on it.
     """
 
     env: Tossing3DEnvironment

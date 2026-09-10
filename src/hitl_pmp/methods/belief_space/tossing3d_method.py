@@ -1,6 +1,7 @@
 """Tossing3D method backed by situated belief-space expectimax."""
 
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
@@ -370,11 +371,24 @@ class Tossing3DPomdpMethod(EesMethod):
             trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
         self._practice_values = {}
+        action_value_events = [
+            event
+            for event in trace.events
+            if event["node"] == 0 and event["event"] == "action_value"
+        ]
+        action_name_counts = Counter(
+            event["action"]["skill"]["name"] for event in action_value_events
+        )
         for event in trace.events:
             if event["node"] == 0 and event["event"] == "stop_value":
                 self._practice_values["STOP"] = event["value"]
             elif event["node"] == 0 and event["event"] == "action_value":
-                self._practice_values[event["action"]["skill"]["name"]] = event["value"]
+                skill_name = event["action"]["skill"]["name"]
+                key = skill_name
+                if action_name_counts[skill_name] > 1:
+                    objects = ", ".join(obj["name"] for obj in event["action"]["objects"])
+                    key = f"{skill_name}({objects})"
+                self._practice_values[key] = event["value"]
         self.record_diagnostic(
             event="decision",
             competences=self.practice_skill_competences(),
