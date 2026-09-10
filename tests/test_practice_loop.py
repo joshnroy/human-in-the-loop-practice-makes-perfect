@@ -1860,9 +1860,7 @@ class _CubeBinAskingMethod(_FakeMethod):
     def _asking_action(self, *, state: State) -> LabeledAction:
         del state
         if self.steps_taken >= self.steps_before_asking:
-            raise HumanCubeBinResetRequested(
-                cost=self.ask_cost, destination=self.reset_destination
-            )
+            raise HumanCubeBinResetRequested(cost=self.ask_cost, destination=self.reset_destination)
         self.steps_taken += 1
         return LabeledAction(action=np.array([0.0]), label="asking")
 

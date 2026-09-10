@@ -156,11 +156,7 @@ class Tossing3DSkillProvider(SkillProvider):
             if self.env.layout == Tossing3DLayout.SAME_SIDE
             else Tossing3DSide.OPPOSITE.value
         )
-        return next(
-            reset
-            for reset in resets
-            if reset.objects[-1].name == historical_destination
-        )
+        return next(reset for reset in resets if reset.objects[-1].name == historical_destination)
 
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
         """One lifted reset, grounded once for each typed bin destination.

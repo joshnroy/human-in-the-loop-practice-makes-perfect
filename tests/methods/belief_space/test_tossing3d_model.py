@@ -129,12 +129,8 @@ def _search_state(
         ),
     }
     if all(atom.predicate != HOLDING for atom in action.preconditions):
-        invariants.add(
-            GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube))
-        )
-    return make_tossing3d_search_state(
-        state=state, true_atoms=action.preconditions | invariants
-    )
+        invariants.add(GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)))
+    return make_tossing3d_search_state(state=state, true_atoms=action.preconditions | invariants)
 
 
 def _action(
