@@ -55,6 +55,16 @@ class BenchmarkModel:
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         return policy_value - 0.01 * summed_cost
 
+    def J(self, *, belief_state: BenchmarkBelief, summed_cost: float, num_samples: int) -> float:
+        policy_values = self.sample_policy_values_from_belief(
+            belief_state=belief_state, num_samples=num_samples
+        )
+        return float(
+            np.mean([
+                self.G(policy_value=value, summed_cost=summed_cost) for value in policy_values
+            ])
+        )
+
     def get_valid_actions(self, *, environment_state: BenchmarkState) -> list[BenchmarkAction]:
         if environment_state.path == "" and self.root_action_index is not None:
             return [self.actions[self.root_action_index]]
@@ -74,7 +84,7 @@ class BenchmarkModel:
             (BenchmarkState(path=f"{prefix}R"), 1.0, 0.5),
         ]
 
-    def update_belief_state(
+    def compute_next_belief_state(
         self,
         *,
         belief_state: BenchmarkBelief,
@@ -97,7 +107,7 @@ class BenchmarkModel:
         environment_state: BenchmarkState,
         summed_cost: float,
         belief_state: BenchmarkBelief,
-        horizon: int,
+        horizon: int | None,
     ) -> object:
         return environment_state, summed_cost, belief_state, horizon
 
