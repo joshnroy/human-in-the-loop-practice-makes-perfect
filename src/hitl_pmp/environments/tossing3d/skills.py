@@ -271,10 +271,8 @@ class Tossing3DSkills:
     def compute_action(*, ground_skill: GroundSkill, params: np.ndarray, state: State) -> Action:
         """Realize a (ground skill, parameters) pair as this domain's five-slot vector.
 
-        `state` is unused: unlike Light Switch, whose skills compute a delta against the
-        robot's current position, every parameter here is absolute (a standoff from the
-        bin, a yaw about it, a joint-path speed, a millisecond) and is interpreted by
-        upstream's controller against whatever state it is reset from.
+        `state` is unused: the four toss parameters are bin-relative standoff, bin-relative
+        yaw, joint-path speed, and release time rather than world coordinates.
         """
         del state
         skill = ground_skill.skill

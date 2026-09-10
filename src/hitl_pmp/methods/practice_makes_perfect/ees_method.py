@@ -739,18 +739,18 @@ class EesMethod(Method):
     ) -> list[float]:
         """The full classifier input row for one (ground skill, state, params) --
         predicators' `construct_active_sampler_input`, which is domain-aware. Asks the
-        domain's `SkillProvider` for an oracle row first (`feature_selection="oracle"`);
+        domain's `SkillProvider` for a hand-selected row first;
         if it declines (returns `None`), falls back to the default `"all"` layout
         `[1.0] + concat(state[obj]) + params`. A pure function of its arguments, so the
         row built to *score* a candidate and the row later *observed* for the chosen
         candidate are identical as long as they are built at the same state -- which is
         why the caller snapshots this at decision time rather than rebuilding it once
         the state has moved on."""
-        oracle = self.skill_provider.oracle_sampler_input(
+        hand_selected_features = self.skill_provider.hand_selected_feature_transform(
             ground_skill=ground_skill, state=state, params=params
         )
-        if oracle is not None:
-            return oracle
+        if hand_selected_features is not None:
+            return hand_selected_features
         return LearnedSkillSampler.build_sampler_input(
             state_features=self.state_features(ground_skill=ground_skill, state=state),
             params=params,

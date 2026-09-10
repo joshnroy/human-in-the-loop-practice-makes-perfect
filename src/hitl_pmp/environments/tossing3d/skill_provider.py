@@ -51,7 +51,16 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def predicates(self) -> tuple[Predicate, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
-            return (IN_BIN, HAND_EMPTY, HOLDING, ON_FLOOR, REACHABLE, CLOSED_EMPTY, ON_BIN_RIM)
+            return (
+                IN_BIN,
+                HAND_EMPTY,
+                HOLDING,
+                ON_GROUND,
+                ON_FLOOR,
+                REACHABLE,
+                CLOSED_EMPTY,
+                ON_BIN_RIM,
+            )
         return (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
 
     def types(self) -> tuple[Type, ...]:
@@ -79,6 +88,27 @@ class Tossing3DSkillProvider(SkillProvider):
                 ground_skill=ground_skill, params=params, state=state
             )
         return Tossing3DSkills.compute_action(ground_skill=ground_skill, params=params, state=state)
+
+    def hand_selected_feature_transform(
+        self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float] | None:
+        """Describe a toss by robot-frame bin displacement and controller parameters.
+
+        The parameters are already relative to the bin: standoff, yaw offset, joint
+        speed, and release time. Expressing the observed displacement in the robot frame
+        makes the full sampler row invariant to rigid changes in scene pose.
+        """
+        if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
+            return None
+        robot, bin_, _, _ = ground_skill.objects
+        dx = state.get(obj=bin_, feature_name="x") - state.get(obj=robot, feature_name="pos_base_x")
+        dy = state.get(obj=bin_, feature_name="y") - state.get(obj=robot, feature_name="pos_base_y")
+        yaw = state.get(obj=robot, feature_name="pos_base_rot")
+        cosine = float(np.cos(yaw))
+        sine = float(np.sin(yaw))
+        forward = cosine * dx + sine * dy
+        lateral = -sine * dx + cosine * dy
+        return [1.0, forward, lateral, *(float(param) for param in params)]
 
     def human_cube_bin_reset_skill(self) -> GroundSkill:
         """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`

@@ -2,7 +2,7 @@
 predicators' `active_sampler_learning_feature_selection = "oracle"`, which Ball-Ring
 needs to reproduce the paper's Figure 4 cup-placement curve. EES stays
 domain-agnostic: it reaches oracle features only through
-`SkillProvider.oracle_sampler_input`, falling back to the `"all"` layout otherwise.
+`SkillProvider.hand_selected_feature_transform`, falling back to the `"all"` layout otherwise.
 Light Switch defines no oracle features, so it must be entirely unaffected.
 """
 
@@ -42,7 +42,7 @@ def test_ees_builds_the_oracle_row_for_the_cup_placement_skill() -> None:
     row = method.sampler_input_row(ground_skill=place_cup, state=state, params=params)
     # Exactly the curated oracle vector (bias + 7 table features + 2 placement coords).
     assert len(row) == 10
-    assert row == BallRingSkills.oracle_sampler_input(
+    assert row == BallRingSkills.hand_selected_feature_transform(
         ground_skill=place_cup, state=state, params=params
     )
 
@@ -74,7 +74,7 @@ def test_light_switch_is_unaffected_and_still_uses_all_features() -> None:
     params = np.array([0.5])
     # No oracle features defined for Light Switch -> the hook declines.
     assert (
-        LightSwitchSkillProvider(env=env).oracle_sampler_input(
+        LightSwitchSkillProvider(env=env).hand_selected_feature_transform(
             ground_skill=turn_on, state=state, params=params
         )
         is None

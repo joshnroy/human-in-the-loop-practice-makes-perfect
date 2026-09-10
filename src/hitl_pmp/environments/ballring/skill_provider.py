@@ -72,7 +72,7 @@ class BallRingSkillProvider(SkillProvider):
             ground_skill=ground_skill, params=params, state=state, env=self.env
         )
 
-    def oracle_sampler_input(
+    def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
     ) -> list[float] | None:
         """Route the domain-agnostic Method's oracle-feature-selection hook to
@@ -80,7 +80,7 @@ class BallRingSkillProvider(SkillProvider):
         `None` (fall back to `"all"`) for everything else. This is the seam that lets
         Ball-Ring reproduce the paper's `active_sampler_learning_feature_selection:
         oracle` without the Method importing this environment."""
-        return BallRingSkills.oracle_sampler_input(
+        return BallRingSkills.hand_selected_feature_transform(
             ground_skill=ground_skill, state=state, params=params
         )
 

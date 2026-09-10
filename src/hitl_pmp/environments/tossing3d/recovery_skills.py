@@ -87,14 +87,6 @@ class SameSideSkills:
         delete_effects=frozenset({_empty, _inside}),
         param_dim=0,
     )
-    TOSS: ClassVar[Skill] = Skill(
-        name="MoveToTossLocationAndToss",
-        parameters=(_robot, _bin, _cube, _barrier),
-        preconditions=frozenset({_held, _reachable}),
-        add_effects=frozenset({_empty, _inside, _reachable}),
-        delete_effects=frozenset({_held, _floor}),
-        param_dim=4,
-    )
     OPEN: ClassVar[Skill] = Skill(
         name="OpenGripper",
         parameters=(_robot, _cube),
@@ -110,28 +102,24 @@ class SameSideSkills:
             SameSideSkills.PICK_FLOOR,
             SameSideSkills.PICK_BIN,
             SameSideSkills.PICK_RIM,
-            SameSideSkills.TOSS,
+            Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
             SameSideSkills.OPEN,
         )
 
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        if ground_skill.skill == SameSideSkills.TOSS:
-            original = GroundSkill(
-                skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS, objects=ground_skill.objects
-            )
-            return Tossing3DSkills.sample_params(ground_skill=original, rng=rng)
+        if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
+            return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
         if ground_skill.skill in SameSideSkills.skills():
             return np.zeros(0)
         raise ValueError(f"Unknown skill: {ground_skill.skill.name}")
 
     @staticmethod
     def compute_action(*, ground_skill: GroundSkill, params: np.ndarray, state: State) -> Action:
-        if ground_skill.skill == SameSideSkills.TOSS:
-            original = GroundSkill(
-                skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS, objects=ground_skill.objects
+        if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
+            return Tossing3DSkills.compute_action(
+                ground_skill=ground_skill, params=params, state=state
             )
-            return Tossing3DSkills.compute_action(ground_skill=original, params=params, state=state)
         ids = {
             SameSideSkills.PICK_FLOOR: Tossing3DEnvironment.pick_cube_id,
             SameSideSkills.PICK_BIN: Tossing3DEnvironment.pick_cube_from_bin_id,
