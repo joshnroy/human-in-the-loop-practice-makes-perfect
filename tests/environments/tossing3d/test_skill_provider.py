@@ -95,6 +95,20 @@ def test_human_reset_cost_is_five_robot_action_equivalents() -> None:
     assert _provider().human_cube_bin_reset_skill().evaluate_practice_cost() == 5.0
 
 
+def test_non_human_reset_duplicates_reset_mechanics_with_independent_identity() -> None:
+    provider = _provider()
+    human = provider.human_cube_bin_reset_skill()
+    automatic = provider.non_human_cube_bin_reset_skill()
+
+    assert automatic.skill.name == "non_human_reset_cube_bin_only"
+    assert automatic.evaluate_practice_cost() == 5.0
+    assert automatic.objects == human.objects
+    assert automatic.preconditions == human.preconditions
+    assert automatic.add_effects == human.add_effects
+    assert automatic.delete_effects == human.delete_effects
+    assert provider.movables_reset_skills() == (human, automatic)
+
+
 def test_human_reset_cost_is_provider_configuration() -> None:
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment(), human_reset_practice_cost=0.125)
     assert provider.human_cube_bin_reset_skill().evaluate_practice_cost() == 0.125

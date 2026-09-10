@@ -6,7 +6,7 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete, Method
-from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME, SkillProvider
+from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.method.types import (
     GroundSkill,
     LabeledAction,
@@ -1089,7 +1089,7 @@ class _EesEpisode:
         if self._practicing:
             # Charge the attempt now, even if no later policy call observes it.
             method.record_action_cost(ground_skill=ground_skill)
-        if ground_skill.skill.name == ASK_FOR_RESET_CUBE_BIN_ONLY_NAME:
+        if method.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
             # Dispatch to the rescue mechanism, not execute_ground_skill -- this
             # "skill" has no controller/effects to score. self._pending stays
             # untouched: nothing here for observe_pending to settle.

@@ -34,6 +34,7 @@ class Tossing3DSkillProvider(SkillProvider):
 
     env: Tossing3DEnvironment
     human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
+    non_human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
@@ -145,6 +146,28 @@ class Tossing3DSkillProvider(SkillProvider):
             practice_cost=self.human_reset_practice_cost,
         )
         return GroundSkill(skill=skill, objects=(env.robot, env.cube, env.bin, env.barrier))
+
+    def non_human_cube_bin_reset_skill(self) -> GroundSkill:
+        """Automatic reset with the same mechanics as the human reset.
+
+        Its distinct identity gives the belief-space model an independent joint
+        competence/learning-rate/cost posterior while preserving identical symbolic
+        applicability and outcomes.
+        """
+        human_reset = self.human_cube_bin_reset_skill()
+        return human_reset.model_copy(
+            update={
+                "skill": human_reset.skill.model_copy(
+                    update={
+                        "name": "non_human_reset_cube_bin_only",
+                        "practice_cost": self.non_human_reset_practice_cost,
+                    }
+                )
+            }
+        )
+
+    def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
+        return (self.human_cube_bin_reset_skill(), self.non_human_cube_bin_reset_skill())
 
 
 class Tossing3DOracle(OraclePolicyProvider):

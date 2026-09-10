@@ -114,6 +114,20 @@ class SkillProvider(BaseModel, abc.ABC):
         skill when this returns `None`."""
         return None
 
+    def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
+        """Skills dispatched through the environment's movables-reset mechanism.
+
+        Most domains expose at most the historical human reset. Domains may override
+        this to offer equivalent reset mechanisms with distinct identities and costs.
+        """
+        reset = self.human_cube_bin_reset_skill()
+        return () if reset is None else (reset,)
+
+    def is_movables_reset_skill(self, *, ground_skill: GroundSkill) -> bool:
+        return ground_skill.skill.name in {
+            reset.skill.name for reset in self.movables_reset_skills()
+        }
+
 
 class OraclePolicyProvider(BaseModel, abc.ABC):
     """A domain's privileged, hand-authored solver -- what `SkillOracleMethod` drives

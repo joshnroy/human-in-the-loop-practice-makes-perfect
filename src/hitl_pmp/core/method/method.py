@@ -31,7 +31,7 @@ class InteractionComplete(Exception):  # noqa: N818
 
 
 class HumanCubeBinResetRequested(Exception):  # noqa: N818
-    """Raised by a practice policy asking a human for a *partial* reset:
+    """Raised by a practice policy requesting a *partial* movables reset:
     reposition the domain's non-robot objects, leave the robot untouched. The
     robot asking, not a monitor noticing (see CLAUDE.md's robot-vs-agent rule).
     Control flow, not an error, same N818 waiver as `InteractionComplete`.
@@ -43,7 +43,9 @@ class HumanCubeBinResetRequested(Exception):  # noqa: N818
     Goes through `Environment.reset_movables`/`HumanOracle.execute_movables_reset`
     (`Problem.execute_movables_reset` is the facade), primitives that default to
     declining so every other domain is untouched. See
-    `SkillProvider.human_cube_bin_reset_skill` for how a domain opts in.
+    `SkillProvider.movables_reset_skills` for how a domain opts in. The historical
+    name is retained for compatibility; a provider may expose non-human mechanisms
+    with the same execution contract.
 
     `cost` is required, not optional: there's no `Goal`/`target_state` to price a
     partial reset against, so the raising `Method` must always price it itself."""

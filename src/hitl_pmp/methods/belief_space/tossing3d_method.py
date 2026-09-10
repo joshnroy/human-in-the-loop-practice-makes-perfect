@@ -21,7 +21,7 @@ from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
-    RESET_SKILL,
+    RESET_SKILLS,
     TOSS_SKILL,
 )
 from .tossing3d_model import Tossing3DPracticeModel
@@ -63,7 +63,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _cycle_index: int = PrivateAttr(default=0)
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _cycle_start_competences: dict[str, float] = PrivateAttr(default_factory=dict)
-    _pending_human_reset: GroundSkill | None = PrivateAttr(default=None)
+    _pending_reset: GroundSkill | None = PrivateAttr(default=None)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -120,17 +120,15 @@ class Tossing3DPomdpMethod(EesMethod):
             stream.write(LogTiming.encode(record=record))
 
     def human_skills(self) -> tuple[Skill, ...]:
-        """Use the same provider-owned reset skill and cost as EES."""
-        reset = self.skill_provider.human_cube_bin_reset_skill()
-        assert reset is not None
-        return (reset.skill,)
+        """Offer every provider-owned reset mechanism to belief-space planning."""
+        return tuple(reset.skill for reset in self.skill_provider.movables_reset_skills())
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
-            include_human_reset=bool(self.human_skills()),
+            additional_skill_names=tuple(skill.name for skill in self.human_skills()),
         )
         robot_skills = self.skills()
         human_skills = self.human_skills()
@@ -215,8 +213,8 @@ class Tossing3DPomdpMethod(EesMethod):
         updates: dict[str, object] = {
             "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
         }
-        if ground_skill.skill.name == RESET_SKILL:
-            self._pending_human_reset = ground_skill
+        if ground_skill.skill.name in RESET_SKILLS:
+            self._pending_reset = ground_skill
         self._pomdp_state = self._pomdp_state.model_copy(update=updates)
         self.record_diagnostic(
             event="dispatch",
@@ -229,7 +227,7 @@ class Tossing3DPomdpMethod(EesMethod):
     def observe_help_granted(self, *, state: State) -> None:
         """Condition one completed reset on its joint success and cost observation."""
         super().observe_help_granted(state=state)
-        reset = self._pending_human_reset
+        reset = self._pending_reset
         assert reset is not None, "human reset completion observed without a dispatched reset"
         observed_cost = reset.evaluate_practice_cost()
         self._pomdp_state = self._pomdp_model.observe_outcome(
@@ -239,10 +237,10 @@ class Tossing3DPomdpMethod(EesMethod):
             was_random_exploration=False,
             observed_cost=observed_cost,
         )
-        self._pending_human_reset = None
+        self._pending_reset = None
         self.record_diagnostic(
             event="outcome",
-            skill=RESET_SKILL,
+            skill=reset.skill.name,
             success=True,
             random_exploration=False,
             belief=self._pomdp_state.model_dump(mode="json"),
