@@ -32,6 +32,7 @@ class Model(BaseModel):
     ] = Field(default_factory=dict)
     beliefs: dict[EnvironmentState, BeliefState] = Field(default_factory=dict)
     evaluations: int = 0
+    transition_visits: list[tuple[EnvironmentState, Action]] = Field(default_factory=list)
 
     def sample_policy_values_from_belief(
         self, *, belief_state: BeliefState, num_samples: int
@@ -53,6 +54,7 @@ class Model(BaseModel):
         belief_state: BeliefState,
     ) -> list[tuple[EnvironmentState, float, float]]:
         del belief_state
+        self.transition_visits.append((environment_state, practice_action))
         return self.transitions[environment_state, practice_action]
 
     def update_belief_state(
@@ -81,6 +83,7 @@ ROOT = EnvironmentState(name="root")
 LOW = EnvironmentState(name="low")
 HIGH = EnvironmentState(name="high")
 GOAL = EnvironmentState(name="goal")
+SUCCESS = EnvironmentState(name="success")
 LEFT = Action(name="left")
 RIGHT = Action(name="right")
 FINISH = Action(name="finish")
@@ -192,6 +195,51 @@ def test_merged_node_propagates_deeper_value_to_every_root_action() -> None:
         if event["event"] == "action_value"
     }
     assert action_values == {"left": pytest.approx(0.9), "right": pytest.approx(0.9)}
+
+
+def test_reopened_state_reuses_its_determinized_action_outcome() -> None:
+    model = Model(
+        transitions={
+            (ROOT, LEFT): [(HIGH, 0.0, 1.0)],
+            (ROOT, RIGHT): [(LOW, 0.0, 1.0)],
+            (LOW, FINISH): [(HIGH, 0.0, 1.0)],
+            (HIGH, FINISH): [(GOAL, 0.0, 0.5), (SUCCESS, 0.0, 0.5)],
+        },
+        beliefs={
+            LOW: BeliefState(value=0.3),
+            HIGH: BeliefState(value=0.4),
+            GOAL: BeliefState(value=0.8),
+            SUCCESS: BeliefState(value=0.9),
+        },
+    )
+
+    def reopen_high(
+        *,
+        parent: DeterminizedSearchNode[EnvironmentState, BeliefState],
+        child: DeterminizedSearchNode[EnvironmentState, BeliefState],
+        action: Action,
+        outcome_probability: float,
+        sampled_cost: float,
+    ) -> float:
+        del child, action, outcome_probability, sampled_cost
+        return -2.0 if parent.environment_state == LOW else 1.0
+
+    trace = SearchTrace()
+    solve_belief_space_determinized(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        model=model,
+        max_evaluated_nodes=5,
+        num_samples=1,
+        seed=0,
+        path_cost=reopen_high,
+        trace=trace,
+    )
+
+    assert model.transition_visits.count((HIGH, FINISH)) == 1
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["reopened_nodes"] >= 1
 
 
 def test_zero_expansions_stops_and_invalid_budget_is_rejected() -> None:

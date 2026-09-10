@@ -158,6 +158,9 @@ def solve_belief_space_determinized(
     values_by_key = {root_key: root_value}
     costs_by_key = {root_key: 0.0}
     closed_costs: dict[object, float] = {}
+    sampled_outcomes_by_edge: dict[
+        tuple[object, ActionT], tuple[EnvironmentStateT, float, float]
+    ] = {}
     provenance_by_key: dict[object, list[ActionT]] = {root_key: []}
     children_by_key: dict[object, list[object]] = {root_key: []}
     expanded_nodes = 0
@@ -241,16 +244,19 @@ def solve_belief_space_determinized(
                 termination_reason = "time_budget"
                 break
             action_evaluations += 1
-            outcomes = model.transition_outcomes(
-                environment_state=current_environment,
-                practice_action=action,
-                belief_state=current_belief,
-            )
-            assert outcomes, f"action {action!r} has no chance outcomes"
-            chance_outcomes += len(outcomes)
-            next_environment, sampled_cost, outcome_probability = _sample_outcome(
-                rng=rng, outcomes=outcomes, action=action
-            )
+            edge = (current_key, action)
+            sampled_outcome = sampled_outcomes_by_edge.get(edge)
+            if sampled_outcome is None:
+                outcomes = model.transition_outcomes(
+                    environment_state=current_environment,
+                    practice_action=action,
+                    belief_state=current_belief,
+                )
+                assert outcomes, f"action {action!r} has no chance outcomes"
+                chance_outcomes += len(outcomes)
+                sampled_outcome = _sample_outcome(rng=rng, outcomes=outcomes, action=action)
+                sampled_outcomes_by_edge[edge] = sampled_outcome
+            next_environment, sampled_cost, outcome_probability = sampled_outcome
             next_cost = current_cost + sampled_cost
             next_depth = current_depth + 1
             next_belief = model.update_belief_state(

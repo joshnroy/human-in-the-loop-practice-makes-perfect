@@ -69,7 +69,8 @@ def test_trace_preserves_search_result_and_records_compact_root_values() -> None
     assert any(event["event"] == "branch" and event["probability"] == 1.0 for event in trace.events)
     assert not any(event["event"] == "sample" for event in trace.events)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["expanded_nodes"] == 2
+    assert summary["expanded_nodes"] == 1
+    assert summary["evaluated_nodes"] == 2
     assert summary["action_evaluations"] == 1
     assert summary["chance_outcomes"] == 1
 

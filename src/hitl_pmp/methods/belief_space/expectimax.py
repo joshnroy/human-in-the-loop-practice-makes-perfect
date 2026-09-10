@@ -94,7 +94,7 @@ def solve_belief_space_expectimax(
             node=0,
             solver="expectimax",
             horizon=horizon,
-            expanded_nodes=solver.next_node,
+            expanded_nodes=solver.expanded_nodes,
             touched_nodes=solver.cache_requests,
             evaluated_nodes=solver.next_node,
             unique_nodes=solver.next_node,
@@ -142,6 +142,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         self.max_seconds = max_seconds
         self.root_incumbent: tuple[float, ActionT | StopAction] | None = None
         self.next_node = 0
+        self.expanded_nodes = 0
         self.cache_requests = 0
         self.cache_hits = 0
         self.action_evaluations = 0
@@ -260,6 +261,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
                 )
             return current_best_value, current_best_action
 
+        self.expanded_nodes += 1
         for practice_action in self.model.get_valid_actions(environment_state=environment_state):
             self.check_deadline()
             self.action_evaluations += 1
