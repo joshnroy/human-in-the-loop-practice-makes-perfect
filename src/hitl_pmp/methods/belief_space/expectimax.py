@@ -18,12 +18,19 @@ from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
 
 
 class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]):
-    """Exact finite-horizon belief-space expectimax.
+    """Implementation of ``understanding/pomdp_formulation.py``.
 
-    This is the reference implementation from ``understanding/pomdp_formulation.py``.
-    It evaluates the complete tree through ``horizon``; it has no node or wall-clock
-    stopping condition. Each call owns a fresh cache, so later decisions resample
-    latent parameters and see the latest model state.
+    Pseudocode and review:
+    https://github.com/joshnroy/human-in-the-loop-practice-makes-perfect/pull/290
+    Algorithm notes (Google Drive reference from the pseudocode):
+    https://drive.google.com/drive/folders/17j47M4NUGQIoKzNOo7yvWIhw13tE7h-a
+
+    Model methods have the pseudocode's names and keyword arguments. Costs and
+    policy values allow floats. Theta is sampled ``num_samples`` times per unique
+    search state. Stopping wins ties. The complete tree is evaluated through
+    ``horizon`` with no node or wall-clock stopping condition. Each call owns a
+    fresh recursive cache, so later searches resample theta and see updated model
+    parameters.
     """
 
     name = "expectimax"
@@ -46,20 +53,20 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
             "summed_cost must be finite and non-negative"
         )
 
-        self._model = model
-        self._num_samples = num_samples
-        self._trace = trace
-        self._memo: dict[object, tuple[float, ActionT | StopAction]] = {}
-        self._next_node = 0
-        self._expanded_nodes = 0
-        self._cache_requests = 0
-        self._cache_hits = 0
-        self._action_transitions_evaluated = 0
-        self._chance_outcomes_enumerated = 0
-        self._nodes_by_horizon: dict[int, int] = {}
+        self.model = model
+        self.num_samples = num_samples
+        self.trace = trace
+        self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
+        self.next_node = 0
+        self.expanded_nodes = 0
+        self.cache_requests = 0
+        self.cache_hits = 0
+        self.action_transitions_evaluated = 0
+        self.chance_outcomes_enumerated = 0
+        self.nodes_by_horizon: dict[int, int] = {}
         started_at = time.perf_counter()
 
-        result = self._cached_solve(
+        result = self.cached_solve_belief_space_expectimax(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
@@ -71,27 +78,27 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 node=0,
                 solver=self.name,
                 horizon=horizon,
-                expanded_nodes=self._expanded_nodes,
-                traversed_nodes=self._cache_requests,
-                generated_successors=max(0, self._cache_requests - 1),
-                unique_nodes=self._next_node,
-                stop_value_evaluations=self._next_node,
+                expanded_nodes=self.expanded_nodes,
+                traversed_nodes=self.cache_requests,
+                generated_successors=max(0, self.cache_requests - 1),
+                unique_nodes=self.next_node,
+                stop_value_evaluations=self.next_node,
                 frontier_nodes=0,
                 max_frontier_size=0,
-                cache_requests=self._cache_requests,
-                cache_hits=self._cache_hits,
-                action_transitions_evaluated=self._action_transitions_evaluated,
-                chance_outcomes_enumerated=self._chance_outcomes_enumerated,
-                nodes_by_horizon=dict(sorted(self._nodes_by_horizon.items(), reverse=True)),
+                cache_requests=self.cache_requests,
+                cache_hits=self.cache_hits,
+                action_transitions_evaluated=self.action_transitions_evaluated,
+                chance_outcomes_enumerated=self.chance_outcomes_enumerated,
+                nodes_by_horizon=dict(sorted(self.nodes_by_horizon.items(), reverse=True)),
                 max_depth_reached=(
-                    horizon - min(self._nodes_by_horizon) if self._nodes_by_horizon else 0
+                    horizon - min(self.nodes_by_horizon) if self.nodes_by_horizon else 0
                 ),
                 search_elapsed_seconds=time.perf_counter() - started_at,
                 termination_reason="horizon_or_objective_exhausted",
             )
         return result
 
-    def _cached_solve(
+    def cached_solve_belief_space_expectimax(
         self,
         *,
         environment_state: EnvironmentStateT,
@@ -99,27 +106,27 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         belief_state: BeliefStateT,
         horizon: int,
     ) -> tuple[float, ActionT | StopAction]:
-        self._cache_requests += 1
-        key = self._model.search_cache_key(
+        self.cache_requests += 1
+        key = self.model.search_cache_key(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
             horizon=horizon,
         )
-        cached = self._memo.get(key)
+        cached = self.memo.get(key)
         if cached is not None:
-            self._cache_hits += 1
+            self.cache_hits += 1
             return cached
-        result = self._solve_node(
+        result = self.solve_belief_space_expectimax(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
             horizon=horizon,
         )
-        self._memo[key] = result
+        self.memo[key] = result
         return result
 
-    def _solve_node(
+    def solve_belief_space_expectimax(
         self,
         *,
         environment_state: EnvironmentStateT,
@@ -127,26 +134,26 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         belief_state: BeliefStateT,
         horizon: int,
     ) -> tuple[float, ActionT | StopAction]:
-        node = self._next_node
-        self._next_node += 1
-        self._nodes_by_horizon[horizon] = self._nodes_by_horizon.get(horizon, 0) + 1
-        policy_values = self._model.sample_policy_values_from_belief(
-            belief_state=belief_state, num_samples=self._num_samples
+        node = self.next_node
+        self.next_node += 1
+        self.nodes_by_horizon[horizon] = self.nodes_by_horizon.get(horizon, 0) + 1
+        policy_values = self.model.sample_policy_values_from_belief(
+            belief_state=belief_state, num_samples=self.num_samples
         )
-        assert len(policy_values) == self._num_samples
+        assert len(policy_values) == self.num_samples
         sample_values = np.fromiter(
             (
-                self._model.G(policy_value=float(policy_value), summed_cost=summed_cost)
+                self.model.G(policy_value=float(policy_value), summed_cost=summed_cost)
                 for policy_value in policy_values
             ),
             dtype=np.float64,
-            count=self._num_samples,
+            count=self.num_samples,
         )
         assert all(not math.isnan(value) and value != math.inf for value in sample_values), (
             "stop value must be finite or negative infinity"
         )
-        if self._trace is not None and node == 0:
-            self._trace.record(
+        if self.trace is not None and node == 0:
+            self.trace.record(
                 event="sample_summary",
                 node=node,
                 count=len(sample_values),
@@ -160,11 +167,11 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
 
         current_best_value = float(np.mean(sample_values))
         current_best_action: ActionT | StopAction = STOP_ACTION
-        if self._trace is not None and node == 0:
-            self._trace.record(event="stop_value", node=node, value=current_best_value)
+        if self.trace is not None and node == 0:
+            self.trace.record(event="stop_value", node=node, value=current_best_value)
         if current_best_value == -math.inf:
-            if self._trace is not None and node == 0:
-                self._trace.record(
+            if self.trace is not None and node == 0:
+                self.trace.record(
                     event="choice",
                     node=node,
                     action="STOP",
@@ -173,8 +180,8 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 )
             return current_best_value, current_best_action
         if horizon == 0:
-            if self._trace is not None and node == 0:
-                self._trace.record(
+            if self.trace is not None and node == 0:
+                self.trace.record(
                     event="choice",
                     node=node,
                     action="STOP",
@@ -183,12 +190,13 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 )
             return current_best_value, current_best_action
 
-        self._expanded_nodes += 1
-        for practice_action in self._model.get_valid_actions(environment_state=environment_state):
-            self._action_transitions_evaluated += 1
+        self.expanded_nodes += 1
+        for practice_action in self.model.get_valid_actions(environment_state=environment_state):
+            self.action_transitions_evaluated += 1
             value_of_state = 0.0
             total_probability = 0.0
-            next_states_and_probabilities = self._model.transition_outcomes(
+            # TODO: Should samples be drawn with or without replacement?
+            next_states_and_probabilities = self.model.transition_outcomes(
                 environment_state=environment_state,
                 practice_action=practice_action,
                 belief_state=belief_state,
@@ -196,7 +204,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
             assert next_states_and_probabilities, (
                 f"action {practice_action!r} has no chance outcomes"
             )
-            self._chance_outcomes_enumerated += len(next_states_and_probabilities)
+            self.chance_outcomes_enumerated += len(next_states_and_probabilities)
             for (
                 potential_next_environment_state,
                 sampled_cost,
@@ -205,13 +213,13 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 assert math.isfinite(sampled_cost) and sampled_cost >= 0, (
                     "sampled_cost must be finite and non-negative"
                 )
-                next_belief_state = self._model.update_belief_state(
+                next_belief_state = self.model.update_belief_state(
                     belief_state=belief_state,
                     environment_state=environment_state,
                     potential_next_environment_state=potential_next_environment_state,
                     practice_action=practice_action,
                 )
-                value_of_next_state, _ = self._cached_solve(
+                value_of_next_state, _ = self.cached_solve_belief_space_expectimax(
                     environment_state=potential_next_environment_state,
                     summed_cost=summed_cost + sampled_cost,
                     belief_state=next_belief_state,
@@ -222,8 +230,8 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 )
                 value_of_state += probability * value_of_next_state
                 total_probability += probability
-                if self._trace is not None and node == 0:
-                    self._trace.record(
+                if self.trace is not None and node == 0:
+                    self.trace.record(
                         event="branch",
                         node=node,
                         action=practice_action.model_dump(mode="json", fallback=str),
@@ -238,8 +246,9 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
             assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (
                 f"chance probabilities sum to {total_probability}, not 1"
             )
-            if self._trace is not None and node == 0:
-                self._trace.record(
+            # Compare only after summing every successor, including negative values.
+            if self.trace is not None and node == 0:
+                self.trace.record(
                     event="action_value",
                     node=node,
                     action=practice_action.model_dump(mode="json", fallback=str),
@@ -249,8 +258,8 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 current_best_value = value_of_state
                 current_best_action = practice_action
 
-        if self._trace is not None and node == 0:
-            self._trace.record(
+        if self.trace is not None and node == 0:
+            self.trace.record(
                 event="choice",
                 node=node,
                 action=(
@@ -262,25 +271,3 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 reason="max_value_stop_wins_ties",
             )
         return current_best_value, current_best_action
-
-
-def solve_belief_space_expectimax(
-    *,
-    environment_state: EnvironmentStateT,
-    summed_cost: float,
-    belief_state: BeliefStateT,
-    horizon: int,
-    model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-    num_samples: int = NUM_SAMPLES,
-    trace: SearchTrace | None = None,
-) -> tuple[float, ActionT | StopAction]:
-    """Compatibility entry point backed by :class:`ExpectimaxPlanner`."""
-    return ExpectimaxPlanner[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]().solve(
-        environment_state=environment_state,
-        summed_cost=summed_cost,
-        belief_state=belief_state,
-        horizon=horizon,
-        model=model,
-        num_samples=num_samples,
-        trace=trace,
-    )

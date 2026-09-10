@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
-from hitl_pmp.methods.belief_space.expectimax import solve_belief_space_expectimax
+from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
@@ -189,7 +189,7 @@ def test_search_prunes_state_beyond_hard_budget() -> None:
     model = _domain_model(reset_cost=1.0)
     state = make_default_tossing3d_belief().model_copy(update={"accumulated_cost": 21.0})
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
-    value, action = solve_belief_space_expectimax(
+    value, action = ExpectimaxPlanner().solve(
         environment_state=search_state,
         belief_state=state,
         summed_cost=state.accumulated_cost,
@@ -206,7 +206,7 @@ def test_search_chooses_stop_when_every_continuation_crosses_hard_budget() -> No
         update={"accumulated_cost": 20.0}
     )
     search_state = _search_state(model=model, state=state, action_name=PICK_SKILL)
-    value, action = solve_belief_space_expectimax(
+    value, action = ExpectimaxPlanner().solve(
         environment_state=search_state,
         belief_state=state,
         summed_cost=state.accumulated_cost,
@@ -220,7 +220,7 @@ def test_search_chooses_stop_when_every_continuation_crosses_hard_budget() -> No
 def test_search_protocol_charges_accumulated_cost_once() -> None:
     state = _point_state(toss=0.8, pick=0.5, open_gripper=1.0, accumulated_cost=3.0)
     model = Tossing3DPracticeModel(linear_cost_lambda=0.01)
-    value, action = solve_belief_space_expectimax(
+    value, action = ExpectimaxPlanner().solve(
         environment_state=make_tossing3d_search_state(state=state, true_atoms=frozenset()),
         belief_state=state,
         summed_cost=state.accumulated_cost,

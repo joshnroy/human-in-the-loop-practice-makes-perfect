@@ -185,6 +185,8 @@ def test_invalid_method_configuration_is_rejected_early() -> None:
     with pytest.raises(ValidationError):
         _build(pomdp_max_search_iterations=0)
     with pytest.raises(ValidationError):
+        _build(pomdp_observation_probability_weight=-0.1)
+    with pytest.raises(ValidationError):
         _build(pomdp_solver="unknown")
 
 

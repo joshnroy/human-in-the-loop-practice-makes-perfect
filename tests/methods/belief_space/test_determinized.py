@@ -2,13 +2,10 @@ import numpy as np
 import pytest
 from pydantic import BaseModel, Field
 
-from hitl_pmp.methods.belief_space.determinized import (
-    DeterminizedAStarPlanner,
-    DeterminizedSearchNode,
-    heuristic,
-    solve_belief_space_determinized_astar,
-)
+from hitl_pmp.methods.belief_space.determinized import DeterminizedAStarPlanner
+from hitl_pmp.methods.belief_space.types.determinized import DeterminizedSearchNode
 from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
+from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION
 
 
 class EnvironmentState(BaseModel):
@@ -100,14 +97,14 @@ def test_best_first_returns_first_action_on_best_discovered_path() -> None:
         },
     )
 
-    value, action = solve_belief_space_determinized_astar(
+    planner = DeterminizedAStarPlanner(max_iterations=5, seed=4)
+    value, action = planner.solve(
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
+        horizon=0,
         model=model,
-        max_iterations=5,
         num_samples=1,
-        rng=np.random.default_rng(4),
     )
 
     assert value == pytest.approx(0.9)
@@ -124,14 +121,39 @@ def test_samples_one_weighted_outcome_per_action_reproducibly() -> None:
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
         model=model,
-        max_iterations=2,
+        horizon=0,
         num_samples=1,
     )
 
-    first = solve_belief_space_determinized_astar(rng=np.random.default_rng(7), **args)
-    second = solve_belief_space_determinized_astar(rng=np.random.default_rng(7), **args)
+    first = DeterminizedAStarPlanner(max_iterations=2, seed=7).solve(**args)
+    second = DeterminizedAStarPlanner(max_iterations=2, seed=7).solve(**args)
     assert first == second
     assert first == (pytest.approx(0.8), LEFT)
+
+
+def test_observation_probability_penalizes_an_unlikely_determinization() -> None:
+    model = Model(
+        transitions={(ROOT, LEFT): [(LOW, 0.0, 0.1), (HIGH, 0.0, 0.9)]},
+        beliefs={LOW: BeliefState(value=0.25), HIGH: BeliefState(value=0.25)},
+    )
+    args = dict(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=0,
+        model=model,
+        num_samples=1,
+    )
+
+    unweighted = DeterminizedAStarPlanner(
+        max_iterations=1, seed=3, observation_probability_weight=0.0
+    ).solve(**args)
+    weighted = DeterminizedAStarPlanner(
+        max_iterations=1, seed=3, observation_probability_weight=0.1
+    ).solve(**args)
+
+    assert unweighted == (pytest.approx(0.25), LEFT)
+    assert weighted == (pytest.approx(0.2), STOP_ACTION)
 
 
 def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> None:
@@ -144,14 +166,14 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
     )
     trace = SearchTrace()
 
-    result = solve_belief_space_determinized_astar(
+    planner = DeterminizedAStarPlanner(max_iterations=3, seed=0)
+    result = planner.solve(
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
+        horizon=0,
         model=model,
-        max_iterations=3,
         num_samples=1,
-        rng=np.random.default_rng(0),
         trace=trace,
     )
 
@@ -176,14 +198,14 @@ def test_merged_node_propagates_deeper_value_to_every_root_action() -> None:
     )
     trace = SearchTrace()
 
-    solve_belief_space_determinized_astar(
+    planner = DeterminizedAStarPlanner(max_iterations=4, seed=0)
+    planner.solve(
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
+        horizon=0,
         model=model,
-        max_iterations=4,
         num_samples=1,
-        rng=np.random.default_rng(0),
         trace=trace,
     )
 
@@ -203,12 +225,12 @@ def test_nonpositive_iteration_budget_is_rejected() -> None:
         belief_state=BeliefState(value=0.2),
         model=model,
         num_samples=1,
-        rng=np.random.default_rng(0),
+        horizon=0,
     )
-    with pytest.raises(AssertionError, match="positive"):
-        solve_belief_space_determinized_astar(max_iterations=0, **args)
-    with pytest.raises(AssertionError, match="positive"):
-        solve_belief_space_determinized_astar(max_iterations=-1, **args)
+    for max_iterations in (0, -1):
+        planner = DeterminizedAStarPlanner(max_iterations=max_iterations, seed=0)
+        with pytest.raises(AssertionError, match="positive"):
+            planner.solve(**args)
 
 
 def test_one_iteration_expands_only_the_root() -> None:
@@ -218,14 +240,14 @@ def test_one_iteration_expands_only_the_root() -> None:
     )
     trace = SearchTrace()
 
-    result = solve_belief_space_determinized_astar(
+    planner = DeterminizedAStarPlanner(max_iterations=1, seed=0)
+    result = planner.solve(
         environment_state=ROOT,
         summed_cost=0.0,
         belief_state=BeliefState(value=0.2),
+        horizon=0,
         model=model,
-        max_iterations=1,
         num_samples=1,
-        rng=np.random.default_rng(0),
         trace=trace,
     )
 
@@ -237,8 +259,9 @@ def test_one_iteration_expands_only_the_root() -> None:
 
 
 def test_generic_heuristic_adds_no_domain_knowledge() -> None:
+    planner = DeterminizedAStarPlanner(max_iterations=1, seed=0)
     assert (
-        heuristic(
+        planner.heuristic(
             node=DeterminizedSearchNode(
                 environment_state=ROOT,
                 belief_state=BeliefState(value=0.2),

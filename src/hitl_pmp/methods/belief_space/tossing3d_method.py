@@ -54,6 +54,9 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_search_depth: int = Field(default=3, ge=0)
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
+    pomdp_observation_probability_weight: float = Field(
+        default=0.1, ge=0.0, allow_inf_nan=False
+    )
     pomdp_planner: (
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
         | None
@@ -169,6 +172,7 @@ class Tossing3DPomdpMethod(EesMethod):
             self._determinized_planner = DeterminizedAStarPlanner(
                 max_iterations=self.pomdp_max_search_iterations,
                 seed=self.seed,
+                observation_probability_weight=self.pomdp_observation_probability_weight,
             )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         missing = {PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
@@ -382,6 +386,11 @@ class Tossing3DPomdpMethod(EesMethod):
             solver=planner.name,
             max_search_iterations=(
                 planner.max_iterations if isinstance(planner, DeterminizedAStarPlanner) else None
+            ),
+            observation_probability_weight=(
+                planner.observation_probability_weight
+                if isinstance(planner, DeterminizedAStarPlanner)
+                else None
             ),
             model=self._pomdp_model.model_dump(mode="json"),
             search=trace.events,

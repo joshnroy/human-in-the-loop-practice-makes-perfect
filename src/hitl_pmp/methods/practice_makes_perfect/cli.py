@@ -180,6 +180,14 @@ class Tossing3DPomdpCli(EesCli):
             help="Priority-queue iterations per determinized A* search (Algorithm 3's H).",
         )
         parser.add_argument(
+            "--pomdp-observation-probability-weight",
+            type=float,
+            default=Tossing3DPomdpMethod.model_fields[
+                "pomdp_observation_probability_weight"
+            ].default,
+            help="Algorithm 3 weight on the negative log probability of a sampled observation.",
+        )
+        parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
@@ -236,6 +244,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,
+                pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),
