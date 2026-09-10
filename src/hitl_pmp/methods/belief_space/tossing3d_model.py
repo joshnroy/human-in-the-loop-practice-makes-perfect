@@ -130,6 +130,20 @@ class Tossing3DPracticeModel(BaseModel):
             return policy_value - self.linear_cost_lambda * summed_cost
         return policy_value if summed_cost <= PRACTICE_BUDGET else -np.inf
 
+    def J(
+        self, *, belief_state: Tossing3DBeliefState, summed_cost: float, num_samples: int
+    ) -> float:
+        """Estimate the PDF's belief objective J(C, b) = E[G(C, theta)]."""
+        policy_values = self.sample_policy_values_from_belief(
+            belief_state=belief_state, num_samples=num_samples
+        )
+        values = np.fromiter(
+            (self.G(policy_value=float(value), summed_cost=summed_cost) for value in policy_values),
+            dtype=np.float64,
+            count=num_samples,
+        )
+        return float(np.mean(values))
+
     def observe_outcome(
         self,
         *,
@@ -187,7 +201,7 @@ class Tossing3DPracticeModel(BaseModel):
         environment_state: Tossing3DSearchState,
         summed_cost: float,
         belief_state: Tossing3DBeliefState,
-        horizon: int,
+        horizon: int | None,
     ) -> object:
         assert summed_cost == belief_state.accumulated_cost
         return (

@@ -39,6 +39,14 @@ class Model(BaseModel):
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         return policy_value - summed_cost
 
+    def J(self, *, belief_state: BeliefState, summed_cost: float, num_samples: int) -> float:
+        values = self.sample_policy_values_from_belief(
+            belief_state=belief_state, num_samples=num_samples
+        )
+        return float(
+            np.mean([self.G(policy_value=value, summed_cost=summed_cost) for value in values])
+        )
+
     def get_valid_actions(self, *, environment_state: EnvironmentState) -> list[Action]:
         return [action for state, action in self.transitions if state == environment_state]
 
@@ -69,7 +77,7 @@ class Model(BaseModel):
         environment_state: EnvironmentState,
         summed_cost: float,
         belief_state: BeliefState,
-        horizon: int,
+        horizon: int | None,
     ) -> object:
         return environment_state, summed_cost, belief_state, horizon
 
@@ -187,7 +195,7 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
     assert not any(event["event"] == "branch" for event in trace.events)
 
 
-def test_merged_node_propagates_deeper_value_to_every_root_action() -> None:
+def test_merged_node_is_evaluated_once() -> None:
     model = Model(
         transitions={
             (ROOT, LEFT): [(HIGH, 0.0, 1.0)],
@@ -209,12 +217,8 @@ def test_merged_node_propagates_deeper_value_to_every_root_action() -> None:
         trace=trace,
     )
 
-    action_values = {
-        event["action"]["name"]: event["value"]
-        for event in trace.events
-        if event["event"] == "action_value"
-    }
-    assert action_values == {"left": pytest.approx(0.9), "right": pytest.approx(0.9)}
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["merged_nodes"] == 1
 
 
 def test_nonpositive_iteration_budget_is_rejected() -> None:
@@ -268,7 +272,7 @@ def test_generic_heuristic_adds_no_domain_knowledge() -> None:
                 summed_cost=0.0,
                 depth=0,
                 stop_value=0.2,
-                path_cost=0.0,
+                g=0.0,
             )
         )
         == 0.0

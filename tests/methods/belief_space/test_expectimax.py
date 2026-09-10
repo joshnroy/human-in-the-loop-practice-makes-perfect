@@ -101,7 +101,7 @@ class Model(BaseModel):
         environment_state: EnvironmentState,
         summed_cost: float,
         belief_state: BeliefState,
-        horizon: int,
+        horizon: int | None,
     ) -> object:
         return environment_state, summed_cost, belief_state, horizon
 
