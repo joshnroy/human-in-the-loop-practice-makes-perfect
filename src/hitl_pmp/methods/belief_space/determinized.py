@@ -14,11 +14,7 @@ import time
 import numpy as np
 
 from .planner import BeliefSpacePlanner
-from .types.determinized import (
-    DeterminizedHeuristic,
-    DeterminizedPathCost,
-    DeterminizedSearchNode,
-)
+from .types.determinized import DeterminizedHeuristic, DeterminizedSearchNode
 from .types.protocol import ActionT, BeliefSpaceModel, BeliefStateT, EnvironmentStateT, ThetaT
 from .types.search_trace import SearchTrace
 from .types.stop_action import NUM_SAMPLES, STOP_ACTION, StopAction
@@ -34,19 +30,15 @@ class DeterminizedAStarPlanner(
     def __init__(
         self,
         *,
-        max_evaluated_nodes: int | None = None,
+        max_stop_value_evaluations: int | None = None,
         seed: int,
         max_seconds: float | None = None,
-        safety_max_depth: int | None = None,
         heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] | None = None,
-        path_cost: DeterminizedPathCost[EnvironmentStateT, BeliefStateT, ActionT] | None = None,
     ) -> None:
-        self.max_evaluated_nodes = max_evaluated_nodes
+        self.max_stop_value_evaluations = max_stop_value_evaluations
         self.seed = seed
         self.max_seconds = max_seconds
-        self.safety_max_depth = safety_max_depth
         self.heuristic = heuristic or zero_heuristic
-        self.path_cost = path_cost or objective_delta_path_cost
 
     def solve(
         self,
@@ -62,66 +54,60 @@ class DeterminizedAStarPlanner(
         # ``horizon`` belongs to the shared interface for exact expectimax. It
         # deliberately does not bound this compute-budgeted planner.
         del horizon
-        return solve_belief_space_determinized(
+        return solve_belief_space_determinized_astar(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
             model=model,
-            max_evaluated_nodes=self.max_evaluated_nodes,
+            max_stop_value_evaluations=self.max_stop_value_evaluations,
             max_seconds=self.max_seconds,
-            safety_max_depth=self.safety_max_depth,
             seed=self.seed,
             heuristic=self.heuristic,
-            path_cost=self.path_cost,
             num_samples=num_samples,
             trace=trace,
         )
 
 
-def solve_belief_space_determinized(
+def solve_belief_space_determinized_astar(
     *,
     environment_state: EnvironmentStateT,
     summed_cost: float,
     belief_state: BeliefStateT,
     model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
-    max_evaluated_nodes: int | None = None,
+    max_stop_value_evaluations: int | None = None,
     max_seconds: float | None = None,
-    safety_max_depth: int | None = None,
     seed: int,
     heuristic: DeterminizedHeuristic[EnvironmentStateT, BeliefStateT] | None = None,
-    path_cost: DeterminizedPathCost[EnvironmentStateT, BeliefStateT, ActionT] | None = None,
     num_samples: int = NUM_SAMPLES,
     trace: SearchTrace | None = None,
 ) -> tuple[float, ActionT | StopAction]:
     """Search one sampled deterministic successor per applicable action.
 
-    Each action samples one successor from the model's complete outcome
-    distribution. Nodes are ordered by ``-stop_value + heuristic(node)``: the
-    negative sign converts this maximization problem to A*'s lowest-cost-first
-    convention. Search ends at the expansion or wall-clock budget, whichever
-    comes first. ``safety_max_depth`` is only an emergency guard and is not a
-    search budget. The supplied seed controls chance-outcome determinization;
-    any additional model sampling remains controlled by the experiment's
-    master-seeded model.
+    Each unique cache-key/action edge is expanded at most once and samples one
+    successor from the model's complete outcome distribution. A fixed seed and
+    fixed traversal order are reproducible; changing the traversal order can
+    assign random draws to different edges. Nodes are ordered by accumulated
+    objective loss plus the injected heuristic. Search ends at the stop-value
+    evaluation or wall-clock budget, whichever comes first.
+
+    Additional model sampling remains controlled by the experiment's
+    master-seeded model. At least one compute budget is required, so cyclic
+    search spaces do not require a separate depth cutoff.
     """
-    assert max_evaluated_nodes is None or max_evaluated_nodes >= 1, (
-        "max_evaluated_nodes must be positive"
-    )
-    assert safety_max_depth is None or safety_max_depth >= 0, (
-        "safety_max_depth must be non-negative"
+    assert max_stop_value_evaluations is None or max_stop_value_evaluations >= 1, (
+        "max_stop_value_evaluations must be positive"
     )
     assert num_samples >= 1, "num_samples must be positive"
     assert max_seconds is None or (math.isfinite(max_seconds) and max_seconds >= 0.0), (
         "max_seconds must be finite and non-negative"
     )
-    assert max_evaluated_nodes is not None or max_seconds is not None, (
+    assert max_stop_value_evaluations is not None or max_seconds is not None, (
         "at least one compute budget is required"
     )
     assert math.isfinite(summed_cost) and summed_cost >= 0, (
         "summed_cost must be finite and non-negative"
     )
     heuristic = heuristic or zero_heuristic
-    path_cost = path_cost or objective_delta_path_cost
     rng = np.random.default_rng(seed)
     started_at = time.perf_counter()
 
@@ -129,7 +115,6 @@ def solve_belief_space_determinized(
         model=model, belief_state=belief_state, summed_cost=summed_cost, num_samples=num_samples
     )
     best_value = root_value
-    best_path_cost = 0.0
     best_action: ActionT | StopAction = STOP_ACTION
     root_values: dict[ActionT, float] = {}
     frontier: list[
@@ -156,22 +141,19 @@ def solve_belief_space_determinized(
         horizon=0,
     )
     values_by_key = {root_key: root_value}
-    costs_by_key = {root_key: 0.0}
-    closed_costs: dict[object, float] = {}
-    sampled_outcomes_by_edge: dict[
-        tuple[object, ActionT], tuple[EnvironmentStateT, float, float]
-    ] = {}
-    provenance_by_key: dict[object, list[ActionT]] = {root_key: []}
-    children_by_key: dict[object, list[object]] = {root_key: []}
+    queued_keys = {root_key}
+    expanded_keys: set[object] = set()
+    provenance_by_key: dict[object, set[ActionT]] = {root_key: set()}
+    children_by_key: dict[object, set[object]] = {root_key: set()}
     expanded_nodes = 0
-    generated_nodes = 0
+    traversed_nodes = 0
+    generated_successors = 0
     merged_nodes = 0
-    action_evaluations = 0
-    chance_outcomes = 0
+    action_transitions_evaluated = 0
+    chance_outcomes_enumerated = 0
     sequence = 0
     max_frontier_size = 0
     max_depth_reached = 0
-    reopened_nodes = 0
     termination_reason = "frontier_exhausted"
 
     if trace is not None:
@@ -204,11 +186,17 @@ def solve_belief_space_determinized(
         )
         max_frontier_size = 1
 
-    # A hard-budget G can reject the root with -inf. Since execution costs are
-    # non-negative, deeper nodes cannot restore feasibility.
+    # A hard-budget G(C, theta) can make J(C, b) negative infinity at the root.
+    # Since execution costs are non-negative, deeper nodes cannot restore feasibility.
     while frontier:
         if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
             termination_reason = "time_budget"
+            break
+        if (
+            max_stop_value_evaluations is not None
+            and len(values_by_key) >= max_stop_value_evaluations
+        ):
+            termination_reason = "stop_value_evaluation_budget"
             break
         (
             _priority,
@@ -222,41 +210,33 @@ def solve_belief_space_determinized(
             current_value,
             current_first_action,
         ) = heapq.heappop(frontier)
-        if current_path_cost != costs_by_key.get(current_key):
+        traversed_nodes += 1
+        queued_keys.discard(current_key)
+        if current_key in expanded_keys:
             continue
-        closed_cost = closed_costs.get(current_key)
-        if closed_cost is not None and closed_cost <= current_path_cost:
-            continue
-        closed_costs[current_key] = current_path_cost
+        expanded_keys.add(current_key)
         expanded_nodes += 1
         max_depth_reached = max(max_depth_reached, current_depth)
-
-        if current_path_cost < best_path_cost:
-            best_path_cost = current_path_cost
-            best_value = current_value
-            best_action = current_first_action
-
-        if safety_max_depth is not None and current_depth >= safety_max_depth:
-            continue
 
         for action in model.get_valid_actions(environment_state=current_environment):
             if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
                 termination_reason = "time_budget"
                 break
-            action_evaluations += 1
-            edge = (current_key, action)
-            sampled_outcome = sampled_outcomes_by_edge.get(edge)
-            if sampled_outcome is None:
-                outcomes = model.transition_outcomes(
-                    environment_state=current_environment,
-                    practice_action=action,
-                    belief_state=current_belief,
-                )
-                assert outcomes, f"action {action!r} has no chance outcomes"
-                chance_outcomes += len(outcomes)
-                sampled_outcome = _sample_outcome(rng=rng, outcomes=outcomes, action=action)
-                sampled_outcomes_by_edge[edge] = sampled_outcome
-            next_environment, sampled_cost, outcome_probability = sampled_outcome
+            if (
+                max_stop_value_evaluations is not None
+                and len(values_by_key) >= max_stop_value_evaluations
+            ):
+                termination_reason = "stop_value_evaluation_budget"
+                break
+            action_transitions_evaluated += 1
+            outcomes = model.transition_outcomes(
+                environment_state=current_environment,
+                practice_action=action,
+                belief_state=current_belief,
+            )
+            chance_outcomes_enumerated += len(outcomes)
+            sampled_outcome = _sample_outcome(rng=rng, outcomes=outcomes, action=action)
+            next_environment, sampled_cost, _outcome_probability = sampled_outcome
             next_cost = current_cost + sampled_cost
             next_depth = current_depth + 1
             next_belief = model.update_belief_state(
@@ -265,9 +245,9 @@ def solve_belief_space_determinized(
                 potential_next_environment_state=next_environment,
                 practice_action=action,
             )
-            generated_nodes += 1
+            generated_successors += 1
             first_action = action if current_depth == 0 else current_first_action
-            first_actions = [action] if current_depth == 0 else provenance_by_key[current_key]
+            first_actions = {action} if current_depth == 0 else provenance_by_key[current_key]
             key = model.search_cache_key(
                 environment_state=next_environment,
                 summed_cost=next_cost,
@@ -279,12 +259,6 @@ def solve_belief_space_determinized(
                 merged_nodes += 1
                 value = cached_value
             else:
-                if max_evaluated_nodes is not None and len(values_by_key) >= max_evaluated_nodes:
-                    termination_reason = "evaluated_node_budget"
-                    # The evaluation budget limits expensive G/stop-value
-                    # calls, not graph traversal. Continue consuming already
-                    # evaluated/cache-hit nodes, matching expectimax semantics.
-                    continue
                 if max_seconds is not None and time.perf_counter() - started_at >= max_seconds:
                     termination_reason = "time_budget"
                     break
@@ -295,10 +269,9 @@ def solve_belief_space_determinized(
                     num_samples=num_samples,
                 )
                 values_by_key[key] = value
-                provenance_by_key[key] = []
-                children_by_key[key] = []
-            if key not in children_by_key[current_key]:
-                children_by_key[current_key].append(key)
+                provenance_by_key[key] = set()
+                children_by_key[key] = set()
+            children_by_key[current_key].add(key)
             _add_provenance(
                 key=key,
                 actions=first_actions,
@@ -309,41 +282,15 @@ def solve_belief_space_determinized(
             )
             if value == -math.inf:
                 continue
-            parent_node = DeterminizedSearchNode(
-                environment_state=current_environment,
-                belief_state=current_belief,
-                summed_cost=current_cost,
-                depth=current_depth,
-                stop_value=current_value,
-                path_cost=current_path_cost,
-            )
-            provisional_child = DeterminizedSearchNode(
-                environment_state=next_environment,
-                belief_state=next_belief,
-                summed_cost=next_cost,
-                depth=next_depth,
-                stop_value=value,
-                path_cost=current_path_cost,
-            )
-            incremental_cost = path_cost(
-                parent=parent_node,
-                child=provisional_child,
-                action=action,
-                outcome_probability=outcome_probability,
-                sampled_cost=sampled_cost,
-            )
-            assert math.isfinite(incremental_cost), "path cost must be finite"
-            next_path_cost = current_path_cost + incremental_cost
-            if next_path_cost < best_path_cost:
-                best_path_cost = next_path_cost
+            # Objective differences telescope along the path, converting this
+            # maximization problem to A*'s lowest-cost-first convention.
+            next_path_cost = current_path_cost + current_value - value
+            if value > best_value:
                 best_value = value
                 best_action = first_action
-            previous_cost = costs_by_key.get(key, math.inf)
-            if next_path_cost >= previous_cost:
+            if key in expanded_keys or key in queued_keys:
                 continue
-            if key in closed_costs:
-                reopened_nodes += 1
-            costs_by_key[key] = next_path_cost
+            queued_keys.add(key)
             sequence += 1
             heapq.heappush(
                 frontier,
@@ -370,6 +317,9 @@ def solve_belief_space_determinized(
             )
             max_frontier_size = max(max_frontier_size, len(frontier))
 
+        if termination_reason in {"time_budget", "stop_value_evaluation_budget"}:
+            break
+
     if trace is not None:
         for action, value in root_values.items():
             trace.record(
@@ -390,21 +340,19 @@ def solve_belief_space_determinized(
         trace.record(
             event="search_summary",
             node=0,
-            solver="determinized",
+            solver="determinized_astar",
             expanded_nodes=expanded_nodes,
-            touched_nodes=generated_nodes + 1,
-            generated_nodes=generated_nodes,
+            traversed_nodes=traversed_nodes,
+            generated_successors=generated_successors,
             unique_nodes=len(values_by_key),
             merged_nodes=merged_nodes,
-            reopened_nodes=reopened_nodes,
-            action_evaluations=action_evaluations,
-            chance_outcomes=chance_outcomes,
+            action_transitions_evaluated=action_transitions_evaluated,
+            chance_outcomes_enumerated=chance_outcomes_enumerated,
             frontier_nodes=len(frontier),
             max_frontier_size=max_frontier_size,
             max_depth_reached=max_depth_reached,
-            safety_max_depth=safety_max_depth,
-            evaluated_nodes=len(values_by_key),
-            max_evaluated_nodes=max_evaluated_nodes,
+            stop_value_evaluations=len(values_by_key),
+            max_stop_value_evaluations=max_stop_value_evaluations,
             max_seconds=max_seconds,
             search_elapsed_seconds=(elapsed_seconds := time.perf_counter() - started_at),
             time_budget_overshoot_seconds=(
@@ -421,24 +369,6 @@ def zero_heuristic(*, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStat
     return 0.0
 
 
-def objective_delta_path_cost(
-    *,
-    parent: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-    child: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-    action: ActionT,
-    outcome_probability: float,
-    sampled_cost: float,
-) -> float:
-    """Convert improvement in the supplied objective ``G`` to A* path cost.
-
-    The differences telescope, so minimizing accumulated cost selects the
-    discovered node with the largest stop/deployment value. Domains may inject
-    another additive path-cost model without changing the planner.
-    """
-    del action, outcome_probability, sampled_cost
-    return parent.stop_value - child.stop_value
-
-
 def _stop_value(
     *,
     model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
@@ -446,7 +376,11 @@ def _stop_value(
     summed_cost: float,
     num_samples: int,
 ) -> float:
-    """Estimate the value of stopping from one belief-space state."""
+    """Monte Carlo estimate of the paper's stopping objective ``J(C, b)``.
+
+    ``model.G`` evaluates ``G(C, theta)`` for one sampled latent model; the
+    mean below estimates its expectation under the belief ``b``.
+    """
     policy_values = model.sample_policy_values_from_belief(
         belief_state=belief_state, num_samples=num_samples
     )
@@ -514,11 +448,11 @@ def _sample_outcome(
 def _add_provenance(
     *,
     key: object,
-    actions: list[ActionT],
-    provenance_by_key: dict[object, list[ActionT]],
+    actions: set[ActionT],
+    provenance_by_key: dict[object, set[ActionT]],
     root_values: dict[ActionT, float],
     values_by_key: dict[object, float],
-    children_by_key: dict[object, list[object]],
+    children_by_key: dict[object, set[object]],
 ) -> None:
     """Credit a shared descendant to every root action that reaches it."""
     pending = [(key, action) for action in actions]
@@ -527,6 +461,6 @@ def _add_provenance(
         provenance = provenance_by_key[current_key]
         if action in provenance:
             continue
-        provenance.append(action)
+        provenance.add(action)
         root_values[action] = max(root_values.get(action, -math.inf), values_by_key[current_key])
         pending.extend((child_key, action) for child_key in children_by_key[current_key])

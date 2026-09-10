@@ -30,7 +30,7 @@ def solve_belief_space_expectimax(
     horizon: int,
     model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
     num_samples: int = NUM_SAMPLES,
-    max_evaluated_nodes: int | None = None,
+    max_stop_value_evaluations: int | None = None,
     max_seconds: float | None = None,
     trace: SearchTrace | None = None,
 ) -> tuple[float, ActionT | StopAction]:
@@ -47,8 +47,8 @@ def solve_belief_space_expectimax(
     resample theta and see updated model parameters.
     """
     assert num_samples >= 1, "num_samples must be positive"
-    assert max_evaluated_nodes is None or max_evaluated_nodes >= 1, (
-        "max_evaluated_nodes must be positive"
+    assert max_stop_value_evaluations is None or max_stop_value_evaluations >= 1, (
+        "max_stop_value_evaluations must be positive"
     )
     assert max_seconds is None or (math.isfinite(max_seconds) and max_seconds >= 0.0), (
         "max_seconds must be finite and non-negative"
@@ -59,7 +59,7 @@ def solve_belief_space_expectimax(
         num_samples=num_samples,
         trace=trace,
         started_at=started_at,
-        max_evaluated_nodes=max_evaluated_nodes,
+        max_stop_value_evaluations=max_stop_value_evaluations,
         max_seconds=max_seconds,
     )
     termination_reason = "horizon_or_objective_exhausted"
@@ -95,18 +95,18 @@ def solve_belief_space_expectimax(
             solver="expectimax",
             horizon=horizon,
             expanded_nodes=solver.expanded_nodes,
-            touched_nodes=solver.cache_requests,
-            evaluated_nodes=solver.next_node,
+            traversed_nodes=solver.cache_requests,
+            stop_value_evaluations=solver.next_node,
             unique_nodes=solver.next_node,
-            max_evaluated_nodes=max_evaluated_nodes,
+            max_stop_value_evaluations=max_stop_value_evaluations,
             max_seconds=max_seconds,
-            generated_nodes=max(0, solver.cache_requests - 1),
+            generated_successors=max(0, solver.cache_requests - 1),
             frontier_nodes=0,
             max_frontier_size=0,
             cache_requests=solver.cache_requests,
             cache_hits=solver.cache_hits,
-            action_evaluations=solver.action_evaluations,
-            chance_outcomes=solver.chance_outcomes,
+            action_transitions_evaluated=solver.action_transitions_evaluated,
+            chance_outcomes_enumerated=solver.chance_outcomes_enumerated,
             nodes_by_horizon=dict(sorted(solver.nodes_by_horizon.items(), reverse=True)),
             max_depth_reached=(
                 horizon - min(solver.nodes_by_horizon) if solver.nodes_by_horizon else 0
@@ -129,7 +129,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
         num_samples: int,
         started_at: float,
-        max_evaluated_nodes: int | None = None,
+        max_stop_value_evaluations: int | None = None,
         max_seconds: float | None = None,
         trace: SearchTrace | None = None,
     ) -> None:
@@ -138,15 +138,15 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         self.memo: dict[object, tuple[float, ActionT | StopAction]] = {}
         self.trace = trace
         self.started_at = started_at
-        self.max_evaluated_nodes = max_evaluated_nodes
+        self.max_stop_value_evaluations = max_stop_value_evaluations
         self.max_seconds = max_seconds
         self.root_incumbent: tuple[float, ActionT | StopAction] | None = None
         self.next_node = 0
         self.expanded_nodes = 0
         self.cache_requests = 0
         self.cache_hits = 0
-        self.action_evaluations = 0
-        self.chance_outcomes = 0
+        self.action_transitions_evaluated = 0
+        self.chance_outcomes_enumerated = 0
         self.nodes_by_horizon: dict[int, int] = {}
 
     def check_deadline(self) -> None:
@@ -199,8 +199,11 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             "summed_cost must be finite and non-negative"
         )
 
-        if self.max_evaluated_nodes is not None and self.next_node >= self.max_evaluated_nodes:
-            raise _SearchBudgetExhausted("evaluated_node_budget")
+        if (
+            self.max_stop_value_evaluations is not None
+            and self.next_node >= self.max_stop_value_evaluations
+        ):
+            raise _SearchBudgetExhausted("stop_value_evaluation_budget")
         self.check_deadline()
         node = self.next_node
         self.next_node += 1
@@ -217,10 +220,9 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             dtype=np.float64,
             count=self.num_samples,
         )
-        for current_pomdp_value in sample_values:
-            assert not math.isnan(current_pomdp_value) and current_pomdp_value != math.inf, (
-                f"stop value must be finite or negative infinity, got {current_pomdp_value}"
-            )
+        assert all(not math.isnan(value) and value != math.inf for value in sample_values), (
+            "stop value must be finite or negative infinity"
+        )
         if self.trace is not None and node == 0:
             self.trace.record(
                 event="sample_summary",
@@ -264,7 +266,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
         self.expanded_nodes += 1
         for practice_action in self.model.get_valid_actions(environment_state=environment_state):
             self.check_deadline()
-            self.action_evaluations += 1
+            self.action_transitions_evaluated += 1
             value_of_state = 0.0
             total_probability = 0.0
             # TODO: Should samples be drawn with or without replacement?
@@ -276,7 +278,7 @@ class ExpectimaxSearch(Generic[EnvironmentStateT, BeliefStateT, ThetaT, ActionT]
             assert next_states_and_probabilities, (
                 f"action {practice_action!r} has no chance outcomes"
             )
-            self.chance_outcomes += len(next_states_and_probabilities)
+            self.chance_outcomes_enumerated += len(next_states_and_probabilities)
             for (
                 potential_next_environment_state,
                 sampled_cost,
@@ -355,10 +357,10 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
     def __init__(
         self,
         *,
-        max_evaluated_nodes: int | None = None,
+        max_stop_value_evaluations: int | None = None,
         max_seconds: float | None = None,
     ) -> None:
-        self.max_evaluated_nodes = max_evaluated_nodes
+        self.max_stop_value_evaluations = max_stop_value_evaluations
         self.max_seconds = max_seconds
 
     def solve(
@@ -379,7 +381,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
             horizon=horizon,
             model=model,
             num_samples=num_samples,
-            max_evaluated_nodes=self.max_evaluated_nodes,
+            max_stop_value_evaluations=self.max_stop_value_evaluations,
             max_seconds=self.max_seconds,
             trace=trace,
         )

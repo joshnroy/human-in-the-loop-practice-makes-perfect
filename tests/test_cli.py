@@ -111,7 +111,7 @@ def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     assert args.pomdp_num_samples == 100
     assert args.pomdp_learning_rate_process_noise_std == 0.05
     assert args.pomdp_solver == "expectimax"
-    assert args.pomdp_max_evaluated_nodes == 100
+    assert args.pomdp_max_stop_value_evaluations == 100
     assert args.pomdp_max_search_seconds is None
 
 
@@ -123,13 +123,13 @@ def test_tossing3d_pomdp_cli_accepts_determinized_solver() -> None:
             "--method",
             "pomdp",
             "--pomdp-solver",
-            "determinized",
-            "--pomdp-max-evaluated-nodes",
+            "determinized_astar",
+            "--pomdp-max-stop-value-evaluations",
             "17",
         ]
     )
-    assert args.pomdp_solver == "determinized"
-    assert args.pomdp_max_evaluated_nodes == 17
+    assert args.pomdp_solver == "determinized_astar"
+    assert args.pomdp_max_stop_value_evaluations == 17
 
 
 def test_parse_args_has_no_positional_arguments() -> None:

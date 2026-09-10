@@ -56,7 +56,7 @@ def test_trace_preserves_search_result_and_records_compact_root_values() -> None
     )
     plain = solve_belief_space_expectimax(model=model, **args)
     traced = solve_belief_space_expectimax(
-        model=traced_model, trace=trace, max_evaluated_nodes=2, **args
+        model=traced_model, trace=trace, max_stop_value_evaluations=2, **args
     )
     assert plain == traced
     assert model.visits == traced_model.visits
@@ -70,9 +70,9 @@ def test_trace_preserves_search_result_and_records_compact_root_values() -> None
     assert not any(event["event"] == "sample" for event in trace.events)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
     assert summary["expanded_nodes"] == 1
-    assert summary["evaluated_nodes"] == 2
-    assert summary["action_evaluations"] == 1
-    assert summary["chance_outcomes"] == 1
+    assert summary["stop_value_evaluations"] == 2
+    assert summary["action_transitions_evaluated"] == 1
+    assert summary["chance_outcomes_enumerated"] == 1
 
 
 class Model(BaseModel):
@@ -466,14 +466,14 @@ def test_node_budget_discards_an_incomplete_root_chance_sum() -> None:
         belief_state=BeliefState(value=0.2),
         horizon=1,
         model=model,
-        max_evaluated_nodes=2,
+        max_stop_value_evaluations=2,
         trace=trace,
     )
 
     assert result == (pytest.approx(0.2), STOP_ACTION)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["evaluated_nodes"] == 2
-    assert summary["termination_reason"] == "evaluated_node_budget"
+    assert summary["stop_value_evaluations"] == 2
+    assert summary["termination_reason"] == "stop_value_evaluation_budget"
     assert not any(event["event"] == "action_value" for event in trace.events)
 
 
@@ -491,7 +491,7 @@ def test_zero_time_budget_returns_root_stop_incumbent() -> None:
 
     assert result == (pytest.approx(0.2), STOP_ACTION)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["evaluated_nodes"] == 1
+    assert summary["stop_value_evaluations"] == 1
     assert summary["termination_reason"] == "time_budget"
 
 
@@ -503,12 +503,12 @@ def test_node_budget_one_evaluates_only_the_root() -> None:
         belief_state=BeliefState(value=0.2),
         horizon=1,
         model=Model(transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]}),
-        max_evaluated_nodes=1,
+        max_stop_value_evaluations=1,
         trace=trace,
     )
     assert result == (pytest.approx(0.2), STOP_ACTION)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["evaluated_nodes"] == 1
+    assert summary["stop_value_evaluations"] == 1
 
 
 def test_exact_full_tree_node_budget_completes_normally() -> None:
@@ -522,12 +522,12 @@ def test_exact_full_tree_node_budget_completes_normally() -> None:
             transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.0, 1.0)]},
             beliefs={SUCCESS: BeliefState(value=0.8)},
         ),
-        max_evaluated_nodes=2,
+        max_stop_value_evaluations=2,
         trace=trace,
     )
     assert result == (pytest.approx(0.8), PRACTICE)
     summary = next(event for event in trace.events if event["event"] == "search_summary")
-    assert summary["evaluated_nodes"] == 2
+    assert summary["stop_value_evaluations"] == 2
     assert summary["termination_reason"] == "horizon_or_objective_exhausted"
 
 
@@ -548,7 +548,7 @@ def test_budget_retains_a_complete_root_action_before_interruption() -> None:
                 SUCCESS: BeliefState(value=0.9),
             },
         ),
-        max_evaluated_nodes=2,
+        max_stop_value_evaluations=2,
         trace=trace,
     )
     assert result == (pytest.approx(0.7), SETUP)
@@ -574,7 +574,7 @@ def test_deep_interruption_does_not_leak_a_partial_value_to_the_root() -> None:
                 FAILURE: BeliefState(value=0.0),
             },
         ),
-        max_evaluated_nodes=3,
+        max_stop_value_evaluations=3,
         trace=trace,
     )
     assert result == (pytest.approx(0.2), STOP_ACTION)

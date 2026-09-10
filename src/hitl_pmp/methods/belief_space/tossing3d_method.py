@@ -52,8 +52,8 @@ class Tossing3DPomdpMethod(EesMethod):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     pomdp_search_depth: int = Field(default=3, ge=0)
-    pomdp_solver: Literal["expectimax", "determinized"] = "expectimax"
-    pomdp_max_evaluated_nodes: int = Field(default=100, ge=1)
+    pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
+    pomdp_max_stop_value_evaluations: int = Field(default=100, ge=1)
     pomdp_max_search_seconds: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     pomdp_planner: (
         BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
@@ -332,8 +332,8 @@ class Tossing3DPomdpMethod(EesMethod):
                 planner = ExpectimaxPlanner()
             else:
                 planner = DeterminizedAStarPlanner(
-                    max_evaluated_nodes=self.pomdp_max_evaluated_nodes,
-                    seed=self.seed + self._decision_index,
+                    max_stop_value_evaluations=self.pomdp_max_stop_value_evaluations,
+                    seed=_pair_seed(seed=self.seed, index=self._decision_index),
                     max_seconds=self.pomdp_max_search_seconds,
                 )
             value, action = planner.solve(
@@ -370,8 +370,8 @@ class Tossing3DPomdpMethod(EesMethod):
             value=value,
             horizon=self.pomdp_search_depth if planner.name == "expectimax" else None,
             solver=planner.name,
-            max_evaluated_nodes=(
-                planner.max_evaluated_nodes
+            max_stop_value_evaluations=(
+                planner.max_stop_value_evaluations
                 if isinstance(planner, DeterminizedAStarPlanner)
                 else None
             ),
@@ -387,3 +387,10 @@ class Tossing3DPomdpMethod(EesMethod):
 
         self.record_practice_target(name=action.skill.name, field="scored")
         return [action]
+
+
+def _pair_seed(*, seed: int, index: int) -> int:
+    """Uniquely derive a decision stream from one non-negative experiment seed."""
+    assert seed >= 0 and index >= 0
+    total = seed + index
+    return total * (total + 1) // 2 + index

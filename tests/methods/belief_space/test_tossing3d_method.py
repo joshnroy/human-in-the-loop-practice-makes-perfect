@@ -65,7 +65,11 @@ def test_selector_uses_current_symbolic_state_without_starting_simulator() -> No
 
 def test_determinized_selector_is_seeded_and_does_not_start_simulator() -> None:
     methods = [
-        _build(pomdp_num_samples=1, pomdp_solver="determinized", pomdp_max_evaluated_nodes=4)
+        _build(
+            pomdp_num_samples=1,
+            pomdp_solver="determinized_astar",
+            pomdp_max_stop_value_evaluations=4,
+        )
         for _ in range(2)
     ]
     selections = []
@@ -179,7 +183,7 @@ def test_invalid_method_configuration_is_rejected_early() -> None:
     with pytest.raises(ValidationError):
         _build(pomdp_search_depth=-1)
     with pytest.raises(ValidationError):
-        _build(pomdp_max_evaluated_nodes=0)
+        _build(pomdp_max_stop_value_evaluations=0)
     with pytest.raises(ValidationError):
         _build(pomdp_solver="unknown")
 
@@ -335,7 +339,7 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
     summary = next(event for event in decision["search"] if event["event"] == "search_summary")
     assert summary["expanded_nodes"] > 0
     assert summary["cache_requests"] >= summary["expanded_nodes"]
-    assert summary["chance_outcomes"] > 0
+    assert summary["chance_outcomes_enumerated"] > 0
 
 
 def test_end_cycle_logs_exact_learning_rate_observations(

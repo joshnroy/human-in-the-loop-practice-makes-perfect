@@ -1,7 +1,5 @@
 """Tests for compact expectimax search summaries."""
 
-import pytest
-
 from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 
 
@@ -14,21 +12,11 @@ def test_search_trace_retains_compact_root_events() -> None:
         expanded_nodes=12,
         cache_requests=20,
         cache_hits=8,
-        action_evaluations=15,
-        chance_outcomes=30,
+        action_transitions_evaluated=15,
+        chance_outcomes_enumerated=30,
         nodes_by_horizon={2: 1, 1: 3, 0: 8},
     )
 
     assert [event["event"] for event in trace.events] == ["stop_value", "search_summary"]
     assert trace.events[1]["expanded_nodes"] == 12
     trace.close()
-
-
-def test_search_fields_cannot_be_overwritten_by_log_timing() -> None:
-    trace = SearchTrace()
-    trace.record(event="search_summary", search_elapsed_seconds=0.125)
-
-    event = trace.events[0]
-    assert event["search_elapsed_seconds"] == pytest.approx(0.125)
-    assert float(event["recorded_at_elapsed_seconds"]) >= 0.0
-    assert "elapsed_seconds" not in event

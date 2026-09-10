@@ -1,11 +1,11 @@
 """Compare exact expectimax with compute-bounded determinized A*.
 
 Exact expectimax is first run to completion to establish its reference action,
-value, evaluated-node count, and runtime. Both planners are then rerun through
-the same budgeted interface: once with that exact node budget and once with the
-same half-reference wall-clock deadline. Interrupted expectimax retains only
-STOP and completely evaluated root actions; partial chance sums are discarded.
-A* itself has no depth limit.
+value, stop-value evaluation count, and runtime. Both planners are then rerun
+through the same budgeted interface: once with that evaluation budget and once
+with the same half-reference wall-clock deadline. Interrupted expectimax
+retains only STOP and completely evaluated root actions; partial chance sums
+are discarded. Determinized A* itself has no planning-horizon cutoff.
 """
 
 import argparse
@@ -124,15 +124,15 @@ def _run(*, planner: Any, horizon: int, model: BenchmarkModel | None = None) -> 
     return {
         "search_elapsed_seconds": float(summary["search_elapsed_seconds"]),
         "expanded_nodes": int(summary["expanded_nodes"]),
-        "touched_nodes": int(summary["touched_nodes"]),
-        "evaluated_nodes": int(summary["evaluated_nodes"]),
-        "generated_nodes": int(summary["generated_nodes"]),
-        "unique_nodes": int(summary.get("unique_nodes", summary["evaluated_nodes"])),
+        "traversed_nodes": int(summary["traversed_nodes"]),
+        "stop_value_evaluations": int(summary["stop_value_evaluations"]),
+        "generated_successors": int(summary["generated_successors"]),
+        "unique_nodes": int(summary.get("unique_nodes", summary["stop_value_evaluations"])),
         "cache_hits_or_merges": int(summary.get("cache_hits", summary.get("merged_nodes", 0))),
         "frontier_nodes": int(summary.get("frontier_nodes", 0)),
         "max_frontier_size": int(summary.get("max_frontier_size", 0)),
-        "action_evaluations": int(summary["action_evaluations"]),
-        "chance_outcomes": int(summary["chance_outcomes"]),
+        "action_transitions_evaluated": int(summary["action_transitions_evaluated"]),
+        "chance_outcomes_enumerated": int(summary["chance_outcomes_enumerated"]),
         "max_depth_reached": int(summary["max_depth_reached"]),
         "termination_reason": str(summary["termination_reason"]),
         "time_budget_overshoot_seconds": float(summary.get("time_budget_overshoot_seconds") or 0.0),
@@ -158,17 +158,25 @@ def _aggregate(
         "q3_seconds": float(np.quantile(elapsed, 0.75)),
         "stdev_seconds": (statistics.stdev(elapsed) if len(runs) > 1 else 0.0),
         "mean_expanded_nodes": statistics.mean(int(run["expanded_nodes"]) for run in runs),
-        "mean_touched_nodes": statistics.mean(int(run["touched_nodes"]) for run in runs),
-        "mean_evaluated_nodes": statistics.mean(int(run["evaluated_nodes"]) for run in runs),
-        "mean_generated_nodes": statistics.mean(int(run["generated_nodes"]) for run in runs),
+        "mean_traversed_nodes": statistics.mean(int(run["traversed_nodes"]) for run in runs),
+        "mean_stop_value_evaluations": statistics.mean(
+            int(run["stop_value_evaluations"]) for run in runs
+        ),
+        "mean_generated_successors": statistics.mean(
+            int(run["generated_successors"]) for run in runs
+        ),
         "mean_unique_nodes": statistics.mean(int(run["unique_nodes"]) for run in runs),
         "mean_cache_hits_or_merges": statistics.mean(
             int(run["cache_hits_or_merges"]) for run in runs
         ),
         "mean_frontier_nodes": statistics.mean(int(run["frontier_nodes"]) for run in runs),
         "mean_max_frontier_size": statistics.mean(int(run["max_frontier_size"]) for run in runs),
-        "mean_action_evaluations": statistics.mean(int(run["action_evaluations"]) for run in runs),
-        "mean_chance_outcomes": statistics.mean(int(run["chance_outcomes"]) for run in runs),
+        "mean_action_transitions_evaluated": statistics.mean(
+            int(run["action_transitions_evaluated"]) for run in runs
+        ),
+        "mean_chance_outcomes_enumerated": statistics.mean(
+            int(run["chance_outcomes_enumerated"]) for run in runs
+        ),
         "mean_max_depth": statistics.mean(int(run["max_depth_reached"]) for run in runs),
         "mean_time_budget_overshoot_seconds": statistics.mean(
             float(run["time_budget_overshoot_seconds"]) for run in runs
@@ -213,30 +221,32 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
         "action": exact_runs[0]["action"],
         "action_values": root_action_values,
     }
-    reference_nodes = round(statistics.mean(int(run["evaluated_nodes"]) for run in exact_runs))
+    reference_nodes = round(
+        statistics.mean(int(run["stop_value_evaluations"]) for run in exact_runs)
+    )
     reference_seconds = statistics.median(
         float(run["search_elapsed_seconds"]) for run in exact_runs
     )
     wall_clock_budget = reference_seconds * 0.5
     paired_runs: dict[tuple[str, str], list[dict[str, Any]]] = {
         (mode, planner): []
-        for mode in ("fixed_node_budget", "fixed_wall_clock_budget")
+        for mode in ("fixed_stop_value_evaluation_budget", "fixed_wall_clock_budget")
         for planner in ("expectimax", "determinized_astar")
     }
 
     def make_planner(*, mode: str, planner: str, repeat: int) -> Any:
-        node_limit = reference_nodes if mode == "fixed_node_budget" else None
+        node_limit = reference_nodes if mode == "fixed_stop_value_evaluation_budget" else None
         time_limit = wall_clock_budget if mode == "fixed_wall_clock_budget" else None
         if planner == "expectimax":
             return ExpectimaxPlanner[
                 BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
-            ](max_evaluated_nodes=node_limit, max_seconds=time_limit)
+            ](max_stop_value_evaluations=node_limit, max_seconds=time_limit)
         return DeterminizedAStarPlanner[
             BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
-        ](max_evaluated_nodes=node_limit, max_seconds=time_limit, seed=repeat)
+        ](max_stop_value_evaluations=node_limit, max_seconds=time_limit, seed=repeat)
 
     # Alternate execution order within every paired repetition to reduce drift.
-    for mode in ("fixed_node_budget", "fixed_wall_clock_budget"):
+    for mode in ("fixed_stop_value_evaluation_budget", "fixed_wall_clock_budget"):
         for repeat in range(repeats):
             order = (
                 ("expectimax", "determinized_astar")
@@ -254,7 +264,9 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
     for (mode, planner), runs in paired_runs.items():
         rows.append({
             **_aggregate(mode=mode, planner=planner, runs=runs, reference=reference),
-            "node_budget": reference_nodes if mode == "fixed_node_budget" else "",
+            "stop_value_evaluation_budget": reference_nodes
+            if mode == "fixed_stop_value_evaluation_budget"
+            else "",
             "time_budget_seconds": (wall_clock_budget if mode == "fixed_wall_clock_budget" else ""),
             "reference_horizon": reference_horizon,
             "reference_value": reference["value"],
@@ -266,19 +278,19 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
         writer.writeheader()
         writer.writerows(rows)
     figure, axes = plt.subplots(1, 2, figsize=(10.5, 4.3), constrained_layout=True)
-    node_rows = [row for row in rows if row["budget_mode"] == "fixed_node_budget"]
+    node_rows = [row for row in rows if row["budget_mode"] == "fixed_stop_value_evaluation_budget"]
     time_rows = [row for row in rows if row["budget_mode"] == "fixed_wall_clock_budget"]
     axes[0].bar(
         [str(row["planner"]).replace("_", " ") for row in node_rows],
         [1000 * float(row["mean_search_seconds"]) for row in node_rows],
     )
     axes[0].set_ylabel("Wall-clock time (ms)")
-    axes[0].set_title(f"Same node budget: {reference_nodes:,}")
+    axes[0].set_title(f"Same stop-value evaluation budget: {reference_nodes:,}")
     axes[1].bar(
         [str(row["planner"]).replace("_", " ") for row in time_rows],
-        [float(row["mean_evaluated_nodes"]) for row in time_rows],
+        [float(row["mean_stop_value_evaluations"]) for row in time_rows],
     )
-    axes[1].set_ylabel("Evaluated nodes")
+    axes[1].set_ylabel("Stop-value evaluations")
     axes[1].set_title(f"Same time budget: {1000 * wall_clock_budget:.1f} ms")
     for axis in axes:
         axis.grid(axis="y", alpha=0.25)

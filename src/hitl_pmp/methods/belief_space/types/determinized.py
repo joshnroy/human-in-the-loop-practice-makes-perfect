@@ -1,6 +1,6 @@
 """Types used by determinized belief-space search."""
 
-from typing import Generic, Protocol, TypeVar
+from typing import Generic, Protocol
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,21 +25,4 @@ class DeterminizedHeuristic(Protocol[EnvironmentStateT, BeliefStateT]):
 
     def __call__(
         self, *, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]
-    ) -> float: ...
-
-
-PathActionT = TypeVar("PathActionT", contravariant=True)
-
-
-class DeterminizedPathCost(Protocol[EnvironmentStateT, BeliefStateT, PathActionT]):
-    """Incremental cost used to relax paths through the determinized graph."""
-
-    def __call__(
-        self,
-        *,
-        parent: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-        child: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT],
-        action: PathActionT,
-        outcome_probability: float,
-        sampled_cost: float,
     ) -> float: ...

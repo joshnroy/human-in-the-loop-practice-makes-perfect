@@ -169,15 +169,15 @@ class Tossing3DPomdpCli(EesCli):
         )
         parser.add_argument(
             "--pomdp-solver",
-            choices=("expectimax", "determinized"),
+            choices=("expectimax", "determinized_astar"),
             default=Tossing3DPomdpMethod.model_fields["pomdp_solver"].default,
             help="Belief-space traversal: exact expectimax or sampled best-first search.",
         )
         parser.add_argument(
-            "--pomdp-max-evaluated-nodes",
+            "--pomdp-max-stop-value-evaluations",
             type=int,
-            default=Tossing3DPomdpMethod.model_fields["pomdp_max_evaluated_nodes"].default,
-            help="Unique state-value evaluation budget for determinized search.",
+            default=Tossing3DPomdpMethod.model_fields["pomdp_max_stop_value_evaluations"].default,
+            help="Monte Carlo stop-value evaluation budget for determinized A*.",
         )
         parser.add_argument(
             "--pomdp-max-search-seconds",
@@ -216,7 +216,8 @@ class Tossing3DPomdpCli(EesCli):
         # the state and decision logs after the experiment finishes.
         args.defer_rendering = True
         # Cached recursion adds interpreter frames per depth; this is not a search cutoff.
-        sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
+        if args.pomdp_solver == "expectimax":
+            sys.setrecursionlimit(max(sys.getrecursionlimit(), 10 * args.pomdp_search_depth + 1000))
         draw_recorder = SamplerDrawRecorder.open_if_requested(args=args)
         env_cli.run_method(
             args=args,
@@ -240,7 +241,7 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
-                pomdp_max_evaluated_nodes=args.pomdp_max_evaluated_nodes,
+                pomdp_max_stop_value_evaluations=args.pomdp_max_stop_value_evaluations,
                 pomdp_max_search_seconds=args.pomdp_max_search_seconds,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
