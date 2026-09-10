@@ -615,11 +615,13 @@ class KinderBackend(BaseModel):
             )
         else:
             bin_region_name = "__selected_bin_reset_region"
-            object_centric.task_config["regions"][bin_region_name] = bin_region
-        object_centric.reset_ground_objects_to_regions({
-            self.cube_name: cube_region_name,
-            self.bin_name: bin_region_name,
-        })
+        object_centric.reset_ground_objects_to_regions(
+            {
+                self.cube_name: cube_region_name,
+                self.bin_name: bin_region_name,
+            },
+            region_configs=(None if bin_region is None else {bin_region_name: bin_region}),
+        )
         self._state = object_centric._get_current_state()  # noqa: SLF001
         return self.observe()
 
