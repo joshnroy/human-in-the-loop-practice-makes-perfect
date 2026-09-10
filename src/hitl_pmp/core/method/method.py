@@ -48,12 +48,10 @@ class HumanCubeBinResetRequested(Exception):  # noqa: N818
     with the same execution contract.
 
     `cost` is required, not optional: there's no `Goal`/`target_state` to price a
-    partial reset against, so the raising `Method` must always price it itself.
-    `destination` carries an optional symbolic grounding (for example, a named side
-    of a barrier) without making the core interpret domain geometry."""
+    partial reset against, so the raising `Method` must always price it itself."""
 
     def __init__(self, *, cost: float, destination: str | None = None) -> None:
-        super().__init__(cost, destination)
+        super().__init__(cost)
         self.cost = cost
         self.destination = destination
 

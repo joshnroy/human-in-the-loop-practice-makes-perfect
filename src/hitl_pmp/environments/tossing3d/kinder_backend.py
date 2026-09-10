@@ -585,7 +585,9 @@ class KinderBackend(BaseModel):
         }
         return type(template)(data, template.type_features)
 
-    def reset_cube_and_bin(self, *, bin_region_name: str | None = None) -> KinderObservation:
+    def reset_cube_and_bin(
+        self, *, bin_region: dict[str, object] | None = None
+    ) -> KinderObservation:
         """Reposition `cube_name`/`bin_name` to fresh ground poses in the live
         simulator, robot and everything else untouched. Backs
         `Tossing3DEnvironment.reset_movables`.
@@ -595,8 +597,9 @@ class KinderBackend(BaseModel):
         `reset()`, scoped to just these two objects -- a real MuJoCo write, not
         a splice of two snapshots, so poses are as collision-free as any object
         upstream's own reset ever places. The cube returns to its declared initial
-        region; ``bin_region_name`` is the side selected by the symbolic action.
-        ``None`` retains the task config's historical initial bin region.
+        region; ``bin_region`` is the Python-defined continuous region selected by
+        the symbolic action. ``None`` retains the task config's historical initial
+        bin region.
         Note `blocks_goal_region` is now parented on `bin_0`, so this also moves
         the scored window, not just the bin's visible position.
 
@@ -606,10 +609,13 @@ class KinderBackend(BaseModel):
         cube_region_name = self._initial_state_region(
             object_centric=object_centric, object_name=self.cube_name
         )
-        if bin_region_name is None:
+        if bin_region is None:
             bin_region_name = self._initial_state_region(
                 object_centric=object_centric, object_name=self.bin_name
             )
+        else:
+            bin_region_name = "__selected_bin_reset_region"
+            object_centric.task_config["regions"][bin_region_name] = bin_region
         object_centric.reset_ground_objects_to_regions({
             self.cube_name: cube_region_name,
             self.bin_name: bin_region_name,

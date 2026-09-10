@@ -50,6 +50,7 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
 from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
 from .layout import Tossing3DLayout
+from .sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
 from .state_log import StateLogWriter
 from .types import AbstractAtom, Tossing3DState
 
@@ -488,24 +489,21 @@ class Tossing3DEnvironment(Environment):
         primitive -- deliberately not routed through `set_state`, which can only
         rebuild the whole scene (relocating the robot too).
 
-        ``destination`` is ``robot_side`` or ``opposite_side`` and maps to named
-        task-config regions; omitting it preserves the historical ``bin_init_region``.
+        ``destination`` is ``robot_side`` or ``opposite_side`` and selects a
+        Python-defined continuous placement region; omitting it preserves the
+        historical ``bin_init_region`` from the task configuration.
         `steps_taken`/`seed` carry forward unchanged: this is neither a skill
         execution nor a scene rebuild, so episode bookkeeping doesn't move."""
         state = self.get_current_state()
         seed = int(round(state.get(obj=self.scene, feature_name="seed")))
         steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
         backend = self.backend()
-        from .sides import Tossing3DSide
-
-        region_by_side = {
-            Tossing3DSide.ROBOT: "bin_robot_side_reset_region",
-            Tossing3DSide.OPPOSITE: "bin_far_side_reset_region",
-        }
-        bin_region_name = (
-            None if destination is None else region_by_side[Tossing3DSide(destination)]
+        bin_region = None
+        if destination is not None:
+            bin_region = BIN_RESET_REGION_BY_SIDE[Tossing3DSide(destination)]
+        backend.reset_cube_and_bin(
+            bin_region=None if bin_region is None else bin_region.model_dump(mode="json")
         )
-        backend.reset_cube_and_bin(bin_region_name=bin_region_name)
         next_state = self.build_state(
             observation=backend.observe(),
             seed=seed,
