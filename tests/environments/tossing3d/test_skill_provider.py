@@ -244,7 +244,12 @@ def test_non_human_reset_duplicates_reset_mechanics_with_independent_identity() 
     assert automatic.preconditions == human.preconditions
     assert automatic.add_effects == human.add_effects
     assert automatic.delete_effects == human.delete_effects
-    assert provider.movables_reset_skills() == (human, automatic)
+    human_destinations = provider.human_cube_bin_reset_skills()
+    assert provider.movables_reset_skills() == (*human_destinations, automatic)
+    assert {reset.objects[-1].name for reset in human_destinations} == {
+        "robot_side",
+        "opposite_side",
+    }
 
 
 def test_human_reset_cost_is_provider_configuration() -> None:

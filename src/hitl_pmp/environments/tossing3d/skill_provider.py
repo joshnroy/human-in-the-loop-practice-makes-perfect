@@ -284,7 +284,10 @@ class Tossing3DSkillProvider(SkillProvider):
         )
 
     def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
-        return (self.human_cube_bin_reset_skill(), self.non_human_cube_bin_reset_skill())
+        return (
+            *self.human_cube_bin_reset_skills(),
+            self.non_human_cube_bin_reset_skill(),
+        )
 
 
 class Tossing3DOracle(OraclePolicyProvider):
