@@ -47,6 +47,9 @@ class BenchmarkModel:
 
     actions = [BenchmarkAction(index=index) for index in range(3)]
 
+    def __init__(self, *, root_action_index: int | None = None) -> None:
+        self.root_action_index = root_action_index
+
     def sample_policy_values_from_belief(
         self, *, belief_state: BenchmarkBelief, num_samples: int
     ) -> np.ndarray:
@@ -56,7 +59,8 @@ class BenchmarkModel:
         return policy_value - 0.01 * summed_cost
 
     def get_valid_actions(self, *, environment_state: BenchmarkState) -> list[BenchmarkAction]:
-        del environment_state
+        if environment_state.path == "" and self.root_action_index is not None:
+            return [self.actions[self.root_action_index]]
         return self.actions
 
     def transition_outcomes(
@@ -105,14 +109,14 @@ def _summary(*, trace: SearchTrace) -> dict[str, Any]:
     return next(event for event in trace.events if event["event"] == "search_summary")
 
 
-def _run(*, planner: Any, horizon: int) -> dict[str, Any]:
+def _run(*, planner: Any, horizon: int, model: BenchmarkModel | None = None) -> dict[str, Any]:
     trace = SearchTrace()
     value, action = planner.solve(
         environment_state=BenchmarkState(),
         summed_cost=0.0,
         belief_state=BenchmarkBelief(),
         horizon=horizon,
-        model=BenchmarkModel(),
+        model=BenchmarkModel() if model is None else model,
         num_samples=1,
         trace=trace,
     )
@@ -142,6 +146,8 @@ def _aggregate(
 ) -> dict[str, Any]:
     values = [float(run["value"]) for run in runs]
     elapsed = [float(run["search_elapsed_seconds"]) for run in runs]
+    action_values = reference["action_values"]
+    reference_best_action_value = max(float(value) for value in action_values.values())
     return {
         "budget_mode": mode,
         "planner": planner,
@@ -168,8 +174,11 @@ def _aggregate(
             float(run["time_budget_overshoot_seconds"]) for run in runs
         ),
         "mean_value": statistics.mean(values),
-        "mean_absolute_value_error": statistics.mean(
+        "mean_returned_score_gap": statistics.mean(
             abs(value - float(reference["value"])) for value in values
+        ),
+        "mean_simple_regret": statistics.mean(
+            reference_best_action_value - float(action_values[run["action"]]) for run in runs
         ),
         "action_agreement_rate": statistics.mean(
             run["action"] == reference["action"] for run in runs
@@ -188,9 +197,21 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
         )
         for _ in range(repeats)
     ]
+    root_action_values: dict[int | str, float] = {
+        action.index: _run(
+            planner=ExpectimaxPlanner[
+                BenchmarkState, BenchmarkBelief, BenchmarkTheta, BenchmarkAction
+            ](),
+            horizon=reference_horizon,
+            model=BenchmarkModel(root_action_index=action.index),
+        )["value"]
+        for action in BenchmarkModel.actions
+    }
+    root_action_values["STOP"] = 0.0
     reference = {
         "value": statistics.mean(float(run["value"]) for run in exact_runs),
         "action": exact_runs[0]["action"],
+        "action_values": root_action_values,
     }
     reference_nodes = round(statistics.mean(int(run["evaluated_nodes"]) for run in exact_runs))
     reference_seconds = statistics.median(
