@@ -51,7 +51,16 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def predicates(self) -> tuple[Predicate, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
-            return (IN_BIN, HAND_EMPTY, HOLDING, ON_FLOOR, REACHABLE, CLOSED_EMPTY, ON_BIN_RIM)
+            return (
+                IN_BIN,
+                HAND_EMPTY,
+                HOLDING,
+                ON_GROUND,
+                ON_FLOOR,
+                REACHABLE,
+                CLOSED_EMPTY,
+                ON_BIN_RIM,
+            )
         return (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
 
     def types(self) -> tuple[Type, ...]:
@@ -89,11 +98,7 @@ class Tossing3DSkillProvider(SkillProvider):
         speed, and release time. Expressing the observed displacement in the robot frame
         makes the full sampler row invariant to rigid changes in scene pose.
         """
-        toss_skills = (
-            Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            SameSideSkills.TOSS,
-        )
-        if ground_skill.skill not in toss_skills:
+        if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return None
         robot, bin_, _, _ = ground_skill.objects
         dx = state.get(obj=bin_, feature_name="x") - state.get(obj=robot, feature_name="pos_base_x")

@@ -56,11 +56,10 @@ def test_toss_sampler_input_and_relative_move_params_are_invariant_to_a_rigid_ha
 
 def test_same_side_toss_uses_the_same_relative_feature_layout() -> None:
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
-    from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     toss = GroundSkill(
-        skill=SameSideSkills.TOSS,
+        skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
         objects=(env.robot, env.bin, env.cube, env.barrier),
     )
     row = Tossing3DSkillProvider(env=env).hand_selected_feature_transform(

@@ -367,7 +367,7 @@ def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
         Tossing3DSkills.compute_action(ground_skill=stray, params=np.zeros(4), state=state())
 
 
-def test_same_side_plans_bin_retrieval_as_a_throw_prerequisite() -> None:
+def test_same_side_uses_canonical_toss_and_supports_bin_retrieval() -> None:
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
     from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 
@@ -384,12 +384,10 @@ def test_same_side_plans_bin_retrieval_as_a_throw_prerequisite() -> None:
     )
     in_bin = GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))
     holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
-    reachable = GroundAtom(predicate=REACHABLE, objects=(env.cube, env.barrier))
     assert in_bin in retrieval.preconditions
     assert in_bin in retrieval.delete_effects
     assert holding in retrieval.add_effects
-    assert reachable not in toss.delete_effects
-    assert reachable in toss.add_effects
+    assert toss.skill is Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
 
 
 @pytest.mark.parametrize(
