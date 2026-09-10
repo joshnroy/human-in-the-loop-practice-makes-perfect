@@ -472,26 +472,33 @@ class EesMethod(Method):
         unrescued" possible."""
         skills = self.skills()
         ground_skill_costs = costs
-        cube_bin_ground_skill: GroundSkill | None = None
+        cube_bin_ground_skills: tuple[GroundSkill, ...] = ()
         if practicing:
-            cube_bin_ground_skill = self.skill_provider.human_cube_bin_reset_skill()
-            if cube_bin_ground_skill is not None:
-                reset_cost = cube_bin_ground_skill.evaluate_practice_cost()
-                skills = (*skills, cube_bin_ground_skill.skill)
-                ground_skill_costs = {**ground_skill_costs, cube_bin_ground_skill: reset_cost}
+            cube_bin_ground_skills = self.skill_provider.human_cube_bin_reset_skills()
+            if cube_bin_ground_skills:
+                reset_skill = cube_bin_ground_skills[0].skill
+                assert all(ground.skill == reset_skill for ground in cube_bin_ground_skills)
+                skills = (*skills, reset_skill)
+                ground_skill_costs = {
+                    **ground_skill_costs,
+                    **{
+                        ground: ground.evaluate_practice_cost() for ground in cube_bin_ground_skills
+                    },
+                }
 
         plan = self._plan_or_raise(
             skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs
         )
-        if cube_bin_ground_skill is None:
+        if not cube_bin_ground_skills:
             return plan
-        used = [ground_skill for ground_skill in plan if ground_skill == cube_bin_ground_skill]
+        reset_set = set(cube_bin_ground_skills)
+        used = [ground_skill for ground_skill in plan if ground_skill in reset_set]
         if not used:
             return plan
         # Position doesn't matter for the ceiling check, only that a reset
         # appears; `used[0]` is representative (a second reset back-to-back
         # would itself be pure waste, so at most one is ever load-bearing).
-        reset_cost = cube_bin_ground_skill.evaluate_practice_cost()
+        reset_cost = used[0].evaluate_practice_cost()
         ceiling = max(costs.values(), default=self.default_cost())
         if reset_cost <= ceiling:
             return plan
@@ -791,7 +798,7 @@ class EesMethod(Method):
 
     def may_request_human_help(self) -> bool:
         """Whether this domain supplies a human-reset skill."""
-        return self.skill_provider.human_cube_bin_reset_skill() is not None
+        return bool(self.skill_provider.human_cube_bin_reset_skills())
 
     def get_task_policy(self, *, task: Task) -> Policy:
         """Evaluation: plan to the goal with current competences and execute
@@ -1093,7 +1100,12 @@ class _EesEpisode:
             # Dispatch to the rescue mechanism, not execute_ground_skill -- this
             # "skill" has no controller/effects to score. self._pending stays
             # untouched: nothing here for observe_pending to settle.
-            raise HumanCubeBinResetRequested(cost=ground_skill.evaluate_practice_cost())
+            raise HumanCubeBinResetRequested(
+                cost=ground_skill.evaluate_practice_cost(),
+                destination=method.skill_provider.movables_reset_destination(
+                    ground_skill=ground_skill
+                ),
+            )
         # By default every skill executed during practice explores (epsilon-greedy).
         # Under reproduce_predicators_explore_target_only, only the practice target
         # does -- the prefix that navigates to it uses the greedy learned sampler,

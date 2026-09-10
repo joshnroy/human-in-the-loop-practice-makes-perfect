@@ -501,6 +501,7 @@ class PracticeLoop:
                         method=method,
                         metrics=metrics,
                         cost=request.cost,
+                        destination=request.destination,
                         state=state,
                     )
                     method.observe_help_granted(state=state)
@@ -604,7 +605,13 @@ class PracticeLoop:
 
     @staticmethod
     def _grant_movables_reset(
-        *, problem: Problem, method: Method, metrics: Metrics, cost: float, state: State
+        *,
+        problem: Problem,
+        method: Method,
+        metrics: Metrics,
+        cost: float,
+        state: State,
+        destination: str | None = None,
     ) -> State:
         """Perform the *partial* rescue a `Method` asked for via
         `HumanCubeBinResetRequested`, charge it, and return the state that results.
@@ -635,7 +642,7 @@ class PracticeLoop:
         against what really happened rather than against the state it is about to
         lose -- the identical contract a mid-period interval reset has."""
         method.observe_environment_reset(state=state)
-        problem.execute_movables_reset()
+        problem.execute_movables_reset(destination=destination)
         metrics.record_human_intervention(cost=cost)
         return problem.get_current_state()
 

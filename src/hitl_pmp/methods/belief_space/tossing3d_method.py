@@ -155,7 +155,9 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def human_skills(self) -> tuple[Skill, ...]:
         """Offer every provider-owned reset mechanism to belief-space planning."""
-        return tuple(reset.skill for reset in self.skill_provider.movables_reset_skills())
+        resets = self.skill_provider.movables_reset_skills()
+        assert resets
+        return tuple(dict.fromkeys(reset.skill for reset in resets))
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)

@@ -5,7 +5,15 @@ import pytest
 from pydantic import ValidationError
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import (
+    HOLDING,
+    NOT_HOLDING,
+    OPPOSITE_SIDES,
+    ROBOT_AT_SIDE,
+)
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
@@ -107,8 +115,25 @@ def _weighted_default_state() -> Tossing3DBeliefState:
 def _search_state(
     *, model: Tossing3DPracticeModel, state: Tossing3DBeliefState, action_name: str
 ) -> Tossing3DSearchState:
+    action = _ground_skill(model=model, name=action_name)
+    env = Tossing3DEnvironment(scene_bg=False)
+    robot_side = GroundAtom(
+        predicate=ROBOT_AT_SIDE,
+        objects=(env.robot, env.barrier, Tossing3DSides.robot),
+    )
+    invariants = {
+        robot_side,
+        GroundAtom(
+            predicate=OPPOSITE_SIDES,
+            objects=(Tossing3DSides.robot, Tossing3DSides.opposite),
+        ),
+    }
+    if all(atom.predicate != HOLDING for atom in action.preconditions):
+        invariants.add(
+            GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube))
+        )
     return make_tossing3d_search_state(
-        state=state, true_atoms=_ground_skill(model=model, name=action_name).preconditions
+        state=state, true_atoms=action.preconditions | invariants
     )
 
 
@@ -624,7 +649,6 @@ def test_only_physically_applicable_actions_are_returned() -> None:
     } == {
         TOSS_SKILL,
         OPEN_GRIPPER_SKILL,
-        RESET_SKILL,
     }
 
 
@@ -666,12 +690,21 @@ def test_batched_sampling_and_evaluation_matches_individual_theta_path() -> None
     ])
 
 
-@pytest.mark.parametrize("action_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
-def test_human_reset_uses_unchanged_ees_empty_preconditions(*, action_name: str) -> None:
+@pytest.mark.parametrize("action_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
+def test_human_reset_is_available_when_not_holding(*, action_name: str) -> None:
     model = _domain_model(reset_cost=1.0)
     state = make_default_tossing3d_belief()
     search_state = _search_state(model=model, state=state, action_name=action_name)
     assert RESET_SKILL in {
+        action.skill.name for action in model.get_valid_actions(environment_state=search_state)
+    }
+
+
+def test_human_reset_is_not_available_while_holding() -> None:
+    model = _domain_model(reset_cost=1.0)
+    state = make_default_tossing3d_belief()
+    search_state = _search_state(model=model, state=state, action_name=TOSS_SKILL)
+    assert RESET_SKILL not in {
         action.skill.name for action in model.get_valid_actions(environment_state=search_state)
     }
 

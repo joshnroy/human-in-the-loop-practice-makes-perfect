@@ -69,12 +69,11 @@ The rule here is that an operator model must never permit *more* than the raw dy
 allow -- a precondition weaker than reality yields plans that look valid and cannot
 execute. Both are upstream's own, for the same reasons upstream gives:
 
-1. **`PickCube` requires `Reachable(?cube, ?barrier)`.** The base cannot cross the
-   barrier, so a cube past it can never be grasped. Without this precondition a planner
-   emits "toss, then pick it back up and try again", which the dynamics silently refuse.
-2. **The toss deletes `Reachable(?cube, ?barrier)` unconditionally**, hit or miss. A toss
-   makes the cube unreachable whether or not it scored; deleting it only on success would
-   be a model in which a missed throw costs nothing.
+1. **`PickCube` binds the robot and cube to one typed side.** The base cannot cross the
+   barrier, so a cube on the opposite side can never be grasped. This replaces the old,
+   redundant ``Reachable`` predicate with the same fact in relational form.
+2. **The toss copies the bin's side to the cube.** ``CubeAtSide`` is functional, so the
+   old value is cleared before the selected destination side is added.
 
 And one add effect that is neither of those: **the toss adds `OnGround(?cube)`**, because
 upstream measured 15/15 scoring throws leaving the cube resting on a face. Upstream's
@@ -83,13 +82,8 @@ face it started on" would call most scoring throws a failure, and this add effec
 not be honest against it. That is one of the things this domain gets for free by looking
 upstream's atoms up rather than re-implementing them (see `predicates.py`).
 
-**The toss also requires `Reachable(?held, ?barrier)`.** Upstream's own note: without it
-the grounder can bind `?barrier` to an object the held cube was never down-x of, and the
-delete effect then targets an atom that was never true. Here the types make `?barrier`
-bind only to the barrier, so the binding hazard does not arise -- but the precondition
-stays, because it is also simply true (the pick requires it and nothing between them
-touches it) and because dropping it would make this operator's delete effect describe an
-atom the operator does not require.
+The typed relation also makes same-side practice honest: tossing into a same-side bin
+leaves the cube pickable, while tossing across the barrier does not.
 
 ## No operator takes a goal region
 
@@ -107,7 +101,17 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
-from .predicates import HAND_EMPTY, HOLDING, IN_BIN, ON_GROUND, REACHABLE
+from .predicates import (
+    BIN_AT_SIDE,
+    CUBE_AT_SIDE,
+    HAND_EMPTY,
+    HOLDING,
+    IN_BIN,
+    NOT_HOLDING,
+    ON_GROUND,
+    ROBOT_AT_SIDE,
+)
+from .sides import Tossing3DSides
 
 # Upstream's `MoveToTossLocationAndTossController.TARGET_DISTANCE_BOUNDS`: where a throw
 # is possible, in metres from the bin. The upper part of the wider range upstream tried
@@ -152,22 +156,25 @@ class Tossing3DSkills:
     _cube: ClassVar[Variable] = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
     _bin: ClassVar[Variable] = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
     _barrier: ClassVar[Variable] = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
+    _side: ClassVar[Variable] = Variable(name="side", type=Tossing3DSides.type)
 
     PICK_CUBE: ClassVar[Skill] = Skill(
         name="PickCube",
         # Upstream's own object order for `pick_cube`: (robot, cube, barrier). The
         # barrier is unused by the controller and present so the operator can say the
         # cube is still on this side of it.
-        parameters=(_robot, _cube, _barrier),
+        parameters=(_robot, _cube, _barrier, _side),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
             # The barrier is one-way: see this module's docstring, choice 1.
-            LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
+            LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
+            LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
         }),
         add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
         delete_effects=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
         }),
         param_dim=0,
@@ -177,22 +184,23 @@ class Tossing3DSkills:
     MOVE_TO_TOSS_LOCATION_AND_TOSS: ClassVar[Skill] = Skill(
         name="MoveToTossLocationAndToss",
         # Upstream's own object order: (robot, target, held, barrier).
-        parameters=(_robot, _bin, _cube, _barrier),
+        parameters=(_robot, _bin, _cube, _barrier, _side),
         preconditions=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
-            LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
+            LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side)),
         }),
         add_effects=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin)),
             # Measured upstream on 20 throws: 15/15 that scored left the cube on a face.
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
+            LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
-            # Unconditionally, hit or miss: see this module's docstring, choice 2.
-            LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier)),
         }),
+        ignore_effects=frozenset({CUBE_AT_SIDE}),
         param_dim=4,
         practice_cost=1.0,
     )

@@ -15,14 +15,19 @@ from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_AT_SIDE,
+    CUBE_AT_SIDE,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
+    NOT_HOLDING,
     ON_GROUND,
-    REACHABLE,
+    OPPOSITE_SIDES,
+    ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
 from hitl_pmp.environments.tossing3d.renderer import Tossing3DRenderer
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.tasks import Tossing3DTasks
@@ -68,8 +73,12 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         IN_BIN,
         HAND_EMPTY,
         HOLDING,
+        NOT_HOLDING,
         ON_GROUND,
-        REACHABLE,
+        OPPOSITE_SIDES,
+        ROBOT_AT_SIDE,
+        CUBE_AT_SIDE,
+        BIN_AT_SIDE,
     }
     assert {obj.type for obj in provider.objects()} == set(provider.types())
 
@@ -129,13 +138,13 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
 
 def test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_barrier() -> None:
     """The irreversibility, read off the symbolic layer: after a toss the cube is beyond
-    the barrier, `Reachable` is false, `Pick` is inapplicable, and no skill that could
+    the barrier, its robot-side atom is false, `Pick` is inapplicable, and no skill that could
     make progress toward the goal remains -- a planner asked to recover from here
     correctly finds no plan.
 
     **`OpenGripper` is the one exception, and it does not reopen this.** It has no
     precondition, so it is always symbolically applicable, including here -- but its
-    effects touch only `HandEmpty`, never `Reachable`/`OnGround`/`InBin`, so applying it
+    effects cannot move the cube back to the robot side, so applying it
     changes nothing about whether the goal is reachable. This test asserts the precise
     surviving invariant (nothing *but* the no-op rescue is applicable) rather than the
     old, now-too-strong one (nothing at all is applicable)."""
@@ -161,7 +170,7 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() 
     provider = Tossing3DSkillProvider(env=env)
     ground_skill = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier),
+        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
     )
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
     assert params.shape == (4,)

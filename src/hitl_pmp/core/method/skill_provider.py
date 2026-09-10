@@ -115,19 +115,33 @@ class SkillProvider(BaseModel, abc.ABC):
         skill when this returns `None`."""
         return None
 
+    def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
+        """All symbolic destinations for the optional human reset action.
+
+        Existing domains expose at most one destination, so the plural interface is
+        backward compatible. A parameterized domain can override it with multiple
+        groundings of one lifted reset skill.
+        """
+        skill = self.human_cube_bin_reset_skill()
+        return () if skill is None else (skill,)
+
     def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
         """Skills dispatched through the environment's movables-reset mechanism.
 
         Most domains expose at most the historical human reset. Domains may override
         this to offer equivalent reset mechanisms with distinct identities and costs.
         """
-        reset = self.human_cube_bin_reset_skill()
-        return () if reset is None else (reset,)
+        return self.human_cube_bin_reset_skills()
 
     def is_movables_reset_skill(self, *, ground_skill: GroundSkill) -> bool:
         return ground_skill.skill.name in {
             reset.skill.name for reset in self.movables_reset_skills()
         }
+
+    def movables_reset_destination(self, *, ground_skill: GroundSkill) -> str | None:
+        """Decode a reset grounding into an environment-facing destination name."""
+        del ground_skill
+        return None
 
 
 class OraclePolicyProvider(BaseModel, abc.ABC):

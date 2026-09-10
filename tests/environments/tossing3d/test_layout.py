@@ -25,7 +25,11 @@ def test_same_side_layout_reaches_backend_and_has_space_to_throw() -> None:
     bin_x_min, _, bin_x_max, _ = regions["bin_init_region"]["ranges"][0]
     barrier_x = regions["barrier_init_region"]["ranges"][0][0]
     assert bin_x_max + 0.15 < barrier_x
-    assert bin_x_min - 1.45 > -2.5
+    # The same-side scene is the evaluation release geometry rotated 180 degrees:
+    # the robot faces -x and approaches the negative-x bin from its +x side.
+    assert bin_x_min + 1.25 > -2.5
+    assert regions["robot_init_region"]["yaw_ranges"] == [[175, 185]]
+    assert regions["blocks_init_region"]["ranges"] == [[-0.75, -0.25, -0.5, 0.25]]
     assert regions["blocks_goal_region"]["target"] == "bin_0"
 
 

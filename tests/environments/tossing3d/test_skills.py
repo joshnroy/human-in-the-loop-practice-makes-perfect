@@ -26,12 +26,17 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_AT_SIDE,
+    CUBE_AT_SIDE,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
+    NOT_HOLDING,
     ON_GROUND,
-    REACHABLE,
+    OPPOSITE_SIDES,
+    ROBOT_AT_SIDE,
 )
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skills import (
     MAX_TOSS_ROTATION,
     TOSS_DISTANCE_BOUNDS,
@@ -74,8 +79,8 @@ _TOSS_BOUNDS = (
 # `(robot, target, held, barrier)` for the composed toss -- so a ground skill built here
 # can be handed to upstream's controller unpermuted.
 _EXPECTED_PARAMETERS = {
-    "PickCube": ("robot", "cube", "barrier"),
-    "MoveToTossLocationAndToss": ("robot", "bin", "cube", "barrier"),
+    "PickCube": ("robot", "cube", "barrier", "side"),
+    "MoveToTossLocationAndToss": ("robot", "bin", "cube", "barrier", "side"),
 }
 
 
@@ -84,13 +89,16 @@ def _every_skill() -> tuple:
 
 
 def _pick_cube() -> GroundSkill:
-    return GroundSkill(skill=_SKILLS.PICK_CUBE, objects=(_ENV.robot, _ENV.cube, _ENV.barrier))
+    return GroundSkill(
+        skill=_SKILLS.PICK_CUBE,
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot),
+    )
 
 
 def _toss() -> GroundSkill:
     return GroundSkill(
         skill=_SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(_ENV.robot, _ENV.bin, _ENV.cube, _ENV.barrier),
+        objects=(_ENV.robot, _ENV.bin, _ENV.cube, _ENV.barrier, Tossing3DSides.opposite),
     )
 
 
@@ -127,25 +135,31 @@ def test_each_operator_declares_exactly_the_objects_it_acts_on() -> None:
     assert actual == _EXPECTED_PARAMETERS
 
 
-def test_pick_requires_reachable_so_no_plan_retrieves_a_tossed_cube() -> None:
-    """The one precondition that encodes the domain's irreversibility. Without it a
-    planner emits "toss, then pick it back up and try again", which the dynamics can
-    never execute -- exactly the over-permissive-model defect class that
-    tests/environments/test_operator_dynamics_fidelity.py exists for."""
+def test_pick_requires_robot_and_cube_to_share_a_side() -> None:
     assert (
-        LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier))
+        LiftedAtom(
+            predicate=ROBOT_AT_SIDE,
+            variables=(_SKILLS._robot, _SKILLS._barrier, _SKILLS._side),
+        )
+        in _SKILLS.PICK_CUBE.preconditions
+    )
+    assert (
+        LiftedAtom(
+            predicate=CUBE_AT_SIDE,
+            variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
+        )
         in _SKILLS.PICK_CUBE.preconditions
     )
 
 
-def test_the_toss_deletes_reachable_unconditionally_hit_or_miss() -> None:
-    """A toss makes the cube unreachable whether or not it lands in the region. Deleting
-    it only on success would be a model in which a missed throw costs nothing -- which is
-    precisely the cost this domain exists to represent."""
-    assert (
-        LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier))
-        in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.delete_effects
+def test_toss_copies_the_bins_side_to_the_cube() -> None:
+    toss = _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS
+    side_atom = LiftedAtom(
+        predicate=CUBE_AT_SIDE,
+        variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
     )
+    assert side_atom in toss.add_effects
+    assert CUBE_AT_SIDE in toss.ignore_effects
 
 
 def test_the_toss_lands_the_cube_flat_as_well_as_in_the_bin() -> None:
@@ -162,12 +176,12 @@ def test_the_toss_lands_the_cube_flat_as_well_as_in_the_bin() -> None:
     )
 
 
-def test_the_toss_requires_reachable_as_well_as_deleting_it() -> None:
-    """An operator whose delete effect names an atom it does not require would be
-    describing a state it never established. Upstream keeps this precondition for a
-    binding reason the types here already rule out; it stays because it is also true."""
+def test_the_toss_binds_its_destination_to_the_bins_side() -> None:
     assert (
-        LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier))
+        LiftedAtom(
+            predicate=BIN_AT_SIDE,
+            variables=(_SKILLS._bin, _SKILLS._barrier, _SKILLS._side),
+        )
         in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions
     )
 
@@ -178,7 +192,14 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
     assert _SKILLS.PICK_CUBE.preconditions == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
-        LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier)),
+        LiftedAtom(
+            predicate=ROBOT_AT_SIDE,
+            variables=(_SKILLS._robot, _SKILLS._barrier, _SKILLS._side),
+        ),
+        LiftedAtom(
+            predicate=CUBE_AT_SIDE,
+            variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
+        ),
     })
     assert _SKILLS.PICK_CUBE.add_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
@@ -186,29 +207,34 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
     assert _SKILLS.PICK_CUBE.delete_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
+        LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
-        LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier)),
+        LiftedAtom(
+            predicate=BIN_AT_SIDE,
+            variables=(_SKILLS._bin, _SKILLS._barrier, _SKILLS._side),
+        ),
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
+        LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
         LiftedAtom(predicate=IN_BIN, variables=(_SKILLS._cube, _SKILLS._bin)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
+        LiftedAtom(
+            predicate=CUBE_AT_SIDE,
+            variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
+        ),
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.delete_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
-        LiftedAtom(predicate=REACHABLE, variables=(_SKILLS._cube, _SKILLS._barrier)),
     })
 
 
-def test_no_skill_declares_ignore_effects() -> None:
-    """Unlike Ball-Ring's navigations and Tossing Room's Press, nothing here wipes a whole
-    predicate: there is one cube, one bin and one barrier, so every effect is expressible
-    as a plain add or delete."""
-    for skill in _every_skill():
-        assert skill.ignore_effects == frozenset(), skill.name
+def test_only_toss_replaces_a_functional_side_fact() -> None:
+    assert _SKILLS.PICK_CUBE.ignore_effects == frozenset()
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects == frozenset({CUBE_AT_SIDE})
 
 
 def test_no_variable_carries_the_question_mark_the_pddl_writer_adds() -> None:
@@ -239,15 +265,25 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
     end-to-end evidence that the composed operator's preconditions are reachable from the
     initial abstract state without the retired throw-pose predicate in between."""
     env = Tossing3DEnvironment()
-    objects = (env.robot, env.cube, env.bin, env.barrier)
-    predicates = (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
+    objects = (env.robot, env.cube, env.bin, env.barrier, *Tossing3DSides.objects())
+    predicates = (
+        IN_BIN,
+        HAND_EMPTY,
+        HOLDING,
+        NOT_HOLDING,
+        ON_GROUND,
+        OPPOSITE_SIDES,
+        ROBOT_AT_SIDE,
+        CUBE_AT_SIDE,
+        BIN_AT_SIDE,
+    )
     init_atoms = SkillGrounder.abstract_state(
         state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
     )
     plan = FastDownwardPlanner.plan(
         skills=_every_skill(),
         predicates=predicates,
-        types=(env.robot_type, env.cube_type, env.bin_type, env.barrier_type),
+        types=(env.robot_type, env.cube_type, env.bin_type, env.barrier_type, Tossing3DSides.type),
         objects=objects,
         init_atoms=init_atoms,
         goal=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))}),
@@ -359,7 +395,7 @@ def test_the_four_toss_dials_are_drawn_independently() -> None:
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     stray = GroundSkill(
         skill=_SKILLS.PICK_CUBE.model_copy(update={"name": "NotASkill"}),
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot),
     )
     with pytest.raises(ValueError, match="Unknown skill"):
         Tossing3DSkills.sample_params(ground_skill=stray, rng=np.random.default_rng(0))
@@ -376,17 +412,23 @@ def test_same_side_uses_canonical_toss_and_supports_bin_retrieval() -> None:
     skills = {skill.name: skill for skill in provider.skills()}
     assert "PickCubeFromBin" in skills
     retrieval = GroundSkill(
-        skill=skills["PickCubeFromBin"], objects=(env.robot, env.cube, env.bin, env.barrier)
+        skill=skills["PickCubeFromBin"],
+        objects=(env.robot, env.cube, env.bin, env.barrier, Tossing3DSides.robot),
     )
     toss = GroundSkill(
         skill=skills["MoveToTossLocationAndToss"],
-        objects=(env.robot, env.bin, env.cube, env.barrier),
+        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
     )
     in_bin = GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))
     holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
+    cube_side = GroundAtom(
+        predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, Tossing3DSides.robot)
+    )
     assert in_bin in retrieval.preconditions
     assert in_bin in retrieval.delete_effects
     assert holding in retrieval.add_effects
+    assert cube_side in retrieval.preconditions
+    assert cube_side in toss.add_effects
     assert toss.skill is Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
 
 
@@ -440,9 +482,14 @@ def test_ees_implicitly_retrieves_after_hits_and_misses() -> None:
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     provider = Tossing3DSkillProvider(env=env)
     method = EesMethod(env=env, skill_provider=provider, seed=0, goal_pursuit_horizon=2)
-    floor = state(env=env, abstract_atoms=INITIAL_ATOMS)
-    holding = state(env=env, abstract_atoms=HOLDING_ATOMS)
-    inside = state(env=env, abstract_atoms=INITIAL_ATOMS | {("MovableInGoalRegion", ("cube_0",))})
+    same_side_pose = {"base_rot": np.pi, "bin_x": -2.0, "cube_x": -0.5}
+    floor = state(env=env, abstract_atoms=INITIAL_ATOMS, **same_side_pose)
+    holding = state(env=env, abstract_atoms=HOLDING_ATOMS, **same_side_pose)
+    inside = state(
+        env=env,
+        abstract_atoms=INITIAL_ATOMS | {("MovableInGoalRegion", ("cube_0",))},
+        **same_side_pose,
+    )
     task = Task(
         initial_state=floor,
         goal=Goal(atoms=frozenset({GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin))})),

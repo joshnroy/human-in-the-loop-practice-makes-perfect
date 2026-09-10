@@ -13,33 +13,43 @@
             "target": "ground",
             "ranges": [
                 [
-                    0.0,
-                    -0.7,
-                    0.001,
-                    -0.699
+                    -2.3,
+                    -2.3,
+                    -1.48,
+                    2.3
                 ]
             ],
             "yaw_ranges": [
                 [
-                    0,
-                    0
+                    180,
+                    180
                 ]
             ]
+        },
+        "bin_robot_side_reset_region": {
+            "target": "ground",
+            "ranges": [[-2.3, -2.3, -1.48, 2.3]],
+            "yaw_ranges": [[180, 180]]
+        },
+        "bin_far_side_reset_region": {
+            "target": "ground",
+            "ranges": [[1.48, -2.3, 2.3, 2.3]],
+            "yaw_ranges": [[0, 0]]
         },
         "blocks_init_region": {
             "target": "ground",
             "ranges": [
                 [
-                    0.5,
+                    -0.75,
                     -0.25,
-                    0.75,
+                    -0.5,
                     0.25
                 ]
             ],
             "yaw_ranges": [
                 [
-                    -45,
-                    45
+                    135,
+                    225
                 ]
             ],
             "rgba": [
@@ -103,8 +113,8 @@
             ],
             "yaw_ranges": [
                 [
-                    -5,
-                    5
+                    175,
+                    185
                 ]
             ],
             "rgba": [

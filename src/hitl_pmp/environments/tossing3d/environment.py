@@ -478,20 +478,31 @@ class Tossing3DEnvironment(Environment):
         self._adopt(state=state)
         return state
 
-    def reset_movables(self) -> bool:
+    def reset_movables(self, *, destination: str | None = None) -> bool:
         """Reposition `cube`/`bin` to fresh ground poses, robot untouched, and
         return True (`core.Environment`'s default declines). Backed by
         `KinderBackend.reset_cube_and_bin`, a real per-object pose-setting
         primitive -- deliberately not routed through `set_state`, which can only
         rebuild the whole scene (relocating the robot too).
 
+        ``destination`` is ``robot_side`` or ``opposite_side`` and maps to named
+        task-config regions; omitting it preserves the historical ``bin_init_region``.
         `steps_taken`/`seed` carry forward unchanged: this is neither a skill
         execution nor a scene rebuild, so episode bookkeeping doesn't move."""
         state = self.get_current_state()
         seed = int(round(state.get(obj=self.scene, feature_name="seed")))
         steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
         backend = self.backend()
-        backend.reset_cube_and_bin()
+        from .sides import Tossing3DSide
+
+        region_by_side = {
+            Tossing3DSide.ROBOT: "bin_robot_side_reset_region",
+            Tossing3DSide.OPPOSITE: "bin_far_side_reset_region",
+        }
+        bin_region_name = (
+            None if destination is None else region_by_side[Tossing3DSide(destination)]
+        )
+        backend.reset_cube_and_bin(bin_region_name=bin_region_name)
         next_state = self.build_state(
             observation=backend.observe(),
             seed=seed,
