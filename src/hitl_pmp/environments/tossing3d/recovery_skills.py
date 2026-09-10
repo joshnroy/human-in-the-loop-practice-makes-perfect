@@ -13,7 +13,6 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
-    BIN_AT_SIDE,
     CUBE_AT_SIDE,
     HAND_EMPTY,
     HOLDING,
