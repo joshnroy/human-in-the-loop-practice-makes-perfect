@@ -194,14 +194,16 @@ def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
     object_x = state.get(obj=x_object, feature_name="x")
     robot_delta = robot_x - barrier_x
     object_delta = object_x - barrier_x
-    # A cube centred on or straddling the barrier is not reachable from either
-    # halfspace.  Use its physical x footprint when available; the bin has no
-    # ``bb_x`` state feature, so its centre is classified strictly.
-    clearance = (
+    # An object centred on or straddling the barrier is not in either open
+    # halfspace. Include both physical footprints: using only the cube half-width
+    # incorrectly classifies overlap with the nonzero-width barrier as reachable.
+    barrier_half_width = state.get(obj=Tossing3DEnvironment.barrier, feature_name="bb_x") / 2.0
+    object_half_width = (
         state.get(obj=x_object, feature_name="bb_x") / 2.0
         if "bb_x" in x_object.type.feature_names
         else 0.0
     )
+    clearance = barrier_half_width + object_half_width
     if abs(object_delta) <= clearance:
         return False
     same_as_robot = object_delta * robot_delta > 0.0

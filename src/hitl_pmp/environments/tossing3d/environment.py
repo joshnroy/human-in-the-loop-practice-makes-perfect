@@ -111,8 +111,9 @@ class Tossing3DEnvironment(Environment):
         name="tossing3d_cube",
         feature_names=("x", "y", "z", "qx", "qy", "qz", "qw", "bb_x", "bb_y", "bb_z"),
     )
-    # `bin_0` and `cuboid_barrier` are `MujocoObjectType`; x/y/z is what the symbolic layer
-    # needs of their poses.
+    # `bin_0` and `cuboid_barrier` are `MujocoObjectType`. The barrier also carries its
+    # physical x extent so side predicates can reject a cube that overlaps the barrier,
+    # rather than treating the barrier as an infinitely thin plane.
     #
     # The bin carries six more, and they are **not** KINDER features: they are the live
     # `Region.bbox` of `blocks_goal_region`, the box `_check_goals()` actually scores
@@ -126,7 +127,9 @@ class Tossing3DEnvironment(Environment):
         name="tossing3d_bin",
         feature_names=("x", "y", "z", "x_min", "y_min", "z_min", "x_max", "y_max", "z_max"),
     )
-    barrier_type: ClassVar[Type] = Type(name="tossing3d_barrier", feature_names=("x", "y", "z"))
+    barrier_type: ClassVar[Type] = Type(
+        name="tossing3d_barrier", feature_names=("x", "y", "z", "bb_x")
+    )
     # Also ours, and also not a KINDER object: the two facts a flat State cannot otherwise
     # carry. `seed` is what `set_state` rebuilds the scene from; `steps_taken` is what
     # lets it refuse a state it cannot restore.

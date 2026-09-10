@@ -8,8 +8,12 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    CUBE_AT_SIDE,
+    HAND_EMPTY,
     HOLDING,
+    IN_BIN,
     NOT_HOLDING,
+    ON_GROUND,
     OPPOSITE_SIDES,
     ROBOT_AT_SIDE,
 )
@@ -282,6 +286,35 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
         for successor, cost in successors
     ]
     assert probabilities == pytest.approx([0.5, 0.5])
+
+
+def test_failed_toss_still_releases_cube_on_target_side() -> None:
+    """A scoring miss changes physical state even though it omits ``InBin``."""
+    state = _point_state(toss=0.5, pick=0.5, open_gripper=1.0)
+    model = _domain_model(exploration_epsilon=0.0)
+
+    outcomes = _outcomes(model=model, state=state, name=TOSS_SKILL)
+
+    assert len(outcomes) == 2
+    success_atoms = outcomes[0][2]
+    failure_atoms = outcomes[1][2]
+    env = Tossing3DEnvironment(scene_bg=False)
+    holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
+    common_after_toss = {
+        GroundAtom(predicate=HAND_EMPTY, objects=(env.robot,)),
+        GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
+        GroundAtom(predicate=ON_GROUND, objects=(env.cube,)),
+    }
+    assert common_after_toss <= success_atoms
+    assert common_after_toss <= failure_atoms
+    assert holding not in success_atoms
+    assert holding not in failure_atoms
+    success_cube_sides = {atom for atom in success_atoms if atom.predicate == CUBE_AT_SIDE}
+    failure_cube_sides = {atom for atom in failure_atoms if atom.predicate == CUBE_AT_SIDE}
+    assert len(success_cube_sides) == 1
+    assert failure_cube_sides == success_cube_sides
+    assert GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)) in success_atoms
+    assert GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)) not in failure_atoms
 
 
 def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBelief:

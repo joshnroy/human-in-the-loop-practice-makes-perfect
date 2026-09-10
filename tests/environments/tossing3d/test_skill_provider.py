@@ -133,10 +133,18 @@ def test_cube_on_or_straddling_barrier_is_on_neither_side() -> None:
     env = Tossing3DEnvironment()
     scene = state(env=env, base_x=0.0)
     scene.set(obj=env.barrier, feature_name="x", feature_val=1.3)
-    for cube_x in (1.3, 1.3 - 0.024, 1.3 + 0.024):
+    # Barrier half-width 0.03 + cube half-width 0.025 gives a 0.055 m contact edge.
+    for cube_x in (1.3, 1.3 - 0.054, 1.3 + 0.054, 1.3 - 0.055, 1.3 + 0.055):
         scene.set(obj=env.cube, feature_name="x", feature_val=cube_x)
         assert not CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, Tossing3DSides.robot))
         assert not CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, Tossing3DSides.opposite))
+
+    for cube_x in (1.3 - 0.056, 1.3 + 0.056):
+        scene.set(obj=env.cube, feature_name="x", feature_val=cube_x)
+        assert any(
+            CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, side))
+            for side in Tossing3DSides.objects()
+        )
 
 
 def test_reset_destination_is_decoded_from_the_ground_side_parameter() -> None:

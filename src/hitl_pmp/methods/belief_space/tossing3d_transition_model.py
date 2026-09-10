@@ -4,6 +4,7 @@ from functools import cache
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
+from hitl_pmp.environments.tossing3d.predicates import IN_BIN
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
@@ -87,6 +88,35 @@ def apply_success_effects(
     ],
 ) -> frozenset[GroundAtom]:
     add_effects, delete_effects, ignore_effects = effects[ground_skill]
+    kept = {
+        atom
+        for atom in true_atoms
+        if atom.predicate not in ignore_effects and atom not in delete_effects
+    }
+    return frozenset(kept | set(add_effects))
+
+
+def apply_toss_effects(
+    *,
+    true_atoms: frozenset[GroundAtom],
+    ground_skill: GroundSkill,
+    success: bool,
+    effects: dict[
+        GroundSkill,
+        tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
+    ],
+) -> frozenset[GroundAtom]:
+    """Apply physical throw effects whether or not the toss scores.
+
+    Toss competence measures scoring in the bin, not whether the controller releases
+    the cube. A miss still opens the gripper and moves the cube to the target side of
+    the barrier. Only ``InBin`` is conditional on success; treating every other effect
+    as conditional would let search retry a toss while it incorrectly still believes
+    the robot is holding the cube.
+    """
+    add_effects, delete_effects, ignore_effects = effects[ground_skill]
+    if not success:
+        add_effects = frozenset(atom for atom in add_effects if atom.predicate != IN_BIN)
     kept = {
         atom
         for atom in true_atoms
@@ -215,12 +245,11 @@ def toss_outcomes(
             belief = state.skill_beliefs[TOSS_SKILL]
             if not is_random:
                 belief = condition_skill_belief(belief=belief, success=success)
-            next_true_atoms = (
-                apply_success_effects(
-                    true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
-                )
-                if success
-                else true_atoms
+            next_true_atoms = apply_toss_effects(
+                true_atoms=true_atoms,
+                ground_skill=ground_skill,
+                success=success,
+                effects=effects,
             )
             branches.append((
                 probability,
