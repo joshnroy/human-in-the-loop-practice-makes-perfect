@@ -118,10 +118,17 @@ def _run(*, planner: Any, horizon: int) -> dict[str, Any]:
     )
     summary = _summary(trace=trace)
     return {
-        "elapsed_seconds": float(summary["elapsed_seconds"]),
+        "search_elapsed_seconds": float(summary["search_elapsed_seconds"]),
         "expanded_nodes": int(summary["expanded_nodes"]),
+        "touched_nodes": int(summary["touched_nodes"]),
         "evaluated_nodes": int(summary["evaluated_nodes"]),
         "generated_nodes": int(summary["generated_nodes"]),
+        "unique_nodes": int(summary.get("unique_nodes", summary["evaluated_nodes"])),
+        "cache_hits_or_merges": int(summary.get("cache_hits", summary.get("merged_nodes", 0))),
+        "frontier_nodes": int(summary.get("frontier_nodes", 0)),
+        "max_frontier_size": int(summary.get("max_frontier_size", 0)),
+        "action_evaluations": int(summary["action_evaluations"]),
+        "chance_outcomes": int(summary["chance_outcomes"]),
         "max_depth_reached": int(summary["max_depth_reached"]),
         "termination_reason": str(summary["termination_reason"]),
         "time_budget_overshoot_seconds": float(summary.get("time_budget_overshoot_seconds") or 0.0),
@@ -134,23 +141,28 @@ def _aggregate(
     *, mode: str, planner: str, runs: list[dict[str, Any]], reference: dict[str, Any]
 ) -> dict[str, Any]:
     values = [float(run["value"]) for run in runs]
-    elapsed = [float(run["elapsed_seconds"]) for run in runs]
+    elapsed = [float(run["search_elapsed_seconds"]) for run in runs]
     return {
         "budget_mode": mode,
         "planner": planner,
         "repeats": len(runs),
-        "mean_seconds": statistics.mean(float(run["elapsed_seconds"]) for run in runs),
+        "mean_search_seconds": statistics.mean(elapsed),
         "median_seconds": statistics.median(elapsed),
         "q1_seconds": float(np.quantile(elapsed, 0.25)),
         "q3_seconds": float(np.quantile(elapsed, 0.75)),
-        "stdev_seconds": (
-            statistics.stdev(float(run["elapsed_seconds"]) for run in runs)
-            if len(runs) > 1
-            else 0.0
-        ),
+        "stdev_seconds": (statistics.stdev(elapsed) if len(runs) > 1 else 0.0),
         "mean_expanded_nodes": statistics.mean(int(run["expanded_nodes"]) for run in runs),
+        "mean_touched_nodes": statistics.mean(int(run["touched_nodes"]) for run in runs),
         "mean_evaluated_nodes": statistics.mean(int(run["evaluated_nodes"]) for run in runs),
         "mean_generated_nodes": statistics.mean(int(run["generated_nodes"]) for run in runs),
+        "mean_unique_nodes": statistics.mean(int(run["unique_nodes"]) for run in runs),
+        "mean_cache_hits_or_merges": statistics.mean(
+            int(run["cache_hits_or_merges"]) for run in runs
+        ),
+        "mean_frontier_nodes": statistics.mean(int(run["frontier_nodes"]) for run in runs),
+        "mean_max_frontier_size": statistics.mean(int(run["max_frontier_size"]) for run in runs),
+        "mean_action_evaluations": statistics.mean(int(run["action_evaluations"]) for run in runs),
+        "mean_chance_outcomes": statistics.mean(int(run["chance_outcomes"]) for run in runs),
         "mean_max_depth": statistics.mean(int(run["max_depth_reached"]) for run in runs),
         "mean_time_budget_overshoot_seconds": statistics.mean(
             float(run["time_budget_overshoot_seconds"]) for run in runs
@@ -181,7 +193,9 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
         "action": exact_runs[0]["action"],
     }
     reference_nodes = round(statistics.mean(int(run["evaluated_nodes"]) for run in exact_runs))
-    reference_seconds = statistics.median(float(run["elapsed_seconds"]) for run in exact_runs)
+    reference_seconds = statistics.median(
+        float(run["search_elapsed_seconds"]) for run in exact_runs
+    )
     wall_clock_budget = reference_seconds * 0.5
     paired_runs: dict[tuple[str, str], list[dict[str, Any]]] = {
         (mode, planner): []
@@ -235,7 +249,7 @@ def benchmark(*, reference_horizon: int, repeats: int, output: Path) -> list[dic
     time_rows = [row for row in rows if row["budget_mode"] == "fixed_wall_clock_budget"]
     axes[0].bar(
         [str(row["planner"]).replace("_", " ") for row in node_rows],
-        [1000 * float(row["mean_seconds"]) for row in node_rows],
+        [1000 * float(row["mean_search_seconds"]) for row in node_rows],
     )
     axes[0].set_ylabel("Wall-clock time (ms)")
     axes[0].set_title(f"Same node budget: {reference_nodes:,}")

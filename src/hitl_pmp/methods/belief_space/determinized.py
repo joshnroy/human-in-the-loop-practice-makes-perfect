@@ -386,6 +386,7 @@ def solve_belief_space_determinized(
             node=0,
             solver="determinized",
             expanded_nodes=expanded_nodes,
+            touched_nodes=generated_nodes + 1,
             generated_nodes=generated_nodes,
             unique_nodes=len(values_by_key),
             merged_nodes=merged_nodes,
@@ -399,7 +400,7 @@ def solve_belief_space_determinized(
             evaluated_nodes=len(values_by_key),
             max_evaluated_nodes=max_evaluated_nodes,
             max_seconds=max_seconds,
-            elapsed_seconds=(elapsed_seconds := time.perf_counter() - started_at),
+            search_elapsed_seconds=(elapsed_seconds := time.perf_counter() - started_at),
             time_budget_overshoot_seconds=(
                 max(0.0, elapsed_seconds - max_seconds) if max_seconds is not None else None
             ),

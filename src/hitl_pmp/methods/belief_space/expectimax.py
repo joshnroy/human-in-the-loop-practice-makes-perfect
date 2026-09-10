@@ -95,10 +95,14 @@ def solve_belief_space_expectimax(
             solver="expectimax",
             horizon=horizon,
             expanded_nodes=solver.next_node,
+            touched_nodes=solver.cache_requests,
             evaluated_nodes=solver.next_node,
+            unique_nodes=solver.next_node,
             max_evaluated_nodes=max_evaluated_nodes,
             max_seconds=max_seconds,
             generated_nodes=max(0, solver.cache_requests - 1),
+            frontier_nodes=0,
+            max_frontier_size=0,
             cache_requests=solver.cache_requests,
             cache_hits=solver.cache_hits,
             action_evaluations=solver.action_evaluations,
@@ -107,7 +111,7 @@ def solve_belief_space_expectimax(
             max_depth_reached=(
                 horizon - min(solver.nodes_by_horizon) if solver.nodes_by_horizon else 0
             ),
-            elapsed_seconds=elapsed_seconds,
+            search_elapsed_seconds=elapsed_seconds,
             time_budget_overshoot_seconds=(
                 max(0.0, elapsed_seconds - max_seconds) if max_seconds is not None else None
             ),

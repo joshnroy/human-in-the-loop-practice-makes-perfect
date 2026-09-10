@@ -19,7 +19,14 @@ class SearchTrace(BaseModel):
     events: list[dict[str, Any]] = Field(default_factory=list)
 
     def record(self, *, event: str, **fields: Any) -> None:
-        self.events.append({"event": event, **fields, **LogTiming.fields()})
+        timing = LogTiming.fields()
+        recorded_at_elapsed_seconds = timing.pop("elapsed_seconds")
+        self.events.append({
+            "event": event,
+            **timing,
+            "recorded_at_elapsed_seconds": recorded_at_elapsed_seconds,
+            **fields,
+        })
 
     def close(self) -> None:
         """Retain the old lifecycle interface; compact summaries need no writer."""
