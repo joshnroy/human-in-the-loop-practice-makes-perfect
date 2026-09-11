@@ -404,6 +404,13 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
     decisions = {
         int(row["decision"]): row for row in diagnostic_rows if row.get("event") == "decision"
     }
+    terminal_decisions = {
+        cycle: max(
+            (decision for decision in decisions.values() if int(decision["cycle"]) == cycle),
+            key=lambda decision: int(decision["decision"]),
+        )
+        for cycle in {int(decision["cycle"]) for decision in decisions.values()}
+    }
     timeline = sorted(
         [row for row in diagnostic_rows if row.get("event") in {"session_start", "dispatch"}],
         key=lambda row: _timestamp(row["timestamp"]),
@@ -448,6 +455,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                 if event["event"] == "session_start":
                     next_cycle = int(event["cycle"])
                     if next_cycle != cycle and last_frame is not None and last_state is not None:
+                        terminal_decision = terminal_decisions.get(cycle, current_decision)
                         completed = _compose(
                             frame=last_frame,
                             state=last_state,
@@ -458,12 +466,12 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                             current_skill=current_skill,
                             current_objects=current_objects,
                             history=history,
-                            decision=current_decision,
+                            decision=terminal_decision,
                             samples=samples,
                             horizon=horizon,
                             banner=(
                                 f"CYCLE {cycle + 1} COMPLETE\n"
-                                f"{_cycle_end_reason(current_decision)}"
+                                f"{_cycle_end_reason(terminal_decision)}"
                             ),
                         )
                         for _ in range(hold_frames):
@@ -530,6 +538,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                 )
             )
         if last_frame is not None and last_state is not None:
+            terminal_decision = terminal_decisions.get(cycle, current_decision)
             completed = _compose(
                 frame=last_frame,
                 state=last_state,
@@ -540,10 +549,10 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                 current_skill=current_skill,
                 current_objects=current_objects,
                 history=history,
-                decision=current_decision,
+                decision=terminal_decision,
                 samples=samples,
                 horizon=horizon,
-                banner=f"CYCLE {cycle + 1} COMPLETE\n{_cycle_end_reason(current_decision)}",
+                banner=f"CYCLE {cycle + 1} COMPLETE\n{_cycle_end_reason(terminal_decision)}",
             )
             for _ in range(hold_frames):
                 video.append(frame=completed)
