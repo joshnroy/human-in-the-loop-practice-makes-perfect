@@ -123,6 +123,40 @@ def _action_name(decision: dict[str, Any] | None) -> str | None:
     return str(skill["name"]) if isinstance(skill, dict) and "name" in skill else None
 
 
+def _decision_values(decision: dict[str, Any] | None) -> dict[str, float]:
+    """Return logged root values keyed by skill, including STOP.
+
+    New logs may provide ``action_values`` directly.  The trace fallback also
+    supports expectimax's root ``action_value`` events.  Older determinized runs
+    only retained the selected path and STOP, so those are the only recoverable
+    entries for an offline re-render.
+    """
+    if decision is None:
+        return {}
+    values: dict[str, float] = {}
+    logged = decision.get("action_values")
+    if isinstance(logged, dict):
+        for name, value in logged.items():
+            if isinstance(value, (int, float)):
+                values[str(name)] = float(value)
+    for event in decision.get("search", []):
+        if int(event.get("node", -1)) != 0:
+            continue
+        if event.get("event") == "stop_value":
+            values["STOP"] = float(event["value"])
+        elif event.get("event") == "action_value":
+            action = event.get("action", {})
+            skill = action.get("skill", {}) if isinstance(action, dict) else {}
+            if isinstance(skill, dict) and "name" in skill:
+                values[str(skill["name"])] = float(event["value"])
+    selected = _action_name(decision)
+    if selected is not None and isinstance(decision.get("value"), (int, float)):
+        values.setdefault(selected, float(decision["value"]))
+    elif selected is None and isinstance(decision.get("value"), (int, float)):
+        values.setdefault("STOP", float(decision["value"]))
+    return values
+
+
 def _draw_bar(
     draw: ImageDraw.ImageDraw,
     *,
@@ -169,23 +203,35 @@ def _draw_decision_column(draw: ImageDraw.ImageDraw, *, decision: dict[str, Any]
     left = DECISION_LEFT
     draw.text((left, 65), "DECISION VALUES", font=_font(15, bold=True), fill=PURPLE)
     selected = _action_name(decision)
-    selected_value = float(decision["value"]) if decision is not None else None
-    stop_value: float | None = None
-    if decision is not None:
-        for event in decision.get("search", []):
-            if event.get("event") == "stop_value" and int(event.get("node", -1)) == 0:
-                stop_value = float(event["value"])
-                break
-    draw.text((left, 105), "Selected action", font=_font(15), fill=TEXT)
-    draw.text(
-        (left, 133),
-        "STOP" if selected is None else _short_skill(selected),
-        font=_font(20, bold=True),
-        fill=GREEN,
-    )
-    _draw_bar(draw, left=left, top=170, value=selected_value, color=GREEN)
-    draw.text((left, 232), "STOP", font=_font(15), fill=TEXT)
-    _draw_bar(draw, left=left, top=260, value=stop_value, color=PURPLE)
+    selected_key = "STOP" if selected is None else selected
+    values = _decision_values(decision)
+    top = 105
+    for skill in (*SKILLS, "STOP"):
+        is_selected = skill == selected_key
+        color = GREEN if is_selected else TEXT
+        label = _short_skill(skill)
+        if is_selected:
+            label = f"▶ {label}"
+        draw.text((left, top), label, font=_font(15, bold=is_selected), fill=color)
+        value = values.get(skill)
+        if value is None:
+            draw.text((left, top + 25), "n/a", font=_font(13), fill=MUTED)
+        else:
+            draw.text(
+                (left, top + 25),
+                f"{value:.4f}",
+                font=_font(13, bold=is_selected),
+                fill=GREEN if is_selected else PURPLE,
+            )
+        top += 82
+
+
+def _cycle_end_reason(decision: dict[str, Any] | None) -> str:
+    if decision is None:
+        return "PRACTICE CYCLE ENDED"
+    if _action_name(decision) is None:
+        return "PRACTICE CYCLE ENDED — STOP SELECTED"
+    return "PRACTICE CYCLE ENDED — CONFIGURED LIMIT REACHED"
 
 
 def _state_xyz(state: dict[str, list[float]], name: str) -> tuple[float, float, float]:
@@ -390,7 +436,10 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                             decision=current_decision,
                             samples=samples,
                             horizon=horizon,
-                            banner=f"CYCLE {cycle + 1} COMPLETE",
+                            banner=(
+                                f"CYCLE {cycle + 1} COMPLETE\n"
+                                f"{_cycle_end_reason(current_decision)}"
+                            ),
                         )
                         for _ in range(hold_frames):
                             video.append(frame=completed)
@@ -469,7 +518,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                 decision=current_decision,
                 samples=samples,
                 horizon=horizon,
-                banner=f"CYCLE {cycle + 1} COMPLETE",
+                banner=f"CYCLE {cycle + 1} COMPLETE\n{_cycle_end_reason(current_decision)}",
             )
             for _ in range(hold_frames):
                 video.append(frame=completed)

@@ -1,4 +1,8 @@
-from analysis.render_tossing3d_presentation import reset_destination
+from analysis.render_tossing3d_presentation import (
+    _cycle_end_reason,
+    _decision_values,
+    reset_destination,
+)
 
 
 def test_reset_destination_reads_the_bound_side_object() -> None:
@@ -19,3 +23,20 @@ def test_reset_destination_ignores_non_reset_actions() -> None:
         }
     }
     assert reset_destination(decision) is None
+
+
+def test_decision_values_preserve_all_logged_root_actions() -> None:
+    decision = {
+        "action": {"skill": {"name": "PickCube"}},
+        "value": 0.8,
+        "action_values": {"PickCube": 0.8, "OpenGripper": 0.6, "STOP": 0.5},
+    }
+    assert _decision_values(decision) == {
+        "PickCube": 0.8,
+        "OpenGripper": 0.6,
+        "STOP": 0.5,
+    }
+
+
+def test_cycle_end_reason_reports_stop() -> None:
+    assert _cycle_end_reason({"action": "STOP"}) == "PRACTICE CYCLE ENDED — STOP SELECTED"
