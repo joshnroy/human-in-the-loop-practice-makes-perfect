@@ -101,6 +101,7 @@ class DeterminizedAStarPlanner(
         # Best discovered continuation grouped by its first root action. These
         # diagnostics explain why each applicable action did or did not beat STOP.
         root_action_paths: list[dict[str, object]] = []
+        rejected_root_actions: list[tuple[ActionT, float, float]] = []
         # Algorithm 3, line 3: Open <- {(b0, g=0)}.
         open_nodes: list[
             DeterminizedSearchQueueEntry[EnvironmentStateT, BeliefStateT, ActionT]
@@ -211,6 +212,10 @@ class DeterminizedAStarPlanner(
                     num_samples=num_samples,
                 )
                 if value == -math.inf:
+                    if current_node.diagnostic_info.depth == 0:
+                        rejected_root_actions.append(
+                            (action, sampled_cost, estimated_observation_probability)
+                        )
                     continue
                 # Algorithm 3, lines 17-19: update g'. Here the estimated
                 # reward is improvement in J. For linear G,
@@ -308,6 +313,15 @@ class DeterminizedAStarPlanner(
             diagnostics.termination_reason = "iteration_budget"
 
         if trace is not None:
+            for action, rejected_cost, rejected_probability in rejected_root_actions:
+                trace.record(
+                    event="action_rejected",
+                    node=0,
+                    action=action.model_dump(mode="json", fallback=str),
+                    reason="infeasible_stop_value",
+                    sampled_cost=rejected_cost,
+                    sampled_observation_probability=rejected_probability,
+                )
             for path in root_action_paths:
                 action = cast(ActionT, path["action"])
                 assert action != STOP_ACTION

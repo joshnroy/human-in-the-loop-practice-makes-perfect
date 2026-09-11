@@ -79,6 +79,12 @@ def _short_skill(name: str) -> str:
     }.get(name, name)
 
 
+def _canonical_skill(name: str) -> str:
+    if name in {"PickCubeFromFloor", "PickCubeFromBin", "PickCubeFromBinRim"}:
+        return "PickCube"
+    return name
+
+
 def reset_destination(decision: dict[str, Any] | None) -> str | None:
     """Return the human-readable bound bin destination from a logged action."""
     if decision is None:
@@ -149,7 +155,7 @@ def _decision_values(decision: dict[str, Any] | None) -> dict[str, float]:
             action = event.get("action", {})
             skill = action.get("skill", {}) if isinstance(action, dict) else {}
             if isinstance(skill, dict) and "name" in skill:
-                name = str(skill["name"])
+                name = _canonical_skill(str(skill["name"]))
                 path_cost = float(event.get("path_cost_g", -float(event["value"])))
                 if name not in best_path_costs or path_cost < best_path_costs[name]:
                     best_path_costs[name] = path_cost
@@ -160,6 +166,20 @@ def _decision_values(decision: dict[str, Any] | None) -> dict[str, float]:
     elif selected is None and isinstance(decision.get("value"), (int, float)):
         values.setdefault("STOP", float(decision["value"]))
     return values
+
+
+def _decision_rejections(decision: dict[str, Any] | None) -> dict[str, str]:
+    if decision is None:
+        return {}
+    rejected: dict[str, str] = {}
+    for event in decision.get("search", []):
+        if event.get("event") != "action_rejected" or int(event.get("node", -1)) != 0:
+            continue
+        action = event.get("action", {})
+        skill = action.get("skill", {}) if isinstance(action, dict) else {}
+        if isinstance(skill, dict) and "name" in skill:
+            rejected[_canonical_skill(str(skill["name"]))] = str(event["reason"])
+    return rejected
 
 
 def _is_applicable(decision: dict[str, Any] | None, skill: str) -> bool:
@@ -232,8 +252,9 @@ def _draw_decision_column(draw: ImageDraw.ImageDraw, *, decision: dict[str, Any]
     left = DECISION_LEFT
     draw.text((left, 65), "DECISION VALUES", font=_font(15, bold=True), fill=PURPLE)
     selected = _action_name(decision)
-    selected_key = "STOP" if selected is None else selected
+    selected_key = "STOP" if selected is None else _canonical_skill(selected)
     values = _decision_values(decision)
+    rejections = _decision_rejections(decision)
     top = 105
     for skill in (*SKILLS, "STOP"):
         is_selected = skill == selected_key
@@ -244,7 +265,10 @@ def _draw_decision_column(draw: ImageDraw.ImageDraw, *, decision: dict[str, Any]
         draw.text((left, top), label, font=_font(15, bold=is_selected), fill=color)
         value = values.get(skill)
         if value is None:
-            label = "not logged" if _is_applicable(decision, skill) else "n/a"
+            if rejections.get(skill) == "infeasible_stop_value":
+                label = "−∞  infeasible"
+            else:
+                label = "not logged" if _is_applicable(decision, skill) else "n/a"
             draw.text((left, top + 25), label, font=_font(13), fill=MUTED)
         else:
             draw.text(

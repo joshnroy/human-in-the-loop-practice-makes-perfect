@@ -286,6 +286,26 @@ def test_generic_heuristic_adds_no_domain_knowledge() -> None:
     )
 
 
+def test_infeasible_root_action_is_logged_as_rejected() -> None:
+    model = Model(
+        transitions={(ROOT, LEFT): [(LOW, 0.0, 1.0)]},
+        beliefs={LOW: BeliefState(value=-float("inf"))},
+    )
+    trace = SearchTrace()
+    DeterminizedAStarPlanner(max_iterations=1, seed=0).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=0,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+    rejected = next(event for event in trace.events if event["event"] == "action_rejected")
+    assert rejected["action"] == {"name": "left"}
+    assert rejected["reason"] == "infeasible_stop_value"
+
+
 def test_planner_compute_budget_is_independent_of_expectimax_horizon() -> None:
     model = Model(
         transitions={
