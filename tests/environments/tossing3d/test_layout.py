@@ -22,14 +22,16 @@ def test_same_side_layout_reaches_backend_and_has_space_to_throw() -> None:
     assert path is not None
     config = json.loads(path.read_text())
     regions = config["regions"]
-    bin_x_min, _, bin_x_max, _ = regions["bin_init_region"]["ranges"][0]
+    bin_x_min, bin_y_min, bin_x_max, bin_y_max = regions["bin_init_region"]["ranges"][0]
     barrier_x = regions["barrier_init_region"]["ranges"][0][0]
     assert bin_x_max + 0.15 < barrier_x
-    # The same-side scene is the evaluation release geometry rotated 180 degrees:
-    # the robot faces -x and approaches the negative-x bin from its +x side.
+    assert bin_x_max - bin_x_min > 0.3
+    assert bin_y_max - bin_y_min > 0.3
+    # The same-side scene preserves the evaluation orientation while moving both
+    # movable objects onto the robot's side of the barrier.
     assert bin_x_min + 1.25 > -2.5
-    assert regions["robot_init_region"]["yaw_ranges"] == [[175, 185]]
-    assert regions["blocks_init_region"]["ranges"] == [[-0.75, -0.25, -0.5, 0.25]]
+    assert regions["robot_init_region"]["yaw_ranges"] == [[-5, 5]]
+    assert regions["blocks_init_region"]["ranges"] == [[0.5, -0.25, 0.75, 0.25]]
     assert regions["blocks_goal_region"]["target"] == "bin_0"
 
 
