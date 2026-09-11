@@ -193,6 +193,13 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
     assert summary["merged_nodes"] == 1
     assert model.evaluations == 2  # root plus the one unique successor
     assert not any(event["event"] == "branch" for event in trace.events)
+    action_values = [event for event in trace.events if event["event"] == "action_value"]
+    assert {event["action"]["name"] for event in action_values} == {"left", "right"}
+    left = next(event for event in action_values if event["action"]["name"] == "left")
+    assert left["objective_improvement"] == pytest.approx(0.6)
+    assert left["observation_surprise"] == pytest.approx(0.0)
+    assert left["path_cost_g"] == pytest.approx(-0.6)
+    assert left["beats_stop"] is True
 
 
 def test_merged_node_is_evaluated_once() -> None:
@@ -277,6 +284,26 @@ def test_generic_heuristic_adds_no_domain_knowledge() -> None:
         )
         == 0.0
     )
+
+
+def test_infeasible_root_action_is_logged_as_rejected() -> None:
+    model = Model(
+        transitions={(ROOT, LEFT): [(LOW, 0.0, 1.0)]},
+        beliefs={LOW: BeliefState(value=-float("inf"))},
+    )
+    trace = SearchTrace()
+    DeterminizedAStarPlanner(max_iterations=1, seed=0).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=0,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+    rejected = next(event for event in trace.events if event["event"] == "action_rejected")
+    assert rejected["action"] == {"name": "left"}
+    assert rejected["reason"] == "infeasible_stop_value"
 
 
 def test_planner_compute_budget_is_independent_of_expectimax_horizon() -> None:

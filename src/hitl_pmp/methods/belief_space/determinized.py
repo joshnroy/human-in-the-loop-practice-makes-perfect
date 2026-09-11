@@ -10,6 +10,7 @@ from __future__ import annotations
 import heapq
 import math
 import time
+from typing import cast
 
 import numpy as np
 
@@ -97,6 +98,10 @@ class DeterminizedAStarPlanner(
         best_g = 0.0  # Algorithm 3's cumulative search cost g.
         best_objective_value = root_value
         best_action: ActionT | StopAction = STOP_ACTION
+        # Best discovered continuation grouped by its first root action. These
+        # diagnostics explain why each applicable action did or did not beat STOP.
+        root_action_paths: list[dict[str, object]] = []
+        rejected_root_actions: list[tuple[ActionT, float, float]] = []
         # Algorithm 3, line 3: Open <- {(b0, g=0)}.
         open_nodes: list[
             DeterminizedSearchQueueEntry[EnvironmentStateT, BeliefStateT, ActionT]
@@ -207,6 +212,10 @@ class DeterminizedAStarPlanner(
                     num_samples=num_samples,
                 )
                 if value == -math.inf:
+                    if current_node.diagnostic_info.depth == 0:
+                        rejected_root_actions.append(
+                            (action, sampled_cost, estimated_observation_probability)
+                        )
                     continue
                 # Algorithm 3, lines 17-19: update g'. Here the estimated
                 # reward is improvement in J. For linear G,
@@ -239,6 +248,36 @@ class DeterminizedAStarPlanner(
                 next_path_cost = (
                     current_node.g - estimated_reward + observation_surprise + heuristic_cost
                 )  # Algorithm 3: g'.
+                existing_root_path = next(
+                    (
+                        path
+                        for path in root_action_paths
+                        if path["action"] == first_action
+                    ),
+                    None,
+                )
+                if existing_root_path is None or next_path_cost < cast(
+                    float, existing_root_path["path_cost_g"]
+                ):
+                    path_diagnostic: dict[str, object] = {
+                        "action": first_action,
+                        "path_cost_g": next_path_cost,
+                        "value": value,
+                        "objective_improvement": value - root_value,
+                        "observation_surprise": (
+                            next_path_cost - (root_value - value) - heuristic_cost
+                        ),
+                        "heuristic_cost": heuristic_cost,
+                        "practice_cost": next_cost - summed_cost,
+                        "depth": next_depth,
+                        "sampled_observation_probability": (
+                            estimated_observation_probability
+                        ),
+                    }
+                    if existing_root_path is None:
+                        root_action_paths.append(path_diagnostic)
+                    else:
+                        existing_root_path.update(path_diagnostic)
                 # Algorithm 3, lines 20-22: insert b' only for a newly discovered
                 # or strictly cheaper path.
                 if key not in cost or next_path_cost < cost[key]:
@@ -274,6 +313,34 @@ class DeterminizedAStarPlanner(
             diagnostics.termination_reason = "iteration_budget"
 
         if trace is not None:
+            for action, rejected_cost, rejected_probability in rejected_root_actions:
+                trace.record(
+                    event="action_rejected",
+                    node=0,
+                    action=action.model_dump(mode="json", fallback=str),
+                    reason="infeasible_stop_value",
+                    sampled_cost=rejected_cost,
+                    sampled_observation_probability=rejected_probability,
+                )
+            for path in root_action_paths:
+                action = cast(ActionT, path["action"])
+                assert action != STOP_ACTION
+                trace.record(
+                    event="action_value",
+                    node=0,
+                    action=action.model_dump(mode="json", fallback=str),
+                    value=path["value"],
+                    path_cost_g=path["path_cost_g"],
+                    objective_improvement=path["objective_improvement"],
+                    observation_surprise=path["observation_surprise"],
+                    heuristic_cost=path["heuristic_cost"],
+                    practice_cost=path["practice_cost"],
+                    depth=path["depth"],
+                    sampled_observation_probability=path[
+                        "sampled_observation_probability"
+                    ],
+                    beats_stop=cast(float, path["path_cost_g"]) < 0.0,
+                )
             # Algorithm 3, line 26: return the first action on the minimum-g
             # sampled path found in Open or Closed. ``best_g`` tracks
             # that node as children are generated.
