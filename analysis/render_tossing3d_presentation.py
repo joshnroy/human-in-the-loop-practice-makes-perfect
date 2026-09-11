@@ -391,13 +391,22 @@ def _compose(
             outline=GREEN,
             width=4,
         )
+        lines = banner.splitlines()
         draw.text(
-            (SCENE_WIDTH // 2, 282),
-            banner,
-            font=_font(31, bold=True),
+            (SCENE_WIDTH // 2, 263),
+            lines[0],
+            font=_font(27, bold=True),
             fill=GREEN,
             anchor="mm",
         )
+        if len(lines) > 1:
+            draw.text(
+                (SCENE_WIDTH // 2, 307),
+                lines[1],
+                font=_font(16, bold=True),
+                fill=TEXT,
+                anchor="mm",
+            )
     return np.asarray(image, dtype=np.uint8)
 
 
