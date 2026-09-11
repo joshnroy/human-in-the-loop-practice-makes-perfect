@@ -33,7 +33,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    OPPOSITE_SIDES,
     ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
@@ -273,7 +272,6 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         HOLDING,
         NOT_HOLDING,
         ON_GROUND,
-        OPPOSITE_SIDES,
         ROBOT_AT_SIDE,
         CUBE_AT_SIDE,
         BIN_AT_SIDE,

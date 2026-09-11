@@ -22,7 +22,6 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
-    OPPOSITE_SIDES,
     ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.problem import Tossing3DProblem
@@ -75,7 +74,6 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         HOLDING,
         NOT_HOLDING,
         ON_GROUND,
-        OPPOSITE_SIDES,
         ROBOT_AT_SIDE,
         CUBE_AT_SIDE,
         BIN_AT_SIDE,
