@@ -207,6 +207,7 @@ def _compose(
     decision: dict[str, Any] | None,
     samples: int,
     horizon: int,
+    banner: str | None = None,
 ) -> np.ndarray:
     image = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
     scene = Image.fromarray(np.ascontiguousarray(frame, dtype=np.uint8)).resize(
@@ -237,10 +238,10 @@ def _compose(
     draw.line((SCENE_WIDTH, TOP_HEIGHT, SCENE_WIDTH, HEIGHT), fill="#39344c", width=2)
     draw.text((HISTORY_LEFT, 65), "SKILL HISTORY", font=_font(15, bold=True), fill=PURPLE)
     visible = history[-13:]
-    first = max(1, transitions - len(visible) + 1)
+    first = max(1, step - len(visible) + 1)
     y = 103
     for index, (skill, logged_destination) in enumerate(visible, start=first):
-        current = index == transitions
+        current = index == step
         color = (
             GREEN
             if current and skill == "ask_for_reset_cube_bin_only"
@@ -306,6 +307,21 @@ def _compose(
             fill=GREEN,
             anchor="mm",
         )
+    if banner is not None:
+        draw.rounded_rectangle(
+            (74, 224, SCENE_WIDTH - 74, 340),
+            radius=16,
+            fill="#10141a",
+            outline=GREEN,
+            width=4,
+        )
+        draw.text(
+            (SCENE_WIDTH // 2, 282),
+            banner,
+            font=_font(31, bold=True),
+            fill=GREEN,
+            anchor="mm",
+        )
     return np.asarray(image, dtype=np.uint8)
 
 
@@ -359,8 +375,28 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
             ):
                 event = timeline[timeline_index]
                 if event["event"] == "session_start":
-                    cycle = int(event["cycle"])
+                    next_cycle = int(event["cycle"])
+                    if next_cycle != cycle and last_frame is not None and last_state is not None:
+                        completed = _compose(
+                            frame=last_frame,
+                            state=last_state,
+                            seed=header.seed,
+                            cycle=cycle,
+                            step=step,
+                            transitions=transitions,
+                            current_skill=current_skill,
+                            current_objects=current_objects,
+                            history=history,
+                            decision=current_decision,
+                            samples=samples,
+                            horizon=horizon,
+                            banner=f"CYCLE {cycle + 1} COMPLETE",
+                        )
+                        for _ in range(hold_frames):
+                            video.append(frame=completed)
+                    cycle = next_cycle
                     step = 0
+                    history = []
                 else:
                     cycle = int(event["cycle"])
                     step += 1
@@ -419,6 +455,24 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                     horizon=horizon,
                 )
             )
+        if last_frame is not None and last_state is not None:
+            completed = _compose(
+                frame=last_frame,
+                state=last_state,
+                seed=header.seed,
+                cycle=cycle,
+                step=step,
+                transitions=transitions,
+                current_skill=current_skill,
+                current_objects=current_objects,
+                history=history,
+                decision=current_decision,
+                samples=samples,
+                horizon=horizon,
+                banner=f"CYCLE {cycle + 1} COMPLETE",
+            )
+            for _ in range(hold_frames):
+                video.append(frame=completed)
     finally:
         video.close()
         env.close()
