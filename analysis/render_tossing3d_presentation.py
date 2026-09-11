@@ -139,6 +139,7 @@ def _decision_values(decision: dict[str, Any] | None) -> dict[str, float]:
         for name, value in logged.items():
             if isinstance(value, (int, float)):
                 values[str(name)] = float(value)
+    best_path_costs: dict[str, float] = {}
     for event in decision.get("search", []):
         if int(event.get("node", -1)) != 0:
             continue
@@ -148,7 +149,11 @@ def _decision_values(decision: dict[str, Any] | None) -> dict[str, float]:
             action = event.get("action", {})
             skill = action.get("skill", {}) if isinstance(action, dict) else {}
             if isinstance(skill, dict) and "name" in skill:
-                values[str(skill["name"])] = float(event["value"])
+                name = str(skill["name"])
+                path_cost = float(event.get("path_cost_g", -float(event["value"])))
+                if name not in best_path_costs or path_cost < best_path_costs[name]:
+                    best_path_costs[name] = path_cost
+                    values[name] = float(event["value"])
     selected = _action_name(decision)
     if selected is not None and isinstance(decision.get("value"), (int, float)):
         values.setdefault(selected, float(decision["value"]))

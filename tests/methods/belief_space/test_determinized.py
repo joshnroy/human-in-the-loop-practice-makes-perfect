@@ -193,6 +193,13 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
     assert summary["merged_nodes"] == 1
     assert model.evaluations == 2  # root plus the one unique successor
     assert not any(event["event"] == "branch" for event in trace.events)
+    action_values = [event for event in trace.events if event["event"] == "action_value"]
+    assert {event["action"]["name"] for event in action_values} == {"left", "right"}
+    left = next(event for event in action_values if event["action"]["name"] == "left")
+    assert left["objective_improvement"] == pytest.approx(0.6)
+    assert left["observation_surprise"] == pytest.approx(0.0)
+    assert left["path_cost_g"] == pytest.approx(-0.6)
+    assert left["beats_stop"] is True
 
 
 def test_merged_node_is_evaluated_once() -> None:
