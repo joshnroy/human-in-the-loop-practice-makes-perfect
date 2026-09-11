@@ -157,6 +157,30 @@ def _decision_values(decision: dict[str, Any] | None) -> dict[str, float]:
     return values
 
 
+def _is_applicable(decision: dict[str, Any] | None, skill: str) -> bool:
+    """Recover Tossing3D skill applicability from the logged symbolic state."""
+    if skill == "STOP":
+        return True
+    if decision is None:
+        return False
+    atom_text = "\n".join(str(atom) for atom in decision.get("atoms", ()))
+
+    def holds(predicate: str) -> bool:
+        return f"name='{predicate}'" in atom_text
+    if skill == "OpenGripper":
+        return True
+    if skill == "PickCube":
+        return all(
+            holds(predicate)
+            for predicate in ("HandEmpty", "OnGround", "RobotAtSide", "CubeAtSide")
+        )
+    if skill == "MoveToTossLocationAndToss":
+        return holds("Holding") and holds("BinAtSide")
+    if skill == "ask_for_reset_cube_bin_only":
+        return holds("RobotAtSide") and holds("NotHolding")
+    return False
+
+
 def _draw_bar(
     draw: ImageDraw.ImageDraw,
     *,
@@ -215,7 +239,8 @@ def _draw_decision_column(draw: ImageDraw.ImageDraw, *, decision: dict[str, Any]
         draw.text((left, top), label, font=_font(15, bold=is_selected), fill=color)
         value = values.get(skill)
         if value is None:
-            draw.text((left, top + 25), "n/a", font=_font(13), fill=MUTED)
+            label = "not logged" if _is_applicable(decision, skill) else "n/a"
+            draw.text((left, top + 25), label, font=_font(13), fill=MUTED)
         else:
             draw.text(
                 (left, top + 25),
