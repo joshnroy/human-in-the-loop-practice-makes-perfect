@@ -193,7 +193,7 @@ def _is_applicable(decision: dict[str, Any] | None, skill: str) -> bool:
     def holds(predicate: str) -> bool:
         return f"name='{predicate}'" in atom_text
     if skill == "OpenGripper":
-        return True
+        return holds("ClosedEmpty")
     if skill == "PickCube":
         return all(
             holds(predicate)

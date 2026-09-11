@@ -1,6 +1,7 @@
 from analysis.render_tossing3d_presentation import (
     _cycle_end_reason,
     _decision_values,
+    _is_applicable,
     reset_destination,
 )
 
@@ -40,3 +41,8 @@ def test_decision_values_preserve_all_logged_root_actions() -> None:
 
 def test_cycle_end_reason_reports_stop() -> None:
     assert _cycle_end_reason({"action": "STOP"}) == "PRACTICE CYCLE ENDED — STOP SELECTED"
+
+
+def test_same_side_open_gripper_requires_closed_empty() -> None:
+    assert not _is_applicable({"atoms": ["name='HandEmpty'"]}, "OpenGripper")
+    assert _is_applicable({"atoms": ["name='ClosedEmpty'"]}, "OpenGripper")
