@@ -237,10 +237,10 @@ def _compose(
     draw.line((SCENE_WIDTH, TOP_HEIGHT, SCENE_WIDTH, HEIGHT), fill="#39344c", width=2)
     draw.text((HISTORY_LEFT, 65), "SKILL HISTORY", font=_font(15, bold=True), fill=PURPLE)
     visible = history[-13:]
-    first = max(1, step - len(visible) + 1)
+    first = max(1, transitions - len(visible) + 1)
     y = 103
     for index, (skill, logged_destination) in enumerate(visible, start=first):
-        current = index == step
+        current = index == transitions
         color = (
             GREEN
             if current and skill == "ask_for_reset_cube_bin_only"
@@ -361,7 +361,6 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                 if event["event"] == "session_start":
                     cycle = int(event["cycle"])
                     step = 0
-                    history = []
                 else:
                     cycle = int(event["cycle"])
                     step += 1
