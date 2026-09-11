@@ -251,18 +251,27 @@ class _SpyHuman(HumanOracle):
     # CommandGoalDescription to record -- see execute_movables_reset's own docstring
     # for why this call carries no description).
     movables_reset_calls: int = 0
+    movables_reset_destinations: list[str | None] = []
 
     @staticmethod
-    def execute_movables_reset(*, env: Environment) -> None:
+    def execute_movables_reset(*, env: Environment, destination: str | None = None) -> None:
         del env
         _SpyHuman.movables_reset_calls += 1
+        _SpyHuman.movables_reset_destinations.append(destination)
 
 
 def _build_spy_problem() -> _Problem:
     _SpyHuman.seen = []
+    _SpyHuman.movables_reset_destinations = []
     env = _Env()
     env.set_state(state=_state(x=0.0))
     return _Problem(env=env, tasks=_Tasks(env=env), human=_SpyHuman)
+
+
+def test_execute_movables_reset_forwards_a_symbolic_destination() -> None:
+    problem = _build_spy_problem()
+    problem.execute_movables_reset(destination="opposite_side")
+    assert _SpyHuman.movables_reset_destinations == ["opposite_side"]
 
 
 def test_describe_command_carries_no_target_state_by_default() -> None:

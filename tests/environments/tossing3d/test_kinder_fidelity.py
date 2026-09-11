@@ -6,6 +6,7 @@ and MuJoCo runtime.
 """
 
 import importlib.util
+import json
 from pathlib import Path
 
 import numpy as np
@@ -405,50 +406,45 @@ def test_in_bin_agrees_with_kinders_own_goal_check_at_the_boundary() -> None:
 # --- reset_movables / reset_cube_and_bin: the partial, robot-untouched reset ------
 
 
-@pytest.mark.parametrize("edited_json", [False, True])
-def test_same_side_human_reset_uses_json_initial_regions(*, tmp_path, edited_json: bool) -> None:
-    """Changing JSON regions/assignments changes the actual human reset placement."""
-    import json
-
+@pytest.mark.parametrize("destination", ["robot_side", "opposite_side"])
+def test_same_side_human_reset_uses_python_defined_region(*, destination: str) -> None:
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.sides import (
+        BIN_RESET_REGION_BY_SIDE,
+        Tossing3DSide,
+    )
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     path = env.backend().task_config_path
     assert path is not None
     config = json.loads(path.read_text())
-    assignments = {"cube_0": "blocks_init_region", "bin_0": "bin_init_region"}
-    if edited_json:
-        for name, bounds in (
-            ("blocks_init_region", [0.3, 0.6, 0.4, 0.7]),
-            ("bin_init_region", [-0.8, -1.2, -0.7, -1.1]),
-        ):
-            config["regions"][name]["ranges"] = [bounds]
-            config["regions"][f"edited_{name}"] = config["regions"].pop(name)
-        for predicate in config["initial_state"]:
-            if predicate[1] in assignments:
-                predicate[2] = f"edited_{assignments[predicate[1]]}"
-                assignments[predicate[1]] = predicate[2]
-        path = tmp_path / "edited-scene.json"
-        path.write_text(json.dumps(config))
-        env.backend().task_config_path = path
+    assert "bin_robot_side_reset_region" not in config["regions"]
+    assert "bin_far_side_reset_region" not in config["regions"]
+    cube_bounds = config["regions"]["blocks_init_region"]["ranges"][0]
+    bin_bounds = BIN_RESET_REGION_BY_SIDE[Tossing3DSide(destination)].ranges[0]
+    bounds_by_name = {"cube_0": cube_bounds, "bin_0": bin_bounds}
     try:
         env.hard_reset()
         snapshot = env.backend().snapshot()
-        for name in assignments:
+        for name in bounds_by_name:
             obj = snapshot.get_object_from_name(name)
             snapshot.set(obj, "x", 1.0)
         env.backend().restore(snapshot=snapshot)
         before = _robot_pose(state=env.get_current_state())
         for _ in range(3):
-            assert env.reset_movables()
+            assert env.reset_movables(destination=destination)
             observed = env.get_current_state()
             for obj in (env.cube, env.bin):
-                xmin, ymin, xmax, ymax = config["regions"][assignments[obj.name]]["ranges"][0]
+                xmin, ymin, xmax, ymax = bounds_by_name[obj.name]
                 x = observed.get(obj=obj, feature_name="x")
                 y = observed.get(obj=obj, feature_name="y")
                 assert xmin - 1e-6 <= x <= xmax + 1e-6
                 assert ymin - 1e-6 <= y <= ymax + 1e-6
-                assert x < observed.get(obj=env.barrier, feature_name="x")
+                barrier_x = observed.get(obj=env.barrier, feature_name="x")
+                if obj == env.cube or destination == "robot_side":
+                    assert x < barrier_x
+                else:
+                    assert x > barrier_x
             assert _robot_pose(state=observed) == pytest.approx(before, abs=1e-6)
     finally:
         env.close()
@@ -639,7 +635,10 @@ def test_human_reset_clears_recorded_rim_support() -> None:
         assert env.reset_movables()
         after = method.abstract_state(state=env.get_current_state())
         assert reset.add_effects <= after
-        assert reset.delete_effects.isdisjoint(after)
+        # The one lifted STRIPS reset deletes both possible values of each
+        # functional side predicate, then re-adds the selected destination. Add
+        # effects win, matching both the in-memory transition and PDDL semantics.
+        assert (reset.delete_effects - reset.add_effects).isdisjoint(after)
     finally:
         env.close()
 

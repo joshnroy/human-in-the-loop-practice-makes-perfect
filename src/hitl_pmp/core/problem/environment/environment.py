@@ -119,7 +119,7 @@ class Environment(BaseModel, abc.ABC):
         it."""
         raise NotImplementedError
 
-    def reset_movables(self) -> bool:
+    def reset_movables(self, *, destination: str | None = None) -> bool:
         """External override, like `set_state` but *partial*: reposition whichever
         non-robot objects a human could tidy up, robot untouched. Called only via
         `HumanOracle.execute_movables_reset`/`Problem.execute_movables_reset`, from
@@ -128,7 +128,9 @@ class Environment(BaseModel, abc.ABC):
         `False` by default (declined -- caller must not claim a reset happened);
         `Tossing3DEnvironment` overrides, returns True. Not a widening of
         `set_state`: that takes a full `State` for every object, this touches an
-        unspecified domain-chosen subset and takes no argument at all."""
+        domain-chosen subset. ``destination`` optionally names a domain-defined
+        placement region; domains with one reset ignore it."""
+        del destination
         return False
 
     def set_substep_recording(self, *, enabled: bool) -> None:

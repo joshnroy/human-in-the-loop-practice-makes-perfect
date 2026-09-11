@@ -51,11 +51,12 @@ distance bounds upstream now samples from. Moving any one alone changes the thro
 import numpy as np
 
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction
-from hitl_pmp.core.problem.environment.types import State
+from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Goal
 
 from .environment import Tossing3DEnvironment
 from .predicates import HOLDING
+from .sides import Tossing3DSides
 from .skills import Tossing3DSkills
 
 # Upstream's own `target_distance` for the throw.
@@ -102,12 +103,22 @@ class SkillOraclePolicy:
         # as `Holding` here.
         holding = HOLDING.holds(state, (env.robot, env.cube))
 
+        def side_of(*, obj: Object) -> Object:
+            robot_x = state.get(obj=env.robot, feature_name="pos_base_x")
+            barrier_x = state.get(obj=env.barrier, feature_name="x")
+            object_x = state.get(obj=obj, feature_name="x")
+            return (
+                Tossing3DSides.robot
+                if (object_x - barrier_x) * (robot_x - barrier_x) >= 0.0
+                else Tossing3DSides.opposite
+            )
+
         ground_skill: GroundSkill
         params: np.ndarray
         if holding:
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-                objects=(env.robot, env.bin, env.cube, env.barrier),
+                objects=(env.robot, env.bin, env.cube, env.barrier, side_of(obj=env.bin)),
             )
             params = np.array([
                 throw_standoff,
@@ -123,14 +134,19 @@ class SkillOraclePolicy:
             # otherwise would hide the irreversibility the domain exists to exhibit.
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.PICK_CUBE,
-                objects=(env.robot, env.cube, env.barrier),
+                objects=(env.robot, env.cube, env.barrier, side_of(obj=env.cube)),
             )
             params = np.zeros(0)
 
         action = Tossing3DSkills.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )
-        objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
+        # Side objects are planner bookkeeping, not physical controller arguments.
+        # Keep them out of the human-facing overlay so recordings retain the same
+        # skill labels as before side-aware planning.
+        objects_desc = ", ".join(
+            obj.name for obj in ground_skill.objects if obj.type != Tossing3DSides.type
+        )
         label = f"{ground_skill.skill.name}({objects_desc})"
         if params.size > 0:
             label += f", params={[round(float(value), 2) for value in params]}"

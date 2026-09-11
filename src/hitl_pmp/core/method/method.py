@@ -50,9 +50,10 @@ class HumanCubeBinResetRequested(Exception):  # noqa: N818
     `cost` is required, not optional: there's no `Goal`/`target_state` to price a
     partial reset against, so the raising `Method` must always price it itself."""
 
-    def __init__(self, *, cost: float) -> None:
+    def __init__(self, *, cost: float, destination: str | None = None) -> None:
         super().__init__(cost)
         self.cost = cost
+        self.destination = destination
 
 
 class Method(BaseModel, abc.ABC):

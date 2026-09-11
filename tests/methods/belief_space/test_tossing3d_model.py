@@ -5,7 +5,18 @@ import pytest
 from pydantic import ValidationError
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import (
+    CUBE_AT_SIDE,
+    HAND_EMPTY,
+    HOLDING,
+    IN_BIN,
+    NOT_HOLDING,
+    ON_GROUND,
+    ROBOT_AT_SIDE,
+)
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
@@ -107,9 +118,18 @@ def _weighted_default_state() -> Tossing3DBeliefState:
 def _search_state(
     *, model: Tossing3DPracticeModel, state: Tossing3DBeliefState, action_name: str
 ) -> Tossing3DSearchState:
-    return make_tossing3d_search_state(
-        state=state, true_atoms=_ground_skill(model=model, name=action_name).preconditions
+    action = _ground_skill(model=model, name=action_name)
+    env = Tossing3DEnvironment(scene_bg=False)
+    robot_side = GroundAtom(
+        predicate=ROBOT_AT_SIDE,
+        objects=(env.robot, env.barrier, Tossing3DSides.robot),
     )
+    invariants = {
+        robot_side,
+    }
+    if all(atom.predicate != HOLDING for atom in action.preconditions):
+        invariants.add(GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)))
+    return make_tossing3d_search_state(state=state, true_atoms=action.preconditions | invariants)
 
 
 def _action(
@@ -261,6 +281,35 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
         for successor, cost in successors
     ]
     assert probabilities == pytest.approx([0.5, 0.5])
+
+
+def test_failed_toss_still_releases_cube_on_target_side() -> None:
+    """A scoring miss changes physical state even though it omits ``InBin``."""
+    state = _point_state(toss=0.5, pick=0.5, open_gripper=1.0)
+    model = _domain_model(exploration_epsilon=0.0)
+
+    outcomes = _outcomes(model=model, state=state, name=TOSS_SKILL)
+
+    assert len(outcomes) == 2
+    success_atoms = outcomes[0][2]
+    failure_atoms = outcomes[1][2]
+    env = Tossing3DEnvironment(scene_bg=False)
+    holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
+    common_after_toss = {
+        GroundAtom(predicate=HAND_EMPTY, objects=(env.robot,)),
+        GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
+        GroundAtom(predicate=ON_GROUND, objects=(env.cube,)),
+    }
+    assert common_after_toss <= success_atoms
+    assert common_after_toss <= failure_atoms
+    assert holding not in success_atoms
+    assert holding not in failure_atoms
+    success_cube_sides = {atom for atom in success_atoms if atom.predicate == CUBE_AT_SIDE}
+    failure_cube_sides = {atom for atom in failure_atoms if atom.predicate == CUBE_AT_SIDE}
+    assert len(success_cube_sides) == 1
+    assert failure_cube_sides == success_cube_sides
+    assert GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)) in success_atoms
+    assert GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)) not in failure_atoms
 
 
 def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBelief:
@@ -624,7 +673,6 @@ def test_only_physically_applicable_actions_are_returned() -> None:
     } == {
         TOSS_SKILL,
         OPEN_GRIPPER_SKILL,
-        RESET_SKILL,
     }
 
 
@@ -666,12 +714,21 @@ def test_batched_sampling_and_evaluation_matches_individual_theta_path() -> None
     ])
 
 
-@pytest.mark.parametrize("action_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
-def test_human_reset_uses_unchanged_ees_empty_preconditions(*, action_name: str) -> None:
+@pytest.mark.parametrize("action_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
+def test_human_reset_is_available_when_not_holding(*, action_name: str) -> None:
     model = _domain_model(reset_cost=1.0)
     state = make_default_tossing3d_belief()
     search_state = _search_state(model=model, state=state, action_name=action_name)
     assert RESET_SKILL in {
+        action.skill.name for action in model.get_valid_actions(environment_state=search_state)
+    }
+
+
+def test_human_reset_is_not_available_while_holding() -> None:
+    model = _domain_model(reset_cost=1.0)
+    state = make_default_tossing3d_belief()
+    search_state = _search_state(model=model, state=state, action_name=TOSS_SKILL)
+    assert RESET_SKILL not in {
         action.skill.name for action in model.get_valid_actions(environment_state=search_state)
     }
 

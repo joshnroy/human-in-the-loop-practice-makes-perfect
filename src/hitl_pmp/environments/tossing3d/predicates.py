@@ -1,10 +1,13 @@
-"""Tossing3D's symbolic layer: five predicates, all of them upstream's.
+"""Tossing3D's symbolic layer: upstream physical atoms plus typed barrier sides.
 
-**These are kinder-baselines' classifiers, not ours.** Every predicate below is a lookup
+The five manipulation predicates are KINDER's classifiers, not ours. Each is a lookup
 into the atom set upstream's own `Tossing3DStateAbstractor`
 (`kinder_models.dynamic3d.tossing.state_abstractions`) derived from the state being
 asked about. Nothing here re-implements a threshold, so nothing here can drift out of
-agreement with upstream.
+agreement with upstream. ``RobotAtSide``, ``CubeAtSide``, and ``BinAtSide`` are the
+small geometric vocabulary added here so PDDL can bind a reset destination. Their sides
+are robot-relative: ``robot_side`` denotes the robot's halfspace of the barrier and
+``opposite_side`` denotes the other one, independent of world-frame orientation.
 
 That is the change this module records. It previously carried six classifiers of its own,
 three of them ported from upstream's `shelf` abstractions with thresholds copied across,
@@ -71,6 +74,7 @@ from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 
 from .environment import Tossing3DEnvironment
+from .sides import Tossing3DSides
 
 
 class Tossing3DAtoms:
@@ -157,6 +161,12 @@ HOLDING = Predicate(
     ),
 )
 
+NOT_HOLDING = Predicate(
+    name="NotHolding",
+    types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
+    holds=lambda state, objects: not HOLDING.holds(state, objects),
+)
+
 ON_GROUND = Predicate(
     name="OnGround",
     types=(Tossing3DEnvironment.cube_type,),
@@ -173,5 +183,67 @@ REACHABLE = Predicate(
     # domain interesting. Audited at 201/201 agreement before the swap.
     holds=lambda state, objects: Tossing3DAtoms.holds(
         state=state, name=KB_IS_DOWN_X, objects=(objects[0], objects[1])
+    ),
+)
+
+
+def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
+    """Whether ``x_object`` is on the named robot-relative halfspace."""
+    robot_x = state.get(obj=Tossing3DEnvironment.robot, feature_name="pos_base_x")
+    barrier_x = state.get(obj=Tossing3DEnvironment.barrier, feature_name="x")
+    object_x = state.get(obj=x_object, feature_name="x")
+    robot_delta = robot_x - barrier_x
+    object_delta = object_x - barrier_x
+    # An object centred on or straddling the barrier is not in either open
+    # halfspace. Include both physical footprints: using only the cube half-width
+    # incorrectly classifies overlap with the nonzero-width barrier as reachable.
+    barrier_half_width = state.get(obj=Tossing3DEnvironment.barrier, feature_name="bb_x") / 2.0
+    object_half_width = (
+        state.get(obj=x_object, feature_name="bb_x") / 2.0
+        if "bb_x" in x_object.type.feature_names
+        else 0.0
+    )
+    clearance = barrier_half_width + object_half_width
+    if abs(object_delta) <= clearance:
+        return False
+    same_as_robot = object_delta * robot_delta > 0.0
+    if side == Tossing3DSides.robot:
+        return same_as_robot
+    if side == Tossing3DSides.opposite:
+        return object_delta * robot_delta < 0.0
+    raise ValueError(f"unknown Tossing3D side object {side.name!r}")
+
+
+ROBOT_AT_SIDE = Predicate(
+    name="RobotAtSide",
+    types=(
+        Tossing3DEnvironment.robot_type,
+        Tossing3DEnvironment.barrier_type,
+        Tossing3DSides.type,
+    ),
+    holds=lambda state, objects: objects[2] == Tossing3DSides.robot,
+)
+
+CUBE_AT_SIDE = Predicate(
+    name="CubeAtSide",
+    types=(
+        Tossing3DEnvironment.cube_type,
+        Tossing3DEnvironment.barrier_type,
+        Tossing3DSides.type,
+    ),
+    holds=lambda state, objects: _same_barrier_side(
+        state=state, x_object=objects[0], side=objects[2]
+    ),
+)
+
+BIN_AT_SIDE = Predicate(
+    name="BinAtSide",
+    types=(
+        Tossing3DEnvironment.bin_type,
+        Tossing3DEnvironment.barrier_type,
+        Tossing3DSides.type,
+    ),
+    holds=lambda state, objects: _same_barrier_side(
+        state=state, x_object=objects[0], side=objects[2]
     ),
 )

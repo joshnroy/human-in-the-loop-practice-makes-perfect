@@ -13,13 +13,16 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    CUBE_AT_SIDE,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
+    NOT_HOLDING,
     ON_GROUND,
-    REACHABLE,
+    ROBOT_AT_SIDE,
     Tossing3DAtoms,
 )
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 
 ON_BIN_RIM = Predicate(
@@ -53,47 +56,70 @@ class SameSideSkills:
     _cube: ClassVar[Variable] = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
     _bin: ClassVar[Variable] = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
     _barrier: ClassVar[Variable] = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
+    _side: ClassVar[Variable] = Variable(name="side", type=Tossing3DSides.type)
     _empty: ClassVar[LiftedAtom] = LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))
     _held: ClassVar[LiftedAtom] = LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))
     _floor: ClassVar[LiftedAtom] = LiftedAtom(predicate=ON_FLOOR, variables=(_cube, _bin))
     _inside: ClassVar[LiftedAtom] = LiftedAtom(predicate=IN_BIN, variables=(_cube, _bin))
-    _reachable: ClassVar[LiftedAtom] = LiftedAtom(predicate=REACHABLE, variables=(_cube, _barrier))
+    _same_robot_side: ClassVar[frozenset[LiftedAtom]] = frozenset({
+        LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
+        LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+    })
     _closed: ClassVar[LiftedAtom] = LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
 
     _rim: ClassVar[LiftedAtom] = LiftedAtom(predicate=ON_BIN_RIM, variables=(_cube, _bin))
 
     PICK_RIM: ClassVar[Skill] = Skill(
         name="PickCubeFromRim",
-        parameters=(_robot, _cube, _bin, _barrier),
-        preconditions=frozenset({_empty, _rim, _reachable}),
+        parameters=(_robot, _cube, _bin, _barrier, _side),
+        preconditions=frozenset({_empty, _rim}) | _same_robot_side,
         add_effects=frozenset({_held}),
-        delete_effects=frozenset({_empty, _rim}),
+        delete_effects=frozenset({
+            _empty,
+            _rim,
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
+        }),
         param_dim=0,
+        practice_cost=1.0,
     )
 
     PICK_FLOOR: ClassVar[Skill] = Skill(
         name="PickCubeFromFloor",
-        parameters=(_robot, _cube, _bin, _barrier),
-        preconditions=frozenset({_empty, _floor, _reachable}),
+        parameters=(_robot, _cube, _bin, _barrier, _side),
+        preconditions=frozenset({_empty, _floor}) | _same_robot_side,
         add_effects=frozenset({_held}),
-        delete_effects=frozenset({_empty, _floor}),
+        delete_effects=frozenset({
+            _empty,
+            _floor,
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
+        }),
         param_dim=0,
+        practice_cost=1.0,
     )
     PICK_BIN: ClassVar[Skill] = Skill(
         name="PickCubeFromBin",
-        parameters=(_robot, _cube, _bin, _barrier),
-        preconditions=frozenset({_empty, _inside, _reachable}),
+        parameters=(_robot, _cube, _bin, _barrier, _side),
+        preconditions=frozenset({_empty, _inside}) | _same_robot_side,
         add_effects=frozenset({_held}),
-        delete_effects=frozenset({_empty, _inside}),
+        delete_effects=frozenset({
+            _empty,
+            _inside,
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
+        }),
         param_dim=0,
+        practice_cost=1.0,
     )
     OPEN: ClassVar[Skill] = Skill(
         name="OpenGripper",
         parameters=(_robot, _cube),
         preconditions=frozenset({_closed}),
-        add_effects=frozenset({_empty}),
+        add_effects=frozenset({
+            _empty,
+            LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),
+        }),
         delete_effects=frozenset({_closed}),
         param_dim=0,
+        practice_cost=1.0,
     )
 
     @staticmethod

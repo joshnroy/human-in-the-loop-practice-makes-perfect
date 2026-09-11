@@ -585,61 +585,42 @@ class KinderBackend(BaseModel):
         }
         return type(template)(data, template.type_features)
 
-    def reset_cube_and_bin(self) -> KinderObservation:
+    def reset_cube_and_bin(
+        self, *, bin_region: dict[str, object] | None = None
+    ) -> KinderObservation:
         """Reposition `cube_name`/`bin_name` to fresh ground poses in the live
         simulator, robot and everything else untouched. Backs
         `Tossing3DEnvironment.reset_movables`.
 
-        Uses upstream's own placement sampler (`sample_collision_free_positions`
-        + `mujoco_object.set_pose`), the same one `_initialize_object_poses` uses
-        at `reset()`, scoped to just these two objects -- a real MuJoCo write, not
+        Uses upstream's public ``reset_ground_objects_to_regions`` primitive,
+        which delegates to the same collision-free placement sampler used at
+        `reset()`, scoped to just these two objects -- a real MuJoCo write, not
         a splice of two snapshots, so poses are as collision-free as any object
-        upstream's own reset ever places. Both objects' regions are genuine
-        ranges as of kindergarden#166, so both get independently randomized.
+        upstream's own reset ever places. The cube returns to its declared initial
+        region; ``bin_region`` is the Python-defined continuous region selected by
+        the symbolic action. ``None`` retains the task config's historical initial
+        bin region.
         Note `blocks_goal_region` is now parented on `bin_0`, so this also moves
         the scored window, not just the bin's visible position.
 
         Draws from the live scene's own `np_random` (not a fresh seed), same as
         every other in-episode source of randomness in this domain."""
-        from kinder.envs.dynamic3d.placement_samplers import sample_collision_free_positions
-        from kinder.envs.dynamic3d.utils import convert_yaw_to_quaternion
-
         object_centric = self._object_centric()
-        ground_fixture = object_centric._ground_fixture  # noqa: SLF001
-        assert ground_fixture is not None, (
-            "reset_cube_and_bin needs a live scene (KinderBackend.reset() first)."
+        cube_region_name = self._initial_state_region(
+            object_centric=object_centric, object_name=self.cube_name
         )
-
-        configs: dict[str, dict[str, dict[str, Any]]] = {}
-        entity_region_names: dict[str, str] = {}
-        entity_pos_yaw_samplers: dict[str, Any] = {}
-        for object_name in (self.cube_name, self.bin_name):
-            region_name = self._initial_state_region(
-                object_centric=object_centric, object_name=object_name
+        if bin_region is None:
+            bin_region_name = self._initial_state_region(
+                object_centric=object_centric, object_name=self.bin_name
             )
-            obj = object_centric._objects_dict[object_name]  # noqa: SLF001
-            obj_type = obj.__class__.REGISTERED_NAME
-            obj_config = object_centric.task_config["objects"][obj_type][object_name]
-            configs.setdefault(obj_type, {})[object_name] = obj_config
-            entity_region_names[object_name] = region_name
-            entity_pos_yaw_samplers[object_name] = ground_fixture.sample_pose_in_region
-
-        object_poses = sample_collision_free_positions(
-            configs,
-            object_centric.np_random,
-            entity_region_names=entity_region_names,
-            entity_pos_yaw_samplers=entity_pos_yaw_samplers,
-        )
-        for obj_poses_dict in object_poses.values():
-            for object_name, pose in obj_poses_dict.items():
-                obj = object_centric._objects_dict[object_name]  # noqa: SLF001
-                obj.set_pose(pose["position"], convert_yaw_to_quaternion(pose["yaw"]))
-
-        assert object_centric._robot_env is not None  # noqa: SLF001
-        assert object_centric._robot_env.sim is not None  # noqa: SLF001
-        object_centric._robot_env.sim.forward()  # noqa: SLF001
-        object_centric._current_state = (  # noqa: SLF001
-            object_centric._get_object_centric_state()  # noqa: SLF001
+        else:
+            bin_region_name = "__selected_bin_reset_region"
+        object_centric.reset_ground_objects_to_regions(
+            {
+                self.cube_name: cube_region_name,
+                self.bin_name: bin_region_name,
+            },
+            region_configs=(None if bin_region is None else {bin_region_name: bin_region}),
         )
         self._state = object_centric._get_current_state()  # noqa: SLF001
         return self.observe()

@@ -96,7 +96,7 @@ def observation(
                 "bb_z": CUBE_BB_Z,
             },
             "bin_0": {"x": bin_x, "y": 0.0, "z": 0.1},
-            "cuboid_barrier": {"x": BARRIER_X, "y": 0.0, "z": 0.05},
+            "cuboid_barrier": {"x": BARRIER_X, "y": 0.0, "z": 0.05, "bb_x": 0.06},
         },
         goal_region=goal_region,
         solved=solved,

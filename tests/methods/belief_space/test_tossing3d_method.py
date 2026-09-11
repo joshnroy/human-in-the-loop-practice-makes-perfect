@@ -13,7 +13,6 @@ from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvide
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.planner import BeliefSpacePlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
-    NON_HUMAN_RESET_SKILL,
     PICK_SKILL,
     RESET_SKILL,
     TOSS_SKILL,
@@ -25,6 +24,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_learning_rate,
 )
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
+from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION, StopAction
 from hitl_pmp.planning.grounding import SkillGrounder
 
@@ -55,11 +55,13 @@ def _grounding(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
 
 
 def test_selector_uses_current_symbolic_state_without_starting_simulator() -> None:
-    # Keep this seeded grounding regression independent of the CLI sampling default.
+    # The sampled belief and newly available reset choices may change which applicable
+    # action wins; this regression is about using the supplied symbolic state lazily.
     method = _build(pomdp_num_samples=1)
     pick = _grounding(method=method, name=PICK_SKILL)
     selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
-    assert selection == [pick]
+    assert len(selection) == 1
+    assert selection[0].preconditions <= pick.preconditions
     assert method.env._backend is None  # noqa: SLF001 (pin lazy simulator construction)
 
 
@@ -99,6 +101,37 @@ def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
     assert planner.calls == 1
     decision = json.loads(decision_log.read_text().splitlines()[-1])
     assert decision["solver"] == "injected"
+
+
+def test_action_value_diagnostics_distinguish_parameterized_reset_destinations() -> None:
+    seed_method = _build()
+    resets = seed_method.skill_provider.human_cube_bin_reset_skills()
+
+    class ResetValuePlanner(BeliefSpacePlanner):  # type: ignore[type-arg]
+        name = "reset_values"
+
+        def solve(self, **kwargs: object) -> tuple[float, StopAction]:  # type: ignore[override]
+            trace = kwargs["trace"]
+            assert isinstance(trace, SearchTrace)
+            trace.record(event="stop_value", node=0, value=0.0)
+            for value, reset in enumerate(resets, start=1):
+                trace.record(
+                    event="action_value",
+                    node=0,
+                    action=reset.model_dump(mode="json", fallback=str),
+                    value=float(value),
+                )
+            return 0.0, STOP_ACTION
+
+    method = _build(pomdp_planner=ResetValuePlanner())
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.select_skill_to_practice(true_atoms=pick.preconditions)
+
+    keys = set(method.practice_action_values())
+    reset_keys = {key for key in keys if key.startswith(f"{RESET_SKILL}(")}
+    assert len(reset_keys) == 2
+    assert any("robot_side" in key for key in reset_keys)
+    assert any("opposite_side" in key for key in reset_keys)
 
 
 def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:
@@ -256,38 +289,6 @@ def test_completed_human_reset_jointly_updates_performance_cost_and_training() -
     assert method.pomdp_state.pending_examples[RESET_SKILL] == 1
 
 
-def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
-    method = _build()
-    reset_skill = next(
-        skill for skill in method.human_skills() if skill.name == NON_HUMAN_RESET_SKILL
-    )
-    reset = next(
-        skill
-        for skill in SkillGrounder.applicable_ground_skills(
-            skills=(reset_skill,),
-            objects=method.objects(),
-            true_atoms=SkillGrounder.all_possible_ground_atoms(
-                objects=method.objects(), predicates=method.predicates()
-            ),
-        )
-    )
-    human_before = method.pomdp_state.skill_beliefs[RESET_SKILL]
-    automatic_before = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
-
-    method.record_action_cost(ground_skill=reset)
-    method.observe_help_granted(
-        state=Tossing3DState(
-            data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
-            abstract_atoms=frozenset(),
-        )
-    )
-
-    automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
-    assert automatic_after == automatic_before.condition_execution(success=True, observed_cost=5.0)
-    assert method.pomdp_state.skill_beliefs[RESET_SKILL] == human_before
-    assert method.pomdp_state.pending_examples[NON_HUMAN_RESET_SKILL] == 1
-
-
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
     with pytest.raises(ValidationError, match="cost observations must be at most"):
         _build(human_reset_practice_cost=20.01)
@@ -332,7 +333,6 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
         "MoveToTossLocationAndToss (belief mean)",
         "OpenGripper (belief mean)",
         "ask_for_reset_cube_bin_only (belief mean)",
-        "non_human_reset_cube_bin_only (belief mean)",
     }
     assert decision["improvement_potentials"]
     stop_value = method.practice_action_values()["STOP"]
@@ -364,17 +364,3 @@ def test_end_cycle_logs_exact_learning_rate_observations(
     assert refit["event"] == "refit"
     assert refit["learning_rate_observations"] == {PICK_SKILL: 0.0}
     assert refit["learning_rate_observation_counts"] == {PICK_SKILL: 1}
-
-
-def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
-    method = _build()
-    human = method.pomdp_state.skill_beliefs[RESET_SKILL]
-    automatic = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
-
-    assert isinstance(human, ParticleFilterBelief)
-    assert isinstance(automatic, ParticleFilterBelief)
-    assert human.particle_parameters != automatic.particle_parameters
-    assert set(method.practice_skill_costs()) >= {
-        f"{RESET_SKILL} (belief mean)",
-        f"{NON_HUMAN_RESET_SKILL} (belief mean)",
-    }

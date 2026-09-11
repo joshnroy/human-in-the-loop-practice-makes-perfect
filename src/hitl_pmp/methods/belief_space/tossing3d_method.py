@@ -1,6 +1,7 @@
 """Tossing3D method backed by situated belief-space expectimax."""
 
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,6 +24,7 @@ from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
+    PICK_SKILLS,
     RESET_SKILLS,
     TOSS_SKILL,
 )
@@ -155,7 +157,9 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def human_skills(self) -> tuple[Skill, ...]:
         """Offer every provider-owned reset mechanism to belief-space planning."""
-        return tuple(reset.skill for reset in self.skill_provider.movables_reset_skills())
+        resets = self.skill_provider.movables_reset_skills()
+        assert resets
+        return tuple(dict.fromkeys(reset.skill for reset in resets))
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
@@ -188,7 +192,9 @@ class Tossing3DPomdpMethod(EesMethod):
             observation_probability_weight=self.pomdp_observation_probability_weight,
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
-        missing = {PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
+        missing = {TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
+        if not (available & PICK_SKILLS):
+            missing.add(PICK_SKILL)
         assert not missing, (
             "Tossing3DPomdpMethod requires canonical Tossing3D skills; missing "
             f"{sorted(missing)} from {sorted(available)}"
@@ -365,11 +371,24 @@ class Tossing3DPomdpMethod(EesMethod):
             trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
         self._practice_values = {}
+        action_value_events = [
+            event
+            for event in trace.events
+            if event["node"] == 0 and event["event"] == "action_value"
+        ]
+        action_name_counts = Counter(
+            event["action"]["skill"]["name"] for event in action_value_events
+        )
         for event in trace.events:
             if event["node"] == 0 and event["event"] == "stop_value":
                 self._practice_values["STOP"] = event["value"]
             elif event["node"] == 0 and event["event"] == "action_value":
-                self._practice_values[event["action"]["skill"]["name"]] = event["value"]
+                skill_name = event["action"]["skill"]["name"]
+                key = skill_name
+                if action_name_counts[skill_name] > 1:
+                    objects = ", ".join(obj["name"] for obj in event["action"]["objects"])
+                    key = f"{skill_name}({objects})"
+                self._practice_values[key] = event["value"]
         self.record_diagnostic(
             event="decision",
             competences=self.practice_skill_competences(),

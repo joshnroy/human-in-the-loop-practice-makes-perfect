@@ -10,7 +10,16 @@ from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import IN_BIN, ON_GROUND, REACHABLE
+from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_AT_SIDE,
+    CUBE_AT_SIDE,
+    HOLDING,
+    IN_BIN,
+    NOT_HOLDING,
+    ON_GROUND,
+    ROBOT_AT_SIDE,
+)
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 
@@ -24,7 +33,7 @@ def _provider() -> Tossing3DSkillProvider:
 def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier),
+        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
     )
 
 
@@ -60,7 +69,7 @@ def test_same_side_toss_uses_the_same_relative_feature_layout() -> None:
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     toss = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier),
+        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
     )
     row = Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
         ground_skill=toss,
@@ -74,7 +83,7 @@ def test_non_toss_skills_keep_the_generic_sampler_input_fallback() -> None:
     env = Tossing3DEnvironment()
     pick = GroundSkill(
         skill=Tossing3DSkills.PICK_CUBE,
-        objects=(env.robot, env.cube, env.barrier),
+        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot),
     )
     assert (
         _provider().hand_selected_feature_transform(
@@ -92,61 +101,113 @@ def test_the_ground_skill_is_named_for_ees_to_intercept() -> None:
     assert ground.skill.name == ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
 
 
-def test_it_is_bound_to_all_four_domain_objects() -> None:
+def test_reset_groundings_bind_a_typed_destination_side() -> None:
+    env = Tossing3DEnvironment()
+    resets = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skills()
+    assert tuple(reset.objects for reset in resets) == tuple(
+        (
+            env.robot,
+            env.cube,
+            env.bin,
+            env.barrier,
+            Tossing3DSides.robot,
+            destination,
+        )
+        for destination in Tossing3DSides.objects()
+    )
+
+
+def test_side_predicates_are_robot_relative_not_world_signs() -> None:
+    env = Tossing3DEnvironment()
+    scene = state(env=env, base_x=0.0, bin_x=-2.0)
+    scene.set(obj=env.barrier, feature_name="x", feature_val=1.3)
+    scene.set(obj=env.cube, feature_name="x", feature_val=0.5)
+    assert BIN_AT_SIDE.holds(scene, (env.bin, env.barrier, Tossing3DSides.robot))
+    assert CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, Tossing3DSides.robot))
+    assert not BIN_AT_SIDE.holds(scene, (env.bin, env.barrier, Tossing3DSides.opposite))
+
+
+def test_cube_on_or_straddling_barrier_is_on_neither_side() -> None:
+    env = Tossing3DEnvironment()
+    scene = state(env=env, base_x=0.0)
+    scene.set(obj=env.barrier, feature_name="x", feature_val=1.3)
+    # Barrier half-width 0.03 + cube half-width 0.025 gives a 0.055 m contact edge.
+    for cube_x in (1.3, 1.3 - 0.054, 1.3 + 0.054, 1.3 - 0.055, 1.3 + 0.055):
+        scene.set(obj=env.cube, feature_name="x", feature_val=cube_x)
+        assert not CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, Tossing3DSides.robot))
+        assert not CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, Tossing3DSides.opposite))
+
+    for cube_x in (1.3 - 0.056, 1.3 + 0.056):
+        scene.set(obj=env.cube, feature_name="x", feature_val=cube_x)
+        assert any(
+            CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, side))
+            for side in Tossing3DSides.objects()
+        )
+
+
+def test_reset_destination_is_decoded_from_the_ground_side_parameter() -> None:
+    provider = _provider()
+    assert tuple(
+        provider.movables_reset_destination(ground_skill=reset)
+        for reset in provider.human_cube_bin_reset_skills()
+    ) == ("robot_side", "opposite_side")
+
+
+def test_the_ground_precondition_only_binds_the_robot_side() -> None:
+    """The tautological side atom binds the lifted variable without restricting reset."""
     env = Tossing3DEnvironment()
     ground = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skill()
-    assert ground.objects == (env.robot, env.cube, env.bin, env.barrier)
+    assert ground.preconditions == frozenset({
+        GroundAtom(
+            predicate=ROBOT_AT_SIDE,
+            objects=(env.robot, env.barrier, Tossing3DSides.robot),
+        ),
+        GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
+    })
 
 
-def test_the_ground_precondition_is_now_empty_not_hand_empty() -> None:
-    """Used to require HandEmpty(robot), on the reasoning that 'nothing about Holding
-    changes' is only true while the gripper is empty. That guarded a real correctness
-    gap but made the rescue unreachable from the one state it exists to rescue -- a
-    near-miss grasp leaves HandEmpty and Holding both false, and nothing in this
-    domain's operator model ever restores HandEmpty on its own. The framework has no
-    negation, so the closest expressible precondition to the right one (not Holding)
-    is none at all. See Tossing3DSkillProvider.human_cube_bin_reset_skill's own
-    docstring for the full reasoning."""
-    env = Tossing3DEnvironment()
-    ground = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skill()
-    assert ground.preconditions == frozenset()
-
-
-def test_add_effects_place_the_cube_on_ground_and_reachable() -> None:
+def test_add_effects_place_the_cube_and_bin_on_selected_sides() -> None:
     """A fresh ground placement (blocks_init_region) is known to leave the cube resting
     on the ground and on the near side of the barrier -- see KinderBackend.reset_cube_
     and_bin's own docstring for why this is upstream's own placement guarantee, not an
     assumption made here."""
     env = Tossing3DEnvironment()
     ground = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skill()
-    assert ground.add_effects == frozenset({
+    assert {
         GroundAtom(predicate=ON_GROUND, objects=(env.cube,)),
-        GroundAtom(predicate=REACHABLE, objects=(env.cube, env.barrier)),
-    })
+        GroundAtom(
+            predicate=CUBE_AT_SIDE,
+            objects=(env.cube, env.barrier, Tossing3DSides.robot),
+        ),
+        GroundAtom(
+            predicate=BIN_AT_SIDE,
+            objects=(env.bin, env.barrier, Tossing3DSides.opposite),
+        ),
+    } <= ground.add_effects
 
 
 def test_delete_effects_remove_in_bin_since_the_fresh_position_cannot_score() -> None:
     env = Tossing3DEnvironment()
     ground = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skill()
-    assert ground.delete_effects == frozenset({
+    assert {
         GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)),
-    })
+    } <= ground.delete_effects
 
 
-def test_add_and_delete_effects_never_overlap() -> None:
+def test_reset_replaces_existing_side_facts_with_quantified_ignore_effects() -> None:
     ground = _provider().human_cube_bin_reset_skill()
-    assert ground.add_effects.isdisjoint(ground.delete_effects)
+    assert ground.ignore_effects == frozenset({CUBE_AT_SIDE, BIN_AT_SIDE})
 
 
-def test_the_operator_never_names_hand_empty_or_holding_as_an_effect() -> None:
-    """The load-bearing claim this skill makes: since the robot is never touched, no
-    atom about it is added or deleted -- only preconditioned on. Checked by name
-    rather than by predicate identity so a future refactor that renames Holding/
-    HandEmpty cannot silently reintroduce an effect on them without this failing."""
+def test_the_operator_requires_not_holding_and_does_not_claim_the_gripper_opens() -> None:
+    """The positive complement keeps reset physically sound without PDDL negation."""
     ground = _provider().human_cube_bin_reset_skill()
     touched_names = {atom.predicate.name for atom in (ground.add_effects | ground.delete_effects)}
     assert "HandEmpty" not in touched_names
-    assert "Holding" not in touched_names
+    assert (
+        GroundAtom(predicate=NOT_HOLDING, objects=(ground.objects[0], ground.objects[1]))
+        in ground.preconditions
+    )
 
 
 def test_param_dim_is_zero_so_it_has_no_sampler() -> None:
@@ -159,18 +220,14 @@ def test_human_reset_cost_is_five_robot_action_equivalents() -> None:
     assert _provider().human_cube_bin_reset_skill().evaluate_practice_cost() == 5.0
 
 
-def test_non_human_reset_duplicates_reset_mechanics_with_independent_identity() -> None:
+def test_human_reset_has_two_bin_destination_groundings() -> None:
     provider = _provider()
-    human = provider.human_cube_bin_reset_skill()
-    automatic = provider.non_human_cube_bin_reset_skill()
-
-    assert automatic.skill.name == "non_human_reset_cube_bin_only"
-    assert automatic.evaluate_practice_cost() == 5.0
-    assert automatic.objects == human.objects
-    assert automatic.preconditions == human.preconditions
-    assert automatic.add_effects == human.add_effects
-    assert automatic.delete_effects == human.delete_effects
-    assert provider.movables_reset_skills() == (human, automatic)
+    human_destinations = provider.human_cube_bin_reset_skills()
+    assert provider.movables_reset_skills() == human_destinations
+    assert {reset.objects[-1].name for reset in human_destinations} == {
+        "robot_side",
+        "opposite_side",
+    }
 
 
 def test_human_reset_cost_is_provider_configuration() -> None:
@@ -183,7 +240,7 @@ def test_human_reset_cost_is_provider_configuration() -> None:
 def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) -> None:
     """Offering a reset must preserve ordinary plans and rescue stranded cubes."""
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
-    from hitl_pmp.environments.tossing3d.predicates import HAND_EMPTY, HOLDING
+    from hitl_pmp.environments.tossing3d.predicates import HAND_EMPTY
     from hitl_pmp.environments.tossing3d.recovery_skills import CLOSED_EMPTY, ON_FLOOR
     from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
@@ -194,12 +251,20 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
         GroundAtom(
             predicate=CLOSED_EMPTY if closed else HAND_EMPTY,
             objects=(env.robot, env.cube) if closed else (env.robot,),
-        )
+        ),
+        GroundAtom(
+            predicate=ROBOT_AT_SIDE,
+            objects=(env.robot, env.barrier, Tossing3DSides.robot),
+        ),
+        GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)),
     }
     if not stranded:
         atoms |= {
             GroundAtom(predicate=ON_FLOOR, objects=(env.cube, env.bin)),
-            GroundAtom(predicate=REACHABLE, objects=(env.cube, env.barrier)),
+            GroundAtom(
+                predicate=CUBE_AT_SIDE,
+                objects=(env.cube, env.barrier, Tossing3DSides.robot),
+            ),
         }
     plan = method.plan_to(
         init_atoms=frozenset(atoms),

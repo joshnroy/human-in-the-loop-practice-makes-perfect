@@ -1632,10 +1632,12 @@ class _RecordingHuman(HumanOracle):
     # Separate from `commands`: execute_movables_reset carries no
     # CommandGoalDescription to append (see its own docstring for why).
     movables_reset_calls: int = 0
+    movables_reset_destinations: list[str | None] = []
 
     @staticmethod
-    def execute_movables_reset(*, env: Environment) -> None:
+    def execute_movables_reset(*, env: Environment, destination: str | None = None) -> None:
         _RecordingHuman.movables_reset_calls += 1
+        _RecordingHuman.movables_reset_destinations.append(destination)
         assert env.reset_movables(), "_FakeEnv.reset_movables() should always accept"
 
 
@@ -1838,6 +1840,7 @@ class _CubeBinAskingMethod(_FakeMethod):
     steps_before_asking: int = 2
     steps_taken: int = 0
     ask_cost: float = 0.5
+    reset_destination: str | None = None
     # x observed at each observe_help_granted call, in call order.
     help_granted_xs: list[float] = Field(default_factory=list)
 
@@ -1857,7 +1860,7 @@ class _CubeBinAskingMethod(_FakeMethod):
     def _asking_action(self, *, state: State) -> LabeledAction:
         del state
         if self.steps_taken >= self.steps_before_asking:
-            raise HumanCubeBinResetRequested(cost=self.ask_cost)
+            raise HumanCubeBinResetRequested(cost=self.ask_cost, destination=self.reset_destination)
         self.steps_taken += 1
         return LabeledAction(action=np.array([0.0]), label="asking")
 
@@ -1865,6 +1868,7 @@ class _CubeBinAskingMethod(_FakeMethod):
 def _build_cube_bin_asking(*, steps_before_asking: int = 2, ask_cost: float = 0.5):
     _RecordingHuman.commands = []
     _RecordingHuman.movables_reset_calls = 0
+    _RecordingHuman.movables_reset_destinations = []
     practice_env = _FakeEnv()
     evaluation_env = _FakeEnv()
     event_log = _EventLog()
@@ -1882,6 +1886,21 @@ def _build_cube_bin_asking(*, steps_before_asking: int = 2, ask_cost: float = 0.
         ask_cost=ask_cost,
     )
     return practice, evaluation, method, Metrics()
+
+
+def test_a_cube_bin_reset_forwards_its_selected_destination_end_to_end() -> None:
+    practice, evaluation, method, metrics = _build_cube_bin_asking(steps_before_asking=0)
+    method.reset_destination = "opposite_side"
+    PracticeLoop.run(
+        problem=practice,
+        evaluation_problem=evaluation,
+        method=method,
+        metrics=metrics,
+        num_cycles=1,
+        max_steps_per_interaction=1,
+        num_test_tasks=1,
+    )
+    assert _RecordingHuman.movables_reset_destinations == ["opposite_side"]
 
 
 def test_a_cube_bin_reset_continues_the_period_rather_than_ending() -> None:

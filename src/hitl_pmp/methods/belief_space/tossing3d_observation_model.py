@@ -15,7 +15,7 @@ from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
-from .tossing3d_constants import RESET_SKILLS
+from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILLS, RESET_SKILLS, TOSS_SKILL
 
 
 class PracticeExampleSource(Enum):
@@ -95,6 +95,12 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
 
 def skill_belief_model(*, ground_skill: GroundSkill) -> SkillBeliefModel:
     """Return the update contract for one provider-supplied ground skill."""
+    if ground_skill.skill.name in PICK_SKILLS:
+        return SKILL_BELIEF_MODELS[Tossing3DSkills.PICK_CUBE]
+    if ground_skill.skill.name == TOSS_SKILL:
+        return SKILL_BELIEF_MODELS[Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS]
+    if ground_skill.skill.name == OPEN_GRIPPER_SKILL:
+        return SKILL_BELIEF_MODELS[Tossing3DSkills.OPEN_GRIPPER]
     if ground_skill.skill.name in RESET_SKILLS:
         return SkillBeliefModel(
             skill=ground_skill.skill,
