@@ -16,6 +16,7 @@ from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
 from .predicates import (
     BIN_AT_SIDE,
+    CLOSED_EMPTY,
     CUBE_AT_SIDE,
     HAND_EMPTY,
     HOLDING,
@@ -24,7 +25,7 @@ from .predicates import (
     ON_GROUND,
     ROBOT_AT_SIDE,
 )
-from .recovery_skills import CLOSED_EMPTY, ON_BIN_RIM, ON_FLOOR, SameSideSkills
+from .recovery_skills import ON_BIN_RIM, ON_FLOOR, SameSideSkills
 from .sides import Tossing3DSide, Tossing3DSides
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
 from .skills import Tossing3DSkills
@@ -75,6 +76,7 @@ class Tossing3DSkillProvider(SkillProvider):
                 BIN_AT_SIDE,
             )
         return (
+            CLOSED_EMPTY,
             IN_BIN,
             HAND_EMPTY,
             HOLDING,
