@@ -394,7 +394,7 @@ class Tossing3DEnvironment(Environment):
                 self.barrier.name,
             )
         if skill_id == self.open_gripper_id:
-            return "OpenGripper", (self.robot.name,)
+            return "OpenGripper", (self.robot.name, self.cube.name)
         if skill_id == self.pick_cube_from_bin_id:
             return "PickCubeFromBin", (
                 self.robot.name,

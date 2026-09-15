@@ -13,6 +13,7 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    CLOSED_EMPTY,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -35,13 +36,6 @@ ON_FLOOR = Predicate(
     types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.bin_type),
     holds=lambda state, objects: (
         ON_GROUND.holds(state, (objects[0],)) and not IN_BIN.holds(state, objects)
-    ),
-)
-CLOSED_EMPTY = Predicate(
-    name="ClosedEmpty",
-    types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
-    holds=lambda state, objects: (
-        not HAND_EMPTY.holds(state, (objects[0],)) and not HOLDING.holds(state, objects)
     ),
 )
 

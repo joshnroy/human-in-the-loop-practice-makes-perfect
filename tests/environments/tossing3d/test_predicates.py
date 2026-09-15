@@ -28,6 +28,7 @@ import pytest
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    CLOSED_EMPTY,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -46,6 +47,15 @@ from .observations import HOLDING_ATOMS, INITIAL_ATOMS, LANDED_IN_REGION_ATOMS, 
 _ENV = Tossing3DEnvironment()
 
 _ALL = (IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
+
+
+def test_closed_empty_requires_a_closed_gripper_without_a_held_cube() -> None:
+    closed_empty = state(abstract_atoms=frozenset())
+    opened = state(abstract_atoms=frozenset({(KB_HAND_EMPTY, ("robot",))}))
+    holding = state(abstract_atoms=HOLDING_ATOMS)
+    assert CLOSED_EMPTY.holds(closed_empty, (_ENV.robot, _ENV.cube))
+    assert not CLOSED_EMPTY.holds(opened, (_ENV.robot, _ENV.cube))
+    assert not CLOSED_EMPTY.holds(holding, (_ENV.robot, _ENV.cube))
 
 
 def test_every_predicate_declares_the_types_it_is_actually_applied_to() -> None:
