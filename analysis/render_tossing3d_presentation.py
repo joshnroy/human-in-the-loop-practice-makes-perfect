@@ -585,7 +585,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
     # Preserve an initial frame as well as executed-skill ticks.  A planner may
     # legitimately select STOP before dispatching any skill; that zero-step
     # session still needs a diagnostic video showing the decision that ended it.
-    last_frame: np.ndarray | None = backend.render()
+    last_frame: np.ndarray | None = backend.render(follow_robot=True)
     last_state: dict[str, list[float]] | None = backend.snapshot_to_plain(
         snapshot=backend.snapshot()
     )
@@ -674,7 +674,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
             last_state = {key: list(value) for key, value in row["state"].items()}
             last_abstraction_diagnostics = row.get("abstraction_diagnostics")
             env.restore_plain_snapshot(plain=last_state)
-            last_frame = backend.render()
+            last_frame = backend.render(follow_robot=True)
             video.append(
                 frame=_compose(
                     frame=last_frame,

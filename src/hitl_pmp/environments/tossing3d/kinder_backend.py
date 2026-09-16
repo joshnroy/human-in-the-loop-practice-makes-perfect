@@ -654,6 +654,12 @@ class KinderBackend(BaseModel):
             obj.name: {name: float(state.get(obj, name)) for name in state.type_features[obj.type]}
             for obj in state
         }
+        # Upstream now represents the barrier as a fixture: its geometry remains
+        # available on the scene object, but is no longer in movable-state features.
+        if "bb_x" not in features[self.barrier_name]:
+            barrier = self._object_centric()._fixtures_dict[self.barrier_name]
+            dimensions = barrier.primitive.get_bounding_box_dimensions()
+            features[self.barrier_name].update(zip(("bb_x", "bb_y", "bb_z"), dimensions))
         return KinderObservation(
             features=features,
             goal_region=self.goal_region_bbox(),
@@ -767,7 +773,7 @@ class KinderBackend(BaseModel):
         x_min, y_min, z_min, x_max, y_max, z_max = bbox
         return (x_min, y_min, z_min, x_max, y_max, z_max)
 
-    def render(self) -> np.ndarray:
+    def render(self, *, follow_robot: bool = False) -> np.ndarray:
         """One RGB frame from `task_view`, copied out of MuJoCo's buffer.
 
         Rendered from the *unwrapped* env, so a single frame is still a single frame
@@ -781,6 +787,30 @@ class KinderBackend(BaseModel):
         """
         if self._raw_env is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is nothing to render.")
+        if follow_robot:
+            # Presentation-only translation: preserve the task camera's orientation
+            # and height, but center its view on the robot's current base position.
+            # Restore the model afterwards so recording cannot affect other cameras.
+            scene = self._object_centric()
+            robot_env = scene._robot_env
+            sim = robot_env.sim
+            camera_id = sim.model.camera_name2id(self.camera)
+            original_position = sim.model.cam_pos[camera_id].copy()
+            robot = self._state.get_object_from_name(self.robot_name)
+            offset = np.array([
+                self._state.get(robot, "pos_base_x"),
+                self._state.get(robot, "pos_base_y"),
+                0.0,
+            ])
+            target = scene.task_config["cameras"][self.camera].get("lookat", [0, 0, 0])
+            offset[:2] -= np.asarray(target[:2])
+            try:
+                sim.model.cam_pos[camera_id] = original_position + offset
+                sim.forward()
+                return np.asarray(self._raw_env.render(), dtype=np.uint8).copy()
+            finally:
+                sim.model.cam_pos[camera_id] = original_position
+                sim.forward()
         return np.asarray(self._raw_env.render(), dtype=np.uint8).copy()
 
     def render_fps(self) -> int:
