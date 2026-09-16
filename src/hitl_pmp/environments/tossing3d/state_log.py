@@ -49,6 +49,7 @@ class TickEvent(BaseModel):
 
     kind: str = "tick"
     state: dict[str, tuple[float, ...]]
+    abstraction_diagnostics: dict[str, Any] | None = None
 
 
 class StateLogHeader(BaseModel):
@@ -87,8 +88,18 @@ class StateLogWriter(BaseModel):
     ) -> None:
         self._write(obj=SkillEvent(name=name, objects=objects, params=params).model_dump())
 
-    def record_tick(self, *, state: dict[str, list[float]]) -> None:
-        self._write(obj=TickEvent(state={k: tuple(v) for k, v in state.items()}).model_dump())
+    def record_tick(
+        self,
+        *,
+        state: dict[str, list[float]],
+        abstraction_diagnostics: dict[str, Any] | None = None,
+    ) -> None:
+        self._write(
+            obj=TickEvent(
+                state={k: tuple(v) for k, v in state.items()},
+                abstraction_diagnostics=abstraction_diagnostics,
+            ).model_dump()
+        )
 
     def _write(self, *, obj: dict[str, Any]) -> None:
         self._file.write(LogTiming.encode(record=obj))

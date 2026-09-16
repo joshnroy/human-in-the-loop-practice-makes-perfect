@@ -188,6 +188,14 @@ class Tossing3DPomdpCli(EesCli):
             help="Algorithm 3 weight on the negative log probability of a sampled observation.",
         )
         parser.add_argument(
+            "--pomdp-log-full-search-tree",
+            action=argparse.BooleanOptionalAction,
+            default=Tossing3DPomdpMethod.model_fields[
+                "pomdp_log_full_search_tree"
+            ].default,
+            help="Log every determinized A* node, queue pop, and generated edge.",
+        )
+        parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
@@ -245,6 +253,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_solver=args.pomdp_solver,
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
+                pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),

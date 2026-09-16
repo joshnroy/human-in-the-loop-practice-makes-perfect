@@ -161,6 +161,14 @@ HOLDING = Predicate(
     ),
 )
 
+CLOSED_EMPTY = Predicate(
+    name="ClosedEmpty",
+    types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
+    holds=lambda state, objects: (
+        not HAND_EMPTY.holds(state, (objects[0],)) and not HOLDING.holds(state, objects)
+    ),
+)
+
 NOT_HOLDING = Predicate(
     name="NotHolding",
     types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
