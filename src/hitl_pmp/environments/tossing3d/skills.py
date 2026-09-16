@@ -103,6 +103,7 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from .environment import Tossing3DEnvironment
 from .predicates import (
     BIN_AT_SIDE,
+    CLOSED_EMPTY,
     CUBE_AT_SIDE,
     HAND_EMPTY,
     HOLDING,
@@ -242,10 +243,14 @@ class Tossing3DSkills:
     # revisit this.
     OPEN_GRIPPER: ClassVar[Skill] = Skill(
         name="OpenGripper",
-        parameters=(_robot,),
-        preconditions=frozenset(),
+        parameters=(_robot, _cube),
+        preconditions=frozenset({
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
+        }),
         add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
-        delete_effects=frozenset(),
+        delete_effects=frozenset({
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
+        }),
         param_dim=0,
         practice_cost=1.0,
     )

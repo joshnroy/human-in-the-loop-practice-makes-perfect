@@ -198,7 +198,8 @@ def test_graph_search_merges_duplicate_states_and_emits_compact_metrics() -> Non
     left = next(event for event in action_values if event["action"]["name"] == "left")
     assert left["objective_improvement"] == pytest.approx(0.6)
     assert left["observation_surprise"] == pytest.approx(0.0)
-    assert left["path_cost_g"] == pytest.approx(-0.6)
+    # Continuing is free in this fixture, then STOP receives the child's value.
+    assert left["path_cost_g"] == pytest.approx(-0.8)
     assert left["beats_stop"] is True
 
 

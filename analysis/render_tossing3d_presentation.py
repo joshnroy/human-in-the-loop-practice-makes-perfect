@@ -32,7 +32,7 @@ from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossing3d.state_log import StateLogHeader
 
 WIDTH = 1920
-HEIGHT = 640
+HEIGHT = 960
 TOP_HEIGHT = 48
 SCENE_WIDTH = 640
 SCENE_HEIGHT = 480
@@ -40,8 +40,8 @@ SCENE_TOP = TOP_HEIGHT
 HISTORY_LEFT = 656
 COMPETENCE_LEFT = 960
 LEARNING_RATE_LEFT = 1280
-DECISION_LEFT = 1600
 COLUMN_WIDTH = 288
+DECISION_TOP = 640
 FPS_HOLD_SECONDS = 1.0
 
 BACKGROUND = "#0f0d1c"
@@ -182,6 +182,38 @@ def _decision_rejections(decision: dict[str, Any] | None) -> dict[str, str]:
     return rejected
 
 
+def _decision_breakdowns(decision: dict[str, Any] | None) -> dict[str, dict[str, float]]:
+    """Return the minimum-g root path decomposition for each action."""
+    if decision is None:
+        return {}
+    breakdowns: dict[str, dict[str, float]] = {}
+    for event in decision.get("search", []):
+        if event.get("event") != "action_value" or int(event.get("node", -1)) != 0:
+            continue
+        action = event.get("action", {})
+        skill = action.get("skill", {}) if isinstance(action, dict) else {}
+        if not isinstance(skill, dict) or "name" not in skill:
+            continue
+        name = _canonical_skill(str(skill["name"]))
+        candidate = {
+            "objective": float(event["value"]),
+            "reward": float(event["objective_improvement"]),
+            "surprise": float(event["observation_surprise"]),
+            "path_cost": float(event["path_cost_g"]),
+        }
+        if name not in breakdowns or candidate["path_cost"] < breakdowns[name]["path_cost"]:
+            breakdowns[name] = candidate
+    stop = _decision_values(decision).get("STOP")
+    if stop is not None:
+        breakdowns["STOP"] = {
+            "objective": stop,
+            "reward": 0.0,
+            "surprise": 0.0,
+            "path_cost": 0.0,
+        }
+    return breakdowns
+
+
 def _is_applicable(decision: dict[str, Any] | None, skill: str) -> bool:
     """Recover Tossing3D skill applicability from the logged symbolic state."""
     if skill == "STOP":
@@ -192,12 +224,12 @@ def _is_applicable(decision: dict[str, Any] | None, skill: str) -> bool:
 
     def holds(predicate: str) -> bool:
         return f"name='{predicate}'" in atom_text
+
     if skill == "OpenGripper":
         return holds("ClosedEmpty")
     if skill == "PickCube":
         return all(
-            holds(predicate)
-            for predicate in ("HandEmpty", "OnGround", "RobotAtSide", "CubeAtSide")
+            holds(predicate) for predicate in ("HandEmpty", "OnGround", "RobotAtSide", "CubeAtSide")
         )
     if skill == "MoveToTossLocationAndToss":
         return holds("Holding") and holds("BinAtSide")
@@ -248,36 +280,65 @@ def _draw_metric_column(
         top += 116
 
 
-def _draw_decision_column(draw: ImageDraw.ImageDraw, *, decision: dict[str, Any] | None) -> None:
-    left = DECISION_LEFT
-    draw.text((left, 65), "DECISION VALUES", font=_font(15, bold=True), fill=PURPLE)
+def _draw_decision_columns(draw: ImageDraw.ImageDraw, *, decision: dict[str, Any] | None) -> None:
+    """Give every A* quantity its own full-width, vertically stacked column."""
     selected = _action_name(decision)
     selected_key = "STOP" if selected is None else _canonical_skill(selected)
-    values = _decision_values(decision)
+    breakdowns = _decision_breakdowns(decision)
     rejections = _decision_rejections(decision)
-    top = 105
-    for skill in (*SKILLS, "STOP"):
-        is_selected = skill == selected_key
-        color = GREEN if is_selected else TEXT
-        label = _short_skill(skill)
-        if is_selected:
-            label = f"▶ {label}"
-        draw.text((left, top), label, font=_font(15, bold=is_selected), fill=color)
-        value = values.get(skill)
-        if value is None:
-            if rejections.get(skill) == "infeasible_stop_value":
-                label = "−∞  infeasible"
-            else:
-                label = "not logged" if _is_applicable(decision, skill) else "n/a"
-            draw.text((left, top + 25), label, font=_font(13), fill=MUTED)
-        else:
+    columns = (
+        ("objective", "J′ — CHILD OBJECTIVE"),
+        ("reward", "r̂ — EXPECTED OBJECTIVE IMPROVEMENT"),
+        ("surprise", "−λ log p̂ — OBSERVATION SURPRISE"),
+        ("path_cost", "g′ — A* CUMULATIVE PATH COST"),
+    )
+    column_width = WIDTH // len(columns)
+    for column_index, (field, title) in enumerate(columns):
+        left = column_index * column_width + 20
+        if column_index:
+            divider = column_index * column_width
+            draw.line((divider, DECISION_TOP, divider, HEIGHT), fill="#39344c", width=2)
+        draw.text((left, DECISION_TOP + 18), title, font=_font(14, bold=True), fill=PURPLE)
+        maximum = max((abs(item[field]) for item in breakdowns.values()), default=1.0)
+        top = DECISION_TOP + 56
+        for skill in (*SKILLS, "STOP"):
+            is_selected = skill == selected_key
+            color = GREEN if is_selected else PURPLE
+            label = _short_skill(skill)
+            if is_selected:
+                label = f"▶ {label}"
             draw.text(
-                (left, top + 25),
-                f"{value:.4f}",
-                font=_font(13, bold=is_selected),
-                fill=GREEN if is_selected else PURPLE,
+                (left, top),
+                label,
+                font=_font(12, bold=is_selected),
+                fill=GREEN if is_selected else TEXT,
             )
-        top += 82
+            breakdown = breakdowns.get(skill)
+            if breakdown is None:
+                if rejections.get(skill) == "infeasible_stop_value":
+                    missing = "−∞  infeasible"
+                else:
+                    missing = "not logged" if _is_applicable(decision, skill) else "n/a"
+                draw.text((left + 150, top), missing, font=_font(11), fill=MUTED)
+            else:
+                value = breakdown[field]
+                draw.text((left + 150, top), f"{value:+.4f}", font=_font(11), fill=color)
+                bar_left = left + 232
+                bar_width = column_width - 272
+                bar_top = top + 3
+                draw.rectangle((bar_left, bar_top, bar_left + bar_width, bar_top + 10), fill=TRACK)
+                fraction = min(1.0, abs(value) / maximum) if maximum > 0 else 0.0
+                if value < 0:
+                    midpoint = bar_left + bar_width // 2
+                    draw.line((midpoint, bar_top, midpoint, bar_top + 10), fill=MUTED, width=1)
+                    extent = round((bar_width // 2) * fraction)
+                    draw.rectangle((midpoint - extent, bar_top, midpoint, bar_top + 10), fill=color)
+                else:
+                    draw.rectangle(
+                        (bar_left, bar_top, bar_left + round(bar_width * fraction), bar_top + 10),
+                        fill=color,
+                    )
+            top += 47
 
 
 def _cycle_end_reason(decision: dict[str, Any] | None) -> str:
@@ -299,6 +360,7 @@ def _compose(
     state: dict[str, list[float]],
     seed: int,
     cycle: int,
+    total_cycles: int,
     step: int,
     transitions: int,
     current_skill: str,
@@ -307,6 +369,7 @@ def _compose(
     decision: dict[str, Any] | None,
     samples: int,
     horizon: int,
+    abstraction_diagnostics: dict[str, Any] | None = None,
     banner: str | None = None,
 ) -> np.ndarray:
     image = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
@@ -325,7 +388,7 @@ def _compose(
     draw.text((54, 24), "PRACTICE", font=_font(17, bold=True), fill="white", anchor="mm")
     status = (
         f"SEED {seed}    SAMPLES {samples}    H {horizon if horizon else '—'}    "
-        f"CYCLE {cycle + 1}/10    STEP {step}    TRANSITIONS {transitions}"
+        f"CYCLE {cycle + 1}/{total_cycles}    STEP {step}    TRANSITIONS {transitions}"
     )
     draw.text((122, 16), status, font=_font(13), fill=TEXT)
     draw.text((122, 32), f"TASK {_short_skill(current_skill)}", font=_font(13), fill=MUTED)
@@ -339,7 +402,10 @@ def _compose(
     draw.text((HISTORY_LEFT, 65), "SKILL HISTORY", font=_font(15, bold=True), fill=PURPLE)
     visible = history[-13:]
     first = max(1, step - len(visible) + 1)
-    y = 103
+    # Keep the newest action on the bottom row.  Once the window fills, older
+    # actions scroll upward and fall off the top instead of moving the active
+    # action farther down the panel.
+    y = 103 + (13 - len(visible)) * 36
     for index, (skill, logged_destination) in enumerate(visible, start=first):
         current = index == step
         color = (
@@ -377,10 +443,12 @@ def _compose(
         decision=decision,
         color=GREEN,
     )
-    _draw_decision_column(draw, decision=decision)
+    draw.rectangle((0, DECISION_TOP, WIDTH, HEIGHT), fill=PANEL)
+    draw.line((0, DECISION_TOP, WIDTH, DECISION_TOP), fill="#39344c", width=2)
+    _draw_decision_columns(draw, decision=decision)
 
     footer_top = SCENE_TOP + SCENE_HEIGHT
-    draw.rectangle((0, footer_top, SCENE_WIDTH, HEIGHT), fill="#10141a")
+    draw.rectangle((0, footer_top, SCENE_WIDTH, DECISION_TOP), fill="#10141a")
     draw.rectangle((0, footer_top, SCENE_WIDTH, footer_top + 5), fill=active_color)
     cube = _state_xyz(state, "cube_0")
     bin_ = _state_xyz(state, "bin_0")
@@ -398,10 +466,21 @@ def _compose(
         font=_font(13),
         fill=MUTED,
     )
-    if destination:
-        draw.rectangle((0, HEIGHT - 35, SCENE_WIDTH, HEIGHT), fill="#123c30")
+    holding = (abstraction_diagnostics or {}).get("holding")
+    if holding is not None:
+        verdict = "HOLDING" if holding["contact_holding"] else "NOT HOLDING"
         draw.text(
-            (SCENE_WIDTH // 2, HEIGHT - 18),
+            (12, footer_top + 68),
+            f"{verdict}: MuJoCo contacts={holding['contact_count']}, "
+            f"off-ground={holding['cube_off_ground']}, "
+            f"gripper-closed={holding['gripper_closed']}",
+            font=_font(12, bold=True),
+            fill=GREEN if holding["contact_holding"] else AMBER,
+        )
+    if destination:
+        draw.rectangle((0, DECISION_TOP - 35, SCENE_WIDTH, DECISION_TOP), fill="#123c30")
+        draw.text(
+            (SCENE_WIDTH // 2, DECISION_TOP - 18),
             f"RESET DESTINATION: {destination}",
             font=_font(19, bold=True),
             fill=GREEN,
@@ -453,6 +532,32 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
         [row for row in diagnostic_rows if row.get("event") in {"session_start", "dispatch"}],
         key=lambda row: _timestamp(row["timestamp"]),
     )
+    # The environment state log begins with the initial evaluation sweep, while
+    # the planner decision log marks the true practice boundary explicitly.
+    # Presentation videos are practice sessions, so never label those earlier
+    # evaluation frames as step-zero practice with an absent decision.
+    session_starts = [
+        _timestamp(row["timestamp"])
+        for row in diagnostic_rows
+        if row.get("event") == "session_start"
+    ]
+    if session_starts:
+        practice_start = min(session_starts)
+        practice_end_candidates = [
+            _timestamp(row["timestamp"])
+            for row in diagnostic_rows
+            if row.get("event") == "refit"
+        ]
+        practice_end = max(practice_end_candidates) if practice_end_candidates else float("inf")
+        state_rows = [
+            state_rows[0],
+            *(
+                row
+                for row in state_rows[1:]
+                if practice_start <= _timestamp(row["timestamp"]) <= practice_end
+            ),
+        ]
+    total_cycles = max(1, len(session_starts))
 
     header_values = state_rows[0].copy()
     header_values.pop("kind")
@@ -477,8 +582,14 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
     current_skill = "Ready"
     current_objects: tuple[str, ...] = ()
     current_decision: dict[str, Any] | None = None
-    last_frame: np.ndarray | None = None
-    last_state: dict[str, list[float]] | None = None
+    # Preserve an initial frame as well as executed-skill ticks.  A planner may
+    # legitimately select STOP before dispatching any skill; that zero-step
+    # session still needs a diagnostic video showing the decision that ended it.
+    last_frame: np.ndarray | None = backend.render()
+    last_state: dict[str, list[float]] | None = backend.snapshot_to_plain(
+        snapshot=backend.snapshot()
+    )
+    last_abstraction_diagnostics: dict[str, Any] | None = backend.abstraction_diagnostics()
     samples = 0
     horizon = 0
     hold_frames = max(1, round(FPS_HOLD_SECONDS * backend.render_fps()))
@@ -499,6 +610,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                             state=last_state,
                             seed=header.seed,
                             cycle=cycle,
+                            total_cycles=total_cycles,
                             step=step,
                             transitions=transitions,
                             current_skill=current_skill,
@@ -507,6 +619,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                             decision=terminal_decision,
                             samples=samples,
                             horizon=horizon,
+                            abstraction_diagnostics=last_abstraction_diagnostics,
                             banner=(
                                 f"CYCLE {cycle + 1} COMPLETE\n"
                                 f"{_cycle_end_reason(terminal_decision)}"
@@ -537,6 +650,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                             state=last_state,
                             seed=header.seed,
                             cycle=cycle,
+                            total_cycles=total_cycles,
                             step=step,
                             transitions=transitions,
                             current_skill=current_skill,
@@ -545,6 +659,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                             decision=current_decision,
                             samples=samples,
                             horizon=horizon,
+                            abstraction_diagnostics=last_abstraction_diagnostics,
                         )
                         for _ in range(hold_frames):
                             video.append(frame=held)
@@ -557,6 +672,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
             if row["kind"] != "tick":
                 continue
             last_state = {key: list(value) for key, value in row["state"].items()}
+            last_abstraction_diagnostics = row.get("abstraction_diagnostics")
             env.restore_plain_snapshot(plain=last_state)
             last_frame = backend.render()
             video.append(
@@ -565,6 +681,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                     state=last_state,
                     seed=header.seed,
                     cycle=cycle,
+                    total_cycles=total_cycles,
                     step=step,
                     transitions=transitions,
                     current_skill=current_skill,
@@ -573,15 +690,20 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                     decision=current_decision,
                     samples=samples,
                     horizon=horizon,
+                    abstraction_diagnostics=last_abstraction_diagnostics,
                 )
             )
         if last_frame is not None and last_state is not None:
             terminal_decision = terminal_decisions.get(cycle, current_decision)
+            if terminal_decision is not None:
+                samples = int(terminal_decision.get("num_samples") or samples)
+                horizon = int(terminal_decision.get("horizon") or horizon)
             completed = _compose(
                 frame=last_frame,
                 state=last_state,
                 seed=header.seed,
                 cycle=cycle,
+                total_cycles=total_cycles,
                 step=step,
                 transitions=transitions,
                 current_skill=current_skill,
@@ -590,6 +712,7 @@ def render(*, run: Path, output: Path, realistic_background: bool) -> int:
                 decision=terminal_decision,
                 samples=samples,
                 horizon=horizon,
+                abstraction_diagnostics=last_abstraction_diagnostics,
                 banner=f"CYCLE {cycle + 1} COMPLETE\n{_cycle_end_reason(terminal_decision)}",
             )
             for _ in range(hold_frames):

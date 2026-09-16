@@ -45,6 +45,7 @@ class DeterminizedPathRecoveryInfo(BaseModel, Generic[ActionT]):
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
     first_action: ActionT | StopAction
+    action_path: tuple[ActionT, ...] = ()
 
 
 class DeterminizedSearchQueueEntry(

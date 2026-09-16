@@ -721,6 +721,16 @@ class KinderBackend(BaseModel):
             atoms |= frozenset({("OnBinRim", (self.cube_name, self.bin_name))})
         return atoms
 
+    def abstraction_diagnostics(self, *, state: Any = None) -> dict[str, Any]:
+        """Return auditable geometric evidence used by upstream predicates."""
+        if self._abstractor is None:
+            raise RuntimeError("KinderBackend.reset() has not run yet; there is no abstractor.")
+        subject = self._require_state() if state is None else state
+        robot = subject.get_object_from_name(self.robot_name)
+        cube = subject.get_object_from_name(self.cube_name)
+        evidence = self._abstractor.holding_evidence(subject, robot, cube)
+        return {"holding": evidence.as_dict()}
+
     def check_goals(self) -> bool:
         """Upstream's own verdict -- `ObjectCentricTidyBot3DEnv._check_goals()`.
 
