@@ -12,7 +12,7 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend, intera
 def test_camera_follows_base_without_accumulating_motion(fail):
     positions = np.array([[1.0, -1.8, 5.5]])
     original = positions.copy()
-    model = SimpleNamespace(cam_pos=positions, camera_name2id=lambda _: 0)
+    model = SimpleNamespace(mj_model=SimpleNamespace(cam_pos=positions), camera_name2id=lambda _: 0)
     sim = SimpleNamespace(model=model, forward=lambda: None)
     scene = SimpleNamespace(
         _robot_env=SimpleNamespace(sim=sim, camera_width=640, camera_height=480),

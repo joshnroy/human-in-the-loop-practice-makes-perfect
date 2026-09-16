@@ -813,7 +813,8 @@ class KinderBackend(BaseModel):
             robot_env = scene._robot_env
             sim = robot_env.sim
             camera_id = sim.model.camera_name2id(self.camera)
-            original_position = sim.model.cam_pos[camera_id].copy()
+            model = sim.model.mj_model
+            original_position = model.cam_pos[camera_id].copy()
             robot = self._state.get_object_from_name(self.robot_name)
             robot_position = np.array([
                 self._state.get(robot, "pos_base_x"),
@@ -833,11 +834,11 @@ class KinderBackend(BaseModel):
                 aspect=robot_env.camera_width / robot_env.camera_height,
             )
             try:
-                sim.model.cam_pos[camera_id] = position
+                model.cam_pos[camera_id] = position
                 sim.forward()
                 return np.asarray(self._raw_env.render(), dtype=np.uint8).copy()
             finally:
-                sim.model.cam_pos[camera_id] = original_position
+                model.cam_pos[camera_id] = original_position
                 sim.forward()
         return np.asarray(self._raw_env.render(), dtype=np.uint8).copy()
 
