@@ -114,10 +114,11 @@ from .predicates import (
 )
 from .sides import Tossing3DSides
 
-# Upstream's `MoveToTossLocationAndTossController.TARGET_DISTANCE_BOUNDS`: where a throw
-# is possible, in metres from the bin. The upper part of the wider range upstream tried
-# does not score.
-TOSS_DISTANCE_BOUNDS = (1.25, 1.45)
+# Match `MoveToTossLocationAndTossController.TARGET_DISTANCE_BOUNDS`. These are
+# candidate standoffs, not guaranteed scoring distances. KINDER #191 moved bins
+# farther across the barrier; the old 1.45 m ceiling excluded reachable release
+# positions. Keep the lower end for same-side practice.
+TOSS_DISTANCE_BOUNDS = (1.25, 2.6)
 
 # Upstream's `WAYPOINT_TOLERANCE` (`kinder_models/dynamic3d/utils.py`), how close
 # `_check_robot_is_close_to_pose` requires the base to be to its own planned waypoint.

@@ -391,6 +391,21 @@ def test_the_four_toss_dials_are_drawn_independently() -> None:
     assert np.max(np.abs(off_diagonal)) < 0.15
 
 
+def test_sampler_covers_farther_receivers_without_losing_short_throws() -> None:
+    """KINDER #191 requires >2.425 m to clear the wall at the farthest bin.
+
+    This checks candidate support, not whether a throw scores. Navigation and
+    ballistic outcomes are separate controller-level checks.
+    """
+    rng = np.random.default_rng(0)
+    distances = [
+        Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[0]
+        for _ in range(200)
+    ]
+    assert any(distance > 2.425 + 0.05 for distance in distances)
+    assert any(distance < 1.45 for distance in distances)
+
+
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     stray = GroundSkill(
         skill=_SKILLS.PICK_CUBE.model_copy(update={"name": "NotASkill"}),
