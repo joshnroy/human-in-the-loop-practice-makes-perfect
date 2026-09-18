@@ -133,12 +133,15 @@ TOSS_ROTATION_BOUNDS = (-MAX_TOSS_ROTATION, MAX_TOSS_ROTATION)
 
 # Upstream's `SPEED_BOUNDS`, in joint-path deg/s rather than upstream's rad/s -- see this
 # module's docstring for why the degree convention is kept and where it is converted.
-TOSS_SPEED_BOUNDS = (115.0, 140.0)
+# The composed simulator controller explicitly permits higher effort for farther
+# receivers. This is not a hardware-safe speed limit; the low-level default stays
+# unchanged upstream.
+TOSS_SPEED_BOUNDS = (115.0, 420.0)
 
 # Upstream's `RELEASE_MS_BOUNDS`: the millisecond from the start of the swing at which
 # the gripper opens. Absolute rather than a swing fraction because that is what the real
 # TidyBot's `movej_primitive.execute()` takes.
-TOSS_RELEASE_MS_BOUNDS = (700.0, 840.0)
+TOSS_RELEASE_MS_BOUNDS = (400.0, 840.0)
 
 
 class Tossing3DSkills:
