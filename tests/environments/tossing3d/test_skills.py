@@ -26,6 +26,7 @@ from hitl_pmp.core.method.types import GroundSkill, LiftedAtom
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    CLOSED_EMPTY,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -186,6 +187,17 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
     assert _SKILLS.PICK_CUBE.delete_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
         LiftedAtom(predicate=ON_GROUND, variables=(_SKILLS._cube,)),
+    })
+
+    assert _SKILLS.OPEN_GRIPPER.parameters == (_SKILLS._robot, _SKILLS._cube)
+    assert _SKILLS.OPEN_GRIPPER.preconditions == frozenset({
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube))
+    })
+    assert _SKILLS.OPEN_GRIPPER.add_effects == frozenset({
+        LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,))
+    })
+    assert _SKILLS.OPEN_GRIPPER.delete_effects == frozenset({
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube))
     })
 
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.preconditions == frozenset({

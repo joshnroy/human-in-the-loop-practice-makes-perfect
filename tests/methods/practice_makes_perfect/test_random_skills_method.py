@@ -1,5 +1,6 @@
 import pytest
 
+from hitl_pmp.core.method.method import InteractionComplete
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
@@ -116,11 +117,9 @@ def _missed_toss_no_forward_progress() -> tuple[Tossing3DEnvironment, RandomSkil
     the barrier is one-way -- so once the cube is past it `Pick` is inapplicable, and
     with an empty hand neither `MoveToThrowPose` nor `Toss` is either.
 
-    `OpenGripper` is the one exception, and it does not reopen this (see
-    `Tossing3DSkills.OPEN_GRIPPER`'s own docstring): it has no precondition, so it is
-    always symbolically applicable, including here -- but its effects touch only
-    `HandEmpty`, never `Reachable`/`OnGround`/`InBin`, so applying it changes nothing
-    about whether the goal is reachable. `test_problem.py`'s
+    `OpenGripper` is not applicable because the hand is already open. Its
+    `ClosedEmpty` precondition prevents repeatedly practicing an already-satisfied
+    command. `test_problem.py`'s
     `test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_barrier`
     pins the same invariant at the grounder level; this asserts what it means for this
     baseline's dispatch, since a uniform draw over one candidate always picks it.
@@ -149,32 +148,23 @@ def _missed_toss_no_forward_progress() -> tuple[Tossing3DEnvironment, RandomSkil
         steps_taken=3,
         abstract_atoms=MISSED_TOSS_ATOMS,
     )
-    applicable = method.applicable_ground_skills(state=state)
-    assert {ground.skill.name for ground in applicable} == {"OpenGripper"}
+    assert method.applicable_ground_skills(state=state) == []
     return env, method, state
 
 
-def test_a_no_progress_evaluation_step_dispatches_the_open_gripper_rescue() -> None:
-    """The evaluation half: `OpenGripper` is the only applicable skill here, so the
-    uniform draw always picks it -- a real (if useless-for-the-goal) dispatch, not the
-    no-op degradation this used to be before `OpenGripper` existed (see
-    `_missed_toss_no_forward_progress`)."""
+def test_a_no_progress_evaluation_step_returns_noop() -> None:
     _env, method, state = _missed_toss_no_forward_progress()
 
     labeled = method.get_task_policy(task=None)(state)  # type: ignore[arg-type]
 
-    assert labeled.label == "OpenGripper(robot)"
+    assert labeled.label == "no-op (no applicable skills)"
 
 
-def test_a_no_progress_practice_step_dispatches_open_gripper_instead_of_ending_the_period() -> None:
-    """The practice half, also matching EesMethod's own behaviour once `OpenGripper`
-    made this state no longer a total dead end for either method: neither raises
-    `InteractionComplete` here any more."""
+def test_a_no_progress_practice_step_ends_the_period() -> None:
     _env, method, state = _missed_toss_no_forward_progress()
 
-    labeled = method.get_practice_policy(task=None)(state)  # type: ignore[arg-type]
-
-    assert labeled.label == "OpenGripper(robot)"
+    with pytest.raises(InteractionComplete):
+        method.get_practice_policy(task=None)(state)  # type: ignore[arg-type]
 
 
 def test_the_two_phases_agree_wherever_a_skill_is_applicable() -> None:
