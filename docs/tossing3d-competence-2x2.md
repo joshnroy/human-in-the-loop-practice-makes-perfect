@@ -94,6 +94,16 @@ configuration snapshot, progress, sampler draws, physical state log, decisions a
 final statistics. A successful process exit alone is insufficient: check ten refit
 and smoothing events, eleven evaluation sweeps, and numerical diagnostics.
 
+Validate the completed matrix and export CSV/JSON summaries plus PNG/PDF figures:
+
+```bash
+scripts/with_env.sh python scripts/summarize_tossing3d_competence_2x2.py \
+  --results-root /absolute/path/to/results-directory
+```
+
+The summary command streams the large belief logs and checks cycle completion,
+dispatch accounting, sampler counts and retrospective smoothing before plotting.
+
 One seed per arm is a controlled pilot, not an estimate of variation across seeds.
 The matched initial tasks do not imply identical training trajectories: model and
 inference differences can lead the planner to choose different actions.
