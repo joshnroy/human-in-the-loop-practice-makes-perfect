@@ -41,6 +41,7 @@ import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY, HAND_EMPTY
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
     ORACLE_GRIPPER_RELEASE_MS,
     ORACLE_RELEASE_SPEED_DEG_S,
@@ -127,9 +128,38 @@ def test_no_applicable_ground_skill_is_silently_ignored_along_the_oracles_trajec
                 action=SkillOraclePolicy.get_labeled_action(state=state, env=env, goal=goal).action
             )
 
+        # A successful oracle trajectory never needs recovery. Close the empty hand
+        # in the live initial scene to exercise OpenGripper's new precondition too.
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        backend = env.backend()
+        closed_snapshot = backend.snapshot()
+        robot = next(obj for obj in closed_snapshot if obj.name == backend.robot_name)
+        closed_snapshot.set(robot, "pos_gripper", 1.0)
+        before = env.restore_plain_snapshot(
+            plain=backend.snapshot_to_plain(snapshot=closed_snapshot)
+        )
+        assert CLOSED_EMPTY.holds(before, (env.robot, env.cube))
+        atoms = SkillGrounder.abstract_state(
+            state=before, objects=provider.objects(), predicates=provider.predicates()
+        )
+        (recovery,) = SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
+        )
+        assert recovery.skill.name == "OpenGripper"
+        after = env.take_action(
+            action=provider.compute_action(
+                ground_skill=recovery,
+                params=provider.sample_params(ground_skill=recovery, rng=rng),
+                state=before,
+            )
+        )
+        assert _changed(before=before, after=after)
+        assert HAND_EMPTY.holds(after, (env.robot,))
+        assert not CLOSED_EMPTY.holds(after, (env.robot, env.cube))
+        exercised.add(recovery.skill.name)
+
         assert not violations, "\n".join(f"  - {v}" for v in sorted(set(violations)))
-        # Coverage floor, so the property above cannot pass vacuously: the oracle's own
-        # trajectory reaches a state where each of the three skills is applicable.
+        # The oracle trajectory and closed-empty recovery together cover every skill.
         assert exercised == {skill.name for skill in provider.skills()}, (
             f"the walk never reached a state where "
             f"{sorted({s.name for s in provider.skills()} - exercised)} was applicable, so "

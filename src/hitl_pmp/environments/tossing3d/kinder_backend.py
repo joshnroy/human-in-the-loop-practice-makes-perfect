@@ -418,16 +418,28 @@ class KinderBackend(BaseModel):
         """
         api = self.api()
         if self._raw_env is None:
-            # The default uses upstream unchanged; the named same-side layout is opt-in.
-            config_kwargs = {}
+            # Registered Tossing3D variants now select their own task JSON by object
+            # count. Custom layouts use the configurable robot environment beneath
+            # that family, retaining its velocity controls and Gymnasium wrappers.
+            env_spec: Any = self.env_id
             if self.task_config_path is not None:
-                config_kwargs["task_config_path"] = str(self.task_config_path.resolve())
+                from gymnasium.envs.registration import EnvSpec
+                from kinder.envs.dynamic3d.envs import TidyBot3DConfig
+
+                env_spec = EnvSpec(
+                    id=self.env_id,
+                    entry_point="kinder.envs.dynamic3d.envs:TidyBot3DEnv",
+                    kwargs={
+                        "task_config_path": str(self.task_config_path.resolve()),
+                        "scene_render_camera": "task_view",
+                        "config": TidyBot3DConfig(use_arm_velocities=True),
+                    },
+                )
             self._raw_env = api.kinder.make(
-                self.env_id,
+                env_spec,
                 render_mode=self.render_mode,
                 scene_bg=self.scene_bg,
                 allow_state_access=self.allow_state_access,
-                **config_kwargs,
             )
             object_centric = self._object_centric()
             available = list(getattr(object_centric, "camera_names", []))

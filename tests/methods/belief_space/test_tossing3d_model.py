@@ -615,7 +615,6 @@ def test_only_physically_applicable_actions_are_returned() -> None:
     ready = _search_state(model=model, state=belief, action_name=PICK_SKILL)
     assert {action.skill.name for action in model.get_valid_actions(environment_state=ready)} == {
         PICK_SKILL,
-        OPEN_GRIPPER_SKILL,
         RESET_SKILL,
     }
     carrying = _search_state(model=model, state=belief, action_name=TOSS_SKILL)
@@ -623,6 +622,12 @@ def test_only_physically_applicable_actions_are_returned() -> None:
         action.skill.name for action in model.get_valid_actions(environment_state=carrying)
     } == {
         TOSS_SKILL,
+        RESET_SKILL,
+    }
+    closed_empty = _search_state(model=model, state=belief, action_name=OPEN_GRIPPER_SKILL)
+    assert {
+        action.skill.name for action in model.get_valid_actions(environment_state=closed_empty)
+    } == {
         OPEN_GRIPPER_SKILL,
         RESET_SKILL,
     }
@@ -821,7 +826,8 @@ def test_first_session_cannot_identify_learning_rate() -> None:
 def test_open_gripper_success_is_inferred_not_assumed() -> None:
     state = make_default_tossing3d_belief()
     model = _domain_model()
-    closed_atoms = frozenset(
+    open_gripper = _ground_skill(model=model, name=OPEN_GRIPPER_SKILL)
+    closed_atoms = open_gripper.preconditions | frozenset(
         atom
         for atom in _ground_skill(model=model, name=PICK_SKILL).preconditions
         if atom.predicate.name != "HandEmpty"
@@ -835,7 +841,7 @@ def test_open_gripper_success_is_inferred_not_assumed() -> None:
     competence = mean_competence(belief=state.skill_beliefs[OPEN_GRIPPER_SKILL])
     assert [o[0] for o in outcomes] == pytest.approx([competence, 1 - competence])
     assert outcomes[1][2] == closed_atoms
-    open_gripper = _ground_skill(model=model, name=OPEN_GRIPPER_SKILL)
+    assert outcomes[0][2] == (closed_atoms - open_gripper.delete_effects) | open_gripper.add_effects
     for _ in range(100):
         state = model.observe_outcome(
             state=state,

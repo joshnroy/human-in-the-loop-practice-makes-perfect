@@ -15,6 +15,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
+    CLOSED_EMPTY,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -68,6 +69,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         IN_BIN,
         HAND_EMPTY,
         HOLDING,
+        CLOSED_EMPTY,
         ON_GROUND,
         REACHABLE,
     }
@@ -87,13 +89,12 @@ def test_every_predicate_a_skill_references_is_one_the_provider_publishes() -> N
 
 def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
     """Walked with the real grounder rather than by hand: from the initial abstract state
-    `PickCube` is applicable, and holding the cube unlocks the composed toss -- plus
-    `OpenGripper` everywhere, since it has no precondition at all (see `Tossing3DSkills`'
-    own docstring for why: it exists precisely to be reachable from a near-miss-grasp
-    dead end no other skill's precondition can describe).
+    `PickCube` is applicable, and holding the cube unlocks the composed toss.
+    `OpenGripper` is applicable only after a failed grasp leaves the hand closed
+    without holding the cube.
 
     **There is no third *rung* any more** -- `OpenGripper` is not a step in the oracle's
-    plan shape, just an always-available rescue the oracle never needs. Where the robot
+    plan shape, just a failed-grasp rescue the oracle never needs. Where the robot
     stands used to decide between `MoveToThrowPose` and `Toss`; the composed controller
     drives itself to the standoff, so the base pose is not part of any precondition and
     the same skill set is applicable whether the robot is next to the bin or across the
@@ -113,18 +114,18 @@ def test_the_symbolic_layer_grounds_the_oracles_own_plan_shape() -> None:
             )
         }
 
-    assert applicable() == {"PickCube", "OpenGripper"}
+    assert applicable() == {"PickCube"}
     assert applicable(atoms=HOLDING_ATOMS, cube_z=0.4) == {
         "MoveToTossLocationAndToss",
-        "OpenGripper",
     }
     # Standing at the old throw standoff changes nothing: the composed skill drives there
     # itself, so no precondition reads the base pose -- and no *atom* reports it either,
     # since upstream deleted `RobotAtThrowPose` with the pose it named.
     assert applicable(atoms=HOLDING_ATOMS, cube_z=0.4, base_x=BIN_X - 1.35) == {
         "MoveToTossLocationAndToss",
-        "OpenGripper",
     }
+    closed_empty_atoms = INITIAL_ATOMS - {("HandEmpty", ("robot",))}
+    assert applicable(atoms=closed_empty_atoms, gripper=1.0) == {"OpenGripper"}
 
 
 def test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_barrier() -> None:
@@ -133,12 +134,8 @@ def test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_b
     make progress toward the goal remains -- a planner asked to recover from here
     correctly finds no plan.
 
-    **`OpenGripper` is the one exception, and it does not reopen this.** It has no
-    precondition, so it is always symbolically applicable, including here -- but its
-    effects touch only `HandEmpty`, never `Reachable`/`OnGround`/`InBin`, so applying it
-    changes nothing about whether the goal is reachable. This test asserts the precise
-    surviving invariant (nothing *but* the no-op rescue is applicable) rather than the
-    old, now-too-strong one (nothing at all is applicable)."""
+    The hand is already open, so `OpenGripper`'s `ClosedEmpty` precondition is false
+    and the recovery skill is also inapplicable."""
     provider = Tossing3DSkillProvider(env=Tossing3DEnvironment())
     landed = state(
         cube_x=2.6,
@@ -153,7 +150,7 @@ def test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_b
     applicable = SkillGrounder.applicable_ground_skills(
         skills=provider.skills(), objects=provider.objects(), true_atoms=atoms
     )
-    assert {ground.skill.name for ground in applicable} == {"OpenGripper"}
+    assert not applicable
 
 
 def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() -> None:
