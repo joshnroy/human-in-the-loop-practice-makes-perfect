@@ -266,10 +266,22 @@ def test_the_containment_guard_would_catch_a_bin_moved_off_the_scored_box() -> N
     assert not _is_contained(margins=margins)
 
 
-def test_a_full_episode_through_the_problem_solves_the_default_scene() -> None:
+def test_a_full_episode_through_the_problem_solves_a_feasible_scene(*, tmp_path) -> None:
     """End to end through the harness's own path: `run_task_episode` with the oracle
-    policy, on the canonical scene."""
+    policy, on its measured bin position with the installed simulator's physics.
+
+    The installed task now samples bins at x=2.6..3.42. The historical oracle's
+    1.35 m standoff can cross the one-way barrier there, so those scenes do not
+    satisfy this operating point's feasibility assumptions.
+    """
+    import json
+
     env = _env()
+    config = _installed_task_json()
+    config["regions"]["bin_init_region"]["ranges"] = [[2.0, 0.0, 2.0, 0.0]]
+    path = tmp_path / "oracle-feasible-scene.json"
+    path.write_text(json.dumps(config))
+    env.backend().task_config_path = path
     try:
         tasks = Tossing3DTasks(env=env, seed=0)
         problem = Tossing3DProblem(env=env, tasks=tasks)
@@ -281,6 +293,27 @@ def test_a_full_episode_through_the_problem_solves_the_default_scene() -> None:
         solved, frames, _ = problem.run_task_episode(task=task, policy=policy)
         assert solved
         assert frames == []
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("seed,speed", [(10125, 360.0), (10126, 380.0), (10127, 358.0)])
+def test_extended_toss_solves_default_far_scene_witnesses(*, seed: int, speed: float) -> None:
+    """Replay upstream's certified witnesses through the real HITL action bridge.
+
+    These cases establish physical reachability of the default far-bin layout;
+    they do not measure an untrained policy's success rate.
+    """
+    env = _env()
+    try:
+        initial = env.reset_to_seed(seed=seed)
+        assert initial.get(obj=env.bin, feature_name="x") >= 2.6
+        picked = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+        assert HOLDING.holds(picked, (env.robot, env.cube)), env.last_skill_error()
+        landed = env.take_action(action=np.array([1, 2.5, 0.0, speed, 500.0]))
+        assert env.last_skill_error() is None
+        assert IN_BIN.holds(landed, (env.cube, env.bin))
+        assert env.is_solved()
     finally:
         env.close()
 
@@ -420,7 +453,7 @@ def test_same_side_human_reset_uses_json_initial_regions(*, tmp_path, edited_jso
     if edited_json:
         for name, bounds in (
             ("blocks_init_region", [0.3, 0.6, 0.4, 0.7]),
-            ("bin_init_region", [-0.8, -1.2, -0.7, -1.1]),
+            ("bin_init_region", [-1.05, -1.45, -0.45, -0.85]),
         ):
             config["regions"][name]["ranges"] = [bounds]
             config["regions"][f"edited_{name}"] = config["regions"].pop(name)

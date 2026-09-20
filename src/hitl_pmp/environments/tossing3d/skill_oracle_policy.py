@@ -18,7 +18,7 @@ The four the oracle does supply:
 - **`ORACLE_THROW_STANDOFF = 1.35`** is upstream's own `target_distance` in
   `test_pick_ground_toss`, and is the standoff every measured number in
   `docs/kinder-environment-validation.md` and `docs/tossing3d-integration-status.md` was
-  taken at. It lies inside upstream's own `TOSS_DISTANCE_BOUNDS` of `(1.25, 1.45)`.
+  taken at. It remains inside the expanded `TOSS_DISTANCE_BOUNDS` of `(1.25, 2.6)`.
 - **`ORACLE_THROW_ROTATION = 0.0`** -- head-on. Upstream's own value in the same test,
   and the centre of `TOSS_ROTATION_BOUNDS`.
 - **`ORACLE_RELEASE_SPEED_DEG_S = 140`** is upstream's own shipped default: what
@@ -36,9 +36,11 @@ The four the oracle does supply:
 > Nothing here is recomputed; the earlier values stand as published.
 >
 > **What has since been checked, and what has not.** This operating point *does* still
-> solve the canonical scene end to end -- `test_kinder_fidelity.py` runs it and the cube
-> comes to rest inside the scored box -- so the four are known to work together on the
-> composed controller. What has **not** been redone is the search that chose them:
+> solve a controlled scene with the bin at `(2.0, 0.0)` end to end --
+> `test_kinder_fidelity.py` runs it with the installed simulator's physics and the cube
+> comes to rest inside the scored box. The installed task's wider x=2.6..3.42 bin range
+> can put this operating point's base target across the barrier; this fixed oracle is
+> not a solver for that new range. What has **not** been redone is the search that chose them:
 > `ORACLE_GRIPPER_RELEASE_MS`'s `5/5` band and PR #221's standoff scan were both measured
 > on a decomposition and a scene that no longer exist, so 792 is a value that works rather
 > than a value shown to be best. Re-deriving it is a measurement, not an edit.

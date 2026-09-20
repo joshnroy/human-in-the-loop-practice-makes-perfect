@@ -8,15 +8,17 @@
         }
     },
     "scene": "lab2",
+    "room_layout": "tossing_room.xml",
+    "convex_placement_room_body": "tossing_room",
     "regions": {
         "bin_init_region": {
             "target": "ground",
             "ranges": [
                 [
-                    0.0,
-                    -0.7,
-                    0.001,
-                    -0.699
+                    -0.3,
+                    -1.0,
+                    0.3,
+                    -0.4
                 ]
             ],
             "yaw_ranges": [

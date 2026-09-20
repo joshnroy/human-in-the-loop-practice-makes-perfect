@@ -41,17 +41,16 @@ Two consequences worth stating rather than discovering:
 
 ## Every continuous bound below is upstream's
 
-`MoveToTossLocationAndTossController` declares all four on itself, and they are narrower
-than the ones this package used to draw from -- upstream measured (480 draws across 16
-seeds) that every scoring draw fell in speed [117.5, 140.0] deg/s and release
-[710.4, 836.1] ms, and set its bounds a small margin outside that. The old
-`TOSS_SPEED_BOUNDS` of `(60, 140)` and `TOSS_RELEASE_MS_BOUNDS` of `(300, 1400)` spent
-most of a sampler's budget on combinations that can never score.
+`MoveToTossLocationAndTossController` declares all four on itself. The current simulation
+range extends the standoff to 2.6 m, release speed to 420 deg/s, and release timing down
+to 400 ms so the farther default receivers have feasible release poses and trajectories.
+The low-level toss profile keeps its 140 deg/s default; the composed simulation controller
+explicitly permits up to three times that effort.
 
-**That is a real change to what a learning run measures, in the same direction as the
-`param_dim=0` pick**: narrowing the box a sampler draws from raises what an *untrained*
-sampler scores, which is the baseline a trained one has to beat. How much headroom is
-left is a measurement, not an argument, and is not asserted here.
+Earlier bounds came from a shorter-range scene's 480-draw study. Those bounds and success
+rates do not describe this expanded candidate space. The live regression tests replay
+three certified solutions in the default far-bin scene through this package's wrapper;
+they establish reachability, not an untrained sampler's success rate.
 
 It is not a choice made in this package -- these are the bounds upstream's own controller
 samples from, and `test_kinder_pin.py` pins them against it, so this domain and the
@@ -109,10 +108,10 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from .environment import Tossing3DEnvironment
 from .predicates import CLOSED_EMPTY, HAND_EMPTY, HOLDING, IN_BIN, ON_GROUND, REACHABLE
 
-# Upstream's `MoveToTossLocationAndTossController.TARGET_DISTANCE_BOUNDS`: where a throw
-# is possible, in metres from the bin. The upper part of the wider range upstream tried
-# does not score.
-TOSS_DISTANCE_BOUNDS = (1.25, 1.45)
+# Match upstream's candidate standoffs. Farther receivers require release poses
+# that remain on the robot's side of the barrier; keep the lower end for same-side
+# practice. These bounds cover candidates, not guaranteed scoring distances.
+TOSS_DISTANCE_BOUNDS = (1.25, 2.6)
 
 # Upstream's `WAYPOINT_TOLERANCE` (`kinder_models/dynamic3d/utils.py`), how close
 # `_check_robot_is_close_to_pose` requires the base to be to its own planned waypoint.
@@ -127,12 +126,14 @@ TOSS_ROTATION_BOUNDS = (-MAX_TOSS_ROTATION, MAX_TOSS_ROTATION)
 
 # Upstream's `SPEED_BOUNDS`, in joint-path deg/s rather than upstream's rad/s -- see this
 # module's docstring for why the degree convention is kept and where it is converted.
-TOSS_SPEED_BOUNDS = (115.0, 140.0)
+# The simulator controller explicitly permits higher effort for farther receivers.
+# The low-level default remains unchanged upstream; this is a simulation range.
+TOSS_SPEED_BOUNDS = (115.0, 420.0)
 
 # Upstream's `RELEASE_MS_BOUNDS`: the millisecond from the start of the swing at which
 # the gripper opens. Absolute rather than a swing fraction because that is what the real
 # TidyBot's `movej_primitive.execute()` takes.
-TOSS_RELEASE_MS_BOUNDS = (700.0, 840.0)
+TOSS_RELEASE_MS_BOUNDS = (400.0, 840.0)
 
 
 class Tossing3DSkills:
