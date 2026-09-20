@@ -393,7 +393,7 @@ def write_summary(*, summary: dict[str, Any], output_dir: Path) -> None:
         "errors",
     ]
     with (output_dir / "summary.csv").open("w", encoding="utf-8", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=columns)
+        writer = csv.DictWriter(stream, fieldnames=columns, lineterminator="\n")
         writer.writeheader()
         for run in summary["runs"]:
             row = {key: run.get(key) for key in columns}
