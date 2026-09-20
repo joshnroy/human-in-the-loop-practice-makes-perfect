@@ -12,7 +12,7 @@ arms use the same simulator, task seed, planner, action budget and cost objectiv
 
 Both models observe skill success/failure using a Bernoulli likelihood with latent
 competence C. Learning rate has no separately observed target: subsequent outcomes
-reweight the latent learning hypotheses. Random exploration tosses train the
+reweight the latent learning hypotheses. Epsilon-random exploration tosses train the
 sampler but are excluded from learned-controller competence evidence, as before.
 
 Model A uses cumulative training examples m and static parameters phi:
@@ -75,7 +75,7 @@ the configured population is 1,024 and zero-mass posteriors fail explicitly.
 From a clean checkout with the committed submodule pins and environment installed:
 
 ```bash
-scripts/with_env.sh python scripts/tossing3d_competence_2x2.py \
+scripts/with_env.sh python -m scripts.tossing3d_competence_2x2 \
   --results-root /absolute/path/to/new/results-directory
 ```
 
@@ -87,8 +87,9 @@ practice resets, and twenty actions per cycle. The determinized A* planner uses
 100 search iterations and observation-probability weight .001. The long-range
 throw domain is 1.25–2.6 m, 115–420 degrees/s and 400–840 ms release time.
 
-The launcher records commands, the source commit, environment paths, source diff,
-separate process logs and exit statuses. Commit new source files before a measured
+The launcher uses `scripts.run_sweep.SweepRunner` and records commands, the source
+commit, environment paths, source diff, per-run `timing.json`, separate process
+logs and exit statuses. Commit new source files before a measured
 run: the source diff does not include untracked files. Each arm also writes its
 configuration snapshot, progress, sampler draws, physical state log, decisions and
 final statistics. A successful process exit alone is insufficient: check ten refit

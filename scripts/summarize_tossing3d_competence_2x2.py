@@ -434,82 +434,145 @@ def plot_summary(*, summary: dict[str, Any], output_dir: Path) -> None:
 
     if not summary["valid"]:
         raise ValueError("refusing to plot an incomplete or inconsistent experiment")
-    colors = dict(zip(ARMS, ("#0072B2", "#D55E00", "#009E73", "#CC79A7"), strict=True))
+    color = "#0072B2"  # All arms have assistance available.
     titles = {"global_curve": "A · global curve", "local_trend": "B · local trend"}
-    figure, axes = plt.subplots(2, 2, figsize=(12, 8.6), layout="constrained")
-    for run in summary["runs"]:
-        color = colors[f"{run['model']}-{run['engine']}"]
-        label = f"{titles[run['model']]} / {run['engine']}"
-        if summary["num_runs"] > 4:
-            label += f" / seed {run['seed']}"
-        evaluations, cycles, history = run["evaluations"], run["cycles"], run["toss_history"]
-        axes[0, 0].plot(
-            [row["cycle"] for row in evaluations],
-            [row["success_rate"] for row in evaluations],
-            "o-",
-            color=color,
-            label=label,
-            markersize=4,
-        )
-        axes[0, 1].plot(
-            [0, *[row["cycle"] for row in cycles]],
-            [0, *[row["cumulative_dispatched_cost"] for row in cycles]],
-            "o-",
-            color=color,
-            markersize=4,
-        )
-        for axis, suffix in ((axes[1, 0], "competence"), (axes[1, 1], "learning_rate")):
-            x = [row["cycle_index"] + 1 for row in history]
+    styles = {"particle": "-", "grid": (0, (4, 2))}
+    markers = {"particle": "o", "grid": "s"}
+    figure, axes = plt.subplots(2, 4, figsize=(18, 8.6), layout="constrained")
+
+    def draw_traces(
+        *,
+        axis: Any,
+        x: list[int],
+        traces: list[list[float]],
+        engine: str,
+        points_only: bool = False,
+    ) -> None:
+        """Draw each seed beneath its mean; symbols denote online filtering."""
+        style = "None" if points_only else styles[engine]
+        marker = markers[engine] if points_only else None
+        for trace in traces:
             axis.plot(
                 x,
-                [row[f"filtered_{suffix}"] for row in history],
-                ":o",
+                trace,
                 color=color,
-                alpha=0.65,
-                markerfacecolor="white",
+                linestyle=style,
+                marker=marker,
+                markerfacecolor="none",
                 markersize=4,
+                linewidth=0.8,
+                alpha=0.16,
+                zorder=1,
             )
-            axis.plot(
-                x, [row[f"smoothed_{suffix}"] for row in history], "-", color=color, linewidth=2
+        means = [sum(values) / len(values) for values in zip(*traces, strict=True)]
+        axis.plot(
+            x,
+            means,
+            color=color,
+            linestyle=style,
+            marker=marker,
+            markerfacecolor="none",
+            markersize=5,
+            linewidth=2.3,
+            zorder=3 if points_only else 2,
+        )
+
+    cost_max = max(run["cycles"][-1]["cumulative_dispatched_cost"] for run in summary["runs"])
+    rate_max = max(
+        entry[f"{estimate}_learning_rate"]
+        for run in summary["runs"]
+        for entry in run["toss_history"]
+        for estimate in ("filtered", "smoothed")
+    )
+    for row_index, (model, title) in enumerate(titles.items()):
+        model_runs = [run for run in summary["runs"] if run["model"] == model]
+        denominators = sorted({row["total"] for run in model_runs for row in run["evaluations"]})
+        denominator = "/".join(str(value) for value in denominators)
+        engine_handles = []
+        for engine in styles:
+            runs = [run for run in model_runs if run["engine"] == engine]
+            engine_handles.append(
+                Line2D(
+                    [0],
+                    [0],
+                    color=color,
+                    linestyle=styles[engine],
+                    linewidth=2.3,
+                    label=f"{engine} mean, n={len(runs)}",
+                )
             )
-    axes[0, 0].set(
-        title="Held-out evaluation", ylabel="Tasks solved / tasks evaluated", ylim=(-0.03, 1.03)
-    )
-    axes[0, 1].set(
-        title="Cumulative dispatched cost", ylabel="Configured practice cost", ylim=(0, None)
-    )
-    axes[1, 0].set(
-        title="Toss competence: filtered and final smoothing",
-        ylabel="Expected competence",
-        ylim=(-0.03, 1.03),
-    )
-    axes[1, 1].set(
-        title="Toss learning rate: filtered and final smoothing",
-        ylabel="Expected competence gain / example",
-        ylim=(0, None),
-    )
+            x = [entry["cycle"] for entry in runs[0]["evaluations"]]
+            draw_traces(
+                axis=axes[row_index, 0],
+                x=x,
+                traces=[[entry["solved"] for entry in run["evaluations"]] for run in runs],
+                engine=engine,
+            )
+            draw_traces(
+                axis=axes[row_index, 1],
+                x=[0, *[entry["cycle"] for entry in runs[0]["cycles"]]],
+                traces=[
+                    [0, *[entry["cumulative_dispatched_cost"] for entry in run["cycles"]]]
+                    for run in runs
+                ],
+                engine=engine,
+            )
+            x = [entry["cycle_index"] + 1 for entry in runs[0]["toss_history"]]
+            for column, suffix in ((2, "competence"), (3, "learning_rate")):
+                for estimate in ("filtered", "smoothed"):
+                    draw_traces(
+                        axis=axes[row_index, column],
+                        x=x,
+                        traces=[
+                            [entry[f"{estimate}_{suffix}"] for entry in run["toss_history"]]
+                            for run in runs
+                        ],
+                        engine=engine,
+                        points_only=estimate == "filtered",
+                    )
+        axes[row_index, 0].set(
+            title=f"{title}\nHeld-out tasks (of {denominator})",
+            ylabel="Solved per seed",
+            ylim=(-0.3, max(denominators) + 0.3),
+        )
+        axes[row_index, 1].set(
+            title="Cumulative dispatched cost",
+            ylabel="Configured practice cost",
+            ylim=(0, max(1, cost_max * 1.05)),
+        )
+        axes[row_index, 2].set(
+            title="Toss competence",
+            ylabel="Expected competence",
+            ylim=(-0.03, 1.03),
+        )
+        axes[row_index, 3].set(
+            title="Toss learning rate",
+            ylabel="Posterior mean learning rate",
+            ylim=(0, max(0.001, rate_max * 1.05)),
+        )
+        axes[row_index, 0].legend(handles=engine_handles, fontsize=8, loc="upper left")
+        axes[row_index, 2].legend(
+            handles=[
+                Line2D(
+                    [0],
+                    [0],
+                    color=color,
+                    linestyle="None",
+                    marker=markers[engine],
+                    markerfacecolor="none",
+                    label=f"Filtered · {engine}",
+                )
+                for engine in styles
+            ]
+            + [Line2D([0], [0], color=color, linewidth=2.3, label="Lines: final smoothing")],
+            fontsize=8,
+            loc="upper left",
+        )
     for axis in axes.ravel():
         axis.set_xlabel("Practice cycle")
         axis.set_xticks(range(summary["num_cycles"] + 1))
         axis.grid(alpha=0.18)
         axis.spines[["top", "right"]].set_visible(False)
-    axes[0, 0].legend(fontsize=8, loc="upper left")
-    axes[1, 0].legend(
-        handles=[
-            Line2D(
-                [0],
-                [0],
-                color="#555555",
-                linestyle=":",
-                marker="o",
-                markerfacecolor="white",
-                label="Online filtered",
-            ),
-            Line2D([0], [0], color="#555555", linewidth=2, label="Smoothed using all cycles"),
-        ],
-        fontsize=8,
-        loc="upper left",
-    )
     figure.suptitle(
         f"Tossing3D competence experiment · {summary['num_cycles']} practice cycles", fontsize=15
     )

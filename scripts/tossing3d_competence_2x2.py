@@ -7,9 +7,9 @@ import json
 import os
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
 from pathlib import Path
+
+from scripts.run_sweep import SweepRun, SweepRunner
 
 MODELS = ("global_curve", "local_trend")
 ENGINES = ("particle", "grid")
@@ -86,34 +86,41 @@ def experiment_commands(
     return runs
 
 
-def run_one(*, name: str, command: list[str], results_root: Path) -> dict[str, object]:
-    log = results_root / "logs" / (name.replace("/", "-") + ".log")
-    environment = {
-        **os.environ,
-        "OMP_NUM_THREADS": "1",
+def execute_experiments(
+    *, runs: list[tuple[str, list[str]]], results_root: Path, max_workers: int
+) -> list[dict[str, object]]:
+    """Use the shared sweep executor for retry handling, logs and timing.json."""
+    planned = [
+        SweepRun(
+            method=name.split("/")[0],
+            seed=int(command[command.index("--seed") + 1]),
+            output_dir=results_root / name,
+            command=command,
+        )
+        for name, command in runs
+    ]
+    # SweepRunner pins OMP/MKL itself. Preserve the remaining measured-run settings.
+    os.environ.update({
         "OPENBLAS_NUM_THREADS": "1",
-        "MKL_NUM_THREADS": "1",
         "PYTHONUNBUFFERED": "1",
         "MPLCONFIGDIR": str(results_root / "matplotlib-cache"),
-    }
-    started = datetime.now(timezone.utc).isoformat()
-    print(f"Starting {name}; log: {log}", flush=True)
-    with log.open("w", encoding="utf-8") as stream:
-        completed = subprocess.run(
-            command, env=environment, stdout=stream, stderr=stream, check=False
+    })
+    outcomes = SweepRunner.execute(runs=planned, max_workers=max_workers)
+    records: list[dict[str, object]] = []
+    for outcome in outcomes:
+        name = str(outcome.run.output_dir.relative_to(results_root))
+        record: dict[str, object] = {
+            "name": name,
+            "returncode": outcome.returncode,
+            "spawn_attempts": outcome.spawn_attempts,
+            "log": str(outcome.run.output_dir / "log.txt"),
+            "timing": str(outcome.run.output_dir / "timing.json"),
+        }
+        (results_root / "logs" / (name.replace("/", "-") + ".status.json")).write_text(
+            json.dumps(record, indent=2) + "\n", encoding="utf-8"
         )
-    record: dict[str, object] = {
-        "name": name,
-        "returncode": completed.returncode,
-        "started_at": started,
-        "finished_at": datetime.now(timezone.utc).isoformat(),
-        "log": str(log),
-    }
-    (results_root / "logs" / (name.replace("/", "-") + ".status.json")).write_text(
-        json.dumps(record, indent=2) + "\n", encoding="utf-8"
-    )
-    print(f"Finished {name}: exit {completed.returncode}", flush=True)
-    return record
+        records.append(record)
+    return records
 
 
 def main() -> None:
@@ -158,12 +165,7 @@ def main() -> None:
         + "\n",
         encoding="utf-8",
     )
-    with ThreadPoolExecutor(max_workers=args.max_workers) as pool:
-        futures = [
-            pool.submit(run_one, name=name, command=command, results_root=root)
-            for name, command in runs
-        ]
-        results = [future.result() for future in as_completed(futures)]
+    results = execute_experiments(runs=runs, results_root=root, max_workers=args.max_workers)
     (root / "run_status.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
     if any(result["returncode"] != 0 for result in results):
         raise SystemExit(1)

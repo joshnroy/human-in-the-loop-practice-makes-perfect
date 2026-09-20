@@ -1,0 +1,5 @@
+name,model,engine,seed,valid,returncode,num_cycles,initial_eval_solved,final_eval_solved,eval_tasks,total_dispatches,total_dispatched_cost,free_practice_resets,sampler_attempts,sampler_successes,toss_final_filtered_competence,toss_final_filtered_learning_rate,toss_earliest_smoothed_ess,toss_earliest_unique_ancestors,toss_phi_configurations_final_filtered,elapsed_seconds,errors
+global_curve-grid/seed_00,global_curve,grid,0,True,0,10,0,1,10,200,728.0,0,15,0,0.12347978335979931,0.002929786760309176,101.12915451311119,,,787.1177754339878,
+global_curve-particle/seed_00,global_curve,particle,0,True,0,10,0,0,10,200,692.0,0,20,0,0.09181303507369157,0.0021487606235000645,35.00387234610763,127,97,651.6505801780149,
+local_trend-grid/seed_00,local_trend,grid,0,True,0,10,0,1,10,200,640.0,0,24,2,0.24552805365959118,0.003884854509647769,19.678591538898992,,,661.8180519440211,
+local_trend-particle/seed_00,local_trend,particle,0,True,0,10,0,0,10,200,628.0,0,26,0,0.08422347399287886,0.004463804912044062,45.77073577427177,290,,681.5873743359698,
