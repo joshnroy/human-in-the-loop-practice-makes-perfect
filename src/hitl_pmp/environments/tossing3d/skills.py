@@ -206,13 +206,9 @@ class Tossing3DSkills:
     OPEN_GRIPPER: ClassVar[Skill] = Skill(
         name="OpenGripper",
         parameters=(_robot, _cube),
-        preconditions=frozenset({
-            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
-        }),
+        preconditions=frozenset({LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))}),
         add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
-        delete_effects=frozenset({
-            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
-        }),
+        delete_effects=frozenset({LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))}),
         param_dim=0,
         practice_cost=1.0,
     )
