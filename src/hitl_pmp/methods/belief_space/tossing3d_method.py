@@ -16,6 +16,7 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import (
 )
 from hitl_pmp.planning.grounding import SkillGrounder
 
+from .competence_inference import BayesianSkillBelief, InferenceConfig, smooth_history
 from .determinized import DeterminizedAStarPlanner
 from .expectimax import ExpectimaxPlanner
 from .planner import BeliefSpacePlanner
@@ -32,7 +33,6 @@ from .tossing3d_observation_model import (
     mean_competence,
     mean_cost,
     mean_learning_rate,
-    observed_learning_rates,
     refit_belief_state,
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
@@ -84,6 +84,13 @@ class Tossing3DPomdpMethod(EesMethod):
     ) = Field(default=None, exclude=True, repr=False)
     pomdp_num_samples: int = Field(default=100, ge=1)
     pomdp_num_particles: int = Field(default=1024, ge=1)
+    pomdp_competence_model: Literal["global_curve", "local_trend"] = "local_trend"
+    pomdp_inference_engine: Literal["particle", "grid"] = "particle"
+    pomdp_grid_competence_bins: int = Field(default=25, ge=3)
+    pomdp_grid_learning_rate_bins: int = Field(default=16, ge=2)
+    pomdp_competence_process_noise_std: float = Field(default=0.03, ge=0.0)
+    pomdp_learning_rate_decay: float = Field(default=0.9, ge=0.0, le=1.0)
+    pomdp_learning_rate_max: float = Field(default=0.15, gt=0.0, le=1.0)
     pomdp_learning_rate_process_noise_std: float = Field(
         default=LEARNING_RATE_PROCESS_NOISE_STD, ge=0.0
     )
@@ -96,7 +103,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _decision_index: int = PrivateAttr(default=0)
     _cycle_index: int = PrivateAttr(default=0)
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
-    _cycle_start_competences: dict[str, float] = PrivateAttr(default_factory=dict)
+    _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
 
     def practice_action_values(self) -> dict[str, float]:
@@ -119,7 +126,7 @@ class Tossing3DPomdpMethod(EesMethod):
         return {
             skill_name + " (belief mean)": mean_cost(belief=belief)
             for skill_name, belief in self._pomdp_state.skill_beliefs.items()
-            if isinstance(belief, ParticleFilterBelief)
+            if isinstance(belief, (ParticleFilterBelief, BayesianSkillBelief))
         }
 
     def practice_skill_improvement_potentials(self) -> dict[str, float]:
@@ -162,6 +169,16 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_state = make_default_tossing3d_belief(
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
+            model=self.pomdp_competence_model,
+            engine=self.pomdp_inference_engine,
+            inference_config=InferenceConfig(
+                competence_bins=self.pomdp_grid_competence_bins,
+                learning_rate_bins=self.pomdp_grid_learning_rate_bins,
+                sigma_competence=self.pomdp_competence_process_noise_std,
+                sigma_eta=self.pomdp_learning_rate_process_noise_std,
+                learning_rate_decay=self.pomdp_learning_rate_decay,
+                eta_max=self.pomdp_learning_rate_max,
+            ),
             additional_skill_names=tuple(skill.name for skill in self.human_skills()),
         )
         robot_skills = self.skills()
@@ -207,10 +224,6 @@ class Tossing3DPomdpMethod(EesMethod):
         # G scores the current session, so its accumulated cost starts at zero.
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
-        self._cycle_start_competences = {
-            skill_name: mean_competence(belief=belief)
-            for skill_name, belief in self._pomdp_state.skill_beliefs.items()
-        }
         self._practice_values.clear()
         self.record_diagnostic(
             event="session_start",
@@ -313,26 +326,38 @@ class Tossing3DPomdpMethod(EesMethod):
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
-        learning_rate_observations = observed_learning_rates(
-            state=self._pomdp_state,
-            cycle_start_competences=self._cycle_start_competences,
-        )
-        learning_rate_observation_counts = {
-            skill_name: self._pomdp_state.pending_examples[skill_name]
-            for skill_name in learning_rate_observations
-        }
+        training_examples = dict(self._pomdp_state.pending_examples)
+        for skill_name, belief in self._pomdp_state.skill_beliefs.items():
+            if isinstance(belief, BayesianSkillBelief):
+                self._belief_history.setdefault(skill_name, []).append(belief)
+        if self.decision_log is not None:
+            histories = {
+                skill_name: [
+                    cycle.model_dump(mode="json") for cycle in smooth_history(history=history)
+                ]
+                for skill_name, history in self._belief_history.items()
+            }
+            self.record_diagnostic(
+                event="smoothing",
+                competence_model=self.pomdp_competence_model,
+                inference_engine=self.pomdp_inference_engine,
+                history=histories,
+                use="retrospective_diagnostics_only",
+            )
         self._pomdp_state = refit_belief_state(
             state=self._pomdp_state,
-            cycle_start_competences=self._cycle_start_competences,
             learning_rate_process_noise_std=self.pomdp_learning_rate_process_noise_std,
+            advance_cycle=True,
         )
         self.record_diagnostic(
             event="refit",
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             estimated_costs=self.practice_skill_costs(),
-            learning_rate_observations=learning_rate_observations,
-            learning_rate_observation_counts=learning_rate_observation_counts,
+            training_examples=training_examples,
+            learning_rate_evidence="success_failure_only",
+            competence_model=self.pomdp_competence_model,
+            inference_engine=self.pomdp_inference_engine,
         )
         self._cycle_index += 1
 

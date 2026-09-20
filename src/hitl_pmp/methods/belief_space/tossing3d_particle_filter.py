@@ -30,7 +30,6 @@ class ParticleBelief(Protocol):
 
 BeliefT = TypeVar("BeliefT", bound=ParticleBelief)
 
-_OBSERVATION_SCALE = 0.02
 _OBSERVATION_DOF = 4.0
 _ESS_FRACTION = 0.5
 _SHRINKAGE = 0.98
@@ -82,18 +81,6 @@ def condition_cost(*, belief: BeliefT, observed_cost: float) -> BeliefT:
         observation=observed_cost,
         hypotheses=parameters[:, 2],
         scale=COST_OBSERVATION_SCALE,
-    )
-    masses = np.exp(log_masses - float(np.max(log_masses)))
-    return _condition(belief=belief, parameters=parameters, masses=masses)
-
-
-def condition_learning_rate(*, belief: BeliefT, observed_learning_rate: float) -> BeliefT:
-    assert LEARNING_RATE_MIN <= observed_learning_rate <= LEARNING_RATE_MAX
-    parameters, weights = belief.arrays()
-    log_masses = np.log(weights) + _student_t_log_likelihoods(
-        observation=observed_learning_rate,
-        hypotheses=parameters[:, 1],
-        scale=_OBSERVATION_SCALE,
     )
     masses = np.exp(log_masses - float(np.max(log_masses)))
     return _condition(belief=belief, parameters=parameters, masses=masses)

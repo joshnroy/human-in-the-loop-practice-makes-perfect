@@ -4,6 +4,7 @@ from functools import cache
 
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
+from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
@@ -34,7 +35,7 @@ def estimated_action_cost(*, state: Tossing3DBeliefState, action: GroundSkill) -
     mean and holds that estimate fixed within one search.
     """
     belief = state.skill_beliefs.get(action.skill.name)
-    if isinstance(belief, ParticleFilterBelief):
+    if isinstance(belief, (ParticleFilterBelief, BayesianSkillBelief)):
         return belief.mean_cost()
     return action.evaluate_practice_cost()
 

@@ -4,10 +4,12 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
+
 from .particle_filter_belief import ParticleFilterBelief
 from .weighted_hypothesis_belief import WeightedHypothesisBelief
 
-ConcreteSkillBelief = ParticleFilterBelief | WeightedHypothesisBelief
+ConcreteSkillBelief = BayesianSkillBelief | ParticleFilterBelief | WeightedHypothesisBelief
 
 
 class Tossing3DBeliefState(BaseModel):

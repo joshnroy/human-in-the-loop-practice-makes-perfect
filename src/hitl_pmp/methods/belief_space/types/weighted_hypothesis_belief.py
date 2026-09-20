@@ -73,25 +73,6 @@ class WeightedHypothesisBelief(SkillBelief):
             )
         )
 
-    def condition_learning_rate(
-        self, *, observed_learning_rate: float
-    ) -> "WeightedHypothesisBelief":
-        scale = 0.02
-        masses = [
-            item.probability
-            / (1.0 + ((observed_learning_rate - item.hypothesis.learning_rate) / scale) ** 2 / 4.0)
-            ** 2.5
-            for item in self.hypotheses
-        ]
-        normalizer = sum(masses)
-        return type(self)(
-            hypotheses=tuple(
-                WeightedHypothesis(hypothesis=item.hypothesis, probability=mass / normalizer)
-                for item, mass in zip(self.hypotheses, masses, strict=True)
-                if mass > 0.0
-            )
-        )
-
     def refit(self, *, training_examples: int) -> "WeightedHypothesisBelief":
         assert training_examples >= 0
         if training_examples == 0:

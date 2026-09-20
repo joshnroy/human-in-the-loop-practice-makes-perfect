@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 
 import numpy as np
@@ -43,7 +44,6 @@ class Tossing3DPracticeModel(BaseModel):
         GroundSkill,
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
     ] = PrivateAttr(default_factory=dict)
-    _belief_ids: dict[object, int] = PrivateAttr(default_factory=dict)
     _skill_belief_models: dict[GroundSkill, SkillBeliefModel] = PrivateAttr(default_factory=dict)
     _skill_belief_models_by_name: dict[str, SkillBeliefModel] = PrivateAttr(default_factory=dict)
 
@@ -184,16 +184,54 @@ class Tossing3DPracticeModel(BaseModel):
         return mask
 
     @staticmethod
-    def _belief_signature(*, belief: SkillBelief) -> tuple[object, ...]:
-        return (type(belief).__name__, *belief.signature())
+    def _belief_signature(*, belief: SkillBelief) -> bytes:
+        """Identify a posterior without retaining its potentially large buffers.
 
-    def _belief_id(self, *, belief: SkillBelief) -> int:
-        signature = self._belief_signature(belief=belief)
-        identifier = self._belief_ids.get(signature)
-        if identifier is None:
-            identifier = len(self._belief_ids)
-            self._belief_ids[signature] = identifier
-        return identifier
+        Search memo tables live for one solve. A persistent signature-to-integer
+        table previously kept every hypothetical posterior alive across solves,
+        including hundreds of KB per fixed-grid posterior. A SHA-256 identifier
+        is constant-size, requires no interning table, and includes all the same
+        signature information. Type tags and lengths prevent ambiguous joins.
+        """
+        digest = hashlib.sha256()
+
+        def update(*, value: object) -> None:
+            if isinstance(value, tuple):
+                digest.update(b"tuple" + len(value).to_bytes(8, "big"))
+                for item in value:
+                    update(value=item)
+                return
+            if isinstance(value, BaseModel):
+                digest.update(b"model")
+                update(
+                    value=(
+                        "pydantic",
+                        type(value).__module__,
+                        type(value).__qualname__,
+                        value.model_dump_json(),
+                    )
+                )
+                return
+            if isinstance(value, bytes):
+                tag, payload = b"bytes", value
+            elif isinstance(value, str):
+                tag, payload = b"string", value.encode("utf-8")
+            elif isinstance(value, bool):
+                tag, payload = b"bool", bytes([value])
+            elif isinstance(value, int):
+                tag, payload = b"int", str(value).encode("ascii")
+            elif isinstance(value, float):
+                # Python's old tuple keys treat positive and negative zero equally.
+                tag, payload = b"float", (0.0 if value == 0 else value).hex().encode("ascii")
+            elif value is None:
+                tag, payload = b"none", b""
+            else:
+                raise TypeError(f"unsupported belief signature component: {type(value).__name__}")
+            digest.update(tag + len(payload).to_bytes(8, "big"))
+            digest.update(payload)
+
+        update(value=(type(belief).__module__, type(belief).__qualname__, belief.signature()))
+        return digest.digest()
 
     def search_cache_key(
         self,
@@ -207,7 +245,7 @@ class Tossing3DPracticeModel(BaseModel):
         return (
             self._atoms_mask(atoms=environment_state.true_atoms),
             tuple(
-                (skill_name, self._belief_id(belief=belief))
+                (skill_name, self._belief_signature(belief=belief))
                 for skill_name, belief in sorted(belief_state.skill_beliefs.items())
             ),
             tuple(sorted(belief_state.pending_examples.items())),

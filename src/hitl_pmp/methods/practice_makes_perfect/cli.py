@@ -194,12 +194,30 @@ class Tossing3DPomdpCli(EesCli):
             help="Particles per robot skill.",
         )
         parser.add_argument(
+            "--pomdp-competence-model",
+            choices=("global_curve", "local_trend"),
+            default="local_trend",
+            help="Competence dynamics: notebook Model A (phi curve) or Model B (local trend).",
+        )
+        parser.add_argument(
+            "--pomdp-inference-engine",
+            choices=("particle", "grid"),
+            default="particle",
+            help="Bayesian filtering representation; costs retain their shared particle model.",
+        )
+        parser.add_argument("--pomdp-grid-competence-bins", type=int, default=25)
+        parser.add_argument("--pomdp-grid-learning-rate-bins", type=int, default=16)
+        parser.add_argument("--pomdp-competence-process-noise-std", type=float, default=0.03)
+        parser.add_argument("--pomdp-learning-rate-decay", type=float, default=0.9)
+        parser.add_argument("--pomdp-learning-rate-max", type=float, default=0.15)
+        parser.add_argument(
             "--pomdp-learning-rate-process-noise-std",
             type=float,
             default=Tossing3DPomdpMethod.model_fields[
                 "pomdp_learning_rate_process_noise_std"
             ].default,
-            help="Standard deviation of the per-cycle Gaussian random walk on eta.",
+            help="Model B learning-rate transition noise; "
+            "eta is inferred from success/failure only.",
         )
         parser.add_argument(
             "--pomdp-linear-cost-lambda",
@@ -247,6 +265,13 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
+                pomdp_competence_model=args.pomdp_competence_model,
+                pomdp_inference_engine=args.pomdp_inference_engine,
+                pomdp_grid_competence_bins=args.pomdp_grid_competence_bins,
+                pomdp_grid_learning_rate_bins=args.pomdp_grid_learning_rate_bins,
+                pomdp_competence_process_noise_std=args.pomdp_competence_process_noise_std,
+                pomdp_learning_rate_decay=args.pomdp_learning_rate_decay,
+                pomdp_learning_rate_max=args.pomdp_learning_rate_max,
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 decision_log=(
