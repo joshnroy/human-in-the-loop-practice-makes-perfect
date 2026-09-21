@@ -1,0 +1,52 @@
+[
+  {
+    "check": "lint",
+    "command": [
+      "ruff",
+      "check",
+      "."
+    ],
+    "returncode": 0
+  },
+  {
+    "check": "format",
+    "command": [
+      "ruff",
+      "format",
+      "--check",
+      "."
+    ],
+    "returncode": 0
+  },
+  {
+    "check": "types",
+    "command": [
+      "mypy",
+      "src"
+    ],
+    "returncode": 0
+  },
+  {
+    "check": "imports",
+    "command": [
+      "lint-imports"
+    ],
+    "returncode": 0
+  },
+  {
+    "check": "doc_links",
+    "command": [
+      "bash",
+      "scripts/check_doc_links.sh"
+    ],
+    "returncode": 0
+  },
+  {
+    "check": "tests",
+    "command": [
+      "pytest",
+      "-q"
+    ],
+    "returncode": 0
+  }
+]

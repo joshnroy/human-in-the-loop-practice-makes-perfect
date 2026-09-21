@@ -191,6 +191,9 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
         "parameter_rejection_reason",
         lambda self, **kwargs: "blocked" if reject else None,
     )
+    # Tossing3D replans every practice action, so a preloaded plan alone does
+    # not isolate dispatch accounting from the planner's STOP criterion.
+    monkeypatch.setattr(_EesEpisode, "_next_plan", lambda self, **kwargs: [ground])
     episode = _EesEpisode(method=method, goal=frozenset(), practicing=practicing)
     episode._plan = [ground]  # noqa: SLF001 (isolate dispatch from search)
     method.observe_practice_action_budget(remaining_actions=7)

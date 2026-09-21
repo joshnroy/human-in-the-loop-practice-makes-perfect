@@ -157,3 +157,12 @@ Use the repository's memory-limited service convention for long workstation runs
 The original full logs, manifest, dependency provenance, monitoring snapshots and
 planner diagnosis are retained locally under
 `artifacts/tossing3d-competence-2x2-20260920/`.
+
+
+## Follow-up qualification (2026-09-21)
+
+The [subsequent production integration and algorithm audit](2026-09-21-tossing3d-production.md)
+identifies additional reset-region, proposal-feasibility, sampler-lifecycle, and
+stochastic-planning limitations, and reports a separate four-arm rerun. These
+findings qualify interpretation of this earlier pilot; its measurements above
+remain unchanged.

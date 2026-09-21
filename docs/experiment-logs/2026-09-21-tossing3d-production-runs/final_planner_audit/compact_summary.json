@@ -1,0 +1,382 @@
+[
+  {
+    "run": "global_curve-grid-seed_00",
+    "log": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/global_curve-grid/seed_00/pomdp_decisions.jsonl",
+    "decisions": 97,
+    "STOPs": 9,
+    "stopped_action_slots": 112,
+    "dispatches": 88,
+    "refits": 10,
+    "fixed_skill_training_credit_errors": [],
+    "baseline_replays": 9,
+    "states_with_longer_real_budget": 6,
+    "states_with_beneficial_deeper_policy": 0,
+    "resource_limited_states": 0,
+    "beneficial_decisions": [],
+    "first_full_budget_STOP": {
+      "cycle_1based": 6,
+      "decision": 93,
+      "root_deployment_J": 0.45355205039855184,
+      "accumulated_cost": 0.0,
+      "toss_competence_mean": 0.46420980467873746,
+      "toss_learning_rate_mean": 0.0016993204068777414,
+      "sampler_training": {
+        "MoveToTossLocationAndToss": {
+          "successes": 1,
+          "failures": 32,
+          "fitted_successes": 1,
+          "fitted_failures": 32
+        }
+      }
+    },
+    "descriptive_evaluation_context": {
+      "arm": "global_curve-grid",
+      "final_effective_fit_checkpoint": 5,
+      "training_support_at_fit": {
+        "successes": 1,
+        "failures": 32,
+        "fitted_successes": 1,
+        "fitted_failures": 32
+      },
+      "forecast_toss_competence_at_fit": 0.46420980467873746,
+      "forecast_toss_learning_rate_at_fit": 0.0016993204068777414,
+      "forecast_cost_free_deployment_J_at_fit": 0.45355205039855184,
+      "descriptive_same_parameter_policy_evaluations": {
+        "tasks_solved": 21,
+        "task_episodes": 60,
+        "toss_attempts": 61,
+        "toss_successes": 21
+      },
+      "per_checkpoint": {
+        "5": {
+          "tasks_solved": 3,
+          "task_episodes": 10,
+          "toss_successes": 3,
+          "toss_attempts": 10
+        },
+        "6": {
+          "tasks_solved": 5,
+          "task_episodes": 10,
+          "toss_successes": 5,
+          "toss_attempts": 10
+        },
+        "7": {
+          "tasks_solved": 4,
+          "task_episodes": 10,
+          "toss_successes": 4,
+          "toss_attempts": 10
+        },
+        "8": {
+          "tasks_solved": 5,
+          "task_episodes": 10,
+          "toss_successes": 5,
+          "toss_attempts": 11
+        },
+        "9": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        },
+        "10": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        }
+      },
+      "limitations": [
+        "Repeated evaluation on the same ten scenes; not independent scenes.",
+        "Task value and conditional toss competence are distinct quantities.",
+        "Canonical deployment forecast and the real replanning evaluator need not have identical dynamics.",
+        "Forecast-versus-count differences alone do not establish miscalibration.",
+        "Evaluation outcomes did not enter STOP/depth decisions or model fitting."
+      ]
+    }
+  },
+  {
+    "run": "global_curve-particle-seed_00",
+    "log": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/global_curve-particle/seed_00/pomdp_decisions.jsonl",
+    "decisions": 97,
+    "STOPs": 9,
+    "stopped_action_slots": 112,
+    "dispatches": 88,
+    "refits": 10,
+    "fixed_skill_training_credit_errors": [],
+    "baseline_replays": 9,
+    "states_with_longer_real_budget": 6,
+    "states_with_beneficial_deeper_policy": 0,
+    "resource_limited_states": 0,
+    "beneficial_decisions": [],
+    "first_full_budget_STOP": {
+      "cycle_1based": 6,
+      "decision": 93,
+      "root_deployment_J": 0.47565157308568795,
+      "accumulated_cost": 0.0,
+      "toss_competence_mean": 0.4837880584787748,
+      "toss_learning_rate_mean": 0.0016589329342424903,
+      "sampler_training": {
+        "MoveToTossLocationAndToss": {
+          "successes": 1,
+          "failures": 32,
+          "fitted_successes": 1,
+          "fitted_failures": 32
+        }
+      }
+    },
+    "descriptive_evaluation_context": {
+      "arm": "global_curve-particle",
+      "final_effective_fit_checkpoint": 5,
+      "training_support_at_fit": {
+        "successes": 1,
+        "failures": 32,
+        "fitted_successes": 1,
+        "fitted_failures": 32
+      },
+      "forecast_toss_competence_at_fit": 0.4837880584787748,
+      "forecast_toss_learning_rate_at_fit": 0.0016589329342424903,
+      "forecast_cost_free_deployment_J_at_fit": 0.47565157308568795,
+      "descriptive_same_parameter_policy_evaluations": {
+        "tasks_solved": 21,
+        "task_episodes": 60,
+        "toss_attempts": 61,
+        "toss_successes": 21
+      },
+      "per_checkpoint": {
+        "5": {
+          "tasks_solved": 3,
+          "task_episodes": 10,
+          "toss_successes": 3,
+          "toss_attempts": 10
+        },
+        "6": {
+          "tasks_solved": 5,
+          "task_episodes": 10,
+          "toss_successes": 5,
+          "toss_attempts": 10
+        },
+        "7": {
+          "tasks_solved": 4,
+          "task_episodes": 10,
+          "toss_successes": 4,
+          "toss_attempts": 10
+        },
+        "8": {
+          "tasks_solved": 5,
+          "task_episodes": 10,
+          "toss_successes": 5,
+          "toss_attempts": 11
+        },
+        "9": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        },
+        "10": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        }
+      },
+      "limitations": [
+        "Repeated evaluation on the same ten scenes; not independent scenes.",
+        "Task value and conditional toss competence are distinct quantities.",
+        "Canonical deployment forecast and the real replanning evaluator need not have identical dynamics.",
+        "Forecast-versus-count differences alone do not establish miscalibration.",
+        "Evaluation outcomes did not enter STOP/depth decisions or model fitting."
+      ]
+    }
+  },
+  {
+    "run": "local_trend-grid-seed_00",
+    "log": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/local_trend-grid/seed_00/pomdp_decisions.jsonl",
+    "decisions": 103,
+    "STOPs": 9,
+    "stopped_action_slots": 106,
+    "dispatches": 94,
+    "refits": 10,
+    "fixed_skill_training_credit_errors": [],
+    "baseline_replays": 9,
+    "states_with_longer_real_budget": 5,
+    "states_with_beneficial_deeper_policy": 0,
+    "resource_limited_states": 0,
+    "beneficial_decisions": [],
+    "first_full_budget_STOP": {
+      "cycle_1based": 6,
+      "decision": 99,
+      "root_deployment_J": 0.7998596517204463,
+      "accumulated_cost": 0.0,
+      "toss_competence_mean": 0.8056269055080441,
+      "toss_learning_rate_mean": 0.0021701936785395886,
+      "sampler_training": {
+        "MoveToTossLocationAndToss": {
+          "successes": 1,
+          "failures": 34,
+          "fitted_successes": 1,
+          "fitted_failures": 34
+        }
+      }
+    },
+    "descriptive_evaluation_context": {
+      "arm": "local_trend-grid",
+      "final_effective_fit_checkpoint": 5,
+      "training_support_at_fit": {
+        "successes": 1,
+        "failures": 34,
+        "fitted_successes": 1,
+        "fitted_failures": 34
+      },
+      "forecast_toss_competence_at_fit": 0.8056269055080441,
+      "forecast_toss_learning_rate_at_fit": 0.0021701936785395886,
+      "forecast_cost_free_deployment_J_at_fit": 0.7998596517204463,
+      "descriptive_same_parameter_policy_evaluations": {
+        "tasks_solved": 11,
+        "task_episodes": 60,
+        "toss_attempts": 60,
+        "toss_successes": 11
+      },
+      "per_checkpoint": {
+        "5": {
+          "tasks_solved": 3,
+          "task_episodes": 10,
+          "toss_successes": 3,
+          "toss_attempts": 10
+        },
+        "6": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        },
+        "7": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        },
+        "8": {
+          "tasks_solved": 1,
+          "task_episodes": 10,
+          "toss_successes": 1,
+          "toss_attempts": 10
+        },
+        "9": {
+          "tasks_solved": 1,
+          "task_episodes": 10,
+          "toss_successes": 1,
+          "toss_attempts": 10
+        },
+        "10": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        }
+      },
+      "limitations": [
+        "Repeated evaluation on the same ten scenes; not independent scenes.",
+        "Task value and conditional toss competence are distinct quantities.",
+        "Canonical deployment forecast and the real replanning evaluator need not have identical dynamics.",
+        "Forecast-versus-count differences alone do not establish miscalibration.",
+        "Evaluation outcomes did not enter STOP/depth decisions or model fitting."
+      ]
+    }
+  },
+  {
+    "run": "local_trend-particle-seed_00",
+    "log": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/local_trend-particle/seed_00/pomdp_decisions.jsonl",
+    "decisions": 103,
+    "STOPs": 9,
+    "stopped_action_slots": 106,
+    "dispatches": 94,
+    "refits": 10,
+    "fixed_skill_training_credit_errors": [],
+    "baseline_replays": 9,
+    "states_with_longer_real_budget": 5,
+    "states_with_beneficial_deeper_policy": 0,
+    "resource_limited_states": 0,
+    "beneficial_decisions": [],
+    "first_full_budget_STOP": {
+      "cycle_1based": 6,
+      "decision": 99,
+      "root_deployment_J": 0.7713536654632672,
+      "accumulated_cost": 0.0,
+      "toss_competence_mean": 0.7794197319116698,
+      "toss_learning_rate_mean": 0.0025245288198434503,
+      "sampler_training": {
+        "MoveToTossLocationAndToss": {
+          "successes": 1,
+          "failures": 34,
+          "fitted_successes": 1,
+          "fitted_failures": 34
+        }
+      }
+    },
+    "descriptive_evaluation_context": {
+      "arm": "local_trend-particle",
+      "final_effective_fit_checkpoint": 5,
+      "training_support_at_fit": {
+        "successes": 1,
+        "failures": 34,
+        "fitted_successes": 1,
+        "fitted_failures": 34
+      },
+      "forecast_toss_competence_at_fit": 0.7794197319116698,
+      "forecast_toss_learning_rate_at_fit": 0.0025245288198434503,
+      "forecast_cost_free_deployment_J_at_fit": 0.7713536654632672,
+      "descriptive_same_parameter_policy_evaluations": {
+        "tasks_solved": 11,
+        "task_episodes": 60,
+        "toss_attempts": 60,
+        "toss_successes": 11
+      },
+      "per_checkpoint": {
+        "5": {
+          "tasks_solved": 3,
+          "task_episodes": 10,
+          "toss_successes": 3,
+          "toss_attempts": 10
+        },
+        "6": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        },
+        "7": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        },
+        "8": {
+          "tasks_solved": 1,
+          "task_episodes": 10,
+          "toss_successes": 1,
+          "toss_attempts": 10
+        },
+        "9": {
+          "tasks_solved": 1,
+          "task_episodes": 10,
+          "toss_successes": 1,
+          "toss_attempts": 10
+        },
+        "10": {
+          "tasks_solved": 2,
+          "task_episodes": 10,
+          "toss_successes": 2,
+          "toss_attempts": 10
+        }
+      },
+      "limitations": [
+        "Repeated evaluation on the same ten scenes; not independent scenes.",
+        "Task value and conditional toss competence are distinct quantities.",
+        "Canonical deployment forecast and the real replanning evaluator need not have identical dynamics.",
+        "Forecast-versus-count differences alone do not establish miscalibration.",
+        "Evaluation outcomes did not enter STOP/depth decisions or model fitting."
+      ]
+    }
+  }
+]
