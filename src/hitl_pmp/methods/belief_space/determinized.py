@@ -123,6 +123,16 @@ class DeterminizedAStarPlanner(
         # b0's cumulative search cost g (cost-to-come), not its objective value J.
         closed: set[object] = set()
         cost = {root_key: 0.0}
+        # Potential differences in J can make edges negative. A cheaper path to
+        # an expanded node must therefore propagate through its descendants.
+        # Retain its sampled edges so reopening cannot redraw the determinization.
+        sampled_edges: dict[
+            object,
+            list[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]],
+        ] = {}
+        reopened_nodes = 0
+        cached_successor_relaxations = 0
+        stale_queue_entries = 0
         diagnostics = DeterminizedSearchDiagnostics()
         sequence = 0
         # Algorithm 3 uses one iteration per Open pop; this is also our traversed-node count.
@@ -158,6 +168,11 @@ class DeterminizedAStarPlanner(
         while open_nodes and iterations < self.max_iterations:
             current_node = heapq.heappop(open_nodes)
             iterations += 1
+            if self.strictly_improves(
+                candidate=cost[current_node.cache_info.key], previous=current_node.g
+            ):
+                stale_queue_entries += 1
+                continue
             # Algorithm 3, lines 5 and 9: pop lowest(Open), then skip Closed nodes.
             if current_node.cache_info.key in closed:
                 continue
@@ -171,36 +186,60 @@ class DeterminizedAStarPlanner(
                 diagnostics.action_horizon_terminal_nodes += 1
                 continue
 
-            # Algorithm 3: for action a applicable in belief b.
-            for action in model.get_valid_actions(
-                environment_state=current_node.belief.environment_state
-            ):
-                diagnostics.action_transitions_evaluated += 1
-                # Algorithm 3, lines 14-15 -- the determinization step. Each entry is
-                # one possible joint (next environment state, realized cost,
-                # observation probability), not a latent particle. Sampling one entry
-                # jointly selects the next state from line 14 and observation from line 15.
-                joint_transition_outcomes = model.transition_outcomes(
-                    environment_state=current_node.belief.environment_state,
-                    practice_action=action,
-                    belief_state=current_node.belief.belief_state,
+            edges = sampled_edges.get(current_node.cache_info.key)
+            sample_new_edges = edges is None
+            if edges is None:
+                edges = []
+                sampled_edges[current_node.cache_info.key] = edges
+                actions = model.get_valid_actions(
+                    environment_state=current_node.belief.environment_state
                 )
-                diagnostics.chance_outcomes_enumerated += len(joint_transition_outcomes)
-                (
-                    next_environment_state,
-                    sampled_cost,
-                    estimated_observation_probability,
-                ) = self.sample_outcome(outcomes=joint_transition_outcomes, action=action)
+            else:
+                actions = [edge[0] for edge in edges]
+                cached_successor_relaxations += len(edges)
+
+            # Keep the first expansion's original sample/evaluate order even if
+            # the model shares random state between transitions and J.
+            for edge_index, action in enumerate(actions):
+                if sample_new_edges:
+                    diagnostics.action_transitions_evaluated += 1
+                    # Algorithm 3, lines 14-15: jointly sample one state/cost/
+                    # observation outcome, once per unique state/action edge.
+                    joint_transition_outcomes = model.transition_outcomes(
+                        environment_state=current_node.belief.environment_state,
+                        practice_action=action,
+                        belief_state=current_node.belief.belief_state,
+                    )
+                    diagnostics.chance_outcomes_enumerated += len(joint_transition_outcomes)
+                    (
+                        next_environment_state,
+                        sampled_cost,
+                        estimated_observation_probability,
+                    ) = self.sample_outcome(outcomes=joint_transition_outcomes, action=action)
+                    next_belief = model.compute_next_belief_state(
+                        belief_state=current_node.belief.belief_state,
+                        environment_state=current_node.belief.environment_state,
+                        potential_next_environment_state=next_environment_state,
+                        practice_action=action,
+                    )
+                    edges.append((
+                        action,
+                        next_environment_state,
+                        next_belief,
+                        sampled_cost,
+                        estimated_observation_probability,
+                    ))
+                    diagnostics.generated_successors += 1
+                else:
+                    (
+                        _,
+                        next_environment_state,
+                        next_belief,
+                        sampled_cost,
+                        estimated_observation_probability,
+                    ) = edges[edge_index]
                 next_cost = current_node.belief.summed_cost + sampled_cost
                 next_depth = current_node.diagnostic_info.depth + 1
-                # Algorithm 3, line 16: b' <- Branch(b, a, o).
-                next_belief = model.compute_next_belief_state(
-                    belief_state=current_node.belief.belief_state,
-                    environment_state=current_node.belief.environment_state,
-                    potential_next_environment_state=next_environment_state,
-                    practice_action=action,
-                )
-                diagnostics.generated_successors += 1
                 # Only a root edge establishes the first action. Descendants inherit
                 # it so line 26 can return the first action on the selected path.
                 first_action = (
@@ -255,8 +294,13 @@ class DeterminizedAStarPlanner(
                 )  # Algorithm 3: g'.
                 # Algorithm 3, lines 20-22: insert b' only for a newly discovered
                 # or strictly cheaper path.
-                if key not in cost or next_path_cost < cost[key]:
+                if key not in cost or self.strictly_improves(
+                    candidate=next_path_cost, previous=cost[key]
+                ):
                     cost[key] = next_path_cost
+                    if key in closed:
+                        closed.remove(key)
+                        reopened_nodes += 1
                     if next_path_cost < best_g:
                         best_g = next_path_cost
                         best_objective_value = value
@@ -313,6 +357,9 @@ class DeterminizedAStarPlanner(
                 generated_successors=diagnostics.generated_successors,
                 unique_nodes=len(values_by_key),
                 merged_nodes=diagnostics.merged_nodes,
+                reopened_nodes=reopened_nodes,
+                cached_successor_relaxations=cached_successor_relaxations,
+                stale_queue_entries=stale_queue_entries,
                 action_transitions_evaluated=diagnostics.action_transitions_evaluated,
                 chance_outcomes_enumerated=diagnostics.chance_outcomes_enumerated,
                 frontier_nodes=len(open_nodes),
@@ -329,6 +376,13 @@ class DeterminizedAStarPlanner(
                 termination_reason=diagnostics.termination_reason,
             )
         return best_objective_value, best_action
+
+    @staticmethod
+    def strictly_improves(*, candidate: float, previous: float) -> bool:
+        """Ignore roundoff in telescoping potential costs when relaxing a path."""
+        return candidate < previous and not math.isclose(
+            candidate, previous, rel_tol=1e-12, abs_tol=1e-15
+        )
 
     def heuristic(self, *, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
         """Generic hook used at line 19 where Algorithm 3 adds ``alpha * h_hat``.

@@ -241,14 +241,15 @@ def test_random_toss_is_sampler_data_and_cost_evidence_but_never_competence_evid
     assert _belief(method=method, name=TOSS_SKILL) == after_random
     method.end_cycle()
     advanced = _belief(method=method, name=TOSS_SKILL)
-    assert advanced.total_training_examples == advanced.incoming_training_examples == 1
-    assert advanced.process_transition_count == 1
+    assert advanced.total_training_examples == advanced.incoming_training_examples == 0
+    assert advanced.process_transition_count == 0
+    assert method.pomdp_state.sampler_training[TOSS_SKILL].failures == 1
     assert advanced.cycle_successes == advanced.cycle_failures == 0
     assert sampler.is_fitted
 
 
 @pytest.mark.parametrize(("model", "engine"), ARMS)
-def test_hypothetical_and_real_positive_example_refits_agree_without_mutating_live_state(
+def test_hypothetical_and_real_one_class_refits_preserve_competence_without_mutation(
     *, model: Model, engine: Engine
 ) -> None:
     method = _build(model=model, engine=engine)
@@ -265,8 +266,11 @@ def test_hypothetical_and_real_positive_example_refits_agree_without_mutating_li
     method.end_cycle()
     for name in (PICK_SKILL, TOSS_SKILL):
         actual = _belief(method=method, name=name)
-        assert actual == forecast.skill_beliefs[name]
-        assert actual.total_training_examples == actual.process_transition_count == 1
+        predicted = forecast.skill_beliefs[name]
+        assert isinstance(predicted, BayesianSkillBelief)
+        assert actual.latent_values == predicted.latent_values
+        assert actual.state_weights == predicted.state_weights
+        assert actual.total_training_examples == actual.process_transition_count == 0
     assert method.pomdp_state.pending_examples == {}
     assert method.sampler(skill_name=TOSS_SKILL, param_dim=4).is_fitted
 
@@ -286,7 +290,7 @@ def test_cycle_logs_preserve_sf_history_and_zero_example_cycles_for_smoothing(
     assert after_empty.latent_values == after_learning.latent_values
     assert after_empty.state_weights == after_learning.state_weights
     assert after_empty.cost_belief == after_learning.cost_belief
-    assert after_empty.total_training_examples == after_empty.process_transition_count == 1
+    assert after_empty.total_training_examples == after_empty.process_transition_count == 0
     assert after_empty.incoming_training_examples == 0
     assert after_empty.cycle_index == 2
     method.observe_outcome(ground_skill=pick, success=False)
@@ -294,15 +298,11 @@ def test_cycle_logs_preserve_sf_history_and_zero_example_cycles_for_smoothing(
     history = method._belief_history[PICK_SKILL]  # noqa: SLF001
     assert [(b.cycle_successes, b.cycle_failures) for b in history] == [(1, 0), (0, 0), (0, 1)]
     assert [b.cycle_index for b in history] == [0, 1, 2]
-    assert [b.total_training_examples for b in history] == [0, 1, 1]
-    assert [b.incoming_training_examples for b in history] == [0, 1, 0]
+    assert [b.total_training_examples for b in history] == [0, 0, 0]
+    assert [b.incoming_training_examples for b in history] == [0, 0, 0]
     events = list(map(json.loads, decision_log.read_text().splitlines()))
     refits = [event for event in events if event["event"] == "refit"]
-    assert [event["training_examples"] for event in refits] == [
-        {PICK_SKILL: 1},
-        {},
-        {PICK_SKILL: 1},
-    ]
+    assert [event["training_examples"] for event in refits] == [{}, {}, {}]
     assert all(event["learning_rate_evidence"] == "success_failure_only" for event in refits)
     assert all("learning_rate_observations" not in event for event in events)
     smoothing = [event for event in events if event["event"] == "smoothing"]

@@ -84,7 +84,7 @@ def test_reset_success_is_known_even_with_zero_performance_posterior(*, reset_na
 
 
 @pytest.mark.parametrize("reset_name", sorted(RESET_SKILLS))
-def test_real_reset_still_updates_identical_cost_performance_and_training_filters(
+def test_real_reset_still_updates_identical_cost_and_performance_filters(
     *, reset_name: str
 ) -> None:
     method = _method()
@@ -99,10 +99,10 @@ def test_real_reset_still_updates_identical_cost_performance_and_training_filter
     )
     expected = before.condition_execution(success=True, observed_cost=5.0)
     assert method.pomdp_state.skill_beliefs[reset_name] == expected
-    assert method.pomdp_state.pending_examples[reset_name] == 1
+    assert method.pomdp_state.pending_examples.get(reset_name, 0) == 0
     assert method.pomdp_state.accumulated_cost == 5.0
     refitted = refit_belief_state(state=method.pomdp_state)
-    assert refitted.skill_beliefs[reset_name] == expected.refit(training_examples=1)
+    assert refitted.skill_beliefs[reset_name] == expected
 
 
 @pytest.mark.parametrize("gripper", ["HandEmpty", "ClosedEmpty"])

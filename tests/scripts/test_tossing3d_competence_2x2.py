@@ -8,9 +8,19 @@ from hitl_pmp.cli import Cli
 from scripts.tossing3d_competence_2x2 import execute_experiments, experiment_commands
 
 
-def test_four_commands_parse_with_only_model_and_engine_varying(*, tmp_path: Path) -> None:
+@pytest.mark.parametrize("search_iterations", [100, 1000])
+@pytest.mark.parametrize("solver,depth", [("determinized_astar", 3), ("expectimax", 6)])
+def test_four_commands_parse_with_only_model_and_engine_varying(
+    *, tmp_path: Path, search_iterations: int, solver: str, depth: int
+) -> None:
     commands = experiment_commands(
-        results_root=tmp_path, num_seeds=1, num_cycles=10, python="python"
+        results_root=tmp_path,
+        num_seeds=1,
+        num_cycles=10,
+        python="python",
+        max_search_iterations=search_iterations,
+        solver=solver,
+        search_depth=depth,
     )
     parsed = [Cli.parse_args(argv=command[3:]) for _, command in commands]
     assert {(args.pomdp_competence_model, args.pomdp_inference_engine) for args in parsed} == {
@@ -27,6 +37,9 @@ def test_four_commands_parse_with_only_model_and_engine_varying(*, tmp_path: Pat
         assert args.seed == 0
         assert args.human_reset_practice_cost == 5
         assert args.pomdp_linear_cost_lambda == 0.0003
+        assert args.pomdp_max_search_iterations == search_iterations
+        assert args.pomdp_solver == solver
+        assert args.pomdp_search_depth == depth
         assert args.record_episode_traces
         config = vars(args).copy()
         for key in ("pomdp_competence_model", "pomdp_inference_engine", "output_dir"):

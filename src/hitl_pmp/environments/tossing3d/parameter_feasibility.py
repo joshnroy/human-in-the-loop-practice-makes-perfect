@@ -1,7 +1,7 @@
 """Reject provably blocked toss base targets without predicting throw success.
 
-This diagnostic does not change the production sampler. It is deliberately a
-one-sided check: accepting a proposal means only that these geometric proofs did
+The learned sampler uses this one-sided check before selecting parameters.
+Accepting a proposal means only that these geometric proofs did
 not reject it. No search, simulator step, random draw, or speed/timing tuning is
 performed, and missing geometry is accepted.
 """
@@ -23,7 +23,7 @@ _GEOMETRY_TOLERANCE = 1e-9
 
 
 class TossParameterFeasibility:
-    """A pure geometry gate shared by diagnostic proposal generators."""
+    """A pure geometry gate shared by execution and diagnostic proposal generators."""
 
     @staticmethod
     def rejection_reason(

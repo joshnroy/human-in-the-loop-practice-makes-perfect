@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
-from hitl_pmp.core.method.types import GroundSkill, Policy, Skill
+from hitl_pmp.core.method.types import GroundSkill, ParameterSamplingDiagnostics, Policy, Skill
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
@@ -62,7 +62,10 @@ def make_belief_space_planner(
     if planner is not None:
         return planner
     if solver == "expectimax":
-        return ExpectimaxPlanner()
+        return ExpectimaxPlanner(
+            use_model_j=True,
+            observation_probability_weight=observation_probability_weight,
+        )
     return DeterminizedAStarPlanner(
         max_iterations=max_iterations,
         seed=seed,
@@ -268,6 +271,23 @@ class Tossing3DPomdpMethod(EesMethod):
             estimated_costs=self.practice_skill_costs(),
         )
 
+    def record_parameter_sampling(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        explore: bool,
+        diagnostics: ParameterSamplingDiagnostics,
+    ) -> None:
+        super().record_parameter_sampling(
+            ground_skill=ground_skill, explore=explore, diagnostics=diagnostics
+        )
+        self.record_diagnostic(
+            event="parameter_sampling",
+            skill=ground_skill.skill.name,
+            explore=explore,
+            **diagnostics.model_dump(mode="json"),
+        )
+
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         """Charge each attempted action immediately, including a final-step reset."""
         action_cost = ground_skill.evaluate_practice_cost()
@@ -352,19 +372,23 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
         )
         self._pomdp_state = self._pomdp_model.observe_training_example(
-            state=self._pomdp_state, skill_name=skill_name
+            state=self._pomdp_state, skill_name=skill_name, success=success
         )
 
     def end_cycle(self) -> None:
         """Advance inferred learning curves at the session boundary.
 
-        For parameter-free skills this is a forecast, not a controller update.
-        Subsequent outcomes reweight improving versus stationary hypotheses.
+        Fixed controllers and one-class-only sampler refits have no learning
+        transition. Their S/F evidence still updates the competence posterior.
         """
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
         training_examples = dict(self._pomdp_state.pending_examples)
+        effective_training_examples = {
+            name: training.refit_examples
+            for name, training in self._pomdp_state.sampler_training.items()
+        }
         for skill_name, belief in self._pomdp_state.skill_beliefs.items():
             if isinstance(belief, BayesianSkillBelief):
                 self._belief_history.setdefault(skill_name, []).append(belief)
@@ -393,6 +417,7 @@ class Tossing3DPomdpMethod(EesMethod):
             beliefs=self.belief_diagnostics(),
             estimated_costs=self.practice_skill_costs(),
             training_examples=training_examples,
+            effective_training_examples=effective_training_examples,
             learning_rate_evidence="success_failure_only",
             competence_model=self.pomdp_competence_model,
             inference_engine=self.pomdp_inference_engine,
@@ -470,7 +495,7 @@ class Tossing3DPomdpMethod(EesMethod):
             ),
             observation_probability_weight=(
                 planner.observation_probability_weight
-                if isinstance(planner, DeterminizedAStarPlanner)
+                if isinstance(planner, (DeterminizedAStarPlanner, ExpectimaxPlanner))
                 else None
             ),
             model=self._pomdp_model.model_dump(mode="json"),

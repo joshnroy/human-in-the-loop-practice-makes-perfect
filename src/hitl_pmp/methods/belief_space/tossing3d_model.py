@@ -193,10 +193,12 @@ class Tossing3DPracticeModel(BaseModel):
         )
 
     def observe_training_example(
-        self, *, state: Tossing3DBeliefState, skill_name: str
+        self, *, state: Tossing3DBeliefState, skill_name: str, success: bool
     ) -> Tossing3DBeliefState:
         """Apply any learning-curve update associated with a sampler example."""
-        return self._skill_belief_models_by_name[skill_name].observe_training_example(state=state)
+        return self._skill_belief_models_by_name[skill_name].observe_training_example(
+            state=state, success=success
+        )
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
         """Return applicable actions except dominated symbolic reset self-loops.
@@ -296,6 +298,7 @@ class Tossing3DPracticeModel(BaseModel):
                 for skill_name, belief in sorted(belief_state.skill_beliefs.items())
             ),
             tuple(sorted(belief_state.pending_examples.items())),
+            tuple(sorted(belief_state.sampler_training.items())),
             belief_state.accumulated_cost,
             horizon,
         )
@@ -370,6 +373,7 @@ class Tossing3DPracticeModel(BaseModel):
             environment_state.atoms,
             tuple(sorted(state.skill_beliefs.items())),
             tuple(sorted(state.pending_examples.items())),
+            tuple(sorted(state.sampler_training.items())),
             state.accumulated_cost,
             cost,
         )

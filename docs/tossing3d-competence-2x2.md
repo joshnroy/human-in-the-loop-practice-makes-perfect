@@ -49,6 +49,31 @@ An actual cycle with zero examples advances diagnostic bookkeeping but leaves th
 latent distribution unchanged. Hypothetical zero-example refits are pure identity
 operations. Forecasts never consume the live inference random stream.
 
+The runtime connection additionally respects when the actual parameter policy can
+change. PickCube, OpenGripper, and resets have fixed controllers: their executions
+still condition competence and cost, but receive no training credit or competence
+transition at refit. For toss, the state records cumulative positive/negative
+sampler labels separately from the label counts used by the current fit. Random
+exploration labels remain training data without becoming policy-competence evidence.
+
+An unfitted or one-class sampler returns a uniform candidate with the policy
+observation flag, bypassing epsilon entirely. Planning therefore sets the epsilon
+branch probability to zero until a mixed-class fit has occurred. Collecting the
+opposite label changes the next refit's possibilities, not the policy currently
+executing within that cycle. A mixed-class fit only makes epsilon possible;
+candidate-specific score ties can still trigger the runtime's uniform fallback,
+which the symbolic forecast does not represent.
+
+One-class refits leave the competence distribution unchanged because their
+constant classifier cannot change the selection policy. Raw examples remain
+recorded, but their learning credit is deferred. The first mixed-class refit
+applies the full retained dataset, including earlier one-class examples; later
+refits apply newly collected examples. Thus A sees the full cumulative example
+count once fitting can change the policy, and B receives the deferred first batch.
+This is a correction to the runtime forecast's policy-identity assumption, not a
+change to the A/B equations. Logs distinguish raw `training_examples` from
+`effective_training_examples`; the belief's training count tracks credited data.
+
 ## Costs and smoothing
 
 The cost distribution retains the existing particle filter, prior, Student-t
@@ -77,11 +102,20 @@ current implementation corrects the shared planner and symbolic dynamics before
 repeating the same four inference arms. The original pilot remains a separate
 measurement at source revision `68dd6a9797fc651922991f4aa3b888d8f7249d1c`.
 
-The practice loop supplies its actual remaining action slots before each decision.
-Determinized search respects that bound as well as its unchanged 100-iteration
-compute limit. Cache keys distinguish remaining budgets. Logs include the effective
-action horizon and selected path depth; the older generic `horizon` argument alone
-did not impose a bound on this solver.
+The production comparison uses exact expectimax through six practice actions,
+shortened to the actual remaining action slots. Every chance outcome contributes
+its probability-weighted continuation value. The existing observation penalty
+of `-0.001 * log(probability)` is charged once per forecast edge and averaged over
+outcomes, separately from the unchanged physical cost objective. This replaces the
+optimistic single-outcome path criterion used in the earlier determinized runs.
+Six steps can represent gathering both sampler labels after gripper recovery;
+it remains a finite lookahead, not a solution of the full practice POMDP.
+
+The determinized solver remains available with an independent queue-iteration
+limit and the actual action budget. Cache keys distinguish remaining budgets.
+Cheaper paths reopen previously expanded nodes because potential differences can
+make edges negative; their original sampled successors are reused, so reopening
+does not draw new outcomes. Both solvers preserve stopping on objective ties.
 
 Deployment value is integrated exactly over the represented independent skill
 distributions after the existing pending-example forecast. Repeated attempts use
@@ -89,14 +123,18 @@ mixed moments of the same latent competence, rather than powers of its mean.
 This removes fresh Monte Carlo error from objective comparisons without changing
 the deployment policy, cost distribution, hard-budget alternative or linear lambda.
 Particle approximation and forecast uncertainty still exist.
+Online particles retain ESS resampling. Hypothetical S/F branches preserve their
+likelihood weights so numerical resampling error cannot become a fictitious
+practice value for a fixed controller. The process and refit equations are
+unchanged.
 
 Both reset mechanisms now delete `Holding` and conditionally add `ClosedEmpty`
 when a cube was held; an already open gripper remains open. The classical and
 belief-space models agree on these effects. Completed resets have success
 probability one, matching the simulator API: errors abort execution rather than
 produce a completed failed reset. Hypothetical resets change atoms and accrued
-cost only. Actual reset completion still records the same success, cost observation,
-training count and cycle refit as before.
+cost only. Actual reset completion still records the same success and cost observation.
+Its fixed controller receives no training credit.
 
 A reset whose modeled successor atoms equal its incoming atoms is omitted from
 practice search: it consumes a nonnegative cost and an action slot without changing
@@ -120,15 +158,18 @@ From a clean checkout with the committed submodule pins and environment installe
 
 ```bash
 scripts/with_env.sh python -m scripts.tossing3d_competence_2x2 \
-  --results-root /absolute/path/to/new/results-directory
+  --results-root /absolute/path/to/new/results-directory \
+  --solver expectimax --search-depth 6
 ```
 
 Use the repository's memory-limited simulator execution convention on workstations.
 The launcher defaults to two concurrent workers, one paired seed (0), ten practice
 cycles per arm, ten evaluation tasks per sweep, and eleven evaluation sweeps per
 arm. Practice and evaluation use the barrier layout, canonical seed 125, no free
-practice resets, and twenty actions per cycle. The determinized A* planner uses
-100 search iterations and observation-probability weight .001. The long-range
+practice resets, and twenty actions per cycle. The command above selects the
+corrected expectation-backed solver; the launcher's historical default remains
+determinized A* with 100 search iterations for reproducibility. Both use
+observation-probability weight .001. The long-range
 throw domain is 1.25–2.6 m, 115–420 degrees/s and 400–840 ms release time.
 
 The launcher uses `scripts.run_sweep.SweepRunner` and records commands, the source
@@ -139,6 +180,13 @@ configuration snapshot, progress, sampler draws, physical state log, decisions,
 evaluation episode traces and final statistics. A successful process exit alone is
 insufficient: check ten refit
 and smoothing events, eleven evaluation sweeps, and numerical diagnostics.
+`sampler_proposals.jsonl` records bounded feasibility filtering separately from
+executed sampler draws. The filter uses the supplied practice/evaluation state and
+retains accepted iid draws in order. It preserves the raw parameter box and
+selection strategy; it does not predict throw success. Empty batches create no
+execution cost or S/F observation and end practice with a reason distinct from
+planner STOP. The partial-reset adapter preserves declared center sampling regions
+while retaining upstream collision checks against the current physical state.
 
 Validate the completed matrix and export CSV/JSON summaries plus PNG/PDF figures:
 

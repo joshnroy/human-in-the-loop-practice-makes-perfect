@@ -9,12 +9,22 @@ from hitl_pmp.core.problem.tasks.types import Task
 
 from .types import (
     GroundSkill,
+    ParameterSamplingDiagnostics,
     Policy,
     PracticeTargetTally,
     Rollout,
     SetupCommand,
     SkillPracticeTally,
 )
+
+
+class NoFeasibleParametersError(Exception):
+    """A bounded proposal batch produced no action, observation, or practice cost."""
+
+    def __init__(self, *, skill_name: str, diagnostics: ParameterSamplingDiagnostics) -> None:
+        super().__init__(f"No feasible parameters for {skill_name}")
+        self.skill_name = skill_name
+        self.diagnostics = diagnostics
 
 
 class InteractionComplete(Exception):  # noqa: N818

@@ -133,7 +133,13 @@ class BayesianSkillBelief(SkillBelief):
             self.cost_belief.sample(rng=rng, count=count)[:, 2],
         ))
 
-    def condition_outcome(self, *, success: bool) -> Self:
+    def condition_outcome(self, *, success: bool, resample: bool = True) -> Self:
+        """Condition S/F, optionally preserving weighted support for planning.
+
+        Online observations retain ESS resampling. Imagined branches keep their
+        exact likelihood weights so averaging posterior values does not turn
+        resampling noise into a fictitious practice reward.
+        """
         values, weights = self.arrays()
         competence = self.competence_values()
         masses = weights * (competence if success else 1.0 - competence)
@@ -146,7 +152,8 @@ class BayesianSkillBelief(SkillBelief):
             "cycle_failures": self.cycle_failures + int(not success),
         }
         if (
-            self.engine == "particle"
+            resample
+            and self.engine == "particle"
             and 1.0 / float(posterior @ posterior)
             < self.config.resample_ess_fraction * self.state_count
         ):

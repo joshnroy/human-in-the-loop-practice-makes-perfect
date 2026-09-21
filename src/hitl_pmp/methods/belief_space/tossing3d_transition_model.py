@@ -208,6 +208,7 @@ def binary_outcomes(
             state=transition_belief_state(state=state, added_cost=cost),
             success=success,
             was_random_exploration=False,
+            resample=False,
         )
         outcomes.extend(
             (branch_probability * effect_probability, next_state, next_true_atoms)
@@ -231,6 +232,9 @@ def toss_outcomes(
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
 ) -> tuple[TransitionBranch, ...]:
     branches: list[TransitionBranch] = []
+    training = state.sampler_training.get(TOSS_SKILL)
+    if training is not None and not training.fitted_mixed_classes:
+        exploration_epsilon = 0.0
     for is_random, choice_probability, success_probability in (
         (
             False,
@@ -248,7 +252,7 @@ def toss_outcomes(
                 continue
             belief = state.skill_beliefs[TOSS_SKILL]
             if not is_random:
-                belief = condition_skill_belief(belief=belief, success=success)
+                belief = condition_skill_belief(belief=belief, success=success, resample=False)
             effect_outcomes = (
                 (
                     (
@@ -270,7 +274,9 @@ def toss_outcomes(
                 state=state,
                 added_cost=toss_cost,
                 toss_belief=belief,
-                added_training_examples=1,
+            )
+            next_state = skill_belief_model(ground_skill=ground_skill).observe_training_example(
+                state=next_state, success=success
             )
             branches.extend(
                 (probability * effect_probability, next_state, next_true_atoms)

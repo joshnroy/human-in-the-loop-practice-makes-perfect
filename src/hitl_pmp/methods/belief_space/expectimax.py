@@ -26,14 +26,28 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
     https://drive.google.com/drive/folders/17j47M4NUGQIoKzNOo7yvWIhw13tE7h-a
 
     Model methods have the pseudocode's names and keyword arguments. Costs and
-    policy values allow floats. Theta is sampled ``num_samples`` times per unique
-    search state. Stopping wins ties. The complete tree is evaluated through
+    policy values allow floats. By default theta is sampled ``num_samples`` times
+    per unique search state. Models providing an exact J can opt into using it
+    directly. An optional observation penalty is integrated over chance outcomes;
+    its default zero preserves the unshaped objective. Stopping wins ties.
+    The complete tree is evaluated through
     ``horizon`` with no node or wall-clock stopping condition. Each call owns a
-    fresh recursive cache, so later searches resample theta and see updated model
-    parameters.
+    fresh recursive cache, so later searches see updated model parameters and,
+    when configured to sample, resample theta.
     """
 
     name = "expectimax"
+
+    def __init__(
+        self,
+        *,
+        use_model_j: bool = False,
+        observation_probability_weight: float = 0.0,
+    ) -> None:
+        assert math.isfinite(observation_probability_weight)
+        assert observation_probability_weight >= 0.0
+        self.use_model_j = use_model_j
+        self.observation_probability_weight = observation_probability_weight
 
     def solve(
         self,
@@ -77,6 +91,8 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 event="search_summary",
                 node=0,
                 solver=self.name,
+                stop_value_source="model_J" if self.use_model_j else "sampled_policy_values",
+                observation_probability_weight=self.observation_probability_weight,
                 horizon=horizon,
                 expanded_nodes=self.expanded_nodes,
                 traversed_nodes=self.cache_requests,
@@ -137,35 +153,45 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         node = self.next_node
         self.next_node += 1
         self.nodes_by_horizon[horizon] = self.nodes_by_horizon.get(horizon, 0) + 1
-        policy_values = self.model.sample_policy_values_from_belief(
-            belief_state=belief_state, num_samples=self.num_samples
-        )
-        assert len(policy_values) == self.num_samples
-        sample_values = np.fromiter(
-            (
-                self.model.G(policy_value=float(policy_value), summed_cost=summed_cost)
-                for policy_value in policy_values
-            ),
-            dtype=np.float64,
-            count=self.num_samples,
-        )
-        assert all(not math.isnan(value) and value != math.inf for value in sample_values), (
+        if self.use_model_j:
+            current_best_value = self.model.J(
+                belief_state=belief_state,
+                summed_cost=summed_cost,
+                num_samples=self.num_samples,
+            )
+        else:
+            policy_values = self.model.sample_policy_values_from_belief(
+                belief_state=belief_state, num_samples=self.num_samples
+            )
+            assert len(policy_values) == self.num_samples
+            sample_values = np.fromiter(
+                (
+                    self.model.G(policy_value=float(policy_value), summed_cost=summed_cost)
+                    for policy_value in policy_values
+                ),
+                dtype=np.float64,
+                count=self.num_samples,
+            )
+            assert all(not math.isnan(value) and value != math.inf for value in sample_values), (
+                "stop value must be finite or negative infinity"
+            )
+            if self.trace is not None and node == 0:
+                self.trace.record(
+                    event="sample_summary",
+                    node=node,
+                    count=len(sample_values),
+                    policy_value_mean=float(np.mean(policy_values)),
+                    policy_value_min=float(np.min(policy_values)),
+                    policy_value_max=float(np.max(policy_values)),
+                    pomdp_value_mean=float(np.mean(sample_values)),
+                    pomdp_value_min=float(np.min(sample_values)),
+                    pomdp_value_max=float(np.max(sample_values)),
+                )
+            current_best_value = float(np.mean(sample_values))
+
+        assert not math.isnan(current_best_value) and current_best_value != math.inf, (
             "stop value must be finite or negative infinity"
         )
-        if self.trace is not None and node == 0:
-            self.trace.record(
-                event="sample_summary",
-                node=node,
-                count=len(sample_values),
-                policy_value_mean=float(np.mean(policy_values)),
-                policy_value_min=float(np.min(policy_values)),
-                policy_value_max=float(np.max(policy_values)),
-                pomdp_value_mean=float(np.mean(sample_values)),
-                pomdp_value_min=float(np.min(sample_values)),
-                pomdp_value_max=float(np.max(sample_values)),
-            )
-
-        current_best_value = float(np.mean(sample_values))
         current_best_action: ActionT | StopAction = STOP_ACTION
         if self.trace is not None and node == 0:
             self.trace.record(event="stop_value", node=node, value=current_best_value)
@@ -228,7 +254,9 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                 assert math.isfinite(probability) and probability > 0.0, (
                     f"chance probability must be finite and positive, got {probability}"
                 )
-                value_of_state += probability * value_of_next_state
+                observation_surprise = -self.observation_probability_weight * math.log(probability)
+                contribution = probability * (value_of_next_state - observation_surprise)
+                value_of_state += contribution
                 total_probability += probability
                 if self.trace is not None and node == 0:
                     self.trace.record(
@@ -240,7 +268,8 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                         sampled_cost=sampled_cost,
                         probability=probability,
                         successor_value=value_of_next_state,
-                        contribution=probability * value_of_next_state,
+                        observation_surprise=observation_surprise,
+                        contribution=contribution,
                     )
 
             assert math.isclose(total_probability, 1.0, rel_tol=1e-9, abs_tol=1e-12), (

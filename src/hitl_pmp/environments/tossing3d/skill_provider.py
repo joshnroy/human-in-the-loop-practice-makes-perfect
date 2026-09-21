@@ -21,6 +21,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
+from .parameter_feasibility import TossParameterFeasibility
 from .predicates import (
     CLOSED_EMPTY,
     HAND_EMPTY,
@@ -102,6 +103,13 @@ class Tossing3DSkillProvider(SkillProvider):
                 ground_skill=ground_skill, params=params, state=state
             )
         return Tossing3DSkills.compute_action(ground_skill=ground_skill, params=params, state=state)
+
+    def parameter_rejection_reason(
+        self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
+    ) -> str | None:
+        return TossParameterFeasibility.rejection_reason(
+            ground_skill=ground_skill, params=params, state=state
+        )
 
     def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray

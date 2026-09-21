@@ -42,12 +42,13 @@ from typing import TextIO
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
-from hitl_pmp.core.method.types import SamplerConsultation
+from hitl_pmp.core.method.types import ParameterSamplingDiagnostics, SamplerConsultation
 from hitl_pmp.core.problem.environment.types import Object, State
 
 # The sibling `--output-dir` file this writes, named the same way `stats.json`,
 # `timing.json` and `config_snapshot.json` are: after its content, not after the flag.
 SAMPLER_DRAWS_FILENAME = "sampler_draws.jsonl"
+SAMPLER_PROPOSALS_FILENAME = "sampler_proposals.jsonl"
 
 
 class SamplerDrawRecorder(BaseModel):
@@ -67,6 +68,7 @@ class SamplerDrawRecorder(BaseModel):
     output_path: Path
 
     _handle: TextIO | None = PrivateAttr(default=None)
+    _proposal_handle: TextIO | None = PrivateAttr(default=None)
     _cycle: int = PrivateAttr(default=0)
 
     @staticmethod
@@ -96,6 +98,35 @@ class SamplerDrawRecorder(BaseModel):
         `practice_loop.py` fires once per cycle before that cycle's evaluation sweep,
         so a draw's `cycle` is the cycle it was actually made in."""
         self._cycle += 1
+
+    def record_proposals(
+        self,
+        *,
+        skill_name: str,
+        explore: bool,
+        diagnostics: ParameterSamplingDiagnostics,
+    ) -> None:
+        """Record every candidate batch, including evaluation and empty batches.
+
+        This sibling file describes proposal construction, not S/F observations.
+        Keeping it separate preserves the practice-execution row count of draws.
+        `explore` is the sampler mode, not the phase: practice setup can be greedy.
+        """
+        if self._proposal_handle is None:
+            self.output_path.parent.mkdir(parents=True, exist_ok=True)
+            path = self.output_path.with_name(SAMPLER_PROPOSALS_FILENAME)
+            self._proposal_handle = path.open("w", encoding="utf-8")
+        self._proposal_handle.write(
+            LogTiming.encode(
+                record={
+                    "cycle": self._cycle,
+                    "skill": skill_name,
+                    "explore": explore,
+                    **diagnostics.model_dump(mode="json"),
+                }
+            )
+        )
+        self._proposal_handle.flush()
 
     def record(
         self,

@@ -632,7 +632,7 @@ def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
     } == {RESET_SKILL}
 
 
-def test_human_reset_observation_updates_its_joint_belief_and_training_count() -> None:
+def test_human_reset_observation_updates_its_joint_belief_without_training_credit() -> None:
     model = _domain_model(reset_cost=0.25)
     state = make_default_tossing3d_belief(include_human_reset=True)
     reset = _ground_skill(model=model, name=RESET_SKILL)
@@ -652,7 +652,7 @@ def test_human_reset_observation_updates_its_joint_belief_and_training_count() -
     assert abs(mean_cost(belief=observed.skill_beliefs[RESET_SKILL]) - 0.25) < abs(
         mean_cost(belief=state.skill_beliefs[RESET_SKILL]) - 0.25
     )
-    assert observed.pending_examples[RESET_SKILL] == 1
+    assert observed.pending_examples.get(RESET_SKILL, 0) == 0
 
 
 def test_human_reset_transition_uses_known_success_without_hypothetical_evidence() -> None:
@@ -666,7 +666,7 @@ def test_human_reset_transition_uses_known_success_without_hypothetical_evidence
     assert outcomes[0][1].pending_examples == state.pending_examples
 
 
-def test_human_reset_refit_consumes_examples_without_synthetic_evidence() -> None:
+def test_human_reset_refit_preserves_performance_without_synthetic_learning() -> None:
     model = _domain_model(reset_cost=0.25)
     reset = _ground_skill(model=model, name=RESET_SKILL)
     observed = model.observe_outcome(
@@ -677,9 +677,7 @@ def test_human_reset_refit_consumes_examples_without_synthetic_evidence() -> Non
         observed_cost=0.25,
     )
     posterior = refit_belief_state(state=observed)
-    assert posterior.skill_beliefs[RESET_SKILL] == observed.skill_beliefs[RESET_SKILL].refit(
-        training_examples=1
-    )
+    assert posterior.skill_beliefs[RESET_SKILL] == observed.skill_beliefs[RESET_SKILL]
     assert posterior.pending_examples == {}
 
 
@@ -699,7 +697,7 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
         _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 0 for outcome in outcomes
     )
     assert all(
-        _pending_examples(state=outcome[1], skill_name=PICK_SKILL) == 1 for outcome in outcomes
+        _pending_examples(state=outcome[1], skill_name=PICK_SKILL) == 0 for outcome in outcomes
     )
     assert mean_competence(
         belief=_belief(state=outcomes[0][1], skill_name=PICK_SKILL)
@@ -711,10 +709,11 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
 
 
 @pytest.mark.parametrize("skill_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
-def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
+def test_fixed_controller_data_updates_competence_without_learning(*, skill_name: str) -> None:
     model = _domain_model()
     skill = _ground_skill(model=model, name=skill_name)
     state = _weighted_default_state()
+    prior_rate = state.skill_beliefs[skill_name].mean_learning_rate()
     for _ in range(20):
         for success in [True, False] * 5:
             state = model.observe_outcome(
@@ -725,10 +724,9 @@ def test_stationary_data_favors_zero_improvement(*, skill_name: str) -> None:
             )
         state = refit_belief_state(state=state)
     belief = _belief(state=state, skill_name=skill_name)
-    stationary_mass = sum(
-        item.probability for item in belief.hypotheses if item.hypothesis.learning_rate == 0
-    )
-    assert stationary_mass > 0.99
+    assert belief.mean_competence() == pytest.approx(0.5, abs=0.01)
+    assert belief.mean_learning_rate() == pytest.approx(prior_rate)
+    assert state.pending_examples == {}
     assert mean_competence(belief=belief) == pytest.approx(0.5, abs=0.01)
 
 

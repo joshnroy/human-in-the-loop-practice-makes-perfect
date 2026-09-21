@@ -20,6 +20,7 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+from hitl_pmp.methods.belief_space.types.belief_state import SamplerTrainingState
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
@@ -115,6 +116,16 @@ def test_toss_failure_distribution_learns_retained_and_released_outcomes_without
 
 def test_failure_effects_use_only_matching_context_and_exploration_mode() -> None:
     method = _method(exploration_epsilon=0.5)
+    # Epsilon can fire only after fitting both label classes.
+    method._pomdp_state = method.pomdp_state.model_copy(  # noqa: SLF001
+        update={
+            "sampler_training": {
+                TOSS_SKILL: SamplerTrainingState(
+                    successes=1, failures=1, fitted_successes=1, fitted_failures=1
+                )
+            }
+        }
+    )
     toss = _skill(method=method, name=TOSS_SKILL)
     before = toss.preconditions
     released = _atoms(method=method, names={"HandEmpty", "OnGround"})

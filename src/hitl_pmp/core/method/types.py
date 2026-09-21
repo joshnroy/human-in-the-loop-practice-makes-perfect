@@ -26,6 +26,18 @@ class LabeledAction(BaseModel):
 Policy = Callable[[State], LabeledAction]
 
 
+class ParameterSamplingDiagnostics(BaseModel):
+    """One proposal batch, including rejected draws that never became actions."""
+
+    model_config = ConfigDict(frozen=True)
+
+    requested_candidates: int
+    sampled_proposals: int
+    accepted_candidates: int
+    max_proposals: int
+    rejection_reasons: dict[str, int]
+
+
 class Rollout(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

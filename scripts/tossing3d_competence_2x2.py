@@ -16,7 +16,14 @@ ENGINES = ("particle", "grid")
 
 
 def experiment_commands(
-    *, results_root: Path, num_seeds: int, num_cycles: int, python: str
+    *,
+    results_root: Path,
+    num_seeds: int,
+    num_cycles: int,
+    python: str,
+    max_search_iterations: int = 100,
+    solver: str = "determinized_astar",
+    search_depth: int = 3,
 ) -> list[tuple[str, list[str]]]:
     """Pair task seeds and hold simulator, planner, costs and budgets fixed."""
     runs = []
@@ -53,9 +60,11 @@ def experiment_commands(
                     "--pomdp-linear-cost-lambda",
                     "0.0003",
                     "--pomdp-solver",
-                    "determinized_astar",
+                    solver,
+                    "--pomdp-search-depth",
+                    str(search_depth),
                     "--pomdp-max-search-iterations",
-                    "100",
+                    str(max_search_iterations),
                     "--pomdp-observation-probability-weight",
                     "0.001",
                     "--pomdp-num-particles",
@@ -130,16 +139,26 @@ def main() -> None:
     parser.add_argument("--num-seeds", type=int, default=1)
     parser.add_argument("--num-cycles", type=int, default=10)
     parser.add_argument("--max-workers", type=int, default=2)
+    parser.add_argument("--max-search-iterations", type=int, default=100)
+    parser.add_argument(
+        "--solver", choices=("determinized_astar", "expectimax"), default="determinized_astar"
+    )
+    parser.add_argument("--search-depth", type=int, default=3)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    if min(args.num_seeds, args.num_cycles, args.max_workers) < 1:
-        parser.error("seeds, cycles and workers must be positive")
+    if min(args.num_seeds, args.num_cycles, args.max_workers, args.max_search_iterations) < 1:
+        parser.error("seeds, cycles, workers and search iterations must be positive")
+    if args.search_depth < 0:
+        parser.error("search depth must be non-negative")
     root = args.results_root.resolve()
     runs = experiment_commands(
         results_root=root,
         num_seeds=args.num_seeds,
         num_cycles=args.num_cycles,
         python=sys.executable,
+        max_search_iterations=args.max_search_iterations,
+        solver=args.solver,
+        search_depth=args.search_depth,
     )
     if args.dry_run:
         print(json.dumps(dict(runs), indent=2))
@@ -159,6 +178,9 @@ def main() -> None:
                 "pythonpath": os.environ.get("PYTHONPATH", ""),
                 "num_cycles": args.num_cycles,
                 "num_seeds": args.num_seeds,
+                "max_search_iterations": args.max_search_iterations,
+                "solver": args.solver,
+                "search_depth": args.search_depth,
                 "commands": dict(runs),
             },
             indent=2,

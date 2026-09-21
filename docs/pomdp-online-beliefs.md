@@ -1,7 +1,10 @@
 # Online skill beliefs
 
-Every modeled skill has its own joint particle posterior over competence p,
-learning rate eta, and execution cost c. Particle marginals begin as
+The current Tossing3D method selects the A/B competence models and particle/grid
+inference described in [the competence experiment](tossing3d-competence-2x2.md).
+Its execution-cost filter is independent and unchanged. The older standalone
+particle model, retained for numerical consumers, has joint competence p,
+learning rate eta, and execution cost c with initial marginals
 
 - p ~ Beta(10, 1), with mean 10/11 and support [0, 1];
 - eta ~ Uniform(0, 1); and
@@ -22,12 +25,26 @@ Across session boundaries, stationary outcomes can favor eta=0. Within a
 session, competence evidence updates immediately, but improvement is deferred
 to the boundary, matching the existing toss refit schedule.
 
-PickCube and OpenGripper count each observed practice attempt as an example.
-Their controllers remain parameter-free: advancing their hypothesized learning
-curve is a prediction to test against subsequent observations, not a real
-controller update. Toss retains its sampler-training-row accounting and does
-not treat random exploration outcomes as greedy-policy competence evidence.
-Evaluation outcomes are not training data.
+PickCube, OpenGripper, and reset controllers receive S/F and cost observations but
+no learning credit: no fitting step can change those controllers. Toss retains
+every sampler-training row, including epsilon-random examples, while excluding
+epsilon-random outcomes from policy-competence evidence. Evaluation outcomes are
+not training data.
+
+The toss forecast carries observed and last-fitted positive/negative label counts.
+With no data or one label class, the real sampler bypasses epsilon and chooses a
+uniform candidate; hypothetical execution uses that same mode. One-class refits
+cannot change the policy and therefore preserve the competence posterior. Their
+examples remain retained and become learning credit at the first mixed-class
+refit. Further refits use only new examples. This preserves the value of reaching
+the first informative fit without awarding improvement to an unchanged policy.
+Within a practice cycle, hypothetical new labels affect deployment after fitting,
+not the sampling mode of the next practice action.
+
+Mixed-class fitting is necessary but not sufficient for a discriminating sampler:
+a particular candidate batch can still have tied scores. The symbolic forecast
+does not model those candidate-specific ties. It does suppress the epsilon branch
+when that branch is provably impossible under the one-class shortcut.
 
 The particle approximation is a modeling assumption, not a guarantee of
 calibration. Constant performance does not prove an exactly zero learning rate;
@@ -35,9 +52,12 @@ in particular, learning rate is unidentifiable at competence 1, where all rates
 predict zero further improvement. Tests cover stationary and always-successful
 observations rather than hardcoding a skill's resulting estimate.
 
-Search samples a joint theta across all modeled robot and reset skills. Both practice
-transitions and deployment evaluation use these estimates, including failed
-OpenGripper outcomes. The human reset cost is still charged normally.
+Tossing3D search integrates deployment value over the represented competence
+posteriors directly, including failed OpenGripper outcomes, without drawing fresh
+theta samples for each stopping value. Expectimax averages every modeled practice
+outcome and its configured observation penalty; determinized search instead
+follows one sampled successor per state/action edge. The human reset cost is still
+charged normally.
 
 ## Validation limits
 

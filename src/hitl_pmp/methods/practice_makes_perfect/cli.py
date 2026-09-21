@@ -185,7 +185,10 @@ class Tossing3DPomdpCli(EesCli):
             default=Tossing3DPomdpMethod.model_fields[
                 "pomdp_observation_probability_weight"
             ].default,
-            help="Algorithm 3 weight on the negative log probability of a sampled observation.",
+            help=(
+                "Weight on negative log observation probability: averaged over outcomes "
+                "in expectimax, or accumulated on the determinized sampled path."
+            ),
         )
         parser.add_argument(
             "--pomdp-num-particles",

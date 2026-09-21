@@ -7,6 +7,7 @@ from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
+    SamplerTrainingState,
     Tossing3DBeliefState,
 )
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
@@ -17,7 +18,7 @@ from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 from .competence_inference import BayesianSkillBelief, InferenceConfig, create_bayesian_prior
-from .tossing3d_constants import RESET_SKILLS
+from .tossing3d_constants import RESET_SKILLS, TOSS_SKILL
 
 
 class PracticeExampleSource(Enum):
@@ -44,7 +45,9 @@ class SkillBeliefModel:
         success: bool,
         was_random_exploration: bool,
         observed_cost: float | None = None,
+        resample: bool = True,
     ) -> Tossing3DBeliefState:
+        assert resample or observed_cost is None, "imagined updates do not observe execution costs"
         if self.skill is None:
             return state
         skill_name = self.skill.name
@@ -61,7 +64,7 @@ class SkillBeliefModel:
                 else belief.condition_execution(success=success, observed_cost=observed_cost)
             )
         elif not was_random_exploration:
-            belief = condition_skill_belief(belief=belief, success=success)
+            belief = condition_skill_belief(belief=belief, success=success, resample=resample)
         skill_beliefs[skill_name] = belief
         if was_random_exploration:
             return state.model_copy(update={"skill_beliefs": skill_beliefs})
@@ -72,19 +75,25 @@ class SkillBeliefModel:
             update={"skill_beliefs": skill_beliefs, "pending_examples": pending_examples}
         )
 
-    def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+    def observe_training_example(
+        self, *, state: Tossing3DBeliefState, success: bool
+    ) -> Tossing3DBeliefState:
         if self.skill is None or self.example_source != PracticeExampleSource.SAMPLER:
             return state
         pending_examples = dict(state.pending_examples)
         skill_name = self.skill.name
         pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
-        return state.model_copy(update={"pending_examples": pending_examples})
+        training = dict(state.sampler_training)
+        if skill_name in training:
+            training[skill_name] = training[skill_name].observe(success=success)
+        return state.model_copy(
+            update={"pending_examples": pending_examples, "sampler_training": training}
+        )
 
 
 SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
     Tossing3DSkills.PICK_CUBE: SkillBeliefModel(
         skill=Tossing3DSkills.PICK_CUBE,
-        example_source=PracticeExampleSource.OUTCOME,
     ),
     Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: SkillBeliefModel(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
@@ -92,7 +101,6 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
     ),
     Tossing3DSkills.OPEN_GRIPPER: SkillBeliefModel(
         skill=Tossing3DSkills.OPEN_GRIPPER,
-        example_source=PracticeExampleSource.OUTCOME,
     ),
 }
 
@@ -100,10 +108,7 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
 def skill_belief_model(*, ground_skill: GroundSkill) -> SkillBeliefModel:
     """Return the update contract for one provider-supplied ground skill."""
     if ground_skill.skill.name in RESET_SKILLS:
-        return SkillBeliefModel(
-            skill=ground_skill.skill,
-            example_source=PracticeExampleSource.OUTCOME,
-        )
+        return SkillBeliefModel(skill=ground_skill.skill)
     return SKILL_BELIEF_MODELS.get(
         ground_skill.skill,
         SkillBeliefModel(skill=ground_skill.skill),
@@ -160,7 +165,9 @@ def make_default_tossing3d_belief(
                 config=inference_config or InferenceConfig(),
             )
         )
-    return Tossing3DBeliefState(skill_beliefs=beliefs)
+    return Tossing3DBeliefState(
+        skill_beliefs=beliefs, sampler_training={TOSS_SKILL: SamplerTrainingState()}
+    )
 
 
 def mean_competence(*, belief: SkillBelief) -> float:
@@ -175,8 +182,12 @@ def mean_cost(*, belief: ParticleFilterBelief | BayesianSkillBelief) -> float:
     return belief.mean_cost()
 
 
-def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:
+def condition_skill_belief(
+    *, belief: ConcreteSkillBelief, success: bool, resample: bool = True
+) -> ConcreteSkillBelief:
     """Condition on a greedy-policy outcome without pretending a refit occurred."""
+    if isinstance(belief, BayesianSkillBelief):
+        return belief.condition_outcome(success=success, resample=resample)
     return belief.condition_outcome(success=success)
 
 
@@ -197,11 +208,16 @@ def refit_belief_state(
 
     Real cycle boundaries also reset evidence and ancestry bookkeeping when no
     training occurred. A hypothetical zero-example forecast remains an identity.
+    Tracked one-class samplers defer learning credit until both labels exist;
+    their first mixed-class refit uses the whole retained training set.
     """
     assert learning_rate_process_noise_std >= 0.0
     refitted_beliefs: dict[str, ConcreteSkillBelief] = {}
     for skill_name, belief in state.skill_beliefs.items():
         count = state.pending_examples.get(skill_name, 0)
+        training = state.sampler_training.get(skill_name)
+        if training is not None:
+            count = training.refit_examples
         refitted: ConcreteSkillBelief
         if isinstance(belief, BayesianSkillBelief):
             refitted = (
@@ -214,4 +230,12 @@ def refit_belief_state(
                 process_noise_std=learning_rate_process_noise_std
             )
         refitted_beliefs[skill_name] = refitted
-    return state.model_copy(update={"skill_beliefs": refitted_beliefs, "pending_examples": {}})
+    return state.model_copy(
+        update={
+            "skill_beliefs": refitted_beliefs,
+            "pending_examples": {},
+            "sampler_training": {
+                name: training.refitted() for name, training in state.sampler_training.items()
+            },
+        }
+    )
