@@ -1,0 +1,91 @@
+{
+  "original_source": "68dd6a9797fc651922991f4aa3b888d8f7249d1c",
+  "debugged_source": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+  "comparisons": [
+    {
+      "arm": "global_curve-grid/seed_00",
+      "original": {
+        "final_evaluation_solved": 1,
+        "evaluation_tasks": 10,
+        "total_actions": 200,
+        "total_resets": 132,
+        "total_tosses": 15,
+        "total_cost": 728.0,
+        "successful_practice_tosses": 0
+      },
+      "debugged": {
+        "final_evaluation_solved": 1,
+        "evaluation_tasks": 10,
+        "total_actions": 76,
+        "total_resets": 21,
+        "total_tosses": 20,
+        "total_cost": 160.0,
+        "successful_practice_tosses": 0
+      }
+    },
+    {
+      "arm": "global_curve-particle/seed_00",
+      "original": {
+        "final_evaluation_solved": 0,
+        "evaluation_tasks": 10,
+        "total_actions": 200,
+        "total_resets": 123,
+        "total_tosses": 20,
+        "total_cost": 692.0,
+        "successful_practice_tosses": 0
+      },
+      "debugged": {
+        "final_evaluation_solved": 0,
+        "evaluation_tasks": 10,
+        "total_actions": 100,
+        "total_resets": 27,
+        "total_tosses": 25,
+        "total_cost": 208.0,
+        "successful_practice_tosses": 0
+      }
+    },
+    {
+      "arm": "local_trend-grid/seed_00",
+      "original": {
+        "final_evaluation_solved": 1,
+        "evaluation_tasks": 10,
+        "total_actions": 200,
+        "total_resets": 110,
+        "total_tosses": 24,
+        "total_cost": 640.0,
+        "successful_practice_tosses": 2
+      },
+      "debugged": {
+        "final_evaluation_solved": 2,
+        "evaluation_tasks": 10,
+        "total_actions": 147,
+        "total_resets": 40,
+        "total_tosses": 39,
+        "total_cost": 307.0,
+        "successful_practice_tosses": 3
+      }
+    },
+    {
+      "arm": "local_trend-particle/seed_00",
+      "original": {
+        "final_evaluation_solved": 0,
+        "evaluation_tasks": 10,
+        "total_actions": 200,
+        "total_resets": 107,
+        "total_tosses": 26,
+        "total_cost": 628.0,
+        "successful_practice_tosses": 0
+      },
+      "debugged": {
+        "final_evaluation_solved": 1,
+        "evaluation_tasks": 10,
+        "total_actions": 142,
+        "total_resets": 37,
+        "total_tosses": 38,
+        "total_cost": 290.0,
+        "successful_practice_tosses": 0
+      }
+    }
+  ],
+  "interpretation": "One paired seed; raw pilot results only, no statistical inference."
+}

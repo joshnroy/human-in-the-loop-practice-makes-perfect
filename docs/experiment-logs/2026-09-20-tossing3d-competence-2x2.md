@@ -1,5 +1,7 @@
 # Tossing3D: competence model × inference, ten-cycle pilot
 
+> **Follow-up:** A [debugged ten-cycle rerun](2026-09-20-tossing3d-competence-2x2-debugged.md) corrects the planner budget, deployment value and reset/failure dynamics. The original measurements below are preserved; low physical success remains a limitation.
+
 All four arms completed 10 practice cycles and 11 evaluation sweeps. Each used
 200 actions, with no free practice resets. This is one paired seed per arm;
 the raw results support no statistical inference about which combination is better.
