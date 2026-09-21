@@ -47,7 +47,7 @@ deep-copying a `Tossing3DStateAbstractor` would clone a PyBullet client. The abs
 lives on `KinderBackend` for its whole lifetime; only its *output* travels.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 # `np` and `Object` are imported for pydantic's benefit, not this module's: `State.data`
 # is annotated `dict[Object, np.ndarray]` under `from __future__ import annotations`, so
@@ -55,6 +55,7 @@ from typing import Any
 # namespace. Without these imports, constructing a `Tossing3DState` raises
 # "`Tossing3DState` is not fully defined".
 import numpy as np  # noqa: F401
+from pydantic import BaseModel, ConfigDict, Field
 
 from hitl_pmp.core.problem.environment.types import Object, State  # noqa: F401
 
@@ -64,6 +65,32 @@ from hitl_pmp.core.problem.environment.types import Object, State  # noqa: F401
 # domain's `Object` is the literal `"robot"` -- and `KinderBackend` does that mapping so
 # nothing downstream has to know about it.
 AbstractAtom = tuple[str, tuple[str, ...]]
+
+
+class PlanarCollisionBox(BaseModel):
+    """A controller's overhead collision rectangle, expressed without KINDER types."""
+
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
+
+    name: str
+    center: tuple[float, float]
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    yaw: float
+
+
+class TossFeasibilityGeometry(BaseModel):
+    """Geometry from one explicit state for a conservative toss-parameter check."""
+
+    model_config = ConfigDict(frozen=True, allow_inf_nan=False)
+
+    robot_pose: tuple[float, float, float]
+    robot_size: tuple[float, float]
+    robot_state_dtype: Literal["float32", "float64"] = "float64"
+    bin_pose: tuple[float, float, float]
+    obstacles: tuple[PlanarCollisionBox, ...]
+    sampling_x_bounds: tuple[float, float]
+    sampling_y_bounds: tuple[float, float]
 
 
 class Tossing3DState(State):
