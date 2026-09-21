@@ -1,6 +1,7 @@
 """Shared model priors and numerical settings for the competence experiment."""
 
 import math
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Self
@@ -25,6 +26,33 @@ class InferenceConfig(BaseModel):
     phi_rates: tuple[float, ...] = (0.02, 0.05, 0.1, 0.2, 0.4, 0.8)
     phi_concentrations: tuple[float, ...] = (6.0, 24.0, 96.0)
     resample_ess_fraction: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    def scaled_learning_time(
+        self, *, model: Literal["global_curve", "local_trend"], time_scale: float
+    ) -> Self:
+        """Stretch the model's learning clock without changing actual example counts.
+
+        Values above one predict slower learning. Model A stretches its phi curve;
+        Model B stretches learning-rate magnitudes and per-example decay together.
+        Competence process noise and all non-learning priors stay unchanged.
+        """
+        if not math.isfinite(time_scale) or time_scale <= 0:
+            raise ValueError("time_scale must be finite and positive")
+        if model not in ("global_curve", "local_trend"):
+            raise ValueError(f"unknown competence model: {model}")
+        if time_scale == 1.0:
+            return self
+        parameters = self.model_dump()
+        if model == "global_curve":
+            parameters["phi_rates"] = tuple(rate / time_scale for rate in self.phi_rates)
+        else:
+            parameters.update(
+                eta_max=self.eta_max / time_scale,
+                initial_eta_sigma=self.initial_eta_sigma / time_scale,
+                sigma_eta=self.sigma_eta / time_scale,
+                learning_rate_decay=self.learning_rate_decay ** (1.0 / time_scale),
+            )
+        return self.model_validate(parameters)
 
     @model_validator(mode="after")
     def validate_curve_prior(self) -> Self:

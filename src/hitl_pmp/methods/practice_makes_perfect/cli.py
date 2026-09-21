@@ -223,6 +223,14 @@ class Tossing3DPomdpCli(EesCli):
             "eta is inferred from success/failure only.",
         )
         parser.add_argument(
+            "--pomdp-learning-time-scale",
+            type=float,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_learning_time_scale"].default,
+            help="Positive multiplier for the forecast learning time scale; above one "
+            "slows Model A's phi rates or Model B's rate magnitudes and decay. "
+            "Actual training-example counts and competence noise stay unchanged.",
+        )
+        parser.add_argument(
             "--pomdp-linear-cost-lambda",
             type=float,
             default=Tossing3DPomdpMethod.model_fields["pomdp_linear_cost_lambda"].default,
@@ -276,6 +284,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_learning_rate_decay=args.pomdp_learning_rate_decay,
                 pomdp_learning_rate_max=args.pomdp_learning_rate_max,
                 pomdp_learning_rate_process_noise_std=(args.pomdp_learning_rate_process_noise_std),
+                pomdp_learning_time_scale=args.pomdp_learning_time_scale,
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 decision_log=(
                     args.output_dir / "pomdp_decisions.jsonl"

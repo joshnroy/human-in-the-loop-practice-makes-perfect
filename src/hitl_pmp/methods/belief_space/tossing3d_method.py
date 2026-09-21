@@ -98,6 +98,7 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_learning_rate_process_noise_std: float = Field(
         default=LEARNING_RATE_PROCESS_NOISE_STD, ge=0.0
     )
+    pomdp_learning_time_scale: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
     pomdp_linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     goal_pursuit_horizon: int | None = 0
     decision_log: Path | None = None
@@ -183,6 +184,8 @@ class Tossing3DPomdpMethod(EesMethod):
                 sigma_eta=self.pomdp_learning_rate_process_noise_std,
                 learning_rate_decay=self.pomdp_learning_rate_decay,
                 eta_max=self.pomdp_learning_rate_max,
+            ).scaled_learning_time(
+                model=self.pomdp_competence_model, time_scale=self.pomdp_learning_time_scale
             ),
             additional_skill_names=tuple(skill.name for skill in self.human_skills()),
         )
