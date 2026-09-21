@@ -1,4 +1,4 @@
-from hitl_pmp.core.method.types import LiftedAtom, Skill, Variable
+from hitl_pmp.core.method.types import ConditionalAddEffect, LiftedAtom, Skill, Variable
 from hitl_pmp.core.problem.environment.types import Object, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 
@@ -73,8 +73,11 @@ class PddlWriter:
         skills_str = "\n\n  ".join(
             PddlWriter._action_str(skill=skill) for skill in sorted(skills, key=lambda s: s.name)
         )
+        requirements = ":typing"
+        if any(skill.conditional_add_effects for skill in skills):
+            requirements += " :conditional-effects"
         return f"""(define (domain {domain_name})
-  (:requirements :typing)
+  (:requirements {requirements})
   (:types {types_str})
 
   (:predicates\n    {preds_str}
@@ -146,11 +149,26 @@ class PddlWriter:
                 PddlWriter._ignore_effect_str(predicate=predicate, prefix=prefix)
                 for predicate in sorted(skill.ignore_effects, key=lambda p: p.name)
             )
+        if skill.conditional_add_effects:
+            if effects_str:
+                effects_str += "\n        "
+            effects_str += "\n        ".join(
+                sorted(
+                    PddlWriter._conditional_add_effect_str(effect=effect)
+                    for effect in skill.conditional_add_effects
+                )
+            )
         return f"""(:action {skill.name}
     :parameters ({params_str})
     :precondition (and {preconds_str})
     :effect (and {effects_str})
   )"""
+
+    @staticmethod
+    def _conditional_add_effect_str(*, effect: ConditionalAddEffect) -> str:
+        conditions = " ".join(PddlWriter._sorted_lifted_atom_strs(atoms=effect.conditions))
+        additions = " ".join(PddlWriter._sorted_lifted_atom_strs(atoms=effect.add_effects))
+        return f"(when (and {conditions}) (and {additions}))"
 
     @staticmethod
     def _ignore_effect_str(*, predicate: Predicate, prefix: str) -> str:

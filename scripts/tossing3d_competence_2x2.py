@@ -79,6 +79,7 @@ def experiment_commands(
                     "--pomdp-learning-rate-max",
                     "0.15",
                     "--record-sampler-draws",
+                    "--record-episode-traces",
                     "--output-dir",
                     str(results_root / name),
                 ]

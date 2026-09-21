@@ -70,6 +70,12 @@ class ParticleFilterBelief(SkillBelief):
         parameters, weights = self.arrays()
         return float(weights @ parameters[:, 0])
 
+    def competence_outcome_probability(self, *, successes: int, failures: int) -> float:
+        assert successes >= 0 and failures >= 0
+        parameters, weights = self.arrays()
+        competence = parameters[:, 0]
+        return float(weights @ (competence**successes * (1 - competence) ** failures))
+
     def mean_learning_rate(self) -> float:
         parameters, weights = self.arrays()
         return float(weights @ parameters[:, 1])

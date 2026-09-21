@@ -70,6 +70,50 @@ and surviving phi configurations. Abrupt reversals can expose material particle
 approximation error. Tiny particle populations can exhaust compatible support;
 the configured population is 1,024 and zero-mass posteriors fail explicitly.
 
+## Practice planning and simulator consistency
+
+The initial pilot exposed reset-heavy planning and sparse toss practice. The
+current implementation corrects the shared planner and symbolic dynamics before
+repeating the same four inference arms. The original pilot remains a separate
+measurement at source revision `68dd6a9797fc651922991f4aa3b888d8f7249d1c`.
+
+The practice loop supplies its actual remaining action slots before each decision.
+Determinized search respects that bound as well as its unchanged 100-iteration
+compute limit. Cache keys distinguish remaining budgets. Logs include the effective
+action horizon and selected path depth; the older generic `horizon` argument alone
+did not impose a bound on this solver.
+
+Deployment value is integrated exactly over the represented independent skill
+distributions after the existing pending-example forecast. Repeated attempts use
+mixed moments of the same latent competence, rather than powers of its mean.
+This removes fresh Monte Carlo error from objective comparisons without changing
+the deployment policy, cost distribution, hard-budget alternative or linear lambda.
+Particle approximation and forecast uncertainty still exist.
+
+Both reset mechanisms now delete `Holding` and conditionally add `ClosedEmpty`
+when a cube was held; an already open gripper remains open. The classical and
+belief-space models agree on these effects. Completed resets have success
+probability one, matching the simulator API: errors abort execution rather than
+produce a completed failed reset. Hypothetical resets change atoms and accrued
+cost only. Actual reset completion still records the same success, cost observation,
+training count and cycle refit as before.
+
+A reset whose modeled successor atoms equal its incoming atoms is omitted from
+practice search: it consumes a nonnegative cost and an action slot without changing
+the represented deployment value or future dynamics. Recovery resets remain
+available. This dominance applies within the symbolic abstraction; any benefit of
+resampling physical poses that leaves those atoms unchanged is outside this model.
+
+Failed robot skills need not leave the world unchanged. Their symbolic effect
+distribution is estimated from actual failed practice executions, separately for
+each grounded skill, exact incoming atom set, and epsilon-random versus policy
+sampling mode. Empirical frequencies split the existing failure probability; they
+add no competence observation, learning-rate target or cost charge. Counts persist
+across cycles and stay fixed during each search. Unseen contexts retain the previous
+identity-effect approximation, which can be optimistic. No outcomes from the
+original pilot initialize this model. Before/after atoms and count snapshots are
+logged for independent replay.
+
 ## Running the four arms
 
 From a clean checkout with the committed submodule pins and environment installed:
@@ -91,8 +135,9 @@ The launcher uses `scripts.run_sweep.SweepRunner` and records commands, the sour
 commit, environment paths, source diff, per-run `timing.json`, separate process
 logs and exit statuses. Commit new source files before a measured
 run: the source diff does not include untracked files. Each arm also writes its
-configuration snapshot, progress, sampler draws, physical state log, decisions and
-final statistics. A successful process exit alone is insufficient: check ten refit
+configuration snapshot, progress, sampler draws, physical state log, decisions,
+evaluation episode traces and final statistics. A successful process exit alone is
+insufficient: check ten refit
 and smoothing events, eleven evaluation sweeps, and numerical diagnostics.
 
 Validate the completed matrix and export CSV/JSON summaries plus PNG/PDF figures:

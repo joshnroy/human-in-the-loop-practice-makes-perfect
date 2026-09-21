@@ -706,6 +706,22 @@ class EesMethod(Method):
         del true_atoms
         return self.choose_practice_target()
 
+    def observe_symbolic_transition(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        before_atoms: frozenset[GroundAtom],
+        after_atoms: frozenset[GroundAtom],
+        success: bool,
+        was_random_exploration: bool,
+    ) -> None:
+        """Optional dynamics observation from one real practice execution.
+
+        Both abstractions belong to this attempt: the prestate was captured at
+        dispatch and the poststate is the explicit state passed to observe_pending,
+        including when the harness flushes an attempt before resetting the world.
+        """
+
     def random_choice(self, *, ground_skills: list[GroundSkill]) -> GroundSkill:
         """Uniform pick from this Method's own RNG stream, so a seeded EesMethod
         is fully reproducible."""
@@ -1010,6 +1026,7 @@ class _EesEpisode:
         self._practicing = practicing
         self._plan: list[GroundSkill] = []
         self._pending: GroundSkill | None = None
+        self._pending_before_atoms: frozenset[GroundAtom] = frozenset()
         self._pending_sampler_record: _SkillAttempt | None = None
         self._goal_phase_done = False
         # The last skill of the current practice plan -- the one actually being
@@ -1109,6 +1126,7 @@ class _EesEpisode:
             ground_skill=ground_skill, state=state, explore=explore
         )
         self._pending = ground_skill
+        self._pending_before_atoms = true_atoms
         self._pending_sampler_record = record
         return labeled
 
@@ -1162,6 +1180,13 @@ class _EesEpisode:
                 success=success,
                 was_random_exploration=attempt is not None and attempt.was_random_exploration,
             )
+            self._method.observe_symbolic_transition(
+                ground_skill=self._pending,
+                before_atoms=self._pending_before_atoms,
+                after_atoms=true_atoms,
+                success=success,
+                was_random_exploration=attempt is not None and attempt.was_random_exploration,
+            )
             # `records_training_row`, not `attempt is not None`: a record now exists for
             # every sampler-backed execution, but only an exploring one is training
             # data. This gate is what keeps the learning path byte-identical.
@@ -1188,6 +1213,7 @@ class _EesEpisode:
                     objects=self._pending.objects,
                 )
         self._pending = None
+        self._pending_before_atoms = frozenset()
         self._pending_sampler_record = None
 
     def _next_plan(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:

@@ -5,6 +5,7 @@ from functools import cache
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
+from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
@@ -20,6 +21,7 @@ from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
     Tossing3DBeliefState,
 )
+from hitl_pmp.methods.belief_space.types.failure_effects import FailureEffectCount
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
 
@@ -93,7 +95,13 @@ def apply_success_effects(
         for atom in true_atoms
         if atom.predicate not in ignore_effects and atom not in delete_effects
     }
-    return frozenset(kept | set(add_effects))
+    conditional_additions = {
+        atom
+        for effect in ground_skill.conditional_add_effects
+        if effect.conditions <= true_atoms
+        for atom in effect.add_effects
+    }
+    return frozenset(kept | set(add_effects) | conditional_additions)
 
 
 def transition_outcomes(
@@ -108,6 +116,7 @@ def transition_outcomes(
     ],
     exploration_epsilon: float,
     random_toss_competence: float,
+    failure_effect_counts: tuple[FailureEffectCount, ...] = (),
 ) -> tuple[TransitionBranch, ...]:
     assert action in ground_skills
     assert action.preconditions <= environment_state.true_atoms
@@ -120,6 +129,7 @@ def transition_outcomes(
             probability=mean_competence(belief=state.skill_beliefs[PICK_SKILL]),
             cost=cost,
             effects=effects,
+            failure_effect_counts=failure_effect_counts,
         )
     if action.skill.name == OPEN_GRIPPER_SKILL:
         return binary_outcomes(
@@ -129,15 +139,23 @@ def transition_outcomes(
             probability=mean_competence(belief=state.skill_beliefs[OPEN_GRIPPER_SKILL]),
             cost=cost,
             effects=effects,
+            failure_effect_counts=failure_effect_counts,
         )
     if action.skill.name in RESET_SKILLS:
-        return binary_outcomes(
-            state=state,
-            true_atoms=environment_state.true_atoms,
-            ground_skill=action,
-            probability=mean_competence(belief=state.skill_beliefs[action.skill.name]),
-            cost=cost,
-            effects=effects,
+        # The reset API either completes successfully or raises and aborts the
+        # run. Its empirical performance telemetry is not uncertain dynamics.
+        # Real completions still update S/F, costs and refits, but a forecast must
+        # not invent evidence about a known mechanism or move its cost posterior.
+        return (
+            (
+                1.0,
+                transition_belief_state(state=state, added_cost=cost),
+                apply_success_effects(
+                    true_atoms=environment_state.true_atoms,
+                    ground_skill=action,
+                    effects=effects,
+                ),
+            ),
         )
     assert action.skill.name == TOSS_SKILL
     return toss_outcomes(
@@ -148,6 +166,7 @@ def transition_outcomes(
         exploration_epsilon=exploration_epsilon,
         random_toss_competence=random_toss_competence,
         effects=effects,
+        failure_effect_counts=failure_effect_counts,
     )
 
 
@@ -162,25 +181,38 @@ def binary_outcomes(
         GroundSkill,
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
     ],
+    failure_effect_counts: tuple[FailureEffectCount, ...] = (),
 ) -> tuple[TransitionBranch, ...]:
-    outcomes = []
+    outcomes: list[TransitionBranch] = []
     for success, branch_probability in ((True, probability), (False, 1.0 - probability)):
         if branch_probability <= 0.0:
             continue
-        next_true_atoms = (
-            apply_success_effects(true_atoms=true_atoms, ground_skill=ground_skill, effects=effects)
+        effect_outcomes = (
+            (
+                (
+                    1.0,
+                    apply_success_effects(
+                        true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
+                    ),
+                ),
+            )
             if success
-            else true_atoms
-        )
-        outcomes.append((
-            branch_probability,
-            skill_belief_model(ground_skill=ground_skill).observe_outcome(
-                state=transition_belief_state(state=state, added_cost=cost),
-                success=success,
+            else EmpiricalFailureEffects.outcomes(
+                counts=failure_effect_counts,
+                ground_skill=ground_skill,
+                true_atoms=true_atoms,
                 was_random_exploration=False,
-            ),
-            next_true_atoms,
-        ))
+            )
+        )
+        next_state = skill_belief_model(ground_skill=ground_skill).observe_outcome(
+            state=transition_belief_state(state=state, added_cost=cost),
+            success=success,
+            was_random_exploration=False,
+        )
+        outcomes.extend(
+            (branch_probability * effect_probability, next_state, next_true_atoms)
+            for effect_probability, next_true_atoms in effect_outcomes
+        )
     return tuple(outcomes)
 
 
@@ -196,6 +228,7 @@ def toss_outcomes(
         GroundSkill,
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
     ],
+    failure_effect_counts: tuple[FailureEffectCount, ...] = (),
 ) -> tuple[TransitionBranch, ...]:
     branches: list[TransitionBranch] = []
     for is_random, choice_probability, success_probability in (
@@ -216,21 +249,31 @@ def toss_outcomes(
             belief = state.skill_beliefs[TOSS_SKILL]
             if not is_random:
                 belief = condition_skill_belief(belief=belief, success=success)
-            next_true_atoms = (
-                apply_success_effects(
-                    true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
+            effect_outcomes = (
+                (
+                    (
+                        1.0,
+                        apply_success_effects(
+                            true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
+                        ),
+                    ),
                 )
                 if success
-                else true_atoms
+                else EmpiricalFailureEffects.outcomes(
+                    counts=failure_effect_counts,
+                    ground_skill=ground_skill,
+                    true_atoms=true_atoms,
+                    was_random_exploration=is_random,
+                )
             )
-            branches.append((
-                probability,
-                transition_belief_state(
-                    state=state,
-                    added_cost=toss_cost,
-                    toss_belief=belief,
-                    added_training_examples=1,
-                ),
-                next_true_atoms,
-            ))
+            next_state = transition_belief_state(
+                state=state,
+                added_cost=toss_cost,
+                toss_belief=belief,
+                added_training_examples=1,
+            )
+            branches.extend(
+                (probability * effect_probability, next_state, next_true_atoms)
+                for effect_probability, next_true_atoms in effect_outcomes
+            )
     return tuple(branches)

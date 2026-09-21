@@ -82,6 +82,46 @@ def test_determinized_selector_is_seeded_and_does_not_start_simulator() -> None:
     assert selections[0] == selections[1]
 
 
+@pytest.mark.parametrize("remaining_actions", [0, 1, 3])
+def test_determinized_selector_receives_real_action_budget(
+    *, remaining_actions: int, tmp_path: Path
+) -> None:
+    decision_log = tmp_path / "bounded.jsonl"
+    method = _build(
+        pomdp_num_samples=1,
+        pomdp_num_particles=32,
+        pomdp_solver="determinized_astar",
+        pomdp_search_depth=0,
+        pomdp_max_search_iterations=5,
+        decision_log=decision_log,
+    )
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.observe_practice_action_budget(remaining_actions=remaining_actions)
+    selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
+    decision = json.loads(decision_log.read_text().splitlines()[-1])
+    summary = next(event for event in decision["search"] if event["event"] == "search_summary")
+
+    assert decision["remaining_practice_actions"] == remaining_actions
+    assert summary["effective_action_horizon"] == remaining_actions
+    assert summary["selected_path_depth"] <= remaining_actions
+    assert summary["max_depth_reached"] <= remaining_actions
+    if remaining_actions == 0:
+        assert selection[0].skill.name == "STOP"
+        assert summary["action_transitions_evaluated"] == 0
+    else:
+        assert summary["action_transitions_evaluated"] > 0
+
+
+def test_expectimax_horizon_does_not_exceed_remaining_practice_actions(*, tmp_path: Path) -> None:
+    decision_log = tmp_path / "expectimax_bounded.jsonl"
+    method = _build(pomdp_search_depth=5, decision_log=decision_log)
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.observe_practice_action_budget(remaining_actions=0)
+    assert method.select_skill_to_practice(true_atoms=pick.preconditions)[0].skill.name == "STOP"
+    decision = json.loads(decision_log.read_text().splitlines()[-1])
+    assert decision["horizon"] == 0
+
+
 def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
     class InjectedPlanner(BeliefSpacePlanner):  # type: ignore[type-arg]
         name = "injected"

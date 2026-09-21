@@ -117,6 +117,15 @@ class Method(BaseModel, abc.ABC):
         _create_explorer is only ever consulted for interaction requests)."""
         return self.get_task_policy(task=task)
 
+    def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
+        """Receive the session's remaining action slots immediately before a step.
+
+        The current action is included. Both robot actions and requested resets
+        consume one slot in PracticeLoop. Methods that plan beyond the next action
+        can use this limit without confusing it with a search-compute budget.
+        Methods that do not need the limit inherit this no-op.
+        """
+
     def observe_environment_reset(self, *, state: State) -> None:
         """Called by practice_loop.py immediately *before* it resets the
         environment part-way through an interaction period

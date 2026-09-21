@@ -3,6 +3,7 @@ import pytest
 from pydantic import ValidationError
 
 from hitl_pmp.core.method.types import (
+    ConditionalAddEffect,
     EpisodeTrace,
     GroundSkill,
     LabeledAction,
@@ -452,3 +453,34 @@ def test_practice_target_tally_rejects_more_selections_than_scorings() -> None:
 def test_practice_target_tally_rejects_selected_plus_unreachable_above_scored() -> None:
     with pytest.raises(ValidationError):
         PracticeTargetTally(num_scored=3, num_selected=2, num_unreachable=2)
+
+
+@pytest.mark.parametrize("field", ["conditions", "add_effects"])
+def test_conditional_addition_rejects_undeclared_variables(*, field: str) -> None:
+    skill, robot, current, _ = _move_skill()
+    stray = Variable(name="stray", type=_BLOCK)
+    effect = ConditionalAddEffect(
+        conditions=frozenset({LiftedAtom(predicate=_AT, variables=(robot, current))}),
+        add_effects=frozenset({LiftedAtom(predicate=_AT, variables=(robot, current))}),
+    ).model_copy(update={field: frozenset({LiftedAtom(predicate=_AT, variables=(robot, stray))})})
+    with pytest.raises(ValidationError, match="not in its own parameters"):
+        Skill(**{**dict(skill), "conditional_add_effects": frozenset({effect})})
+
+
+def test_conditional_effects_ground_conditions_and_additions_and_affect_identity() -> None:
+    skill, robot, current, target = _move_skill()
+    effect = ConditionalAddEffect(
+        conditions=frozenset({LiftedAtom(predicate=_AT, variables=(robot, current))}),
+        add_effects=frozenset({LiftedAtom(predicate=_AT, variables=(robot, target))}),
+    )
+    conditional = skill.model_copy(update={"conditional_add_effects": frozenset({effect})})
+    grounded = GroundSkill(skill=conditional, objects=(_OBJ, _OBJ2, _OBJ3))
+    ordinary = GroundSkill(skill=skill, objects=grounded.objects)
+    assert len({ordinary, grounded}) == 2
+    (grounded_effect,) = grounded.conditional_add_effects
+    assert grounded_effect.conditions == frozenset({
+        GroundAtom(predicate=_AT, objects=(_OBJ, _OBJ2))
+    })
+    assert grounded_effect.add_effects == frozenset({
+        GroundAtom(predicate=_AT, objects=(_OBJ, _OBJ3))
+    })

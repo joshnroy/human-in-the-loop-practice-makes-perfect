@@ -202,6 +202,7 @@ class _FakeMethod(Method):
     # test check the Method is handed the state the harness is about to discard
     # rather than the one it is about to reset to.
     reset_observation_xs: list[float] = Field(default_factory=list)
+    observed_practice_budgets: list[int] = Field(default_factory=list)
     # Shared with _FakeProblem -- see its own event_log comment.
     event_log: _EventLog = Field(default_factory=_EventLog)
 
@@ -229,6 +230,9 @@ class _FakeMethod(Method):
     def observe_environment_reset(self, *, state: State) -> None:
         self.reset_observation_xs.append(float(state[_OBJ][0]))
         self.event_log.record(event="observe_environment_reset")
+
+    def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
+        self.observed_practice_budgets.append(remaining_actions)
 
     def _get_action(self, *, state: State) -> LabeledAction:
         del state
@@ -687,6 +691,7 @@ def test_session_cap_is_not_a_stop_decision() -> None:
     assert [end.reason for end in metrics.practice_session_ends] == ["session_action_cap"] * 2
     assert [end.actions_executed for end in metrics.practice_session_ends] == [3, 3]
     assert [end.cycle_index for end in metrics.practice_session_ends] == [0, 1]
+    assert method.observed_practice_budgets == [3, 2, 1, 3, 2, 1]
 
 
 def test_early_stopping_still_ends_the_cycle_and_evaluates() -> None:
@@ -1902,6 +1907,7 @@ def test_a_cube_bin_reset_continues_the_period_rather_than_ending() -> None:
     assert [transitions for transitions, _s, _t in metrics.evaluations] == [0, 6]
     assert metrics.practice_session_ends[0].reason == "session_action_cap"
     assert metrics.practice_session_ends[0].actions_executed == 9
+    assert method.observed_practice_budgets == list(range(9, 0, -1))
 
 
 def test_a_cube_bin_reset_goes_through_execute_movables_reset_not_execute_human_command() -> None:

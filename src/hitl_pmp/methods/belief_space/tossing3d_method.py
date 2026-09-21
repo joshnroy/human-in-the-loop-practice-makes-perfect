@@ -19,6 +19,7 @@ from hitl_pmp.planning.grounding import SkillGrounder
 from .competence_inference import BayesianSkillBelief, InferenceConfig, smooth_history
 from .determinized import DeterminizedAStarPlanner
 from .expectimax import ExpectimaxPlanner
+from .failure_effect_model import EmpiricalFailureEffects
 from .planner import BeliefSpacePlanner
 from .tossing3d_constants import (
     LEARNING_RATE_PROCESS_NOISE_STD,
@@ -105,6 +106,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
+    _remaining_practice_actions: int | None = PrivateAttr(default=None)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -221,6 +223,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def get_practice_policy(self, *, task: Task) -> Policy:
         """Start a practice session without resetting the learned skill state."""
+        self._remaining_practice_actions = None
         # G scores the current session, so its accumulated cost starts at zero.
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
@@ -232,6 +235,10 @@ class Tossing3DPomdpMethod(EesMethod):
             estimated_costs=self.practice_skill_costs(),
         )
         return super().get_practice_policy(task=task)
+
+    def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
+        assert remaining_actions >= 0, "remaining_actions must be non-negative"
+        self._remaining_practice_actions = remaining_actions
 
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
@@ -276,6 +283,37 @@ class Tossing3DPomdpMethod(EesMethod):
             cost=action_cost,
             summed_cost=self._pomdp_state.accumulated_cost,
             estimated_costs=self.practice_skill_costs(),
+        )
+
+    def observe_symbolic_transition(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        before_atoms: frozenset[GroundAtom],
+        after_atoms: frozenset[GroundAtom],
+        success: bool,
+        was_random_exploration: bool,
+    ) -> None:
+        if success or ground_skill.skill.name not in {PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL}:
+            return
+        counts = EmpiricalFailureEffects.observe(
+            counts=self._pomdp_model.failure_effect_counts,
+            ground_skill=ground_skill,
+            before_atoms=before_atoms,
+            after_atoms=after_atoms,
+            was_random_exploration=was_random_exploration,
+        )
+        self._pomdp_model = self._pomdp_model.model_copy(update={"failure_effect_counts": counts})
+        self.record_diagnostic(
+            event="failure_transition",
+            skill=ground_skill.skill.name,
+            objects=[obj.name for obj in ground_skill.objects],
+            before_atoms=sorted(str(atom) for atom in before_atoms),
+            after_atoms=sorted(str(atom) for atom in after_atoms),
+            was_random_exploration=was_random_exploration,
+            add_effects=sorted(str(atom) for atom in after_atoms - before_atoms),
+            delete_effects=sorted(str(atom) for atom in before_atoms - after_atoms),
+            failure_effect_counts=EmpiricalFailureEffects.diagnostics(counts=counts),
         )
 
     def observe_help_granted(self, *, state: State) -> None:
@@ -372,20 +410,35 @@ class Tossing3DPomdpMethod(EesMethod):
         ] = self._pomdp_model
         planner = self.pomdp_planner
         assert planner is not None
+        horizon = self.pomdp_search_depth
+        if self._remaining_practice_actions is not None:
+            horizon = min(horizon, self._remaining_practice_actions)
         search_started_at = time.perf_counter()
         try:
             search_state = make_tossing3d_search_state(
                 state=self._pomdp_state, true_atoms=true_atoms
             )
-            value, action = planner.solve(
-                environment_state=search_state,
-                belief_state=self._pomdp_state,
-                summed_cost=self._pomdp_state.accumulated_cost,
-                horizon=self.pomdp_search_depth,
-                model=model,
-                trace=trace,
-                num_samples=self.pomdp_num_samples,
-            )
+            if isinstance(planner, DeterminizedAStarPlanner):
+                value, action = planner.solve(
+                    environment_state=search_state,
+                    belief_state=self._pomdp_state,
+                    summed_cost=self._pomdp_state.accumulated_cost,
+                    horizon=horizon,
+                    model=model,
+                    trace=trace,
+                    num_samples=self.pomdp_num_samples,
+                    remaining_actions=self._remaining_practice_actions,
+                )
+            else:
+                value, action = planner.solve(
+                    environment_state=search_state,
+                    belief_state=self._pomdp_state,
+                    summed_cost=self._pomdp_state.accumulated_cost,
+                    horizon=horizon,
+                    model=model,
+                    trace=trace,
+                    num_samples=self.pomdp_num_samples,
+                )
         finally:
             trace.close()
         search_duration_seconds = time.perf_counter() - search_started_at
@@ -409,7 +462,8 @@ class Tossing3DPomdpMethod(EesMethod):
             if action == STOP_ACTION
             else action.model_dump(mode="json", fallback=str),
             value=value,
-            horizon=self.pomdp_search_depth if planner.name == "expectimax" else None,
+            horizon=horizon if planner.name == "expectimax" else None,
+            remaining_practice_actions=self._remaining_practice_actions,
             solver=planner.name,
             max_search_iterations=(
                 planner.max_iterations if isinstance(planner, DeterminizedAStarPlanner) else None
@@ -420,6 +474,9 @@ class Tossing3DPomdpMethod(EesMethod):
                 else None
             ),
             model=self._pomdp_model.model_dump(mode="json"),
+            failure_effect_counts=EmpiricalFailureEffects.diagnostics(
+                counts=self._pomdp_model.failure_effect_counts
+            ),
             search=trace.events,
         )
         if isinstance(action, StopAction):

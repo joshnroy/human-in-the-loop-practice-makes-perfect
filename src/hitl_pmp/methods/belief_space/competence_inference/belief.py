@@ -109,6 +109,12 @@ class BayesianSkillBelief(SkillBelief):
         _, weights = self.arrays()
         return float(weights @ self.competence_values())
 
+    def competence_outcome_probability(self, *, successes: int, failures: int) -> float:
+        assert successes >= 0 and failures >= 0
+        _, weights = self.arrays()
+        competence = self.competence_values()
+        return float(weights @ (competence**successes * (1 - competence) ** failures))
+
     def mean_learning_rate(self) -> float:
         _, weights = self.arrays()
         return float(weights @ self.learning_rate_values())

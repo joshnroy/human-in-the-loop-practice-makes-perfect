@@ -11,15 +11,30 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
-from .tossing3d_constants import OPEN_GRIPPER_SKILL, PICK_SKILL, PRACTICE_BUDGET, TOSS_SKILL
-from .tossing3d_deployment_model import evaluate_deployment_policies, evaluate_deployment_policy
+from .tossing3d_constants import (
+    OPEN_GRIPPER_SKILL,
+    PICK_SKILL,
+    PRACTICE_BUDGET,
+    RESET_SKILLS,
+    TOSS_SKILL,
+)
+from .tossing3d_deployment_model import (
+    DeploymentPolicyExpectation,
+    evaluate_deployment_policies,
+    evaluate_deployment_policy,
+)
 from .tossing3d_observation_model import (
     SkillBeliefModel,
     make_skill_belief_models,
     refit_belief_state,
 )
-from .tossing3d_transition_model import make_tossing3d_search_state, transition_outcomes
+from .tossing3d_transition_model import (
+    apply_success_effects,
+    make_tossing3d_search_state,
+    transition_outcomes,
+)
 from .types.belief_state import Tossing3DBeliefState
+from .types.failure_effects import FailureEffectCount
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis
 from .types.theta import Tossing3DTheta
@@ -36,6 +51,7 @@ class Tossing3DPracticeModel(BaseModel):
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
     deployment_horizon: int = Field(default=4, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    failure_effect_counts: tuple[FailureEffectCount, ...] = Field(default=(), exclude=True)
 
     _rng: np.random.Generator = PrivateAttr()
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
@@ -53,7 +69,16 @@ class Tossing3DPracticeModel(BaseModel):
             {
                 atom
                 for skill in self.ground_skills
-                for atom in (*skill.preconditions, *skill.add_effects, *skill.delete_effects)
+                for atom in (
+                    *skill.preconditions,
+                    *skill.add_effects,
+                    *skill.delete_effects,
+                    *(
+                        atom
+                        for effect in skill.conditional_add_effects
+                        for atom in (*effect.conditions, *effect.add_effects)
+                    ),
+                )
             },
             key=str,
         )
@@ -133,16 +158,22 @@ class Tossing3DPracticeModel(BaseModel):
     def J(
         self, *, belief_state: Tossing3DBeliefState, summed_cost: float, num_samples: int
     ) -> float:
-        """Estimate the PDF's belief objective J(C, b) = E[G(C, theta)]."""
-        policy_values = self.sample_policy_values_from_belief(
-            belief_state=belief_state, num_samples=num_samples
+        """Integrate J(C, b) exactly over the represented competence distributions.
+
+        G is affine in deployment value for either supported cost objective.
+        No fresh Monte Carlo draw is needed to compare stopping values, which
+        otherwise introduces noise much larger than one reset's cost penalty.
+        Particle/grid approximation and the existing training forecasts remain.
+        """
+        assert num_samples >= 1
+        projected = refit_belief_state(state=belief_state)
+        policy_value = DeploymentPolicyExpectation.evaluate(
+            pick=projected.skill_beliefs[PICK_SKILL],
+            toss=projected.skill_beliefs[TOSS_SKILL],
+            opened=projected.skill_beliefs[OPEN_GRIPPER_SKILL],
+            horizon=self.deployment_horizon,
         )
-        values = np.fromiter(
-            (self.G(policy_value=float(value), summed_cost=summed_cost) for value in policy_values),
-            dtype=np.float64,
-            count=num_samples,
-        )
-        return float(np.mean(values))
+        return self.G(policy_value=policy_value, summed_cost=summed_cost)
 
     def observe_outcome(
         self,
@@ -168,11 +199,27 @@ class Tossing3DPracticeModel(BaseModel):
         return self._skill_belief_models_by_name[skill_name].observe_training_example(state=state)
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
+        """Return applicable actions except dominated symbolic reset self-loops.
+
+        A known-success reset that changes no atom only spends nonnegative cost
+        and an action slot in this abstract model. Real geometry randomization
+        may have value that this symbolic state does not represent; pruning here
+        makes no claim of global optimality in the physical simulator.
+        """
         state_mask = self._atoms_mask(atoms=environment_state.true_atoms)
         return [
             ground_skill
             for index, ground_skill in enumerate(self.ground_skills)
             if self._precondition_masks[index] & state_mask == self._precondition_masks[index]
+            and (
+                ground_skill.skill.name not in RESET_SKILLS
+                or apply_success_effects(
+                    true_atoms=environment_state.true_atoms,
+                    ground_skill=ground_skill,
+                    effects=self._effects,
+                )
+                != environment_state.true_atoms
+            )
         ]
 
     def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
@@ -268,6 +315,7 @@ class Tossing3DPracticeModel(BaseModel):
             effects=self._effects,
             exploration_epsilon=self.exploration_epsilon,
             random_toss_competence=self.random_toss_competence,
+            failure_effect_counts=self.failure_effect_counts,
         )
 
     def sample_next_states(

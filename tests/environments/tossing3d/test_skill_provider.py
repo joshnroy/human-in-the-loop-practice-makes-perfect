@@ -10,7 +10,7 @@ from hitl_pmp.core.method.skill_provider import ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
-from hitl_pmp.environments.tossing3d.predicates import IN_BIN, ON_GROUND, REACHABLE
+from hitl_pmp.environments.tossing3d.predicates import HOLDING, IN_BIN, ON_GROUND, REACHABLE
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 
@@ -98,15 +98,8 @@ def test_it_is_bound_to_all_four_domain_objects() -> None:
     assert ground.objects == (env.robot, env.cube, env.bin, env.barrier)
 
 
-def test_the_ground_precondition_is_now_empty_not_hand_empty() -> None:
-    """Used to require HandEmpty(robot), on the reasoning that 'nothing about Holding
-    changes' is only true while the gripper is empty. That guarded a real correctness
-    gap but made the rescue unreachable from the one state it exists to rescue -- a
-    near-miss grasp leaves HandEmpty and Holding both false, and nothing in this
-    domain's operator model ever restores HandEmpty on its own. The framework has no
-    negation, so the closest expressible precondition to the right one (not Holding)
-    is none at all. See Tossing3DSkillProvider.human_cube_bin_reset_skill's own
-    docstring for the full reasoning."""
+def test_reset_remains_applicable_with_an_open_closed_or_holding_gripper() -> None:
+    """A failed grasp and a stranded cube must both retain the rescue mechanism."""
     env = Tossing3DEnvironment()
     ground = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skill()
     assert ground.preconditions == frozenset()
@@ -125,11 +118,12 @@ def test_add_effects_place_the_cube_on_ground_and_reachable() -> None:
     })
 
 
-def test_delete_effects_remove_in_bin_since_the_fresh_position_cannot_score() -> None:
+def test_delete_effects_remove_in_bin_and_holding_since_the_cube_is_relocated() -> None:
     env = Tossing3DEnvironment()
     ground = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skill()
     assert ground.delete_effects == frozenset({
         GroundAtom(predicate=IN_BIN, objects=(env.cube, env.bin)),
+        GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube)),
     })
 
 
@@ -138,15 +132,11 @@ def test_add_and_delete_effects_never_overlap() -> None:
     assert ground.add_effects.isdisjoint(ground.delete_effects)
 
 
-def test_the_operator_never_names_hand_empty_or_holding_as_an_effect() -> None:
-    """The load-bearing claim this skill makes: since the robot is never touched, no
-    atom about it is added or deleted -- only preconditioned on. Checked by name
-    rather than by predicate identity so a future refactor that renames Holding/
-    HandEmpty cannot silently reintroduce an effect on them without this failing."""
+def test_reset_preserves_the_gripper_command() -> None:
     ground = _provider().human_cube_bin_reset_skill()
     touched_names = {atom.predicate.name for atom in (ground.add_effects | ground.delete_effects)}
     assert "HandEmpty" not in touched_names
-    assert "Holding" not in touched_names
+    assert "Holding" in touched_names
 
 
 def test_param_dim_is_zero_so_it_has_no_sampler() -> None:
@@ -170,6 +160,7 @@ def test_non_human_reset_duplicates_reset_mechanics_with_independent_identity() 
     assert automatic.preconditions == human.preconditions
     assert automatic.add_effects == human.add_effects
     assert automatic.delete_effects == human.delete_effects
+    assert automatic.conditional_add_effects == human.conditional_add_effects
     assert provider.movables_reset_skills() == (human, automatic)
 
 

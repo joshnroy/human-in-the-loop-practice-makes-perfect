@@ -543,13 +543,12 @@ def test_cycle_refit_applies_learning_rate_process_noise_without_examples() -> N
     assert np.any(after[:, 1] != before[:, 1])
 
 
-def test_only_physically_applicable_actions_are_returned() -> None:
+def test_applicable_actions_exclude_dominated_symbolic_reset_self_loops() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()
     ready = _search_state(model=model, state=belief, action_name=PICK_SKILL)
     assert {action.skill.name for action in model.get_valid_actions(environment_state=ready)} == {
         PICK_SKILL,
-        RESET_SKILL,
     }
     carrying = _search_state(model=model, state=belief, action_name=TOSS_SKILL)
     assert {
@@ -610,17 +609,21 @@ def test_human_reset_uses_unchanged_ees_empty_preconditions(*, action_name: str)
     model = _domain_model(reset_cost=1.0)
     state = make_default_tossing3d_belief()
     search_state = _search_state(model=model, state=state, action_name=action_name)
-    assert RESET_SKILL in {
-        action.skill.name for action in model.get_valid_actions(environment_state=search_state)
-    }
+    reset = _ground_skill(model=model, name=RESET_SKILL)
+    assert reset.preconditions == frozenset()
+    assert reset.preconditions <= search_state.true_atoms
+    assert (
+        RESET_SKILL
+        in {action.skill.name for action in model.get_valid_actions(environment_state=search_state)}
+    ) == (action_name != PICK_SKILL)
 
 
 def test_disabling_human_reset_removes_only_that_ees_skill() -> None:
     with_reset = _domain_model(reset_cost=1.0)
     without_reset = _domain_model(reset_cost=None)
     state = make_default_tossing3d_belief()
-    with_state = _search_state(model=with_reset, state=state, action_name=PICK_SKILL)
-    without_state = _search_state(model=without_reset, state=state, action_name=PICK_SKILL)
+    with_state = _search_state(model=with_reset, state=state, action_name=TOSS_SKILL)
+    without_state = _search_state(model=without_reset, state=state, action_name=TOSS_SKILL)
     assert {
         action.skill.name for action in with_reset.get_valid_actions(environment_state=with_state)
     } - {
@@ -652,16 +655,15 @@ def test_human_reset_observation_updates_its_joint_belief_and_training_count() -
     assert observed.pending_examples[RESET_SKILL] == 1
 
 
-def test_human_reset_transition_uses_inferred_success_probability() -> None:
+def test_human_reset_transition_uses_known_success_without_hypothetical_evidence() -> None:
     model = _domain_model(reset_cost=0.25)
     state = make_default_tossing3d_belief(include_human_reset=True)
     outcomes = _outcomes(model=model, state=state, name=RESET_SKILL)
-    competence = mean_competence(belief=state.skill_beliefs[RESET_SKILL])
-    assert [outcome[0] for outcome in outcomes] == pytest.approx([competence, 1.0 - competence])
-    assert outcomes[0][2] != outcomes[1][2]
+    assert [outcome[0] for outcome in outcomes] == [1.0]
     estimated_cost = mean_cost(belief=state.skill_beliefs[RESET_SKILL])
     assert all(outcome[1].accumulated_cost == pytest.approx(estimated_cost) for outcome in outcomes)
-    assert all(outcome[1].pending_examples[RESET_SKILL] == 1 for outcome in outcomes)
+    assert outcomes[0][1].skill_beliefs == state.skill_beliefs
+    assert outcomes[0][1].pending_examples == state.pending_examples
 
 
 def test_human_reset_refit_consumes_examples_without_synthetic_evidence() -> None:

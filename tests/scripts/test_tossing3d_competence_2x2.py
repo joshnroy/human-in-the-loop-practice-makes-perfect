@@ -27,6 +27,7 @@ def test_four_commands_parse_with_only_model_and_engine_varying(*, tmp_path: Pat
         assert args.seed == 0
         assert args.human_reset_practice_cost == 5
         assert args.pomdp_linear_cost_lambda == 0.0003
+        assert args.record_episode_traces
         config = vars(args).copy()
         for key in ("pomdp_competence_model", "pomdp_inference_engine", "output_dir"):
             del config[key]

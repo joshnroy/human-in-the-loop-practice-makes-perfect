@@ -302,3 +302,82 @@ def test_planner_compute_budget_is_independent_of_expectimax_horizon() -> None:
 
     assert value == pytest.approx(0.9)
     assert action == RIGHT
+
+
+@pytest.mark.parametrize("remaining_actions", [0, 1, 2])
+def test_real_action_budget_limits_paths_and_stops_at_zero(*, remaining_actions: int) -> None:
+    model = Model(
+        transitions={
+            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
+            (HIGH, FINISH): [(GOAL, 0.0, 1.0)],
+        },
+        beliefs={HIGH: BeliefState(value=0.6), GOAL: BeliefState(value=0.9)},
+    )
+    trace = SearchTrace()
+    value, action = DeterminizedAStarPlanner(max_iterations=100, seed=0).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=99,
+        remaining_actions=remaining_actions,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+
+    assert value == pytest.approx([0.2, 0.6, 0.9][remaining_actions])
+    assert action == (STOP_ACTION if remaining_actions == 0 else RIGHT)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["effective_action_horizon"] == remaining_actions
+    assert summary["selected_path_depth"] == remaining_actions
+    assert summary["max_depth_reached"] == remaining_actions
+    assert summary["action_transitions_evaluated"] == remaining_actions
+    assert summary["action_horizon_terminal_nodes"] == 1
+    assert summary["termination_reason"] == "action_horizon_exhausted"
+
+
+def test_same_state_with_a_remaining_action_is_not_closed_by_a_terminal_visit() -> None:
+    class DepthPenaltyPlanner(DeterminizedAStarPlanner):
+        def heuristic(self, *, node: DeterminizedSearchNode) -> float:
+            # Visit HIGH through LOW first, exhausting the two-action budget.
+            # The direct visit must still expand HIGH -> GOAL with its final slot.
+            return 0.15 if node.environment_state == HIGH and node.depth == 1 else 0.0
+
+    model = Model(
+        transitions={
+            (ROOT, LEFT): [(LOW, 0.0, 1.0)],
+            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
+            (LOW, FINISH): [(HIGH, 0.0, 1.0)],
+            (HIGH, FINISH): [(GOAL, 0.0, 1.0)],
+        },
+        beliefs={
+            LOW: BeliefState(value=0.3),
+            HIGH: BeliefState(value=0.4),
+            GOAL: BeliefState(value=0.9),
+        },
+    )
+    value, action = DepthPenaltyPlanner(max_iterations=100, seed=0).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=0,
+        remaining_actions=2,
+        model=model,
+        num_samples=1,
+    )
+
+    assert value == pytest.approx(0.9)
+    assert action == RIGHT
+
+
+def test_negative_remaining_action_budget_is_rejected() -> None:
+    with pytest.raises(AssertionError, match="remaining_actions must be non-negative"):
+        DeterminizedAStarPlanner(max_iterations=100, seed=0).solve(
+            environment_state=ROOT,
+            summed_cost=0.0,
+            belief_state=BeliefState(value=0.2),
+            horizon=0,
+            remaining_actions=-1,
+            model=Model(),
+            num_samples=1,
+        )

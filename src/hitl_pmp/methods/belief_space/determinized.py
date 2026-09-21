@@ -59,6 +59,7 @@ class DeterminizedAStarPlanner(
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
         num_samples: int = NUM_SAMPLES,
         trace: SearchTrace | None = None,
+        remaining_actions: int | None = None,
     ) -> tuple[float, ActionT | StopAction]:
         """Search one sampled deterministic successor per applicable action.
 
@@ -70,12 +71,16 @@ class DeterminizedAStarPlanner(
         bounds the number of priority-queue iterations (pops), not search depth.
 
         Additional model sampling remains controlled by the experiment's
-        master-seeded model. The iteration limit bounds cyclic search spaces without
-        imposing a depth cutoff or wall-clock stopping condition.
+        master-seeded model. Optional ``remaining_actions`` separately limits plans
+        to the real practice session's remaining action slots. Without it, the
+        iteration limit bounds cyclic search without imposing a depth cutoff.
         """
         # ``horizon`` belongs to the shared interface for exact expectimax. It
         # deliberately does not bound this iteration-budgeted planner.
         del horizon
+        assert remaining_actions is None or remaining_actions >= 0, (
+            "remaining_actions must be non-negative"
+        )
         assert self.max_iterations >= 1, "max_iterations must be positive"
         assert num_samples >= 1, "num_samples must be positive"
         assert math.isfinite(summed_cost) and summed_cost >= 0, (
@@ -97,6 +102,7 @@ class DeterminizedAStarPlanner(
         best_g = 0.0  # Algorithm 3's cumulative search cost g.
         best_objective_value = root_value
         best_action: ActionT | StopAction = STOP_ACTION
+        best_path_depth = 0
         # Algorithm 3, line 3: Open <- {(b0, g=0)}.
         open_nodes: list[
             DeterminizedSearchQueueEntry[EnvironmentStateT, BeliefStateT, ActionT]
@@ -107,10 +113,9 @@ class DeterminizedAStarPlanner(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
-            # Determinized search is compute-bounded, not horizon-bounded. The
-            # model protocol still accepts a remaining-horizon discriminator for
-            # exact expectimax; None is the depth-independent sentinel.
-            horizon=None,
+            # An identical state reached with fewer action slots has different
+            # continuations. None preserves unrestricted graph-search merging.
+            horizon=remaining_actions,
         )
         # Our sampled stopping objective J(C, b), cached per belief-space node.
         values_by_key = {root_key: root_value}
@@ -160,6 +165,12 @@ class DeterminizedAStarPlanner(
             closed.add(current_node.cache_info.key)
             diagnostics.observe_expansion(depth=current_node.diagnostic_info.depth)
 
+            if remaining_actions is not None and (
+                current_node.diagnostic_info.depth >= remaining_actions
+            ):
+                diagnostics.action_horizon_terminal_nodes += 1
+                continue
+
             # Algorithm 3: for action a applicable in belief b.
             for action in model.get_valid_actions(
                 environment_state=current_node.belief.environment_state
@@ -205,6 +216,9 @@ class DeterminizedAStarPlanner(
                     belief_state=next_belief,
                     summed_cost=next_cost,
                     num_samples=num_samples,
+                    remaining_actions=(
+                        None if remaining_actions is None else remaining_actions - next_depth
+                    ),
                 )
                 if value == -math.inf:
                     continue
@@ -247,6 +261,7 @@ class DeterminizedAStarPlanner(
                         best_g = next_path_cost
                         best_objective_value = value
                         best_action = first_action
+                        best_path_depth = next_depth
                     sequence += 1
                     heapq.heappush(
                         open_nodes,
@@ -272,6 +287,8 @@ class DeterminizedAStarPlanner(
 
         if open_nodes and iterations >= self.max_iterations:
             diagnostics.termination_reason = "iteration_budget"
+        elif diagnostics.action_horizon_terminal_nodes:
+            diagnostics.termination_reason = "action_horizon_exhausted"
 
         if trace is not None:
             # Algorithm 3, line 26: return the first action on the minimum-g
@@ -284,6 +301,7 @@ class DeterminizedAStarPlanner(
                 if best_action == STOP_ACTION
                 else best_action.model_dump(mode="json", fallback=str),
                 value=best_objective_value,
+                selected_path_depth=best_path_depth,
                 reason="minimum_g_sampled_path_stop_wins_ties",
             )
             trace.record(
@@ -300,6 +318,9 @@ class DeterminizedAStarPlanner(
                 frontier_nodes=len(open_nodes),
                 max_frontier_size=diagnostics.max_frontier_size,
                 max_depth_reached=diagnostics.max_depth_reached,
+                effective_action_horizon=remaining_actions,
+                selected_path_depth=best_path_depth,
+                action_horizon_terminal_nodes=diagnostics.action_horizon_terminal_nodes,
                 iterations=iterations,
                 max_iterations=self.max_iterations,
                 observation_probability_weight=self.observation_probability_weight,
@@ -329,13 +350,14 @@ class DeterminizedAStarPlanner(
         belief_state: BeliefStateT,
         summed_cost: float,
         num_samples: int,
+        remaining_actions: int | None = None,
     ) -> tuple[object, float]:
         """Return the belief key and cached J(C, b), computing J on a cache miss."""
         key = model.search_cache_key(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
-            horizon=None,
+            horizon=remaining_actions,
         )
         cached_value = values_by_key.get(key)
         if cached_value is not None:
