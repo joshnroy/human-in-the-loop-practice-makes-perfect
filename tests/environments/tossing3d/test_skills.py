@@ -414,6 +414,25 @@ def test_the_four_same_side_toss_dials_are_drawn_independently() -> None:
     assert np.max(np.abs(off_diagonal)) < 0.15
 
 
+def test_samplers_cover_farther_receivers_without_losing_short_throws() -> None:
+    """Candidate support spans the far-bin clearance requirement and short throws.
+
+    The same-side sampler is the one whose independent distance draw must span both;
+    the barrier layout's wide proposal covers the far-bin requirement with its fixed
+    standoff instead, having dropped short throws by design with the proposal choice.
+    """
+    from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
+    from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
+        WideLongRangeTossProposal,
+    )
+
+    rng = np.random.default_rng(0)
+    distances = [SameSideSkills.sample_params(ground_skill=_toss(), rng=rng)[0] for _ in range(200)]
+    assert any(distance > 2.425 + 0.05 for distance in distances)
+    assert any(distance < 1.45 for distance in distances)
+    assert WideLongRangeTossProposal.sample(rng=rng)[0] > 2.425 + 0.05
+
+
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     stray = GroundSkill(
         skill=_SKILLS.PICK_CUBE.model_copy(update={"name": "NotASkill"}),
