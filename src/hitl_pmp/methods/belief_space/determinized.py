@@ -10,6 +10,7 @@ from __future__ import annotations
 import heapq
 import math
 import time
+from typing import Any
 
 import numpy as np
 
@@ -41,6 +42,7 @@ class DeterminizedAStarPlanner(
         max_iterations: int,
         seed: int,
         observation_probability_weight: float = 0.1,
+        log_full_search_tree: bool = False,
     ) -> None:
         assert math.isfinite(observation_probability_weight)
         assert observation_probability_weight >= 0.0
@@ -48,6 +50,7 @@ class DeterminizedAStarPlanner(
         self.rng = np.random.default_rng(seed)
         # Algorithm 3's lambda: weight on the sampled observation log probability.
         self.observation_probability_weight = observation_probability_weight
+        self.log_full_search_tree = log_full_search_tree
 
     def solve(
         self,
@@ -134,12 +137,23 @@ class DeterminizedAStarPlanner(
         cached_successor_relaxations = 0
         stale_queue_entries = 0
         diagnostics = DeterminizedSearchDiagnostics()
+        search_node_ids = {root_key: 0}
+        root_action_paths: list[dict[str, Any]] = []
         sequence = 0
         # Algorithm 3 uses one iteration per Open pop; this is also our traversed-node count.
         iterations = 0
 
         if trace is not None:
             trace.record(event="stop_value", node=0, value=root_value)
+            if self.log_full_search_tree:
+                trace.record(
+                    event="tree_node",
+                    node=0,
+                    depth=0,
+                    g=0.0,
+                    stop_value=root_value,
+                    summed_cost=summed_cost,
+                )
 
         if root_value != -math.inf:
             # The queue entry contains Algorithm 3's (b_0, g=0), plus only the
@@ -168,6 +182,20 @@ class DeterminizedAStarPlanner(
         while open_nodes and iterations < self.max_iterations:
             current_node = heapq.heappop(open_nodes)
             iterations += 1
+            current_search_node_id = search_node_ids[current_node.cache_info.key]
+            if trace is not None and self.log_full_search_tree:
+                trace.record(
+                    event="tree_pop",
+                    node=current_search_node_id,
+                    iteration=iterations,
+                    depth=current_node.diagnostic_info.depth,
+                    g=current_node.g,
+                    frontier_size_after_pop=len(open_nodes),
+                    skipped_already_closed=current_node.cache_info.key in closed,
+                    skipped_stale=self.strictly_improves(
+                        candidate=cost[current_node.cache_info.key], previous=current_node.g
+                    ),
+                )
             if self.strictly_improves(
                 candidate=cost[current_node.cache_info.key], previous=current_node.g
             ):
@@ -259,7 +287,27 @@ class DeterminizedAStarPlanner(
                         None if remaining_actions is None else remaining_actions - next_depth
                     ),
                 )
+                child_is_new = key not in search_node_ids
+                child_search_node_id = search_node_ids.setdefault(key, len(search_node_ids))
                 if value == -math.inf:
+                    if trace is not None and current_node.diagnostic_info.depth == 0:
+                        trace.record(
+                            event="action_rejected",
+                            node=0,
+                            action=action.model_dump(mode="json", fallback=str),
+                            reason="infeasible_stop_value",
+                            sampled_cost=sampled_cost,
+                            sampled_observation_probability=estimated_observation_probability,
+                        )
+                    if trace is not None and self.log_full_search_tree:
+                        trace.record(
+                            event="tree_edge",
+                            node=current_search_node_id,
+                            child_node=child_search_node_id,
+                            depth=next_depth,
+                            action=action.model_dump(mode="json", fallback=str),
+                            disposition="infeasible",
+                        )
                     continue
                 # Algorithm 3, lines 17-19: update g'. Here the estimated
                 # reward is improvement in J. For linear G,
@@ -292,6 +340,67 @@ class DeterminizedAStarPlanner(
                 next_path_cost = (
                     current_node.g - estimated_reward + observation_surprise + heuristic_cost
                 )  # Algorithm 3: g'.
+                action_path = current_node.path_recovery_info.action_path + (action,)
+                cumulative_surprise = (
+                    current_node.path_recovery_info.observation_surprise + observation_surprise
+                )
+                cumulative_heuristic = (
+                    current_node.path_recovery_info.heuristic_cost + heuristic_cost
+                )
+                if trace is not None:
+                    path = next(
+                        (item for item in root_action_paths if item["root_action"] == first_action),
+                        None,
+                    )
+                    if path is None:
+                        path = {"root_action": first_action, "path_cost_g": math.inf}
+                        root_action_paths.append(path)
+                    if next_path_cost < path["path_cost_g"]:
+                        path.update(
+                            value=value,
+                            path_cost_g=next_path_cost,
+                            objective_improvement=value - root_value,
+                            observation_surprise=cumulative_surprise,
+                            heuristic_cost=cumulative_heuristic,
+                            practice_cost=next_cost - summed_cost,
+                            depth=next_depth,
+                            sampled_observation_probability=estimated_observation_probability,
+                            best_action_path=[
+                                a.model_dump(mode="json", fallback=str) for a in action_path
+                            ],
+                            beats_stop=next_path_cost < 0.0,
+                        )
+                    if self.log_full_search_tree:
+                        if child_is_new:
+                            trace.record(
+                                event="tree_node",
+                                node=child_search_node_id,
+                                depth=next_depth,
+                                g=next_path_cost,
+                                stop_value=value,
+                                summed_cost=next_cost,
+                            )
+                        trace.record(
+                            event="tree_edge",
+                            node=current_search_node_id,
+                            child_node=child_search_node_id,
+                            depth=next_depth,
+                            action=action.model_dump(mode="json", fallback=str),
+                            sampled_cost=sampled_cost,
+                            sampled_observation_probability=estimated_observation_probability,
+                            parent_stop_value=current_node.cache_info.stop_value,
+                            child_stop_value=value,
+                            estimated_reward=estimated_reward,
+                            observation_surprise=observation_surprise,
+                            heuristic_cost=heuristic_cost,
+                            child_g=next_path_cost,
+                            previous_best_g=cost.get(key),
+                            cached_successor=not sample_new_edges,
+                            disposition="enqueued"
+                            if key not in cost
+                            or self.strictly_improves(candidate=next_path_cost, previous=cost[key])
+                            else "dominated",
+                        )
                 # Algorithm 3, lines 20-22: insert b' only for a newly discovered
                 # or strictly cheaper path.
                 if key not in cost or self.strictly_improves(
@@ -323,7 +432,10 @@ class DeterminizedAStarPlanner(
                                 queue_sequence=sequence,
                             ),
                             path_recovery_info=DeterminizedPathRecoveryInfo(
-                                first_action=first_action
+                                first_action=first_action,
+                                action_path=action_path,
+                                observation_surprise=cumulative_surprise,
+                                heuristic_cost=cumulative_heuristic,
                             ),
                         ),
                     )
@@ -335,6 +447,14 @@ class DeterminizedAStarPlanner(
             diagnostics.termination_reason = "action_horizon_exhausted"
 
         if trace is not None:
+            for path in root_action_paths:
+                root_action = path.pop("root_action")
+                trace.record(
+                    event="action_value",
+                    node=0,
+                    action=root_action.model_dump(mode="json", fallback=str),
+                    **path,
+                )
             # Algorithm 3, line 26: return the first action on the minimum-g
             # sampled path found in Open or Closed. ``best_g`` tracks
             # that node as children are generated.

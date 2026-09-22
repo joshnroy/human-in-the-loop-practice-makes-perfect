@@ -384,8 +384,9 @@ def test_negative_remaining_action_budget_is_rejected() -> None:
 
 
 @pytest.mark.parametrize("remaining_actions", [None, 3])
+@pytest.mark.parametrize("log_full_search_tree", [False, True])
 def test_cheaper_closed_path_propagates_without_resampling(
-    *, remaining_actions: int | None
+    *, remaining_actions: int | None, log_full_search_tree: bool
 ) -> None:
     merged = EnvironmentState(name="merged")
     safe = EnvironmentState(name="safe")
@@ -411,7 +412,10 @@ def test_cheaper_closed_path_propagates_without_resampling(
     )
     trace = SearchTrace()
     planner = DeterminizedAStarPlanner(
-        max_iterations=100, seed=3, observation_probability_weight=0.1
+        max_iterations=100,
+        seed=3,
+        observation_probability_weight=0.1,
+        log_full_search_tree=log_full_search_tree,
     )
     value, action = planner.solve(
         environment_state=ROOT,
@@ -434,6 +438,18 @@ def test_cheaper_closed_path_propagates_without_resampling(
     assert summary["action_transitions_evaluated"] == 6
     assert summary["selected_path_depth"] == 3
     assert model.evaluations == 6  # cached J is also reused on reopening
+    paths = [row for row in trace.events if row["event"] == "action_value"]
+    assert len(paths) == 3
+    right_path = next(row for row in paths if row["action"] == RIGHT.model_dump())
+    assert right_path["value"] == pytest.approx(0.8)
+    assert right_path["path_cost_g"] == pytest.approx(-0.6)
+    assert right_path["objective_improvement"] == pytest.approx(0.6)
+    assert right_path["observation_surprise"] == pytest.approx(0.0)
+    assert len(right_path["best_action_path"]) == 3
+    tree_edges = [row for row in trace.events if row["event"] == "tree_edge"]
+    assert bool(tree_edges) == log_full_search_tree
+    if log_full_search_tree:
+        assert sum(row.get("cached_successor", False) for row in tree_edges) == 1
     expected_rng = np.random.default_rng(3)
     expected_rng.random(6)
     assert planner.rng.bit_generator.state == expected_rng.bit_generator.state

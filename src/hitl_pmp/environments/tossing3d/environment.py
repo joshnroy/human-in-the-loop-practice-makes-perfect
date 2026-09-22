@@ -380,7 +380,10 @@ class Tossing3DEnvironment(Environment):
         name, objects = self._skill_label(action=action)
         writer.record_skill(name=name, objects=objects, params=tuple(float(v) for v in action[1:]))
         for tick in ticks:
-            writer.record_tick(state=backend.snapshot_to_plain(snapshot=tick))
+            writer.record_tick(
+                state=backend.snapshot_to_plain(snapshot=tick),
+                abstraction_diagnostics=backend.abstraction_diagnostics(state=tick),
+            )
 
     def _skill_label(self, *, action: Action) -> tuple[str, tuple[str, ...]]:
         """The (name, bound objects) `_execute` would dispatch on `action[0]` -- kept

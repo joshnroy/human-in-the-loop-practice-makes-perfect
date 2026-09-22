@@ -265,6 +265,28 @@ class KinderApi(BaseModel):
     render_collection: Any
 
 
+def interaction_camera_position(
+    *,
+    points: np.ndarray,
+    original_position: np.ndarray,
+    original_target: np.ndarray,
+    vertical_fov: float,
+    aspect: float,
+) -> np.ndarray:
+    """Fit robot/cube/bin with body-sized margins and an unchanged view direction."""
+    lower = points.min(axis=0) - 1.0
+    upper = points.max(axis=0) + 1.0
+    center = (lower + upper) / 2
+    radius = float(np.linalg.norm(upper - lower) / 2)
+    vertical_half_angle = np.deg2rad(vertical_fov) / 2
+    horizontal_half_angle = np.arctan(np.tan(vertical_half_angle) * aspect)
+    half_angle = min(vertical_half_angle, horizontal_half_angle)
+    direction = original_position - original_target
+    original_distance = float(np.linalg.norm(direction))
+    distance = max(original_distance, 1.1 * radius / np.sin(half_angle))
+    return center + direction / original_distance * distance
+
+
 class KinderBackend(BaseModel):
     """A live `kinder/Tossing3D-<variant>-v0` and the translation to and from it.
 
@@ -664,10 +686,15 @@ class KinderBackend(BaseModel):
         dict cannot carry on its own."""
         template = self._require_state()
         objects_by_name = {obj.name: obj for obj in template}
-        data = {
+        # Fixed collider names embed compiled MuJoCo geometry IDs. Presentation
+        # assets can renumber those IDs; fixed geometry belongs to the live model
+        # and cannot be restored by moving state objects anyway.
+        data = {obj: template[obj].copy() for obj in template if obj.name.startswith("collider:")}
+        data.update({
             objects_by_name[name]: np.array(values, dtype=np.float32)
             for name, values in plain.items()
-        }
+            if not name.startswith("collider:")
+        })
         return type(template)(data, template.type_features)
 
     def reset_cube_and_bin(
@@ -855,6 +882,16 @@ class KinderBackend(BaseModel):
             atoms |= frozenset({("OnBinRim", (self.cube_name, self.bin_name))})
         return atoms
 
+    def abstraction_diagnostics(self, *, state: Any = None) -> dict[str, Any]:
+        """Return auditable geometric evidence used by upstream predicates."""
+        if self._abstractor is None:
+            raise RuntimeError("KinderBackend.reset() has not run yet; there is no abstractor.")
+        subject = self._require_state() if state is None else state
+        robot = subject.get_object_from_name(self.robot_name)
+        cube = subject.get_object_from_name(self.cube_name)
+        evidence = self._abstractor.holding_evidence(subject, robot, cube)
+        return {"holding": evidence.as_dict()}
+
     def check_goals(self) -> bool:
         """Upstream's own verdict -- `ObjectCentricTidyBot3DEnv._check_goals()`.
 
@@ -891,7 +928,7 @@ class KinderBackend(BaseModel):
         x_min, y_min, z_min, x_max, y_max, z_max = bbox
         return (x_min, y_min, z_min, x_max, y_max, z_max)
 
-    def render(self) -> np.ndarray:
+    def render(self, *, follow_robot: bool = False) -> np.ndarray:
         """One RGB frame from `task_view`, copied out of MuJoCo's buffer.
 
         Rendered from the *unwrapped* env, so a single frame is still a single frame
@@ -905,6 +942,41 @@ class KinderBackend(BaseModel):
         """
         if self._raw_env is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is nothing to render.")
+        if follow_robot:
+            # Frame the whole interaction, including the cube in flight. Keep the
+            # task camera's orientation and retreat far enough to contain a padded
+            # bounding sphere in BOTH image dimensions. Restore the model afterwards.
+            scene = self._object_centric()
+            robot_env = scene._robot_env
+            sim = robot_env.sim
+            camera_id = sim.model.camera_name2id(self.camera)
+            model = sim.model.mj_model
+            original_position = model.cam_pos[camera_id].copy()
+            robot = self._state.get_object_from_name(self.robot_name)
+            robot_position = np.array([
+                self._state.get(robot, "pos_base_x"),
+                self._state.get(robot, "pos_base_y"),
+                0.7,
+            ])
+            points = [robot_position]
+            for name in (self.cube_name, self.bin_name):
+                obj = self._state.get_object_from_name(name)
+                points.append(np.array([self._state.get(obj, key) for key in ("x", "y", "z")]))
+            camera_config = scene.task_config["cameras"][self.camera]
+            position = interaction_camera_position(
+                points=np.array(points),
+                original_position=original_position,
+                original_target=np.asarray(camera_config.get("lookat", [0, 0, 0])),
+                vertical_fov=float(camera_config.get("fovy", 45)),
+                aspect=robot_env.camera_width / robot_env.camera_height,
+            )
+            try:
+                model.cam_pos[camera_id] = position
+                sim.forward()
+                return np.asarray(self._raw_env.render(), dtype=np.uint8).copy()
+            finally:
+                model.cam_pos[camera_id] = original_position
+                sim.forward()
         return np.asarray(self._raw_env.render(), dtype=np.uint8).copy()
 
     def render_fps(self) -> int:

@@ -59,6 +59,7 @@ def make_belief_space_planner(
     max_iterations: int,
     seed: int,
     observation_probability_weight: float,
+    log_full_search_tree: bool = False,
 ) -> BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]:
     """Return the injected planner or construct the configured planner once."""
     if planner is not None:
@@ -72,6 +73,7 @@ def make_belief_space_planner(
         max_iterations=max_iterations,
         seed=seed,
         observation_probability_weight=observation_probability_weight,
+        log_full_search_tree=log_full_search_tree,
     )
 
 
@@ -81,6 +83,7 @@ class Tossing3DPomdpMethod(EesMethod):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     pomdp_search_depth: int = Field(default=3, ge=0)
+    pomdp_log_full_search_tree: bool = False
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
@@ -215,6 +218,7 @@ class Tossing3DPomdpMethod(EesMethod):
             max_iterations=self.pomdp_max_search_iterations,
             seed=self.seed,
             observation_probability_weight=self.pomdp_observation_probability_weight,
+            log_full_search_tree=self.pomdp_log_full_search_tree,
         )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         missing = {TOSS_SKILL, OPEN_GRIPPER_SKILL} - available

@@ -191,6 +191,12 @@ class Tossing3DPomdpCli(EesCli):
             ),
         )
         parser.add_argument(
+            "--pomdp-log-full-search-tree",
+            action=argparse.BooleanOptionalAction,
+            default=Tossing3DPomdpMethod.model_fields["pomdp_log_full_search_tree"].default,
+            help="Log every determinized A* node, queue pop, and generated edge.",
+        )
+        parser.add_argument(
             "--pomdp-num-particles",
             type=int,
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_particles"].default,
@@ -274,6 +280,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_solver=args.pomdp_solver,
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
+                pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
                 pomdp_num_samples=args.pomdp_num_samples,
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_competence_model=args.pomdp_competence_model,
