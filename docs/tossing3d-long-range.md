@@ -1,10 +1,16 @@
 # Calibrated long-range Tossing3D proposals
 
-Use `--toss-proposal long-range` with the barrier layout to sample coupled joint
-speed and release time at a 2.5 m standoff. The independent sampler remains the
-default, and the same-side layout retains its existing sampler. Both proposal
-modes use the usual geometry rejection, learned candidate scoring, practice
-labels, and action costs.
+**Removed as a selectable proposal.** The `--toss-proposal` flag and the
+`LongRangeTossProposal` sampler this document describes no longer exist: the
+calibrated proposal supplied almost exclusively scoring throws, so an untrained
+learner evaluated 10/10 before any practice and learning experiments built on it
+were vacuous. The barrier layout's only toss candidate generator is now
+`WideLongRangeTossProposal`, which keeps this calibration's standoff, yaw, and
+release-time ridge (as `release_ridge`) but draws speed and release independently
+over a band straddling that ridge. The same-side layout retains its existing
+sampler. The calibration record and its physical-reliability evidence below are
+retained unchanged; they describe the ridge, which is still the wide proposal's
+center of success.
 
 The farther receiver distribution requires a compatible launch position and
 throw profile. Merely extending independent distance, speed, and release bounds

@@ -18,6 +18,8 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import (
     TOSS_DISTANCE_BOUNDS,
@@ -107,10 +109,10 @@ def test_every_sweep_witness_lies_inside_the_support(*, no_kinder_import) -> Non
         assert WideLongRangeTossProposal.contains(params=np.array(params)), params
 
 
-def test_wide_choice_routes_tosses_only_and_leaves_pick_cube_untouched(*, no_kinder_import) -> None:
+def test_every_barrier_toss_draw_comes_from_the_wide_proposal(*, no_kinder_import) -> None:
     del no_kinder_import
     env = Tossing3DEnvironment()
-    provider = Tossing3DSkillProvider(env=env, toss_proposal="long-range-wide")
+    provider = Tossing3DSkillProvider(env=env)
     toss = _toss_ground_skill(env=env)
     rng = np.random.default_rng(60)
     direct_rng = np.random.default_rng(60)
@@ -126,11 +128,25 @@ def test_wide_choice_routes_tosses_only_and_leaves_pick_cube_untouched(*, no_kin
     )
 
 
-def test_cli_records_the_wide_proposal_choice() -> None:
-    args = Cli.parse_args(
-        argv=["--env", "tossing3d", "--method", "ees", "--toss-proposal", "long-range-wide"]
-    )
-    assert args.toss_proposal == "long-range-wide"
+def test_same_side_tosses_keep_their_own_sampler(*, no_kinder_import) -> None:
+    del no_kinder_import
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    provider = Tossing3DSkillProvider(env=env)
+    toss = _toss_ground_skill(env=env)
+    rng = np.random.default_rng(61)
+    direct_rng = np.random.default_rng(61)
+    for _ in range(10):
+        assert np.array_equal(
+            provider.sample_params(ground_skill=toss, rng=rng),
+            SameSideSkills.sample_params(ground_skill=toss, rng=direct_rng),
+        )
+
+
+def test_the_removed_proposal_flag_is_rejected() -> None:
+    with pytest.raises(SystemExit):
+        Cli.parse_args(
+            argv=["--env", "tossing3d", "--method", "ees", "--toss-proposal", "long-range"]
+        )
 
 
 @pytest.mark.skipif(

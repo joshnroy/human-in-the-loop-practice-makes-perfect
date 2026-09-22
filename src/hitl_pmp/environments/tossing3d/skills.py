@@ -221,20 +221,14 @@ class Tossing3DSkills:
         State-independent by the `SkillProvider` contract: a learned sampler generates
         many candidates from this and then picks among them using the state.
 
-        The four components are drawn independently but are not independent in effect --
-        the swing's duration is a function of its speed, so a fixed millisecond is a
-        different fraction of a slow swing than of a fast one.
+        The toss is deliberately absent: its candidates come from
+        `WideLongRangeTossProposal` via `Tossing3DSkillProvider.sample_params` on the
+        barrier layout, and from `SameSideSkills.sample_params` on the same-side one,
+        so a toss draw reaching this sampler is a routing bug worth failing loudly on.
         """
         skill = ground_skill.skill
         if skill == Tossing3DSkills.PICK_CUBE:
             return np.zeros(0)
-        if skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            return np.array([
-                rng.uniform(*TOSS_DISTANCE_BOUNDS),
-                rng.uniform(*TOSS_ROTATION_BOUNDS),
-                rng.uniform(*TOSS_SPEED_BOUNDS),
-                rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
-            ])
         if skill == Tossing3DSkills.OPEN_GRIPPER:
             return np.zeros(0)
         raise ValueError(f"Unknown skill: {skill.name}")

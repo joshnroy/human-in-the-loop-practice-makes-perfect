@@ -1,15 +1,15 @@
-"""A deliberately wide toss proposal, for learning experiments.
+"""The barrier layout's only toss proposal: deliberately wide, so learning is real.
 
-The calibrated `LongRangeTossProposal` couples release time to speed along its
-development ridge, so nearly every candidate it emits already scores -- an untrained
-learner starts at 10/10 and practice has nothing to teach it. This proposal keeps the
-standoff and yaw that guarantee a legal launch pose for every bin position, but draws
-speed and release time *independently* over a band that straddles that ridge: the
-support still contains a scoring setting for every location in the bin region (the
-2026-09-22 nine-location coverage sweep's success witnesses) alongside a large region
-of completed physical misses (its miss witnesses). `long-range` remains the calibrated
-physical-reliability reference; select this one when the point is that the robot has
-something to learn.
+Its removed predecessor, the calibrated long-range proposal, coupled release time to
+speed along its development ridge, so nearly every candidate it emitted already
+scored -- an untrained learner started at 10/10 and practice had nothing to teach it
+(the calibration itself survives as `release_ridge`, and the 20/20 physical-reliability
+evidence in `docs/tossing3d-long-range.md` still describes that ridge). This proposal
+keeps the standoff and yaw that guarantee a legal launch pose for every bin position,
+but draws speed and release time *independently* over a band that straddles that
+ridge: the support still contains a scoring setting for every location in the bin
+region (the 2026-09-22 nine-location coverage sweep's success witnesses) alongside a
+large region of completed physical misses (its miss witnesses).
 """
 
 import numpy as np

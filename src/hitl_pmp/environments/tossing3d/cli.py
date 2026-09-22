@@ -122,15 +122,6 @@ class Tossing3DCli:
             help="Cost of Tossing3D's provider-owned human cube/bin reset skill, in "
             "robot-action equivalents.",
         )
-        parser.add_argument(
-            "--toss-proposal",
-            choices=("independent", "long-range", "long-range-wide"),
-            default="independent",
-            help="Barrier toss candidates: independent bounds, calibrated long-range "
-            "speed/release pairs, or the long-range standoff with independent "
-            "speed/release over a band straddling the calibrated ridge (for learning "
-            "experiments). All use ordinary practice labels and learned selection.",
-        )
         parser.set_defaults(scene_bg=True, defer_rendering=False)
 
     @staticmethod
@@ -215,7 +206,6 @@ class Tossing3DCli:
             skill_provider=Tossing3DSkillProvider(
                 env=practice_problem.env,
                 human_reset_practice_cost=args.human_reset_practice_cost,
-                toss_proposal=getattr(args, "toss_proposal", "independent"),
             ),
             oracle=Tossing3DOracle(
                 env=practice_problem.env, throw_standoff=args.oracle_throw_standoff
