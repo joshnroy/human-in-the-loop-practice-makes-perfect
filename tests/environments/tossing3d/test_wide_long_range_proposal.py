@@ -20,6 +20,7 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import (
     TOSS_DISTANCE_BOUNDS,
@@ -61,7 +62,7 @@ SIM_MISS_WITNESS = (2.5, 0.0, 390.0, 440.0)
 def _toss_ground_skill(*, env: Tossing3DEnvironment) -> GroundSkill:
     return GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier),
+        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
     )
 
 
@@ -121,7 +122,10 @@ def test_every_barrier_toss_draw_comes_from_the_wide_proposal(*, no_kinder_impor
             provider.sample_params(ground_skill=toss, rng=rng),
             WideLongRangeTossProposal.sample(rng=direct_rng),
         )
-    pick = GroundSkill(skill=Tossing3DSkills.PICK_CUBE, objects=(env.robot, env.cube, env.barrier))
+    pick = GroundSkill(
+        skill=Tossing3DSkills.PICK_CUBE,
+        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot),
+    )
     assert np.array_equal(
         provider.sample_params(ground_skill=pick, rng=rng),
         Tossing3DSkills.sample_params(ground_skill=pick, rng=direct_rng),
