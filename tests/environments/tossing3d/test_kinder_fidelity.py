@@ -297,12 +297,14 @@ def test_a_full_episode_through_the_problem_solves_a_feasible_scene(*, tmp_path)
         env.close()
 
 
-@pytest.mark.parametrize("seed,speed", [(10125, 360.0), (10126, 380.0), (10127, 358.0)])
-def test_extended_toss_solves_default_far_scene_witnesses(*, seed: int, speed: float) -> None:
+@pytest.mark.parametrize("seed", [10125, 10126, 10127])
+def test_extended_toss_solves_default_far_scene_witnesses(*, seed: int) -> None:
     """Replay upstream's certified witnesses through the real HITL action bridge.
 
     These cases establish physical reachability of the default far-bin layout;
-    they do not measure an untrained policy's success rate.
+    they do not measure an untrained policy's success rate. The common recipe
+    was calibrated on separate development scenes after correcting the observed
+    windup handoff; nominal-start timing is no longer the controller contract.
     """
     env = _env()
     try:
@@ -310,7 +312,7 @@ def test_extended_toss_solves_default_far_scene_witnesses(*, seed: int, speed: f
         assert initial.get(obj=env.bin, feature_name="x") >= 2.6
         picked = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
         assert HOLDING.holds(picked, (env.robot, env.cube)), env.last_skill_error()
-        landed = env.take_action(action=np.array([1, 2.5, 0.0, speed, 500.0]))
+        landed = env.take_action(action=np.array([1, 2.5, 0.0, 390.0, 460.0]))
         assert env.last_skill_error() is None
         assert IN_BIN.holds(landed, (env.cube, env.bin))
         assert env.is_solved()
