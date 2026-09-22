@@ -124,10 +124,12 @@ class Tossing3DCli:
         )
         parser.add_argument(
             "--toss-proposal",
-            choices=("independent", "long-range"),
+            choices=("independent", "long-range", "long-range-wide"),
             default="independent",
-            help="Barrier toss candidates: independent bounds or calibrated long-range "
-            "speed/release pairs. Both use ordinary practice labels and learned selection.",
+            help="Barrier toss candidates: independent bounds, calibrated long-range "
+            "speed/release pairs, or the long-range standoff with independent "
+            "speed/release over a band straddling the calibrated ridge (for learning "
+            "experiments). All use ordinary practice labels and learned selection.",
         )
         parser.set_defaults(scene_bg=True, defer_rendering=False)
 

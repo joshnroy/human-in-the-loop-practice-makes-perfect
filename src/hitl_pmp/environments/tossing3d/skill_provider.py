@@ -36,6 +36,7 @@ from .predicates import (
 from .recovery_skills import ON_BIN_RIM, ON_FLOOR, SameSideSkills
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
 from .skills import Tossing3DSkills
+from .wide_long_range_proposal import WideLongRangeTossProposal
 
 
 class Tossing3DSkillProvider(SkillProvider):
@@ -53,7 +54,7 @@ class Tossing3DSkillProvider(SkillProvider):
     env: Tossing3DEnvironment
     human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
     non_human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
-    toss_proposal: Literal["independent", "long-range"] = "independent"
+    toss_proposal: Literal["independent", "long-range", "long-range-wide"] = "independent"
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
@@ -97,11 +98,11 @@ class Tossing3DSkillProvider(SkillProvider):
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
             return SameSideSkills.sample_params(ground_skill=ground_skill, rng=rng)
-        if (
-            self.toss_proposal == "long-range"
-            and ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
-        ):
-            return LongRangeTossProposal.sample(rng=rng)
+        if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
+            if self.toss_proposal == "long-range":
+                return LongRangeTossProposal.sample(rng=rng)
+            if self.toss_proposal == "long-range-wide":
+                return WideLongRangeTossProposal.sample(rng=rng)
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
 
     def compute_action(
