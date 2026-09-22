@@ -11,7 +11,7 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_succe
 
 
 @pytest.mark.parametrize("layout", list(Tossing3DLayout))
-@pytest.mark.parametrize("reset_index", [0, 1])
+@pytest.mark.parametrize("reset_index", [0, 1, 2, 3])
 @pytest.mark.parametrize("gripper", ["open", "holding", "closed_empty"])
 def test_reset_forecast_preserves_command_and_removes_grasp(*, layout, reset_index, gripper):
     env = Tossing3DEnvironment(layout=layout)
@@ -19,7 +19,9 @@ def test_reset_forecast_preserves_command_and_removes_grasp(*, layout, reset_ind
     empty = GroundAtom(predicate=HAND_EMPTY, objects=(env.robot,))
     holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
     closed = GroundAtom(predicate=CLOSED_EMPTY, objects=(env.robot, env.cube))
-    before = frozenset({{"open": empty, "holding": holding, "closed_empty": closed}[gripper]})
+    before = reset.preconditions | frozenset({
+        {"open": empty, "holding": holding, "closed_empty": closed}[gripper]
+    })
     after = apply_success_effects(
         true_atoms=before,
         ground_skill=reset,
@@ -33,7 +35,7 @@ def test_reset_forecast_preserves_command_and_removes_grasp(*, layout, reset_ind
 
 
 @pytest.mark.parametrize("layout", list(Tossing3DLayout))
-@pytest.mark.parametrize("reset_index", [0, 1])
+@pytest.mark.parametrize("reset_index", [0, 1, 2, 3])
 def test_classical_plan_opens_gripper_after_resetting_a_held_cube(*, layout, reset_index):
     from hitl_pmp.environments.tossing3d.recovery_skills import ON_FLOOR
     from hitl_pmp.planning.fast_downward import FastDownwardPlanner
@@ -42,7 +44,9 @@ def test_classical_plan_opens_gripper_after_resetting_a_held_cube(*, layout, res
     provider = Tossing3DSkillProvider(env=env)
     reset = provider.movables_reset_skills()[reset_index]
     opened = next(skill for skill in provider.skills() if skill.name == "OpenGripper")
-    before = frozenset({GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))})
+    before = reset.preconditions | frozenset({
+        GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
+    })
     floor = GroundAtom(
         predicate=ON_FLOOR if layout == Tossing3DLayout.SAME_SIDE else ON_GROUND,
         objects=(env.cube, env.bin) if layout == Tossing3DLayout.SAME_SIDE else (env.cube,),
@@ -73,7 +77,8 @@ def test_conditional_reset_planning_preserves_ground_costs_and_translation_cache
 
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
-    human, automatic = provider.movables_reset_skills()
+    human = provider.human_cube_bin_reset_skill()
+    automatic = provider.non_human_cube_bin_reset_skill()
     holding = GroundAtom(predicate=HOLDING, objects=(env.robot, env.cube))
     closed = GroundAtom(predicate=CLOSED_EMPTY, objects=(env.robot, env.cube))
     empty = GroundAtom(predicate=HAND_EMPTY, objects=(env.robot,))
@@ -83,15 +88,15 @@ def test_conditional_reset_planning_preserves_ground_costs_and_translation_cache
         "predicates": provider.predicates(),
         "types": provider.types(),
         "objects": provider.objects(),
-        "goal": frozenset({closed}),
+        "goal": frozenset({closed, *human.add_effects}),
         "translation_cache": cache,
     }
     for preferred, other in ((human, automatic), (automatic, human)):
         plan = FastDownwardPlanner.plan(
             **options,
-            init_atoms=frozenset({holding}),
+            init_atoms=human.preconditions | frozenset({holding}),
             ground_skill_costs={preferred: 0.5, other: 2.0},
         )
         assert plan == [preferred]
     with pytest.raises(PlanningFailure):
-        FastDownwardPlanner.plan(**options, init_atoms=frozenset({empty}))
+        FastDownwardPlanner.plan(**options, init_atoms=human.preconditions | frozenset({empty}))

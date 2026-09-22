@@ -41,6 +41,10 @@ def _atom(*, method: Tossing3DPomdpMethod, name: str) -> GroundAtom:
             objects=method.objects(), predicates=method.predicates()
         )
         if atom.predicate.name == name
+        and (
+            not name.endswith("AtSide")
+            or atom.objects[-1].name == ("opposite_side" if name == "BinAtSide" else "robot_side")
+        )
     )
 
 
@@ -49,6 +53,8 @@ def _reset(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
         skill
         for skill in method._pomdp_model.ground_skills  # noqa: SLF001
         if skill.skill.name == name
+        and skill.objects[-2].name == "robot_side"
+        and skill.objects[-1].name == "opposite_side"
     )
 
 
@@ -62,7 +68,7 @@ def test_reset_success_is_known_even_with_zero_performance_posterior(*, reset_na
         num_particles=32, seed=10, competence=0.0, learning_rate=0.0
     )
     state = method.pomdp_state.model_copy(update={"skill_beliefs": beliefs})
-    before = frozenset({_atom(method=method, name="Holding")})
+    before = reset.preconditions | frozenset({_atom(method=method, name="Holding")})
     search_state = make_tossing3d_search_state(state=state, true_atoms=before)
     outcomes = model.outcomes(environment_state=search_state, state=state, action=reset)
 
@@ -110,13 +116,16 @@ def test_only_symbolic_self_loop_resets_are_omitted(*, gripper: str) -> None:
     method = _method()
     model = method._pomdp_model  # noqa: SLF001
     ready = frozenset(
-        _atom(method=method, name=name) for name in (gripper, "OnGround", "Reachable")
+        _atom(method=method, name=name)
+        for name in (gripper, "OnGround", "NotHolding", "RobotAtSide", "CubeAtSide", "BinAtSide")
     )
     actions = model.get_valid_actions(
         environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
     )
-    assert not ({action.skill.name for action in actions} & RESET_SKILLS)
-    assert {action.skill.name for action in actions} == {
+    resets = [action for action in actions if action.skill.name in RESET_SKILLS]
+    assert resets  # Moving the bin to the other side is not a self-loop.
+    assert all(reset.objects[-1].name == "robot_side" for reset in resets)
+    assert {action.skill.name for action in actions if action.skill.name not in RESET_SKILLS} == {
         PICK_SKILL if gripper == "HandEmpty" else OPEN_GRIPPER_SKILL
     }
     for reset_name in RESET_SKILLS:
@@ -129,9 +138,11 @@ def test_reset_recoveries_remain_available(*, condition: str) -> None:
     names = {
         "unreachable": {"HandEmpty", "OnGround"},
         "in_bin": {"HandEmpty", "OnGround", "InBin"},
-        "holding": {"Holding", "Reachable"},
+        "holding": {"Holding", "CubeAtSide"},
     }[condition]
-    atoms = frozenset(_atom(method=method, name=name) for name in names)
+    atoms = frozenset(
+        _atom(method=method, name=name) for name in (names | {"RobotAtSide", "BinAtSide"})
+    )
     actions = method._pomdp_model.get_valid_actions(  # noqa: SLF001
         environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=atoms)
     )
@@ -166,7 +177,9 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
             ),
         }
     )
-    ready = make_tossing3d_search_state(state=state, true_atoms=pick.preconditions)
+    ready = make_tossing3d_search_state(
+        state=state, true_atoms=pick.preconditions | reset.preconditions | reset.add_effects
+    )
     direct_probability, direct_state, direct_atoms = model.outcomes(
         environment_state=ready, state=state, action=pick
     )[0]

@@ -23,14 +23,18 @@ from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
 from .parameter_feasibility import TossParameterFeasibility
 from .predicates import (
+    BIN_AT_SIDE,
     CLOSED_EMPTY,
+    CUBE_AT_SIDE,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
+    NOT_HOLDING,
     ON_GROUND,
-    REACHABLE,
+    ROBOT_AT_SIDE,
 )
 from .recovery_skills import ON_BIN_RIM, ON_FLOOR, SameSideSkills
+from .sides import Tossing3DSide, Tossing3DSides
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
 from .skills import Tossing3DSkills
 from .wide_long_range_proposal import WideLongRangeTossProposal
@@ -39,13 +43,14 @@ from .wide_long_range_proposal import WideLongRangeTossProposal
 class Tossing3DSkillProvider(SkillProvider):
     """Tossing3D's `SkillProvider`, mirroring `TossingRoomSkillProvider`.
 
-    `objects()` is a fixed four: upstream's task JSON names exactly one cube, one bin and
-    one barrier, plus the robot. There is no configuration that changes the cast -- `o2`
-    would add a second cube, and this domain does not support it (see the README).
+    `objects()` is a fixed six: upstream's task JSON names exactly one cube, one bin and
+    one barrier, plus the robot; two featureless symbolic side objects let STRIPS actions
+    bind a reset destination. There is no configuration that changes the physical cast --
+    `o2` would add a second cube, and this domain does not support it (see the README).
 
-    It was five until the goal region stopped being a symbolic object. The scored box is
-    still in the `State`, carried on the bin (see `predicates.py`'s module docstring); it
-    is simply not something a planner binds a variable to, because no skill can act on it.
+    The goal region is not a symbolic object. Its scored box remains in the `State`,
+    carried on the bin (see `predicates.py`'s module docstring); it is not something a
+    planner binds a variable to because no skill can act on it.
     """
 
     env: Tossing3DEnvironment
@@ -73,11 +78,24 @@ class Tossing3DSkillProvider(SkillProvider):
                 HOLDING,
                 ON_GROUND,
                 ON_FLOOR,
-                REACHABLE,
+                NOT_HOLDING,
                 CLOSED_EMPTY,
                 ON_BIN_RIM,
+                ROBOT_AT_SIDE,
+                CUBE_AT_SIDE,
+                BIN_AT_SIDE,
             )
-        return (CLOSED_EMPTY, IN_BIN, HAND_EMPTY, HOLDING, ON_GROUND, REACHABLE)
+        return (
+            CLOSED_EMPTY,
+            IN_BIN,
+            HAND_EMPTY,
+            HOLDING,
+            NOT_HOLDING,
+            ON_GROUND,
+            ROBOT_AT_SIDE,
+            CUBE_AT_SIDE,
+            BIN_AT_SIDE,
+        )
 
     def types(self) -> tuple[Type, ...]:
         return (
@@ -85,15 +103,19 @@ class Tossing3DSkillProvider(SkillProvider):
             Tossing3DEnvironment.cube_type,
             Tossing3DEnvironment.bin_type,
             Tossing3DEnvironment.barrier_type,
+            Tossing3DSides.type,
         )
 
     def objects(self) -> tuple[Object, ...]:
         env = self.env
-        return (env.robot, env.cube, env.bin, env.barrier)
+        return (env.robot, env.cube, env.bin, env.barrier, *Tossing3DSides.objects())
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
             return SameSideSkills.sample_params(ground_skill=ground_skill, rng=rng)
+        # Every barrier toss draws the wide proposal regardless of the side target:
+        # the per-side calibrated/long-range selection was removed with the proposal
+        # choice itself.
         if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return WideLongRangeTossProposal.sample(rng=rng)
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
@@ -125,7 +147,7 @@ class Tossing3DSkillProvider(SkillProvider):
         """
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return None
-        robot, bin_, _, _ = ground_skill.objects
+        robot, bin_, *_ = ground_skill.objects
         dx = state.get(obj=bin_, feature_name="x") - state.get(obj=robot, feature_name="pos_base_x")
         dy = state.get(obj=bin_, feature_name="y") - state.get(obj=robot, feature_name="pos_base_y")
         yaw = state.get(obj=robot, feature_name="pos_base_rot")
@@ -136,18 +158,41 @@ class Tossing3DSkillProvider(SkillProvider):
         return [1.0, forward, lateral, *(float(param) for param in params)]
 
     def human_cube_bin_reset_skill(self) -> GroundSkill:
-        """Relocate the cube and bin, preserving the robot's gripper command.
+        """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`
+        to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot
+        untouched. Effects: `OnGround` (or same-side `OnFloor`) and the selected
+        typed side facts become true, `InBin` becomes false; same-side `OnBinRim`
+        is cleared too. ``HandEmpty`` stays as it was.
 
-        Reset remains callable from any state, including failed grasps. Relocating
-        a held cube deletes Holding and produces ClosedEmpty; an already-open
-        gripper remains HandEmpty. The conditional addition is evaluated before
-        Holding is deleted, in both classical and belief-space planning.
+        The static precondition binds the robot-relative side object. The singular API
+        preserves each layout's historical bin destination; planners use the plural
+        API below to choose either destination."""
+        resets = self.human_cube_bin_reset_skills()
+        historical_destination = (
+            Tossing3DSide.ROBOT.value
+            if self.env.layout == Tossing3DLayout.SAME_SIDE
+            else Tossing3DSide.OPPOSITE.value
+        )
+        return next(reset for reset in resets if reset.objects[-1].name == historical_destination)
+
+    def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
+        """One lifted reset, grounded once for each typed bin destination.
+
+        The cube is always returned to the robot's side so practice can continue;
+        the final parameter is the bin side selected by the planner. Functional side
+        predicates are cleared through ``ignore_effects`` before the two selected
+        atoms are added. This is the one lifted STRIPS action; the two choices are
+        ordinary ground actions, not separately named skills. Holding is deleted
+        when a reset relocates the cube; a closed gripper is preserved through
+        the existing conditional ClosedEmpty effect.
         """
         env = self.env
         robot = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
         cube = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
         bin_ = Variable(name="bin", type=Tossing3DEnvironment.bin_type)
         barrier = Variable(name="barrier", type=Tossing3DEnvironment.barrier_type)
+        robot_side = Variable(name="robot_side", type=Tossing3DSides.type)
+        bin_destination = Variable(name="bin_destination", type=Tossing3DSides.type)
         floor = (
             LiftedAtom(predicate=ON_FLOOR, variables=(cube, bin_))
             if env.layout == Tossing3DLayout.SAME_SIDE
@@ -159,11 +204,31 @@ class Tossing3DSkillProvider(SkillProvider):
             removed.add(LiftedAtom(predicate=ON_BIN_RIM, variables=(cube, bin_)))
         skill = Skill(
             name=ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
-            parameters=(robot, cube, bin_, barrier),
-            preconditions=frozenset(),
+            parameters=(
+                robot,
+                cube,
+                bin_,
+                barrier,
+                robot_side,
+                bin_destination,
+            ),
+            preconditions=frozenset({
+                LiftedAtom(
+                    predicate=ROBOT_AT_SIDE,
+                    variables=(robot, barrier, robot_side),
+                ),
+            }),
             add_effects=frozenset({
                 floor,
-                LiftedAtom(predicate=REACHABLE, variables=(cube, barrier)),
+                LiftedAtom(predicate=NOT_HOLDING, variables=(robot, cube)),
+                LiftedAtom(
+                    predicate=CUBE_AT_SIDE,
+                    variables=(cube, barrier, robot_side),
+                ),
+                LiftedAtom(
+                    predicate=BIN_AT_SIDE,
+                    variables=(bin_, barrier, bin_destination),
+                ),
             }),
             delete_effects=frozenset(removed),
             conditional_add_effects=frozenset({
@@ -174,22 +239,40 @@ class Tossing3DSkillProvider(SkillProvider):
                     }),
                 )
             }),
+            ignore_effects=frozenset({CUBE_AT_SIDE, BIN_AT_SIDE}),
             param_dim=0,
             practice_cost=self.human_reset_practice_cost,
         )
-        return GroundSkill(skill=skill, objects=(env.robot, env.cube, env.bin, env.barrier))
+        return tuple(
+            GroundSkill(
+                skill=skill,
+                objects=(
+                    env.robot,
+                    env.cube,
+                    env.bin,
+                    env.barrier,
+                    Tossing3DSides.robot,
+                    side,
+                ),
+            )
+            for side in Tossing3DSides.objects()
+        )
 
     def non_human_cube_bin_reset_skill(self) -> GroundSkill:
-        """Automatic reset with the same mechanics as the human reset.
+        """The historical destination with its independent automatic-reset cost."""
+        human = self.human_cube_bin_reset_skill()
+        return self._automatic_reset(reset=human)
 
-        Its distinct identity gives the belief-space model an independent joint
-        competence/learning-rate/cost posterior while preserving identical symbolic
-        applicability and outcomes.
-        """
-        human_reset = self.human_cube_bin_reset_skill()
-        return human_reset.model_copy(
+    def non_human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
+        """Automatic reset destinations share one belief, distinct from human reset."""
+        return tuple(
+            self._automatic_reset(reset=reset) for reset in self.human_cube_bin_reset_skills()
+        )
+
+    def _automatic_reset(self, *, reset: GroundSkill) -> GroundSkill:
+        return reset.model_copy(
             update={
-                "skill": human_reset.skill.model_copy(
+                "skill": reset.skill.model_copy(
                     update={
                         "name": "non_human_reset_cube_bin_only",
                         "practice_cost": self.non_human_reset_practice_cost,
@@ -198,8 +281,18 @@ class Tossing3DSkillProvider(SkillProvider):
             }
         )
 
+    def movables_reset_destination(self, *, ground_skill: GroundSkill) -> str | None:
+        if ground_skill.skill.name not in {
+            ASK_FOR_RESET_CUBE_BIN_ONLY_NAME,
+            "non_human_reset_cube_bin_only",
+        }:
+            return None
+        destination = ground_skill.objects[-1]
+        Tossing3DSides.parse(name=destination.name)
+        return destination.name
+
     def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
-        return (self.human_cube_bin_reset_skill(), self.non_human_cube_bin_reset_skill())
+        return (*self.human_cube_bin_reset_skills(), *self.non_human_cube_bin_reset_skills())
 
 
 class Tossing3DOracle(OraclePolicyProvider):

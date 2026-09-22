@@ -42,6 +42,7 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY, HAND_EMPTY
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
     ORACLE_GRIPPER_RELEASE_MS,
     ORACLE_RELEASE_SPEED_DEG_S,
@@ -217,7 +218,7 @@ def test_a_restore_really_rewinds_the_simulator_and_not_just_the_state_object() 
 
         ground_skill = GroundSkill(
             skill=provider.skills()[1],
-            objects=(env.robot, env.bin, env.cube, env.barrier),
+            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
         )
         action = provider.compute_action(
             ground_skill=ground_skill,

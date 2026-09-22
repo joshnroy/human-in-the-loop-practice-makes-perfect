@@ -44,7 +44,7 @@ class HumanOracle(abc.ABC):
 
     @staticmethod
     @abc.abstractmethod
-    def execute_movables_reset(*, env: Environment) -> None:
+    def execute_movables_reset(*, env: Environment, destination: str | None = None) -> None:
         """Ask the human for a *partial* reset: `env.reset_movables()`, nothing
         else. No target-state pair, unlike `execute_human_command` -- the domain's
         own `Environment` decides what "not the robot" means, not the caller.

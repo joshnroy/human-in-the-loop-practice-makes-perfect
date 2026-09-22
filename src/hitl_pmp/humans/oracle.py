@@ -109,7 +109,7 @@ class UnconditionalHumanOracle(HumanOracle):
         env.set_state(state=target_state.model_copy(deep=True))
 
     @staticmethod
-    def execute_movables_reset(*, env: Environment) -> None:
+    def execute_movables_reset(*, env: Environment, destination: str | None = None) -> None:
         """`env.reset_movables()`, and nothing else: a v0 human complies immediately
         and unconditionally, so there is no capability model to consult and no
         `target_state` to copy -- unlike `execute_human_command`, the domain itself
@@ -119,7 +119,12 @@ class UnconditionalHumanOracle(HumanOracle):
         shape as `execute_human_command`'s missing-target_state check: by the time
         this runs, the caller has already priced and is about to record an
         intervention, so silently doing nothing would bill one that never happened."""
-        if not env.reset_movables():
+        accepted = (
+            env.reset_movables()
+            if destination is None
+            else env.reset_movables(destination=destination)
+        )
+        if not accepted:
             raise ValueError(
                 "UnconditionalHumanOracle was asked to execute a movables reset, but "
                 f"{type(env).__name__}.reset_movables() returned False -- this domain "
