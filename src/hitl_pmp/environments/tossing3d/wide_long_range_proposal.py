@@ -3,8 +3,7 @@
 Its removed predecessor, the calibrated long-range proposal, coupled release time to
 speed along its development ridge, so nearly every candidate it emitted already
 scored -- an untrained learner started at 10/10 and practice had nothing to teach it
-(the calibration itself survives as `release_ridge`, and the 20/20 physical-reliability
-evidence in `docs/tossing3d-long-range.md` still describes that ridge). This proposal
+(the calibration itself survives as `release_ridge`). This proposal
 keeps the standoff and yaw that guarantee a legal launch pose for every bin position,
 but draws speed and release time *independently* over a band that straddles that
 ridge: the support still contains a scoring setting for every location in the bin
