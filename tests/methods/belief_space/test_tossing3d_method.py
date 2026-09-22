@@ -26,6 +26,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_cost,
     mean_learning_rate,
 )
+from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION, StopAction
 from hitl_pmp.planning.grounding import SkillGrounder
 
@@ -56,7 +57,8 @@ def _grounding(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
 
 
 def test_selector_uses_current_symbolic_state_without_starting_simulator() -> None:
-    # Keep this seeded grounding regression independent of the CLI sampling default.
+    # The sampled belief and newly available reset choices may change which applicable
+    # action wins; this regression is about using the supplied symbolic state lazily.
     method = _build(pomdp_num_samples=1)
     pick = _grounding(method=method, name=PICK_SKILL)
     selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
@@ -163,6 +165,37 @@ def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
     assert planner.calls == 1
     decision = json.loads(decision_log.read_text().splitlines()[-1])
     assert decision["solver"] == "injected"
+
+
+def test_action_value_diagnostics_distinguish_parameterized_reset_destinations() -> None:
+    seed_method = _build()
+    resets = seed_method.skill_provider.human_cube_bin_reset_skills()
+
+    class ResetValuePlanner(BeliefSpacePlanner):  # type: ignore[type-arg]
+        name = "reset_values"
+
+        def solve(self, **kwargs: object) -> tuple[float, StopAction]:  # type: ignore[override]
+            trace = kwargs["trace"]
+            assert isinstance(trace, SearchTrace)
+            trace.record(event="stop_value", node=0, value=0.0)
+            for value, reset in enumerate(resets, start=1):
+                trace.record(
+                    event="action_value",
+                    node=0,
+                    action=reset.model_dump(mode="json", fallback=str),
+                    value=float(value),
+                )
+            return 0.0, STOP_ACTION
+
+    method = _build(pomdp_planner=ResetValuePlanner())
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.select_skill_to_practice(true_atoms=pick.preconditions)
+
+    keys = set(method.practice_action_values())
+    reset_keys = {key for key in keys if key.startswith(f"{RESET_SKILL}(")}
+    assert len(reset_keys) == 2
+    assert any("robot_side" in key for key in reset_keys)
+    assert any("opposite_side" in key for key in reset_keys)
 
 
 def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:

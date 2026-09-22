@@ -4,7 +4,15 @@ import numpy as np
 import pytest
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+from hitl_pmp.environments.tossing3d.predicates import (
+    CUBE_AT_SIDE,
+    HOLDING,
+    NOT_HOLDING,
+    ROBOT_AT_SIDE,
+)
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
@@ -104,9 +112,18 @@ def _weighted_default_state() -> Tossing3DBeliefState:
 def _search_state(
     *, model: Tossing3DPracticeModel, state: Tossing3DBeliefState, action_name: str
 ) -> Tossing3DSearchState:
-    return make_tossing3d_search_state(
-        state=state, true_atoms=_ground_skill(model=model, name=action_name).preconditions
+    action = _ground_skill(model=model, name=action_name)
+    env = Tossing3DEnvironment(scene_bg=False)
+    robot_side = GroundAtom(
+        predicate=ROBOT_AT_SIDE,
+        objects=(env.robot, env.barrier, Tossing3DSides.robot),
     )
+    invariants = {
+        robot_side,
+    }
+    if all(atom.predicate != HOLDING for atom in action.preconditions):
+        invariants.add(GroundAtom(predicate=NOT_HOLDING, objects=(env.robot, env.cube)))
+    return make_tossing3d_search_state(state=state, true_atoms=action.preconditions | invariants)
 
 
 def _action(
@@ -258,6 +275,18 @@ def test_search_protocol_merges_identical_exploration_successors() -> None:
         for successor, cost in successors
     ]
     assert probabilities == pytest.approx([0.5, 0.5])
+
+
+def test_unseen_toss_failure_retains_empirical_identity_prior() -> None:
+    """Side-aware operators retain the measured failure model rather than assuming release."""
+    state = _point_state(toss=0.5, pick=0.5, open_gripper=1.0)
+    model = _domain_model(exploration_epsilon=0.0)
+    before = _search_state(model=model, state=state, action_name=TOSS_SKILL)
+    outcomes = _outcomes(model=model, state=state, name=TOSS_SKILL)
+    assert len(outcomes) == 2
+    assert outcomes[1][2] == before.true_atoms
+    assert any(atom.predicate == CUBE_AT_SIDE for atom in outcomes[0][2])
+    assert not any(atom.predicate == HOLDING for atom in outcomes[0][2])
 
 
 def _point_belief(*, competence: float, learning_rate: float = 0.1) -> SkillBelief:
@@ -543,27 +572,21 @@ def test_cycle_refit_applies_learning_rate_process_noise_without_examples() -> N
     assert np.any(after[:, 1] != before[:, 1])
 
 
-def test_applicable_actions_exclude_dominated_symbolic_reset_self_loops() -> None:
+def test_applicable_actions_exclude_only_same_destination_reset_self_loops() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()
-    ready = _search_state(model=model, state=belief, action_name=PICK_SKILL)
-    assert {action.skill.name for action in model.get_valid_actions(environment_state=ready)} == {
-        PICK_SKILL,
-    }
-    carrying = _search_state(model=model, state=belief, action_name=TOSS_SKILL)
-    assert {
-        action.skill.name for action in model.get_valid_actions(environment_state=carrying)
-    } == {
-        TOSS_SKILL,
-        RESET_SKILL,
-    }
-    closed_empty = _search_state(model=model, state=belief, action_name=OPEN_GRIPPER_SKILL)
-    assert {
-        action.skill.name for action in model.get_valid_actions(environment_state=closed_empty)
-    } == {
-        OPEN_GRIPPER_SKILL,
-        RESET_SKILL,
-    }
+    reset = _ground_skill(model=model, name=RESET_SKILL)
+    pick = _ground_skill(model=model, name=PICK_SKILL)
+    ready = make_tossing3d_search_state(
+        state=belief, true_atoms=pick.preconditions | reset.preconditions | reset.add_effects
+    )
+    actions = model.get_valid_actions(environment_state=ready)
+    assert pick in actions
+    assert reset not in actions
+    assert any(
+        action.skill.name == RESET_SKILL and action.objects[-1] != reset.objects[-1]
+        for action in actions
+    )
 
 
 def test_search_state_serializes_ees_atoms_without_serializing_predicate_functions() -> None:
@@ -604,18 +627,26 @@ def test_batched_sampling_and_evaluation_matches_individual_theta_path() -> None
     ])
 
 
-@pytest.mark.parametrize("action_name", [PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL])
-def test_human_reset_uses_unchanged_ees_empty_preconditions(*, action_name: str) -> None:
+@pytest.mark.parametrize("action_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
+def test_human_reset_is_available_when_not_holding(*, action_name: str) -> None:
     model = _domain_model(reset_cost=1.0)
     state = make_default_tossing3d_belief()
     search_state = _search_state(model=model, state=state, action_name=action_name)
     reset = _ground_skill(model=model, name=RESET_SKILL)
-    assert reset.preconditions == frozenset()
+    assert {atom.predicate for atom in reset.preconditions} == {ROBOT_AT_SIDE}
     assert reset.preconditions <= search_state.true_atoms
-    assert (
-        RESET_SKILL
-        in {action.skill.name for action in model.get_valid_actions(environment_state=search_state)}
-    ) == (action_name != PICK_SKILL)
+    assert RESET_SKILL in {
+        action.skill.name for action in model.get_valid_actions(environment_state=search_state)
+    }  # The other destination changes the symbolic state.
+
+
+def test_human_reset_remains_available_while_holding() -> None:
+    model = _domain_model(reset_cost=1.0)
+    state = make_default_tossing3d_belief()
+    search_state = _search_state(model=model, state=state, action_name=TOSS_SKILL)
+    assert RESET_SKILL in {
+        action.skill.name for action in model.get_valid_actions(environment_state=search_state)
+    }
 
 
 def test_disabling_human_reset_removes_only_that_ees_skill() -> None:

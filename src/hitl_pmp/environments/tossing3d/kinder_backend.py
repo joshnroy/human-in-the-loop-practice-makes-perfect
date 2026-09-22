@@ -670,7 +670,9 @@ class KinderBackend(BaseModel):
         }
         return type(template)(data, template.type_features)
 
-    def reset_cube_and_bin(self) -> KinderObservation:
+    def reset_cube_and_bin(
+        self, *, bin_region: dict[str, object] | None = None
+    ) -> KinderObservation:
         """Reset the cube and bin to their declared regions, leaving the robot alone.
 
         Use KINDER's public reset primitive so placements honor the room boundary,
@@ -682,7 +684,9 @@ class KinderBackend(BaseModel):
         """
         object_centric = self._object_centric()
         regions, overrides = self._movables_reset_regions(
-            object_centric=object_centric, object_names=(self.cube_name, self.bin_name)
+            object_centric=object_centric,
+            object_names=(self.cube_name, self.bin_name),
+            selected_regions={} if bin_region is None else {self.bin_name: bin_region},
         )
         object_centric.reset_ground_objects_to_regions(regions, region_configs=overrides)
         self._state = object_centric._get_current_state()  # noqa: SLF001
@@ -690,7 +694,10 @@ class KinderBackend(BaseModel):
 
     @staticmethod
     def _movables_reset_regions(
-        *, object_centric: Any, object_names: tuple[str, ...]
+        *,
+        object_centric: Any,
+        object_names: tuple[str, ...],
+        selected_regions: Mapping[str, dict[str, object]] | None = None,
     ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
         """Adapt center-based `on` placements to the pinned feasible-reset API.
 
@@ -706,10 +713,15 @@ class KinderBackend(BaseModel):
             placement, region_name = KinderBackend._initial_state_placement(
                 object_centric=object_centric, object_name=object_name
             )
+            selected = (selected_regions or {}).get(object_name)
             names[object_name] = region_name
+            if selected is not None:
+                placement = "on"
             if placement != "on":
                 continue
-            region = copy.deepcopy(config["regions"][region_name])
+            region: dict[str, Any] = copy.deepcopy(
+                config["regions"][region_name] if selected is None else selected
+            )
             # The no-room fallback has different region-tolerance semantics. Avoid
             # applying this adapter to a task that does not use the pinned polygon path.
             if not config.get("convex_placement_room_body"):
@@ -770,6 +782,12 @@ class KinderBackend(BaseModel):
             obj.name: {name: float(state.get(obj, name)) for name in state.type_features[obj.type]}
             for obj in state
         }
+        if "bb_x" not in features[self.barrier_name]:
+            barrier = self._object_centric()._fixtures_dict[self.barrier_name]
+            dimensions = barrier.primitive.get_bounding_box_dimensions()
+            features[self.barrier_name].update(
+                zip(("bb_x", "bb_y", "bb_z"), dimensions, strict=True)
+            )
         return KinderObservation(
             features=features,
             goal_region=self.goal_region_bbox(),

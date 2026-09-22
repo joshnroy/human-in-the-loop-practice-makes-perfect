@@ -14,6 +14,7 @@ from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillPro
 from hitl_pmp.environments.lightswitch.skills import LightSwitchSkills
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.types import (
@@ -179,7 +180,7 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
     )
     ground = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier),
+        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
     )
     state = Tossing3DState(
         data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
@@ -236,7 +237,7 @@ def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -
     method = EesMethod(env=env, skill_provider=provider, num_candidates=2)
     ground = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier),
+        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
     )
     snapshot = object()
     state = Tossing3DState(

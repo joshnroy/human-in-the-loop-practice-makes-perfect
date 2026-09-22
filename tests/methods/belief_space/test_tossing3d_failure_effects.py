@@ -22,6 +22,7 @@ from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
 from hitl_pmp.methods.belief_space.types.belief_state import SamplerTrainingState
 from hitl_pmp.planning.grounding import SkillGrounder
+from tests.environments.tossing3d.observations import state as observed_state
 
 
 def _method(**kwargs: object) -> Tossing3DPomdpMethod:
@@ -56,8 +57,8 @@ def _atoms(*, method: Tossing3DPomdpMethod, names: set[str]) -> frozenset[Ground
 
 def _state(*, method: Tossing3DPomdpMethod, atoms: frozenset[GroundAtom]) -> Tossing3DState:
     upstream_names = {"Reachable": "MovableIsDownX", "InBin": "MovableInGoalRegion"}
-    return Tossing3DState(
-        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+    return observed_state(
+        env=method.env,
         abstract_atoms=frozenset(
             (
                 upstream_names.get(atom.predicate.name, atom.predicate.name),
@@ -171,7 +172,7 @@ def test_binary_failure_branches_share_the_original_belief_update(*, skill_name:
     skill = _skill(method=method, name=skill_name)
     before = skill.preconditions
     # Failed attempts can change reachability while missing their success effects.
-    after = before ^ _atoms(method=method, names={"Reachable"})
+    after = before ^ _atoms(method=method, names={"CubeAtSide"})
     initial_model = method._pomdp_model  # noqa: SLF001
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=before)
     baseline = initial_model.outcomes(
@@ -243,6 +244,12 @@ def test_pending_failure_flush_uses_actual_pre_and_post_atoms_exactly_once(
     )
     before = _state(method=method, atoms=before_atoms)
     after = _state(method=method, atoms=after_atoms)
+    before_atoms = SkillGrounder.abstract_state(
+        state=before, objects=method.objects(), predicates=method.predicates()
+    )
+    after_atoms = SkillGrounder.abstract_state(
+        state=after, objects=method.objects(), predicates=method.predicates()
+    )
     task = Task(initial_state=before, goal=Goal(atoms=pick.add_effects))
     monkeypatch.setattr(Tossing3DPomdpMethod, "select_skill_to_practice", lambda self, **_: [pick])
     monkeypatch.setattr(

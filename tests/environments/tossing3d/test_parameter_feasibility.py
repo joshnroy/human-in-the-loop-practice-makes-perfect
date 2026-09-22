@@ -12,6 +12,7 @@ from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.parameter_feasibility import TossParameterFeasibility
+from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.types import PlanarCollisionBox, TossFeasibilityGeometry
 
@@ -177,9 +178,12 @@ def test_missing_snapshot_and_other_skills_are_accepted() -> None:
     env = Tossing3DEnvironment()
     toss = GroundSkill(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier),
+        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
     )
-    pick = GroundSkill(skill=Tossing3DSkills.PICK_CUBE, objects=(env.robot, env.cube, env.barrier))
+    pick = GroundSkill(
+        skill=Tossing3DSkills.PICK_CUBE,
+        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot),
+    )
     assert (
         TossParameterFeasibility.rejection_reason(
             state=State(data={}), ground_skill=toss, params=_params(distance=1.0)
@@ -299,7 +303,7 @@ def test_snapshot_adapter_reads_supplied_state_after_live_environment_changes() 
         old_state = env.reset_to_seed(seed=125)
         toss = GroundSkill(
             skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            objects=(env.robot, env.bin, env.cube, env.barrier),
+            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
         )
         before = KinderBackend.toss_feasibility_geometry(snapshot=old_state.object_centric)
         assert before is not None and before.robot_size == (0.55, 0.55)

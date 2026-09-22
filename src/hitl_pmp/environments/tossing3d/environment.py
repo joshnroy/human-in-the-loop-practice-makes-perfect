@@ -50,6 +50,7 @@ from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 
 from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
 from .layout import Tossing3DLayout
+from .sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
 from .state_log import StateLogWriter
 from .types import AbstractAtom, Tossing3DState
 
@@ -111,8 +112,9 @@ class Tossing3DEnvironment(Environment):
         name="tossing3d_cube",
         feature_names=("x", "y", "z", "qx", "qy", "qz", "qw", "bb_x", "bb_y", "bb_z"),
     )
-    # `bin_0` and `cuboid_barrier` are `MujocoObjectType`; x/y/z is what the symbolic layer
-    # needs of their poses.
+    # `bin_0` and `cuboid_barrier` are `MujocoObjectType`. The barrier also carries its
+    # physical x extent so side predicates can reject a cube that overlaps the barrier,
+    # rather than treating the barrier as an infinitely thin plane.
     #
     # The bin carries six more, and they are **not** KINDER features: they are the live
     # `Region.bbox` of `blocks_goal_region`, the box `_check_goals()` actually scores
@@ -126,7 +128,9 @@ class Tossing3DEnvironment(Environment):
         name="tossing3d_bin",
         feature_names=("x", "y", "z", "x_min", "y_min", "z_min", "x_max", "y_max", "z_max"),
     )
-    barrier_type: ClassVar[Type] = Type(name="tossing3d_barrier", feature_names=("x", "y", "z"))
+    barrier_type: ClassVar[Type] = Type(
+        name="tossing3d_barrier", feature_names=("x", "y", "z", "bb_x")
+    )
     # Also ours, and also not a KINDER object: the two facts a flat State cannot otherwise
     # carry. `seed` is what `set_state` rebuilds the scene from; `steps_taken` is what
     # lets it refuse a state it cannot restore.
@@ -478,20 +482,28 @@ class Tossing3DEnvironment(Environment):
         self._adopt(state=state)
         return state
 
-    def reset_movables(self) -> bool:
+    def reset_movables(self, *, destination: str | None = None) -> bool:
         """Reposition `cube`/`bin` to fresh ground poses, robot untouched, and
         return True (`core.Environment`'s default declines). Backed by
         `KinderBackend.reset_cube_and_bin`, a real per-object pose-setting
         primitive -- deliberately not routed through `set_state`, which can only
         rebuild the whole scene (relocating the robot too).
 
+        ``destination`` is ``robot_side`` or ``opposite_side`` and selects a
+        Python-defined continuous placement region; omitting it preserves the
+        historical ``bin_init_region`` from the task configuration.
         `steps_taken`/`seed` carry forward unchanged: this is neither a skill
         execution nor a scene rebuild, so episode bookkeeping doesn't move."""
         state = self.get_current_state()
         seed = int(round(state.get(obj=self.scene, feature_name="seed")))
         steps_taken = int(round(state.get(obj=self.scene, feature_name="steps_taken")))
         backend = self.backend()
-        backend.reset_cube_and_bin()
+        bin_region = None
+        if destination is not None:
+            bin_region = BIN_RESET_REGION_BY_SIDE[Tossing3DSide(destination)]
+        backend.reset_cube_and_bin(
+            bin_region=None if bin_region is None else bin_region.model_dump(mode="json")
+        )
         next_state = self.build_state(
             observation=backend.observe(),
             seed=seed,

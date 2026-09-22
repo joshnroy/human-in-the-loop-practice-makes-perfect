@@ -127,7 +127,8 @@ def test_center_support_still_respects_room_and_obstacles() -> None:
 
 @needs_kinder
 @pytest.mark.parametrize("layout", [Tossing3DLayout.BARRIER, Tossing3DLayout.SAME_SIDE])
-def test_live_partial_reset_preserves_robot_and_goal_attachment(*, layout) -> None:
+@pytest.mark.parametrize("destination", [None, "robot_side", "opposite_side"])
+def test_live_partial_reset_preserves_robot_and_goal_attachment(*, layout, destination) -> None:
     env = Tossing3DEnvironment(layout=layout)
     try:
         env.hard_reset()
@@ -139,7 +140,7 @@ def test_live_partial_reset_preserves_robot_and_goal_attachment(*, layout) -> No
         scene = backend._object_centric()
         config_before = copy.deepcopy(scene.task_config)
         barrier_before = before[before.get_object_from_name("cuboid_barrier")].copy()
-        assert env.reset_movables()
+        assert env.reset_movables(destination=destination)
         after = backend.snapshot()
         np.testing.assert_allclose(after[robot], robot_before, atol=1e-7, rtol=0)
         np.testing.assert_allclose(

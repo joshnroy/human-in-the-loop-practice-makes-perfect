@@ -586,7 +586,10 @@ def test_reset_movables_breaks_a_grasp_since_the_robot_is_never_touched() -> Non
 
 @pytest.mark.parametrize("layout", ["barrier", "same-side"])
 @pytest.mark.parametrize("gripper", ["open", "holding", "closed_empty"])
-def test_reset_symbolic_gripper_effects_match_physics(*, layout: str, gripper: str) -> None:
+@pytest.mark.parametrize("destination", ["robot_side", "opposite_side"])
+def test_reset_symbolic_gripper_effects_match_physics(
+    *, layout: str, gripper: str, destination: str
+) -> None:
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
     from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY
     from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
@@ -608,7 +611,7 @@ def test_reset_symbolic_gripper_effects_match_physics(*, layout: str, gripper: s
             state=state, objects=provider.objects(), predicates=provider.predicates()
         )
         robot_before = state.data[env.robot].copy()
-        assert env.reset_movables()
+        assert env.reset_movables(destination=destination)
         state = env.get_current_state()
         # Re-observation round-trips the base pose through float32 controller state.
         np.testing.assert_allclose(state.data[env.robot], robot_before, rtol=0, atol=1e-7)
@@ -617,6 +620,8 @@ def test_reset_symbolic_gripper_effects_match_physics(*, layout: str, gripper: s
         )
         gripper_predicates = {HAND_EMPTY, HOLDING, CLOSED_EMPTY}
         for reset in provider.movables_reset_skills():
+            if provider.movables_reset_destination(ground_skill=reset) != destination:
+                continue
             predicted = apply_success_effects(
                 true_atoms=before,
                 ground_skill=reset,
@@ -749,5 +754,51 @@ def test_ees_picks_cube_from_recorded_bin_rim() -> None:
         retrieved = env.take_action(action=action.action)
         assert HOLDING.holds(retrieved, (env.robot, env.cube)), env.last_skill_error()
         assert retrieved.get(obj=env.cube, feature_name="z") > 0.3
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("destination", ["robot_side", "opposite_side"])
+def test_same_side_human_reset_uses_python_defined_region(*, destination: str) -> None:
+    import json
+
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.sides import (
+        BIN_RESET_REGION_BY_SIDE,
+        Tossing3DSide,
+    )
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
+    path = env.backend().task_config_path
+    assert path is not None
+    config = json.loads(path.read_text())
+    assert "bin_robot_side_reset_region" not in config["regions"]
+    assert "bin_far_side_reset_region" not in config["regions"]
+    cube_bounds = config["regions"]["blocks_init_region"]["ranges"][0]
+    bin_bounds = BIN_RESET_REGION_BY_SIDE[Tossing3DSide(destination)].ranges[0]
+    bounds_by_name = {"cube_0": cube_bounds, "bin_0": bin_bounds}
+    try:
+        env.hard_reset()
+        snapshot = env.backend().snapshot()
+        for name in bounds_by_name:
+            obj = snapshot.get_object_from_name(name)
+            snapshot.set(obj, "x", 1.0)
+        env.backend().restore(snapshot=snapshot)
+        before = _robot_pose(state=env.get_current_state())
+        for _ in range(3):
+            assert env.reset_movables(destination=destination)
+            observed = env.get_current_state()
+            for obj in (env.cube, env.bin):
+                xmin, ymin, xmax, ymax = bounds_by_name[obj.name]
+                x = observed.get(obj=obj, feature_name="x")
+                y = observed.get(obj=obj, feature_name="y")
+                assert xmin - 1e-6 <= x <= xmax + 1e-6
+                assert ymin - 1e-6 <= y <= ymax + 1e-6
+                barrier_x = observed.get(obj=env.barrier, feature_name="x")
+                if obj == env.cube or destination == "robot_side":
+                    assert x < barrier_x
+                else:
+                    assert x > barrier_x
+            assert _robot_pose(state=observed) == pytest.approx(before, abs=1e-6)
     finally:
         env.close()
