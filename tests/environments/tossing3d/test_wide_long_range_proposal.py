@@ -124,7 +124,7 @@ def test_every_barrier_toss_draw_comes_from_the_wide_proposal(*, no_kinder_impor
         )
     pick = GroundSkill(
         skill=Tossing3DSkills.PICK_CUBE,
-        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot),
+        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
     )
     assert np.array_equal(
         provider.sample_params(ground_skill=pick, rng=rng),

@@ -254,3 +254,71 @@ BIN_AT_SIDE = Predicate(
         state=state, x_object=objects[0], side=objects[2]
     ),
 )
+
+
+# The bin's physical outer footprint half-extent. Not a state feature: the bin's
+# `x_min..z_max` features carry the SCORING box, which is strictly inside the walls
+# and whose width varies with the scene (0.15 m in the stock task, 0.22 m after a
+# bin relocation), so it cannot stand in for the walls. The 0.30 m footprint is the
+# one `test_the_live_scoring_window_lies_inside_the_bins_live_footprint` measures
+# against the compiled model, so this constant cannot drift from the scene unnoticed.
+BIN_FOOTPRINT_HALF_M = 0.15
+
+# The lateral clearance a graspable cube needs from the bin's footprint planes.
+# Measured at the live pick controller by bisection (2026-09-22 trap diagnosis): a
+# cube whose face sits 0.040 m inside the footprint plane is REFUSED ("No
+# collision-free cube grasp", zero steps) and one at 0.050 m is planned and picked.
+# The boundary decomposes into upstream's named `GRASP_OBSTACLE_CLEARANCE = 0.01`
+# (kinder_models `parameterized_skills.PickCubeController`, the mesh distance the
+# grasp planner reserves from non-target obstacles, added by upstream c18056d2) plus
+# the ~0.04 m wall band between the scoring box and the footprint that the 2F-85's
+# fingers must clear -- the composite is what the bisection measures directly. The
+# original home for this classifier would be upstream `state_abstractions`, like the
+# five classifier-backed predicates; keeping it local follows #346's side-atom
+# precedent, and migrating it upstream is deliberate follow-up work.
+GRASP_CLEARANCE_M = 0.05
+
+
+def _grasp_clear(*, state: State, cube: Object, bin_: Object) -> bool:
+    """Whether every cube face clears the bin's wall band by `GRASP_CLEARANCE_M`.
+
+    Two-dimensional and lateral only: the wall band is the square annulus between
+    the footprint rectangle and itself (walls have no reachable interior in this
+    projection), so the signed quantity that matters is the distance from the cube's
+    rectangle to the footprint *boundary*. Inside the bin that is the smallest
+    face-to-plane gap; outside it is the rectangle-to-rectangle distance; a cube
+    straddling a wall is never clear.
+    """
+    cube_half = state.get(obj=cube, feature_name="bb_x") / 2.0
+    inside_gaps: list[float] = []
+    outside_gaps: list[float] = []
+    straddles = 0
+    for axis in ("x", "y"):
+        delta = abs(state.get(obj=cube, feature_name=axis) - state.get(obj=bin_, feature_name=axis))
+        near_face = delta - cube_half
+        far_face = delta + cube_half
+        if far_face <= BIN_FOOTPRINT_HALF_M:
+            inside_gaps.append(BIN_FOOTPRINT_HALF_M - far_face)
+        elif near_face >= BIN_FOOTPRINT_HALF_M:
+            outside_gaps.append(near_face - BIN_FOOTPRINT_HALF_M)
+        else:
+            straddles += 1
+    if straddles and not outside_gaps:
+        # A wall passes through the cube's rectangle: touching, never clear.
+        return False
+    # Exactly the margin counts as clear (the measured 0.050 m case was accepted
+    # live); the epsilon keeps float arithmetic from flipping that boundary.
+    epsilon = 1e-9
+    if outside_gaps:
+        # Outside the footprint: rectangle-to-rectangle distance, to which only the
+        # axes actually beyond the footprint contribute.
+        distance = sum(gap**2 for gap in outside_gaps) ** 0.5
+        return distance >= GRASP_CLEARANCE_M - epsilon
+    return min(inside_gaps) >= GRASP_CLEARANCE_M - epsilon
+
+
+GRASP_CLEAR = Predicate(
+    name="GraspClear",
+    types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.bin_type),
+    holds=lambda state, objects: _grasp_clear(state=state, cube=objects[0], bin_=objects[1]),
+)

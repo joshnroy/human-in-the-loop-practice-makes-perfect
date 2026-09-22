@@ -83,7 +83,7 @@ def test_non_toss_skills_keep_the_generic_sampler_input_fallback() -> None:
     env = Tossing3DEnvironment()
     pick = GroundSkill(
         skill=Tossing3DSkills.PICK_CUBE,
-        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot),
+        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
     )
     assert (
         _provider().hand_selected_feature_transform(

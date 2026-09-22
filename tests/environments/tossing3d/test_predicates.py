@@ -22,6 +22,8 @@ moved:
   the price of the classifier no longer being ours to test in isolation.
 """
 
+import importlib.util
+
 import numpy as np
 import pytest
 
@@ -177,3 +179,99 @@ def test_all_five_predicates_are_predicates() -> None:
     is expected -- `SkillGrounder` and `PddlWriter` both read `.name` and `.types`."""
     assert all(isinstance(predicate, Predicate) for predicate in _ALL)
     assert len({predicate.name for predicate in _ALL}) == len(_ALL)
+
+
+# --------------------------------------------------------------------------- GraspClear
+# The measured planner boundary these brackets pin: at the live controller, a pick with
+# the cube's face 0.040 m from the bin's outer footprint plane is REFUSED ("No
+# collision-free cube grasp", 0 steps) and one at 0.050 m is planned and succeeds.
+# See `predicates.py`'s GraspClear docstring for the constants that boundary decomposes
+# into. Offsets below are cube-center offsets from the bin center: o = 0.15 - 0.025 - g
+# for an inside face gap g against the 0.30 m footprint and the 0.05 m cube.
+
+
+def _grasp_clear_at(*, cube_x: float, cube_y: float = 0.0) -> bool:
+    from hitl_pmp.environments.tossing3d.predicates import GRASP_CLEAR
+
+    observed = state(cube_x=cube_x, cube_y=cube_y)
+    return GRASP_CLEAR.holds(observed, (_ENV.cube, _ENV.bin))
+
+
+def test_grasp_clear_brackets_the_measured_refusal_boundary() -> None:
+    bin_x = 2.0
+    assert not _grasp_clear_at(cube_x=bin_x - 0.105)  # face gap 0.020: refused live
+    assert not _grasp_clear_at(cube_x=bin_x - 0.085)  # face gap 0.040: refused live
+    assert _grasp_clear_at(cube_x=bin_x - 0.075)  # face gap 0.050: planned and held
+    assert _grasp_clear_at(cube_x=bin_x)  # centered: planned and held
+
+
+def test_grasp_clear_boundary_is_inclusive_at_the_margin() -> None:
+    # Exactly the margin counts as clear: the measured 0.050 case was accepted live.
+    assert _grasp_clear_at(cube_x=2.0 - (0.15 - 0.025 - 0.05))
+
+
+def test_grasp_clear_applies_on_both_axes() -> None:
+    assert not _grasp_clear_at(cube_x=2.0, cube_y=0.105)
+    assert _grasp_clear_at(cube_x=2.0, cube_y=0.075)
+
+
+def test_a_cube_far_outside_the_footprint_is_clear_by_default() -> None:
+    assert _grasp_clear_at(cube_x=0.7129)  # the initial scene: 1.1 m from the bin
+
+
+def test_a_cube_hugging_the_outside_of_the_wall_is_not_clear() -> None:
+    # Face 0.020 m from the outer footprint plane, outside the bin.
+    assert not _grasp_clear_at(cube_x=2.0 - 0.15 - 0.025 - 0.02)
+    # Face 0.050 m out: clear.
+    assert _grasp_clear_at(cube_x=2.0 - 0.15 - 0.025 - 0.05)
+
+
+def test_a_cube_overlapping_the_wall_band_is_not_clear() -> None:
+    assert not _grasp_clear_at(cube_x=2.0 - 0.15)  # centered on the footprint plane
+
+
+def test_a_corner_approach_is_measured_in_two_dimensions() -> None:
+    # 0.015 m beyond the footprint on each axis: diagonal distance ~0.021 < margin.
+    assert not _grasp_clear_at(cube_x=2.0 - 0.19, cube_y=0.19)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
+)
+def test_grasp_clear_matches_the_live_grasp_planners_verdict() -> None:
+    """Predicate <=> planner, on the three diagnosed states: a centered in-bin cube is
+    clear and picked; an edge-lodged cube (face gap 0.020) is not-clear and REFUSED;
+    the lip-equivalent gap (0.094) is clear and the planner accepts and picks it --
+    the trap was the refusals, not the lip (see the 2026-09-22 trap diagnosis)."""
+    import json as jsonlib
+
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+    from hitl_pmp.environments.tossing3d.predicates import GRASP_CLEAR
+
+    env = Tossing3DEnvironment()
+    try:
+        env.reset_to_seed(seed=125)
+        base = KinderBackend.snapshot_to_plain(snapshot=env.backend().snapshot())
+        for gap, expect_clear, expect_refused, expect_held in (
+            (0.125, True, False, True),
+            (0.020, False, True, False),
+            (0.094, True, False, True),
+        ):
+            plain = jsonlib.loads(jsonlib.dumps(base))
+            plain["bin_0"][0] = -0.5
+            plain["bin_0"][1] = 0.0
+            plain["cube_0"][0] = -0.5 - (0.15 - 0.025 - gap)
+            plain["cube_0"][1] = 0.0
+            # Resting on the bin floor, as landed cubes do (the trap-run prestates
+            # all show z = 0.044); leaving the reset's ground z embeds the cube in
+            # the bin floor and every grasp is refused for the wrong reason.
+            plain["cube_0"][2] = 0.0444
+            restored = env.restore_plain_snapshot(plain=plain)
+            assert GRASP_CLEAR.holds(restored, (env.cube, env.bin)) == expect_clear, gap
+            landed = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+            error = env.last_skill_error()
+            refused = bool(error and "No collision-free" in error)
+            assert refused == expect_refused, (gap, error)
+            assert HOLDING.holds(landed, (env.robot, env.cube)) == expect_held, gap
+    finally:
+        env.close()

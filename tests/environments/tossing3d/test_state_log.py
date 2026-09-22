@@ -69,7 +69,7 @@ def _record_one_pick(*, output_path: Path, seed: int) -> list[np.ndarray]:
         assert episode is not None
         pick = GroundSkill(
             skill=Tossing3DSkills.PICK_CUBE,
-            objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot),
+            objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
         )
         episode._plan = [pick]
         labeled_action = policy(state)

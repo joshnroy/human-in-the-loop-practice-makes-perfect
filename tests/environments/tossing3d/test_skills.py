@@ -29,6 +29,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     BIN_AT_SIDE,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
+    GRASP_CLEAR,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -80,7 +81,7 @@ _TOSS_BOUNDS = (
 # `(robot, target, held, barrier)` for the composed toss -- so a ground skill built here
 # can be handed to upstream's controller unpermuted.
 _EXPECTED_PARAMETERS = {
-    "PickCube": ("robot", "cube", "barrier", "side"),
+    "PickCube": ("robot", "cube", "barrier", "side", "bin"),
     "MoveToTossLocationAndToss": ("robot", "bin", "cube", "barrier", "side"),
 }
 
@@ -92,7 +93,7 @@ def _every_skill() -> tuple:
 def _pick_cube() -> GroundSkill:
     return GroundSkill(
         skill=_SKILLS.PICK_CUBE,
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot, _ENV.bin),
     )
 
 
@@ -201,6 +202,10 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=CUBE_AT_SIDE,
             variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
         ),
+        LiftedAtom(
+            predicate=GRASP_CLEAR,
+            variables=(_SKILLS._cube, _SKILLS._bin),
+        ),
     })
     assert _SKILLS.PICK_CUBE.add_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
@@ -246,7 +251,10 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
 
 def test_only_toss_replaces_a_functional_side_fact() -> None:
     assert _SKILLS.PICK_CUBE.ignore_effects == frozenset()
-    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects == frozenset({CUBE_AT_SIDE})
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects == frozenset({
+        CUBE_AT_SIDE,
+        GRASP_CLEAR,
+    })
 
 
 def test_no_variable_carries_the_question_mark_the_pddl_writer_adds() -> None:
@@ -287,6 +295,7 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         ROBOT_AT_SIDE,
         CUBE_AT_SIDE,
         BIN_AT_SIDE,
+        GRASP_CLEAR,
     )
     init_atoms = SkillGrounder.abstract_state(
         state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
@@ -436,7 +445,7 @@ def test_samplers_cover_farther_receivers_without_losing_short_throws() -> None:
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     stray = GroundSkill(
         skill=_SKILLS.PICK_CUBE.model_copy(update={"name": "NotASkill"}),
-        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot),
+        objects=(_ENV.robot, _ENV.cube, _ENV.barrier, Tossing3DSides.robot, _ENV.bin),
     )
     with pytest.raises(ValueError, match="Unknown skill"):
         Tossing3DSkills.sample_params(ground_skill=stray, rng=np.random.default_rng(0))
@@ -583,3 +592,24 @@ def test_rim_support_uses_bin_frame_and_rejects_non_support(*, yaw: float) -> No
         zip(("qx", "qy", "qz", "qw"), Rotation.from_euler("x", np.pi).as_quat(), strict=True)
     )
     assert not RimGeometry.supported(cube=cube, bin_=bin_ | tipped, wall_thickness=0.01)
+
+
+def test_pick_requires_grasp_clear_and_the_toss_leaves_it_to_observation() -> None:
+    """The GraspClear gate: a pick must name the bin whose walls it measures, the toss
+    cannot promise the landing is graspable (functional update, like CubeAtSide), and
+    the paid reset re-establishes it -- its cube region sits >= 1.7 m from either bin
+    destination region, so a reset cube is clear by construction."""
+    from hitl_pmp.environments.tossing3d.predicates import GRASP_CLEAR
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    pick = _SKILLS.PICK_CUBE
+    assert _SKILLS._bin in pick.parameters
+    assert (
+        LiftedAtom(predicate=GRASP_CLEAR, variables=(_SKILLS._cube, _SKILLS._bin))
+        in pick.preconditions
+    )
+    assert GRASP_CLEAR in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects
+    provider = Tossing3DSkillProvider(env=_ENV)
+    assert GRASP_CLEAR in provider.predicates()
+    reset = provider.human_cube_bin_reset_skill()
+    assert any(atom.predicate == GRASP_CLEAR for atom in reset.skill.add_effects)

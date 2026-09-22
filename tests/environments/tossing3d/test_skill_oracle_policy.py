@@ -209,7 +209,7 @@ def test_the_label_names_the_skill_and_its_objects() -> None:
     `params=` suffix because it has no parameters -- an empty `params=[]` would invite a
     reader to look for a dial that does not exist."""
     label = _act().label
-    assert label == "PickCube(robot, cube_0, cuboid_barrier)"
+    assert label == "PickCube(robot, cube_0, cuboid_barrier, bin_0)"
 
 
 def test_the_toss_label_carries_all_four_dials_in_upstreams_object_order() -> None:

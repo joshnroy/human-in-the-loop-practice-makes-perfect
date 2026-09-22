@@ -182,7 +182,7 @@ def test_missing_snapshot_and_other_skills_are_accepted() -> None:
     )
     pick = GroundSkill(
         skill=Tossing3DSkills.PICK_CUBE,
-        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot),
+        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
     )
     assert (
         TossParameterFeasibility.rejection_reason(

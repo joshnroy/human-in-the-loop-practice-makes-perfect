@@ -104,6 +104,7 @@ from .predicates import (
     BIN_AT_SIDE,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
+    GRASP_CLEAR,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -164,14 +165,21 @@ class Tossing3DSkills:
         name="PickCube",
         # Upstream's own object order for `pick_cube`: (robot, cube, barrier). The
         # barrier is unused by the controller and present so the operator can say the
-        # cube is still on this side of it.
-        parameters=(_robot, _cube, _barrier, _side),
+        # cube is still on this side of it. The bin comes last, appended after #346's
+        # side for the same reason the side was: the GraspClear gate has to name the
+        # bin whose walls it measures, and appending preserves upstream's prefix order.
+        parameters=(_robot, _cube, _barrier, _side, _bin),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
             # The barrier is one-way: see this module's docstring, choice 1.
             LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
             LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+            # The grasp planner refuses a cube whose faces sit within
+            # GRASP_CLEARANCE_M of the bin's wall band, and retrying such a pick is
+            # the degenerate loop the 2026-09-22 trap diagnosis pinned -- gate it
+            # symbolically so recovery (the paid reset) becomes the plan instead.
+            LiftedAtom(predicate=GRASP_CLEAR, variables=(_cube, _bin)),
         }),
         add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
         delete_effects=frozenset({
@@ -202,7 +210,10 @@ class Tossing3DSkills:
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
         }),
-        ignore_effects=frozenset({CUBE_AT_SIDE}),
+        # GraspClear joins CubeAtSide as a functional update: whether the landed cube
+        # is graspable is a fact of the physics, re-read from observation rather than
+        # promised by the operator model.
+        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR}),
         param_dim=4,
         practice_cost=1.0,
     )
