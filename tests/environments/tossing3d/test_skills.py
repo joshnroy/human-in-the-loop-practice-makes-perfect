@@ -339,28 +339,39 @@ def test_sampling_the_pick_returns_an_empty_vector_rather_than_a_zero() -> None:
     assert drawn.shape == (0,)
 
 
+def test_sampling_the_toss_here_raises_rather_than_supplying_stale_candidates() -> None:
+    """The toss's candidates come from `WideLongRangeTossProposal` via the provider (and
+    from `SameSideSkills` on the same-side layout); a draw that still reached this
+    sampler would silently resurrect the removed independent-bounds proposal."""
+    with pytest.raises(ValueError, match="Unknown skill"):
+        Tossing3DSkills.sample_params(ground_skill=_toss(), rng=np.random.default_rng(0))
+
+
 @pytest.mark.parametrize("slot", range(4))
-def test_every_toss_dial_is_drawn_across_its_own_bounds(*, slot: int) -> None:
+def test_every_same_side_toss_dial_is_drawn_across_its_own_bounds(*, slot: int) -> None:
     """Each dial in bounds, and each one a real draw rather than a constant dressed as
     one -- a sampler that returned a bound's midpoint in some slot would pass a
     containment-only check on every draw."""
+    from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
+
     rng = np.random.default_rng(0)
     draws = [
-        float(Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng)[slot])
-        for _ in range(200)
+        float(SameSideSkills.sample_params(ground_skill=_toss(), rng=rng)[slot]) for _ in range(200)
     ]
     low, high = _TOSS_BOUNDS[slot]
     assert all(low <= value <= high for value in draws)
     assert max(draws) - min(draws) > (high - low) / 2
 
 
-def test_the_four_toss_dials_are_drawn_independently() -> None:
+def test_the_four_same_side_toss_dials_are_drawn_independently() -> None:
     """A sampler that wrote one draw into several slots, or derived one from another,
     would pass every single-slot test above while collapsing the space onto a line or a
     plane. Pinned as near-zero rank correlation between all six pairs."""
+    from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
+
     rng = np.random.default_rng(0)
     draws = np.array([
-        Tossing3DSkills.sample_params(ground_skill=_toss(), rng=rng) for _ in range(500)
+        SameSideSkills.sample_params(ground_skill=_toss(), rng=rng) for _ in range(500)
     ])
     ranks = np.argsort(np.argsort(draws, axis=0), axis=0)
     correlations = np.corrcoef(ranks, rowvar=False)
