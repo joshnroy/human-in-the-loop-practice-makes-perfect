@@ -1,5 +1,7 @@
 """The two injection seams a domain-agnostic `Method` needs from Tossing3D."""
 
+from typing import Literal
+
 import numpy as np
 from pydantic import Field
 
@@ -21,6 +23,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
+from .long_range_proposal import LongRangeTossProposal
 from .parameter_feasibility import TossParameterFeasibility
 from .predicates import (
     CLOSED_EMPTY,
@@ -50,6 +53,7 @@ class Tossing3DSkillProvider(SkillProvider):
     env: Tossing3DEnvironment
     human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
     non_human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
+    toss_proposal: Literal["independent", "long-range"] = "independent"
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
@@ -93,6 +97,11 @@ class Tossing3DSkillProvider(SkillProvider):
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
             return SameSideSkills.sample_params(ground_skill=ground_skill, rng=rng)
+        if (
+            self.toss_proposal == "long-range"
+            and ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
+        ):
+            return LongRangeTossProposal.sample(rng=rng)
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
 
     def compute_action(
