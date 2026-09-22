@@ -9,12 +9,22 @@ from hitl_pmp.core.problem.tasks.types import Task
 
 from .types import (
     GroundSkill,
+    ParameterSamplingDiagnostics,
     Policy,
     PracticeTargetTally,
     Rollout,
     SetupCommand,
     SkillPracticeTally,
 )
+
+
+class NoFeasibleParametersError(Exception):
+    """A bounded proposal batch produced no action, observation, or practice cost."""
+
+    def __init__(self, *, skill_name: str, diagnostics: ParameterSamplingDiagnostics) -> None:
+        super().__init__(f"No feasible parameters for {skill_name}")
+        self.skill_name = skill_name
+        self.diagnostics = diagnostics
 
 
 class InteractionComplete(Exception):  # noqa: N818
@@ -116,6 +126,15 @@ class Method(BaseModel, abc.ABC):
         predicators/approaches/active_sampler_learning_approach.py, whose
         _create_explorer is only ever consulted for interaction requests)."""
         return self.get_task_policy(task=task)
+
+    def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
+        """Receive the session's remaining action slots immediately before a step.
+
+        The current action is included. Both robot actions and requested resets
+        consume one slot in PracticeLoop. Methods that plan beyond the next action
+        can use this limit without confusing it with a search-compute budget.
+        Methods that do not need the limit inherit this no-op.
+        """
 
     def observe_environment_reset(self, *, state: State) -> None:
         """Called by practice_loop.py immediately *before* it resets the

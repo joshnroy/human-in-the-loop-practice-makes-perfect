@@ -1,0 +1,745 @@
+{
+  "reviewer": "independent verify_debug_fixes subagent; no implementation authorship",
+  "updated_at": "2026-09-21T02:28:39.276394+00:00",
+  "runtime_source_commit": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+  "runtime_source_tree": "e511b09f040fa5ef65d7e03a137e59fb1457c767",
+  "runtime_source_unchanged_since_launch": true,
+  "recorded_dependency_paths_are_frozen_and_commits_match_gitlinks": true,
+  "measured_commands_exactly_match_launch_revision": true,
+  "measured_launcher_revision": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+  "current_launcher_changed_after_launch": false,
+  "provenance_note": "Per-arm snapshots are written at run end. Runtime src, pyproject, and dependency pins are byte-identical to the launch commit. All saved measured commands were independently reconstructed from the launch commit and match exactly. Frozen dependency provenance is in dependency_provenance.json.",
+  "arms": {
+    "global_curve-particle": {
+      "status": "passed_completed_arm_audit",
+      "results_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920/global_curve-particle/seed_00",
+      "process_returncode": 0,
+      "process_finished_at": null,
+      "late_config_snapshot_git_commit": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+      "late_config_snapshot_git_dirty": false,
+      "events": {
+        "session_start": 10,
+        "decision": 110,
+        "dispatch": 100,
+        "outcome": 100,
+        "failure_transition": 25,
+        "smoothing": 10,
+        "refit": 10
+      },
+      "validated_skill_posterior_checkpoints": 550,
+      "validated_decision_action_budgets": 110,
+      "validated_nonidentity_reset_selections": 27,
+      "independently_checked_exact_j_stop_values": 110,
+      "replayed_failure_kernel_observations": 25,
+      "final_failure_kernel_strata_and_effects": 3,
+      "all_outcome_transition_and_smoothing_replays_match_exactly": true,
+      "actual_cost_per_cycle": {
+        "0": 31.0,
+        "1": 34.0,
+        "2": 37.0,
+        "3": 25.0,
+        "4": 8.0,
+        "5": 23.0,
+        "6": 20.0,
+        "7": 14.0,
+        "8": 3.0,
+        "9": 13.0
+      },
+      "actual_total_cost": 208.0,
+      "practice_outcomes": {
+        "PickCube": {
+          "policy_successes": 31
+        },
+        "MoveToTossLocationAndToss": {
+          "policy_failures": 25
+        },
+        "non_human_reset_cube_bin_only": {
+          "policy_successes": 15
+        },
+        "ask_for_reset_cube_bin_only": {
+          "policy_successes": 12
+        },
+        "OpenGripper": {
+          "policy_successes": 17
+        }
+      },
+      "evaluation_solved_counts_out_of_10": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "practice_session_end_reasons": {
+        "planner_stop": 10
+      },
+      "num_free_practice_resets": 0,
+      "final_phi_support": {
+        "PickCube": 79,
+        "MoveToTossLocationAndToss": 106,
+        "OpenGripper": 221,
+        "ask_for_reset_cube_bin_only": 219,
+        "non_human_reset_cube_bin_only": 217
+      },
+      "minimum_smoothed_ancestor_count": {
+        "PickCube": 257,
+        "MoveToTossLocationAndToss": 284,
+        "OpenGripper": 303,
+        "ask_for_reset_cube_bin_only": 287,
+        "non_human_reset_cube_bin_only": 600
+      },
+      "final_filtered_competence": {
+        "PickCube": 0.9754427691024303,
+        "MoveToTossLocationAndToss": 0.08844755428477757,
+        "OpenGripper": 0.9489497600081175,
+        "ask_for_reset_cube_bin_only": 0.8947893142716516,
+        "non_human_reset_cube_bin_only": 0.93939703965413
+      },
+      "final_forecast_competence": {
+        "PickCube": 0.9756720336587217,
+        "MoveToTossLocationAndToss": 0.09431821574232564,
+        "OpenGripper": 0.944908444696557,
+        "ask_for_reset_cube_bin_only": 0.8947893142716516,
+        "non_human_reset_cube_bin_only": 0.9319542601266828
+      }
+    },
+    "global_curve-grid": {
+      "status": "passed_completed_arm_audit",
+      "results_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920/global_curve-grid/seed_00",
+      "process_returncode": 0,
+      "process_finished_at": null,
+      "late_config_snapshot_git_commit": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+      "late_config_snapshot_git_dirty": false,
+      "events": {
+        "session_start": 10,
+        "decision": 86,
+        "dispatch": 76,
+        "outcome": 76,
+        "failure_transition": 20,
+        "smoothing": 10,
+        "refit": 10
+      },
+      "validated_skill_posterior_checkpoints": 430,
+      "validated_decision_action_budgets": 86,
+      "validated_nonidentity_reset_selections": 21,
+      "independently_checked_exact_j_stop_values": 86,
+      "replayed_failure_kernel_observations": 20,
+      "final_failure_kernel_strata_and_effects": 4,
+      "all_outcome_transition_and_smoothing_replays_match_exactly": true,
+      "actual_cost_per_cycle": {
+        "0": 25.0,
+        "1": 38.0,
+        "2": 37.0,
+        "3": 17.0,
+        "4": 8.0,
+        "5": 7.0,
+        "6": 0.0,
+        "7": 1.0,
+        "8": 22.0,
+        "9": 5.0
+      },
+      "actual_total_cost": 160.0,
+      "practice_outcomes": {
+        "PickCube": {
+          "policy_successes": 22
+        },
+        "MoveToTossLocationAndToss": {
+          "policy_failures": 20
+        },
+        "ask_for_reset_cube_bin_only": {
+          "policy_successes": 9
+        },
+        "non_human_reset_cube_bin_only": {
+          "policy_successes": 12
+        },
+        "OpenGripper": {
+          "policy_successes": 13
+        }
+      },
+      "evaluation_solved_counts_out_of_10": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "practice_session_end_reasons": {
+        "planner_stop": 10
+      },
+      "num_free_practice_resets": 0,
+      "final_phi_support": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "minimum_smoothed_ancestor_count": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "final_filtered_competence": {
+        "PickCube": 0.9481289130716721,
+        "MoveToTossLocationAndToss": 0.10968762183200786,
+        "OpenGripper": 0.9185052720973006,
+        "ask_for_reset_cube_bin_only": 0.880809202312693,
+        "non_human_reset_cube_bin_only": 0.9161543458608266
+      },
+      "final_forecast_competence": {
+        "PickCube": 0.9481289130716721,
+        "MoveToTossLocationAndToss": 0.10968762183200786,
+        "OpenGripper": 0.9185052720973006,
+        "ask_for_reset_cube_bin_only": 0.880809202312693,
+        "non_human_reset_cube_bin_only": 0.912069635353383
+      }
+    },
+    "local_trend-particle": {
+      "status": "passed_completed_arm_audit",
+      "results_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920/local_trend-particle/seed_00",
+      "process_returncode": 0,
+      "process_finished_at": null,
+      "late_config_snapshot_git_commit": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+      "late_config_snapshot_git_dirty": false,
+      "events": {
+        "session_start": 10,
+        "decision": 150,
+        "dispatch": 142,
+        "outcome": 142,
+        "failure_transition": 38,
+        "smoothing": 10,
+        "refit": 10
+      },
+      "validated_skill_posterior_checkpoints": 760,
+      "validated_decision_action_budgets": 150,
+      "validated_nonidentity_reset_selections": 37,
+      "independently_checked_exact_j_stop_values": 150,
+      "replayed_failure_kernel_observations": 38,
+      "final_failure_kernel_strata_and_effects": 4,
+      "all_outcome_transition_and_smoothing_replays_match_exactly": true,
+      "actual_cost_per_cycle": {
+        "0": 36.0,
+        "1": 40.0,
+        "2": 3.0,
+        "3": 30.0,
+        "4": 27.0,
+        "5": 31.0,
+        "6": 38.0,
+        "7": 34.0,
+        "8": 34.0,
+        "9": 17.0
+      },
+      "actual_total_cost": 290.0,
+      "practice_outcomes": {
+        "PickCube": {
+          "policy_successes": 42
+        },
+        "MoveToTossLocationAndToss": {
+          "policy_failures": 38
+        },
+        "ask_for_reset_cube_bin_only": {
+          "policy_successes": 17
+        },
+        "non_human_reset_cube_bin_only": {
+          "policy_successes": 20
+        },
+        "OpenGripper": {
+          "policy_successes": 25
+        }
+      },
+      "evaluation_solved_counts_out_of_10": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        1,
+        0,
+        1
+      ],
+      "practice_session_end_reasons": {
+        "session_action_cap": 2,
+        "planner_stop": 8
+      },
+      "num_free_practice_resets": 0,
+      "final_phi_support": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "minimum_smoothed_ancestor_count": {
+        "PickCube": 1024,
+        "MoveToTossLocationAndToss": 103,
+        "OpenGripper": 565,
+        "ask_for_reset_cube_bin_only": 559,
+        "non_human_reset_cube_bin_only": 583
+      },
+      "final_filtered_competence": {
+        "PickCube": 0.9885804620135504,
+        "MoveToTossLocationAndToss": 0.08150403884907964,
+        "OpenGripper": 0.9932413345032747,
+        "ask_for_reset_cube_bin_only": 0.9922828220431257,
+        "non_human_reset_cube_bin_only": 0.9941260201813551
+      },
+      "final_forecast_competence": {
+        "PickCube": 0.9839864298639364,
+        "MoveToTossLocationAndToss": 0.09024269014747457,
+        "OpenGripper": 0.9874550795119101,
+        "ask_for_reset_cube_bin_only": 0.9890900213264047,
+        "non_human_reset_cube_bin_only": 0.9941260201813551
+      }
+    },
+    "local_trend-grid": {
+      "status": "passed_completed_arm_audit",
+      "results_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920/local_trend-grid/seed_00",
+      "process_returncode": 0,
+      "process_finished_at": null,
+      "late_config_snapshot_git_commit": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+      "late_config_snapshot_git_dirty": false,
+      "events": {
+        "session_start": 10,
+        "decision": 157,
+        "dispatch": 147,
+        "outcome": 147,
+        "failure_transition": 36,
+        "smoothing": 10,
+        "refit": 10
+      },
+      "validated_skill_posterior_checkpoints": 785,
+      "validated_decision_action_budgets": 157,
+      "validated_nonidentity_reset_selections": 40,
+      "independently_checked_exact_j_stop_values": 157,
+      "replayed_failure_kernel_observations": 36,
+      "final_failure_kernel_strata_and_effects": 8,
+      "all_outcome_transition_and_smoothing_replays_match_exactly": true,
+      "actual_cost_per_cycle": {
+        "0": 35.0,
+        "1": 36.0,
+        "2": 30.0,
+        "3": 33.0,
+        "4": 36.0,
+        "5": 39.0,
+        "6": 31.0,
+        "7": 5.0,
+        "8": 32.0,
+        "9": 30.0
+      },
+      "actual_total_cost": 307.0,
+      "practice_outcomes": {
+        "PickCube": {
+          "policy_successes": 45
+        },
+        "MoveToTossLocationAndToss": {
+          "policy_failures": 18,
+          "policy_successes": 2,
+          "random_failures": 18,
+          "random_successes": 1
+        },
+        "ask_for_reset_cube_bin_only": {
+          "policy_successes": 26
+        },
+        "non_human_reset_cube_bin_only": {
+          "policy_successes": 14
+        },
+        "OpenGripper": {
+          "policy_successes": 23
+        }
+      },
+      "evaluation_solved_counts_out_of_10": [
+        0,
+        0,
+        3,
+        1,
+        2,
+        1,
+        2,
+        2,
+        1,
+        0,
+        2
+      ],
+      "practice_session_end_reasons": {
+        "planner_stop": 10
+      },
+      "num_free_practice_resets": 0,
+      "final_phi_support": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "minimum_smoothed_ancestor_count": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "final_filtered_competence": {
+        "PickCube": 0.9879146279400997,
+        "MoveToTossLocationAndToss": 0.3267009743637834,
+        "OpenGripper": 0.986252967601408,
+        "ask_for_reset_cube_bin_only": 0.9833662283689748,
+        "non_human_reset_cube_bin_only": 0.9903861526418796
+      },
+      "final_forecast_competence": {
+        "PickCube": 0.9833600930905362,
+        "MoveToTossLocationAndToss": 0.3429761201055375,
+        "OpenGripper": 0.9812890943240684,
+        "ask_for_reset_cube_bin_only": 0.9830978596322792,
+        "non_human_reset_cube_bin_only": 0.9858673631062744
+      }
+    }
+  },
+  "all_four_arms_completed_and_passed": true,
+  "original_six_requirements": {
+    "particle_filter_smoothing": "Verified retrospective resampling-ancestry smoothing, immutable filtered beliefs and no feedback into planning; full-run outputs replayed independently.",
+    "no_direct_particle_filter_learning_rate_observations": "All four Bayesian arms reject condition_learning_rate; actual outcomes use success/failure likelihood only, with epsilon-random competence exclusion retained.",
+    "costs_remain_as_is": "G AST unchanged; actual normal action cost1, both reset costs5 and linear lambda0.0003 retained; separate execution-cost filter unchanged.",
+    "updated_learning_rate_observation_model": "Learning rate is latent and updated through joint competence/learning-rate or competence/phi posterior under S/F, not a constructed slope target.",
+    "phi_equation_model_A": "Exponential mode curve and mode-parameterized Beta observation distribution verified; reported learning rate is derivative of Beta mean including concentration correction.",
+    "fixed_grid_approach": "Both model grids verified; A has1188phi\u00d725Cstates, B25C\u00d716etastates; CDF bin masses, transitions and backward smoothing use matched model priors."
+  },
+  "independent_frozen_source_review": {
+    "status": "passed_independent_frozen_source_review",
+    "reviewer": "verify_debug_fixes subagent; no production, test, or experiment implementation authorship",
+    "reviewed_at": "2026-09-21T02:05:41.822057+00:00",
+    "source_commit": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+    "source_tree": "e511b09f040fa5ef65d7e03a137e59fb1457c767",
+    "runtime_source_clean_at_review": true,
+    "objective_G_ast_unchanged_from_original_measurement_branch": true,
+    "four_command_matrix_unchanged_except_observer_episode_traces": true,
+    "original_seed_cycles_actions_layout_reset_policy_costs_and_lambda_unchanged": true,
+    "independent_numerical_evidence": {
+      "deployment_formula": {
+        "status": "passed",
+        "rational_recurrence_vs_formula_cases": 1625,
+        "independent_support_cross_product_vs_mixed_moments_horizons": 13,
+        "horizon_range": [
+          0,
+          12
+        ],
+        "supports_include_zero_and_one": true,
+        "cross_product_dimensions": [
+          4,
+          3,
+          2
+        ]
+      },
+      "exact_j_integration": {
+        "status": "passed",
+        "cases": 624,
+        "maximum_absolute_error": 3.3306690738754696e-16,
+        "families": {
+          "weighted": {
+            "cases": 104,
+            "posterior_support_sizes": {
+              "PickCube": 3,
+              "MoveToTossLocationAndToss": 3,
+              "OpenGripper": 3
+            },
+            "sample_count_invariant": true,
+            "rng_and_original_state_unchanged": true
+          },
+          "legacy-particle": {
+            "cases": 104,
+            "posterior_support_sizes": {
+              "PickCube": 1,
+              "MoveToTossLocationAndToss": 1,
+              "OpenGripper": 2
+            },
+            "sample_count_invariant": true,
+            "rng_and_original_state_unchanged": true
+          },
+          "global_curve-particle": {
+            "cases": 104,
+            "posterior_support_sizes": {
+              "PickCube": 7,
+              "MoveToTossLocationAndToss": 7,
+              "OpenGripper": 7
+            },
+            "sample_count_invariant": true,
+            "rng_and_original_state_unchanged": true
+          },
+          "global_curve-grid": {
+            "cases": 104,
+            "posterior_support_sizes": {
+              "PickCube": 5,
+              "MoveToTossLocationAndToss": 5,
+              "OpenGripper": 5
+            },
+            "sample_count_invariant": true,
+            "rng_and_original_state_unchanged": true
+          },
+          "local_trend-particle": {
+            "cases": 104,
+            "posterior_support_sizes": {
+              "PickCube": 7,
+              "MoveToTossLocationAndToss": 7,
+              "OpenGripper": 5
+            },
+            "sample_count_invariant": true,
+            "rng_and_original_state_unchanged": true
+          },
+          "local_trend-grid": {
+            "cases": 104,
+            "posterior_support_sizes": {
+              "PickCube": 5,
+              "MoveToTossLocationAndToss": 5,
+              "OpenGripper": 5
+            },
+            "sample_count_invariant": true,
+            "rng_and_original_state_unchanged": true
+          }
+        }
+      },
+      "reset_semantics_and_dominance": {
+        "status": "passed",
+        "symbolic_states_checked": 64,
+        "reset_transitions_checked": 128,
+        "reset_names_checked": [
+          "ask_for_reset_cube_bin_only",
+          "non_human_reset_cube_bin_only"
+        ],
+        "pruned_identity_transitions": 8,
+        "deterministic_success_probability": 1.0,
+        "hypothetical_beliefs_and_training_counts_unchanged": true,
+        "configured_costs_unchanged": true
+      },
+      "prior_failure_effect_findings": {
+        "global_curve-particle": {
+          "all_skill_outcomes": {
+            "('PickCube', True)": 33,
+            "('MoveToTossLocationAndToss', False)": 20
+          },
+          "failed_outcome_followed_by_same_cycle_decision": {
+            "('MoveToTossLocationAndToss', 'HandEmpty,OnGround')": 5,
+            "('MoveToTossLocationAndToss', 'Holding,Reachable')": 9,
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable,OnGround')": 2
+          },
+          "examples": {
+            "('MoveToTossLocationAndToss', 'HandEmpty,OnGround')": {
+              "cycle": 0,
+              "decision": 7,
+              "atoms": [
+                "HandEmpty",
+                "OnGround"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'Holding,Reachable')": {
+              "cycle": 0,
+              "decision": 20,
+              "atoms": [
+                "Holding",
+                "Reachable"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable,OnGround')": {
+              "cycle": 7,
+              "decision": 160,
+              "atoms": [
+                "HandEmpty",
+                "Reachable",
+                "OnGround"
+              ]
+            }
+          }
+        },
+        "global_curve-grid": {
+          "all_skill_outcomes": {
+            "('PickCube', True)": 31,
+            "('MoveToTossLocationAndToss', False)": 15
+          },
+          "failed_outcome_followed_by_same_cycle_decision": {
+            "('MoveToTossLocationAndToss', 'HandEmpty,OnGround')": 6,
+            "('MoveToTossLocationAndToss', 'Holding,Reachable')": 7,
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable,OnGround')": 2
+          },
+          "examples": {
+            "('MoveToTossLocationAndToss', 'HandEmpty,OnGround')": {
+              "cycle": 0,
+              "decision": 14,
+              "atoms": [
+                "HandEmpty",
+                "OnGround"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'Holding,Reachable')": {
+              "cycle": 0,
+              "decision": 17,
+              "atoms": [
+                "Holding",
+                "Reachable"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable,OnGround')": {
+              "cycle": 0,
+              "decision": 18,
+              "atoms": [
+                "HandEmpty",
+                "Reachable",
+                "OnGround"
+              ]
+            }
+          }
+        },
+        "local_trend-particle": {
+          "all_skill_outcomes": {
+            "('PickCube', True)": 40,
+            "('MoveToTossLocationAndToss', False)": 26
+          },
+          "failed_outcome_followed_by_same_cycle_decision": {
+            "('MoveToTossLocationAndToss', 'HandEmpty,OnGround')": 7,
+            "('MoveToTossLocationAndToss', 'Holding,Reachable')": 13,
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable')": 2,
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable,OnGround')": 2
+          },
+          "examples": {
+            "('MoveToTossLocationAndToss', 'HandEmpty,OnGround')": {
+              "cycle": 0,
+              "decision": 3,
+              "atoms": [
+                "HandEmpty",
+                "OnGround"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'Holding,Reachable')": {
+              "cycle": 0,
+              "decision": 6,
+              "atoms": [
+                "Holding",
+                "Reachable"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable')": {
+              "cycle": 0,
+              "decision": 11,
+              "atoms": [
+                "HandEmpty",
+                "Reachable"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable,OnGround')": {
+              "cycle": 0,
+              "decision": 14,
+              "atoms": [
+                "HandEmpty",
+                "Reachable",
+                "OnGround"
+              ]
+            }
+          }
+        },
+        "local_trend-grid": {
+          "all_skill_outcomes": {
+            "('PickCube', True)": 40,
+            "('MoveToTossLocationAndToss', False)": 22,
+            "('MoveToTossLocationAndToss', True)": 2
+          },
+          "failed_outcome_followed_by_same_cycle_decision": {
+            "('MoveToTossLocationAndToss', 'HandEmpty,OnGround')": 7,
+            "('MoveToTossLocationAndToss', 'Holding,Reachable')": 11,
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable,OnGround')": 2
+          },
+          "examples": {
+            "('MoveToTossLocationAndToss', 'HandEmpty,OnGround')": {
+              "cycle": 0,
+              "decision": 3,
+              "atoms": [
+                "HandEmpty",
+                "OnGround"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'Holding,Reachable')": {
+              "cycle": 0,
+              "decision": 7,
+              "atoms": [
+                "Holding",
+                "Reachable"
+              ]
+            },
+            "('MoveToTossLocationAndToss', 'HandEmpty,Reachable,OnGround')": {
+              "cycle": 0,
+              "decision": 8,
+              "atoms": [
+                "HandEmpty",
+                "Reachable",
+                "OnGround"
+              ]
+            }
+          }
+        }
+      },
+      "original_requirements": {
+        "status": "passed",
+        "phi_mode_beta_mapping_and_derivative_cases": 4752,
+        "maximum_derivative_finite_difference_error": 1.2776963948663012e-11,
+        "model_A_shared_phi_support_count": 1188,
+        "fixed_grid_supports": {
+          "global_curve": 29700,
+          "local_trend": 400
+        },
+        "all_four_arms_reject_direct_learning_rate_observation": true,
+        "all_four_arms_change_eta_posterior_through_SF_after_training": true
+      }
+    },
+    "reviewed_contracts": [
+      "PracticeLoop supplies remaining slots including current action before every policy call, and resets consume a slot.",
+      "Determinized search honors remaining slots in terminal handling and cache keys while legacy generic horizon remains independent.",
+      "Conditional reset effects inspect incoming atoms, delete Holding, and preserve actual gripper command through ClosedEmpty.",
+      "Both reset names share the same completion-or-exception simulator API; known-success forecasts leave competence/cost beliefs and pending training unchanged.",
+      "Identity reset pruning is valid within the modeled symbolic state, nonnegative cost and guaranteed reset dynamics.",
+      "Real failed robot executions update an immutable empirical failure-effect kernel keyed by exact grounded skill, full precontext and exploration mode.",
+      "Effects split original failure probability without duplicating competence evidence, training examples or costs; success and evaluation do not train the kernel.",
+      "Explicit pre/post observations allow final-step and pre-reset flushes exactly once; search does not train the failure kernel.",
+      "Exact J integrates mixed competence moments after pending-example refit, preserving within-skill correlations and represented-distribution uncertainty."
+    ],
+    "material_approximations_remaining": [
+      "Empirical failure effects retain identity in unseen symbolic context/exploration-mode strata; finite data may miss rare effects.",
+      "Failure-effect weights are empirical frequencies, held fixed within a search; no latent uncertainty over that kernel is planned.",
+      "Symbolic reset self-loop pruning does not model value from continuous geometric randomization when atoms are unchanged.",
+      "Deployment expectation is exact for the represented skill marginals and canonical symbolic recurrence, not a claim of exact simulator dynamics.",
+      "One paired seed cannot establish statistically reliable performance differences between the four arms."
+    ],
+    "blocking_findings": [],
+    "rerun_auditor": "/tmp/audit_tossing3d_debug_rerun_independent.py",
+    "runtime_checks_pending": null,
+    "original_six_requirements": {
+      "particle_filter_smoothing": "Verified retrospective resampling-ancestry smoothing, immutable filtered beliefs and no feedback into planning; full-run outputs replayed independently.",
+      "no_direct_particle_filter_learning_rate_observations": "All four Bayesian arms reject condition_learning_rate; actual outcomes use success/failure likelihood only, with epsilon-random competence exclusion retained.",
+      "costs_remain_as_is": "G AST unchanged; actual normal action cost1, both reset costs5 and linear lambda0.0003 retained; separate execution-cost filter unchanged.",
+      "updated_learning_rate_observation_model": "Learning rate is latent and updated through joint competence/learning-rate or competence/phi posterior under S/F, not a constructed slope target.",
+      "phi_equation_model_A": "Exponential mode curve and mode-parameterized Beta observation distribution verified; reported learning rate is derivative of Beta mean including concentration correction.",
+      "fixed_grid_approach": "Both model grids verified; A has1188phi\u00d725Cstates, B25C\u00d716etastates; CDF bin masses, transitions and backward smoothing use matched model priors."
+    },
+    "runtime_verification_result": "All four measured arms completed ten cycles and passed full independent outcome, transition, smoothing, horizon, exact-J and failure-kernel replay."
+  },
+  "verification_scope_verdict": "All six original experiment requirements and the implemented planner corrections passed independent verification. All four arms completed ten cycles; 2,525 posterior checkpoints, 503 decision action budgets and exact stopping values, 119 failure-effect observations, 125 nonidentity reset selections, and every outcome/refit/smoothing history replayed correctly. This establishes corrected model/accounting behavior, not adequate end-to-end task learning: final task success is 0/10, 1/10, 1/10 and 2/10 for A/particles, A/grid, B/particles and B/grid respectively. Three arms observed no successful practice toss; B/grid observed 3/39. Sparse physical successes and an uninformative all-negative classifier remain limitations, along with learned failure effects in unseen contexts and the symbolic geometry abstraction. One paired seed does not support statistical superiority claims.",
+  "aggregate_checks": {
+    "validated_skill_posterior_checkpoints": 2525,
+    "validated_decision_action_budgets": 503,
+    "independently_checked_exact_j_stop_values": 503,
+    "replayed_failure_kernel_observations": 119,
+    "validated_nonidentity_reset_selections": 125
+  }
+}

@@ -1,5 +1,7 @@
 """The two injection seams a domain-agnostic `Method` needs from Tossing3D."""
 
+from typing import Literal
+
 import numpy as np
 from pydantic import Field
 
@@ -8,12 +10,21 @@ from hitl_pmp.core.method.skill_provider import (
     OraclePolicyProvider,
     SkillProvider,
 )
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, LiftedAtom, Skill, Variable
+from hitl_pmp.core.method.types import (
+    ConditionalAddEffect,
+    GroundSkill,
+    LabeledAction,
+    LiftedAtom,
+    Skill,
+    Variable,
+)
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
+from .long_range_proposal import LongRangeTossProposal
+from .parameter_feasibility import TossParameterFeasibility
 from .predicates import (
     CLOSED_EMPTY,
     HAND_EMPTY,
@@ -42,6 +53,7 @@ class Tossing3DSkillProvider(SkillProvider):
     env: Tossing3DEnvironment
     human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
     non_human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
+    toss_proposal: Literal["independent", "long-range"] = "independent"
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
@@ -85,6 +97,11 @@ class Tossing3DSkillProvider(SkillProvider):
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
             return SameSideSkills.sample_params(ground_skill=ground_skill, rng=rng)
+        if (
+            self.toss_proposal == "long-range"
+            and ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
+        ):
+            return LongRangeTossProposal.sample(rng=rng)
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
 
     def compute_action(
@@ -95,6 +112,13 @@ class Tossing3DSkillProvider(SkillProvider):
                 ground_skill=ground_skill, params=params, state=state
             )
         return Tossing3DSkills.compute_action(ground_skill=ground_skill, params=params, state=state)
+
+    def parameter_rejection_reason(
+        self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
+    ) -> str | None:
+        return TossParameterFeasibility.rejection_reason(
+            ground_skill=ground_skill, params=params, state=state
+        )
 
     def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
@@ -118,45 +142,13 @@ class Tossing3DSkillProvider(SkillProvider):
         return [1.0, forward, lateral, *(float(param) for param in params)]
 
     def human_cube_bin_reset_skill(self) -> GroundSkill:
-        """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`
-        to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot
-        untouched. Effects: `OnGround` (or same-side `OnFloor`) and
-        `Reachable` become true, `InBin` becomes
-        false; same-side `OnBinRim` is cleared too. Everything unnamed
-        (`HandEmpty`, `Holding`) stays as it was.
+        """Relocate the cube and bin, preserving the robot's gripper command.
 
-        No precondition -- callable from any state. Used to require
-        `HandEmpty(robot)`, on the reasoning that without it the operator would
-        claim `Holding` is unaffected even while the robot holds the cube, which
-        repositioning it out from under a closed gripper doesn't actually
-        describe. That guarded a real correctness gap, but it also made the
-        rescue mechanism unreachable from the one state it exists to rescue:
-        `HandEmpty` is a *command* read (gripper commanded open), not "nothing is
-        genuinely held", and it is never the *effect* of any operator in this
-        domain -- so a gripper that closes without actually grasping anything
-        (`Holding` false, `HandEmpty` also false, since the command is still
-        "closed") reaches a dead end no plan can escape: `PickCube` needs
-        `HandEmpty`, `MoveToTossLocationAndToss` needs `Holding`, and the old
-        precondition meant the reset needed `HandEmpty` too. Nothing in the
-        model can ever produce `HandEmpty` from that state, so the episode raised
-        `InteractionComplete` with a rescue mechanism configured and available,
-        just unreachable.
-
-        The right precondition is really `not Holding` (dropping a genuinely
-        held cube out from under the gripper is the actual problem; an empty,
-        commanded-closed gripper isn't), but this framework's `LiftedAtom`
-        preconditions are positive-only -- no negation. Dropping the
-        precondition to none is what "not Holding" degrades to given that
-        constraint, since `Holding` is true only rarely (mid-carry) and this
-        skill is otherwise always safe to offer. The one residual risk: a
-        *hypothetical* multi-step plan built by the classical planner that
-        chains this skill before `MoveToTossLocationAndToss` would internally
-        assume `Holding` survives the reset, which is false. Nothing in the
-        current domain builds a plan of that shape, and live execution always
-        re-observes predicates fresh from the real simulator rather than
-        carrying planning-time predictions forward -- but a future skill or
-        planner change that did chain them this way would need to account for
-        it."""
+        Reset remains callable from any state, including failed grasps. Relocating
+        a held cube deletes Holding and produces ClosedEmpty; an already-open
+        gripper remains HandEmpty. The conditional addition is evaluated before
+        Holding is deleted, in both classical and belief-space planning.
+        """
         env = self.env
         robot = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
         cube = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
@@ -167,7 +159,8 @@ class Tossing3DSkillProvider(SkillProvider):
             if env.layout == Tossing3DLayout.SAME_SIDE
             else LiftedAtom(predicate=ON_GROUND, variables=(cube,))
         )
-        removed = {LiftedAtom(predicate=IN_BIN, variables=(cube, bin_))}
+        holding = LiftedAtom(predicate=HOLDING, variables=(robot, cube))
+        removed = {LiftedAtom(predicate=IN_BIN, variables=(cube, bin_)), holding}
         if env.layout == Tossing3DLayout.SAME_SIDE:
             removed.add(LiftedAtom(predicate=ON_BIN_RIM, variables=(cube, bin_)))
         skill = Skill(
@@ -179,6 +172,14 @@ class Tossing3DSkillProvider(SkillProvider):
                 LiftedAtom(predicate=REACHABLE, variables=(cube, barrier)),
             }),
             delete_effects=frozenset(removed),
+            conditional_add_effects=frozenset({
+                ConditionalAddEffect(
+                    conditions=frozenset({holding}),
+                    add_effects=frozenset({
+                        LiftedAtom(predicate=CLOSED_EMPTY, variables=(robot, cube))
+                    }),
+                )
+            }),
             param_dim=0,
             practice_cost=self.human_reset_practice_cost,
         )

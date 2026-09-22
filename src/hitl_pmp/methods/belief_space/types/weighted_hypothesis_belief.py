@@ -41,6 +41,15 @@ class WeightedHypothesisBelief(SkillBelief):
     def mean_competence(self) -> float:
         return sum(item.probability * item.hypothesis.competence for item in self.hypotheses)
 
+    def competence_outcome_probability(self, *, successes: int, failures: int) -> float:
+        assert successes >= 0 and failures >= 0
+        return sum(
+            item.probability
+            * item.hypothesis.competence**successes
+            * (1 - item.hypothesis.competence) ** failures
+            for item in self.hypotheses
+        )
+
     def mean_learning_rate(self) -> float:
         return sum(item.probability * item.hypothesis.learning_rate for item in self.hypotheses)
 
@@ -70,25 +79,6 @@ class WeightedHypothesisBelief(SkillBelief):
         return type(self)(
             hypotheses=tuple(
                 WeightedHypothesis(hypothesis=h, probability=m / normalizer) for h, m in weighted
-            )
-        )
-
-    def condition_learning_rate(
-        self, *, observed_learning_rate: float
-    ) -> "WeightedHypothesisBelief":
-        scale = 0.02
-        masses = [
-            item.probability
-            / (1.0 + ((observed_learning_rate - item.hypothesis.learning_rate) / scale) ** 2 / 4.0)
-            ** 2.5
-            for item in self.hypotheses
-        ]
-        normalizer = sum(masses)
-        return type(self)(
-            hypotheses=tuple(
-                WeightedHypothesis(hypothesis=item.hypothesis, probability=mass / normalizer)
-                for item, mass in zip(self.hypotheses, masses, strict=True)
-                if mass > 0.0
             )
         )
 

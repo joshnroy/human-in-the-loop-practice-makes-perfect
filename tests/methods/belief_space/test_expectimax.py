@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 from pydantic import BaseModel, Field
@@ -443,4 +445,112 @@ def test_rejects_invalid_costs(*, cost: float, accumulated: bool) -> None:
             belief_state=BeliefState(value=0.0),
             horizon=1,
             model=model,
+        )
+
+
+class ExactModel(Model):
+    exact_evaluations: int = 0
+
+    def J(self, *, belief_state: BeliefState, summed_cost: float, num_samples: int) -> float:
+        del num_samples
+        self.exact_evaluations += 1
+        return self.G(policy_value=belief_state.value * self.scale, summed_cost=summed_cost)
+
+    def sample_policy_values_from_belief(
+        self, *, belief_state: BeliefState, num_samples: int
+    ) -> np.ndarray:
+        raise AssertionError("model-J mode must not sample deployment values")
+
+
+@pytest.mark.parametrize("weight", [0.0, 0.001])
+def test_model_j_integrates_profitable_rare_outcome_without_monte_carlo(*, weight: float) -> None:
+    model = ExactModel(
+        transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.01, 0.1), (FAILURE, 0.01, 0.9)]},
+        beliefs={SUCCESS: BeliefState(value=0.9), FAILURE: BeliefState(value=0.1)},
+    )
+    trace = SearchTrace()
+    value, action = ExpectimaxPlanner(
+        use_model_j=True, observation_probability_weight=weight
+    ).solve(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.1),
+        horizon=1,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+    entropy = -(0.1 * math.log(0.1) + 0.9 * math.log(0.9))
+    assert (value, action) == (pytest.approx(0.17 - weight * entropy), PRACTICE)
+    assert model.exact_evaluations == 3
+    assert model.visits == []
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["stop_value_source"] == "model_J"
+    assert summary["observation_probability_weight"] == weight
+
+
+@pytest.mark.parametrize("weight", [0.0, 0.001])
+def test_fixed_controller_posterior_hunting_cannot_create_expected_learning_gain(
+    *, weight: float
+) -> None:
+    model = ExactModel(
+        transitions={(INITIAL, PRACTICE): [(SUCCESS, 0.01, 0.5), (FAILURE, 0.01, 0.5)]},
+        beliefs={SUCCESS: BeliefState(value=0.8), FAILURE: BeliefState(value=0.2)},
+    )
+    trace = SearchTrace()
+    value, action = ExpectimaxPlanner(
+        use_model_j=True, observation_probability_weight=weight
+    ).solve(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.5),
+        horizon=1,
+        model=model,
+        trace=trace,
+    )
+    assert (value, action) == (0.5, STOP_ACTION)
+    action_value = next(
+        event["value"] for event in trace.events if event["event"] == "action_value"
+    )
+    assert action_value == pytest.approx(0.5 - 0.01 - weight * math.log(2.0))
+
+
+def test_expected_surprise_and_physical_cost_are_each_charged_once_per_edge() -> None:
+    model = ExactModel(
+        transitions={
+            (INITIAL, SETUP): [(READY, 0.01, 0.5), (FAILURE, 0.01, 0.5)],
+            (READY, PRACTICE): [(SUCCESS, 0.02, 1.0)],
+            (FAILURE, PRACTICE): [(SUCCESS, 0.02, 1.0)],
+        },
+        beliefs={
+            READY: BeliefState(value=0.0),
+            FAILURE: BeliefState(value=0.0),
+            SUCCESS: BeliefState(value=0.9),
+        },
+    )
+    value, action = ExpectimaxPlanner(use_model_j=True, observation_probability_weight=0.001).solve(
+        environment_state=INITIAL,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.0),
+        horizon=2,
+        model=model,
+    )
+    assert (value, action) == (pytest.approx(0.9 - 0.01 - 0.02 - 0.001 * math.log(2.0)), SETUP)
+
+
+@pytest.mark.parametrize("weight", [-0.1, float("nan"), float("inf")])
+def test_rejects_invalid_observation_penalty(*, weight: float) -> None:
+    with pytest.raises(AssertionError):
+        ExpectimaxPlanner(observation_probability_weight=weight)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf")])
+def test_rejects_invalid_model_j(*, value: float) -> None:
+    with pytest.raises(AssertionError, match="stop value must be finite"):
+        ExpectimaxPlanner(use_model_j=True).solve(
+            environment_state=INITIAL,
+            summed_cost=0.0,
+            belief_state=BeliefState(value=value),
+            horizon=0,
+            model=ExactModel(),
         )

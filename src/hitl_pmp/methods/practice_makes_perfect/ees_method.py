@@ -3,13 +3,19 @@ import math
 from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from hitl_pmp.core.method.method import HumanCubeBinResetRequested, InteractionComplete, Method
+from hitl_pmp.core.method.method import (
+    HumanCubeBinResetRequested,
+    InteractionComplete,
+    Method,
+    NoFeasibleParametersError,
+)
 from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.method.types import (
     GroundSkill,
     LabeledAction,
+    ParameterSamplingDiagnostics,
     Policy,
     PracticeTargetTally,
     Rollout,
@@ -133,7 +139,10 @@ class EesMethod(Method):
     # with epsilon = 0.5".
     exploration_epsilon: float = 0.5
     # CFG.active_sampler_learning_num_samples
-    num_candidates: int = 100
+    num_candidates: int = Field(default=100, gt=0)
+    # Keep the original iid proposal distribution, conditioning only on the
+    # domain's feasibility proofs. A finite limit also handles impossible states.
+    max_proposals_per_candidate: int = Field(default=100, ge=1)
     # Beta(10, 1), the paper's stated initial-cycle prior.
     prior_alpha: float = 10.0
     prior_beta: float = 1.0
@@ -706,12 +715,81 @@ class EesMethod(Method):
         del true_atoms
         return self.choose_practice_target()
 
+    def observe_symbolic_transition(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        before_atoms: frozenset[GroundAtom],
+        after_atoms: frozenset[GroundAtom],
+        success: bool,
+        was_random_exploration: bool,
+    ) -> None:
+        """Optional dynamics observation from one real practice execution.
+
+        Both abstractions belong to this attempt: the prestate was captured at
+        dispatch and the poststate is the explicit state passed to observe_pending,
+        including when the harness flushes an attempt before resetting the world.
+        """
+
     def random_choice(self, *, ground_skills: list[GroundSkill]) -> GroundSkill:
         """Uniform pick from this Method's own RNG stream, so a seeded EesMethod
         is fully reproducible."""
         return ground_skills[int(self._rng.integers(len(ground_skills)))]
 
     # ---------------------------------------------------------------- sampling
+
+    def record_parameter_sampling(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        explore: bool,
+        diagnostics: ParameterSamplingDiagnostics,
+    ) -> None:
+        """Observe proposal rejection separately from real execution outcomes."""
+        if self.draw_recorder is not None:
+            self.draw_recorder.record_proposals(
+                skill_name=ground_skill.skill.name, explore=explore, diagnostics=diagnostics
+            )
+
+    def sample_parameter_candidates(
+        self, *, ground_skill: GroundSkill, state: State, explore: bool
+    ) -> list[np.ndarray]:
+        """Retain accepted iid draws in order, with a bounded rejection loop.
+
+        Rejected proposals never reach the classifier or the training dataset.
+        Reaching the limit with a nonempty batch still permits selection; an
+        empty batch is an explicit inability to construct an action, not a
+        failed skill execution or a claim that practice has no value.
+        """
+        candidates: list[np.ndarray] = []
+        rejected: dict[str, int] = {}
+        max_proposals = self.num_candidates * self.max_proposals_per_candidate
+        sampled = 0
+        while len(candidates) < self.num_candidates and sampled < max_proposals:
+            candidate = self.skill_provider.sample_params(ground_skill=ground_skill, rng=self._rng)
+            sampled += 1
+            reason = self.skill_provider.parameter_rejection_reason(
+                ground_skill=ground_skill, params=candidate, state=state
+            )
+            if reason is None:
+                candidates.append(candidate)
+            else:
+                rejected[reason] = rejected.get(reason, 0) + 1
+        diagnostics = ParameterSamplingDiagnostics(
+            requested_candidates=self.num_candidates,
+            sampled_proposals=sampled,
+            accepted_candidates=len(candidates),
+            max_proposals=max_proposals,
+            rejection_reasons=rejected,
+        )
+        self.record_parameter_sampling(
+            ground_skill=ground_skill, explore=explore, diagnostics=diagnostics
+        )
+        if not candidates:
+            raise NoFeasibleParametersError(
+                skill_name=ground_skill.skill.name, diagnostics=diagnostics
+            )
+        return candidates
 
     def sampler(self, *, skill_name: str, param_dim: int) -> LearnedSkillSampler:
         if skill_name not in self._samplers:
@@ -861,10 +939,9 @@ class EesMethod(Method):
             params: np.ndarray = np.zeros(0)
             record = None
         else:
-            candidates = [
-                self.skill_provider.sample_params(ground_skill=ground_skill, rng=self._rng)
-                for _ in range(self.num_candidates)
-            ]
+            candidates = self.sample_parameter_candidates(
+                ground_skill=ground_skill, state=state, explore=explore
+            )
             sampler_inputs = [
                 self.sampler_input_row(ground_skill=ground_skill, state=state, params=candidate)
                 for candidate in candidates
@@ -1010,6 +1087,7 @@ class _EesEpisode:
         self._practicing = practicing
         self._plan: list[GroundSkill] = []
         self._pending: GroundSkill | None = None
+        self._pending_before_atoms: frozenset[GroundAtom] = frozenset()
         self._pending_sampler_record: _SkillAttempt | None = None
         self._goal_phase_done = False
         # The last skill of the current practice plan -- the one actually being
@@ -1086,10 +1164,9 @@ class _EesEpisode:
             return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
 
         ground_skill = self._plan.pop(0)
-        if self._practicing:
-            # Charge the attempt now, even if no later policy call observes it.
-            method.record_action_cost(ground_skill=ground_skill)
         if method.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
+            if self._practicing:
+                method.record_action_cost(ground_skill=ground_skill)
             # Dispatch to the rescue mechanism, not execute_ground_skill -- this
             # "skill" has no controller/effects to score. self._pending stays
             # untouched: nothing here for observe_pending to settle.
@@ -1105,10 +1182,25 @@ class _EesEpisode:
             not method.reproduce_predicators_explore_target_only
             or ground_skill is self._practice_target
         )
-        labeled, record = method.execute_ground_skill(
-            ground_skill=ground_skill, state=state, explore=explore
-        )
+        try:
+            labeled, record = method.execute_ground_skill(
+                ground_skill=ground_skill, state=state, explore=explore
+            )
+        except NoFeasibleParametersError:
+            self._plan = []
+            self._practice_target = None
+            if self._practicing:
+                # No controller was dispatched. End without a fake failure,
+                # execution cost, or unrequested reset, and distinguish this
+                # from an algorithmic STOP decision.
+                raise InteractionComplete(planner_stop=False) from None
+            return LabeledAction(action=self._noop_action(), label="no-op (no feasible parameters)")
+        if self._practicing:
+            # Charge only once action construction has succeeded, even if no
+            # later policy call observes this actual attempt.
+            method.record_action_cost(ground_skill=ground_skill)
         self._pending = ground_skill
+        self._pending_before_atoms = true_atoms
         self._pending_sampler_record = record
         return labeled
 
@@ -1162,6 +1254,13 @@ class _EesEpisode:
                 success=success,
                 was_random_exploration=attempt is not None and attempt.was_random_exploration,
             )
+            self._method.observe_symbolic_transition(
+                ground_skill=self._pending,
+                before_atoms=self._pending_before_atoms,
+                after_atoms=true_atoms,
+                success=success,
+                was_random_exploration=attempt is not None and attempt.was_random_exploration,
+            )
             # `records_training_row`, not `attempt is not None`: a record now exists for
             # every sampler-backed execution, but only an exploring one is training
             # data. This gate is what keeps the learning path byte-identical.
@@ -1188,6 +1287,7 @@ class _EesEpisode:
                     objects=self._pending.objects,
                 )
         self._pending = None
+        self._pending_before_atoms = frozenset()
         self._pending_sampler_record = None
 
     def _next_plan(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:

@@ -79,15 +79,22 @@ def test_toss_profile_limits_clamps_effort_at_the_default() -> None:
 def test_the_release_speed_our_sampler_can_draw_is_never_clamped() -> None:
     """The clamp must sit at or above our own upper bound, so no draw the EES sampler
     makes is silently rewritten. `TOSS_SPEED_BOUNDS`' top edge is the boundary case: it
-    is exactly `TOSS_MAX_VELOCITY`, so it must pass through unscaled rather than
-    tripping the clamp.
+    matches the composed controller's explicit simulation effort ceiling, not
+    the unchanged low-level default.
     """
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        MoveToTossLocationAndTossController,
+    )
     from kinder_models.dynamic3d.tossing.toss_swing import toss_profile_limits
 
     from hitl_pmp.environments.tossing3d.skills import TOSS_SPEED_BOUNDS
 
     for deg in np.linspace(TOSS_SPEED_BOUNDS[0], TOSS_SPEED_BOUNDS[1], 37):
-        assert np.rad2deg(toss_profile_limits(np.deg2rad(deg))[0]) == pytest.approx(deg)
+        limits = toss_profile_limits(
+            np.deg2rad(deg),
+            max_effort=MoveToTossLocationAndTossController.MAX_SIMULATION_EFFORT,
+        )
+        assert np.rad2deg(limits[0]) == pytest.approx(deg)
 
 
 # --- The two controllers this domain drives, and the four bounds it samples from -------
@@ -233,6 +240,9 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
     two configurations. This is therefore a guard against a *large* change in the swing's
     duration, not a millisecond-accurate claim.
     """
+    from kinder_models.dynamic3d.tossing.parameterized_skills import (
+        MoveToTossLocationAndTossController,
+    )
     from kinder_models.dynamic3d.tossing.toss_swing import (
         TOSS_RELEASE_ARM_CONFIGURATION,
         TOSS_SLICES_PER_CONTROL_STEP,
@@ -249,6 +259,7 @@ def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None
                 [TOSS_RELEASE_ARM_CONFIGURATION],
                 TOSS_WINDUP_ARM_CONFIGURATION,
                 release_speed=float(np.deg2rad(deg)),
+                max_effort=MoveToTossLocationAndTossController.MAX_SIMULATION_EFFORT,
             )
             for deg in np.linspace(TOSS_SPEED_BOUNDS[0], TOSS_SPEED_BOUNDS[1], 37)
         )

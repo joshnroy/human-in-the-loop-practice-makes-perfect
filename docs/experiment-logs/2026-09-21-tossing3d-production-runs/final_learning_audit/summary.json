@@ -1,0 +1,70 @@
+[
+  {
+    "arm": "global_curve-particle",
+    "exact_replayed_choices": 152,
+    "training_rows": 33,
+    "training_successes": 1,
+    "training_correct": 33,
+    "practice_consultations": {
+      "uninformative": 33
+    },
+    "heldout_proposal_successes": 6,
+    "heldout_proposal_count": 100,
+    "heldout_scenes_with_success": 5,
+    "heldout_scene_count": 10,
+    "heldout_expected_selected_successes": 0.0,
+    "heldout_training_labels_used": 0,
+    "scope": "Offline selection from ten already measured feasible proposals in each of ten independent scenes; not a 100-candidate task evaluation."
+  },
+  {
+    "arm": "global_curve-grid",
+    "exact_replayed_choices": 152,
+    "training_rows": 33,
+    "training_successes": 1,
+    "training_correct": 33,
+    "practice_consultations": {
+      "uninformative": 33
+    },
+    "heldout_proposal_successes": 6,
+    "heldout_proposal_count": 100,
+    "heldout_scenes_with_success": 5,
+    "heldout_scene_count": 10,
+    "heldout_expected_selected_successes": 0.0,
+    "heldout_training_labels_used": 0,
+    "scope": "Offline selection from ten already measured feasible proposals in each of ten independent scenes; not a 100-candidate task evaluation."
+  },
+  {
+    "arm": "local_trend-particle",
+    "exact_replayed_choices": 153,
+    "training_rows": 35,
+    "training_successes": 1,
+    "training_correct": 35,
+    "practice_consultations": {
+      "uninformative": 35
+    },
+    "heldout_proposal_successes": 6,
+    "heldout_proposal_count": 100,
+    "heldout_scenes_with_success": 5,
+    "heldout_scene_count": 10,
+    "heldout_expected_selected_successes": 1.0,
+    "heldout_training_labels_used": 0,
+    "scope": "Offline selection from ten already measured feasible proposals in each of ten independent scenes; not a 100-candidate task evaluation."
+  },
+  {
+    "arm": "local_trend-grid",
+    "exact_replayed_choices": 153,
+    "training_rows": 35,
+    "training_successes": 1,
+    "training_correct": 35,
+    "practice_consultations": {
+      "uninformative": 35
+    },
+    "heldout_proposal_successes": 6,
+    "heldout_proposal_count": 100,
+    "heldout_scenes_with_success": 5,
+    "heldout_scene_count": 10,
+    "heldout_expected_selected_successes": 1.0,
+    "heldout_training_labels_used": 0,
+    "scope": "Offline selection from ten already measured feasible proposals in each of ten independent scenes; not a 100-candidate task evaluation."
+  }
+]

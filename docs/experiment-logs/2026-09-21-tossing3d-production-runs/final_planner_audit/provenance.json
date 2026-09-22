@@ -1,0 +1,11 @@
+{
+  "source_commit": "371361b9ed72c33f441bae714e6ba2d7e62e892b",
+  "source_files": {
+    "/tmp/hitl-tossing3d-interventions-20260921/src/hitl_pmp/methods/belief_space/expectimax.py": "117911ce8018995ce6c9f36b87936af8707df026f574638b1b36d92ea41f278c",
+    "/tmp/hitl-tossing3d-interventions-20260921/src/hitl_pmp/methods/belief_space/tossing3d_model.py": "70d9c886432a3c743258a7ca0c594692c891b8cfc02858cc34437b091d0c3763",
+    "/tmp/hitl-tossing3d-interventions-20260921/src/hitl_pmp/methods/belief_space/tossing3d_transition_model.py": "9975404c03fb689b640a60816766ebacc4df0587cc0fdca4268eaae7591f6034",
+    "/tmp/hitl-tossing3d-interventions-20260921/src/hitl_pmp/methods/belief_space/tossing3d_observation_model.py": "fffc3be4ca7345f577bdd738045edb61d7d9b7813353139b215032f2aab95243",
+    "/tmp/hitl-tossing3d-interventions-20260921/src/hitl_pmp/methods/belief_space/competence_inference/belief.py": "fd21afb3ef4fe39304ea22d8728cc081c8793ff6f69c5960c84d746847f09757",
+    "/tmp/hitl-tossing3d-interventions-20260921/src/hitl_pmp/methods/belief_space/types/belief_state.py": "883a61b4d01e199ec8d6489f82a051b3c216825523cbf7d15b1700945fea3caa"
+  }
+}

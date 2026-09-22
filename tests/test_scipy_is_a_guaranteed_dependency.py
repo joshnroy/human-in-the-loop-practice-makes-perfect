@@ -41,30 +41,28 @@ def test_scipy_is_importable() -> None:
     """
     assert importlib.util.find_spec("scipy") is not None, (
         "scipy is not importable. It is a declared, non-optional dependency of this "
-        'repo\'s `dev` extra -- install it with `pip install -e ".[dev]"`. It is '
+        "package -- install it with `pip install -e .`. It is "
         "deliberately not `find_spec`-gated the way `wandb` and KINDER are."
     )
 
 
-def test_scipy_is_declared_in_the_dev_extra() -> None:
+def test_scipy_is_declared_as_a_runtime_dependency() -> None:
     """Importable-by-accident is not the same as declared.
 
     scipy arrives transitively in any environment that has installed KINDER, because
     `pybullet_helpers` requires it. So the import test above can pass on a machine where
-    nothing in this repo's own metadata asks for scipy at all, and a fresh `.[dev]`
-    install would then not get it. This asserts the declaration, which is what CI
-    actually installs from.
+    nothing in this repo's own metadata asks for scipy at all. Competence inference
+    now requires scipy at runtime, so a fresh base install must include it too.
 
     Parsed as text rather than with `tomllib`, which is 3.11+ while this project targets
     3.10, and rather than via `importlib.metadata`, which in a worktree reports the *main*
     checkout's editable install and so would answer for the wrong `pyproject.toml`.
     """
     pyproject = (_REPO / "pyproject.toml").read_text()
-    dev_block = re.search(r"^dev = \[(.*?)^\]", pyproject, re.DOTALL | re.MULTILINE)
-    assert dev_block is not None, "could not find the `dev` extra in pyproject.toml"
-    declared = re.findall(r'"([A-Za-z0-9_.\-]+)', dev_block.group(1))
+    dependency_block = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.DOTALL | re.MULTILINE)
+    assert dependency_block is not None, "could not find runtime dependencies in pyproject.toml"
+    declared = re.findall(r'"([A-Za-z0-9_.\-]+)', dependency_block.group(1))
     assert "scipy" in declared, (
-        f"scipy is not declared in the `dev` extra; found {declared}. CI installs "
-        '`pip install -e ".[dev]"` in all three jobs, so an undeclared scipy is a scipy '
-        "CI does not have."
+        f"scipy is not declared as a runtime dependency; found {declared}. "
+        "A base install must provide the numerical inference dependency."
     )

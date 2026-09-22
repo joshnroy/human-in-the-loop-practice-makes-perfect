@@ -1,0 +1,25 @@
+{
+  "sweep_id": "20260921T133145-0400-678330-487b93bd",
+  "method": "local_trend-grid",
+  "seed": 0,
+  "start_time": "2026-09-21T13:43:39.507031-04:00",
+  "end_time": "2026-09-21T13:53:37.408298-04:00",
+  "start_epoch_seconds": 1790012619.507031,
+  "end_epoch_seconds": 1790013217.408298,
+  "elapsed_seconds": 597.9012588629848,
+  "returncode": 0,
+  "succeeded": true,
+  "spawn_attempts": 1,
+  "max_workers": 2,
+  "cpu_count": 24,
+  "sweep_runs_in_flight_at_start": 2,
+  "sweep_runs_in_flight_at_end": 1,
+  "machine_at_start": {
+    "cli_processes": 1,
+    "load_average_1min": 3.388671875
+  },
+  "machine_at_end": {
+    "cli_processes": 1,
+    "load_average_1min": 3.0166015625
+  }
+}

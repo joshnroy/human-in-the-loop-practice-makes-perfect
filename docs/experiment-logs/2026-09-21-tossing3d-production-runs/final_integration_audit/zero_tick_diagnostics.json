@@ -1,0 +1,138 @@
+[
+  {
+    "batch_index": 14,
+    "timestamp": "2026-09-21T17:32:49.933232+00:00",
+    "phase": "practice",
+    "cycle": 0,
+    "selected_params": [
+      2.134399270660378,
+      -0.0012069575108873722,
+      214.8194981571835,
+      577.1976683263522
+    ],
+    "success": false,
+    "arm": "global_curve-particle",
+    "initial_base_collisions": [],
+    "base_plan_found": true,
+    "base_plan_poses": 6
+  },
+  {
+    "batch_index": 82,
+    "timestamp": "2026-09-21T17:37:15.851921+00:00",
+    "phase": "evaluation",
+    "cycle": 4,
+    "selected_params": [
+      2.545306483109515,
+      0.002390194271146376,
+      148.17662513997564,
+      677.2064705910298
+    ],
+    "success": false,
+    "arm": "global_curve-particle",
+    "initial_base_collisions": [],
+    "base_plan_found": true,
+    "base_plan_poses": 8
+  },
+  {
+    "batch_index": 14,
+    "timestamp": "2026-09-21T17:32:53.637319+00:00",
+    "phase": "practice",
+    "cycle": 0,
+    "selected_params": [
+      2.134399270660378,
+      -0.0012069575108873722,
+      214.8194981571835,
+      577.1976683263522
+    ],
+    "success": false,
+    "arm": "global_curve-grid",
+    "initial_base_collisions": [],
+    "base_plan_found": true,
+    "base_plan_poses": 6
+  },
+  {
+    "batch_index": 82,
+    "timestamp": "2026-09-21T17:38:35.318750+00:00",
+    "phase": "evaluation",
+    "cycle": 4,
+    "selected_params": [
+      2.545306483109515,
+      0.002390194271146376,
+      148.17662513997564,
+      677.2064705910298
+    ],
+    "success": false,
+    "arm": "global_curve-grid",
+    "initial_base_collisions": [],
+    "base_plan_found": true,
+    "base_plan_poses": 8
+  },
+  {
+    "batch_index": 14,
+    "timestamp": "2026-09-21T17:42:55.701641+00:00",
+    "phase": "practice",
+    "cycle": 0,
+    "selected_params": [
+      2.134399270660378,
+      -0.0012069575108873722,
+      214.8194981571835,
+      577.1976683263522
+    ],
+    "success": false,
+    "arm": "local_trend-particle",
+    "initial_base_collisions": [],
+    "base_plan_found": true,
+    "base_plan_poses": 6
+  },
+  {
+    "batch_index": 82,
+    "timestamp": "2026-09-21T17:47:19.395580+00:00",
+    "phase": "evaluation",
+    "cycle": 4,
+    "selected_params": [
+      2.545306483109515,
+      0.002390194271146376,
+      148.17662513997564,
+      677.2064705910298
+    ],
+    "success": false,
+    "arm": "local_trend-particle",
+    "initial_base_collisions": [],
+    "base_plan_found": true,
+    "base_plan_poses": 8
+  },
+  {
+    "batch_index": 14,
+    "timestamp": "2026-09-21T17:44:43.192910+00:00",
+    "phase": "practice",
+    "cycle": 0,
+    "selected_params": [
+      2.134399270660378,
+      -0.0012069575108873722,
+      214.8194981571835,
+      577.1976683263522
+    ],
+    "success": false,
+    "arm": "local_trend-grid",
+    "initial_base_collisions": [],
+    "base_plan_found": true,
+    "base_plan_poses": 6
+  },
+  {
+    "batch_index": 82,
+    "timestamp": "2026-09-21T17:49:03.177955+00:00",
+    "phase": "evaluation",
+    "cycle": 4,
+    "selected_params": [
+      2.545306483109515,
+      0.002390194271146376,
+      148.17662513997564,
+      677.2064705910298
+    ],
+    "success": false,
+    "arm": "local_trend-grid",
+    "initial_base_collisions": [],
+    "base_plan_found": true,
+    "base_plan_poses": 8
+  }
+]

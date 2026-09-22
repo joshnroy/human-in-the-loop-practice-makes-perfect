@@ -89,6 +89,7 @@ of MuJoCo renders per skill, and a training run that wants no video must not pay
 renderer for.
 """
 
+import copy
 import logging
 import os
 from collections.abc import Mapping, MutableMapping, Sequence
@@ -99,12 +100,17 @@ from typing import Any, ClassVar
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
-from .types import AbstractAtom
+from .types import AbstractAtom, PlanarCollisionBox, TossFeasibilityGeometry
 
 logger = logging.getLogger(__name__)
 
 # A DISPLAY only has to *exist* -- nothing is ever drawn to it. See the module docstring.
 FALLBACK_DISPLAY = ":0"
+
+# The pinned KINDER feasible-placement sampler erodes every input region by this
+# clearance plus the object's footprint. Our `on` adapter cancels only that region
+# erosion; room and obstacle clearances remain upstream's responsibility.
+KINDER_PLACEMENT_CLEARANCE = 0.005
 
 # The GL backend, **snapshotted here at import time**, which is the whole design.
 #
@@ -418,16 +424,28 @@ class KinderBackend(BaseModel):
         """
         api = self.api()
         if self._raw_env is None:
-            # The default uses upstream unchanged; the named same-side layout is opt-in.
-            config_kwargs = {}
+            # Registered Tossing3D variants now select their own task JSON by object
+            # count. Custom layouts use the configurable robot environment beneath
+            # that family, retaining its velocity controls and Gymnasium wrappers.
+            env_spec: Any = self.env_id
             if self.task_config_path is not None:
-                config_kwargs["task_config_path"] = str(self.task_config_path.resolve())
+                from gymnasium.envs.registration import EnvSpec
+                from kinder.envs.dynamic3d.envs import TidyBot3DConfig
+
+                env_spec = EnvSpec(
+                    id=self.env_id,
+                    entry_point="kinder.envs.dynamic3d.envs:TidyBot3DEnv",
+                    kwargs={
+                        "task_config_path": str(self.task_config_path.resolve()),
+                        "scene_render_camera": "task_view",
+                        "config": TidyBot3DConfig(use_arm_velocities=True),
+                    },
+                )
             self._raw_env = api.kinder.make(
-                self.env_id,
+                env_spec,
                 render_mode=self.render_mode,
                 scene_bg=self.scene_bg,
                 allow_state_access=self.allow_state_access,
-                **config_kwargs,
             )
             object_centric = self._object_centric()
             available = list(getattr(object_centric, "camera_names", []))
@@ -563,6 +581,73 @@ class KinderBackend(BaseModel):
         return self.observe()
 
     @staticmethod
+    def toss_feasibility_geometry(*, snapshot: Any) -> TossFeasibilityGeometry | None:
+        """Read the base planner's geometry from the supplied state, never the live env.
+
+        This adapter mirrors the collision-object selection in pinned KINDER's
+        `run_base_motion_planning`, including excluding the held cube. Unknown
+        geometry cannot prove a proposal invalid and therefore disables the gate.
+        """
+        try:
+            from kinder.envs.dynamic3d.object_types import (
+                MujocoDrawerObjectType,
+                MujocoObjectType,
+                MujocoTidyBotRobotObjectType,
+            )
+            from kinder_models.dynamic3d.utils import (
+                WORLD_X_BOUNDS,
+                WORLD_Y_BOUNDS,
+                get_bounding_box,
+                get_overhead_kinematic2ds,
+                get_overhead_object_se2_pose,
+                get_overhead_robot_se2_pose,
+            )
+            from tomsgeoms2d.structs import Rectangle
+
+            (robot,) = snapshot.get_objects(MujocoTidyBotRobotObjectType)
+            # Collision checking writes command poses into this array. Preserve
+            # its precision so the gate checks the same rounded target rectangle.
+            robot_dtype = np.asarray(snapshot[robot]).dtype
+            if robot_dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+                return None
+            bin_object = snapshot.get_object_from_name("bin_0")
+            robot_pose = get_overhead_robot_se2_pose(snapshot, robot)
+            bin_pose = get_overhead_object_se2_pose(snapshot, bin_object)
+            width, height, _ = get_bounding_box(snapshot, robot)
+            geoms = get_overhead_kinematic2ds(snapshot)
+            obstacles = []
+            for obj in snapshot.get_objects(MujocoObjectType):
+                if (
+                    obj.name == "cube_0"
+                    or obj.is_instance(MujocoDrawerObjectType)
+                    or obj.name not in geoms
+                ):
+                    continue
+                geom = geoms[obj.name]
+                if not isinstance(geom, Rectangle):
+                    return None
+                obstacles.append(
+                    PlanarCollisionBox(
+                        name=obj.name,
+                        center=(float(geom.center[0]), float(geom.center[1])),
+                        width=float(geom.width),
+                        height=float(geom.height),
+                        yaw=float(geom.theta),
+                    )
+                )
+            return TossFeasibilityGeometry(
+                robot_pose=(float(robot_pose.x), float(robot_pose.y), float(robot_pose.theta())),
+                robot_size=(float(width), float(height)),
+                robot_state_dtype="float32" if robot_dtype == np.dtype(np.float32) else "float64",
+                bin_pose=(float(bin_pose.x), float(bin_pose.y), float(bin_pose.theta())),
+                obstacles=tuple(obstacles),
+                sampling_x_bounds=WORLD_X_BOUNDS,
+                sampling_y_bounds=WORLD_Y_BOUNDS,
+            )
+        except (ImportError, AttributeError, KeyError, TypeError, ValueError, NotImplementedError):
+            return None
+
+    @staticmethod
     def snapshot_to_plain(*, snapshot: Any) -> dict[str, list[float]]:
         """A `snapshot()` (or a `drain_substep_states()` element), as plain
         `{object_name: [floats]}` -- JSON/pickle-safe, no KINDER `Object`/`Type`
@@ -586,74 +671,86 @@ class KinderBackend(BaseModel):
         return type(template)(data, template.type_features)
 
     def reset_cube_and_bin(self) -> KinderObservation:
-        """Reposition `cube_name`/`bin_name` to fresh ground poses in the live
-        simulator, robot and everything else untouched. Backs
-        `Tossing3DEnvironment.reset_movables`.
+        """Reset the cube and bin to their declared regions, leaving the robot alone.
 
-        Uses upstream's own placement sampler (`sample_collision_free_positions`
-        + `mujoco_object.set_pose`), the same one `_initialize_object_poses` uses
-        at `reset()`, scoped to just these two objects -- a real MuJoCo write, not
-        a splice of two snapshots, so poses are as collision-free as any object
-        upstream's own reset ever places. Both objects' regions are genuine
-        ranges as of kindergarden#166, so both get independently randomized.
-        Note `blocks_goal_region` is now parented on `bin_0`, so this also moves
-        the scored window, not just the bin's visible position.
-
-        Draws from the live scene's own `np_random` (not a fresh seed), same as
-        every other in-episode source of randomness in this domain."""
-        from kinder.envs.dynamic3d.placement_samplers import sample_collision_free_positions
-        from kinder.envs.dynamic3d.utils import convert_yaw_to_quaternion
-
+        Use KINDER's public reset primitive so placements honor the room boundary,
+        furniture and other objects, and reset-object velocities are cleared.
+        `on` spawn regions constrain object centers at full reset. Per-call region
+        overrides preserve that support through KINDER's footprint-based partial
+        reset, without changing the task or its collision checks. Sampling uses the
+        live scene's RNG and moves the bin-attached goal region with the bin.
+        """
         object_centric = self._object_centric()
-        ground_fixture = object_centric._ground_fixture  # noqa: SLF001
-        assert ground_fixture is not None, (
-            "reset_cube_and_bin needs a live scene (KinderBackend.reset() first)."
+        regions, overrides = self._movables_reset_regions(
+            object_centric=object_centric, object_names=(self.cube_name, self.bin_name)
         )
-
-        configs: dict[str, dict[str, dict[str, Any]]] = {}
-        entity_region_names: dict[str, str] = {}
-        entity_pos_yaw_samplers: dict[str, Any] = {}
-        for object_name in (self.cube_name, self.bin_name):
-            region_name = self._initial_state_region(
-                object_centric=object_centric, object_name=object_name
-            )
-            obj = object_centric._objects_dict[object_name]  # noqa: SLF001
-            obj_type = obj.__class__.REGISTERED_NAME
-            obj_config = object_centric.task_config["objects"][obj_type][object_name]
-            configs.setdefault(obj_type, {})[object_name] = obj_config
-            entity_region_names[object_name] = region_name
-            entity_pos_yaw_samplers[object_name] = ground_fixture.sample_pose_in_region
-
-        object_poses = sample_collision_free_positions(
-            configs,
-            object_centric.np_random,
-            entity_region_names=entity_region_names,
-            entity_pos_yaw_samplers=entity_pos_yaw_samplers,
-        )
-        for obj_poses_dict in object_poses.values():
-            for object_name, pose in obj_poses_dict.items():
-                obj = object_centric._objects_dict[object_name]  # noqa: SLF001
-                obj.set_pose(pose["position"], convert_yaw_to_quaternion(pose["yaw"]))
-
-        assert object_centric._robot_env is not None  # noqa: SLF001
-        assert object_centric._robot_env.sim is not None  # noqa: SLF001
-        object_centric._robot_env.sim.forward()  # noqa: SLF001
-        object_centric._current_state = (  # noqa: SLF001
-            object_centric._get_object_centric_state()  # noqa: SLF001
-        )
+        object_centric.reset_ground_objects_to_regions(regions, region_configs=overrides)
         self._state = object_centric._get_current_state()  # noqa: SLF001
         return self.observe()
 
     @staticmethod
-    def _initial_state_region(*, object_centric: Any, object_name: str) -> str:
-        """The region name `object_name` is placed in at a real `reset()`, read off
-        `task_config["initial_state"]`'s own `["on"/"in", object_name, region_name]`
-        predicates -- the same lookup `_initialize_object_poses` performs, so a task
-        JSON's own region assignment is honoured rather than duplicated as a literal
-        here."""
+    def _movables_reset_regions(
+        *, object_centric: Any, object_names: tuple[str, ...]
+    ) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+        """Adapt center-based `on` placements to the pinned feasible-reset API.
+
+        Dilation here is canceled by upstream's region erosion, including its
+        conservative rotation envelope. Physical room/obstacle clipping still uses
+        the real footprint. `in` regions retain upstream containment semantics.
+        Separate aliases avoid coupling objects that share a spawn region.
+        """
+        names: dict[str, str] = {}
+        overrides: dict[str, dict[str, Any]] = {}
+        config = object_centric.task_config
+        for object_name in object_names:
+            placement, region_name = KinderBackend._initial_state_placement(
+                object_centric=object_centric, object_name=object_name
+            )
+            names[object_name] = region_name
+            if placement != "on":
+                continue
+            region = copy.deepcopy(config["regions"][region_name])
+            # The no-room fallback has different region-tolerance semantics. Avoid
+            # applying this adapter to a task that does not use the pinned polygon path.
+            if not config.get("convex_placement_room_body"):
+                raise ValueError("center-preserving partial resets require a convex placement room")
+            obj = object_centric._objects_dict[object_name]  # noqa: SLF001
+            object_config = config["objects"][obj.REGISTERED_NAME].get(object_name, {})
+            bounds = obj.get_bounding_box_from_config(np.zeros(3, dtype=np.float32), object_config)
+            half = (np.asarray(bounds[3:5]) - np.asarray(bounds[:2])) / 2
+            yaw_ranges = region.get("yaw_ranges", [(0.0, 360.0)] * len(region["ranges"]))
+            ranges = []
+            for extent, (low, high) in zip(region["ranges"], yaw_ranges, strict=True):
+                if len(extent) != 4:
+                    raise ValueError("center-preserving partial resets require 2D ground regions")
+                if low == high:
+                    yaw = np.deg2rad(low)
+                    cosine, sine = abs(np.cos(yaw)), abs(np.sin(yaw))
+                    footprint = np.array([
+                        cosine * half[0] + sine * half[1],
+                        sine * half[0] + cosine * half[1],
+                    ])
+                else:
+                    footprint = np.full(2, np.linalg.norm(half))
+                margin = footprint + KINDER_PLACEMENT_CLEARANCE
+                ranges.append([
+                    float(extent[0] - margin[0]),
+                    float(extent[1] - margin[1]),
+                    float(extent[2] + margin[0]),
+                    float(extent[3] + margin[1]),
+                ])
+            region["ranges"] = ranges
+            alias = f"__hitl_center_reset_{object_name}"
+            names[object_name] = alias
+            overrides[alias] = region
+        return names, overrides
+
+    @staticmethod
+    def _initial_state_placement(*, object_centric: Any, object_name: str) -> tuple[str, str]:
+        """Read the placement relation and region from the live task's initial state."""
         for predicate in object_centric.task_config.get("initial_state", []):
             if predicate[0] in ("on", "in") and predicate[1] == object_name:
-                return str(predicate[2])
+                return str(predicate[0]), str(predicate[2])
         raise ValueError(
             f"no initial_state predicate places {object_name!r}; cannot sample a "
             "fresh ground pose for it."

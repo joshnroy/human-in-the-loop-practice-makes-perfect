@@ -472,6 +472,9 @@ class PracticeLoop:
                 action_limit=max_steps_per_interaction,
             )
             for step in range(max_steps_per_interaction):
+                method.observe_practice_action_budget(
+                    remaining_actions=max_steps_per_interaction - step
+                )
                 try:
                     labeled_action = policy(state)
                     if period_recorder is not None:

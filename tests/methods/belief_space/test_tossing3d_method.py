@@ -11,6 +11,8 @@ from hitl_pmp.core.problem.tasks.types import Goal, Task
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
+from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
+from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
 from hitl_pmp.methods.belief_space.planner import BeliefSpacePlanner
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
@@ -24,7 +26,6 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_cost,
     mean_learning_rate,
 )
-from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION, StopAction
 from hitl_pmp.planning.grounding import SkillGrounder
 
@@ -59,7 +60,9 @@ def test_selector_uses_current_symbolic_state_without_starting_simulator() -> No
     method = _build(pomdp_num_samples=1)
     pick = _grounding(method=method, name=PICK_SKILL)
     selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
-    assert selection == [pick]
+    assert len(selection) == 1
+    assert selection[0].preconditions <= pick.preconditions
+    assert selection[0].skill.name != TOSS_SKILL
     assert method.env._backend is None  # noqa: SLF001 (pin lazy simulator construction)
 
 
@@ -78,6 +81,67 @@ def test_determinized_selector_is_seeded_and_does_not_start_simulator() -> None:
         selections.append(method.select_skill_to_practice(true_atoms=pick.preconditions))
         assert method.env._backend is None  # noqa: SLF001
     assert selections[0] == selections[1]
+
+
+@pytest.mark.parametrize("remaining_actions", [0, 1, 3])
+def test_determinized_selector_receives_real_action_budget(
+    *, remaining_actions: int, tmp_path: Path
+) -> None:
+    decision_log = tmp_path / "bounded.jsonl"
+    method = _build(
+        pomdp_num_samples=1,
+        pomdp_num_particles=32,
+        pomdp_solver="determinized_astar",
+        pomdp_search_depth=0,
+        pomdp_max_search_iterations=5,
+        decision_log=decision_log,
+    )
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.observe_practice_action_budget(remaining_actions=remaining_actions)
+    selection = method.select_skill_to_practice(true_atoms=pick.preconditions)
+    decision = json.loads(decision_log.read_text().splitlines()[-1])
+    summary = next(event for event in decision["search"] if event["event"] == "search_summary")
+
+    assert decision["remaining_practice_actions"] == remaining_actions
+    assert summary["effective_action_horizon"] == remaining_actions
+    assert summary["selected_path_depth"] <= remaining_actions
+    assert summary["max_depth_reached"] <= remaining_actions
+    if remaining_actions == 0:
+        assert selection[0].skill.name == "STOP"
+        assert summary["action_transitions_evaluated"] == 0
+    else:
+        assert summary["action_transitions_evaluated"] > 0
+
+
+def test_expectimax_horizon_does_not_exceed_remaining_practice_actions(*, tmp_path: Path) -> None:
+    decision_log = tmp_path / "expectimax_bounded.jsonl"
+    method = _build(pomdp_search_depth=5, decision_log=decision_log)
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.observe_practice_action_budget(remaining_actions=0)
+    assert method.select_skill_to_practice(true_atoms=pick.preconditions)[0].skill.name == "STOP"
+    decision = json.loads(decision_log.read_text().splitlines()[-1])
+    assert decision["horizon"] == 0
+
+
+def test_expectimax_uses_model_j_and_records_the_configured_penalty(*, tmp_path: Path) -> None:
+    decision_log = tmp_path / "expectimax_exact.jsonl"
+    method = _build(
+        pomdp_observation_probability_weight=0.001,
+        pomdp_search_depth=6,
+        decision_log=decision_log,
+    )
+    assert isinstance(method.pomdp_planner, ExpectimaxPlanner)
+    assert method.pomdp_planner.use_model_j
+    assert method.pomdp_planner.observation_probability_weight == 0.001
+    pick = _grounding(method=method, name=PICK_SKILL)
+    method.observe_practice_action_budget(remaining_actions=1)
+    method.select_skill_to_practice(true_atoms=pick.preconditions)
+    decision = json.loads(decision_log.read_text().splitlines()[-1])
+    summary = next(event for event in decision["search"] if event["event"] == "search_summary")
+    assert decision["horizon"] == 1
+    assert summary["max_depth_reached"] == 1
+    assert decision["observation_probability_weight"] == 0.001
+    assert summary["stop_value_source"] == "model_J"
 
 
 def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
@@ -124,9 +188,9 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     assert mean_competence(belief=after.skill_beliefs[PICK_SKILL]) > mean_competence(
         belief=before.skill_beliefs[PICK_SKILL]
     )
-    assert after.pending_examples[PICK_SKILL] == 1
-    assert isinstance(after.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
-    assert isinstance(before.skill_beliefs[PICK_SKILL], ParticleFilterBelief)
+    assert after.pending_examples.get(PICK_SKILL, 0) == 0
+    assert isinstance(after.skill_beliefs[PICK_SKILL], BayesianSkillBelief)
+    assert isinstance(before.skill_beliefs[PICK_SKILL], BayesianSkillBelief)
     assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 1.0) < abs(
         mean_cost(belief=before.skill_beliefs[PICK_SKILL]) - 1.0
     )
@@ -144,8 +208,8 @@ def test_theta_charts_are_read_only_and_show_reset_beliefs() -> None:
     method = _build(human_reset_practice_cost=0.00001)
     before = method.pomdp_state
     values = method.practice_skill_competences()
-    assert values["PickCube (belief mean)"] == pytest.approx(10 / 11, abs=1e-3)
-    assert values["OpenGripper (belief mean)"] == pytest.approx(10 / 11, abs=1e-3)
+    assert values["PickCube (belief mean)"] == pytest.approx(2 / 3, abs=0.03)
+    assert values["OpenGripper (belief mean)"] == pytest.approx(2 / 3, abs=0.03)
     assert values["MoveToTossLocationAndToss (belief mean)"] == mean_competence(
         belief=before.skill_beliefs[TOSS_SKILL]
     )
@@ -154,9 +218,9 @@ def test_theta_charts_are_read_only_and_show_reset_beliefs() -> None:
     )
     assert "STOP" not in values
     rates = method.practice_skill_learning_rates()
-    assert rates["PickCube (belief mean)"] == pytest.approx(0.5)
-    assert rates["OpenGripper (belief mean)"] == pytest.approx(0.5)
-    assert rates["MoveToTossLocationAndToss (belief mean)"] == pytest.approx(0.5)
+    assert rates["PickCube (belief mean)"] == pytest.approx(0.04, abs=0.005)
+    assert rates["OpenGripper (belief mean)"] == pytest.approx(0.04, abs=0.005)
+    assert rates["MoveToTossLocationAndToss (belief mean)"] == pytest.approx(0.04, abs=0.005)
     assert rates["ask_for_reset_cube_bin_only (belief mean)"] == mean_learning_rate(
         belief=before.skill_beliefs[RESET_SKILL]
     )
@@ -221,7 +285,7 @@ def test_reset_cost_is_charged_at_dispatch_without_another_selection() -> None:
     assert method.pomdp_state.accumulated_cost == 0.005
 
 
-def test_completed_human_reset_jointly_updates_performance_cost_and_training() -> None:
+def test_completed_human_reset_jointly_updates_performance_and_cost_without_training() -> None:
     observed_cost = 0.00001
     method = _build(human_reset_practice_cost=observed_cost)
     reset_skill = method.human_skills()[0]
@@ -247,13 +311,13 @@ def test_completed_human_reset_jointly_updates_performance_cost_and_training() -
     method.observe_help_granted(state=reset_state)
 
     after = method.pomdp_state.skill_beliefs[RESET_SKILL]
-    assert isinstance(before, ParticleFilterBelief)
+    assert isinstance(before, BayesianSkillBelief)
     assert after == before.condition_execution(success=True, observed_cost=observed_cost)
     assert mean_competence(belief=after) > mean_competence(belief=before)
     assert abs(mean_cost(belief=after) - observed_cost) < abs(
         mean_cost(belief=before) - observed_cost
     )
-    assert method.pomdp_state.pending_examples[RESET_SKILL] == 1
+    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 0
 
 
 def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
@@ -285,7 +349,7 @@ def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
     automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
     assert automatic_after == automatic_before.condition_execution(success=True, observed_cost=5.0)
     assert method.pomdp_state.skill_beliefs[RESET_SKILL] == human_before
-    assert method.pomdp_state.pending_examples[NON_HUMAN_RESET_SKILL] == 1
+    assert method.pomdp_state.pending_examples.get(NON_HUMAN_RESET_SKILL, 0) == 0
 
 
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:
@@ -344,14 +408,11 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
     assert summary["chance_outcomes_enumerated"] > 0
 
 
-def test_end_cycle_logs_exact_learning_rate_observations(
+def test_end_cycle_logs_training_counts_without_learning_rate_observations(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     method = _build()
     method.decision_log = tmp_path / "decisions.jsonl"
-    method._cycle_start_competences = {  # noqa: SLF001 - exercise cycle boundary logging
-        name: belief.mean_competence() for name, belief in method.pomdp_state.skill_beliefs.items()
-    }
     method._pomdp_state = method.pomdp_state.model_copy(  # noqa: SLF001
         update={"pending_examples": {PICK_SKILL: 1}}
     )
@@ -362,8 +423,9 @@ def test_end_cycle_logs_exact_learning_rate_observations(
 
     refit = json.loads(method.decision_log.read_text().splitlines()[-1])
     assert refit["event"] == "refit"
-    assert refit["learning_rate_observations"] == {PICK_SKILL: 0.0}
-    assert refit["learning_rate_observation_counts"] == {PICK_SKILL: 1}
+    assert refit["learning_rate_evidence"] == "success_failure_only"
+    assert refit["training_examples"] == {PICK_SKILL: 1}
+    assert "learning_rate_observations" not in refit
 
 
 def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
@@ -371,9 +433,9 @@ def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
     human = method.pomdp_state.skill_beliefs[RESET_SKILL]
     automatic = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
 
-    assert isinstance(human, ParticleFilterBelief)
-    assert isinstance(automatic, ParticleFilterBelief)
-    assert human.particle_parameters != automatic.particle_parameters
+    assert isinstance(human, BayesianSkillBelief)
+    assert isinstance(automatic, BayesianSkillBelief)
+    assert human.signature() != automatic.signature()
     assert set(method.practice_skill_costs()) >= {
         f"{RESET_SKILL} (belief mean)",
         f"{NON_HUMAN_RESET_SKILL} (belief mean)",

@@ -1,11 +1,13 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
 from enum import Enum
+from typing import Literal
 
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
+    SamplerTrainingState,
     Tossing3DBeliefState,
 )
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
@@ -15,7 +17,8 @@ from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
-from .tossing3d_constants import RESET_SKILLS
+from .competence_inference import BayesianSkillBelief, InferenceConfig, create_bayesian_prior
+from .tossing3d_constants import RESET_SKILLS, TOSS_SKILL
 
 
 class PracticeExampleSource(Enum):
@@ -42,7 +45,9 @@ class SkillBeliefModel:
         success: bool,
         was_random_exploration: bool,
         observed_cost: float | None = None,
+        resample: bool = True,
     ) -> Tossing3DBeliefState:
+        assert resample or observed_cost is None, "imagined updates do not observe execution costs"
         if self.skill is None:
             return state
         skill_name = self.skill.name
@@ -50,14 +55,16 @@ class SkillBeliefModel:
             return state
         skill_beliefs = dict(state.skill_beliefs)
         belief = skill_beliefs[skill_name]
-        if observed_cost is not None and isinstance(belief, ParticleFilterBelief):
+        if observed_cost is not None and isinstance(
+            belief, (ParticleFilterBelief, BayesianSkillBelief)
+        ):
             belief = (
                 belief.condition_cost(observed_cost=observed_cost)
                 if was_random_exploration
                 else belief.condition_execution(success=success, observed_cost=observed_cost)
             )
         elif not was_random_exploration:
-            belief = condition_skill_belief(belief=belief, success=success)
+            belief = condition_skill_belief(belief=belief, success=success, resample=resample)
         skill_beliefs[skill_name] = belief
         if was_random_exploration:
             return state.model_copy(update={"skill_beliefs": skill_beliefs})
@@ -68,19 +75,25 @@ class SkillBeliefModel:
             update={"skill_beliefs": skill_beliefs, "pending_examples": pending_examples}
         )
 
-    def observe_training_example(self, *, state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+    def observe_training_example(
+        self, *, state: Tossing3DBeliefState, success: bool
+    ) -> Tossing3DBeliefState:
         if self.skill is None or self.example_source != PracticeExampleSource.SAMPLER:
             return state
         pending_examples = dict(state.pending_examples)
         skill_name = self.skill.name
         pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
-        return state.model_copy(update={"pending_examples": pending_examples})
+        training = dict(state.sampler_training)
+        if skill_name in training:
+            training[skill_name] = training[skill_name].observe(success=success)
+        return state.model_copy(
+            update={"pending_examples": pending_examples, "sampler_training": training}
+        )
 
 
 SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
     Tossing3DSkills.PICK_CUBE: SkillBeliefModel(
         skill=Tossing3DSkills.PICK_CUBE,
-        example_source=PracticeExampleSource.OUTCOME,
     ),
     Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: SkillBeliefModel(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
@@ -88,7 +101,6 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
     ),
     Tossing3DSkills.OPEN_GRIPPER: SkillBeliefModel(
         skill=Tossing3DSkills.OPEN_GRIPPER,
-        example_source=PracticeExampleSource.OUTCOME,
     ),
 }
 
@@ -96,10 +108,7 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
 def skill_belief_model(*, ground_skill: GroundSkill) -> SkillBeliefModel:
     """Return the update contract for one provider-supplied ground skill."""
     if ground_skill.skill.name in RESET_SKILLS:
-        return SkillBeliefModel(
-            skill=ground_skill.skill,
-            example_source=PracticeExampleSource.OUTCOME,
-        )
+        return SkillBeliefModel(skill=ground_skill.skill)
     return SKILL_BELIEF_MODELS.get(
         ground_skill.skill,
         SkillBeliefModel(skill=ground_skill.skill),
@@ -128,26 +137,37 @@ def make_default_tossing3d_belief(
     seed: int = 0,
     include_human_reset: bool = False,
     additional_skill_names: tuple[str, ...] = (),
+    model: Literal["global_curve", "local_trend"] | None = None,
+    engine: Literal["particle", "grid"] = "particle",
+    inference_config: InferenceConfig | None = None,
 ) -> Tossing3DBeliefState:
-    """Independent broad joint priors for every modeled practice skill."""
-    beliefs: dict[str, ConcreteSkillBelief] = {
-        skill.name: create_broad_particle_prior(
-            num_particles=num_particles,
-            seed=seed + index,
-        )
-        for index, skill in enumerate(SKILL_BELIEF_MODELS)
-    }
-    skill_names = list(additional_skill_names)
+    """Independent priors for every modeled practice skill.
+
+    Omitting model retains the legacy prior for standalone numerical consumers;
+    the POMDP method selects its configured Bayesian model explicitly.
+    """
+    names = [skill.name for skill in SKILL_BELIEF_MODELS]
+    names.extend(additional_skill_names)
     if include_human_reset:
         from .tossing3d_constants import RESET_SKILL
 
-        skill_names.append(RESET_SKILL)
-    for skill_name in dict.fromkeys(skill_names):
-        beliefs[skill_name] = create_broad_particle_prior(
-            num_particles=num_particles,
-            seed=seed + len(beliefs),
+        names.append(RESET_SKILL)
+    beliefs: dict[str, ConcreteSkillBelief] = {}
+    for index, name in enumerate(dict.fromkeys(names)):
+        beliefs[name] = (
+            create_broad_particle_prior(num_particles=num_particles, seed=seed + index)
+            if model is None
+            else create_bayesian_prior(
+                model=model,
+                engine=engine,
+                seed=seed + index,
+                num_particles=num_particles,
+                config=inference_config or InferenceConfig(),
+            )
         )
-    return Tossing3DBeliefState(skill_beliefs=beliefs)
+    return Tossing3DBeliefState(
+        skill_beliefs=beliefs, sampler_training={TOSS_SKILL: SamplerTrainingState()}
+    )
 
 
 def mean_competence(*, belief: SkillBelief) -> float:
@@ -158,97 +178,64 @@ def mean_learning_rate(*, belief: SkillBelief) -> float:
     return belief.mean_learning_rate()
 
 
-def mean_cost(*, belief: ParticleFilterBelief) -> float:
+def mean_cost(*, belief: ParticleFilterBelief | BayesianSkillBelief) -> float:
     return belief.mean_cost()
 
 
-def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:
+def condition_skill_belief(
+    *, belief: ConcreteSkillBelief, success: bool, resample: bool = True
+) -> ConcreteSkillBelief:
     """Condition on a greedy-policy outcome without pretending a refit occurred."""
+    if isinstance(belief, BayesianSkillBelief):
+        return belief.condition_outcome(success=success, resample=resample)
     return belief.condition_outcome(success=success)
 
 
 def refit_skill_belief(
     *, belief: ConcreteSkillBelief, training_examples: int
 ) -> ConcreteSkillBelief:
-    """Advance competence along a locally linear learning curve.
-
-    ``learning_rate`` is the first derivative of competence with respect to the
-    number of training examples.  Competence is a probability, so the linear
-    extrapolation is capped at one.
-    """
+    """Forecast after training without modifying the observed belief."""
     return belief.refit(training_examples=training_examples)
-
-
-def observed_learning_rate(
-    *, competence_before: float, competence_after: float, training_examples: int
-) -> float | None:
-    """Return the nonnegative competence increase per example for one cycle."""
-    assert training_examples >= 0
-    if training_examples == 0:
-        return None
-    return max(0.0, (competence_after - competence_before) / training_examples)
-
-
-def observed_learning_rates(
-    *,
-    state: Tossing3DBeliefState,
-    cycle_start_competences: dict[str, float] | None = None,
-) -> dict[str, float]:
-    """Return the exact per-skill observations used at a cycle boundary."""
-    start_competences = cycle_start_competences or {}
-    observations: dict[str, float] = {}
-    for skill_name, belief in state.skill_beliefs.items():
-        training_examples = state.pending_examples.get(skill_name, 0)
-        start = start_competences.get(skill_name)
-        if start is None:
-            continue
-        observation = observed_learning_rate(
-            competence_before=start,
-            competence_after=mean_competence(belief=belief),
-            training_examples=training_examples,
-        )
-        if observation is not None:
-            observations[skill_name] = observation
-    return observations
-
-
-def refit_observed_skill_belief(
-    *,
-    belief: ConcreteSkillBelief,
-    training_examples: int,
-    cycle_start_competence: float | None,
-) -> ConcreteSkillBelief:
-    if cycle_start_competence is not None:
-        rate = observed_learning_rate(
-            competence_before=cycle_start_competence,
-            competence_after=mean_competence(belief=belief),
-            training_examples=training_examples,
-        )
-        if rate is not None:
-            belief = belief.condition_learning_rate(observed_learning_rate=rate)
-    return refit_skill_belief(belief=belief, training_examples=training_examples)
 
 
 def refit_belief_state(
     *,
     state: Tossing3DBeliefState,
-    cycle_start_competences: dict[str, float] | None = None,
     learning_rate_process_noise_std: float = 0.0,
+    advance_cycle: bool = False,
 ) -> Tossing3DBeliefState:
+    """Apply the configured transition; S/F is the only competence evidence.
+
+    Real cycle boundaries also reset evidence and ancestry bookkeeping when no
+    training occurred. A hypothetical zero-example forecast remains an identity.
+    Tracked one-class samplers defer learning credit until both labels exist;
+    their first mixed-class refit uses the whole retained training set.
+    """
     assert learning_rate_process_noise_std >= 0.0
-    start_competences = cycle_start_competences or {}
     refitted_beliefs: dict[str, ConcreteSkillBelief] = {}
     for skill_name, belief in state.skill_beliefs.items():
-        refitted = refit_observed_skill_belief(
-            belief=belief,
-            training_examples=state.pending_examples.get(skill_name, 0),
-            cycle_start_competence=start_competences.get(skill_name),
-        )
-        refitted = refitted.advance_learning_rate(process_noise_std=learning_rate_process_noise_std)
+        count = state.pending_examples.get(skill_name, 0)
+        training = state.sampler_training.get(skill_name)
+        if training is not None:
+            count = training.refit_examples
+        refitted: ConcreteSkillBelief
+        if isinstance(belief, BayesianSkillBelief):
+            refitted = (
+                belief.advance_cycle(training_examples=count)
+                if advance_cycle
+                else belief.refit(training_examples=count)
+            )
+        else:
+            refitted = belief.refit(training_examples=count).advance_learning_rate(
+                process_noise_std=learning_rate_process_noise_std
+            )
         refitted_beliefs[skill_name] = refitted
     return state.model_copy(
         update={
             "skill_beliefs": refitted_beliefs,
             "pending_examples": {},
+            "sampler_training": {
+                name: training.refitted() for name, training in state.sampler_training.items()
+            },
         }
     )

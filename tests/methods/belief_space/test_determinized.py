@@ -302,3 +302,218 @@ def test_planner_compute_budget_is_independent_of_expectimax_horizon() -> None:
 
     assert value == pytest.approx(0.9)
     assert action == RIGHT
+
+
+@pytest.mark.parametrize("remaining_actions", [0, 1, 2])
+def test_real_action_budget_limits_paths_and_stops_at_zero(*, remaining_actions: int) -> None:
+    model = Model(
+        transitions={
+            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
+            (HIGH, FINISH): [(GOAL, 0.0, 1.0)],
+        },
+        beliefs={HIGH: BeliefState(value=0.6), GOAL: BeliefState(value=0.9)},
+    )
+    trace = SearchTrace()
+    value, action = DeterminizedAStarPlanner(max_iterations=100, seed=0).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=99,
+        remaining_actions=remaining_actions,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+
+    assert value == pytest.approx([0.2, 0.6, 0.9][remaining_actions])
+    assert action == (STOP_ACTION if remaining_actions == 0 else RIGHT)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["effective_action_horizon"] == remaining_actions
+    assert summary["selected_path_depth"] == remaining_actions
+    assert summary["max_depth_reached"] == remaining_actions
+    assert summary["action_transitions_evaluated"] == remaining_actions
+    assert summary["action_horizon_terminal_nodes"] == 1
+    assert summary["termination_reason"] == "action_horizon_exhausted"
+
+
+def test_same_state_with_a_remaining_action_is_not_closed_by_a_terminal_visit() -> None:
+    class DepthPenaltyPlanner(DeterminizedAStarPlanner):
+        def heuristic(self, *, node: DeterminizedSearchNode) -> float:
+            # Visit HIGH through LOW first, exhausting the two-action budget.
+            # The direct visit must still expand HIGH -> GOAL with its final slot.
+            return 0.15 if node.environment_state == HIGH and node.depth == 1 else 0.0
+
+    model = Model(
+        transitions={
+            (ROOT, LEFT): [(LOW, 0.0, 1.0)],
+            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
+            (LOW, FINISH): [(HIGH, 0.0, 1.0)],
+            (HIGH, FINISH): [(GOAL, 0.0, 1.0)],
+        },
+        beliefs={
+            LOW: BeliefState(value=0.3),
+            HIGH: BeliefState(value=0.4),
+            GOAL: BeliefState(value=0.9),
+        },
+    )
+    value, action = DepthPenaltyPlanner(max_iterations=100, seed=0).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=0,
+        remaining_actions=2,
+        model=model,
+        num_samples=1,
+    )
+
+    assert value == pytest.approx(0.9)
+    assert action == RIGHT
+
+
+def test_negative_remaining_action_budget_is_rejected() -> None:
+    with pytest.raises(AssertionError, match="remaining_actions must be non-negative"):
+        DeterminizedAStarPlanner(max_iterations=100, seed=0).solve(
+            environment_state=ROOT,
+            summed_cost=0.0,
+            belief_state=BeliefState(value=0.2),
+            horizon=0,
+            remaining_actions=-1,
+            model=Model(),
+            num_samples=1,
+        )
+
+
+@pytest.mark.parametrize("remaining_actions", [None, 3])
+def test_cheaper_closed_path_propagates_without_resampling(
+    *, remaining_actions: int | None
+) -> None:
+    merged = EnvironmentState(name="merged")
+    safe = EnvironmentState(name="safe")
+    dead = EnvironmentState(name="dead")
+    safe_action = Action(name="safe")
+    model = Model(
+        transitions={
+            (ROOT, LEFT): [(LOW, 0.0, 0.5), (dead, 0.0, 0.5)],
+            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
+            (ROOT, safe_action): [(safe, 0.0, 1.0)],
+            (LOW, FINISH): [(merged, 0.0, 1.0)],
+            (HIGH, FINISH): [(merged, 0.0, 1.0)],
+            (merged, FINISH): [(GOAL, 0.0, 1.0)],
+        },
+        beliefs={
+            LOW: BeliefState(value=0.6),
+            HIGH: BeliefState(value=0.3),
+            merged: BeliefState(value=0.7),
+            safe: BeliefState(value=0.77),
+            dead: BeliefState(value=0.0),
+            GOAL: BeliefState(value=0.8),
+        },
+    )
+    trace = SearchTrace()
+    planner = DeterminizedAStarPlanner(
+        max_iterations=100, seed=3, observation_probability_weight=0.1
+    )
+    value, action = planner.solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=3,
+        remaining_actions=remaining_actions,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+
+    # LEFT closes merged and GOAL before RIGHT is expanded. RIGHT reaches
+    # merged at the same depth with no surprise penalty; propagate that saving.
+    assert (value, action) == (pytest.approx(0.8), RIGHT)
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["reopened_nodes"] == 2
+    assert summary["cached_successor_relaxations"] == 1
+    assert summary["generated_successors"] == 6
+    assert summary["action_transitions_evaluated"] == 6
+    assert summary["selected_path_depth"] == 3
+    assert model.evaluations == 6  # cached J is also reused on reopening
+    expected_rng = np.random.default_rng(3)
+    expected_rng.random(6)
+    assert planner.rng.bit_generator.state == expected_rng.bit_generator.state
+
+
+def test_cheaper_queued_path_discards_the_stale_entry() -> None:
+    dead = EnvironmentState(name="dead")
+    model = Model(
+        transitions={
+            (ROOT, LEFT): [(LOW, 0.0, 0.5), (dead, 0.0, 0.5)],
+            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
+            (LOW, FINISH): [(GOAL, 0.0, 1.0)],
+            (HIGH, FINISH): [(GOAL, 0.0, 1.0)],
+        },
+        beliefs={
+            LOW: BeliefState(value=0.4),
+            HIGH: BeliefState(value=0.3),
+            dead: BeliefState(value=0.0),
+            GOAL: BeliefState(value=0.2),
+        },
+    )
+    trace = SearchTrace()
+    DeterminizedAStarPlanner(max_iterations=100, seed=3).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=3,
+        remaining_actions=3,
+        model=model,
+        num_samples=1,
+        trace=trace,
+    )
+    summary = next(event for event in trace.events if event["event"] == "search_summary")
+    assert summary["stale_queue_entries"] == 1
+    assert summary["reopened_nodes"] == 0
+    assert summary["expanded_nodes"] == 4
+
+
+def test_path_relaxation_ignores_telescoping_roundoff() -> None:
+    assert not DeterminizedAStarPlanner.strictly_improves(candidate=0.01 - 3.5e-18, previous=0.01)
+    assert DeterminizedAStarPlanner.strictly_improves(candidate=0.01 - 1e-8, previous=0.01)
+
+
+def test_first_expansion_keeps_model_sample_and_value_call_order() -> None:
+    class TracedModel(Model):
+        calls: list[str] = Field(default_factory=list)
+
+        def J(self, *, belief_state: BeliefState, summed_cost: float, num_samples: int) -> float:
+            self.calls.append(f"J:{belief_state.value}")
+            return super().J(
+                belief_state=belief_state, summed_cost=summed_cost, num_samples=num_samples
+            )
+
+        def transition_outcomes(
+            self,
+            *,
+            environment_state: EnvironmentState,
+            practice_action: Action,
+            belief_state: BeliefState,
+        ) -> list[tuple[EnvironmentState, float, float]]:
+            self.calls.append(f"outcomes:{practice_action.name}")
+            return super().transition_outcomes(
+                environment_state=environment_state,
+                practice_action=practice_action,
+                belief_state=belief_state,
+            )
+
+    model = TracedModel(
+        transitions={
+            (ROOT, LEFT): [(LOW, 0.0, 1.0)],
+            (ROOT, RIGHT): [(HIGH, 0.0, 1.0)],
+        },
+        beliefs={LOW: BeliefState(value=0.3), HIGH: BeliefState(value=0.6)},
+    )
+    DeterminizedAStarPlanner(max_iterations=1, seed=0).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        horizon=0,
+        model=model,
+        num_samples=1,
+    )
+    assert model.calls == ["J:0.2", "outcomes:left", "J:0.3", "outcomes:right", "J:0.6"]

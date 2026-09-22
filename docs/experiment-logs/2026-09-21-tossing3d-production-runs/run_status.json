@@ -1,0 +1,30 @@
+[
+  {
+    "name": "global_curve-particle/seed_00",
+    "returncode": 0,
+    "spawn_attempts": 1,
+    "log": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/global_curve-particle/seed_00/log.txt",
+    "timing": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/global_curve-particle/seed_00/timing.json"
+  },
+  {
+    "name": "global_curve-grid/seed_00",
+    "returncode": 0,
+    "spawn_attempts": 1,
+    "log": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/global_curve-grid/seed_00/log.txt",
+    "timing": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/global_curve-grid/seed_00/timing.json"
+  },
+  {
+    "name": "local_trend-particle/seed_00",
+    "returncode": 0,
+    "spawn_attempts": 1,
+    "log": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/local_trend-particle/seed_00/log.txt",
+    "timing": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/local_trend-particle/seed_00/timing.json"
+  },
+  {
+    "name": "local_trend-grid/seed_00",
+    "returncode": 0,
+    "spawn_attempts": 1,
+    "log": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/local_trend-grid/seed_00/log.txt",
+    "timing": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-production-20260921/experiments/local_trend-grid/seed_00/timing.json"
+  }
+]

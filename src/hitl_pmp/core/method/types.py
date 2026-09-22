@@ -26,6 +26,18 @@ class LabeledAction(BaseModel):
 Policy = Callable[[State], LabeledAction]
 
 
+class ParameterSamplingDiagnostics(BaseModel):
+    """One proposal batch, including rejected draws that never became actions."""
+
+    model_config = ConfigDict(frozen=True)
+
+    requested_candidates: int
+    sampled_proposals: int
+    accepted_candidates: int
+    max_proposals: int
+    rejection_reasons: dict[str, int]
+
+
 class Rollout(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -518,6 +530,7 @@ class Skill(BaseModel):
     # Deliberately absent from _check_variables_are_declared_parameters below: these
     # are Predicates, not LiftedAtoms -- they bind no variable to check.
     ignore_effects: frozenset[Predicate] = frozenset()
+    conditional_add_effects: frozenset[ConditionalAddEffect] = frozenset()
     param_dim: int
     practice_cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
 
@@ -534,6 +547,12 @@ class Skill(BaseModel):
             for atom in (*self.preconditions, *self.add_effects, *self.delete_effects)
             for variable in atom.variables
         }
+        referenced.update(
+            variable
+            for effect in self.conditional_add_effects
+            for atom in (*effect.conditions, *effect.add_effects)
+            for variable in atom.variables
+        )
         undeclared = referenced - declared
         if undeclared:
             raise ValueError(
@@ -608,6 +627,45 @@ class GroundSkill(BaseModel):
         predicators' `_GroundNSRT.ignore_effects`, which likewise just forwards its
         parent operator's set."""
         return self.skill.ignore_effects
+
+    @property
+    def conditional_add_effects(self) -> frozenset[GroundConditionalAddEffect]:
+        return frozenset(
+            effect.ground(substitution=self._substitution)
+            for effect in self.skill.conditional_add_effects
+        )
+
+
+class ConditionalAddEffect(BaseModel):
+    """Add atoms when every condition held before the action's effects.
+
+    Resetting a held object removes Holding but leaves the gripper closed: the
+    ClosedEmpty effect therefore depends on Holding in the incoming state.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    conditions: frozenset[LiftedAtom]
+    add_effects: frozenset[LiftedAtom]
+
+    def ground(self, *, substitution: dict[Variable, Object]) -> GroundConditionalAddEffect:
+        return GroundConditionalAddEffect(
+            conditions=frozenset(
+                atom.ground(substitution=substitution) for atom in self.conditions
+            ),
+            add_effects=frozenset(
+                atom.ground(substitution=substitution) for atom in self.add_effects
+            ),
+        )
+
+
+class GroundConditionalAddEffect(BaseModel):
+    """A conditional addition bound to the skill's concrete objects."""
+
+    model_config = ConfigDict(frozen=True)
+
+    conditions: frozenset[GroundAtom]
+    add_effects: frozenset[GroundAtom]
 
 
 class Variable(BaseModel):

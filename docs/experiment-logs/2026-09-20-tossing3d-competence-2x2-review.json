@@ -1,0 +1,388 @@
+{
+  "reviewer": "independent experiment_spec_audit subagent; no implementation authorship",
+  "updated_at": "2026-09-20T16:03:00.821896+00:00",
+  "runtime_source_commit": "68dd6a9797fc651922991f4aa3b888d8f7249d1c",
+  "runtime_source_tree": "8a84f21536860d2e7e9edf791c4d5abba5fa54ef",
+  "runtime_source_unchanged_since_launch": true,
+  "measured_commands_exactly_match_launch_revision": true,
+  "measured_launcher_revision": "68dd6a9797fc651922991f4aa3b888d8f7249d1c",
+  "current_launcher_changed_after_launch": true,
+  "provenance_note": "Per-arm snapshots are written at run end and may name later documentation/analysis commits or dirty analysis files. Runtime src, pyproject, and dependency pins are byte-identical to the launch commit. The launcher was refactored after this measured launch; all saved measured commands were independently reconstructed from the launch commit and match exactly. Frozen dependency provenance is in dependency_provenance.json.",
+  "arms": {
+    "global_curve-particle": {
+      "status": "passed_completed_arm_audit",
+      "results_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-20260920/global_curve-particle/seed_00",
+      "process_returncode": 0,
+      "process_finished_at": "2026-09-20T15:49:22.480873+00:00",
+      "late_config_snapshot_git_commit": "41c382641206c0d5ee6eb13b195d146a1a0061b6",
+      "late_config_snapshot_git_dirty": true,
+      "events": {
+        "session_start": 10,
+        "decision": 200,
+        "dispatch": 200,
+        "outcome": 200,
+        "smoothing": 10,
+        "refit": 10
+      },
+      "validated_skill_posterior_checkpoints": 1050,
+      "all_outcome_transition_and_smoothing_replays_match_exactly": true,
+      "actual_cost_per_cycle": {
+        "0": 76.0,
+        "1": 64.0,
+        "2": 56.0,
+        "3": 68.0,
+        "4": 72.0,
+        "5": 68.0,
+        "6": 88.0,
+        "7": 52.0,
+        "8": 92.0,
+        "9": 56.0
+      },
+      "actual_total_cost": 692.0,
+      "practice_outcomes": {
+        "ask_for_reset_cube_bin_only": {
+          "policy_successes": 68
+        },
+        "non_human_reset_cube_bin_only": {
+          "policy_successes": 55
+        },
+        "PickCube": {
+          "policy_successes": 33
+        },
+        "MoveToTossLocationAndToss": {
+          "policy_failures": 20
+        },
+        "OpenGripper": {
+          "policy_successes": 24
+        }
+      },
+      "evaluation_solved_counts_out_of_10": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "practice_session_end_reasons": {
+        "session_action_cap": 10
+      },
+      "num_free_practice_resets": 0,
+      "final_phi_support": {
+        "PickCube": 74,
+        "MoveToTossLocationAndToss": 97,
+        "OpenGripper": 86,
+        "ask_for_reset_cube_bin_only": 40,
+        "non_human_reset_cube_bin_only": 91
+      },
+      "minimum_smoothed_ancestor_count": {
+        "PickCube": 244,
+        "MoveToTossLocationAndToss": 127,
+        "OpenGripper": 122,
+        "ask_for_reset_cube_bin_only": 250,
+        "non_human_reset_cube_bin_only": 288
+      },
+      "final_filtered_competence": {
+        "PickCube": 0.9785592715992306,
+        "MoveToTossLocationAndToss": 0.09181303507369157,
+        "OpenGripper": 0.9694646279165489,
+        "ask_for_reset_cube_bin_only": 0.9849582462437473,
+        "non_human_reset_cube_bin_only": 0.9800290514285721
+      },
+      "final_forecast_competence": {
+        "PickCube": 0.976429917925312,
+        "MoveToTossLocationAndToss": 0.10875355249591713,
+        "OpenGripper": 0.9656897278664376,
+        "ask_for_reset_cube_bin_only": 0.9804584463547789,
+        "non_human_reset_cube_bin_only": 0.9796565654184548
+      }
+    },
+    "global_curve-grid": {
+      "status": "passed_completed_arm_audit",
+      "results_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-20260920/global_curve-grid/seed_00",
+      "process_returncode": 0,
+      "process_finished_at": "2026-09-20T15:51:38.031376+00:00",
+      "late_config_snapshot_git_commit": "41c382641206c0d5ee6eb13b195d146a1a0061b6",
+      "late_config_snapshot_git_dirty": true,
+      "events": {
+        "session_start": 10,
+        "decision": 200,
+        "dispatch": 200,
+        "outcome": 200,
+        "smoothing": 10,
+        "refit": 10
+      },
+      "validated_skill_posterior_checkpoints": 1050,
+      "all_outcome_transition_and_smoothing_replays_match_exactly": true,
+      "actual_cost_per_cycle": {
+        "0": 64.0,
+        "1": 76.0,
+        "2": 68.0,
+        "3": 76.0,
+        "4": 80.0,
+        "5": 80.0,
+        "6": 80.0,
+        "7": 76.0,
+        "8": 60.0,
+        "9": 68.0
+      },
+      "actual_total_cost": 728.0,
+      "practice_outcomes": {
+        "ask_for_reset_cube_bin_only": {
+          "policy_successes": 70
+        },
+        "PickCube": {
+          "policy_successes": 31
+        },
+        "non_human_reset_cube_bin_only": {
+          "policy_successes": 62
+        },
+        "OpenGripper": {
+          "policy_successes": 22
+        },
+        "MoveToTossLocationAndToss": {
+          "policy_failures": 15
+        }
+      },
+      "evaluation_solved_counts_out_of_10": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0,
+        0,
+        1
+      ],
+      "practice_session_end_reasons": {
+        "session_action_cap": 10
+      },
+      "num_free_practice_resets": 0,
+      "final_phi_support": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "minimum_smoothed_ancestor_count": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "final_filtered_competence": {
+        "PickCube": 0.9667445588969307,
+        "MoveToTossLocationAndToss": 0.12347978335979931,
+        "OpenGripper": 0.9567955661073755,
+        "ask_for_reset_cube_bin_only": 0.9760431898496637,
+        "non_human_reset_cube_bin_only": 0.9749681518399249
+      },
+      "final_forecast_competence": {
+        "PickCube": 0.9636065418700628,
+        "MoveToTossLocationAndToss": 0.1319175660569628,
+        "OpenGripper": 0.9527657311299553,
+        "ask_for_reset_cube_bin_only": 0.9740885368119634,
+        "non_human_reset_cube_bin_only": 0.9732594696354786
+      }
+    },
+    "local_trend-particle": {
+      "status": "passed_completed_arm_audit",
+      "results_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-20260920/local_trend-particle/seed_00",
+      "process_returncode": 0,
+      "process_finished_at": "2026-09-20T16:00:45.257263+00:00",
+      "late_config_snapshot_git_commit": "41c382641206c0d5ee6eb13b195d146a1a0061b6",
+      "late_config_snapshot_git_dirty": true,
+      "events": {
+        "session_start": 10,
+        "decision": 200,
+        "dispatch": 200,
+        "outcome": 200,
+        "smoothing": 10,
+        "refit": 10
+      },
+      "validated_skill_posterior_checkpoints": 1050,
+      "all_outcome_transition_and_smoothing_replays_match_exactly": true,
+      "actual_cost_per_cycle": {
+        "0": 44.0,
+        "1": 56.0,
+        "2": 60.0,
+        "3": 60.0,
+        "4": 60.0,
+        "5": 64.0,
+        "6": 76.0,
+        "7": 72.0,
+        "8": 72.0,
+        "9": 64.0
+      },
+      "actual_total_cost": 628.0,
+      "practice_outcomes": {
+        "PickCube": {
+          "policy_successes": 40
+        },
+        "MoveToTossLocationAndToss": {
+          "policy_failures": 26
+        },
+        "non_human_reset_cube_bin_only": {
+          "policy_successes": 46
+        },
+        "ask_for_reset_cube_bin_only": {
+          "policy_successes": 61
+        },
+        "OpenGripper": {
+          "policy_successes": 27
+        }
+      },
+      "evaluation_solved_counts_out_of_10": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "practice_session_end_reasons": {
+        "session_action_cap": 10
+      },
+      "num_free_practice_resets": 0,
+      "final_phi_support": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "minimum_smoothed_ancestor_count": {
+        "PickCube": 1024,
+        "MoveToTossLocationAndToss": 290,
+        "OpenGripper": 556,
+        "ask_for_reset_cube_bin_only": 588,
+        "non_human_reset_cube_bin_only": 556
+      },
+      "final_filtered_competence": {
+        "PickCube": 0.9857378035852156,
+        "MoveToTossLocationAndToss": 0.08422347399287886,
+        "OpenGripper": 0.9895548119135058,
+        "ask_for_reset_cube_bin_only": 0.991979937212911,
+        "non_human_reset_cube_bin_only": 0.9900264943638892
+      },
+      "final_forecast_competence": {
+        "PickCube": 0.9839705310737565,
+        "MoveToTossLocationAndToss": 0.09934442703637689,
+        "OpenGripper": 0.9857535334823364,
+        "ask_for_reset_cube_bin_only": 0.9887546620876728,
+        "non_human_reset_cube_bin_only": 0.9860616211620132
+      }
+    },
+    "local_trend-grid": {
+      "status": "passed_completed_arm_audit",
+      "results_directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-20260920/local_trend-grid/seed_00",
+      "process_returncode": 0,
+      "process_finished_at": "2026-09-20T16:02:41.228381+00:00",
+      "late_config_snapshot_git_commit": "41c382641206c0d5ee6eb13b195d146a1a0061b6",
+      "late_config_snapshot_git_dirty": true,
+      "events": {
+        "session_start": 10,
+        "decision": 200,
+        "dispatch": 200,
+        "outcome": 200,
+        "smoothing": 10,
+        "refit": 10
+      },
+      "validated_skill_posterior_checkpoints": 1050,
+      "all_outcome_transition_and_smoothing_replays_match_exactly": true,
+      "actual_cost_per_cycle": {
+        "0": 52.0,
+        "1": 64.0,
+        "2": 68.0,
+        "3": 72.0,
+        "4": 60.0,
+        "5": 64.0,
+        "6": 68.0,
+        "7": 52.0,
+        "8": 68.0,
+        "9": 72.0
+      },
+      "actual_total_cost": 640.0,
+      "practice_outcomes": {
+        "PickCube": {
+          "policy_successes": 40
+        },
+        "MoveToTossLocationAndToss": {
+          "policy_failures": 20,
+          "policy_successes": 2,
+          "random_failures": 2
+        },
+        "non_human_reset_cube_bin_only": {
+          "policy_successes": 59
+        },
+        "ask_for_reset_cube_bin_only": {
+          "policy_successes": 51
+        },
+        "OpenGripper": {
+          "policy_successes": 26
+        }
+      },
+      "evaluation_solved_counts_out_of_10": [
+        0,
+        0,
+        1,
+        0,
+        0,
+        1,
+        0,
+        5,
+        3,
+        0,
+        1
+      ],
+      "practice_session_end_reasons": {
+        "session_action_cap": 10
+      },
+      "num_free_practice_resets": 0,
+      "final_phi_support": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "minimum_smoothed_ancestor_count": {
+        "PickCube": null,
+        "MoveToTossLocationAndToss": null,
+        "OpenGripper": null,
+        "ask_for_reset_cube_bin_only": null,
+        "non_human_reset_cube_bin_only": null
+      },
+      "final_filtered_competence": {
+        "PickCube": 0.9874096516547197,
+        "MoveToTossLocationAndToss": 0.24552805365959118,
+        "OpenGripper": 0.9836520403346821,
+        "ask_for_reset_cube_bin_only": 0.9881402609166643,
+        "non_human_reset_cube_bin_only": 0.9886219634848677
+      },
+      "final_forecast_competence": {
+        "PickCube": 0.9827609033161325,
+        "MoveToTossLocationAndToss": 0.25724617788541904,
+        "OpenGripper": 0.9788632152232413,
+        "ask_for_reset_cube_bin_only": 0.9816906248948917,
+        "non_human_reset_cube_bin_only": 0.9859438543688477
+      }
+    }
+  },
+  "all_four_arms_completed_and_passed": true
+}

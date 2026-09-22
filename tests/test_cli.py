@@ -109,7 +109,9 @@ def test_tossing3d_pomdp_cli_exposes_search_configuration() -> None:
     assert args.pomdp_search_depth == 3
     assert args.pomdp_num_particles == 1024
     assert args.pomdp_num_samples == 100
-    assert args.pomdp_learning_rate_process_noise_std == 0.05
+    assert args.pomdp_learning_rate_process_noise_std == 0.005
+    assert args.pomdp_competence_model == "local_trend"
+    assert args.pomdp_inference_engine == "particle"
     assert args.pomdp_solver == "expectimax"
     assert args.pomdp_max_search_iterations == 100
     assert args.pomdp_observation_probability_weight == 0.1

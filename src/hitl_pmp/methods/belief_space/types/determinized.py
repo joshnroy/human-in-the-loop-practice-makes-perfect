@@ -93,6 +93,7 @@ class DeterminizedSearchDiagnostics(BaseModel):
     chance_outcomes_enumerated: int = 0
     max_frontier_size: int = 0
     max_depth_reached: int = 0
+    action_horizon_terminal_nodes: int = 0
     termination_reason: str = "frontier_exhausted"
 
     def observe_frontier(self, *, size: int) -> None:

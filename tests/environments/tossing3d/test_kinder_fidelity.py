@@ -266,10 +266,22 @@ def test_the_containment_guard_would_catch_a_bin_moved_off_the_scored_box() -> N
     assert not _is_contained(margins=margins)
 
 
-def test_a_full_episode_through_the_problem_solves_the_default_scene() -> None:
+def test_a_full_episode_through_the_problem_solves_a_feasible_scene(*, tmp_path) -> None:
     """End to end through the harness's own path: `run_task_episode` with the oracle
-    policy, on the canonical scene."""
+    policy, on its measured bin position with the installed simulator's physics.
+
+    The installed task now samples bins at x=2.6..3.42. The historical oracle's
+    1.35 m standoff can cross the one-way barrier there, so those scenes do not
+    satisfy this operating point's feasibility assumptions.
+    """
+    import json
+
     env = _env()
+    config = _installed_task_json()
+    config["regions"]["bin_init_region"]["ranges"] = [[2.0, 0.0, 2.0, 0.0]]
+    path = tmp_path / "oracle-feasible-scene.json"
+    path.write_text(json.dumps(config))
+    env.backend().task_config_path = path
     try:
         tasks = Tossing3DTasks(env=env, seed=0)
         problem = Tossing3DProblem(env=env, tasks=tasks)
@@ -281,6 +293,29 @@ def test_a_full_episode_through_the_problem_solves_the_default_scene() -> None:
         solved, frames, _ = problem.run_task_episode(task=task, policy=policy)
         assert solved
         assert frames == []
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("seed", [10125, 10126, 10127])
+def test_extended_toss_solves_default_far_scene_witnesses(*, seed: int) -> None:
+    """Replay upstream's certified witnesses through the real HITL action bridge.
+
+    These cases establish physical reachability of the default far-bin layout;
+    they do not measure an untrained policy's success rate. The common recipe
+    was calibrated on separate development scenes after correcting the observed
+    windup handoff; nominal-start timing is no longer the controller contract.
+    """
+    env = _env()
+    try:
+        initial = env.reset_to_seed(seed=seed)
+        assert initial.get(obj=env.bin, feature_name="x") >= 2.6
+        picked = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+        assert HOLDING.holds(picked, (env.robot, env.cube)), env.last_skill_error()
+        landed = env.take_action(action=np.array([1, 2.5, 0.0, 390.0, 460.0]))
+        assert env.last_skill_error() is None
+        assert IN_BIN.holds(landed, (env.cube, env.bin))
+        assert env.is_solved()
     finally:
         env.close()
 
@@ -420,7 +455,7 @@ def test_same_side_human_reset_uses_json_initial_regions(*, tmp_path, edited_jso
     if edited_json:
         for name, bounds in (
             ("blocks_init_region", [0.3, 0.6, 0.4, 0.7]),
-            ("bin_init_region", [-0.8, -1.2, -0.7, -1.1]),
+            ("bin_init_region", [-1.05, -1.45, -0.45, -0.85]),
         ):
             config["regions"][name]["ranges"] = [bounds]
             config["regions"][f"edited_{name}"] = config["regions"].pop(name)
@@ -532,18 +567,7 @@ def test_reset_movables_moves_the_bin_too_now_that_its_region_is_a_real_range() 
 
 
 def test_reset_movables_breaks_a_grasp_since_the_robot_is_never_touched() -> None:
-    """Empirical grounding for the operator's HandEmpty(robot) precondition (see
-    Tossing3DSkillProvider.human_cube_bin_reset_skill's own docstring), and a
-    correction to the naive prediction: teleporting the cube away from wherever the
-    gripper is does flip Holding to False (the cube is no longer there to hold), but
-    it does NOT flip HandEmpty to True -- the gripper itself is still physically
-    closed (nothing here opens it), and upstream's HandEmpty apparently reads gripper
-    aperture rather than "is Holding false". So the reachable-if-uncontracted result
-    is a state where BOTH are False -- neither holding nor empty-handed, something no
-    ordinary pick_cube/toss transition ever produces -- which is a *stronger* reason
-    this operator requires HandEmpty(robot) as a precondition than "Holding would go
-    stale", not a weaker one. This calls the backend primitive directly, bypassing
-    the operator's precondition, specifically to demonstrate why it is required."""
+    """Relocating a held cube produces ClosedEmpty without opening the gripper."""
     env = _env()
     try:
         state = env.reset_to_seed(seed=CANONICAL_SEED)
@@ -555,10 +579,59 @@ def test_reset_movables_breaks_a_grasp_since_the_robot_is_never_touched() -> Non
         env.reset_movables()
         state = env.get_current_state()
         assert not HOLDING.holds(state, (env.robot, env.cube))
-        assert not HAND_EMPTY.holds(state, (env.robot,)), (
-            "if this starts holding, the HandEmpty(robot) precondition guard above "
-            "needs re-checking against upstream's classifier, not just this test"
+        assert not HAND_EMPTY.holds(state, (env.robot,))
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("layout", ["barrier", "same-side"])
+@pytest.mark.parametrize("gripper", ["open", "holding", "closed_empty"])
+def test_reset_symbolic_gripper_effects_match_physics(*, layout: str, gripper: str) -> None:
+    from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
+    from hitl_pmp.environments.tossing3d.predicates import CLOSED_EMPTY
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_success_effects
+    from hitl_pmp.planning.grounding import SkillGrounder
+
+    env = Tossing3DEnvironment(layout=Tossing3DLayout(layout))
+    provider = Tossing3DSkillProvider(env=env)
+    try:
+        state = env.reset_to_seed(seed=CANONICAL_SEED)
+        if gripper != "open":
+            state = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+            assert HOLDING.holds(state, (env.robot, env.cube)), env.last_skill_error()
+            if gripper == "closed_empty":
+                assert env.reset_movables()
+                state = env.get_current_state()
+                assert CLOSED_EMPTY.holds(state, (env.robot, env.cube))
+        before = SkillGrounder.abstract_state(
+            state=state, objects=provider.objects(), predicates=provider.predicates()
         )
+        robot_before = state.data[env.robot].copy()
+        assert env.reset_movables()
+        state = env.get_current_state()
+        # Re-observation round-trips the base pose through float32 controller state.
+        np.testing.assert_allclose(state.data[env.robot], robot_before, rtol=0, atol=1e-7)
+        after = SkillGrounder.abstract_state(
+            state=state, objects=provider.objects(), predicates=provider.predicates()
+        )
+        gripper_predicates = {HAND_EMPTY, HOLDING, CLOSED_EMPTY}
+        for reset in provider.movables_reset_skills():
+            predicted = apply_success_effects(
+                true_atoms=before,
+                ground_skill=reset,
+                effects={reset: (reset.add_effects, reset.delete_effects, reset.ignore_effects)},
+            )
+            assert {a for a in predicted if a.predicate in gripper_predicates} == {
+                a for a in after if a.predicate in gripper_predicates
+            }
+            assert reset.add_effects <= after
+            assert reset.delete_effects.isdisjoint(after)
+        if gripper != "open":
+            state = env.take_action(action=np.array([2, 0, 0, 0, 0], dtype=float))
+            assert HAND_EMPTY.holds(state, (env.robot,)), env.last_skill_error()
+        assert not HOLDING.holds(state, (env.robot, env.cube))
+        assert not CLOSED_EMPTY.holds(state, (env.robot, env.cube))
     finally:
         env.close()
 

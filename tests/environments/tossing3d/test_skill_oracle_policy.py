@@ -124,10 +124,8 @@ def test_every_oracle_toss_parameter_lies_inside_the_samplers_own_range(
     *, value: float, bounds: tuple[float, float]
 ) -> None:
     """An oracle drawing from outside the range a learner samples would be measuring a
-    different skill from the one being learned -- and all four ranges narrowed in the
-    migration, since they are now upstream's own rather than this package's. `1.35` in
-    particular used to sit inside a `(1.10, 1.75)` standoff range and now sits inside
-    `(1.25, 1.45)`."""
+    different skill from the one being learned. The historical operating point must
+    remain representable after extending the sampler's range for farther receivers."""
     assert bounds[0] <= value <= bounds[1]
 
 
@@ -149,13 +147,11 @@ def test_the_oracle_release_speed_is_upstreams_own_shipped_default() -> None:
     `toss_profile_limits()` still returns by default, and it is the speed every committed
     Tossing3D number -- including the `10/10` at standoff 1.35 -- was measured at.
 
-    It is also exactly the top of `TOSS_SPEED_BOUNDS`, which is what makes the oracle's
-    throw the fastest one a learner could ever draw rather than an interior point it
-    would have to find. If this number ever has to move, that is a new measurement, not a
-    tweak.
+    The long-range simulation skill now also permits higher effort, while this
+    historical operating point retains the low-level default.
     """
     assert ORACLE_RELEASE_SPEED_DEG_S == 140.0
-    assert TOSS_SPEED_BOUNDS[1] == ORACLE_RELEASE_SPEED_DEG_S
+    assert TOSS_SPEED_BOUNDS[1] > ORACLE_RELEASE_SPEED_DEG_S
 
 
 def _measured_solving_band_ms() -> tuple[list[float], dict[float, int]]:

@@ -1,0 +1,198 @@
+"""Run the four competence model/inference combinations under one fixed protocol."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from scripts.run_sweep import SweepRun, SweepRunner
+
+MODELS = ("global_curve", "local_trend")
+ENGINES = ("particle", "grid")
+
+
+def experiment_commands(
+    *,
+    results_root: Path,
+    num_seeds: int,
+    num_cycles: int,
+    python: str,
+    max_search_iterations: int = 100,
+    solver: str = "determinized_astar",
+    search_depth: int = 3,
+) -> list[tuple[str, list[str]]]:
+    """Pair task seeds and hold simulator, planner, costs and budgets fixed."""
+    runs = []
+    for model in MODELS:
+        for engine in ENGINES:
+            for seed in range(num_seeds):
+                name = f"{model}-{engine}/seed_{seed:02d}"
+                command = [
+                    python,
+                    "-m",
+                    "hitl_pmp.cli",
+                    "--env",
+                    "tossing3d",
+                    "--method",
+                    "pomdp",
+                    "--seed",
+                    str(seed),
+                    "--num-cycles",
+                    str(num_cycles),
+                    "--num-test-tasks",
+                    "10",
+                    "--max-steps-per-interaction",
+                    "20",
+                    "--canonical-seed",
+                    "125",
+                    "--layout",
+                    "barrier",
+                    "--evaluation-layout",
+                    "barrier",
+                    "--practice-reset-policy",
+                    "never",
+                    "--human-reset-practice-cost",
+                    "5",
+                    "--pomdp-linear-cost-lambda",
+                    "0.0003",
+                    "--pomdp-solver",
+                    solver,
+                    "--pomdp-search-depth",
+                    str(search_depth),
+                    "--pomdp-max-search-iterations",
+                    str(max_search_iterations),
+                    "--pomdp-observation-probability-weight",
+                    "0.001",
+                    "--pomdp-num-particles",
+                    "1024",
+                    "--pomdp-num-samples",
+                    "100",
+                    "--pomdp-competence-model",
+                    model,
+                    "--pomdp-inference-engine",
+                    engine,
+                    "--pomdp-grid-competence-bins",
+                    "25",
+                    "--pomdp-grid-learning-rate-bins",
+                    "16",
+                    "--pomdp-competence-process-noise-std",
+                    "0.03",
+                    "--pomdp-learning-rate-process-noise-std",
+                    "0.005",
+                    "--pomdp-learning-rate-decay",
+                    "0.9",
+                    "--pomdp-learning-rate-max",
+                    "0.15",
+                    "--record-sampler-draws",
+                    "--record-episode-traces",
+                    "--output-dir",
+                    str(results_root / name),
+                ]
+                runs.append((name, command))
+    return runs
+
+
+def execute_experiments(
+    *, runs: list[tuple[str, list[str]]], results_root: Path, max_workers: int
+) -> list[dict[str, object]]:
+    """Use the shared sweep executor for retry handling, logs and timing.json."""
+    planned = [
+        SweepRun(
+            method=name.split("/")[0],
+            seed=int(command[command.index("--seed") + 1]),
+            output_dir=results_root / name,
+            command=command,
+        )
+        for name, command in runs
+    ]
+    # SweepRunner pins OMP/MKL itself. Preserve the remaining measured-run settings.
+    os.environ.update({
+        "OPENBLAS_NUM_THREADS": "1",
+        "PYTHONUNBUFFERED": "1",
+        "MPLCONFIGDIR": str(results_root / "matplotlib-cache"),
+    })
+    outcomes = SweepRunner.execute(runs=planned, max_workers=max_workers)
+    records: list[dict[str, object]] = []
+    for outcome in outcomes:
+        name = str(outcome.run.output_dir.relative_to(results_root))
+        record: dict[str, object] = {
+            "name": name,
+            "returncode": outcome.returncode,
+            "spawn_attempts": outcome.spawn_attempts,
+            "log": str(outcome.run.output_dir / "log.txt"),
+            "timing": str(outcome.run.output_dir / "timing.json"),
+        }
+        (results_root / "logs" / (name.replace("/", "-") + ".status.json")).write_text(
+            json.dumps(record, indent=2) + "\n", encoding="utf-8"
+        )
+        records.append(record)
+    return records
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--results-root", type=Path, required=True)
+    parser.add_argument("--num-seeds", type=int, default=1)
+    parser.add_argument("--num-cycles", type=int, default=10)
+    parser.add_argument("--max-workers", type=int, default=2)
+    parser.add_argument("--max-search-iterations", type=int, default=100)
+    parser.add_argument(
+        "--solver", choices=("determinized_astar", "expectimax"), default="determinized_astar"
+    )
+    parser.add_argument("--search-depth", type=int, default=3)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    if min(args.num_seeds, args.num_cycles, args.max_workers, args.max_search_iterations) < 1:
+        parser.error("seeds, cycles, workers and search iterations must be positive")
+    if args.search_depth < 0:
+        parser.error("search depth must be non-negative")
+    root = args.results_root.resolve()
+    runs = experiment_commands(
+        results_root=root,
+        num_seeds=args.num_seeds,
+        num_cycles=args.num_cycles,
+        python=sys.executable,
+        max_search_iterations=args.max_search_iterations,
+        solver=args.solver,
+        search_depth=args.search_depth,
+    )
+    if args.dry_run:
+        print(json.dumps(dict(runs), indent=2))
+        return
+    root.mkdir(parents=True, exist_ok=False)
+    (root / "logs").mkdir()
+    source = Path(__file__).resolve().parents[1]
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+    patch = subprocess.check_output(["git", "diff", "HEAD"], cwd=source, text=True)
+    (root / "source.patch").write_text(patch, encoding="utf-8")
+    (root / "manifest.json").write_text(
+        json.dumps(
+            {
+                "source_commit": sha,
+                "source_checkout": str(source),
+                "python": sys.executable,
+                "pythonpath": os.environ.get("PYTHONPATH", ""),
+                "num_cycles": args.num_cycles,
+                "num_seeds": args.num_seeds,
+                "max_search_iterations": args.max_search_iterations,
+                "solver": args.solver,
+                "search_depth": args.search_depth,
+                "commands": dict(runs),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    results = execute_experiments(runs=runs, results_root=root, max_workers=args.max_workers)
+    (root / "run_status.json").write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    if any(result["returncode"] != 0 for result in results):
+        raise SystemExit(1)
+
+
+if __name__ == "__main__":
+    main()

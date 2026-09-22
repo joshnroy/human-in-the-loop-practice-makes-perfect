@@ -78,6 +78,17 @@ class SkillProvider(BaseModel, abc.ABC):
         reading whatever the state provides (object positions, etc.)."""
         raise NotImplementedError
 
+    def parameter_rejection_reason(
+        self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
+    ) -> str | None:
+        """Optionally reject a provably infeasible proposal before sampler scoring.
+
+        This is a pure check of the supplied state, including during evaluation;
+        it must not step or read the provider's live practice environment. None
+        means no proof of infeasibility, not a prediction of skill success.
+        """
+        return None
+
     def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
     ) -> list[float] | None:

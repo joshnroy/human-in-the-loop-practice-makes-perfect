@@ -1,0 +1,3330 @@
+{
+  "schema_version": 1,
+  "results_root": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920",
+  "source_commit": "412b270d90f4a17646b50d0f2cb976668e2ea911",
+  "manifest_present": true,
+  "num_cycles": 10,
+  "num_runs": 4,
+  "valid": true,
+  "errors": [],
+  "runs": [
+    {
+      "name": "global_curve-grid/seed_00",
+      "model": "global_curve",
+      "engine": "grid",
+      "seed": 0,
+      "directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920/global_curve-grid/seed_00",
+      "returncode": 0,
+      "refit_count": 10,
+      "smoothing_count": 10,
+      "dispatch_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "count": 20,
+          "cost": 20.0
+        },
+        "OpenGripper": {
+          "count": 13,
+          "cost": 13.0
+        },
+        "PickCube": {
+          "count": 22,
+          "cost": 22.0
+        },
+        "ask_for_reset_cube_bin_only": {
+          "count": 9,
+          "cost": 45.0
+        },
+        "non_human_reset_cube_bin_only": {
+          "count": 12,
+          "cost": 60.0
+        }
+      },
+      "dispatched_count_by_cycle": [
+        13,
+        18,
+        17,
+        9,
+        4,
+        3,
+        0,
+        1,
+        10,
+        1
+      ],
+      "dispatched_cost_by_cycle": [
+        25.0,
+        38.0,
+        37.0,
+        17.0,
+        8.0,
+        7.0,
+        0.0,
+        1.0,
+        22.0,
+        5.0
+      ],
+      "training_examples_by_cycle": [
+        {
+          "PickCube": 4,
+          "MoveToTossLocationAndToss": 5,
+          "ask_for_reset_cube_bin_only": 1,
+          "non_human_reset_cube_bin_only": 2,
+          "OpenGripper": 1
+        },
+        {
+          "PickCube": 6,
+          "MoveToTossLocationAndToss": 5,
+          "ask_for_reset_cube_bin_only": 3,
+          "OpenGripper": 2,
+          "non_human_reset_cube_bin_only": 2
+        },
+        {
+          "non_human_reset_cube_bin_only": 3,
+          "OpenGripper": 2,
+          "PickCube": 4,
+          "MoveToTossLocationAndToss": 6,
+          "ask_for_reset_cube_bin_only": 2
+        },
+        {
+          "OpenGripper": 3,
+          "PickCube": 3,
+          "ask_for_reset_cube_bin_only": 1,
+          "non_human_reset_cube_bin_only": 1,
+          "MoveToTossLocationAndToss": 1
+        },
+        {
+          "MoveToTossLocationAndToss": 2,
+          "non_human_reset_cube_bin_only": 1,
+          "OpenGripper": 1
+        },
+        {
+          "PickCube": 1,
+          "MoveToTossLocationAndToss": 1,
+          "non_human_reset_cube_bin_only": 1
+        },
+        {},
+        {
+          "OpenGripper": 1
+        },
+        {
+          "PickCube": 4,
+          "non_human_reset_cube_bin_only": 1,
+          "OpenGripper": 3,
+          "ask_for_reset_cube_bin_only": 2
+        },
+        {
+          "non_human_reset_cube_bin_only": 1
+        }
+      ],
+      "outcomes_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "attempts": 20,
+          "successes": 0,
+          "random_attempts": 0,
+          "inference_attempts": 20,
+          "inference_successes": 0
+        },
+        "OpenGripper": {
+          "attempts": 13,
+          "successes": 13,
+          "random_attempts": 0,
+          "inference_attempts": 13,
+          "inference_successes": 13
+        },
+        "PickCube": {
+          "attempts": 22,
+          "successes": 22,
+          "random_attempts": 0,
+          "inference_attempts": 22,
+          "inference_successes": 22
+        },
+        "ask_for_reset_cube_bin_only": {
+          "attempts": 9,
+          "successes": 9,
+          "random_attempts": 0,
+          "inference_attempts": 9,
+          "inference_successes": 9
+        },
+        "non_human_reset_cube_bin_only": {
+          "attempts": 12,
+          "successes": 12,
+          "random_attempts": 0,
+          "inference_attempts": 12,
+          "inference_successes": 12
+        }
+      },
+      "toss_history": [
+        {
+          "cycle_index": 0,
+          "total_training_examples": 0,
+          "filtered_competence": 0.11754580050042063,
+          "smoothed_competence": 0.043864562861813367,
+          "filtered_learning_rate": 0.10181693762332485,
+          "smoothed_learning_rate": 0.008152547159018437,
+          "competence_std": 0.04918032298511202,
+          "learning_rate_std": 0.01817703611377381,
+          "effective_sample_size": 62.30356622940424,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 1,
+          "total_training_examples": 5,
+          "filtered_competence": 0.1394350290537481,
+          "smoothed_competence": 0.06207866253407217,
+          "filtered_learning_rate": 0.010256364643934722,
+          "smoothed_learning_rate": 0.0034313905133453266,
+          "competence_std": 0.0607254759936292,
+          "learning_rate_std": 0.004671674322232043,
+          "effective_sample_size": 70.57096086326715,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 2,
+          "total_training_examples": 10,
+          "filtered_competence": 0.10051375896341233,
+          "smoothed_competence": 0.07252298022669565,
+          "filtered_learning_rate": 0.003954792267226902,
+          "smoothed_learning_rate": 0.0024884961621881013,
+          "competence_std": 0.06713810225406375,
+          "learning_rate_std": 0.0035808219014053897,
+          "effective_sample_size": 73.51102046142712,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 3,
+          "total_training_examples": 16,
+          "filtered_competence": 0.12854191005934468,
+          "smoothed_competence": 0.09818993426759115,
+          "filtered_learning_rate": 0.0026642618025388,
+          "smoothed_learning_rate": 0.0019111876548588073,
+          "competence_std": 0.09549537726687947,
+          "learning_rate_std": 0.002909953278337106,
+          "effective_sample_size": 78.53072371264497,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 4,
+          "total_training_examples": 17,
+          "filtered_competence": 0.10505571415468684,
+          "smoothed_competence": 0.09626770851693055,
+          "filtered_learning_rate": 0.002062700664259855,
+          "smoothed_learning_rate": 0.0018393438750986832,
+          "competence_std": 0.09186913773713125,
+          "learning_rate_std": 0.0028241487236240156,
+          "effective_sample_size": 78.10530041375452,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 5,
+          "total_training_examples": 19,
+          "filtered_competence": 0.10344600234867374,
+          "smoothed_competence": 0.10344600234867377,
+          "filtered_learning_rate": 0.001709167645171093,
+          "smoothed_learning_rate": 0.0017091676451710934,
+          "competence_std": 0.10036757226008315,
+          "learning_rate_std": 0.002666817675422567,
+          "effective_sample_size": 79.20374431139172,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 6,
+          "total_training_examples": 20,
+          "filtered_competence": 0.10968762183200786,
+          "smoothed_competence": 0.10968762183200789,
+          "filtered_learning_rate": 0.0016498861803480604,
+          "smoothed_learning_rate": 0.0016498861803480604,
+          "competence_std": 0.10888998472757525,
+          "learning_rate_std": 0.0025942834939192763,
+          "effective_sample_size": 80.08388201976788,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 7,
+          "total_training_examples": 20,
+          "filtered_competence": 0.10968762183200786,
+          "smoothed_competence": 0.10968762183200789,
+          "filtered_learning_rate": 0.0016498861803480604,
+          "smoothed_learning_rate": 0.0016498861803480604,
+          "competence_std": 0.10888998472757525,
+          "learning_rate_std": 0.0025942834939192763,
+          "effective_sample_size": 80.08388201976788,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 8,
+          "total_training_examples": 20,
+          "filtered_competence": 0.10968762183200786,
+          "smoothed_competence": 0.10968762183200789,
+          "filtered_learning_rate": 0.0016498861803480604,
+          "smoothed_learning_rate": 0.0016498861803480604,
+          "competence_std": 0.10888998472757525,
+          "learning_rate_std": 0.0025942834939192763,
+          "effective_sample_size": 80.08388201976788,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 9,
+          "total_training_examples": 20,
+          "filtered_competence": 0.10968762183200786,
+          "smoothed_competence": 0.10968762183200786,
+          "filtered_learning_rate": 0.0016498861803480604,
+          "smoothed_learning_rate": 0.0016498861803480604,
+          "competence_std": 0.10888998472757523,
+          "learning_rate_std": 0.002594283493919276,
+          "effective_sample_size": 80.08388201976793,
+          "unique_ancestors": null
+        }
+      ],
+      "ancestry_diagnostics": {
+        "PickCube": {
+          "earliest_smoothed_ess": 59.525965017665115,
+          "final_filtered_ess": 51.60697488047749,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "MoveToTossLocationAndToss": {
+          "earliest_smoothed_ess": 62.30356622940424,
+          "final_filtered_ess": 80.08388201976793,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "OpenGripper": {
+          "earliest_smoothed_ess": 153.7139371920014,
+          "final_filtered_ess": 118.66199701603459,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "ask_for_reset_cube_bin_only": {
+          "earliest_smoothed_ess": 255.72706983793847,
+          "final_filtered_ess": 207.86321946437155,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "non_human_reset_cube_bin_only": {
+          "earliest_smoothed_ess": 154.9044424043013,
+          "final_filtered_ess": 124.38584613916741,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        }
+      },
+      "final_filtered_diagnostics": {
+        "PickCube": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 9,
+          "total_training_examples": 22,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 51.60697488047749,
+          "resampling_count": 0,
+          "process_transition_count": 6,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 698.8450656760983,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "MoveToTossLocationAndToss": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 9,
+          "total_training_examples": 20,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 80.08388201976793,
+          "resampling_count": 0,
+          "process_transition_count": 6,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 702.4384702378176,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "OpenGripper": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 9,
+          "total_training_examples": 13,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 118.66199701603459,
+          "resampling_count": 0,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 851.0546918904237,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "ask_for_reset_cube_bin_only": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 9,
+          "total_training_examples": 9,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 207.86321946437155,
+          "resampling_count": 0,
+          "process_transition_count": 5,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 954.5831388904094,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "non_human_reset_cube_bin_only": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 9,
+          "total_training_examples": 11,
+          "cycle_successes": 1,
+          "cycle_failures": 0,
+          "effective_sample_size": 124.38584613916741,
+          "resampling_count": 0,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 879.8847127910528,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        }
+      },
+      "final_predicted_diagnostics": {
+        "PickCube": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 10,
+          "total_training_examples": 22,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 51.60697488047749,
+          "resampling_count": 0,
+          "process_transition_count": 6,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 698.8450656760983,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "MoveToTossLocationAndToss": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 10,
+          "total_training_examples": 20,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 80.08388201976793,
+          "resampling_count": 0,
+          "process_transition_count": 6,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 702.4384702378176,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "OpenGripper": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 10,
+          "total_training_examples": 13,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 118.66199701603459,
+          "resampling_count": 0,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 851.0546918904237,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "ask_for_reset_cube_bin_only": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 10,
+          "total_training_examples": 9,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 207.86321946437155,
+          "resampling_count": 0,
+          "process_transition_count": 5,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 954.5831388904094,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "non_human_reset_cube_bin_only": {
+          "representation": "grid",
+          "competence_model": "global_curve",
+          "num_states": 29700,
+          "cycle_index": 10,
+          "total_training_examples": 12,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 125.06737690564758,
+          "resampling_count": 0,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 879.8847127910528,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        }
+      },
+      "sampler_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "attempts": 20,
+          "successes": 0
+        }
+      },
+      "sampler_by_cycle": [
+        {
+          "attempts": 5,
+          "successes": 0
+        },
+        {
+          "attempts": 5,
+          "successes": 0
+        },
+        {
+          "attempts": 6,
+          "successes": 0
+        },
+        {
+          "attempts": 1,
+          "successes": 0
+        },
+        {
+          "attempts": 2,
+          "successes": 0
+        },
+        {
+          "attempts": 1,
+          "successes": 0
+        },
+        {
+          "attempts": 0,
+          "successes": 0
+        },
+        {
+          "attempts": 0,
+          "successes": 0
+        },
+        {
+          "attempts": 0,
+          "successes": 0
+        },
+        {
+          "attempts": 0,
+          "successes": 0
+        }
+      ],
+      "sampler_consultations": {
+        "uninformative": 20
+      },
+      "valid": true,
+      "errors": [],
+      "num_cycles": 10,
+      "practice_session_count": 10,
+      "progress_count": 11,
+      "evaluations": [
+        {
+          "cycle": 0,
+          "transitions": 0,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 1,
+          "transitions": 10,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 2,
+          "transitions": 23,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        },
+        {
+          "cycle": 3,
+          "transitions": 35,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 4,
+          "transitions": 42,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 5,
+          "transitions": 45,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 6,
+          "transitions": 47,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 7,
+          "transitions": 47,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 8,
+          "transitions": 48,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 9,
+          "transitions": 55,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 10,
+          "transitions": 55,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        }
+      ],
+      "cycles": [
+        {
+          "cycle": 1,
+          "actions_dispatched": 13,
+          "dispatched_cost": 25.0,
+          "cumulative_dispatched_cost": 25.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 4,
+            "MoveToTossLocationAndToss": 5,
+            "ask_for_reset_cube_bin_only": 1,
+            "non_human_reset_cube_bin_only": 2,
+            "OpenGripper": 1
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 2,
+          "actions_dispatched": 18,
+          "dispatched_cost": 38.0,
+          "cumulative_dispatched_cost": 63.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 6,
+            "MoveToTossLocationAndToss": 5,
+            "ask_for_reset_cube_bin_only": 3,
+            "OpenGripper": 2,
+            "non_human_reset_cube_bin_only": 2
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 3,
+          "actions_dispatched": 17,
+          "dispatched_cost": 37.0,
+          "cumulative_dispatched_cost": 100.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "non_human_reset_cube_bin_only": 3,
+            "OpenGripper": 2,
+            "PickCube": 4,
+            "MoveToTossLocationAndToss": 6,
+            "ask_for_reset_cube_bin_only": 2
+          },
+          "sampler_attempts": 6,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 4,
+          "actions_dispatched": 9,
+          "dispatched_cost": 17.0,
+          "cumulative_dispatched_cost": 117.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 3,
+            "PickCube": 3,
+            "ask_for_reset_cube_bin_only": 1,
+            "non_human_reset_cube_bin_only": 1,
+            "MoveToTossLocationAndToss": 1
+          },
+          "sampler_attempts": 1,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 5,
+          "actions_dispatched": 4,
+          "dispatched_cost": 8.0,
+          "cumulative_dispatched_cost": 125.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "MoveToTossLocationAndToss": 2,
+            "non_human_reset_cube_bin_only": 1,
+            "OpenGripper": 1
+          },
+          "sampler_attempts": 2,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 6,
+          "actions_dispatched": 3,
+          "dispatched_cost": 7.0,
+          "cumulative_dispatched_cost": 132.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 1,
+            "MoveToTossLocationAndToss": 1,
+            "non_human_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 1,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 7,
+          "actions_dispatched": 0,
+          "dispatched_cost": 0.0,
+          "cumulative_dispatched_cost": 132.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {},
+          "sampler_attempts": 0,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 8,
+          "actions_dispatched": 1,
+          "dispatched_cost": 1.0,
+          "cumulative_dispatched_cost": 133.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 1
+          },
+          "sampler_attempts": 0,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 9,
+          "actions_dispatched": 10,
+          "dispatched_cost": 22.0,
+          "cumulative_dispatched_cost": 155.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 4,
+            "non_human_reset_cube_bin_only": 1,
+            "OpenGripper": 3,
+            "ask_for_reset_cube_bin_only": 2
+          },
+          "sampler_attempts": 0,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 10,
+          "actions_dispatched": 1,
+          "dispatched_cost": 5.0,
+          "cumulative_dispatched_cost": 160.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "non_human_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 0,
+          "sampler_successes": 0
+        }
+      ],
+      "total_dispatched_cost": 160.0,
+      "total_dispatches": 76,
+      "free_practice_resets": 0,
+      "reset_dispatches": {
+        "ask_for_reset_cube_bin_only": {
+          "count": 9,
+          "cost": 45.0
+        },
+        "non_human_reset_cube_bin_only": {
+          "count": 12,
+          "cost": 60.0
+        }
+      },
+      "recorded_intervention_count": 21,
+      "recorded_intervention_cost": 105.0,
+      "elapsed_seconds": 669.4789251190377
+    },
+    {
+      "name": "global_curve-particle/seed_00",
+      "model": "global_curve",
+      "engine": "particle",
+      "seed": 0,
+      "directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920/global_curve-particle/seed_00",
+      "returncode": 0,
+      "refit_count": 10,
+      "smoothing_count": 10,
+      "dispatch_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "count": 25,
+          "cost": 25.0
+        },
+        "OpenGripper": {
+          "count": 17,
+          "cost": 17.0
+        },
+        "PickCube": {
+          "count": 31,
+          "cost": 31.0
+        },
+        "ask_for_reset_cube_bin_only": {
+          "count": 12,
+          "cost": 60.0
+        },
+        "non_human_reset_cube_bin_only": {
+          "count": 15,
+          "cost": 75.0
+        }
+      },
+      "dispatched_count_by_cycle": [
+        15,
+        18,
+        17,
+        13,
+        4,
+        11,
+        8,
+        6,
+        3,
+        5
+      ],
+      "dispatched_cost_by_cycle": [
+        31.0,
+        34.0,
+        37.0,
+        25.0,
+        8.0,
+        23.0,
+        20.0,
+        14.0,
+        3.0,
+        13.0
+      ],
+      "training_examples_by_cycle": [
+        {
+          "PickCube": 5,
+          "MoveToTossLocationAndToss": 5,
+          "non_human_reset_cube_bin_only": 3,
+          "ask_for_reset_cube_bin_only": 1,
+          "OpenGripper": 1
+        },
+        {
+          "OpenGripper": 3,
+          "PickCube": 6,
+          "ask_for_reset_cube_bin_only": 3,
+          "MoveToTossLocationAndToss": 5,
+          "non_human_reset_cube_bin_only": 1
+        },
+        {
+          "non_human_reset_cube_bin_only": 4,
+          "PickCube": 5,
+          "MoveToTossLocationAndToss": 5,
+          "ask_for_reset_cube_bin_only": 1,
+          "OpenGripper": 2
+        },
+        {
+          "MoveToTossLocationAndToss": 4,
+          "PickCube": 4,
+          "ask_for_reset_cube_bin_only": 2,
+          "OpenGripper": 2,
+          "non_human_reset_cube_bin_only": 1
+        },
+        {
+          "PickCube": 1,
+          "MoveToTossLocationAndToss": 2,
+          "ask_for_reset_cube_bin_only": 1
+        },
+        {
+          "OpenGripper": 3,
+          "PickCube": 4,
+          "non_human_reset_cube_bin_only": 3,
+          "MoveToTossLocationAndToss": 1
+        },
+        {
+          "ask_for_reset_cube_bin_only": 2,
+          "OpenGripper": 3,
+          "PickCube": 2,
+          "non_human_reset_cube_bin_only": 1
+        },
+        {
+          "PickCube": 2,
+          "MoveToTossLocationAndToss": 1,
+          "ask_for_reset_cube_bin_only": 2,
+          "OpenGripper": 1
+        },
+        {
+          "OpenGripper": 1,
+          "PickCube": 1,
+          "MoveToTossLocationAndToss": 1
+        },
+        {
+          "MoveToTossLocationAndToss": 1,
+          "non_human_reset_cube_bin_only": 2,
+          "PickCube": 1,
+          "OpenGripper": 1
+        }
+      ],
+      "outcomes_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "attempts": 25,
+          "successes": 0,
+          "random_attempts": 0,
+          "inference_attempts": 25,
+          "inference_successes": 0
+        },
+        "OpenGripper": {
+          "attempts": 17,
+          "successes": 17,
+          "random_attempts": 0,
+          "inference_attempts": 17,
+          "inference_successes": 17
+        },
+        "PickCube": {
+          "attempts": 31,
+          "successes": 31,
+          "random_attempts": 0,
+          "inference_attempts": 31,
+          "inference_successes": 31
+        },
+        "ask_for_reset_cube_bin_only": {
+          "attempts": 12,
+          "successes": 12,
+          "random_attempts": 0,
+          "inference_attempts": 12,
+          "inference_successes": 12
+        },
+        "non_human_reset_cube_bin_only": {
+          "attempts": 15,
+          "successes": 15,
+          "random_attempts": 0,
+          "inference_attempts": 15,
+          "inference_successes": 15
+        }
+      },
+      "toss_history": [
+        {
+          "cycle_index": 0,
+          "total_training_examples": 0,
+          "filtered_competence": 0.11411767018123584,
+          "smoothed_competence": 0.029071725549209622,
+          "filtered_learning_rate": 0.10089174397786456,
+          "smoothed_learning_rate": 0.007602900228020242,
+          "competence_std": 0.039711431387659174,
+          "learning_rate_std": 0.013291902264249119,
+          "effective_sample_size": 75.74774447648569,
+          "unique_ancestors": 284
+        },
+        {
+          "cycle_index": 1,
+          "total_training_examples": 5,
+          "filtered_competence": 0.13738110196494158,
+          "smoothed_competence": 0.04857790358826615,
+          "filtered_learning_rate": 0.010960535682394251,
+          "smoothed_learning_rate": 0.0034082042145101256,
+          "competence_std": 0.0502331275600265,
+          "learning_rate_std": 0.003501967471519409,
+          "effective_sample_size": 262.2904924599778,
+          "unique_ancestors": 578
+        },
+        {
+          "cycle_index": 2,
+          "total_training_examples": 10,
+          "filtered_competence": 0.1123162605943463,
+          "smoothed_competence": 0.061528000991887453,
+          "filtered_learning_rate": 0.005078515225767353,
+          "smoothed_learning_rate": 0.0023599645279023555,
+          "competence_std": 0.056089775540973455,
+          "learning_rate_std": 0.0026670740020799852,
+          "effective_sample_size": 262.2904924599778,
+          "unique_ancestors": 578
+        },
+        {
+          "cycle_index": 3,
+          "total_training_examples": 15,
+          "filtered_competence": 0.09969866283227102,
+          "smoothed_competence": 0.068032486576205,
+          "filtered_learning_rate": 0.00301905352659026,
+          "smoothed_learning_rate": 0.0018218051047912524,
+          "competence_std": 0.06229695786025997,
+          "learning_rate_std": 0.002277944494780178,
+          "effective_sample_size": 793.0748289072554,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 4,
+          "total_training_examples": 19,
+          "filtered_competence": 0.10524484537432093,
+          "smoothed_competence": 0.08053270518891706,
+          "filtered_learning_rate": 0.002168514523536777,
+          "smoothed_learning_rate": 0.0015356554268070592,
+          "competence_std": 0.07310506154506863,
+          "learning_rate_std": 0.0020499404691022433,
+          "effective_sample_size": 793.0748289072554,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 5,
+          "total_training_examples": 21,
+          "filtered_competence": 0.10355763263674832,
+          "smoothed_competence": 0.08424805955569986,
+          "filtered_learning_rate": 0.001847712121401857,
+          "smoothed_learning_rate": 0.0014206156332972446,
+          "competence_std": 0.07920176358858103,
+          "learning_rate_std": 0.0019509615220163693,
+          "effective_sample_size": 793.0748289072554,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 6,
+          "total_training_examples": 22,
+          "filtered_competence": 0.1133833778212138,
+          "smoothed_competence": 0.0890374446771684,
+          "filtered_learning_rate": 0.0017825575651047958,
+          "smoothed_learning_rate": 0.001368380296115859,
+          "competence_std": 0.0820222508192276,
+          "learning_rate_std": 0.0019043997534428701,
+          "effective_sample_size": 793.0748289072554,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 7,
+          "total_training_examples": 22,
+          "filtered_competence": 0.10215265719585874,
+          "smoothed_competence": 0.0890374446771684,
+          "filtered_learning_rate": 0.0016222251744987591,
+          "smoothed_learning_rate": 0.001368380296115859,
+          "competence_std": 0.0820222508192276,
+          "learning_rate_std": 0.0019043997534428701,
+          "effective_sample_size": 793.0748289072554,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 8,
+          "total_training_examples": 23,
+          "filtered_competence": 0.0924458671634077,
+          "smoothed_competence": 0.0866865970980214,
+          "filtered_learning_rate": 0.0014392709685983167,
+          "smoothed_learning_rate": 0.0013192029932807218,
+          "competence_std": 0.08125801441698055,
+          "learning_rate_std": 0.00185958384343609,
+          "effective_sample_size": 793.0748289072554,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 9,
+          "total_training_examples": 24,
+          "filtered_competence": 0.08844755428477757,
+          "smoothed_competence": 0.08844755428477757,
+          "filtered_learning_rate": 0.0012727958345654248,
+          "smoothed_learning_rate": 0.0012727958345654248,
+          "competence_std": 0.08191310390899055,
+          "learning_rate_std": 0.0018163877873419892,
+          "effective_sample_size": 793.0748289072554,
+          "unique_ancestors": 1024
+        }
+      ],
+      "ancestry_diagnostics": {
+        "PickCube": {
+          "earliest_smoothed_ess": 121.6791026063235,
+          "final_filtered_ess": 949.5781081052586,
+          "earliest_unique_ancestors": 257,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": 392,
+          "phi_configurations_final_filtered": 79,
+          "phi_configurations_after_final_refit": 79
+        },
+        "MoveToTossLocationAndToss": {
+          "earliest_smoothed_ess": 75.74774447648569,
+          "final_filtered_ess": 793.0748289072554,
+          "earliest_unique_ancestors": 284,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": 393,
+          "phi_configurations_final_filtered": 106,
+          "phi_configurations_after_final_refit": 106
+        },
+        "OpenGripper": {
+          "earliest_smoothed_ess": 46.521763815630386,
+          "final_filtered_ess": 609.3564608096502,
+          "earliest_unique_ancestors": 303,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": 694,
+          "phi_configurations_final_filtered": 221,
+          "phi_configurations_after_final_refit": 221
+        },
+        "ask_for_reset_cube_bin_only": {
+          "earliest_smoothed_ess": 63.71514272215986,
+          "final_filtered_ess": 772.1744203818344,
+          "earliest_unique_ancestors": 287,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": 691,
+          "phi_configurations_final_filtered": 219,
+          "phi_configurations_after_final_refit": 219
+        },
+        "non_human_reset_cube_bin_only": {
+          "earliest_smoothed_ess": 220.84791784663963,
+          "final_filtered_ess": 674.9981607954529,
+          "earliest_unique_ancestors": 600,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": 392,
+          "phi_configurations_final_filtered": 217,
+          "phi_configurations_after_final_refit": 217
+        }
+      },
+      "final_filtered_diagnostics": {
+        "PickCube": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 30,
+          "cycle_successes": 1,
+          "cycle_failures": 0,
+          "effective_sample_size": 949.5781081052586,
+          "resampling_count": 3,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 606.1095765430383,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 79
+        },
+        "MoveToTossLocationAndToss": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 24,
+          "cycle_successes": 0,
+          "cycle_failures": 1,
+          "effective_sample_size": 793.0748289072554,
+          "resampling_count": 3,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 632.3682326628406,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 106
+        },
+        "OpenGripper": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 16,
+          "cycle_successes": 1,
+          "cycle_failures": 0,
+          "effective_sample_size": 609.3564608096502,
+          "resampling_count": 2,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 765.7611793331902,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 221
+        },
+        "ask_for_reset_cube_bin_only": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 12,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 772.1744203818344,
+          "resampling_count": 2,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 867.8898695541585,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 219
+        },
+        "non_human_reset_cube_bin_only": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 13,
+          "cycle_successes": 2,
+          "cycle_failures": 0,
+          "effective_sample_size": 674.9981607954529,
+          "resampling_count": 2,
+          "process_transition_count": 6,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 810.9542770797315,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 217
+        }
+      },
+      "final_predicted_diagnostics": {
+        "PickCube": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 31,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 949.5781081052586,
+          "resampling_count": 3,
+          "process_transition_count": 10,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 606.1095765430383,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 79
+        },
+        "MoveToTossLocationAndToss": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 25,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 793.0748289072554,
+          "resampling_count": 3,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 632.3682326628406,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 106
+        },
+        "OpenGripper": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 17,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 609.3564608096502,
+          "resampling_count": 2,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 765.7611793331902,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 221
+        },
+        "ask_for_reset_cube_bin_only": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 12,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 772.1744203818344,
+          "resampling_count": 2,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 867.8898695541585,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 219
+        },
+        "non_human_reset_cube_bin_only": {
+          "representation": "particle",
+          "competence_model": "global_curve",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 15,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 674.9981607954529,
+          "resampling_count": 2,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 810.9542770797315,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024,
+          "unique_phi_configurations": 217
+        }
+      },
+      "sampler_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "attempts": 25,
+          "successes": 0
+        }
+      },
+      "sampler_by_cycle": [
+        {
+          "attempts": 5,
+          "successes": 0
+        },
+        {
+          "attempts": 5,
+          "successes": 0
+        },
+        {
+          "attempts": 5,
+          "successes": 0
+        },
+        {
+          "attempts": 4,
+          "successes": 0
+        },
+        {
+          "attempts": 2,
+          "successes": 0
+        },
+        {
+          "attempts": 1,
+          "successes": 0
+        },
+        {
+          "attempts": 0,
+          "successes": 0
+        },
+        {
+          "attempts": 1,
+          "successes": 0
+        },
+        {
+          "attempts": 1,
+          "successes": 0
+        },
+        {
+          "attempts": 1,
+          "successes": 0
+        }
+      ],
+      "sampler_consultations": {
+        "uninformative": 25
+      },
+      "valid": true,
+      "errors": [],
+      "num_cycles": 10,
+      "practice_session_count": 10,
+      "progress_count": 11,
+      "evaluations": [
+        {
+          "cycle": 0,
+          "transitions": 0,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 1,
+          "transitions": 11,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 2,
+          "transitions": 25,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        },
+        {
+          "cycle": 3,
+          "transitions": 37,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 4,
+          "transitions": 47,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 5,
+          "transitions": 50,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 6,
+          "transitions": 58,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 7,
+          "transitions": 63,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 8,
+          "transitions": 67,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 9,
+          "transitions": 70,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 10,
+          "transitions": 73,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        }
+      ],
+      "cycles": [
+        {
+          "cycle": 1,
+          "actions_dispatched": 15,
+          "dispatched_cost": 31.0,
+          "cumulative_dispatched_cost": 31.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 5,
+            "MoveToTossLocationAndToss": 5,
+            "non_human_reset_cube_bin_only": 3,
+            "ask_for_reset_cube_bin_only": 1,
+            "OpenGripper": 1
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 2,
+          "actions_dispatched": 18,
+          "dispatched_cost": 34.0,
+          "cumulative_dispatched_cost": 65.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 3,
+            "PickCube": 6,
+            "ask_for_reset_cube_bin_only": 3,
+            "MoveToTossLocationAndToss": 5,
+            "non_human_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 3,
+          "actions_dispatched": 17,
+          "dispatched_cost": 37.0,
+          "cumulative_dispatched_cost": 102.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "non_human_reset_cube_bin_only": 4,
+            "PickCube": 5,
+            "MoveToTossLocationAndToss": 5,
+            "ask_for_reset_cube_bin_only": 1,
+            "OpenGripper": 2
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 4,
+          "actions_dispatched": 13,
+          "dispatched_cost": 25.0,
+          "cumulative_dispatched_cost": 127.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "MoveToTossLocationAndToss": 4,
+            "PickCube": 4,
+            "ask_for_reset_cube_bin_only": 2,
+            "OpenGripper": 2,
+            "non_human_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 4,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 5,
+          "actions_dispatched": 4,
+          "dispatched_cost": 8.0,
+          "cumulative_dispatched_cost": 135.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 1,
+            "MoveToTossLocationAndToss": 2,
+            "ask_for_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 2,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 6,
+          "actions_dispatched": 11,
+          "dispatched_cost": 23.0,
+          "cumulative_dispatched_cost": 158.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 3,
+            "PickCube": 4,
+            "non_human_reset_cube_bin_only": 3,
+            "MoveToTossLocationAndToss": 1
+          },
+          "sampler_attempts": 1,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 7,
+          "actions_dispatched": 8,
+          "dispatched_cost": 20.0,
+          "cumulative_dispatched_cost": 178.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "ask_for_reset_cube_bin_only": 2,
+            "OpenGripper": 3,
+            "PickCube": 2,
+            "non_human_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 0,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 8,
+          "actions_dispatched": 6,
+          "dispatched_cost": 14.0,
+          "cumulative_dispatched_cost": 192.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 2,
+            "MoveToTossLocationAndToss": 1,
+            "ask_for_reset_cube_bin_only": 2,
+            "OpenGripper": 1
+          },
+          "sampler_attempts": 1,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 9,
+          "actions_dispatched": 3,
+          "dispatched_cost": 3.0,
+          "cumulative_dispatched_cost": 195.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 1,
+            "PickCube": 1,
+            "MoveToTossLocationAndToss": 1
+          },
+          "sampler_attempts": 1,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 10,
+          "actions_dispatched": 5,
+          "dispatched_cost": 13.0,
+          "cumulative_dispatched_cost": 208.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "MoveToTossLocationAndToss": 1,
+            "non_human_reset_cube_bin_only": 2,
+            "PickCube": 1,
+            "OpenGripper": 1
+          },
+          "sampler_attempts": 1,
+          "sampler_successes": 0
+        }
+      ],
+      "total_dispatched_cost": 208.0,
+      "total_dispatches": 100,
+      "free_practice_resets": 0,
+      "reset_dispatches": {
+        "ask_for_reset_cube_bin_only": {
+          "count": 12,
+          "cost": 60.0
+        },
+        "non_human_reset_cube_bin_only": {
+          "count": 15,
+          "cost": 75.0
+        }
+      },
+      "recorded_intervention_count": 27,
+      "recorded_intervention_cost": 135.0,
+      "elapsed_seconds": 669.8149042130099
+    },
+    {
+      "name": "local_trend-grid/seed_00",
+      "model": "local_trend",
+      "engine": "grid",
+      "seed": 0,
+      "directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920/local_trend-grid/seed_00",
+      "returncode": 0,
+      "refit_count": 10,
+      "smoothing_count": 10,
+      "dispatch_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "count": 39,
+          "cost": 39.0
+        },
+        "OpenGripper": {
+          "count": 23,
+          "cost": 23.0
+        },
+        "PickCube": {
+          "count": 45,
+          "cost": 45.0
+        },
+        "ask_for_reset_cube_bin_only": {
+          "count": 26,
+          "cost": 130.0
+        },
+        "non_human_reset_cube_bin_only": {
+          "count": 14,
+          "cost": 70.0
+        }
+      },
+      "dispatched_count_by_cycle": [
+        19,
+        16,
+        14,
+        17,
+        16,
+        19,
+        15,
+        1,
+        16,
+        14
+      ],
+      "dispatched_cost_by_cycle": [
+        35.0,
+        36.0,
+        30.0,
+        33.0,
+        36.0,
+        39.0,
+        31.0,
+        5.0,
+        32.0,
+        30.0
+      ],
+      "training_examples_by_cycle": [
+        {
+          "PickCube": 6,
+          "MoveToTossLocationAndToss": 7,
+          "ask_for_reset_cube_bin_only": 2,
+          "non_human_reset_cube_bin_only": 2,
+          "OpenGripper": 2
+        },
+        {
+          "ask_for_reset_cube_bin_only": 5,
+          "PickCube": 4,
+          "OpenGripper": 1,
+          "MoveToTossLocationAndToss": 6
+        },
+        {
+          "OpenGripper": 3,
+          "PickCube": 4,
+          "non_human_reset_cube_bin_only": 2,
+          "MoveToTossLocationAndToss": 3,
+          "ask_for_reset_cube_bin_only": 2
+        },
+        {
+          "PickCube": 5,
+          "MoveToTossLocationAndToss": 5,
+          "ask_for_reset_cube_bin_only": 4,
+          "OpenGripper": 3
+        },
+        {
+          "PickCube": 6,
+          "ask_for_reset_cube_bin_only": 2,
+          "OpenGripper": 4,
+          "non_human_reset_cube_bin_only": 3,
+          "MoveToTossLocationAndToss": 1
+        },
+        {
+          "OpenGripper": 5,
+          "PickCube": 7,
+          "non_human_reset_cube_bin_only": 2,
+          "MoveToTossLocationAndToss": 2,
+          "ask_for_reset_cube_bin_only": 3
+        },
+        {
+          "MoveToTossLocationAndToss": 4,
+          "non_human_reset_cube_bin_only": 1,
+          "PickCube": 4,
+          "ask_for_reset_cube_bin_only": 3,
+          "OpenGripper": 3
+        },
+        {
+          "ask_for_reset_cube_bin_only": 1
+        },
+        {
+          "PickCube": 5,
+          "MoveToTossLocationAndToss": 6,
+          "non_human_reset_cube_bin_only": 3,
+          "OpenGripper": 1,
+          "ask_for_reset_cube_bin_only": 1
+        },
+        {
+          "non_human_reset_cube_bin_only": 1,
+          "PickCube": 4,
+          "MoveToTossLocationAndToss": 5,
+          "ask_for_reset_cube_bin_only": 3,
+          "OpenGripper": 1
+        }
+      ],
+      "outcomes_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "attempts": 39,
+          "successes": 3,
+          "random_attempts": 19,
+          "inference_attempts": 20,
+          "inference_successes": 2
+        },
+        "OpenGripper": {
+          "attempts": 23,
+          "successes": 23,
+          "random_attempts": 0,
+          "inference_attempts": 23,
+          "inference_successes": 23
+        },
+        "PickCube": {
+          "attempts": 45,
+          "successes": 45,
+          "random_attempts": 0,
+          "inference_attempts": 45,
+          "inference_successes": 45
+        },
+        "ask_for_reset_cube_bin_only": {
+          "attempts": 26,
+          "successes": 26,
+          "random_attempts": 0,
+          "inference_attempts": 26,
+          "inference_successes": 26
+        },
+        "non_human_reset_cube_bin_only": {
+          "attempts": 14,
+          "successes": 14,
+          "random_attempts": 0,
+          "inference_attempts": 14,
+          "inference_successes": 14
+        }
+      },
+      "toss_history": [
+        {
+          "cycle_index": 0,
+          "total_training_examples": 0,
+          "filtered_competence": 0.19894368314941713,
+          "smoothed_competence": 0.13157007537769588,
+          "filtered_learning_rate": 0.03979017618437855,
+          "smoothed_learning_rate": 0.012095195055845796,
+          "competence_std": 0.07697221745338914,
+          "learning_rate_std": 0.010152169102255503,
+          "effective_sample_size": 20.211797124741988,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 1,
+          "total_training_examples": 7,
+          "filtered_competence": 0.29391604601506527,
+          "smoothed_competence": 0.2114701592712883,
+          "filtered_learning_rate": 0.010241899543032175,
+          "smoothed_learning_rate": 0.0054086688324022705,
+          "competence_std": 0.08651263771283066,
+          "learning_rate_std": 0.006210100130024792,
+          "effective_sample_size": 15.530473145675428,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 2,
+          "total_training_examples": 13,
+          "filtered_competence": 0.3119898255436856,
+          "smoothed_competence": 0.2395889377265329,
+          "filtered_learning_rate": 0.0051895963175293,
+          "smoothed_learning_rate": 0.003518004113133201,
+          "competence_std": 0.10464482316062051,
+          "learning_rate_std": 0.005133755151838511,
+          "effective_sample_size": 15.563103443750764,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 3,
+          "total_training_examples": 16,
+          "filtered_competence": 0.26045791550720143,
+          "smoothed_competence": 0.24725226902044986,
+          "filtered_learning_rate": 0.0038921393698411796,
+          "smoothed_learning_rate": 0.00363075210546112,
+          "competence_std": 0.11056248959549583,
+          "learning_rate_std": 0.005319639079725856,
+          "effective_sample_size": 16.911562937268645,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 4,
+          "total_training_examples": 21,
+          "filtered_competence": 0.25059002504645433,
+          "smoothed_competence": 0.26537621576624626,
+          "filtered_learning_rate": 0.0031577774876551013,
+          "smoothed_learning_rate": 0.0033825033022288403,
+          "competence_std": 0.11846468917890152,
+          "learning_rate_std": 0.005117785780933635,
+          "effective_sample_size": 17.558278391757778,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 5,
+          "total_training_examples": 22,
+          "filtered_competence": 0.25400069861046687,
+          "smoothed_competence": 0.2702141812941187,
+          "filtered_learning_rate": 0.003976844424241101,
+          "smoothed_learning_rate": 0.004311661293310818,
+          "competence_std": 0.12077851611728607,
+          "learning_rate_std": 0.005962213696748356,
+          "effective_sample_size": 20.1464600404237,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 6,
+          "total_training_examples": 24,
+          "filtered_competence": 0.2341994601067555,
+          "smoothed_competence": 0.28030559384270926,
+          "filtered_learning_rate": 0.0041081483856095485,
+          "smoothed_learning_rate": 0.004718604119835659,
+          "competence_std": 0.12345490799590032,
+          "learning_rate_std": 0.006221064992405567,
+          "effective_sample_size": 21.576918098347196,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 7,
+          "total_training_examples": 28,
+          "filtered_competence": 0.250978711955723,
+          "smoothed_competence": 0.30217070522207534,
+          "filtered_learning_rate": 0.00375831846868353,
+          "smoothed_learning_rate": 0.0040873062629000305,
+          "competence_std": 0.12891103941293533,
+          "learning_rate_std": 0.0057095106881870855,
+          "effective_sample_size": 20.868227263386224,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 8,
+          "total_training_examples": 28,
+          "filtered_competence": 0.30217070522207534,
+          "smoothed_competence": 0.30217070522207534,
+          "filtered_learning_rate": 0.004087306262900031,
+          "smoothed_learning_rate": 0.0040873062629000305,
+          "competence_std": 0.12891103941293533,
+          "learning_rate_std": 0.0057095106881870855,
+          "effective_sample_size": 20.86822726338623,
+          "unique_ancestors": null
+        },
+        {
+          "cycle_index": 9,
+          "total_training_examples": 34,
+          "filtered_competence": 0.3267009743637834,
+          "smoothed_competence": 0.3267009743637834,
+          "filtered_learning_rate": 0.0032496733168348255,
+          "smoothed_learning_rate": 0.0032496733168348255,
+          "competence_std": 0.1420798404522729,
+          "learning_rate_std": 0.005049368393497566,
+          "effective_sample_size": 20.603833937962428,
+          "unique_ancestors": null
+        }
+      ],
+      "ancestry_diagnostics": {
+        "PickCube": {
+          "earliest_smoothed_ess": 54.78246290595548,
+          "final_filtered_ess": 2.932351879460742,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "MoveToTossLocationAndToss": {
+          "earliest_smoothed_ess": 20.211797124741988,
+          "final_filtered_ess": 20.603833937962428,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "OpenGripper": {
+          "earliest_smoothed_ess": 66.289849193267,
+          "final_filtered_ess": 4.4921604821217604,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "ask_for_reset_cube_bin_only": {
+          "earliest_smoothed_ess": 62.974401200151206,
+          "final_filtered_ess": 5.129400666923682,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "non_human_reset_cube_bin_only": {
+          "earliest_smoothed_ess": 66.85684880564747,
+          "final_filtered_ess": 5.037187659016995,
+          "earliest_unique_ancestors": null,
+          "final_unique_ancestors": null,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        }
+      },
+      "final_filtered_diagnostics": {
+        "PickCube": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 9,
+          "total_training_examples": 41,
+          "cycle_successes": 4,
+          "cycle_failures": 0,
+          "effective_sample_size": 2.932351879460742,
+          "resampling_count": 0,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 512.9718043086483,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "MoveToTossLocationAndToss": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 9,
+          "total_training_examples": 34,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 20.603833937962428,
+          "resampling_count": 0,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 512.0183421073707,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "OpenGripper": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 9,
+          "total_training_examples": 22,
+          "cycle_successes": 1,
+          "cycle_failures": 0,
+          "effective_sample_size": 4.4921604821217604,
+          "resampling_count": 0,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 674.5083727522148,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "ask_for_reset_cube_bin_only": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 9,
+          "total_training_examples": 23,
+          "cycle_successes": 3,
+          "cycle_failures": 0,
+          "effective_sample_size": 5.129400666923682,
+          "resampling_count": 0,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 622.0941523033928,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "non_human_reset_cube_bin_only": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 9,
+          "total_training_examples": 13,
+          "cycle_successes": 1,
+          "cycle_failures": 0,
+          "effective_sample_size": 5.037187659016995,
+          "resampling_count": 0,
+          "process_transition_count": 6,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 832.328466721475,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        }
+      },
+      "final_predicted_diagnostics": {
+        "PickCube": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 10,
+          "total_training_examples": 45,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 3.399569415515986,
+          "resampling_count": 0,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 512.9718043086483,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "MoveToTossLocationAndToss": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 10,
+          "total_training_examples": 39,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 21.597518628784204,
+          "resampling_count": 0,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 512.0183421073707,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "OpenGripper": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 10,
+          "total_training_examples": 23,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 5.3096612740602,
+          "resampling_count": 0,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 674.5083727522148,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "ask_for_reset_cube_bin_only": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 10,
+          "total_training_examples": 26,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 4.536815666043952,
+          "resampling_count": 0,
+          "process_transition_count": 10,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 622.0941523033928,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        },
+        "non_human_reset_cube_bin_only": {
+          "representation": "grid",
+          "competence_model": "local_trend",
+          "num_states": 400,
+          "cycle_index": 10,
+          "total_training_examples": 14,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 6.028774699643395,
+          "resampling_count": 0,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 832.328466721475,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          }
+        }
+      },
+      "sampler_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "attempts": 39,
+          "successes": 3
+        }
+      },
+      "sampler_by_cycle": [
+        {
+          "attempts": 7,
+          "successes": 0
+        },
+        {
+          "attempts": 6,
+          "successes": 1
+        },
+        {
+          "attempts": 3,
+          "successes": 0
+        },
+        {
+          "attempts": 5,
+          "successes": 0
+        },
+        {
+          "attempts": 1,
+          "successes": 0
+        },
+        {
+          "attempts": 2,
+          "successes": 0
+        },
+        {
+          "attempts": 4,
+          "successes": 1
+        },
+        {
+          "attempts": 0,
+          "successes": 0
+        },
+        {
+          "attempts": 6,
+          "successes": 1
+        },
+        {
+          "attempts": 5,
+          "successes": 0
+        }
+      ],
+      "sampler_consultations": {
+        "epsilon_random": 19,
+        "informed": 7,
+        "uninformative": 13
+      },
+      "valid": true,
+      "errors": [],
+      "num_cycles": 10,
+      "practice_session_count": 10,
+      "progress_count": 11,
+      "evaluations": [
+        {
+          "cycle": 0,
+          "transitions": 0,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 1,
+          "transitions": 15,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 2,
+          "transitions": 26,
+          "solved": 3,
+          "total": 10,
+          "success_rate": 0.3
+        },
+        {
+          "cycle": 3,
+          "transitions": 36,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        },
+        {
+          "cycle": 4,
+          "transitions": 49,
+          "solved": 2,
+          "total": 10,
+          "success_rate": 0.2
+        },
+        {
+          "cycle": 5,
+          "transitions": 60,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        },
+        {
+          "cycle": 6,
+          "transitions": 74,
+          "solved": 2,
+          "total": 10,
+          "success_rate": 0.2
+        },
+        {
+          "cycle": 7,
+          "transitions": 85,
+          "solved": 2,
+          "total": 10,
+          "success_rate": 0.2
+        },
+        {
+          "cycle": 8,
+          "transitions": 85,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        },
+        {
+          "cycle": 9,
+          "transitions": 97,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 10,
+          "transitions": 107,
+          "solved": 2,
+          "total": 10,
+          "success_rate": 0.2
+        }
+      ],
+      "cycles": [
+        {
+          "cycle": 1,
+          "actions_dispatched": 19,
+          "dispatched_cost": 35.0,
+          "cumulative_dispatched_cost": 35.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 6,
+            "MoveToTossLocationAndToss": 7,
+            "ask_for_reset_cube_bin_only": 2,
+            "non_human_reset_cube_bin_only": 2,
+            "OpenGripper": 2
+          },
+          "sampler_attempts": 7,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 2,
+          "actions_dispatched": 16,
+          "dispatched_cost": 36.0,
+          "cumulative_dispatched_cost": 71.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "ask_for_reset_cube_bin_only": 5,
+            "PickCube": 4,
+            "OpenGripper": 1,
+            "MoveToTossLocationAndToss": 6
+          },
+          "sampler_attempts": 6,
+          "sampler_successes": 1
+        },
+        {
+          "cycle": 3,
+          "actions_dispatched": 14,
+          "dispatched_cost": 30.0,
+          "cumulative_dispatched_cost": 101.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 3,
+            "PickCube": 4,
+            "non_human_reset_cube_bin_only": 2,
+            "MoveToTossLocationAndToss": 3,
+            "ask_for_reset_cube_bin_only": 2
+          },
+          "sampler_attempts": 3,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 4,
+          "actions_dispatched": 17,
+          "dispatched_cost": 33.0,
+          "cumulative_dispatched_cost": 134.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 5,
+            "MoveToTossLocationAndToss": 5,
+            "ask_for_reset_cube_bin_only": 4,
+            "OpenGripper": 3
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 5,
+          "actions_dispatched": 16,
+          "dispatched_cost": 36.0,
+          "cumulative_dispatched_cost": 170.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 6,
+            "ask_for_reset_cube_bin_only": 2,
+            "OpenGripper": 4,
+            "non_human_reset_cube_bin_only": 3,
+            "MoveToTossLocationAndToss": 1
+          },
+          "sampler_attempts": 1,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 6,
+          "actions_dispatched": 19,
+          "dispatched_cost": 39.0,
+          "cumulative_dispatched_cost": 209.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 5,
+            "PickCube": 7,
+            "non_human_reset_cube_bin_only": 2,
+            "MoveToTossLocationAndToss": 2,
+            "ask_for_reset_cube_bin_only": 3
+          },
+          "sampler_attempts": 2,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 7,
+          "actions_dispatched": 15,
+          "dispatched_cost": 31.0,
+          "cumulative_dispatched_cost": 240.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "MoveToTossLocationAndToss": 4,
+            "non_human_reset_cube_bin_only": 1,
+            "PickCube": 4,
+            "ask_for_reset_cube_bin_only": 3,
+            "OpenGripper": 3
+          },
+          "sampler_attempts": 4,
+          "sampler_successes": 1
+        },
+        {
+          "cycle": 8,
+          "actions_dispatched": 1,
+          "dispatched_cost": 5.0,
+          "cumulative_dispatched_cost": 245.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "ask_for_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 0,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 9,
+          "actions_dispatched": 16,
+          "dispatched_cost": 32.0,
+          "cumulative_dispatched_cost": 277.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 5,
+            "MoveToTossLocationAndToss": 6,
+            "non_human_reset_cube_bin_only": 3,
+            "OpenGripper": 1,
+            "ask_for_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 6,
+          "sampler_successes": 1
+        },
+        {
+          "cycle": 10,
+          "actions_dispatched": 14,
+          "dispatched_cost": 30.0,
+          "cumulative_dispatched_cost": 307.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "non_human_reset_cube_bin_only": 1,
+            "PickCube": 4,
+            "MoveToTossLocationAndToss": 5,
+            "ask_for_reset_cube_bin_only": 3,
+            "OpenGripper": 1
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        }
+      ],
+      "total_dispatched_cost": 307.0,
+      "total_dispatches": 147,
+      "free_practice_resets": 0,
+      "reset_dispatches": {
+        "ask_for_reset_cube_bin_only": {
+          "count": 26,
+          "cost": 130.0
+        },
+        "non_human_reset_cube_bin_only": {
+          "count": 14,
+          "cost": 70.0
+        }
+      },
+      "recorded_intervention_count": 40,
+      "recorded_intervention_cost": 200.0,
+      "elapsed_seconds": 561.19973264297
+    },
+    {
+      "name": "local_trend-particle/seed_00",
+      "model": "local_trend",
+      "engine": "particle",
+      "seed": 0,
+      "directory": "/home/josh/Documents/repos/research/human-in-the-loop-practice-makes-perfect/artifacts/tossing3d-competence-2x2-debugged-20260920/local_trend-particle/seed_00",
+      "returncode": 0,
+      "refit_count": 10,
+      "smoothing_count": 10,
+      "dispatch_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "count": 38,
+          "cost": 38.0
+        },
+        "OpenGripper": {
+          "count": 25,
+          "cost": 25.0
+        },
+        "PickCube": {
+          "count": 42,
+          "cost": 42.0
+        },
+        "ask_for_reset_cube_bin_only": {
+          "count": 17,
+          "cost": 85.0
+        },
+        "non_human_reset_cube_bin_only": {
+          "count": 20,
+          "cost": 100.0
+        }
+      },
+      "dispatched_count_by_cycle": [
+        20,
+        20,
+        3,
+        14,
+        11,
+        15,
+        18,
+        14,
+        18,
+        9
+      ],
+      "dispatched_cost_by_cycle": [
+        36.0,
+        40.0,
+        3.0,
+        30.0,
+        27.0,
+        31.0,
+        38.0,
+        34.0,
+        34.0,
+        17.0
+      ],
+      "training_examples_by_cycle": [
+        {
+          "PickCube": 6,
+          "MoveToTossLocationAndToss": 10,
+          "ask_for_reset_cube_bin_only": 3,
+          "non_human_reset_cube_bin_only": 1
+        },
+        {
+          "MoveToTossLocationAndToss": 8,
+          "non_human_reset_cube_bin_only": 4,
+          "PickCube": 5,
+          "OpenGripper": 2,
+          "ask_for_reset_cube_bin_only": 1
+        },
+        {
+          "MoveToTossLocationAndToss": 3
+        },
+        {
+          "ask_for_reset_cube_bin_only": 2,
+          "PickCube": 5,
+          "non_human_reset_cube_bin_only": 2,
+          "OpenGripper": 3,
+          "MoveToTossLocationAndToss": 2
+        },
+        {
+          "non_human_reset_cube_bin_only": 2,
+          "OpenGripper": 3,
+          "PickCube": 3,
+          "ask_for_reset_cube_bin_only": 2,
+          "MoveToTossLocationAndToss": 1
+        },
+        {
+          "OpenGripper": 4,
+          "PickCube": 5,
+          "non_human_reset_cube_bin_only": 2,
+          "ask_for_reset_cube_bin_only": 2,
+          "MoveToTossLocationAndToss": 2
+        },
+        {
+          "non_human_reset_cube_bin_only": 4,
+          "OpenGripper": 3,
+          "PickCube": 5,
+          "MoveToTossLocationAndToss": 5,
+          "ask_for_reset_cube_bin_only": 1
+        },
+        {
+          "PickCube": 5,
+          "non_human_reset_cube_bin_only": 5,
+          "OpenGripper": 4
+        },
+        {
+          "OpenGripper": 4,
+          "PickCube": 5,
+          "MoveToTossLocationAndToss": 5,
+          "ask_for_reset_cube_bin_only": 4
+        },
+        {
+          "ask_for_reset_cube_bin_only": 2,
+          "OpenGripper": 2,
+          "PickCube": 3,
+          "MoveToTossLocationAndToss": 2
+        }
+      ],
+      "outcomes_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "attempts": 38,
+          "successes": 0,
+          "random_attempts": 0,
+          "inference_attempts": 38,
+          "inference_successes": 0
+        },
+        "OpenGripper": {
+          "attempts": 25,
+          "successes": 25,
+          "random_attempts": 0,
+          "inference_attempts": 25,
+          "inference_successes": 25
+        },
+        "PickCube": {
+          "attempts": 42,
+          "successes": 42,
+          "random_attempts": 0,
+          "inference_attempts": 42,
+          "inference_successes": 42
+        },
+        "ask_for_reset_cube_bin_only": {
+          "attempts": 17,
+          "successes": 17,
+          "random_attempts": 0,
+          "inference_attempts": 17,
+          "inference_successes": 17
+        },
+        "non_human_reset_cube_bin_only": {
+          "attempts": 20,
+          "successes": 20,
+          "random_attempts": 0,
+          "inference_attempts": 20,
+          "inference_successes": 20
+        }
+      },
+      "toss_history": [
+        {
+          "cycle_index": 0,
+          "total_training_examples": 0,
+          "filtered_competence": 0.13863249747988984,
+          "smoothed_competence": 0.031113399931616024,
+          "filtered_learning_rate": 0.03702414134706324,
+          "smoothed_learning_rate": 0.005421930661924728,
+          "competence_std": 0.025283350489410262,
+          "learning_rate_std": 0.002010979926117788,
+          "effective_sample_size": 23.51872521705034,
+          "unique_ancestors": 103
+        },
+        {
+          "cycle_index": 1,
+          "total_training_examples": 10,
+          "filtered_competence": 0.14260447165532364,
+          "smoothed_competence": 0.06547968037014856,
+          "filtered_learning_rate": 0.0038280090843870193,
+          "smoothed_learning_rate": 0.0011448578831264274,
+          "competence_std": 0.03576385510361546,
+          "learning_rate_std": 0.002327889883158601,
+          "effective_sample_size": 252.49210654974124,
+          "unique_ancestors": 588
+        },
+        {
+          "cycle_index": 2,
+          "total_training_examples": 18,
+          "filtered_competence": 0.1310756946040804,
+          "smoothed_competence": 0.06200513143515444,
+          "filtered_learning_rate": 0.0027369526210454997,
+          "smoothed_learning_rate": 0.0018078263794914257,
+          "competence_std": 0.04286890665768256,
+          "learning_rate_std": 0.0026194279307962206,
+          "effective_sample_size": 252.49210654974124,
+          "unique_ancestors": 588
+        },
+        {
+          "cycle_index": 3,
+          "total_training_examples": 21,
+          "filtered_competence": 0.11790589778232326,
+          "smoothed_competence": 0.05819534758589711,
+          "filtered_learning_rate": 0.0030900205789361258,
+          "smoothed_learning_rate": 0.0022850177631060153,
+          "competence_std": 0.04574573222980643,
+          "learning_rate_std": 0.0030538927378815205,
+          "effective_sample_size": 252.49210654974124,
+          "unique_ancestors": 588
+        },
+        {
+          "cycle_index": 4,
+          "total_training_examples": 23,
+          "filtered_competence": 0.11755248365818764,
+          "smoothed_competence": 0.059435968899792815,
+          "filtered_learning_rate": 0.0035529586337588147,
+          "smoothed_learning_rate": 0.0024567912756337036,
+          "competence_std": 0.04599256684194997,
+          "learning_rate_std": 0.0034090862681473507,
+          "effective_sample_size": 252.49210654974124,
+          "unique_ancestors": 588
+        },
+        {
+          "cycle_index": 5,
+          "total_training_examples": 24,
+          "filtered_competence": 0.10376909716392446,
+          "smoothed_competence": 0.05179717252539187,
+          "filtered_learning_rate": 0.0041720135386860875,
+          "smoothed_learning_rate": 0.002870235020113803,
+          "competence_std": 0.04768129548234091,
+          "learning_rate_std": 0.003938857041817038,
+          "effective_sample_size": 252.49210654974124,
+          "unique_ancestors": 588
+        },
+        {
+          "cycle_index": 6,
+          "total_training_examples": 26,
+          "filtered_competence": 0.07956756978344912,
+          "smoothed_competence": 0.051994932045020516,
+          "filtered_learning_rate": 0.004531633608017411,
+          "smoothed_learning_rate": 0.0034580398719882277,
+          "competence_std": 0.05041142494619528,
+          "learning_rate_std": 0.00416190843616229,
+          "effective_sample_size": 728.2239049372888,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 7,
+          "total_training_examples": 31,
+          "filtered_competence": 0.10309185367594617,
+          "smoothed_competence": 0.06515323896642962,
+          "filtered_learning_rate": 0.003803058566324356,
+          "smoothed_learning_rate": 0.0031958210869696075,
+          "competence_std": 0.05898690366080637,
+          "learning_rate_std": 0.003920511909055479,
+          "effective_sample_size": 728.2239049372888,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 8,
+          "total_training_examples": 31,
+          "filtered_competence": 0.07397387326804197,
+          "smoothed_competence": 0.06515323896642962,
+          "filtered_learning_rate": 0.003472266716180465,
+          "smoothed_learning_rate": 0.0031958210869696075,
+          "competence_std": 0.05898690366080637,
+          "learning_rate_std": 0.003920511909055479,
+          "effective_sample_size": 728.2239049372888,
+          "unique_ancestors": 1024
+        },
+        {
+          "cycle_index": 9,
+          "total_training_examples": 36,
+          "filtered_competence": 0.08150403884907964,
+          "smoothed_competence": 0.08150403884907964,
+          "filtered_learning_rate": 0.0032106522191523335,
+          "smoothed_learning_rate": 0.0032106522191523335,
+          "competence_std": 0.06849322557537099,
+          "learning_rate_std": 0.0037415261088198765,
+          "effective_sample_size": 728.2239049372889,
+          "unique_ancestors": 1024
+        }
+      ],
+      "ancestry_diagnostics": {
+        "PickCube": {
+          "earliest_smoothed_ess": 816.8475844360967,
+          "final_filtered_ess": 816.8475844360968,
+          "earliest_unique_ancestors": 1024,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "MoveToTossLocationAndToss": {
+          "earliest_smoothed_ess": 23.51872521705034,
+          "final_filtered_ess": 728.2239049372889,
+          "earliest_unique_ancestors": 103,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "OpenGripper": {
+          "earliest_smoothed_ess": 379.4355975153924,
+          "final_filtered_ess": 891.9617033895121,
+          "earliest_unique_ancestors": 565,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "ask_for_reset_cube_bin_only": {
+          "earliest_smoothed_ess": 418.1484137462524,
+          "final_filtered_ess": 959.3682612127952,
+          "earliest_unique_ancestors": 559,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        },
+        "non_human_reset_cube_bin_only": {
+          "earliest_smoothed_ess": 404.28760943120335,
+          "final_filtered_ess": 914.4898078445538,
+          "earliest_unique_ancestors": 583,
+          "final_unique_ancestors": 1024,
+          "phi_configurations_after_first_cycle": null,
+          "phi_configurations_final_filtered": null,
+          "phi_configurations_after_final_refit": null
+        }
+      },
+      "final_filtered_diagnostics": {
+        "PickCube": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 39,
+          "cycle_successes": 3,
+          "cycle_failures": 0,
+          "effective_sample_size": 816.8475844360968,
+          "resampling_count": 1,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 529.5010066957608,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        },
+        "MoveToTossLocationAndToss": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 36,
+          "cycle_successes": 0,
+          "cycle_failures": 2,
+          "effective_sample_size": 728.2239049372889,
+          "resampling_count": 5,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 518.3505212045127,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        },
+        "OpenGripper": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 23,
+          "cycle_successes": 2,
+          "cycle_failures": 0,
+          "effective_sample_size": 891.9617033895121,
+          "resampling_count": 1,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 650.8342846471547,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        },
+        "ask_for_reset_cube_bin_only": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 15,
+          "cycle_successes": 2,
+          "cycle_failures": 0,
+          "effective_sample_size": 959.3682612127952,
+          "resampling_count": 1,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 753.5753622231305,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        },
+        "non_human_reset_cube_bin_only": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 9,
+          "total_training_examples": 20,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 914.4898078445538,
+          "resampling_count": 1,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 723.4961169614271,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        }
+      },
+      "final_predicted_diagnostics": {
+        "PickCube": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 42,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 816.8475844360968,
+          "resampling_count": 1,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 529.5010066957608,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        },
+        "MoveToTossLocationAndToss": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 38,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 728.2239049372889,
+          "resampling_count": 5,
+          "process_transition_count": 9,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 518.3505212045127,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        },
+        "OpenGripper": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 25,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 891.9617033895121,
+          "resampling_count": 1,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 650.8342846471547,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        },
+        "ask_for_reset_cube_bin_only": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 17,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 959.3682612127952,
+          "resampling_count": 1,
+          "process_transition_count": 8,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 753.5753622231305,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        },
+        "non_human_reset_cube_bin_only": {
+          "representation": "particle",
+          "competence_model": "local_trend",
+          "num_states": 1024,
+          "cycle_index": 10,
+          "total_training_examples": 20,
+          "cycle_successes": 0,
+          "cycle_failures": 0,
+          "effective_sample_size": 914.4898078445538,
+          "resampling_count": 1,
+          "process_transition_count": 7,
+          "cost": {
+            "representation": "particle_filter",
+            "num_particles": 1024,
+            "effective_sample_size": 723.4961169614271,
+            "resampling_count": 2,
+            "process_transition_count": 0
+          },
+          "unique_parent_particles": 1024
+        }
+      },
+      "sampler_by_skill": {
+        "MoveToTossLocationAndToss": {
+          "attempts": 38,
+          "successes": 0
+        }
+      },
+      "sampler_by_cycle": [
+        {
+          "attempts": 10,
+          "successes": 0
+        },
+        {
+          "attempts": 8,
+          "successes": 0
+        },
+        {
+          "attempts": 3,
+          "successes": 0
+        },
+        {
+          "attempts": 2,
+          "successes": 0
+        },
+        {
+          "attempts": 1,
+          "successes": 0
+        },
+        {
+          "attempts": 2,
+          "successes": 0
+        },
+        {
+          "attempts": 5,
+          "successes": 0
+        },
+        {
+          "attempts": 0,
+          "successes": 0
+        },
+        {
+          "attempts": 5,
+          "successes": 0
+        },
+        {
+          "attempts": 2,
+          "successes": 0
+        }
+      ],
+      "sampler_consultations": {
+        "uninformative": 38
+      },
+      "valid": true,
+      "errors": [],
+      "num_cycles": 10,
+      "practice_session_count": 10,
+      "progress_count": 11,
+      "evaluations": [
+        {
+          "cycle": 0,
+          "transitions": 0,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 1,
+          "transitions": 16,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 2,
+          "transitions": 31,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 3,
+          "transitions": 34,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 4,
+          "transitions": 44,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 5,
+          "transitions": 51,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        },
+        {
+          "cycle": 6,
+          "transitions": 62,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        },
+        {
+          "cycle": 7,
+          "transitions": 75,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 8,
+          "transitions": 84,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        },
+        {
+          "cycle": 9,
+          "transitions": 98,
+          "solved": 0,
+          "total": 10,
+          "success_rate": 0.0
+        },
+        {
+          "cycle": 10,
+          "transitions": 105,
+          "solved": 1,
+          "total": 10,
+          "success_rate": 0.1
+        }
+      ],
+      "cycles": [
+        {
+          "cycle": 1,
+          "actions_dispatched": 20,
+          "dispatched_cost": 36.0,
+          "cumulative_dispatched_cost": 36.0,
+          "session_end_reason": "session_action_cap",
+          "training_examples": {
+            "PickCube": 6,
+            "MoveToTossLocationAndToss": 10,
+            "ask_for_reset_cube_bin_only": 3,
+            "non_human_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 10,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 2,
+          "actions_dispatched": 20,
+          "dispatched_cost": 40.0,
+          "cumulative_dispatched_cost": 76.0,
+          "session_end_reason": "session_action_cap",
+          "training_examples": {
+            "MoveToTossLocationAndToss": 8,
+            "non_human_reset_cube_bin_only": 4,
+            "PickCube": 5,
+            "OpenGripper": 2,
+            "ask_for_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 8,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 3,
+          "actions_dispatched": 3,
+          "dispatched_cost": 3.0,
+          "cumulative_dispatched_cost": 79.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "MoveToTossLocationAndToss": 3
+          },
+          "sampler_attempts": 3,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 4,
+          "actions_dispatched": 14,
+          "dispatched_cost": 30.0,
+          "cumulative_dispatched_cost": 109.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "ask_for_reset_cube_bin_only": 2,
+            "PickCube": 5,
+            "non_human_reset_cube_bin_only": 2,
+            "OpenGripper": 3,
+            "MoveToTossLocationAndToss": 2
+          },
+          "sampler_attempts": 2,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 5,
+          "actions_dispatched": 11,
+          "dispatched_cost": 27.0,
+          "cumulative_dispatched_cost": 136.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "non_human_reset_cube_bin_only": 2,
+            "OpenGripper": 3,
+            "PickCube": 3,
+            "ask_for_reset_cube_bin_only": 2,
+            "MoveToTossLocationAndToss": 1
+          },
+          "sampler_attempts": 1,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 6,
+          "actions_dispatched": 15,
+          "dispatched_cost": 31.0,
+          "cumulative_dispatched_cost": 167.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 4,
+            "PickCube": 5,
+            "non_human_reset_cube_bin_only": 2,
+            "ask_for_reset_cube_bin_only": 2,
+            "MoveToTossLocationAndToss": 2
+          },
+          "sampler_attempts": 2,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 7,
+          "actions_dispatched": 18,
+          "dispatched_cost": 38.0,
+          "cumulative_dispatched_cost": 205.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "non_human_reset_cube_bin_only": 4,
+            "OpenGripper": 3,
+            "PickCube": 5,
+            "MoveToTossLocationAndToss": 5,
+            "ask_for_reset_cube_bin_only": 1
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 8,
+          "actions_dispatched": 14,
+          "dispatched_cost": 34.0,
+          "cumulative_dispatched_cost": 239.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "PickCube": 5,
+            "non_human_reset_cube_bin_only": 5,
+            "OpenGripper": 4
+          },
+          "sampler_attempts": 0,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 9,
+          "actions_dispatched": 18,
+          "dispatched_cost": 34.0,
+          "cumulative_dispatched_cost": 273.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "OpenGripper": 4,
+            "PickCube": 5,
+            "MoveToTossLocationAndToss": 5,
+            "ask_for_reset_cube_bin_only": 4
+          },
+          "sampler_attempts": 5,
+          "sampler_successes": 0
+        },
+        {
+          "cycle": 10,
+          "actions_dispatched": 9,
+          "dispatched_cost": 17.0,
+          "cumulative_dispatched_cost": 290.0,
+          "session_end_reason": "planner_stop",
+          "training_examples": {
+            "ask_for_reset_cube_bin_only": 2,
+            "OpenGripper": 2,
+            "PickCube": 3,
+            "MoveToTossLocationAndToss": 2
+          },
+          "sampler_attempts": 2,
+          "sampler_successes": 0
+        }
+      ],
+      "total_dispatched_cost": 290.0,
+      "total_dispatches": 142,
+      "free_practice_resets": 0,
+      "reset_dispatches": {
+        "ask_for_reset_cube_bin_only": {
+          "count": 17,
+          "cost": 85.0
+        },
+        "non_human_reset_cube_bin_only": {
+          "count": 20,
+          "cost": 100.0
+        }
+      },
+      "recorded_intervention_count": 37,
+      "recorded_intervention_cost": 185.0,
+      "elapsed_seconds": 613.1804922750453
+    }
+  ],
+  "notes": [
+    "Dispatch costs include attempted actions under the preserved cost contract.",
+    "Filtered/smoothed competence records are cycle-end values before each refit.",
+    "Final smoothing uses all recorded cycles and never changes online decisions.",
+    "The legacy intervention counter includes both named reset mechanisms; their dispatches are separated."
+  ]
+}

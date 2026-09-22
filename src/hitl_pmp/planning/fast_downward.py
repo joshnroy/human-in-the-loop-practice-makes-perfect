@@ -140,6 +140,7 @@ class FastDownwardPlanner:
         not, and why that makes this safe. Omitting it translates afresh every
         call, so every existing caller is unaffected."""
         script = FastDownwardPlanner._fast_downward_script()
+        driver_args, search_args = FastDownwardPlanner._search_arguments(skills=skills, alias=alias)
         with tempfile.TemporaryDirectory() as tmp:
             sas_file = Path(tmp) / "output.sas"
             FastDownwardPlanner._translate(
@@ -164,11 +165,22 @@ class FastDownwardPlanner:
                     cost_precision=cost_precision,
                 )
             output = FastDownwardPlanner._run(
-                args=[sys.executable, str(script), "--alias", alias, str(sas_file)],
+                args=[sys.executable, str(script), *driver_args, str(sas_file), *search_args],
                 cwd=tmp,
                 timeout=timeout,
             )
         return FastDownwardPlanner._parse_plan(output=output, skills=skills, objects=objects)
+
+    @staticmethod
+    def _search_arguments(*, skills: tuple[Skill, ...], alias: str) -> tuple[list[str], list[str]]:
+        """Keep cost-optimal search when LM-cut cannot accept conditional effects.
+
+        Hmax is admissible with conditional effects; LM-cut rejects these domains.
+        Explicit non-default aliases retain their requested configuration.
+        """
+        if alias == "seq-opt-lmcut" and any(skill.conditional_add_effects for skill in skills):
+            return [], ["--search", "astar(hmax())"]
+        return ["--alias", alias], []
 
     @staticmethod
     def _fast_downward_script() -> Path:
@@ -253,16 +265,17 @@ class FastDownwardPlanner:
         problem_file = Path(tmp_dir) / "problem.pddl"
         domain_file.write_text(domain_str, encoding="utf-8")
         problem_file.write_text(problem_str, encoding="utf-8")
+        driver_args, search_args = FastDownwardPlanner._search_arguments(skills=skills, alias=alias)
         output = FastDownwardPlanner._run(
             args=[
                 sys.executable,
                 str(script),
-                "--alias",
-                alias,
+                *driver_args,
                 "--sas-file",
                 str(sas_file),
                 str(domain_file),
                 str(problem_file),
+                *search_args,
             ],
             cwd=tmp_dir,
             timeout=timeout,

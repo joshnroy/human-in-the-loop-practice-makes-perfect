@@ -11,7 +11,6 @@ from typing_extensions import Self
 from hitl_pmp.methods.belief_space.tossing3d_particle_filter import (
     condition_cost,
     condition_execution,
-    condition_learning_rate,
     condition_outcome,
     make_rng,
     reflect_into_interval,
@@ -71,6 +70,12 @@ class ParticleFilterBelief(SkillBelief):
         parameters, weights = self.arrays()
         return float(weights @ parameters[:, 0])
 
+    def competence_outcome_probability(self, *, successes: int, failures: int) -> float:
+        assert successes >= 0 and failures >= 0
+        parameters, weights = self.arrays()
+        competence = parameters[:, 0]
+        return float(weights @ (competence**successes * (1 - competence) ** failures))
+
     def mean_learning_rate(self) -> float:
         parameters, weights = self.arrays()
         return float(weights @ parameters[:, 1])
@@ -91,9 +96,6 @@ class ParticleFilterBelief(SkillBelief):
 
     def condition_cost(self, *, observed_cost: float) -> Self:
         return condition_cost(belief=self, observed_cost=observed_cost)
-
-    def condition_learning_rate(self, *, observed_learning_rate: float) -> Self:
-        return condition_learning_rate(belief=self, observed_learning_rate=observed_learning_rate)
 
     def refit(self, *, training_examples: int) -> Self:
         assert training_examples >= 0
