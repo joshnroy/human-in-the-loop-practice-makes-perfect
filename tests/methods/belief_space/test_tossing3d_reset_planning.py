@@ -117,7 +117,18 @@ def test_only_symbolic_self_loop_resets_are_omitted(*, gripper: str) -> None:
     model = method._pomdp_model  # noqa: SLF001
     ready = frozenset(
         _atom(method=method, name=name)
-        for name in (gripper, "OnGround", "NotHolding", "RobotAtSide", "CubeAtSide", "BinAtSide")
+        for name in (
+            gripper,
+            "OnGround",
+            "NotHolding",
+            "RobotAtSide",
+            "CubeAtSide",
+            "BinAtSide",
+            # A ready cube is graspable; without this atom the reset's GraspClear
+            # add-effect makes every destination a non-self-loop, which is the
+            # gate working, not this test's subject.
+            "GraspClear",
+        )
     )
     actions = model.get_valid_actions(
         environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)

@@ -18,6 +18,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     BIN_AT_SIDE,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
+    GRASP_CLEAR,
     HAND_EMPTY,
     HOLDING,
     IN_BIN,
@@ -79,6 +80,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         ROBOT_AT_SIDE,
         CUBE_AT_SIDE,
         BIN_AT_SIDE,
+        GRASP_CLEAR,
     }
     assert {obj.type for obj in provider.objects()} == set(provider.types())
 

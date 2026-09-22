@@ -136,7 +136,7 @@ class SkillOraclePolicy:
             # otherwise would hide the irreversibility the domain exists to exhibit.
             ground_skill = GroundSkill(
                 skill=Tossing3DSkills.PICK_CUBE,
-                objects=(env.robot, env.cube, env.barrier, side_of(obj=env.cube)),
+                objects=(env.robot, env.cube, env.barrier, side_of(obj=env.cube), env.bin),
             )
             params = np.zeros(0)
 
