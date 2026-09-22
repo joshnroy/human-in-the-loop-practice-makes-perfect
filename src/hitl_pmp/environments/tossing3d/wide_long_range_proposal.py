@@ -6,9 +6,10 @@ scored -- an untrained learner started at 10/10 and practice had nothing to teac
 (the calibration itself survives as `release_ridge`). This proposal
 keeps the standoff and yaw that guarantee a legal launch pose for every bin position,
 but draws speed and release time *independently* over a band that straddles that
-ridge: the support still contains a scoring setting for every location in the bin
-region (the 2026-09-22 nine-location coverage sweep's success witnesses) alongside a
-large region of completed physical misses (its miss witnesses).
+ridge: the support still contains a scoring setting for every tested bin location
+(the 2026-09-22 coverage sweep's success witnesses at its nine corner/edge/center
+locations -- a proof for those nine points, not for the continuum between them)
+alongside a large region of completed physical misses (its miss witnesses).
 """
 
 import numpy as np
