@@ -52,7 +52,7 @@ from .kinder_backend import ControllerRun, KinderBackend, KinderObservation
 from .layout import Tossing3DLayout
 from .sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
 from .state_log import StateLogWriter
-from .types import AbstractAtom, Tossing3DState
+from .types import KB_PICKUP_BLOCKED, AbstractAtom, Tossing3DState
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +176,18 @@ class Tossing3DEnvironment(Environment):
     _backend: KinderBackend | None = PrivateAttr(default=None)
     _last_skill_error: str | None = PrivateAttr(default=None)
     _last_controller_steps: tuple[int, ...] = PrivateAttr(default=())
+    # The observed pickup-infeasibility channel (the 2026-09-22 recovery-state fix):
+    # True only after a dispatched pick was REFUSED by the grasp planner ("No
+    # collision-free cube grasp", zero steps) and until something moves the cube.
+    # It is observation-derived state, so it travels into every built state's
+    # abstract atom set as the "PickupBlocked" marker rather than being computed
+    # from geometry -- GraspClear prunes the predictable subset; this catches the
+    # observed remainder (the acceptance boundary is configuration-dependent, so no
+    # geometric constant can reproduce the planner's mesh check exactly). A pick
+    # that EXECUTED and missed deliberately does not set it: retrying a flaky grasp
+    # is often correct (measured: a lip grasp succeeded right after failing), and
+    # the closed-on-nothing subset already has its ClosedEmpty/OpenGripper path.
+    _pickup_blocked: bool = PrivateAttr(default=False)
     # None (the default) means every drained tick is discarded rather than persisted --
     # state capture itself is always on (see KinderBackend.drain_substep_states), but
     # nothing is written to disk without a writer attached. Set by Tossing3DCli.
@@ -322,8 +334,14 @@ class Tossing3DEnvironment(Environment):
             seed=seed,
             steps_taken=steps_taken,
             object_centric=backend.snapshot(),
-            abstract_atoms=backend.abstract_atoms(),
+            abstract_atoms=self._with_pickup_channel(atoms=backend.abstract_atoms()),
         )
+
+    def _with_pickup_channel(self, *, atoms: frozenset) -> frozenset:
+        """Attach the observed "PickupBlocked" marker to an abstract atom set."""
+        if not self._pickup_blocked:
+            return atoms
+        return frozenset(atoms) | {(KB_PICKUP_BLOCKED, (self.cube.name,))}
 
     def take_action(self, *, action: Action) -> State:
         """Run one whole skill in the live simulator and return the resulting state.
@@ -348,6 +366,18 @@ class Tossing3DEnvironment(Environment):
             self._last_skill_error = "; ".join(errors)
             logger.debug("take_action: last_skill_error=%r", self._last_skill_error)
         self._log_skill_ticks(action=action)
+        skill_id = int(round(float(action[0])))
+        executed = sum(self._last_controller_steps) > 0
+        if skill_id in (self.pick_cube_id, self.pick_cube_from_bin_id):
+            if (
+                not executed
+                and self._last_skill_error is not None
+                and "No collision-free" in self._last_skill_error
+            ):
+                self._pickup_blocked = True
+        elif skill_id == self.move_to_toss_location_and_toss_id and executed:
+            # The toss relocated the cube, so the old observation no longer applies.
+            self._pickup_blocked = False
 
         next_state = self._observed_state(seed=seed, steps_taken=steps_taken + 1)
         # `_adopt`, deliberately not `set_state`: the simulator has already advanced by
@@ -481,6 +511,7 @@ class Tossing3DEnvironment(Environment):
         there is exactly one place that puts this domain into a known state.
         """
         self.backend().reset(seed=seed)
+        self._pickup_blocked = False
         state = self._observed_state(seed=seed, steps_taken=0)
         self._adopt(state=state)
         return state
@@ -507,6 +538,10 @@ class Tossing3DEnvironment(Environment):
         backend.reset_cube_and_bin(
             bin_region=None if bin_region is None else bin_region.model_dump(mode="json")
         )
+        # The reset relocated the cube, which physically heals every observed
+        # refusal instance -- the symbolic reset skills promise PickupUnblocked,
+        # and this is what makes the promise true.
+        self._pickup_blocked = False
         next_state = self.build_state(
             observation=backend.observe(),
             seed=seed,
@@ -566,6 +601,9 @@ class Tossing3DEnvironment(Environment):
         either field."""
         backend = self.backend()
         backend.restore(snapshot=backend.plain_to_snapshot(plain=plain))
+        # A restored tick is a fresh observation context: any refusal observed on
+        # the previous timeline does not describe it.
+        self._pickup_blocked = False
         self._adopt(state=self._observed_state(seed=0, steps_taken=0))
         return self.get_current_state()
 

@@ -110,6 +110,7 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
 from .sides import Tossing3DSides
@@ -180,6 +181,9 @@ class Tossing3DSkills:
             # the degenerate loop the 2026-09-22 trap diagnosis pinned -- gate it
             # symbolically so recovery (the paid reset) becomes the plan instead.
             LiftedAtom(predicate=GRASP_CLEAR, variables=(_cube, _bin)),
+            # The observed-refusal channel: a pick the grasp planner already refused
+            # at this cube position is inapplicable until something moves the cube.
+            LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_cube,)),
         }),
         add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
         delete_effects=frozenset({
@@ -206,6 +210,9 @@ class Tossing3DSkills:
             # Measured upstream on 20 throws: 15/15 that scored left the cube on a face.
             LiftedAtom(predicate=ON_GROUND, variables=(_cube,)),
             LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
+            # The toss relocates the cube, so a refusal observed at its old
+            # position no longer describes it -- a true add, not a forget.
+            LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_cube,)),
         }),
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),

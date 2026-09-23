@@ -35,6 +35,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
@@ -206,6 +207,7 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=GRASP_CLEAR,
             variables=(_SKILLS._cube, _SKILLS._bin),
         ),
+        LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,)),
     })
     assert _SKILLS.PICK_CUBE.add_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
@@ -243,6 +245,7 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=CUBE_AT_SIDE,
             variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
         ),
+        LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,)),
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.delete_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
@@ -296,6 +299,7 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         CUBE_AT_SIDE,
         BIN_AT_SIDE,
         GRASP_CLEAR,
+        PICKUP_UNBLOCKED,
     )
     init_atoms = SkillGrounder.abstract_state(
         state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
@@ -613,3 +617,25 @@ def test_pick_requires_grasp_clear_and_the_toss_leaves_it_to_observation() -> No
     assert GRASP_CLEAR in provider.predicates()
     reset = provider.human_cube_bin_reset_skill()
     assert any(atom.predicate == GRASP_CLEAR for atom in reset.skill.add_effects)
+
+
+def test_pick_requires_the_observed_pickup_channel_and_movers_restore_it() -> None:
+    """The recovery-state fix: an OBSERVED grasp-planner refusal makes PickCube
+    inapplicable until something moves the cube -- the toss (which relocates it) or
+    either paid reset. GraspClear prunes the predictable subset; this atom catches
+    the observed remainder."""
+    from hitl_pmp.environments.tossing3d.predicates import PICKUP_UNBLOCKED
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    assert (
+        LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,))
+        in _SKILLS.PICK_CUBE.preconditions
+    )
+    assert (
+        LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,))
+        in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects
+    )
+    provider = Tossing3DSkillProvider(env=_ENV)
+    assert PICKUP_UNBLOCKED in provider.predicates()
+    for reset in provider.movables_reset_skills():
+        assert any(atom.predicate == PICKUP_UNBLOCKED for atom in reset.skill.add_effects)

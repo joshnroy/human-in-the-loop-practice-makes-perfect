@@ -4,6 +4,8 @@ Everything here runs without MuJoCo. The simulator-backed half is
 `test_kinder_fidelity.py`.
 """
 
+import importlib.util
+
 import numpy as np
 import pytest
 
@@ -250,3 +252,39 @@ def test_the_pick_dispatch_ignores_every_parameter_slot(*, monkeypatch: pytest.M
     env._execute(action=np.array([float(env.pick_cube_id), 9.9, -3.0, 1.0, 500.0]))
 
     assert calls == [{"pick_cube": True}, {"pick_cube": True}]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
+)
+def test_an_observed_pick_refusal_blocks_picks_until_a_reset_moves_the_cube() -> None:
+    """The recovery-state lifecycle on the trap-2 stuck state saved from the
+    2026-09-22 grasp-clear validation run: dispatching the pick there is refused
+    ("No collision-free cube grasp", 0 steps); the refusal must surface as an
+    observed atom that removes PickupUnblocked from the state, and a movables
+    reset must clear it and leave the cube physically pickable again."""
+    import json as jsonlib
+    from pathlib import Path
+
+    from hitl_pmp.environments.tossing3d.predicates import HOLDING, PICKUP_UNBLOCKED
+
+    stuck_path = Path(__file__).parent / "fixtures" / "trap2_stuck_state.json"
+    plain = jsonlib.loads(stuck_path.read_text())
+    env = Tossing3DEnvironment()
+    try:
+        env.reset_to_seed(seed=125)
+        restored = env.restore_plain_snapshot(plain=plain)
+        assert PICKUP_UNBLOCKED.holds(restored, (env.cube,))
+        refused = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+        assert env.last_skill_error() is not None
+        assert "No collision-free" in env.last_skill_error()
+        assert sum(env.last_controller_steps()) == 0
+        assert not PICKUP_UNBLOCKED.holds(refused, (env.cube,))
+        assert env.reset_movables(destination="robot_side")
+        after_reset = env.get_current_state()
+        assert PICKUP_UNBLOCKED.holds(after_reset, (env.cube,))
+        picked = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+        assert HOLDING.holds(picked, (env.robot, env.cube))
+        assert PICKUP_UNBLOCKED.holds(picked, (env.cube,))
+    finally:
+        env.close()

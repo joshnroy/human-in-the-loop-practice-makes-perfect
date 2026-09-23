@@ -75,6 +75,7 @@ from hitl_pmp.core.problem.tasks.types import Predicate
 
 from .environment import Tossing3DEnvironment
 from .sides import Tossing3DSides
+from .types import KB_PICKUP_BLOCKED
 
 
 class Tossing3DAtoms:
@@ -321,4 +322,22 @@ GRASP_CLEAR = Predicate(
     name="GraspClear",
     types=(Tossing3DEnvironment.cube_type, Tossing3DEnvironment.bin_type),
     holds=lambda state, objects: _grasp_clear(state=state, cube=objects[0], bin_=objects[1]),
+)
+
+
+# The complement of the environment's observed "PickupBlocked" marker (see
+# `types.KB_PICKUP_BLOCKED`): true unless a dispatched pick was refused by the
+# grasp planner at this cube position and nothing has moved the cube since. The
+# positive-complement shape follows NOT_HOLDING's precedent, because operator
+# preconditions here are positive atoms. GraspClear prunes the geometrically
+# predictable refusals; this catches the observed remainder -- the planner's
+# acceptance boundary is configuration-dependent (measured 2026-09-22: the same
+# 0.052 m face gap is accepted at open floor and refused across the whole western
+# strip x <= -1.0), so no geometric constant can reproduce its mesh check exactly.
+PICKUP_UNBLOCKED = Predicate(
+    name="PickupUnblocked",
+    types=(Tossing3DEnvironment.cube_type,),
+    holds=lambda state, objects: (
+        not Tossing3DAtoms.holds(state=state, name=KB_PICKUP_BLOCKED, objects=objects)
+    ),
 )
