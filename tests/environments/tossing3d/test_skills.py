@@ -336,12 +336,20 @@ def test_the_rotation_bound_is_computed_from_the_waypoint_tolerance_not_typed() 
     standoff -- the widest yaw about the bin that still leaves the base within half the
     tolerance of the bin's axis -- and this module reproduces the derivation rather than
     the number it currently produces. A literal here would go stale silently if upstream
-    retuned either input."""
+    retuned either input.
+
+    `TOSS_ROTATION_BOUNDS` itself no longer equals `+-MAX_TOSS_ROTATION`: it was
+    deliberately widened to +-pi/2 on 2026-09-22 (measured: the controller executes
+    the whole band and a +-90 deg throw scored) so robot-side receivers have feasible
+    toss headings. The divergence pin with the full why lives in test_kinder_pin's
+    `test_the_rotation_bounds_deliberately_widen_upstreams_derived_band`."""
     assert (
         pytest.approx(float(np.arcsin(0.5 * WAYPOINT_TOLERANCE / TOSS_DISTANCE_BOUNDS[1])))
         == MAX_TOSS_ROTATION
     )
-    assert TOSS_ROTATION_BOUNDS == (-MAX_TOSS_ROTATION, MAX_TOSS_ROTATION)
+    assert (-np.pi / 2, np.pi / 2) == TOSS_ROTATION_BOUNDS
+    assert TOSS_ROTATION_BOUNDS[0] < -MAX_TOSS_ROTATION < MAX_TOSS_ROTATION
+    assert TOSS_ROTATION_BOUNDS[1] > MAX_TOSS_ROTATION
 
 
 def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
