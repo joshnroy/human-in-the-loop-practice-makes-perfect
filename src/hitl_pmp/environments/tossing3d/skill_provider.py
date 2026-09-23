@@ -32,6 +32,7 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
 from .recovery_skills import ON_BIN_RIM, ON_FLOOR, SameSideSkills
@@ -85,6 +86,7 @@ class Tossing3DSkillProvider(SkillProvider):
                 ROBOT_AT_SIDE,
                 CUBE_AT_SIDE,
                 BIN_AT_SIDE,
+                PICKUP_UNBLOCKED,
                 # Declared here for the same reason the side atoms are: the shared
                 # toss operator forgets GraspClear (ignore_effects), and a forgetting
                 # effect must name a declared predicate in every domain that writes
@@ -102,6 +104,7 @@ class Tossing3DSkillProvider(SkillProvider):
             CUBE_AT_SIDE,
             BIN_AT_SIDE,
             GRASP_CLEAR,
+            PICKUP_UNBLOCKED,
         )
 
     def types(self) -> tuple[Type, ...]:
@@ -233,6 +236,9 @@ class Tossing3DSkillProvider(SkillProvider):
                 # the walls by construction -- this add effect is what lets a plan
                 # recover from a not-GraspClear landing by paying for the reset.
                 LiftedAtom(predicate=GRASP_CLEAR, variables=(cube, bin_)),
+                # Relocating the cube physically heals every observed refusal
+                # instance, so the reset may promise the channel clear.
+                LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(cube,)),
                 LiftedAtom(
                     predicate=CUBE_AT_SIDE,
                     variables=(cube, barrier, robot_side),

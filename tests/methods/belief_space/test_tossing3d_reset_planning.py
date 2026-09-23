@@ -124,10 +124,11 @@ def test_only_symbolic_self_loop_resets_are_omitted(*, gripper: str) -> None:
             "RobotAtSide",
             "CubeAtSide",
             "BinAtSide",
-            # A ready cube is graspable; without this atom the reset's GraspClear
-            # add-effect makes every destination a non-self-loop, which is the
-            # gate working, not this test's subject.
+            # A ready cube is graspable; without these atoms the reset's
+            # GraspClear/PickupUnblocked add-effects make every destination a
+            # non-self-loop, which is those gates working, not this test's subject.
             "GraspClear",
+            "PickupUnblocked",
         )
     )
     actions = model.get_valid_actions(
@@ -215,3 +216,31 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
     ) - model.J(
         belief_state=long_state, summed_cost=long_state.accumulated_cost, num_samples=1
     ) == pytest.approx(cost_lambda * saved_cost)
+
+
+@pytest.mark.parametrize("gripper", ["HandEmpty", "ClosedEmpty"])
+def test_an_observed_pickup_block_prunes_picks_and_offers_resets(*, gripper: str) -> None:
+    """The run-level property of the recovery fix: with PickupUnblocked absent (an
+    observed refusal), the pick is inapplicable and BOTH resets are offered as
+    state-changing actions -- the cheap-refusal loop cannot form."""
+    method = _method()
+    model = method._pomdp_model  # noqa: SLF001
+    blocked = frozenset(
+        _atom(method=method, name=name)
+        for name in (
+            gripper,
+            "OnGround",
+            "NotHolding",
+            "RobotAtSide",
+            "CubeAtSide",
+            "BinAtSide",
+            "GraspClear",
+            # Deliberately NOT PickupUnblocked: the refusal was observed.
+        )
+    )
+    actions = model.get_valid_actions(
+        environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=blocked)
+    )
+    names = {action.skill.name for action in actions}
+    assert PICK_SKILL not in names
+    assert set(RESET_SKILLS) <= names

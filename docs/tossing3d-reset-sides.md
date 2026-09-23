@@ -13,7 +13,9 @@ cost configuration. Same-destination symbolic self-loops are still pruned;
 changing the destination is a distinct state transition.
 
 Opposite-side resets preserve the current far-bin center range x=[2.60, 3.42],
-y=[-2.3, 2.3]. Robot-side resets use x=[-2.3, -1.48] with the receiver reversed.
+y=[-2.3, 2.3]. Robot-side resets use x=[-0.9, 0.2], y=[-1.0, 1.5] with the receiver
+reversed -- the measured maximal grasp-safe rectangle, east of the grasp-planner
+refusal zone at x <= -1.0 (boundary probes in sides.py).
 The reset adapter preserves center-region support while retaining the simulator's
 room and obstacle checks. Omitting the destination still uses the scene's initial
 placement region. Every barrier toss draws the wide long-range proposal

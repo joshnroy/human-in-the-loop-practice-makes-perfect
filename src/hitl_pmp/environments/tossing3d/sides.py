@@ -28,8 +28,23 @@ class Tossing3DResetRegion(BaseModel):
 
 
 BIN_RESET_REGION_BY_SIDE: Final[dict[Tossing3DSide, Tossing3DResetRegion]] = {
+    # Measured 2026-09-22 at the live pick controller with the trap-2 stuck
+    # arrangement (cube 0.073 m off bin center, face gap 0.052 m): every probed
+    # placement with bin x <= -1.0 REFUSED the grasp (20/20, including mid-room y,
+    # 0.65-1.0 m from any wall plane), while the former range x in [-2.3, -1.48]
+    # sat entirely inside that refusing zone -- which is what let a practiced toss
+    # strand marginal cubes there. This is the MAXIMAL grasp-safe rectangle the
+    # eastward-extent mapping supports: every probed point inside
+    # x in [-0.9, 0.2], y in [-1.0, 1.5] accepted and lifted the marginal cube
+    # (14/14 across the two probe rounds), while y = -1.5 refused at x = 0.6 and
+    # y = +-1.9 refused at x = -0.5 (0/2), so the rectangle stops there. The
+    # y = 0 corridor stays graspable east to at least x = 1.1, but the region is
+    # north-south asymmetric beyond the rectangle, so only the rectangle is
+    # encoded. Its x <= 0.2 also keeps clear of the cube spawn strip
+    # (x in [0.54, 0.71]). A larger receiver region keeps more toss standoff
+    # geometry feasible west of the barrier at x = 1.25.
     Tossing3DSide.ROBOT: Tossing3DResetRegion(
-        ranges=((-2.3, -2.3, -1.48, 2.3),), yaw_ranges=((180, 180),)
+        ranges=((-0.9, -1.0, 0.2, 1.5),), yaw_ranges=((180, 180),)
     ),
     Tossing3DSide.OPPOSITE: Tossing3DResetRegion(
         ranges=((2.60, -2.3, 3.42, 2.3),), yaw_ranges=((0, 0),)
