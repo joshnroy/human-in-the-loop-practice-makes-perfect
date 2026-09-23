@@ -17,7 +17,12 @@ robot-side variant -- joint (standoff, yaw) draws, see its bounds' comment.
 
 import numpy as np
 
-from .skills import TOSS_DISTANCE_BOUNDS, TOSS_ROTATION_BOUNDS
+from .skills import (
+    TOSS_DISTANCE_BOUNDS,
+    TOSS_RELEASE_MS_BOUNDS,
+    TOSS_ROTATION_BOUNDS,
+    TOSS_SPEED_BOUNDS,
+)
 
 # Chosen so every witness tuple from the coverage sweep lies inside: its slowest miss
 # witness sits at (330 deg/s, 520 ms), outside the calibrated 390-420 deg/s band.
@@ -37,6 +42,20 @@ YAW_RAD = 0.0
 # cannot fit.
 ROBOT_SIDE_STANDOFF_BOUNDS = TOSS_DISTANCE_BOUNDS
 ROBOT_SIDE_YAW_BOUNDS = TOSS_ROTATION_BOUNDS
+
+# The far band above has no scoring support at robot-side standoffs below 2.0 m:
+# the 2026-09-22 verification run's short-standoff practice draws scored 0/31,
+# and the 2026-09-23 controller-wide coverage probe (10 speeds x 8 releases at
+# standoffs {1.25, 1.5, 1.75} x 3 receiver positions, 720 completed trials)
+# found 0/240 scoring cells inside that band at every short standoff. Scoring
+# support does exist there, on an anti-correlated (speed, release) ridge running
+# from slow-late (115 deg/s, 840 ms) to fast-early (325-420 deg/s, 400 ms) --
+# both ends outside the far band. Robot-side speed and release are therefore
+# drawn over the controller's full ranges, like standoff and yaw already are;
+# far receivers keep the calibrated band and are byte-identical
+# (`test_far_receiver_draws_are_byte_identical_across_the_robot_side_widening`).
+ROBOT_SIDE_SPEED_BOUNDS = TOSS_SPEED_BOUNDS
+ROBOT_SIDE_RELEASE_MS_BOUNDS = TOSS_RELEASE_MS_BOUNDS
 
 
 class WideLongRangeTossProposal:
@@ -67,14 +86,15 @@ class WideLongRangeTossProposal:
 
     @staticmethod
     def sample_robot_side(*, rng: np.random.Generator) -> np.ndarray:
-        """The robot-side variant: joint (standoff, yaw) over the controller ranges.
+        """The robot-side variant: all four parameters drawn jointly over the
+        controller's full ranges -- see the bounds' comments above for why.
 
         Return metres, radians, degrees/second, and milliseconds, like `sample`.
         """
         standoff = float(rng.uniform(*ROBOT_SIDE_STANDOFF_BOUNDS))
         yaw = float(rng.uniform(*ROBOT_SIDE_YAW_BOUNDS))
-        speed = float(rng.uniform(*WIDE_TOSS_SPEED_BOUNDS))
-        release = float(rng.uniform(*WIDE_TOSS_RELEASE_MS_BOUNDS))
+        speed = float(rng.uniform(*ROBOT_SIDE_SPEED_BOUNDS))
+        release = float(rng.uniform(*ROBOT_SIDE_RELEASE_MS_BOUNDS))
         return np.array([standoff, yaw, speed, release])
 
     @staticmethod
@@ -84,6 +104,6 @@ class WideLongRangeTossProposal:
         return (
             ROBOT_SIDE_STANDOFF_BOUNDS[0] <= standoff <= ROBOT_SIDE_STANDOFF_BOUNDS[1]
             and ROBOT_SIDE_YAW_BOUNDS[0] <= yaw <= ROBOT_SIDE_YAW_BOUNDS[1]
-            and WIDE_TOSS_SPEED_BOUNDS[0] <= speed <= WIDE_TOSS_SPEED_BOUNDS[1]
-            and WIDE_TOSS_RELEASE_MS_BOUNDS[0] <= release <= WIDE_TOSS_RELEASE_MS_BOUNDS[1]
+            and ROBOT_SIDE_SPEED_BOUNDS[0] <= speed <= ROBOT_SIDE_SPEED_BOUNDS[1]
+            and ROBOT_SIDE_RELEASE_MS_BOUNDS[0] <= release <= ROBOT_SIDE_RELEASE_MS_BOUNDS[1]
         )
