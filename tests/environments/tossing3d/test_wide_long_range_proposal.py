@@ -20,7 +20,11 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+from hitl_pmp.environments.tossing3d.sides import (
+    BIN_RESET_REGION_BY_SIDE,
+    Tossing3DSide,
+    Tossing3DSides,
+)
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import (
     TOSS_DISTANCE_BOUNDS,
@@ -30,6 +34,7 @@ from hitl_pmp.environments.tossing3d.skills import (
     Tossing3DSkills,
 )
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
+    FAR_STAND_X_LIMIT_M,
     WIDE_TOSS_RELEASE_MS_BOUNDS,
     WIDE_TOSS_SPEED_BOUNDS,
     WIDE_TOSS_STANDOFF_BOUNDS,
@@ -51,27 +56,24 @@ MISS_WITNESSES = (
     (2.5, 0.0, 390.0, 440.0),
 )
 
-# Short-standoff witnesses from the 2026-09-23 controller-wide coverage probe
-# (10 speeds in [115, 420] x 8 releases in [400, 840] at standoffs
-# {1.25, 1.5, 1.75} x 3 robot-side receiver positions spanning the grasp-safe
-# rectangle, 720 completed physical trials, `results/overnight-coverage-probe-
-# 20260923` on the 2026-09-22 stack): every scoring tuple below scored at all 3
-# tested receiver positions and was re-validated 1/1 at this test's own pinned
-# arrangement; every miss tuple completed a physical non-scoring throw there.
-# The pre-extension robot-side speed/release band (330-420 deg/s x 430-520 ms)
-# contained 0/240 scoring cells at every tested short standoff, which is what
-# fed short-standoff practice an all-miss diet.
+# In-band witnesses from the 2026-09-23 controller-wide coverage probes (6
+# standoffs x 3 robot-side receiver positions x 10x8-ish (speed, release)
+# grids, 2,340 completed physical trials, `results/overnight-coverage-probe-
+# 20260923`): one scoring and one completed-miss tuple per proposal-supported
+# standoff rung, every one re-validated 1/1 at this test's own pinned
+# arrangement. The rungs track the raised standoff floor: 1.75 near the floor,
+# 2.0 mid-band, and 2.5 at the far edge, where the scoring cells ((390, 450),
+# (420, 450)) coincide with the far calibrated regime -- the side-invariance
+# the 2026-09-23 barrier-arc probe measured at 5/5 vs 5/5.
 ROBOT_SIDE_WITNESSES = (
     # (standoff m, speed deg/s, release ms, scores?)
-    (1.25, 150.0, 720.0, True),
-    (1.25, 115.0, 400.0, False),
-    (1.5, 185.0, 650.0, True),
-    (1.5, 115.0, 400.0, False),
     (1.75, 220.0, 600.0, True),
     (1.75, 115.0, 400.0, False),
+    (2.0, 290.0, 500.0, True),
+    (2.0, 115.0, 400.0, False),
+    (2.5, 390.0, 450.0, True),
+    (2.5, 115.0, 400.0, False),
 )
-PRE_EXTENSION_SPEED_BOUNDS = (330.0, 420.0)
-PRE_EXTENSION_RELEASE_MS_BOUNDS = (430.0, 520.0)
 # The probe's arrangement: reset_to_seed then a robot-side movables reset, both
 # deterministic per seed; 125 is the canonical practice seed and its arrangement
 # picks cleanly (bin near (-0.331, 0.965), cube on the spawn strip).
@@ -117,7 +119,17 @@ def test_samples_stay_inside_declared_and_controller_bounds(*, no_kinder_import)
         TOSS_SPEED_BOUNDS,
         TOSS_RELEASE_MS_BOUNDS,
     ])
-    assert np.array_equal(declared_bounds, controller_bounds)
+    # Yaw, speed and release stay the controller's own ranges; the standoff
+    # floor is the PROPOSAL narrowing to the far-feasible band -- the nearest
+    # far bin (2.6) minus the measured legal standing line (0.99) -- while the
+    # controller keeps its full 1.25 capability.
+    assert np.array_equal(declared_bounds[1:], controller_bounds[1:])
+    assert WIDE_TOSS_STANDOFF_BOUNDS[0] == pytest.approx(
+        BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges[0][0] - FAR_STAND_X_LIMIT_M
+    )
+    assert WIDE_TOSS_STANDOFF_BOUNDS[0] == pytest.approx(1.61)
+    assert WIDE_TOSS_STANDOFF_BOUNDS[0] > TOSS_DISTANCE_BOUNDS[0]
+    assert WIDE_TOSS_STANDOFF_BOUNDS[1] == TOSS_DISTANCE_BOUNDS[1]
     assert np.all(samples >= declared_bounds[:, 0])
     assert np.all(samples <= declared_bounds[:, 1])
     for column in range(4):
@@ -126,20 +138,18 @@ def test_samples_stay_inside_declared_and_controller_bounds(*, no_kinder_import)
         assert WideLongRangeTossProposal.contains(params=params)
 
 
-def test_draws_are_byte_identical_to_the_pre_unification_robot_side_variant(
-    *, no_kinder_import
-) -> None:
-    """The unified draw is exactly what `sample_robot_side` produced before the
-    far point mass was retired: these vectors were generated at the #361 code
-    from that variant, pinning values and rng consumption order across the
-    unification."""
+def test_draws_pin_values_and_rng_consumption_order(*, no_kinder_import) -> None:
+    """Exact-vector regression across the standoff-floor change: the yaw, speed
+    and release columns are byte-identical to the pre-floor unified draw at the
+    same rng seed (same consumption order, untouched maps); only the standoff
+    column moved, through the narrowed uniform map."""
     del no_kinder_import
     rng = np.random.default_rng(2026092313)
     expected = (
-        (1.4359164368538408, -1.0784000181958564, 321.96460666311793, 812.9234665995194),
-        (1.9304690625709, 1.265605168021688, 324.4091972918219, 472.333130913595),
-        (1.5707565792532756, -0.11864351652335503, 399.5490334965635, 824.4832454611482),
-        (1.402842106829608, 1.1004221233348783, 406.0396811191806, 756.691302643899),
+        (1.7463387203594833, -1.0784000181958564, 321.96460666311793, 812.9234665995194),
+        (2.109010645885327, 1.265605168021688, 324.4091972918219, 472.333130913595),
+        (1.8452214914524023, -0.11864351652335503, 399.5490334965635, 824.4832454611482),
+        (1.7220842116750459, 1.1004221233348783, 406.0396811191806, 756.691302643899),
     )
     for row in expected:
         assert tuple(WideLongRangeTossProposal.sample(rng=rng).tolist()) == row
@@ -234,31 +244,24 @@ def test_unified_proposals_pass_the_geometry_gate_at_both_sides_receivers() -> N
         env.close()
 
 
-def test_robot_side_support_holds_a_scoring_and_a_missing_combo_per_short_standoff(
+def test_support_holds_a_scoring_and_a_missing_combo_per_in_band_standoff(
     *, no_kinder_import
 ) -> None:
-    """The 2026-09-22 verification run starved short-standoff practice of scoring
-    labels: 0/31 robot-side draws below 2.0 m scored, because the band the draws
-    came from had no scoring support there. Every probe witness -- scoring and
-    miss alike -- must lie inside the robot-side support, and every scoring one
-    lies outside the pre-extension speed/release band, which is what the widening
-    newly covers."""
+    """The proposal's standoff band is the far-feasible band [1.61, 2.6], so
+    same-side practice can only produce transferable positives if scoring
+    support exists inside it. Every witness -- scoring and miss alike -- must
+    lie inside the support, with both classes present at a near-floor, a
+    mid-band and a far-edge standoff; and every witness standoff must respect
+    the raised floor (a sub-floor witness would be pinning dead support)."""
     del no_kinder_import
     by_standoff: dict[float, dict[bool, int]] = {}
     for standoff, speed, release, scores in ROBOT_SIDE_WITNESSES:
+        assert standoff >= WIDE_TOSS_STANDOFF_BOUNDS[0], (standoff, speed, release)
         assert WideLongRangeTossProposal.contains(
             params=np.array([standoff, 0.0, speed, release])
         ), (standoff, speed, release)
-        if scores:
-            in_pre_extension_band = (
-                PRE_EXTENSION_SPEED_BOUNDS[0] <= speed <= PRE_EXTENSION_SPEED_BOUNDS[1]
-                and PRE_EXTENSION_RELEASE_MS_BOUNDS[0]
-                <= release
-                <= PRE_EXTENSION_RELEASE_MS_BOUNDS[1]
-            )
-            assert not in_pre_extension_band, (standoff, speed, release)
         by_standoff.setdefault(standoff, {True: 0, False: 0})[scores] += 1
-    assert set(by_standoff) == {1.25, 1.5, 1.75}
+    assert set(by_standoff) == {1.75, 2.0, 2.5}
     for standoff, counts in by_standoff.items():
         assert counts[True] >= 1, standoff
         assert counts[False] >= 1, standoff
