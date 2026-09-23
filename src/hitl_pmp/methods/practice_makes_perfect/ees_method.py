@@ -278,6 +278,15 @@ class EesMethod(Method):
     # have judged it. None until the first practice period, and never an
     # *evaluation* episode: those observe nothing at all.
     _practice_episode: "_EesEpisode | None" = PrivateAttr()
+    # Ground actions whose parameter pool starved (0 accepted proposals) at a
+    # symbolic state, keyed by that state. Scoped to one practice session: cleared
+    # in get_practice_policy, never during evaluation. Exists so an exhausted
+    # sampler *deselects* the action and the planner chooses again, instead of
+    # ending the session -- the 2026-09-22 robot-side validation run lost nine of
+    # ten practice cycles at 0 actions to exactly that (a fixed 2.5 m standoff made
+    # every robot-side toss proposal infeasible, and each starvation raised
+    # InteractionComplete).
+    _starved_pools: dict[frozenset[GroundAtom], set[GroundSkill]] = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -293,6 +302,7 @@ class EesMethod(Method):
         self._practice_target_tallies = {}
         self._translation_cache = TranslationCache()
         self._practice_episode = None
+        self._starved_pools = {}
 
     # ------------------------------------------------------------------ domain
 
@@ -621,6 +631,20 @@ class EesMethod(Method):
         }[field]
         self._practice_target_tallies[name] = builder()
 
+    def record_starved_parameter_pool(
+        self, *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom]
+    ) -> None:
+        """Deselect `ground_skill` at `true_atoms` for the rest of this practice
+        session: its candidate pool just starved (0 accepted proposals), so
+        dispatching it again from the same symbolic state would only starve again.
+        Keyed by the pair, not the action alone -- a pool's feasibility depends on
+        the geometry the symbolic state stands for, and a reset that changes the
+        state may make the same action feasible."""
+        self._starved_pools.setdefault(true_atoms, set()).add(ground_skill)
+
+    def starved_ground_skills(self, *, true_atoms: frozenset[GroundAtom]) -> frozenset[GroundSkill]:
+        return frozenset(self._starved_pools.get(true_atoms, set()))
+
     def practice_target_outcomes(self) -> dict[str, PracticeTargetTally]:
         """Per lifted skill, cumulative over the run; method_runner.py differences them
         per window. See Method.practice_target_outcomes and PracticeTargetTally.
@@ -898,6 +922,9 @@ class EesMethod(Method):
         those checks key on."""
         init_atoms = self.abstract_state(state=task.initial_state)
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
+        # Starvation is per session: a new period re-randomizes movable geometry,
+        # so last session's infeasible pools are no longer evidence.
+        self._starved_pools.clear()
         episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
         self._practice_episode = episode
         return lambda state: episode.step(state=state)
@@ -1128,93 +1155,125 @@ class _EesEpisode:
         self.observe_pending(true_atoms=true_atoms, state=state)
         self._tick_goal_pursuit_horizon()
 
-        # Closed-loop execution: if the next queued skill's preconditions no longer
-        # hold, the plan has diverged (a stochastic outcome -- e.g. a bare ball
-        # placed on a table falling to the floor -- broke a downstream skill's
-        # preconditions) and executing it anyway would drive an inapplicable action
-        # into the env. Discard the stale plan and replan instead. This mirrors
-        # predicators, whose option policy raises OptionExecutionFailure when a step
-        # is not initiable and re-plans (active_sampler_explorer.py:340-343) rather
-        # than ever feeding simulate() an inapplicable option. The earlier open-loop
-        # execution is what tripped Ball-Ring's pick/place obj_type_id asserts.
-        if self._plan and not (self._plan[0].preconditions <= true_atoms):
-            self._plan = []
+        # The `while` exists for one event only: a starved parameter pool (see the
+        # except branch below) deselects its ground action and retries planning in
+        # the same step, so a session never ends *because* one pool was empty.
+        # Termination: every iteration returns, raises, records a strictly new
+        # starved (state, action) pair, or flips `_goal_phase_done` once.
+        while True:
+            # Closed-loop execution: if the next queued skill's preconditions no
+            # longer hold, the plan has diverged (a stochastic outcome -- e.g. a
+            # bare ball placed on a table falling to the floor -- broke a downstream
+            # skill's preconditions) and executing it anyway would drive an
+            # inapplicable action into the env. Discard the stale plan and replan
+            # instead. This mirrors predicators, whose option policy raises
+            # OptionExecutionFailure when a step is not initiable and re-plans
+            # (active_sampler_explorer.py:340-343) rather than ever feeding
+            # simulate() an inapplicable option. The earlier open-loop execution is
+            # what tripped Ball-Ring's pick/place obj_type_id asserts.
+            if self._plan and not (self._plan[0].preconditions <= true_atoms):
+                self._plan = []
 
-        if not self._plan:
-            self._plan = self._next_plan(true_atoms=true_atoms)
-            # The practice target is the last skill of a practice plan (a goal-pursuit
-            # plan has none); the prefix just reaches its preconditions.
-            self._practice_target = (
-                self._plan[-1]
-                if (self._practicing and self._goal_phase_done and self._plan)
-                else None
-            )
-        if not self._plan:
-            if self._practicing:
-                # The selector returned STOP, or no candidate/setup/bootstrap action
-                # was available. End the period without a no-op or a paid reset.
-                logger.debug(
-                    "_EesEpisode._next_plan: STOP or no available practice action "
-                    "-- raising InteractionComplete at step #%d "
-                    "true_atoms=%s",
-                    self._debug_step_count,
-                    sorted(
-                        f"{a.predicate.name}({','.join(o.name for o in a.objects)})"
-                        for a in true_atoms
+            if not self._plan:
+                self._plan = self._next_plan(true_atoms=true_atoms)
+                # The practice target is the last skill of a practice plan (a
+                # goal-pursuit plan has none); the prefix just reaches its
+                # preconditions.
+                self._practice_target = (
+                    self._plan[-1]
+                    if (self._practicing and self._goal_phase_done and self._plan)
+                    else None
+                )
+            if not self._plan:
+                if self._practicing:
+                    # The selector returned STOP, or no candidate/setup/bootstrap
+                    # action was available. End the period without a no-op or a
+                    # paid reset.
+                    logger.debug(
+                        "_EesEpisode._next_plan: STOP or no available practice action "
+                        "-- raising InteractionComplete at step #%d "
+                        "true_atoms=%s",
+                        self._debug_step_count,
+                        sorted(
+                            f"{a.predicate.name}({','.join(o.name for o in a.objects)})"
+                            for a in true_atoms
+                        ),
+                    )
+                    raise InteractionComplete
+                # Evaluation: run_task_episode owns termination (goal check +
+                # horizon), so degrade to a no-op rather than ending its episode
+                # from in here. The environment supplies the action, since only it
+                # knows what inaction means in its own action space -- see
+                # Environment.noop_action.
+                return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
+
+            ground_skill = self._plan.pop(0)
+            if self._practicing and ground_skill in method.starved_ground_skills(
+                true_atoms=true_atoms
+            ):
+                # Replanning re-chose an action whose pool already starved in this
+                # very state -- planning is deterministic, so executing would only
+                # starve again. Try once more with the goal phase closed (a goal
+                # plan cannot deselect, but the practice selector can); if practice
+                # planning itself reproduced it, end the period as before.
+                self._plan = []
+                self._practice_target = None
+                if not self._goal_phase_done:
+                    self._goal_phase_done = True
+                    continue
+                raise InteractionComplete(planner_stop=False)
+            if method.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
+                if self._practicing:
+                    method.record_action_cost(ground_skill=ground_skill)
+                # Dispatch to the rescue mechanism, not execute_ground_skill --
+                # this "skill" has no controller/effects to score. self._pending
+                # stays untouched: nothing here for observe_pending to settle.
+                raise HumanCubeBinResetRequested(
+                    cost=ground_skill.evaluate_practice_cost(),
+                    destination=method.skill_provider.movables_reset_destination(
+                        ground_skill=ground_skill
                     ),
                 )
-                raise InteractionComplete
-            # Evaluation: run_task_episode owns termination (goal check + horizon),
-            # so degrade to a no-op rather than ending its episode from in here.
-            # The environment supplies the action, since only it knows what inaction
-            # means in its own action space -- see Environment.noop_action.
-            return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
-
-        ground_skill = self._plan.pop(0)
-        if method.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
+            # By default every skill executed during practice explores
+            # (epsilon-greedy). Under reproduce_predicators_explore_target_only,
+            # only the practice target does -- the prefix that navigates to it uses
+            # the greedy learned sampler, matching predicators
+            # (active_sampler_explorer.py fires its exploration sampler only once
+            # next_practice_nsrt's preconditions hold). On this domain's long
+            # multi-skill plans, exploring every step spends ~half of all actions
+            # on off-target random params; this flag measures that cost.
+            explore = self._practicing and (
+                not method.reproduce_predicators_explore_target_only
+                or ground_skill is self._practice_target
+            )
+            try:
+                labeled, record = method.execute_ground_skill(
+                    ground_skill=ground_skill, state=state, explore=explore
+                )
+            except NoFeasibleParametersError:
+                self._plan = []
+                self._practice_target = None
+                if not self._practicing:
+                    return LabeledAction(
+                        action=self._noop_action(), label="no-op (no feasible parameters)"
+                    )
+                # No controller was dispatched, so nothing to score and nothing to
+                # charge. Deselect this (state, action) pair for the session and
+                # let the planner choose again in this same step, instead of ending
+                # the period -- an empty pool is a geometric fact about one action,
+                # not a reason to stop practicing everything else.
+                method.record_starved_parameter_pool(
+                    ground_skill=ground_skill, true_atoms=true_atoms
+                )
+                continue
             if self._practicing:
+                # Charge only once action construction has succeeded, even if no
+                # later policy call observes this actual attempt.
                 method.record_action_cost(ground_skill=ground_skill)
-            # Dispatch to the rescue mechanism, not execute_ground_skill -- this
-            # "skill" has no controller/effects to score. self._pending stays
-            # untouched: nothing here for observe_pending to settle.
-            raise HumanCubeBinResetRequested(
-                cost=ground_skill.evaluate_practice_cost(),
-                destination=method.skill_provider.movables_reset_destination(
-                    ground_skill=ground_skill
-                ),
-            )
-        # By default every skill executed during practice explores (epsilon-greedy).
-        # Under reproduce_predicators_explore_target_only, only the practice target
-        # does -- the prefix that navigates to it uses the greedy learned sampler,
-        # matching predicators (active_sampler_explorer.py fires its exploration
-        # sampler only once next_practice_nsrt's preconditions hold). On this domain's
-        # long multi-skill plans, exploring every step spends ~half of all actions on
-        # off-target random params; this flag measures that cost.
-        explore = self._practicing and (
-            not method.reproduce_predicators_explore_target_only
-            or ground_skill is self._practice_target
-        )
-        try:
-            labeled, record = method.execute_ground_skill(
-                ground_skill=ground_skill, state=state, explore=explore
-            )
-        except NoFeasibleParametersError:
-            self._plan = []
-            self._practice_target = None
-            if self._practicing:
-                # No controller was dispatched. End without a fake failure,
-                # execution cost, or unrequested reset, and distinguish this
-                # from an algorithmic STOP decision.
-                raise InteractionComplete(planner_stop=False) from None
-            return LabeledAction(action=self._noop_action(), label="no-op (no feasible parameters)")
-        if self._practicing:
-            # Charge only once action construction has succeeded, even if no
-            # later policy call observes this actual attempt.
-            method.record_action_cost(ground_skill=ground_skill)
-        self._pending = ground_skill
-        self._pending_before_atoms = true_atoms
-        self._pending_sampler_record = record
-        return labeled
+            self._pending = ground_skill
+            self._pending_before_atoms = true_atoms
+            self._pending_sampler_record = record
+            return labeled
 
     def _tick_goal_pursuit_horizon(self) -> None:
         """Spend one step of the goal-pursuit budget, and end the goal phase once it
@@ -1333,9 +1392,17 @@ class _EesEpisode:
         execution. If candidates are exhausted, bootstrap with a uniformly random
         applicable skill."""
         method = self._method
+        starved = method.starved_ground_skills(true_atoms=true_atoms)
         for candidate in method.select_skill_to_practice(true_atoms=true_atoms):
             if candidate == STOP_SKILL:
                 raise InteractionComplete(planner_stop=True)
+            if candidate in starved:
+                # Its parameter pool starved at this symbolic state earlier in the
+                # session (see record_starved_parameter_pool); selecting it again
+                # would only starve again. Not tallied: record_practice_target's
+                # contract is pure observation of decisions already made, and this
+                # skip *is* the decision.
+                continue
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
                 return [candidate]
@@ -1360,9 +1427,15 @@ class _EesEpisode:
             method.record_practice_target(name=candidate.skill.name, field="selected")
             return [*prefix, candidate]
 
-        applicable = SkillGrounder.applicable_ground_skills(
-            skills=method.skills(), objects=method.objects(), true_atoms=true_atoms
-        )
+        applicable = [
+            ground_skill
+            for ground_skill in SkillGrounder.applicable_ground_skills(
+                skills=method.skills(), objects=method.objects(), true_atoms=true_atoms
+            )
+            # Same deselection as the candidate loop above: a bootstrap draw of a
+            # starved action would starve again, not bootstrap anything.
+            if ground_skill not in starved
+        ]
         if not applicable:
             return []
         return [method.random_choice(ground_skills=applicable)]
