@@ -1,9 +1,11 @@
 """The barrier layout's only toss proposal: one draw for every receiver side.
 
 All four parameters -- standoff, yaw, speed, release -- are drawn jointly and
-independently over the controller's full ranges, and the per-state geometry gate
-keeps the feasible subset. The interface is deliberately identical for both bin
-sides: the fixed far-receiver launch pose (standoff 2.5 m, yaw 0) that survived
+independently: yaw, speed and release over the controller's full ranges,
+standoff over the far-feasible band (see the bounds' comment), and the
+per-state geometry gate keeps the feasible subset. The interface is deliberately
+identical for both bin sides: the fixed far-receiver launch pose (standoff
+2.5 m, yaw 0) that survived
 from the calibrated proposal's development ridge was a point mass that (a) made
 far evaluation a 2-parameter problem while robot-side practice explored four,
 (b) starved refits of far-side variety, and (c) kept every "far" number tied to
@@ -21,6 +23,7 @@ physical misses -- which is what makes learning real on both sides.
 
 import numpy as np
 
+from .sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
 from .skills import (
     TOSS_DISTANCE_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
@@ -28,10 +31,27 @@ from .skills import (
     TOSS_SPEED_BOUNDS,
 )
 
-# The controller's own limits, restated under the proposal's name so the
-# declared support and the controller bounds are asserted equal by test rather
-# than accidentally coinciding.
-WIDE_TOSS_STANDOFF_BOUNDS = TOSS_DISTANCE_BOUNDS
+# The easternmost legal stand x, measured 2026-09-23 through the geometry gate
+# itself (0.55 m robot footprint against the barrier at x = 1.3: the shortest
+# gate-accepted standoff at the natural far bin put the stand at x = 0.994; see
+# the standoff-floor PR). Not derivable from constants in this package -- the
+# barrier pose and robot footprint live in the scene -- so it is pinned here
+# and a change to either upstream quantity must move it.
+FAR_STAND_X_LIMIT_M = 0.99
+
+# Yaw, speed and release are the controller's own ranges. Standoff is the one
+# axis the proposal NARROWS: its floor is the far-feasible band's lower edge --
+# the nearest far bin (`BIN_RESET_REGION_BY_SIDE[OPPOSITE]`'s x-min, 2.6) minus
+# the legal standing line above -- so every draw's standoff is one a far
+# receiver could also demand. Below that floor the two sides' distance regimes
+# are disjoint: the 2026-09-23 verification run's positives sat 14/17 below
+# 1.6 m while every far evaluation required 1.70-2.58 m, and its far evals
+# scored 2/10 at best. The controller keeps its full 1.25 m capability; only
+# the proposal moves.
+WIDE_TOSS_STANDOFF_BOUNDS = (
+    BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges[0][0] - FAR_STAND_X_LIMIT_M,
+    TOSS_DISTANCE_BOUNDS[1],
+)
 WIDE_TOSS_YAW_BOUNDS = TOSS_ROTATION_BOUNDS
 WIDE_TOSS_SPEED_BOUNDS = TOSS_SPEED_BOUNDS
 WIDE_TOSS_RELEASE_MS_BOUNDS = TOSS_RELEASE_MS_BOUNDS

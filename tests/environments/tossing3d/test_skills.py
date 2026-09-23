@@ -438,13 +438,15 @@ def test_the_four_same_side_toss_dials_are_drawn_independently() -> None:
 def test_samplers_cover_farther_receivers_without_losing_short_throws() -> None:
     """Candidate support spans the far-bin clearance requirement and short throws.
 
-    Both samplers draw distance independently now: the same-side sampler always
-    did, and the barrier layout's wide proposal gained the full standoff range
-    when its fixed far launch pose was retired for the unified per-side-free
-    draw -- so each must span the far clearance and the short-throw regime.
+    The same-side recovery sampler must span both regimes. The barrier layout's
+    wide proposal deliberately does NOT: its standoff floor is the far-feasible
+    band's lower edge (the nearest far bin minus the measured legal standing
+    line), so its draws span the far clearance down to that floor and no lower
+    -- short throws below the floor are the recovery sampler's business.
     """
     from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
     from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
+        WIDE_TOSS_STANDOFF_BOUNDS,
         WideLongRangeTossProposal,
     )
 
@@ -454,7 +456,8 @@ def test_samplers_cover_farther_receivers_without_losing_short_throws() -> None:
     assert any(distance < 1.45 for distance in distances)
     wide_distances = [float(WideLongRangeTossProposal.sample(rng=rng)[0]) for _ in range(200)]
     assert any(distance > 2.425 + 0.05 for distance in wide_distances)
-    assert any(distance < 1.45 for distance in wide_distances)
+    assert any(distance < WIDE_TOSS_STANDOFF_BOUNDS[0] + 0.2 for distance in wide_distances)
+    assert all(distance >= WIDE_TOSS_STANDOFF_BOUNDS[0] for distance in wide_distances)
 
 
 def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
