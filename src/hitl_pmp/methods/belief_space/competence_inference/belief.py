@@ -73,8 +73,12 @@ class BayesianSkillBelief(SkillBelief):
                 raise ValueError("curve parameters must satisfy 0 <= phi0 <= phi1 <= 1")
             if np.any(values[:, 2] < 0) or np.any(values[:, 3] <= 2):
                 raise ValueError("curve rates must be nonnegative and concentration > 2")
-        elif np.any((values[:, 1] < 0) | (values[:, 1] > self.config.eta_max)):
-            raise ValueError("learning rates must respect the shared cap")
+        elif np.any(values[:, 1] < 0):
+            raise ValueError("learning rates must be nonnegative")
+        elif self.engine == "grid" and np.any(values[:, 1] > self.config.eta_max):
+            # Grid states are axis points by construction, so a rate above eta_max is
+            # a corrupted buffer; particle rates are uncapped, notebook-exact.
+            raise ValueError("grid learning rates must lie on the [0, eta_max] axis")
         if self.engine == "particle":
             ancestors = self.ancestors()
             if ancestors.shape != (self.state_count,) or np.any(
@@ -195,7 +199,14 @@ class BayesianSkillBelief(SkillBelief):
         return self
 
     def refit(self, *, training_examples: int) -> Self:
-        """Pure forecast used by search, with no transition at zero added examples."""
+        """Pure forecast used by search, with no transition at zero added examples.
+
+        This zero-example identity is a DELIBERATE deviation from the notebook,
+        which always predicts across a boundary: the notebook has no planner, and
+        injecting hypothetical process noise into imagined search branches is what
+        produced the spurious-practice-value pathology the production fixes
+        removed. Real cycle boundaries (`advance_cycle`) do apply the n = 0 step.
+        """
         if training_examples < 0:
             raise ValueError("training_examples must be nonnegative")
         if training_examples == 0:
@@ -206,8 +217,11 @@ class BayesianSkillBelief(SkillBelief):
         """Start a recorded cycle, resetting evidence/ancestry even without training.
 
         Save this cycle's filtered belief in the real-run history BEFORE calling
-        this method. A zero-example boundary changes only bookkeeping, with an
-        identity latent transition: no fictitious process noise or learning.
+        this method. A zero-example boundary applies the notebook's n = 0
+        transition -- the noise-only step for Model B (drift 0, decay^0 = 1, both
+        noises), a redraw at the unchanged total for Model A -- because the
+        notebook's engines always predict across a real boundary. Only the search
+        forecast (`refit`) keeps the zero-example identity; see its docstring.
         """
         if training_examples < 0:
             raise ValueError("training_examples must be nonnegative")
@@ -219,12 +233,12 @@ class BayesianSkillBelief(SkillBelief):
             "incoming_training_examples": training_examples,
             "cycle_successes": 0,
             "cycle_failures": 0,
-            "process_transition_count": self.process_transition_count + int(training_examples > 0),
+            # Every real boundary consumes one process-noise stream now, including
+            # the n = 0 step, so idle cycles draw distinct deterministic noise.
+            "process_transition_count": self.process_transition_count + 1,
         }
         if self.engine == "particle":
             updates["parent_indices"] = np.arange(self.state_count, dtype=INDEX_DTYPE).tobytes()
-        if training_examples == 0:
-            return self.model_copy(update=updates)
         if self.engine == "grid":
             projected = grid_predict(
                 model=self.model_name,

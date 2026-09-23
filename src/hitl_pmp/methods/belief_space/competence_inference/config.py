@@ -34,7 +34,11 @@ class InferenceConfig(BaseModel):
 
         Values above one predict slower learning. Model A stretches its phi curve;
         Model B stretches learning-rate magnitudes and per-example decay together.
-        Competence process noise and all non-learning priors stay unchanged.
+        Competence process noise and all non-learning priors stay unchanged. The
+        `eta_max` division here scales only the GRID's discretization range (and,
+        with it, where the top bin's absorbed tail begins) -- particle rates carry
+        no cap, so for the particle engine the stretch acts through the prior and
+        process-noise sigmas and the decay alone.
         """
         if not math.isfinite(time_scale) or time_scale <= 0:
             raise ValueError("time_scale must be finite and positive")

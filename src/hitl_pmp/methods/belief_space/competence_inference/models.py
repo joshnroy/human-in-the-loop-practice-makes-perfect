@@ -1,4 +1,14 @@
-"""Sampling and fixed-grid operators for the two notebook competence models."""
+"""Sampling and fixed-grid operators for the two notebook competence models.
+
+The spec is `docs/from_tom/competence_models.ipynb` (Model A: cell 9, Model B: cells
+10-11), and this module now follows it exactly where it used to deviate: the particle
+learning-rate prior and transition carry no upper cap (`eta_max` is only the grid's
+discretization range, whose top bin absorbs the tail mass), Model A's particle prior
+is the notebook's continuous sampler rather than the grid's finite support, the
+zero-new-example cycle transition applies the n=0 noise step rather than the
+identity, and the mode entering `beta_parameters` is clipped into [1e-3, 1 - 1e-3].
+Each of those was a port deviation this change removes.
+"""
 
 from functools import lru_cache
 from typing import Literal
@@ -29,13 +39,17 @@ def global_curve_learning_rate(*, phi: np.ndarray, training_examples: int) -> np
 
 
 def beta_parameters(*, phi: np.ndarray, training_examples: int) -> tuple[np.ndarray, np.ndarray]:
-    mode = global_curve_mode(phi=phi, training_examples=training_examples)
+    # The notebook's beta_from_mode clips the mode into [1e-3, 1 - 1e-3] before
+    # computing the parameters, which keeps flat curves at the extremes proper.
+    mode = np.clip(global_curve_mode(phi=phi, training_examples=training_examples), 1e-3, 1 - 1e-3)
     return 1.0 + mode * (phi[..., 3] - 2.0), 1.0 + (1.0 - mode) * (phi[..., 3] - 2.0)
 
 
 @lru_cache(maxsize=32)
 def phi_support(*, config: InferenceConfig) -> np.ndarray:
-    """Uniform finite prior shared exactly by both engines, including flat curves."""
+    """The GRID engine's uniform finite support (the notebook's grid), including flat
+    curves. The particle engine no longer draws from these atoms: its prior is the
+    notebook's continuous sampler in `particle_prior`."""
     support = np.array(
         [
             (initial, plateau, rate, concentration)
@@ -114,14 +128,25 @@ def particle_prior(
     *, model: CompetenceModel, config: InferenceConfig, rng: np.random.Generator, count: int
 ) -> np.ndarray:
     if model == "global_curve":
-        support = phi_support(config=config)
-        phi = support[rng.integers(len(support), size=count)]
+        # The notebook's continuous prior (cell 9 `sample_initial`): the grid atoms
+        # are the discretization, not the model. Rate and concentration ranges come
+        # from the config's own support extremes.
+        phi0 = rng.uniform(0.0, 1.0, size=count)
+        phi1 = phi0 + (1.0 - phi0) * rng.uniform(0.0, 1.0, size=count)
+        rate_bounds = (min(config.phi_rates), max(config.phi_rates))
+        kappa_bounds = (min(config.phi_concentrations), max(config.phi_concentrations))
+        curve_rate = np.exp(rng.uniform(np.log(rate_bounds[0]), np.log(rate_bounds[1]), size=count))
+        concentration = np.exp(
+            rng.uniform(np.log(kappa_bounds[0]), np.log(kappa_bounds[1]), size=count)
+        )
+        phi = np.column_stack((phi0, phi1, curve_rate, concentration))
         alpha, beta = beta_parameters(phi=phi, training_examples=0)
         return np.column_stack((phi, rng.beta(alpha, beta)))
     competence = rng.beta(
         config.initial_competence_alpha, config.initial_competence_beta, size=count
     )
-    rate = np.minimum(np.abs(rng.normal(0.0, config.initial_eta_sigma, size=count)), config.eta_max)
+    # Untruncated half-normal, as the notebook draws it; eta_max caps nothing here.
+    rate = np.abs(rng.normal(0.0, config.initial_eta_sigma, size=count))
     return np.column_stack((competence, rate))
 
 
@@ -134,8 +159,10 @@ def particle_transition(
     total_training_examples: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    if training_examples == 0:
-        return values
+    # No zero-example shortcut: the notebook's engines always predict across a cycle
+    # boundary, so n = 0 is the noise-only step (drift 0, decay^0 = 1 for Model B; a
+    # redraw at the unchanged total for Model A). The search-side identity at zero
+    # lives in `BayesianSkillBelief.refit`, deliberately, not here.
     if model == "global_curve":
         alpha, beta = beta_parameters(phi=values[:, :4], training_examples=total_training_examples)
         return np.column_stack((values[:, :4], rng.beta(alpha, beta)))
@@ -146,11 +173,11 @@ def particle_transition(
         0.0,
         1.0,
     )
-    rate = np.clip(
+    # Floor only, no upper clip: eta' = max(decay^n * eta + noise, 0), notebook-exact.
+    rate = np.maximum(
         config.learning_rate_decay**training_examples * values[:, 1]
         + rng.normal(0.0, config.sigma_eta, size=len(values)),
         0.0,
-        config.eta_max,
     )
     return np.column_stack((competence, rate))
 
@@ -196,8 +223,8 @@ def grid_predict(
     training_examples: int,
     total_training_examples: int,
 ) -> np.ndarray:
-    if training_examples == 0:
-        return weights
+    # Like `particle_transition`, no zero-example shortcut: the n = 0 kernels apply
+    # the noise-only step, and Model A redraws at the unchanged total.
     if model == "global_curve":
         phi_mass = weights.reshape(-1, config.competence_bins).sum(axis=1)
         return (
@@ -222,9 +249,12 @@ def grid_backward(
     training_examples: int,
     total_training_examples: int,
 ) -> np.ndarray:
-    """Apply the transpose of the exact same discrete transition used online."""
-    if training_examples == 0:
-        return message
+    """Apply the transpose of the exact same discrete transition used online.
+
+    That contract is why there is no zero-example shortcut here either: real cycle
+    boundaries now apply the n = 0 noise step forward, so smoothing must apply its
+    transpose or the forward-backward pair would disagree.
+    """
     if model == "global_curve":
         per_phi = np.sum(
             curve_cycle_mass(config=config, training_examples=total_training_examples)
