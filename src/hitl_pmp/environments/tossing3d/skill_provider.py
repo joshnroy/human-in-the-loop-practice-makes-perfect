@@ -123,10 +123,15 @@ class Tossing3DSkillProvider(SkillProvider):
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
             return SameSideSkills.sample_params(ground_skill=ground_skill, rng=rng)
-        # Every barrier toss draws the wide proposal regardless of the side target:
-        # the per-side calibrated/long-range selection was removed with the proposal
-        # choice itself.
+        # Every barrier toss draws the wide proposal; the calibrated/long-range
+        # *choice* stays removed. The one dispatch here is geometric, not a
+        # proposal choice: a robot-side receiver has no fixed legal launch pose
+        # (see wide_long_range_proposal's robot-side bounds comment), so its
+        # variant samples (standoff, yaw) jointly. The side is the toss's own
+        # BinAtSide binding -- its last object.
         if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
+            if ground_skill.objects[-1] == Tossing3DSides.robot:
+                return WideLongRangeTossProposal.sample_robot_side(rng=rng)
             return WideLongRangeTossProposal.sample(rng=rng)
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
 

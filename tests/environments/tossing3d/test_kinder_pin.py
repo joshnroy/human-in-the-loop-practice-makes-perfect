@@ -162,10 +162,17 @@ def test_the_distance_bounds_are_upstreams_own() -> None:
     )
 
 
-def test_the_rotation_bounds_are_upstreams_own() -> None:
-    """Both sides derive this from `WAYPOINT_TOLERANCE` and the largest standoff rather
-    than writing the number out, so this catches a drift in either input as well as in
-    the arithmetic."""
+def test_the_rotation_bounds_deliberately_widen_upstreams_derived_band() -> None:
+    """A DELIBERATE divergence, unlike every other pin in this file. Upstream derives
+    `TARGET_ROTATION_BOUNDS` (~+-0.44 deg) from `WAYPOINT_TOLERANCE` and the largest
+    standoff; that derivation is still mirrored and pinned here as `MAX_TOSS_ROTATION`,
+    so a drift in either input still surfaces. But the *sampling band* this domain uses
+    is widened to +-pi/2: measured 2026-09-22, the live controller executes yaw-offset
+    tosses across that whole band and one +-90 deg 2.5 m throw SCORED -- and robot-side
+    receivers in the grasp-safe region need the yaw freedom, because a yaw-0 toss
+    location for them can sit past the barrier. Local only; not pushed upstream."""
+    import math
+
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
         MoveToTossLocationAndTossController,
     )
@@ -175,10 +182,9 @@ def test_the_rotation_bounds_are_upstreams_own() -> None:
     assert (
         pytest.approx(MoveToTossLocationAndTossController.MAX_TARGET_ROTATION) == MAX_TOSS_ROTATION
     )
-    assert (
-        pytest.approx(MoveToTossLocationAndTossController.TARGET_ROTATION_BOUNDS)
-        == TOSS_ROTATION_BOUNDS
-    )
+    assert (-math.pi / 2, math.pi / 2) == TOSS_ROTATION_BOUNDS
+    assert TOSS_ROTATION_BOUNDS[0] < -MAX_TOSS_ROTATION < MAX_TOSS_ROTATION
+    assert TOSS_ROTATION_BOUNDS[1] > MAX_TOSS_ROTATION
 
 
 def test_the_speed_bounds_are_upstreams_own_read_through_the_degree_conversion() -> None:

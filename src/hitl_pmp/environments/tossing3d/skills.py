@@ -124,12 +124,22 @@ TOSS_DISTANCE_BOUNDS = (1.25, 2.6)
 # `_check_robot_is_close_to_pose` requires the base to be to its own planned waypoint.
 WAYPOINT_TOLERANCE = 4 * 1e-2
 
-# Upstream's `TARGET_ROTATION_BOUNDS`: the widest yaw about the bin that still leaves the
+# Upstream's `MAX_TARGET_ROTATION`: the widest yaw about the bin that still leaves the
 # base within half of `WAYPOINT_TOLERANCE` of the bin's axis at the largest standoff.
 # Computed from the two constants above rather than written as a literal, exactly as
 # upstream computes it, so a bump to either cannot silently drift out of sync.
 MAX_TOSS_ROTATION = float(np.arcsin(0.5 * WAYPOINT_TOLERANCE / TOSS_DISTANCE_BOUNDS[1]))
-TOSS_ROTATION_BOUNDS = (-MAX_TOSS_ROTATION, MAX_TOSS_ROTATION)
+# DELIBERATE divergence from upstream's `TARGET_ROTATION_BOUNDS`
+# (+-MAX_TOSS_ROTATION, ~0.44 deg either way): that derivation bounds *waypoint
+# drift*, not what the controller can execute. Measured 2026-09-22 on the live
+# controller, yaw offsets across +-pi/2 all execute (and a +-90 deg 2.5 m throw
+# scored), while robot-side receivers in the grasp-safe rectangle have NO yaw-0
+# toss location west of the barrier -- the fixed-heading band is what starved the
+# validation run's every robot-side pool. This constant is ours (it mirrors, not
+# imports, upstream's), so the widening stays local; nothing is pushed upstream.
+# `MAX_TOSS_ROTATION` above stays pinned to upstream's derivation by
+# test_kinder_pin so drift in its inputs still surfaces.
+TOSS_ROTATION_BOUNDS = (-float(np.pi) / 2, float(np.pi) / 2)
 
 # Upstream's `SPEED_BOUNDS`, in joint-path deg/s rather than upstream's rad/s -- see this
 # module's docstring for why the degree convention is kept and where it is converted.

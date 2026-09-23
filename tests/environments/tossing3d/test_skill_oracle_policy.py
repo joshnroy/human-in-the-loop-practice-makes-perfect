@@ -135,8 +135,9 @@ def test_the_throw_standoff_is_upstreams_own_test_value() -> None:
 
 def test_the_throw_rotation_is_head_on() -> None:
     """Upstream's own value in `test_pick_ground_toss`, and the centre of
-    `TOSS_ROTATION_BOUNDS` -- which is only about 0.8 degrees wide either way, so any
-    other value would be a rounding of this one rather than a choice."""
+    `TOSS_ROTATION_BOUNDS` -- head-on at the bin. The band itself was widened to
+    +-pi/2 on 2026-09-22 (see test_kinder_pin's deliberate-divergence pin), but it
+    stayed symmetric, so its centre is still upstream's head-on throw."""
     assert ORACLE_THROW_ROTATION == 0.0
     assert pytest.approx(sum(TOSS_ROTATION_BOUNDS) / 2) == ORACLE_THROW_ROTATION
 
