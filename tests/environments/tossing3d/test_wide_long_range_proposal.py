@@ -30,6 +30,8 @@ from hitl_pmp.environments.tossing3d.skills import (
     Tossing3DSkills,
 )
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
+    ROBOT_SIDE_RELEASE_MS_BOUNDS,
+    ROBOT_SIDE_SPEED_BOUNDS,
     ROBOT_SIDE_STANDOFF_BOUNDS,
     ROBOT_SIDE_YAW_BOUNDS,
     WIDE_TOSS_RELEASE_MS_BOUNDS,
@@ -50,6 +52,33 @@ MISS_WITNESSES = (
     (2.5, 0.0, 360.0, 500.0),
     (2.5, 0.0, 390.0, 440.0),
 )
+
+# Short-standoff witnesses from the 2026-09-23 controller-wide coverage probe
+# (10 speeds in [115, 420] x 8 releases in [400, 840] at standoffs
+# {1.25, 1.5, 1.75} x 3 robot-side receiver positions spanning the grasp-safe
+# rectangle, 720 completed physical trials, `results/overnight-coverage-probe-
+# 20260923` on the 2026-09-22 stack): every scoring tuple below scored at all 3
+# tested receiver positions and was re-validated 1/1 at this test's own pinned
+# arrangement; every miss tuple completed a physical non-scoring throw there.
+# The pre-extension robot-side speed/release band (330-420 deg/s x 430-520 ms)
+# contained 0/240 scoring cells at every tested short standoff, which is what
+# fed short-standoff practice an all-miss diet.
+ROBOT_SIDE_WITNESSES = (
+    # (standoff m, speed deg/s, release ms, scores?)
+    (1.25, 150.0, 720.0, True),
+    (1.25, 115.0, 400.0, False),
+    (1.5, 185.0, 650.0, True),
+    (1.5, 115.0, 400.0, False),
+    (1.75, 220.0, 600.0, True),
+    (1.75, 115.0, 400.0, False),
+)
+PRE_EXTENSION_SPEED_BOUNDS = (330.0, 420.0)
+PRE_EXTENSION_RELEASE_MS_BOUNDS = (430.0, 520.0)
+# The probe's arrangement: reset_to_seed then a robot-side movables reset, both
+# deterministic per seed; 125 is the canonical practice seed and its arrangement
+# picks cleanly (bin near (-0.331, 0.965), cube on the spawn strip).
+ROBOT_SIDE_WITNESS_SEED = 125
+ROBOT_SIDE_YAW_SCAN = 41
 
 # Near corner, center, far corner of the swept bin region x in [2.60, 3.42],
 # y in [-2.30, 2.30]; all three are among the sweep's nine tested locations.
@@ -125,14 +154,17 @@ def test_robot_side_samples_draw_standoff_and_yaw_jointly(*, no_kinder_import) -
     bounds = np.array([
         ROBOT_SIDE_STANDOFF_BOUNDS,
         ROBOT_SIDE_YAW_BOUNDS,
-        WIDE_TOSS_SPEED_BOUNDS,
-        WIDE_TOSS_RELEASE_MS_BOUNDS,
+        ROBOT_SIDE_SPEED_BOUNDS,
+        ROBOT_SIDE_RELEASE_MS_BOUNDS,
     ])
     assert np.all(samples >= bounds[:, 0])
     assert np.all(samples <= bounds[:, 1])
-    # Jointly, not on a curve: both marginals fill their band.
+    # Jointly, not on a curve: every marginal fills its band -- including the
+    # speed/release pair, which is what the short-standoff widening extends.
     assert np.ptp(samples[:, 0]) > 0.9 * np.ptp(ROBOT_SIDE_STANDOFF_BOUNDS)
     assert np.ptp(samples[:, 1]) > 0.9 * np.ptp(ROBOT_SIDE_YAW_BOUNDS)
+    assert np.ptp(samples[:, 2]) > 0.9 * np.ptp(ROBOT_SIDE_SPEED_BOUNDS)
+    assert np.ptp(samples[:, 3]) > 0.9 * np.ptp(ROBOT_SIDE_RELEASE_MS_BOUNDS)
     controller_bounds = np.array([
         TOSS_DISTANCE_BOUNDS,
         TOSS_ROTATION_BOUNDS,
@@ -219,6 +251,114 @@ def test_robot_side_proposals_pass_the_geometry_gate_at_representative_receivers
             assert fixed_accepted == 0, (bin_xy, f"{fixed_accepted}/{draws} accepted")
     finally:
         env.close()
+
+
+def test_robot_side_support_holds_a_scoring_and_a_missing_combo_per_short_standoff(
+    *, no_kinder_import
+) -> None:
+    """The 2026-09-22 verification run starved short-standoff practice of scoring
+    labels: 0/31 robot-side draws below 2.0 m scored, because the band the draws
+    came from had no scoring support there. Every probe witness -- scoring and
+    miss alike -- must lie inside the robot-side support, and every scoring one
+    lies outside the pre-extension speed/release band, which is what the widening
+    newly covers."""
+    del no_kinder_import
+    by_standoff: dict[float, dict[bool, int]] = {}
+    for standoff, speed, release, scores in ROBOT_SIDE_WITNESSES:
+        assert WideLongRangeTossProposal.contains_robot_side(
+            params=np.array([standoff, 0.0, speed, release])
+        ), (standoff, speed, release)
+        if scores:
+            in_pre_extension_band = (
+                PRE_EXTENSION_SPEED_BOUNDS[0] <= speed <= PRE_EXTENSION_SPEED_BOUNDS[1]
+                and PRE_EXTENSION_RELEASE_MS_BOUNDS[0]
+                <= release
+                <= PRE_EXTENSION_RELEASE_MS_BOUNDS[1]
+            )
+            assert not in_pre_extension_band, (standoff, speed, release)
+        by_standoff.setdefault(standoff, {True: 0, False: 0})[scores] += 1
+    assert set(by_standoff) == {1.25, 1.5, 1.75}
+    for standoff, counts in by_standoff.items():
+        assert counts[True] >= 1, standoff
+        assert counts[False] >= 1, standoff
+
+
+def test_far_receiver_draws_are_byte_identical_across_the_robot_side_widening(
+    *, no_kinder_import
+) -> None:
+    """`sample` (far receivers) must not move when the robot-side band does. These
+    four vectors were generated at the pre-extension code; equality pins both the
+    values and the rng consumption order."""
+    del no_kinder_import
+    rng = np.random.default_rng(2026092312)
+    expected = (
+        (2.5, 0.0, 400.17750253277154, 476.3770580607905),
+        (2.5, 0.0, 340.9397240496783, 483.54455991266013),
+        (2.5, 0.0, 388.65605276917364, 433.91773382576935),
+        (2.5, 0.0, 339.1945096366844, 453.4291315747239),
+    )
+    for row in expected:
+        assert tuple(WideLongRangeTossProposal.sample(rng=rng).tolist()) == row
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
+)
+def test_robot_side_witnesses_score_and_complete_misses_at_a_robot_side_receiver() -> None:
+    """Six physical trials at the probe's own arrangement: per short standoff, the
+    scoring witness scores 1/1 and the miss witness completes a non-scoring throw
+    1/1. Yaw is chosen exactly as the probe chose it -- the median gate-accepted
+    yaw from a fixed scan -- so the tuple pinned here is the tuple that ran."""
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+    from hitl_pmp.environments.tossing3d.parameter_feasibility import TossParameterFeasibility
+    from hitl_pmp.environments.tossing3d.predicates import HOLDING
+
+    env = Tossing3DEnvironment()
+    scored = 0
+    completed_misses = 0
+    try:
+        robot_side_toss = GroundSkill(
+            skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
+        )
+        yaw_grid = np.linspace(
+            TOSS_ROTATION_BOUNDS[0], TOSS_ROTATION_BOUNDS[1], ROBOT_SIDE_YAW_SCAN
+        )
+        for standoff, speed, release, expect_score in ROBOT_SIDE_WITNESSES:
+            env.reset_to_seed(seed=ROBOT_SIDE_WITNESS_SEED)
+            assert env.reset_movables(destination="robot_side")
+            state = env.get_current_state()
+            geometry = KinderBackend.toss_feasibility_geometry(snapshot=state.object_centric)
+            assert geometry is not None
+            accepted = [
+                float(yaw)
+                for yaw in yaw_grid
+                if TossParameterFeasibility.rejection_reason_from_geometry(
+                    geometry=geometry,
+                    params=np.array([standoff, yaw, speed, release]),
+                )
+                is None
+            ]
+            assert accepted, (standoff, speed, release)
+            yaw = accepted[len(accepted) // 2]
+            picked = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+            assert HOLDING.holds(picked, (env.robot, env.cube)), env.last_skill_error()
+            post = env.take_action(action=np.array([1, standoff, yaw, speed, release], dtype=float))
+            assert env.last_skill_error() is None, (standoff, speed, release)
+            assert sum(env.last_controller_steps()) > 0
+            landed_in_bin = all(
+                atom.predicate.holds(post, atom.objects) for atom in robot_side_toss.add_effects
+            )
+            if expect_score:
+                assert landed_in_bin, (standoff, speed, release)
+                scored += 1
+            else:
+                assert not landed_in_bin, (standoff, speed, release)
+                completed_misses += 1
+    finally:
+        env.close()
+    assert scored == 3
+    assert completed_misses == 3
 
 
 def test_every_barrier_toss_draw_comes_from_the_wide_proposal(*, no_kinder_import) -> None:
