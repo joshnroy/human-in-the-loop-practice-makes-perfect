@@ -250,7 +250,24 @@ class Tossing3DPomdpMethod(EesMethod):
             summed_cost=0.0,
             estimated_costs=self.practice_skill_costs(),
         )
+        # The base class clears the starved-pool registry per session; mirror that
+        # in the search model's mask so the new session's planner starts unmasked.
+        self._pomdp_model = self._pomdp_model.model_copy(update={"starved_pools": ()})
         return super().get_practice_policy(task=task)
+
+    def record_starved_parameter_pool(
+        self, *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom]
+    ) -> None:
+        """Also mask the pair in the belief-space search model: the base registry
+        filters *selected* candidates, but this planner deterministically re-derives
+        its single choice, so deselection has to reach the search's own action
+        enumeration for it to genuinely choose again."""
+        super().record_starved_parameter_pool(ground_skill=ground_skill, true_atoms=true_atoms)
+        pair = (true_atoms, ground_skill)
+        if pair not in self._pomdp_model.starved_pools:
+            self._pomdp_model = self._pomdp_model.model_copy(
+                update={"starved_pools": (*self._pomdp_model.starved_pools, pair)}
+            )
 
     def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
         assert remaining_actions >= 0, "remaining_actions must be non-negative"

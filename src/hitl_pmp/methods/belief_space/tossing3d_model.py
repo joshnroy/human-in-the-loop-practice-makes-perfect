@@ -52,6 +52,14 @@ class Tossing3DPracticeModel(BaseModel):
     deployment_horizon: int = Field(default=4, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     failure_effect_counts: tuple[FailureEffectCount, ...] = Field(default=(), exclude=True)
+    # (symbolic state, ground action) pairs whose parameter pool starved this
+    # session (see EesMethod.record_starved_parameter_pool). Masked in
+    # get_valid_actions so a re-run of the search *chooses again* rather than
+    # deterministically re-picking an action that cannot be dispatched. Excluded
+    # from dumps: session-scoped scratch, not part of the learned model.
+    starved_pools: tuple[tuple[frozenset[GroundAtom], GroundSkill], ...] = Field(
+        default=(), exclude=True
+    )
 
     _rng: np.random.Generator = PrivateAttr()
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
@@ -213,6 +221,7 @@ class Tossing3DPracticeModel(BaseModel):
             ground_skill
             for index, ground_skill in enumerate(self.ground_skills)
             if self._precondition_masks[index] & state_mask == self._precondition_masks[index]
+            and (environment_state.true_atoms, ground_skill) not in self.starved_pools
             and (
                 ground_skill.skill.name not in RESET_SKILLS
                 or apply_success_effects(
