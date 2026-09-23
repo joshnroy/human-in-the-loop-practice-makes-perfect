@@ -242,7 +242,8 @@ def test_random_toss_is_sampler_data_and_cost_evidence_but_never_competence_evid
     method.end_cycle()
     advanced = _belief(method=method, name=TOSS_SKILL)
     assert advanced.total_training_examples == advanced.incoming_training_examples == 0
-    assert advanced.process_transition_count == 0
+    # Every real boundary now consumes one process-noise stream, n = 0 included.
+    assert advanced.process_transition_count == 1
     assert method.pomdp_state.sampler_training[TOSS_SKILL].failures == 1
     assert advanced.cycle_successes == advanced.cycle_failures == 0
     assert sampler.is_fitted
@@ -268,9 +269,16 @@ def test_hypothetical_and_real_one_class_refits_preserve_competence_without_muta
         actual = _belief(method=method, name=name)
         predicted = forecast.skill_beliefs[name]
         assert isinstance(predicted, BayesianSkillBelief)
-        assert actual.latent_values == predicted.latent_values
-        assert actual.state_weights == predicted.state_weights
-        assert actual.total_training_examples == actual.process_transition_count == 0
+        # The carve-out made visible: the search forecast kept the zero-example
+        # identity while the real boundary applied the n = 0 noise step, so the
+        # two now differ in latents while agreeing on every learning total.
+        assert (actual.latent_values, actual.state_weights) != (
+            predicted.latent_values,
+            predicted.state_weights,
+        )
+        assert actual.total_training_examples == 0
+        assert actual.process_transition_count == 1
+        assert predicted.process_transition_count == 0
     assert method.pomdp_state.pending_examples == {}
     assert method.sampler(skill_name=TOSS_SKILL, param_dim=4).is_fitted
 
@@ -287,10 +295,15 @@ def test_cycle_logs_preserve_sf_history_and_zero_example_cycles_for_smoothing(
     after_learning = _belief(method=method, name=PICK_SKILL)
     method.end_cycle()
     after_empty = _belief(method=method, name=PICK_SKILL)
-    assert after_empty.latent_values == after_learning.latent_values
-    assert after_empty.state_weights == after_learning.state_weights
+    # The idle boundary applies the n = 0 noise step, so the latents move while
+    # costs and learning totals stand still.
+    assert (after_empty.latent_values, after_empty.state_weights) != (
+        after_learning.latent_values,
+        after_learning.state_weights,
+    )
     assert after_empty.cost_belief == after_learning.cost_belief
-    assert after_empty.total_training_examples == after_empty.process_transition_count == 0
+    assert after_empty.total_training_examples == 0
+    assert after_empty.process_transition_count == 2
     assert after_empty.incoming_training_examples == 0
     assert after_empty.cycle_index == 2
     method.observe_outcome(ground_skill=pick, success=False)

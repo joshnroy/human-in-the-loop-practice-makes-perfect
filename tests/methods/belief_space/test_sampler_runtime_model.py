@@ -86,11 +86,15 @@ def test_one_class_cycles_preserve_policy_then_first_mixed_refit_credits_all_dat
         assert projected is before
         method.end_cycle()
         after = _toss_belief(state=method.pomdp_state)
-        assert (after.latent_values, after.state_weights) == (
+        # The real boundary applies the notebook's n = 0 noise step (the search
+        # forecast above stayed the identity); one-class data still earns no
+        # learning credit.
+        assert (after.latent_values, after.state_weights) != (
             before.latent_values,
             before.state_weights,
         )
-        assert after.total_training_examples == after.process_transition_count == 0
+        assert after.total_training_examples == 0
+        assert after.process_transition_count == cycle + 1
         training = method.pomdp_state.sampler_training[TOSS_SKILL]
         assert training.successes + training.failures == 2 * (cycle + 1)
         assert training.fitted_successes + training.fitted_failures == 2 * (cycle + 1)
@@ -114,7 +118,7 @@ def test_one_class_cycles_preserve_policy_then_first_mixed_refit_credits_all_dat
     actual = _toss_belief(state=method.pomdp_state)
     predicted = _toss_belief(state=projected)
     assert actual == predicted
-    assert actual.process_transition_count == 1
+    assert actual.process_transition_count == 3
     assert method.sampler(skill_name=TOSS_SKILL, param_dim=4).num_observations == 5
 
     _row(method=method, success=False)
@@ -184,7 +188,13 @@ def test_forecast_j_is_pure_and_matches_real_refit(*, model: Model, engine: Engi
     method = _method(model=model, engine=engine)
     _row(method=method, success=False)
     method.end_cycle()
+    # A MIXED pending cycle: with effective examples > 0 the search refit and the
+    # real boundary run the identical transition off the same noise stream, so the
+    # forecast is exact. (At zero effective examples they now deliberately differ:
+    # refit keeps the identity while the boundary applies the n = 0 noise step --
+    # pinned in test_competence_2x2_integration.)
     _row(method=method, success=True)
+    _row(method=method, success=False)
     sampler = method.sampler(skill_name=TOSS_SKILL, param_dim=4)
     before = method.pomdp_state.model_dump_json()
     rows = sampler.observed_inputs()
@@ -199,7 +209,11 @@ def test_forecast_j_is_pure_and_matches_real_refit(*, model: Model, engine: Engi
     actual = method._pomdp_model.J(  # noqa: SLF001
         belief_state=method.pomdp_state, summed_cost=7.0, num_samples=1
     )
-    assert actual == pytest.approx(forecast)
+    # The pending toss belief transitions identically on both paths, but the
+    # real boundary also noise-steps every IDLE skill belief (search refit
+    # keeps those at the zero-example identity -- the carve-out), so J now
+    # agrees only to within those skills' process noise.
+    assert actual == pytest.approx(forecast, abs=0.01)
     assert method.pomdp_state.accumulated_cost == 0
 
 
@@ -225,11 +239,13 @@ def test_fixed_controllers_condition_sf_and_cost_without_learning_credit(
         after = method.pomdp_state.skill_beliefs[name]
         assert isinstance(before, BayesianSkillBelief)
         assert isinstance(after, BayesianSkillBelief)
-        assert (after.latent_values, after.state_weights) == (
+        # Real-boundary n = 0 noise step: latents move, learning credit does not.
+        assert (after.latent_values, after.state_weights) != (
             before.latent_values,
             before.state_weights,
         )
         assert after.total_training_examples == 0
+        assert after.process_transition_count == 1
 
 
 def test_sampler_lifecycle_is_in_clone_serialization_and_all_search_keys() -> None:
