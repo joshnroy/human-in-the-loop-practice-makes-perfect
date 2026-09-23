@@ -30,12 +30,10 @@ from hitl_pmp.environments.tossing3d.skills import (
     Tossing3DSkills,
 )
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
-    ROBOT_SIDE_RELEASE_MS_BOUNDS,
-    ROBOT_SIDE_SPEED_BOUNDS,
-    ROBOT_SIDE_STANDOFF_BOUNDS,
-    ROBOT_SIDE_YAW_BOUNDS,
     WIDE_TOSS_RELEASE_MS_BOUNDS,
     WIDE_TOSS_SPEED_BOUNDS,
+    WIDE_TOSS_STANDOFF_BOUNDS,
+    WIDE_TOSS_YAW_BOUNDS,
     WideLongRangeTossProposal,
 )
 
@@ -98,6 +96,8 @@ def _toss_ground_skill(*, env: Tossing3DEnvironment) -> GroundSkill:
 
 
 def test_samples_stay_inside_declared_and_controller_bounds(*, no_kinder_import) -> None:
+    """One draw for every barrier toss, both sides: all four parameters jointly
+    over the controller's full ranges, every marginal genuinely filling its band."""
     del no_kinder_import
     rng = np.random.default_rng(2026092200)
     repeat_rng = np.random.default_rng(2026092200)
@@ -105,20 +105,44 @@ def test_samples_stay_inside_declared_and_controller_bounds(*, no_kinder_import)
     repeated = np.stack([WideLongRangeTossProposal.sample(rng=repeat_rng) for _ in range(2000)])
     assert np.array_equal(samples, repeated)
     assert np.all(np.isfinite(samples))
-    assert np.all(samples[:, 0] == 2.5)
-    assert np.all(samples[:, 1] == 0.0)
-    assert np.all(samples[:, 2] >= WIDE_TOSS_SPEED_BOUNDS[0])
-    assert np.all(samples[:, 2] <= WIDE_TOSS_SPEED_BOUNDS[1])
-    assert np.all(samples[:, 3] >= WIDE_TOSS_RELEASE_MS_BOUNDS[0])
-    assert np.all(samples[:, 3] <= WIDE_TOSS_RELEASE_MS_BOUNDS[1])
+    declared_bounds = np.array([
+        WIDE_TOSS_STANDOFF_BOUNDS,
+        WIDE_TOSS_YAW_BOUNDS,
+        WIDE_TOSS_SPEED_BOUNDS,
+        WIDE_TOSS_RELEASE_MS_BOUNDS,
+    ])
     controller_bounds = np.array([
         TOSS_DISTANCE_BOUNDS,
         TOSS_ROTATION_BOUNDS,
         TOSS_SPEED_BOUNDS,
         TOSS_RELEASE_MS_BOUNDS,
     ])
-    assert np.all(samples >= controller_bounds[:, 0])
-    assert np.all(samples <= controller_bounds[:, 1])
+    assert np.array_equal(declared_bounds, controller_bounds)
+    assert np.all(samples >= declared_bounds[:, 0])
+    assert np.all(samples <= declared_bounds[:, 1])
+    for column in range(4):
+        assert np.ptp(samples[:, column]) > 0.9 * np.ptp(declared_bounds[column])
+    for params in samples[:16]:
+        assert WideLongRangeTossProposal.contains(params=params)
+
+
+def test_draws_are_byte_identical_to_the_pre_unification_robot_side_variant(
+    *, no_kinder_import
+) -> None:
+    """The unified draw is exactly what `sample_robot_side` produced before the
+    far point mass was retired: these vectors were generated at the #361 code
+    from that variant, pinning values and rng consumption order across the
+    unification."""
+    del no_kinder_import
+    rng = np.random.default_rng(2026092313)
+    expected = (
+        (1.4359164368538408, -1.0784000181958564, 321.96460666311793, 812.9234665995194),
+        (1.9304690625709, 1.265605168021688, 324.4091972918219, 472.333130913595),
+        (1.5707565792532756, -0.11864351652335503, 399.5490334965635, 824.4832454611482),
+        (1.402842106829608, 1.1004221233348783, 406.0396811191806, 756.691302643899),
+    )
+    for row in expected:
+        assert tuple(WideLongRangeTossProposal.sample(rng=rng).tolist()) == row
 
 
 def test_most_draws_land_off_the_calibrated_ridge(*, no_kinder_import) -> None:
@@ -141,76 +165,35 @@ def test_every_sweep_witness_lies_inside_the_support(*, no_kinder_import) -> Non
         assert WideLongRangeTossProposal.contains(params=np.array(params)), params
 
 
-def test_robot_side_samples_draw_standoff_and_yaw_jointly(*, no_kinder_import) -> None:
-    del no_kinder_import
-    rng = np.random.default_rng(2026092210)
-    repeat_rng = np.random.default_rng(2026092210)
-    samples = np.stack([WideLongRangeTossProposal.sample_robot_side(rng=rng) for _ in range(2000)])
-    repeated = np.stack([
-        WideLongRangeTossProposal.sample_robot_side(rng=repeat_rng) for _ in range(2000)
-    ])
-    assert np.array_equal(samples, repeated)
-    assert np.all(np.isfinite(samples))
-    bounds = np.array([
-        ROBOT_SIDE_STANDOFF_BOUNDS,
-        ROBOT_SIDE_YAW_BOUNDS,
-        ROBOT_SIDE_SPEED_BOUNDS,
-        ROBOT_SIDE_RELEASE_MS_BOUNDS,
-    ])
-    assert np.all(samples >= bounds[:, 0])
-    assert np.all(samples <= bounds[:, 1])
-    # Jointly, not on a curve: every marginal fills its band -- including the
-    # speed/release pair, which is what the short-standoff widening extends.
-    assert np.ptp(samples[:, 0]) > 0.9 * np.ptp(ROBOT_SIDE_STANDOFF_BOUNDS)
-    assert np.ptp(samples[:, 1]) > 0.9 * np.ptp(ROBOT_SIDE_YAW_BOUNDS)
-    assert np.ptp(samples[:, 2]) > 0.9 * np.ptp(ROBOT_SIDE_SPEED_BOUNDS)
-    assert np.ptp(samples[:, 3]) > 0.9 * np.ptp(ROBOT_SIDE_RELEASE_MS_BOUNDS)
-    controller_bounds = np.array([
-        TOSS_DISTANCE_BOUNDS,
-        TOSS_ROTATION_BOUNDS,
-        TOSS_SPEED_BOUNDS,
-        TOSS_RELEASE_MS_BOUNDS,
-    ])
-    assert np.all(samples >= controller_bounds[:, 0])
-    assert np.all(samples <= controller_bounds[:, 1])
-    for params in samples[:16]:
-        assert WideLongRangeTossProposal.contains_robot_side(params=params)
-        assert not WideLongRangeTossProposal.contains(params=params) or (
-            params[0] == 2.5 and params[1] == 0.0
-        )
-
-
-def test_robot_side_toss_draws_dispatch_to_the_joint_proposal(*, no_kinder_import) -> None:
-    """Far receivers stay byte-identical: the opposite-side dispatch is pinned by
-    `test_every_barrier_toss_draw_comes_from_the_wide_proposal` below and `sample`
-    itself is untouched; this pins the robot-side route."""
+def test_both_bin_sides_draw_from_the_one_unified_proposal(*, no_kinder_import) -> None:
+    """The toss proposal interface is the same for both sides: the BinAtSide
+    binding no longer routes to a different draw, so a robot-side toss and an
+    opposite-side toss consume the identical sample stream."""
     del no_kinder_import
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
-    toss = GroundSkill(
-        skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.robot),
-    )
-    rng = np.random.default_rng(62)
-    direct_rng = np.random.default_rng(62)
-    for _ in range(10):
-        assert np.array_equal(
-            provider.sample_params(ground_skill=toss, rng=rng),
-            WideLongRangeTossProposal.sample_robot_side(rng=direct_rng),
+    for side in (Tossing3DSides.robot, Tossing3DSides.opposite):
+        toss = GroundSkill(
+            skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+            objects=(env.robot, env.bin, env.cube, env.barrier, side),
         )
+        rng = np.random.default_rng(62)
+        direct_rng = np.random.default_rng(62)
+        for _ in range(10):
+            assert np.array_equal(
+                provider.sample_params(ground_skill=toss, rng=rng),
+                WideLongRangeTossProposal.sample(rng=direct_rng),
+            ), side
 
 
 @pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
 )
-def test_robot_side_proposals_pass_the_geometry_gate_at_representative_receivers() -> None:
-    """The 2026-09-22 validation run starved on exactly this geometry: with the bin in
-    the grasp-safe receiver region and the proposal's standoff fixed at 2.5 m, every
-    draw's toss location fell past the barrier and 0 of 10,000 candidates were
-    accepted, ending nine practice cycles at 0 actions. The joint (standoff, yaw)
-    proposal must yield a non-empty accepted pool at representative receiver
-    positions -- corners, center-line, and the probe bin -- while the fixed-standoff
-    draw demonstrably yields none there."""
+def test_unified_proposals_pass_the_geometry_gate_at_both_sides_receivers() -> None:
+    """The one draw serves every receiver: the accepted pool must be non-empty
+    both at representative robot-side receiver positions (where the retired far
+    point mass yielded 0 of 10,000 -- the 2026-09-22 validation starvation) and
+    at the natural far bin the scene resets with."""
     import json as jsonlib
     from pathlib import Path
 
@@ -221,34 +204,32 @@ def test_robot_side_proposals_pass_the_geometry_gate_at_representative_receivers
     plain = jsonlib.loads(stuck_path.read_text())
     env = Tossing3DEnvironment()
     draws = 512
+
+    def accepted_of(*, geometry: object) -> int:
+        rng = np.random.default_rng(2026092211)
+        return sum(
+            TossParameterFeasibility.rejection_reason_from_geometry(
+                geometry=geometry,
+                params=WideLongRangeTossProposal.sample(rng=rng),
+            )
+            is None
+            for _ in range(draws)
+        )
+
     try:
-        env.reset_to_seed(seed=125)
+        initial = env.reset_to_seed(seed=125)
+        far_geometry = KinderBackend.toss_feasibility_geometry(snapshot=initial.object_centric)
+        assert far_geometry is not None
+        far_accepted = accepted_of(geometry=far_geometry)
+        assert far_accepted > 0, f"far bin: 0/{draws} accepted"
         for bin_xy in ((-0.9, -1.0), (-0.35, 0.0), (0.2, 1.5), (-0.65, -1.0)):
             moved = jsonlib.loads(jsonlib.dumps(plain))
             moved["bin_0"][0], moved["bin_0"][1] = bin_xy
             state = env.restore_plain_snapshot(plain=moved)
             geometry = KinderBackend.toss_feasibility_geometry(snapshot=state.object_centric)
             assert geometry is not None
-            rng = np.random.default_rng(2026092211)
-            accepted = sum(
-                TossParameterFeasibility.rejection_reason_from_geometry(
-                    geometry=geometry,
-                    params=WideLongRangeTossProposal.sample_robot_side(rng=rng),
-                )
-                is None
-                for _ in range(draws)
-            )
+            accepted = accepted_of(geometry=geometry)
             assert accepted > 0, (bin_xy, f"0/{draws} accepted")
-            fixed_rng = np.random.default_rng(2026092211)
-            fixed_accepted = sum(
-                TossParameterFeasibility.rejection_reason_from_geometry(
-                    geometry=geometry,
-                    params=WideLongRangeTossProposal.sample(rng=fixed_rng),
-                )
-                is None
-                for _ in range(draws)
-            )
-            assert fixed_accepted == 0, (bin_xy, f"{fixed_accepted}/{draws} accepted")
     finally:
         env.close()
 
@@ -265,7 +246,7 @@ def test_robot_side_support_holds_a_scoring_and_a_missing_combo_per_short_stando
     del no_kinder_import
     by_standoff: dict[float, dict[bool, int]] = {}
     for standoff, speed, release, scores in ROBOT_SIDE_WITNESSES:
-        assert WideLongRangeTossProposal.contains_robot_side(
+        assert WideLongRangeTossProposal.contains(
             params=np.array([standoff, 0.0, speed, release])
         ), (standoff, speed, release)
         if scores:
@@ -281,24 +262,6 @@ def test_robot_side_support_holds_a_scoring_and_a_missing_combo_per_short_stando
     for standoff, counts in by_standoff.items():
         assert counts[True] >= 1, standoff
         assert counts[False] >= 1, standoff
-
-
-def test_far_receiver_draws_are_byte_identical_across_the_robot_side_widening(
-    *, no_kinder_import
-) -> None:
-    """`sample` (far receivers) must not move when the robot-side band does. These
-    four vectors were generated at the pre-extension code; equality pins both the
-    values and the rng consumption order."""
-    del no_kinder_import
-    rng = np.random.default_rng(2026092312)
-    expected = (
-        (2.5, 0.0, 400.17750253277154, 476.3770580607905),
-        (2.5, 0.0, 340.9397240496783, 483.54455991266013),
-        (2.5, 0.0, 388.65605276917364, 433.91773382576935),
-        (2.5, 0.0, 339.1945096366844, 453.4291315747239),
-    )
-    for row in expected:
-        assert tuple(WideLongRangeTossProposal.sample(rng=rng).tolist()) == row
 
 
 @pytest.mark.skipif(
