@@ -2,7 +2,8 @@
 
 All four parameters -- standoff, yaw, speed, release -- are drawn jointly and
 independently: yaw, speed and release over the controller's full ranges,
-standoff over the far-feasible band (see the bounds' comment), and the
+standoff over the derived shared band (see the bounds' comment; under the
+graded receiver region it equals the controller's full range), and the
 per-state geometry gate keeps the feasible subset. The interface is deliberately
 identical for both bin sides: the fixed far-receiver launch pose (standoff
 2.5 m, yaw 0) that survived
@@ -39,17 +40,21 @@ from .skills import (
 # and a change to either upstream quantity must move it.
 FAR_STAND_X_LIMIT_M = 0.99
 
-# Yaw, speed and release are the controller's own ranges. Standoff is the one
-# axis the proposal NARROWS: its floor is the far-feasible band's lower edge --
-# the nearest far bin (`BIN_RESET_REGION_BY_SIDE[OPPOSITE]`'s x-min, 2.6) minus
-# the legal standing line above -- so every draw's standoff is one a far
-# receiver could also demand. Below that floor the two sides' distance regimes
-# are disjoint: the 2026-09-23 verification run's positives sat 14/17 below
-# 1.6 m while every far evaluation required 1.70-2.58 m, and its far evals
-# scored 2/10 at best. The controller keeps its full 1.25 m capability; only
-# the proposal moves.
+# Yaw, speed and release are the controller's own ranges. Standoff's floor is
+# DERIVED: max(the controller's own floor, the nearest far bin
+# (`BIN_RESET_REGION_BY_SIDE[OPPOSITE]`'s x-min) minus the legal standing line
+# above) -- so every draw's standoff is one a far receiver could also demand,
+# and the clamp keeps the derivation meaningful whatever the receiver region.
+# Under the far-only region (x-min 2.6) this floor was 1.61 and cut the
+# regime mismatch that held far evals at 2/10; under the graded receiver
+# region (x-min 1.48, the restored near-barrier support) the far term is 0.49
+# and the CONTROLLER floor binds, so the same-side and far-side feasible
+# standoff bands coincide at [1.25, 2.6] exactly.
 WIDE_TOSS_STANDOFF_BOUNDS = (
-    BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges[0][0] - FAR_STAND_X_LIMIT_M,
+    max(
+        TOSS_DISTANCE_BOUNDS[0],
+        BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges[0][0] - FAR_STAND_X_LIMIT_M,
+    ),
     TOSS_DISTANCE_BOUNDS[1],
 )
 WIDE_TOSS_YAW_BOUNDS = TOSS_ROTATION_BOUNDS

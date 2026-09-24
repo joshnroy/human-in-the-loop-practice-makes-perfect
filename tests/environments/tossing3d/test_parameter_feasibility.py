@@ -300,7 +300,12 @@ def test_rectangle_rejections_agree_with_independent_pinned_collision_library() 
 def test_snapshot_adapter_reads_supplied_state_after_live_environment_changes() -> None:
     env = Tossing3DEnvironment()
     try:
-        old_state = env.reset_to_seed(seed=125)
+        # Seed 130's graded-region draw puts the bin at x=2.867: far enough
+        # that the fixed blocked standoff below stands inside the barrier's
+        # collision band, near enough that the safe 2.5 m standoff stays legal.
+        # The guard keeps a future pin bump from silently voiding either case.
+        old_state = env.reset_to_seed(seed=130)
+        assert 2.35 <= float(old_state.get(obj=env.bin, feature_name="x")) <= 2.95
         toss = GroundSkill(
             skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
             objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),

@@ -297,7 +297,10 @@ def test_a_full_episode_through_the_problem_solves_a_feasible_scene(*, tmp_path)
         env.close()
 
 
-@pytest.mark.parametrize("seed", [10125, 10126, 10127])
+# Seeds whose graded-region draw still lands the bin in the far band the
+# certified (2.5, 0, 390, 460) witness was measured for; the >= 2.6 guard below
+# keeps a future region change from silently retargeting these cases.
+@pytest.mark.parametrize("seed", [10126, 10127, 10128])
 def test_extended_toss_solves_default_far_scene_witnesses(*, seed: int) -> None:
     """Replay upstream's certified witnesses through the real HITL action bridge.
 

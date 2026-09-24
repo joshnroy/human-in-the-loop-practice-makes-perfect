@@ -61,12 +61,18 @@ MISS_WITNESSES = (
 # grids, 2,340 completed physical trials, `results/overnight-coverage-probe-
 # 20260923`): one scoring and one completed-miss tuple per proposal-supported
 # standoff rung, every one re-validated 1/1 at this test's own pinned
-# arrangement. The rungs track the raised standoff floor: 1.75 near the floor,
-# 2.0 mid-band, and 2.5 at the far edge, where the scoring cells ((390, 450),
-# (420, 450)) coincide with the far calibrated regime -- the side-invariance
-# the 2026-09-23 barrier-arc probe measured at 5/5 vs 5/5.
+# arrangement. The rungs span the coinciding same-side/far-side feasible band
+# [1.25, 2.6]: slow-late lobs at the short end (150, 720 at 1.25), the mid-band
+# ridge, and the far edge, where the scoring cells ((390, 450), (420, 450))
+# coincide with the far calibrated regime -- the side-invariance the
+# 2026-09-23 barrier-arc and near-barrier probes measured at 5/5 vs 5/5 and
+# 12/12.
 ROBOT_SIDE_WITNESSES = (
     # (standoff m, speed deg/s, release ms, scores?)
+    (1.25, 150.0, 720.0, True),
+    (1.25, 115.0, 400.0, False),
+    (1.5, 185.0, 650.0, True),
+    (1.5, 115.0, 400.0, False),
     (1.75, 220.0, 600.0, True),
     (1.75, 115.0, 400.0, False),
     (2.0, 290.0, 500.0, True),
@@ -120,15 +126,18 @@ def test_samples_stay_inside_declared_and_controller_bounds(*, no_kinder_import)
         TOSS_RELEASE_MS_BOUNDS,
     ])
     # Yaw, speed and release stay the controller's own ranges; the standoff
-    # floor is the PROPOSAL narrowing to the far-feasible band -- the nearest
-    # far bin (2.6) minus the measured legal standing line (0.99) -- while the
-    # controller keeps its full 1.25 capability.
+    # floor is derived as max(controller floor, nearest far bin minus the
+    # measured legal standing line). Under the graded receiver region the far
+    # term is 1.48 - 0.99 = 0.49, so the CONTROLLER floor binds and the
+    # same-side and far-side feasible ranges coincide at [1.25, 2.6] exactly.
     assert np.array_equal(declared_bounds[1:], controller_bounds[1:])
     assert WIDE_TOSS_STANDOFF_BOUNDS[0] == pytest.approx(
-        BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges[0][0] - FAR_STAND_X_LIMIT_M
+        max(
+            TOSS_DISTANCE_BOUNDS[0],
+            BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges[0][0] - FAR_STAND_X_LIMIT_M,
+        )
     )
-    assert WIDE_TOSS_STANDOFF_BOUNDS[0] == pytest.approx(1.61)
-    assert WIDE_TOSS_STANDOFF_BOUNDS[0] > TOSS_DISTANCE_BOUNDS[0]
+    assert WIDE_TOSS_STANDOFF_BOUNDS[0] == TOSS_DISTANCE_BOUNDS[0] == 1.25
     assert WIDE_TOSS_STANDOFF_BOUNDS[1] == TOSS_DISTANCE_BOUNDS[1]
     assert np.all(samples >= declared_bounds[:, 0])
     assert np.all(samples <= declared_bounds[:, 1])
@@ -139,17 +148,17 @@ def test_samples_stay_inside_declared_and_controller_bounds(*, no_kinder_import)
 
 
 def test_draws_pin_values_and_rng_consumption_order(*, no_kinder_import) -> None:
-    """Exact-vector regression across the standoff-floor change: the yaw, speed
-    and release columns are byte-identical to the pre-floor unified draw at the
-    same rng seed (same consumption order, untouched maps); only the standoff
-    column moved, through the narrowed uniform map."""
+    """Exact-vector regression: with the graded receiver region the derived
+    floor clamps to the controller's 1.25, so the standoff map reverts to the
+    original unified draw's -- these are the #362-era vectors, byte-identical
+    again, with the same rng consumption order throughout."""
     del no_kinder_import
     rng = np.random.default_rng(2026092313)
     expected = (
-        (1.7463387203594833, -1.0784000181958564, 321.96460666311793, 812.9234665995194),
-        (2.109010645885327, 1.265605168021688, 324.4091972918219, 472.333130913595),
-        (1.8452214914524023, -0.11864351652335503, 399.5490334965635, 824.4832454611482),
-        (1.7220842116750459, 1.1004221233348783, 406.0396811191806, 756.691302643899),
+        (1.4359164368538408, -1.0784000181958564, 321.96460666311793, 812.9234665995194),
+        (1.9304690625709, 1.265605168021688, 324.4091972918219, 472.333130913595),
+        (1.5707565792532756, -0.11864351652335503, 399.5490334965635, 824.4832454611482),
+        (1.402842106829608, 1.1004221233348783, 406.0396811191806, 756.691302643899),
     )
     for row in expected:
         assert tuple(WideLongRangeTossProposal.sample(rng=rng).tolist()) == row
@@ -247,12 +256,12 @@ def test_unified_proposals_pass_the_geometry_gate_at_both_sides_receivers() -> N
 def test_support_holds_a_scoring_and_a_missing_combo_per_in_band_standoff(
     *, no_kinder_import
 ) -> None:
-    """The proposal's standoff band is the far-feasible band [1.61, 2.6], so
-    same-side practice can only produce transferable positives if scoring
-    support exists inside it. Every witness -- scoring and miss alike -- must
-    lie inside the support, with both classes present at a near-floor, a
-    mid-band and a far-edge standoff; and every witness standoff must respect
-    the raised floor (a sub-floor witness would be pinning dead support)."""
+    """Under the graded receiver region the same-side and far-side feasible
+    standoff bands coincide at [1.25, 2.6], so every rung of the shared band
+    must hold scoring support. Every witness -- scoring and miss alike -- must
+    lie inside the support, with both classes present at each tested rung; and
+    every witness standoff must respect the (clamped) floor, so a sub-floor
+    witness can never pin dead support."""
     del no_kinder_import
     by_standoff: dict[float, dict[bool, int]] = {}
     for standoff, speed, release, scores in ROBOT_SIDE_WITNESSES:
@@ -261,7 +270,7 @@ def test_support_holds_a_scoring_and_a_missing_combo_per_in_band_standoff(
             params=np.array([standoff, 0.0, speed, release])
         ), (standoff, speed, release)
         by_standoff.setdefault(standoff, {True: 0, False: 0})[scores] += 1
-    assert set(by_standoff) == {1.75, 2.0, 2.5}
+    assert set(by_standoff) == {1.25, 1.5, 1.75, 2.0, 2.5}
     for standoff, counts in by_standoff.items():
         assert counts[True] >= 1, standoff
         assert counts[False] >= 1, standoff
@@ -271,9 +280,9 @@ def test_support_holds_a_scoring_and_a_missing_combo_per_in_band_standoff(
     importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
 )
 def test_robot_side_witnesses_score_and_complete_misses_at_a_robot_side_receiver() -> None:
-    """Six physical trials at the probe's own arrangement: per short standoff, the
-    scoring witness scores 1/1 and the miss witness completes a non-scoring throw
-    1/1. Yaw is chosen exactly as the probe chose it -- the median gate-accepted
+    """Ten physical trials at the probe's own arrangement: per in-band standoff
+    rung, the scoring witness scores 1/1 and the miss witness completes a
+    non-scoring throw 1/1. Yaw is chosen exactly as the probe chose it -- the median gate-accepted
     yaw from a fixed scan -- so the tuple pinned here is the tuple that ran."""
     from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
     from hitl_pmp.environments.tossing3d.parameter_feasibility import TossParameterFeasibility
@@ -323,8 +332,8 @@ def test_robot_side_witnesses_score_and_complete_misses_at_a_robot_side_receiver
                 completed_misses += 1
     finally:
         env.close()
-    assert scored == 3
-    assert completed_misses == 3
+    assert scored == 5
+    assert completed_misses == 5
 
 
 def test_every_barrier_toss_draw_comes_from_the_wide_proposal(*, no_kinder_import) -> None:
@@ -387,7 +396,7 @@ def test_witnesses_score_and_complete_misses_at_spanning_bin_locations(*, tmp_pa
         assert WideLongRangeTossProposal.contains(params=np.array(params)), params
     stock_path = Path(kinder.__file__).parent / "envs/dynamic3d/tasks/Tossing3D/Tossing3D-o1.json"
     stock = json.loads(stock_path.read_text())
-    assert stock["regions"]["bin_init_region"]["ranges"] == [[2.6, -2.3, 3.42, 2.3]]
+    assert stock["regions"]["bin_init_region"]["ranges"] == [[1.48, -2.3, 3.42, 2.3]]
     scored = 0
     completed_misses = 0
     for index, (x, y) in enumerate(SPANNING_BIN_LOCATIONS):
