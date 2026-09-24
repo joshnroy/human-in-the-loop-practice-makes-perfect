@@ -46,8 +46,14 @@ BIN_RESET_REGION_BY_SIDE: Final[dict[Tossing3DSide, Tossing3DResetRegion]] = {
     Tossing3DSide.ROBOT: Tossing3DResetRegion(
         ranges=((-0.9, -1.0, 0.2, 1.5),), yaw_ranges=((180, 180),)
     ),
+    # Mirrors the installed task's graded receiver spawn range (kindergarden's
+    # union of the original pre-#191 near-barrier support, west edge 1.48 =
+    # barrier face 1.33 + bin half-footprint 0.15, with #191's far extension
+    # to 3.42), so practice resets and evaluation sample the same distance
+    # ramp. Near-barrier placements are measured usable: 12/12 scored at bins
+    # x in {1.6, 2.0} including 1.25 m-standoff throws over the barrier.
     Tossing3DSide.OPPOSITE: Tossing3DResetRegion(
-        ranges=((2.60, -2.3, 3.42, 2.3),), yaw_ranges=((0, 0),)
+        ranges=((1.48, -2.3, 3.42, 2.3),), yaw_ranges=((0, 0),)
     ),
 }
 

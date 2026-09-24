@@ -29,5 +29,9 @@ def test_robot_side_receiver_region_is_the_measured_maximal_grasp_safe_rectangle
     assert (y_min, y_max) == (-1.0, 1.5)
 
 
-def test_opposite_side_receiver_region_is_unchanged() -> None:
-    assert BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges == ((2.60, -2.3, 3.42, 2.3),)
+def test_opposite_side_receiver_region_mirrors_the_graded_task_region() -> None:
+    """The reset-side far region mirrors the installed task's graded receiver
+    spawn range (kindergarden's [1.48, 3.42] union of the original near support
+    and the #191 far extension), so practice resets and evaluation sample the
+    same distance ramp."""
+    assert BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges == ((1.48, -2.3, 3.42, 2.3),)

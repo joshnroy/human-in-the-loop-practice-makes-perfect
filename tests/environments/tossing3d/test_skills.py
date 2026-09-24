@@ -439,10 +439,10 @@ def test_samplers_cover_farther_receivers_without_losing_short_throws() -> None:
     """Candidate support spans the far-bin clearance requirement and short throws.
 
     The same-side recovery sampler must span both regimes. The barrier layout's
-    wide proposal deliberately does NOT: its standoff floor is the far-feasible
-    band's lower edge (the nearest far bin minus the measured legal standing
-    line), so its draws span the far clearance down to that floor and no lower
-    -- short throws below the floor are the recovery sampler's business.
+    wide proposal draws standoff down to its derived floor -- max(controller
+    floor, nearest far bin minus the measured legal standing line), which the
+    graded receiver region clamps to the controller's own 1.25 -- and never
+    below it.
     """
     from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
     from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
