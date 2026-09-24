@@ -123,6 +123,7 @@ def test_every_draw_is_one_json_object_per_line(*, recording_on: Path) -> None:
             "elapsed_seconds",
             "cycle",
             "skill",
+            "controller_choices",
             "consultation",
             "success",
             "params",

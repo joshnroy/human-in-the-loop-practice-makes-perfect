@@ -164,7 +164,21 @@ def test_nothing_that_reaches_the_goal_is_applicable_once_the_cube_is_past_the_b
     assert not applicable
 
 
-def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() -> None:
+def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from hitl_pmp.environments.tossing3d.toss_direction import (
+        TossDirectionChoice,
+        TossDirectionSelector,
+    )
+
+    def west(*, state, standoff: float) -> TossDirectionChoice:
+        del state, standoff
+        return TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        )
+
+    monkeypatch.setattr(TossDirectionSelector, "select_for_state", west)
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
     ground_skill = GroundSkill(
@@ -172,10 +186,10 @@ def test_the_provider_delegates_sampling_and_encoding_to_the_skills_container() 
         objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
     )
     params = provider.sample_params(ground_skill=ground_skill, rng=np.random.default_rng(0))
-    assert params.shape == (4,)
+    assert params.shape == (3,)
     action = provider.compute_action(ground_skill=ground_skill, params=params, state=state())
     assert action[0] == Tossing3DEnvironment.move_to_toss_location_and_toss_id
-    assert list(action[1:]) == pytest.approx(list(params))
+    assert list(action[1:]) == pytest.approx([params[0], 0.0, params[1], params[2]])
 
 
 class _CannedBackend(KinderBackend):

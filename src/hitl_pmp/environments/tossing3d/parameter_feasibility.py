@@ -1,21 +1,16 @@
 """Reject provably blocked toss base targets without predicting throw success.
 
-The learned sampler uses this one-sided check before selecting parameters.
-Accepting a proposal means only that these geometric proofs did
-not reject it. No search, simulator step, random draw, or speed/timing tuning is
-performed, and missing geometry is accepted.
+`TossDirectionSelector` uses this one-sided check as the cheap pre-filter in front
+of the real base planner, so the planner never runs on a stand these proofs rule out.
+Accepting a stand means only that these geometric proofs did not reject it. No
+search, simulator step or random draw is performed.
 """
 
 import math
 
 import numpy as np
 
-from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.core.problem.environment.types import State
-
-from .kinder_backend import KinderBackend
-from .skills import Tossing3DSkills
-from .types import PlanarCollisionBox, TossFeasibilityGeometry, Tossing3DState
+from .types import PlanarCollisionBox, TossFeasibilityGeometry
 
 # Ambiguous grazing contacts remain the controller's decision. A rejection needs
 # strict overlap or strict separation, not a floating-point boundary coincidence.
@@ -23,28 +18,16 @@ _GEOMETRY_TOLERANCE = 1e-9
 
 
 class TossParameterFeasibility:
-    """A pure geometry gate shared by execution and diagnostic proposal generators."""
-
-    @staticmethod
-    def rejection_reason(
-        *, state: State, ground_skill: GroundSkill, params: np.ndarray
-    ) -> str | None:
-        if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            return None
-        if not isinstance(state, Tossing3DState) or state.object_centric is None:
-            return None
-        geometry = KinderBackend.toss_feasibility_geometry(snapshot=state.object_centric)
-        if geometry is None:
-            return None
-        return TossParameterFeasibility.rejection_reason_from_geometry(
-            geometry=geometry, params=params
-        )
+    """A pure geometry gate on one `(standoff, rotation)` base target."""
 
     @staticmethod
     def rejection_reason_from_geometry(
         *, geometry: TossFeasibilityGeometry, params: np.ndarray
     ) -> str | None:
         """Check only the commanded base target and a proved path obstruction.
+
+        `params` is the controller's `(distance, rotation)` pair: the stand pose, which
+        is all this gate reads.
 
         The controller casts parameters to float32 before deriving its target;
         matching that cast matters for proposals adjacent to collision boundaries.
@@ -55,10 +38,10 @@ class TossParameterFeasibility:
         itself is collision-free. A finite barrier that can be routed around is
         not rejected by that proof.
         """
-        if params.shape != (4,) or not np.isfinite(params).all():
+        if params.shape != (2,) or not np.isfinite(params).all():
             return None
         with np.errstate(over="ignore", invalid="ignore"):
-            controller_params = np.asarray(params[:2], dtype=np.float32)
+            controller_params = np.asarray(params, dtype=np.float32)
         if not np.isfinite(controller_params).all():
             return None
         distance, rotation = (float(v) for v in controller_params)

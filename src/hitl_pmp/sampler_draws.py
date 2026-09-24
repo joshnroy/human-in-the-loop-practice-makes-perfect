@@ -21,6 +21,7 @@ its last complete draw:
 | `consultation` | the `SamplerConsultation` pool -- `informed`, `epsilon_random`, `uninformative` |
 | `success` | did the ground skill's add effects hold afterwards |
 | `params` | the chosen continuous parameters, as drawn |
+| `controller_choices` | values `compute_action` chose itself, e.g. `toss_direction_deg` |
 | `achieved` | post-action features of the ground skill's own objects, `"<object>.<feature>"` |
 
 `consultation` is never `no_sampler`: a `param_dim == 0` skill never reaches a sampler, so it
@@ -39,7 +40,7 @@ import argparse
 from pathlib import Path
 from typing import TextIO
 
-from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
 from hitl_pmp.core.method.types import ParameterSamplingDiagnostics, SamplerConsultation
@@ -137,6 +138,7 @@ class SamplerDrawRecorder(BaseModel):
         params: list[float],
         state: State,
         objects: tuple[Object, ...],
+        controller_choices: dict[str, float] | None = None,
     ) -> None:
         """Write one draw. `state` is the state *after* the action, so `achieved`
         reports what the environment actually did rather than what was asked for --
@@ -148,6 +150,7 @@ class SamplerDrawRecorder(BaseModel):
             consultation=consultation.value,
             success=success,
             params=params,
+            controller_choices=dict(controller_choices or {}),
             achieved=SamplerDrawRecorder.read_features(state=state, objects=objects),
         )
         handle = self._open()
@@ -199,4 +202,8 @@ class SamplerDraw(BaseModel):
     consultation: str
     success: bool
     params: list[float]
+    # Values the domain's `compute_action` chose itself rather than drew (Tossing3D's
+    # `toss_direction_deg`), kept out of `params` so its length stays the skill's
+    # `param_dim`.
+    controller_choices: dict[str, float] = Field(default_factory=dict)
     achieved: dict[str, float]

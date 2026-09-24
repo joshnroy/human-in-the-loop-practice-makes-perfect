@@ -37,33 +37,31 @@ def _toss(*, env: Tossing3DEnvironment) -> GroundSkill:
     )
 
 
-def test_toss_sampler_input_is_robot_frame_bin_displacement_then_params() -> None:
+def test_toss_sampler_input_is_bias_then_the_three_throw_params() -> None:
+    """The pre-move robot-frame bin displacement is gone from the row: it describes
+    where the robot happened to be before driving, not the throw (see `toss.py`)."""
     env = Tossing3DEnvironment()
-    params = np.array([1.3, -0.01, 125.0, 760.0])
+    params = np.array([1.3, 125.0, 760.0])
     scene = state(env=env, base_x=0.2, base_y=-0.4, base_rot=np.pi / 2, bin_x=1.7)
-    # observation() fixes bin y at zero: world displacement is (1.5, 0.4), which
-    # becomes (forward=0.4, lateral=-1.5) for a robot facing +y.
     assert Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
         ground_skill=_toss(env=env), state=scene, params=params
-    ) == pytest.approx([1.0, 0.4, -1.5, 1.3, -0.01, 125.0, 760.0])
+    ) == pytest.approx([1.0, 1.3, 125.0, 760.0])
 
 
-def test_toss_sampler_input_and_relative_move_params_are_invariant_to_a_rigid_half_turn() -> None:
+def test_toss_sampler_input_does_not_depend_on_the_pre_move_pose() -> None:
     env = Tossing3DEnvironment()
     provider = Tossing3DSkillProvider(env=env)
-    params = np.array([1.35, 0.0, 140.0, 792.0])
+    params = np.array([1.35, 140.0, 792.0])
     original = state(env=env, base_x=0.15, base_rot=0.2, bin_x=2.0)
-    rotated = state(env=env, base_x=-0.15, base_rot=0.2 + np.pi, bin_x=-2.0)
+    elsewhere = state(env=env, base_x=-1.4, base_y=0.9, base_rot=2.9, bin_x=3.1)
     assert provider.hand_selected_feature_transform(
-        ground_skill=_toss(env=env), state=rotated, params=params
-    ) == pytest.approx(
-        provider.hand_selected_feature_transform(
-            ground_skill=_toss(env=env), state=original, params=params
-        )
+        ground_skill=_toss(env=env), state=elsewhere, params=params
+    ) == provider.hand_selected_feature_transform(
+        ground_skill=_toss(env=env), state=original, params=params
     )
 
 
-def test_same_side_toss_uses_the_same_relative_feature_layout() -> None:
+def test_same_side_toss_uses_the_same_feature_layout() -> None:
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
@@ -74,9 +72,9 @@ def test_same_side_toss_uses_the_same_relative_feature_layout() -> None:
     row = Tossing3DSkillProvider(env=env).hand_selected_feature_transform(
         ground_skill=toss,
         state=state(env=env, base_x=0.0, base_y=0.0, base_rot=np.pi, bin_x=-2.0),
-        params=np.array([1.35, 0.0, 140.0, 792.0]),
+        params=np.array([1.35, 140.0, 792.0]),
     )
-    assert row == pytest.approx([1.0, 2.0, 0.0, 1.35, 0.0, 140.0, 792.0])
+    assert row == pytest.approx([1.0, 1.35, 140.0, 792.0])
 
 
 def test_non_toss_skills_keep_the_generic_sampler_input_fallback() -> None:

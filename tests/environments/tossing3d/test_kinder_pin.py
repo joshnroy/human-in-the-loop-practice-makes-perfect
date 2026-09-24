@@ -162,29 +162,28 @@ def test_the_distance_bounds_are_upstreams_own() -> None:
     )
 
 
-def test_the_rotation_bounds_deliberately_widen_upstreams_derived_band() -> None:
-    """A DELIBERATE divergence, unlike every other pin in this file. Upstream derives
-    `TARGET_ROTATION_BOUNDS` (~+-0.44 deg) from `WAYPOINT_TOLERANCE` and the largest
-    standoff; that derivation is still mirrored and pinned here as `MAX_TOSS_ROTATION`,
-    so a drift in either input still surfaces. But the *sampling band* this domain uses
-    is widened to +-pi/2: measured 2026-09-22, the live controller executes yaw-offset
-    tosses across that whole band and one +-90 deg 2.5 m throw SCORED -- and robot-side
-    receivers in the grasp-safe region need the yaw freedom, because a yaw-0 toss
-    location for them can sit past the barrier. Local only; not pushed upstream."""
-    import math
-
+def test_the_toss_rotation_is_chosen_here_not_sampled_from_upstreams_band() -> None:
+    """A DELIBERATE divergence. Upstream's controller samples four parameters, the
+    second a rotation inside `TARGET_ROTATION_BOUNDS` (~+-0.44 deg). This domain learns
+    three and passes the controller one of four bin-relative right angles chosen per
+    state (`toss_direction.py`). That supersedes the earlier local +-pi/2 widening of
+    upstream's band, which this test used to pin. The controller's `reset` still takes
+    exactly four, with the rotation second, which is what the action encoding relies on."""
     from kinder_models.dynamic3d.tossing.parameterized_skills import (
         MoveToTossLocationAndTossController,
     )
 
-    from hitl_pmp.environments.tossing3d.skills import MAX_TOSS_ROTATION, TOSS_ROTATION_BOUNDS
+    from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+    from hitl_pmp.environments.tossing3d.toss_direction import TOSS_DIRECTIONS_DEG
 
-    assert (
-        pytest.approx(MoveToTossLocationAndTossController.MAX_TARGET_ROTATION) == MAX_TOSS_ROTATION
+    drawn = MoveToTossLocationAndTossController.sample_parameters(
+        MoveToTossLocationAndTossController, None, np.random.default_rng(0)
     )
-    assert (-math.pi / 2, math.pi / 2) == TOSS_ROTATION_BOUNDS
-    assert TOSS_ROTATION_BOUNDS[0] < -MAX_TOSS_ROTATION < MAX_TOSS_ROTATION
-    assert TOSS_ROTATION_BOUNDS[1] > MAX_TOSS_ROTATION
+    assert len(drawn) == 4
+    assert Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS.param_dim == 3
+    low, high = MoveToTossLocationAndTossController.TARGET_ROTATION_BOUNDS
+    assert low <= float(drawn[1]) <= high
+    assert TOSS_DIRECTIONS_DEG == (0, 90, 180, 270)
 
 
 def test_the_speed_bounds_are_upstreams_own_read_through_the_degree_conversion() -> None:
@@ -218,17 +217,6 @@ def test_the_release_millisecond_bounds_are_upstreams_own() -> None:
         pytest.approx(MoveToTossLocationAndTossController.RELEASE_MS_BOUNDS)
         == TOSS_RELEASE_MS_BOUNDS
     )
-
-
-def test_the_waypoint_tolerance_is_upstreams_own() -> None:
-    """`skills.py` computes `MAX_TOSS_ROTATION` from its own copy of this constant, so a
-    stale copy would make the rotation-bounds test above fail for a reason that reads as
-    an upstream retune. Pinned separately so the two failures are distinguishable."""
-    from kinder_models.dynamic3d.utils import WAYPOINT_TOLERANCE as UPSTREAM_WAYPOINT_TOLERANCE
-
-    from hitl_pmp.environments.tossing3d.skills import WAYPOINT_TOLERANCE
-
-    assert pytest.approx(UPSTREAM_WAYPOINT_TOLERANCE) == WAYPOINT_TOLERANCE
 
 
 def test_every_release_ms_the_sampler_can_draw_still_opens_the_gripper() -> None:

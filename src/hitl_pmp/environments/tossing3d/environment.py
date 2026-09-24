@@ -408,12 +408,29 @@ class Tossing3DEnvironment(Environment):
         if writer is None:
             return
         name, objects = self._skill_label(action=action)
-        writer.record_skill(name=name, objects=objects, params=tuple(float(v) for v in action[1:]))
+        params, toss_direction_deg = self.skill_log_params(action=action)
+        writer.record_skill(
+            name=name, objects=objects, params=params, toss_direction_deg=toss_direction_deg
+        )
         for tick in ticks:
             writer.record_tick(
                 state=backend.snapshot_to_plain(snapshot=tick),
                 abstraction_diagnostics=backend.abstraction_diagnostics(state=tick),
             )
+
+    @classmethod
+    def skill_log_params(cls, *, action: Action) -> tuple[tuple[float, ...], float | None]:
+        """A dispatched action's logged parameters and, for the toss, its stand direction.
+
+        The toss's slot 2 is the controller-chosen rotation about the bin, not a learned
+        parameter, so it is split out in degrees and the params are the three learned
+        ones. Every other skill logs its raw slots, as before."""
+        if int(round(float(action[0]))) == cls.move_to_toss_location_and_toss_id:
+            return (
+                (float(action[1]), float(action[3]), float(action[4])),
+                float(np.degrees(float(action[2]))),
+            )
+        return tuple(float(v) for v in action[1:]), None
 
     def _skill_label(self, *, action: Action) -> tuple[str, tuple[str, ...]]:
         """The (name, bound objects) `_execute` would dispatch on `action[0]` -- kept

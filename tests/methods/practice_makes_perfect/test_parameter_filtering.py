@@ -17,6 +17,11 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+from hitl_pmp.environments.tossing3d.toss_direction import (
+    NoFeasibleTossDirectionError,
+    TossDirectionChoice,
+    TossDirectionSelector,
+)
 from hitl_pmp.environments.tossing3d.types import (
     PlanarCollisionBox,
     TossFeasibilityGeometry,
@@ -192,6 +197,14 @@ def test_pomdp_dispatch_cost_and_pending_require_constructed_action(
         "parameter_rejection_reason",
         lambda self, **kwargs: "blocked" if reject else None,
     )
+    # A hand-built state has no planner geometry; the direction is not under test.
+    monkeypatch.setattr(
+        TossDirectionSelector,
+        "select_for_state",
+        lambda **kwargs: TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        ),
+    )
     # Tossing3D replans every practice action, so a preloaded plan alone does
     # not isolate dispatch accounting from the planner's STOP criterion.
     monkeypatch.setattr(_EesEpisode, "_next_plan", lambda self, **kwargs: [ground])
@@ -357,12 +370,31 @@ def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -
         return geometry
 
     monkeypatch.setattr(KinderBackend, "toss_feasibility_geometry", geometry_for_state)
-    values = [np.array([d, 0.0, 360.0, 500.0]) for d in [1.35, 2.5, 1.7, 2.6]]
+    planned: list[object] = []
+
+    def base_plan_failure(*, snapshot, distance, rotation):
+        del distance, rotation
+        planned.append(snapshot)
+        return None
+
+    monkeypatch.setattr(TossDirectionSelector, "base_plan_failure", base_plan_failure)
+    TossDirectionSelector.clear_plan_cache()
+    values = [np.array([d, 360.0, 500.0]) for d in [2.5, 2.6]]
     proposals = Mock(side_effect=values)
     monkeypatch.setattr(Tossing3DSkillProvider, "sample_params", proposals)
-    _, record = method.execute_ground_skill(ground_skill=ground, state=state, explore=False)
+    labeled, record = method.execute_ground_skill(ground_skill=ground, state=state, explore=False)
     assert record is not None and record.params[0] in (2.5, 2.6)
-    assert record.params[1:] == [0.0, 360.0, 500.0]
+    assert record.params[1:] == [360.0, 500.0]
+    assert record.controller_choices == {"toss_direction_deg": 0.0}
+    assert "toss_direction_deg=0.0" in labeled.label
     assert not record.records_training_row
-    assert proposals.call_count == 4
+    assert proposals.call_count == 2
+    assert planned and all(item is snapshot for item in planned)
+    # A standoff whose every stand is across the barrier raises; it is not filtered.
+    monkeypatch.setattr(
+        Tossing3DSkillProvider, "sample_params", Mock(return_value=np.array([1.35, 360.0, 500.0]))
+    )
+    with pytest.raises(NoFeasibleTossDirectionError):
+        method.execute_ground_skill(ground_skill=ground, state=state, explore=False)
+    TossDirectionSelector.clear_plan_cache()
     assert env._backend is None  # noqa: SLF001 (no live training environment read)

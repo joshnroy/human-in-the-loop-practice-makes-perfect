@@ -41,13 +41,15 @@ from hitl_pmp.environments.tossing3d.predicates import (
 from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skills import (
-    MAX_TOSS_ROTATION,
     TOSS_DISTANCE_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
-    TOSS_ROTATION_BOUNDS,
     TOSS_SPEED_BOUNDS,
-    WAYPOINT_TOLERANCE,
     Tossing3DSkills,
+)
+from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
+from hitl_pmp.environments.tossing3d.toss_direction import (
+    TossDirectionChoice,
+    TossDirectionSelector,
 )
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -57,14 +59,26 @@ from .observations import INITIAL_ATOMS, state
 _ENV = Tossing3DEnvironment()
 _SKILLS = Tossing3DSkills
 
-# The four bounds the composed toss draws from, in slot order, so the sampler tests can
-# be written once over all four rather than once per dial.
+# The three bounds the composed toss draws from, in slot order, so the sampler tests can
+# be written once over all three rather than once per dial.
 _TOSS_BOUNDS = (
     TOSS_DISTANCE_BOUNDS,
-    TOSS_ROTATION_BOUNDS,
     TOSS_SPEED_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
 )
+
+
+@pytest.fixture
+def _west_stand(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Hand-built states carry no simulator geometry: stub the direction choice."""
+
+    def select_for_state(*, state, standoff: float) -> TossDirectionChoice:
+        del state, standoff
+        return TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        )
+
+    monkeypatch.setattr(TossDirectionSelector, "select_for_state", select_for_state)
 
 
 # The exact lifted signature of each operator, in declaration order. Pinned as a literal
@@ -324,67 +338,42 @@ def test_the_pick_takes_no_continuous_parameters_at_all() -> None:
     assert _SKILLS.PICK_CUBE.param_dim == 0
 
 
-def test_the_composed_toss_carries_all_four_dials() -> None:
-    """Standoff and yaw used to belong to `MoveToThrowPose`, speed and millisecond to
-    `Toss`. One controller now takes all four, so every learned parameter in this domain
-    belongs to this one skill."""
-    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.param_dim == 4
-
-
-def test_the_rotation_bound_is_computed_from_the_waypoint_tolerance_not_typed() -> None:
-    """Upstream derives `MAX_TARGET_ROTATION` from `WAYPOINT_TOLERANCE` and the largest
-    standoff -- the widest yaw about the bin that still leaves the base within half the
-    tolerance of the bin's axis -- and this module reproduces the derivation rather than
-    the number it currently produces. A literal here would go stale silently if upstream
-    retuned either input.
-
-    `TOSS_ROTATION_BOUNDS` itself no longer equals `+-MAX_TOSS_ROTATION`: it was
-    deliberately widened to +-pi/2 on 2026-09-22 (measured: the controller executes
-    the whole band and a +-90 deg throw scored) so robot-side receivers have feasible
-    toss headings. The divergence pin with the full why lives in test_kinder_pin's
-    `test_the_rotation_bounds_deliberately_widen_upstreams_derived_band`."""
-    assert (
-        pytest.approx(float(np.arcsin(0.5 * WAYPOINT_TOLERANCE / TOSS_DISTANCE_BOUNDS[1])))
-        == MAX_TOSS_ROTATION
-    )
-    assert (-np.pi / 2, np.pi / 2) == TOSS_ROTATION_BOUNDS
-    assert TOSS_ROTATION_BOUNDS[0] < -MAX_TOSS_ROTATION < MAX_TOSS_ROTATION
-    assert TOSS_ROTATION_BOUNDS[1] > MAX_TOSS_ROTATION
+def test_the_composed_toss_carries_three_learned_dials() -> None:
+    """Standoff used to belong to `MoveToThrowPose`, speed and millisecond to `Toss`. One
+    controller now takes all of them, plus a stand direction the controller chooses
+    itself (`toss_direction.py`), so the learned parameters are these three."""
+    assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.param_dim == 3
 
 
 def test_compute_action_encodes_the_skill_id_in_slot_zero() -> None:
     assert Tossing3DSkills.compute_action(
         ground_skill=_pick_cube(), params=np.zeros(0), state=state()
     ) == pytest.approx([Tossing3DEnvironment.pick_cube_id, 0.0, 0.0, 0.0, 0.0])
-    assert Tossing3DSkills.compute_action(
-        ground_skill=_toss(), params=np.array([1.35, 0.01, 140.0, 792.0]), state=state()
-    ) == pytest.approx([
-        Tossing3DEnvironment.move_to_toss_location_and_toss_id,
-        1.35,
-        0.01,
-        140.0,
-        792.0,
-    ])
 
 
-def test_the_toss_parameters_land_in_slots_one_through_four_in_order() -> None:
-    """Four dials in four slots is four chances to transpose a pair, and a transposition
-    of speed and millisecond typechecks. Encoded from four mutually distinguishable
-    values, so any permutation fails."""
-    action = Tossing3DSkills.compute_action(
-        ground_skill=_toss(), params=np.array([1.31, -0.007, 128.5, 733.0]), state=state()
-    )
-    assert list(action[1:]) == pytest.approx([1.31, -0.007, 128.5, 733.0])
-
-
-def test_every_action_matches_the_declared_action_space() -> None:
-    for ground_skill, params in (
-        (_pick_cube(), np.zeros(0)),
-        (_toss(), np.array([1.35, 0.0, 140.0, 792.0])),
-    ):
-        action = Tossing3DSkills.compute_action(
-            ground_skill=ground_skill, params=params, state=state()
+def test_the_toss_is_not_encoded_here_rather_than_without_a_direction() -> None:
+    """The toss's action needs the state-chosen stand direction, which only
+    `Tossing3DToss` supplies; encoding it here would silently throw head-on."""
+    with pytest.raises(ValueError, match="Unknown skill"):
+        Tossing3DSkills.compute_action(
+            ground_skill=_toss(), params=np.array([1.35, 140.0, 792.0]), state=state()
         )
+
+
+def test_the_toss_parameters_land_in_their_slots_in_order(*, _west_stand) -> None:
+    """Three dials around a direction slot is three chances to transpose a pair, and a
+    transposition of speed and millisecond typechecks. Encoded from mutually
+    distinguishable values, so any permutation fails."""
+    action = Tossing3DToss.compute_action(params=np.array([1.31, 128.5, 733.0]), state=state())
+    assert list(action[1:]) == pytest.approx([1.31, 0.0, 128.5, 733.0])
+
+
+def test_every_action_matches_the_declared_action_space(*, _west_stand) -> None:
+    pick = Tossing3DSkills.compute_action(
+        ground_skill=_pick_cube(), params=np.zeros(0), state=state()
+    )
+    toss = Tossing3DToss.compute_action(params=np.array([1.35, 140.0, 792.0]), state=state())
+    for action in (pick, toss):
         assert action.shape == Tossing3DEnvironment.action_space.shape
 
 
@@ -403,7 +392,7 @@ def test_sampling_the_toss_here_raises_rather_than_supplying_stale_candidates() 
         Tossing3DSkills.sample_params(ground_skill=_toss(), rng=np.random.default_rng(0))
 
 
-@pytest.mark.parametrize("slot", range(4))
+@pytest.mark.parametrize("slot", range(3))
 def test_every_same_side_toss_dial_is_drawn_across_its_own_bounds(*, slot: int) -> None:
     """Each dial in bounds, and each one a real draw rather than a constant dressed as
     one -- a sampler that returned a bound's midpoint in some slot would pass a
@@ -419,10 +408,10 @@ def test_every_same_side_toss_dial_is_drawn_across_its_own_bounds(*, slot: int) 
     assert max(draws) - min(draws) > (high - low) / 2
 
 
-def test_the_four_same_side_toss_dials_are_drawn_independently() -> None:
+def test_the_three_same_side_toss_dials_are_drawn_independently() -> None:
     """A sampler that wrote one draw into several slots, or derived one from another,
     would pass every single-slot test above while collapsing the space onto a line or a
-    plane. Pinned as near-zero rank correlation between all six pairs."""
+    plane. Pinned as near-zero rank correlation between all three pairs."""
     from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 
     rng = np.random.default_rng(0)
@@ -431,7 +420,7 @@ def test_the_four_same_side_toss_dials_are_drawn_independently() -> None:
     ])
     ranks = np.argsort(np.argsort(draws, axis=0), axis=0)
     correlations = np.corrcoef(ranks, rowvar=False)
-    off_diagonal = correlations[~np.eye(4, dtype=bool)]
+    off_diagonal = correlations[~np.eye(3, dtype=bool)]
     assert np.max(np.abs(off_diagonal)) < 0.15
 
 
@@ -468,7 +457,7 @@ def test_an_unknown_skill_raises_from_both_sampler_and_encoder() -> None:
     with pytest.raises(ValueError, match="Unknown skill"):
         Tossing3DSkills.sample_params(ground_skill=stray, rng=np.random.default_rng(0))
     with pytest.raises(ValueError, match="Unknown skill"):
-        Tossing3DSkills.compute_action(ground_skill=stray, params=np.zeros(4), state=state())
+        Tossing3DSkills.compute_action(ground_skill=stray, params=np.zeros(3), state=state())
 
 
 def test_same_side_uses_canonical_toss_and_supports_bin_retrieval() -> None:
@@ -549,7 +538,7 @@ def test_same_side_planner_recovers_from_each_landing(*, inside: bool, closed: b
         )
 
 
-def test_ees_implicitly_retrieves_after_hits_and_misses() -> None:
+def test_ees_implicitly_retrieves_after_hits_and_misses(*, _west_stand) -> None:
     """Replay observed atom states through real EES, without injecting a plan/target."""
     from hitl_pmp.core.problem.tasks.types import Goal, Task
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout

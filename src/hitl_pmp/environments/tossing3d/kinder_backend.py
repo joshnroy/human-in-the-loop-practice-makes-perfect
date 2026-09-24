@@ -670,6 +670,41 @@ class KinderBackend(BaseModel):
             return None
 
     @staticmethod
+    def toss_base_plan_failure(*, snapshot: Any, distance: float, rotation: float) -> str | None:
+        """Ask pinned KINDER's own base planner for a path to a toss stand.
+
+        Mirrors `MoveToTossLocationAndTossController._plan_base_motion` exactly -- the
+        float32 parameter cast, `get_target_robot_pose_from_parameters`, the world
+        sampling bounds, `seed=0` and the held cube excluded from collision -- so a
+        stand this accepts is one the controller's own `reset` will plan. Returns `None`
+        when a plan exists, else the reason.
+        """
+        from kinder_models.dynamic3d.utils import (
+            WORLD_X_BOUNDS,
+            WORLD_Y_BOUNDS,
+            get_overhead_object_se2_pose,
+            get_target_robot_pose_from_parameters,
+            run_base_motion_planning,
+        )
+
+        controller_params = np.asarray([distance, rotation], dtype=np.float32)
+        bin_pose = get_overhead_object_se2_pose(
+            snapshot, snapshot.get_object_from_name(KinderBackend.bin_name)
+        )
+        target = get_target_robot_pose_from_parameters(
+            bin_pose, controller_params[0], controller_params[1]
+        )
+        plan = run_base_motion_planning(
+            state=snapshot,
+            target_base_pose=target,
+            x_bounds=WORLD_X_BOUNDS,
+            y_bounds=WORLD_Y_BOUNDS,
+            seed=0,
+            disable_collision_objects=[KinderBackend.cube_name],
+        )
+        return None if plan is not None else "base_motion_plan_failed"
+
+    @staticmethod
     def snapshot_to_plain(*, snapshot: Any) -> dict[str, list[float]]:
         """A `snapshot()` (or a `drain_substep_states()` element), as plain
         `{object_name: [floats]}` -- JSON/pickle-safe, no KINDER `Object`/`Type`
