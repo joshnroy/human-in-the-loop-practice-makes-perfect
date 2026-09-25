@@ -167,7 +167,7 @@ def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
     assert decision["solver"] == "injected"
 
 
-def test_action_value_diagnostics_distinguish_parameterized_reset_destinations() -> None:
+def test_action_value_diagnostics_offer_only_the_robot_side_reset() -> None:
     seed_method = _build()
     resets = seed_method.skill_provider.human_cube_bin_reset_skills()
 
@@ -192,10 +192,11 @@ def test_action_value_diagnostics_distinguish_parameterized_reset_destinations()
     method.select_skill_to_practice(true_atoms=pick.preconditions)
 
     keys = set(method.practice_action_values())
-    reset_keys = {key for key in keys if key.startswith(f"{RESET_SKILL}(")}
-    assert len(reset_keys) == 2
-    assert any("robot_side" in key for key in reset_keys)
-    assert any("opposite_side" in key for key in reset_keys)
+    # Practice never resets the bin to the opposite side, so the one reset grounding
+    # is reported under its bare skill name rather than per destination.
+    assert len(resets) == 1
+    assert resets[0].objects[-1].name == "robot_side"
+    assert {key for key in keys if key.startswith(RESET_SKILL)} == {RESET_SKILL}
 
 
 def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:

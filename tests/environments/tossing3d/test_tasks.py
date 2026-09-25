@@ -85,3 +85,21 @@ def test_sampling_a_train_task_the_ordinary_way_still_rebuilds_the_scene() -> No
 
     with pytest.raises(AssertionError, match="reset_to_seed"):
         tasks.sample_train_task()
+
+
+@pytest.mark.skipif(
+    __import__("importlib").util.find_spec("kinder") is None, reason="KINDER simulator dependency"
+)
+def test_evaluation_tasks_still_place_the_bin_on_the_far_side() -> None:
+    """Restricting practice resets to the robot side leaves evaluation alone: a test
+    task's full reset still places the bin beyond the barrier."""
+    env = Tossing3DEnvironment()
+    tasks = Tossing3DTasks(env=env, seed=0)
+    try:
+        for _ in range(3):
+            task = tasks.sample_test_task()
+            bin_x = task.initial_state.get(obj=env.bin, feature_name="x")
+            barrier_x = task.initial_state.get(obj=env.barrier, feature_name="x")
+            assert bin_x > barrier_x
+    finally:
+        env.close()

@@ -64,6 +64,14 @@ BIN_RESET_REGION_BY_SIDE: Final[dict[Tossing3DSide, Tossing3DResetRegion]] = {
 }
 
 
+# Josh's rule: practice never happens on the opposite side. In the #364 run 2/13
+# long practice throws went to far-side bins because practice resets could choose
+# that destination. It also keeps the robot out of the stands a far-side toss
+# leaves it in, which can cover the whole robot-side region (see `bin_placement`).
+# Evaluation's far-side bins come from the task's full reset, not from here.
+PRACTICE_RESET_DESTINATIONS: Final[tuple[Tossing3DSide, ...]] = (Tossing3DSide.ROBOT,)
+
+
 class Tossing3DSides:
     """Featureless PDDL objects used as reset destinations."""
 

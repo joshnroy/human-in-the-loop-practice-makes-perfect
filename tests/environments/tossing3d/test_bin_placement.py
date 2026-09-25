@@ -95,6 +95,42 @@ def test_a_bin_inside_the_robots_footprint_is_no_longer_placeable() -> None:
     assert _contains(ranges=free, point=(0.27, -1.35))
 
 
+def test_no_robot_side_toss_stand_leaves_the_block_without_a_free_placement() -> None:
+    """With practice resets robot-side only, the robot stands where a toss at a block
+    bin left it: `bin - d (cos, sin)(pi + direction)`. None of those stands, for any
+    corner bin, direction or standoff, covers the whole block. (A robot parked where a
+    far-side toss stood can, which is why practice must not reset to the far side.)"""
+    block = (-0.33, -1.9, 0.3, -1.3)
+    for bx, by in (
+        (block[0], block[1]),
+        (block[0], block[3]),
+        (block[2], block[1]),
+        (block[2], block[3]),
+        (0.0, -1.6),
+    ):
+        for direction in (0, 90, 180, 270):
+            yaw = np.pi + np.radians(direction)
+            for d in np.arange(1.25, 2.6001, 0.05):
+                stand = (bx - d * np.cos(yaw), by - d * np.sin(yaw))
+                robot = BinPlacementRules.aabb(center=stand, size=(0.55, 0.55), yaw=yaw)
+                free = BinPlacementRules.free_centre_ranges(
+                    ranges=(block,),
+                    robot_aabb=robot,
+                    cube_spawn=SPAWN,
+                    bin_half=BIN_HALF,
+                    clearance=0.005,
+                )
+                assert free, (bx, by, direction, d)
+    far_stand = BinPlacementRules.aabb(center=(0.0, -1.6), size=(0.55, 0.55), yaw=0.0)
+    assert not BinPlacementRules.free_centre_ranges(
+        ranges=(block,),
+        robot_aabb=far_stand,
+        cube_spawn=SPAWN,
+        bin_half=BIN_HALF,
+        clearance=0.005,
+    )
+
+
 def test_robot_aabb_covers_the_rotated_footprint() -> None:
     x0, y0, x1, y1 = BinPlacementRules.aabb(center=(0.0, 0.0), size=(0.55, 0.55), yaw=np.pi / 4)
     half = 0.55 / np.sqrt(2)
