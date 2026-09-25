@@ -228,6 +228,14 @@ class Tossing3DSkillProvider(SkillProvider):
                     predicate=ROBOT_AT_SIDE,
                     variables=(robot, barrier, robot_side),
                 ),
+                # Binds the destination to the robot's own side. EES gives the planner
+                # this LIFTED skill, which it grounds over every side object; without
+                # this atom an opposite-side grounding would be planned at the default
+                # cost, reintroducing the practice-on-the-far-side the provider forbids.
+                LiftedAtom(
+                    predicate=ROBOT_AT_SIDE,
+                    variables=(robot, barrier, bin_destination),
+                ),
             }),
             add_effects=frozenset({
                 floor,

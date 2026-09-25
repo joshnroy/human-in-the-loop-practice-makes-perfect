@@ -296,3 +296,25 @@ def test_same_side_reset_places_cube_on_floor_in_the_declared_vocabulary() -> No
     assert {atom.predicate for atom in reset.add_effects | reset.delete_effects} <= set(
         provider.predicates()
     )
+
+
+def test_the_lifted_reset_cannot_be_grounded_to_the_opposite_side() -> None:
+    """EES hands the planner the LIFTED reset skill, which the planner grounds over
+    every side object itself -- and a grounding with no provided cost gets the default
+    one, so an opposite-side reset would be the cheapest plan. The destination is bound
+    to the robot's own side by precondition, so no such grounding is ever applicable."""
+    from hitl_pmp.planning.grounding import SkillGrounder
+
+    env = Tossing3DEnvironment()
+    reset = Tossing3DSkillProvider(env=env).human_cube_bin_reset_skill()
+    objects = (env.robot, env.cube, env.bin, env.barrier, *Tossing3DSides.objects())
+    true_atoms = frozenset(
+        GroundAtom(predicate=ROBOT_AT_SIDE, objects=(env.robot, env.barrier, side))
+        for side in Tossing3DSides.objects()
+        if ROBOT_AT_SIDE.holds(state(env=env), (env.robot, env.barrier, side))
+    )
+    applicable = SkillGrounder.applicable_ground_skills(
+        skills=(reset.skill,), objects=objects, true_atoms=true_atoms
+    )
+    assert applicable
+    assert {ground.objects[-1].name for ground in applicable} == {"robot_side"}
