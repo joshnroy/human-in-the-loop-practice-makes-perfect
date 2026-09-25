@@ -17,8 +17,8 @@ from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+from hitl_pmp.environments.tossing3d.toss import NO_FEASIBLE_TOSS_DIRECTION_REJECTION
 from hitl_pmp.environments.tossing3d.toss_direction import (
-    NoFeasibleTossDirectionError,
     TossDirectionChoice,
     TossDirectionSelector,
 )
@@ -390,13 +390,15 @@ def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -
     assert not record.records_training_row
     assert proposals.call_count == 2
     assert planned and all(item is snapshot for item in planned)
-    # A standoff whose every stand is across the barrier raises; it is not filtered.
+    # A standoff whose every stand is across the barrier is rejected; with nothing
+    # else on offer the pool is empty, which the practice planner replans around.
     monkeypatch.setattr(
         Tossing3DSkillProvider,
         "sample_params_at_state",
         Mock(return_value=np.array([1.35, 360.0, 500.0])),
     )
-    with pytest.raises(NoFeasibleTossDirectionError):
+    with pytest.raises(NoFeasibleParametersError) as caught:
         method.execute_ground_skill(ground_skill=ground, state=state, explore=False)
+    assert set(caught.value.diagnostics.rejection_reasons) == {NO_FEASIBLE_TOSS_DIRECTION_REJECTION}
     TossDirectionSelector.clear_plan_cache()
     assert env._backend is None  # noqa: SLF001 (no live training environment read)

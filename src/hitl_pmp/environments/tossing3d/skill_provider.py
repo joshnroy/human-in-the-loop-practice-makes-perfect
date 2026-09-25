@@ -152,7 +152,7 @@ class Tossing3DSkillProvider(SkillProvider):
     def parameter_rejection_reason(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> str | None:
-        """Raises `NoFeasibleTossDirectionError` for a standoff no direction can plan."""
+        """Rejects a standoff no direction can plan, rather than raising."""
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return None
         return Tossing3DToss.rejection_reason(state=state, params=params)

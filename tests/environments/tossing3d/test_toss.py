@@ -18,7 +18,10 @@ from hitl_pmp.environments.tossing3d.recovery_skills import SameSideSkills
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
-from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
+from hitl_pmp.environments.tossing3d.toss import (
+    NO_FEASIBLE_TOSS_DIRECTION_REJECTION,
+    Tossing3DToss,
+)
 from hitl_pmp.environments.tossing3d.toss_direction import (
     NoFeasibleTossDirectionError,
     TossDirectionChoice,
@@ -136,7 +139,7 @@ def test_the_direction_is_reported_as_its_own_annotation(*, fixed_direction) -> 
     assert provider.action_annotations(ground_skill=pick, action=np.zeros(5)) == {}
 
 
-def test_a_standoff_with_no_feasible_direction_raises_from_proposal_checking(
+def test_a_standoff_with_no_feasible_direction_is_rejected_by_proposal_checking(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def no_direction(*, state, standoff: float) -> TossDirectionChoice:
@@ -150,16 +153,19 @@ def test_a_standoff_with_no_feasible_direction_raises_from_proposal_checking(
 
     monkeypatch.setattr(TossDirectionSelector, "select_for_state", no_direction)
     env = Tossing3DEnvironment()
-    with pytest.raises(NoFeasibleTossDirectionError):
+    assert (
         Tossing3DSkillProvider(env=env).parameter_rejection_reason(
             ground_skill=_toss(env=env), params=np.array([1.5, 200.0, 600.0]), state=state(env=env)
         )
+        == NO_FEASIBLE_TOSS_DIRECTION_REJECTION
+    )
 
 
-def test_ees_does_not_turn_a_no_direction_standoff_into_an_empty_pool(
+def test_ees_turns_a_pool_with_no_direction_anywhere_into_the_empty_pool_signal(
     *, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The empty-pool replan catches `NoFeasibleParametersError`; this must escape."""
+    """`NoFeasibleParametersError` is what the practice planner replans around."""
+    from hitl_pmp.core.method.method import NoFeasibleParametersError
     from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
     def no_direction(*, state, standoff: float) -> TossDirectionChoice:
@@ -170,11 +176,18 @@ def test_ees_does_not_turn_a_no_direction_standoff_into_an_empty_pool(
 
     monkeypatch.setattr(TossDirectionSelector, "select_for_state", no_direction)
     env = Tossing3DEnvironment()
-    method = EesMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)
-    with pytest.raises(NoFeasibleTossDirectionError):
+    method = EesMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env),
+        seed=0,
+        num_candidates=3,
+        max_proposals_per_candidate=2,
+    )
+    with pytest.raises(NoFeasibleParametersError) as caught:
         method.sample_parameter_candidates(
             ground_skill=_toss(env=env), state=state(env=env), explore=True
         )
+    assert caught.value.diagnostics.rejection_reasons == {NO_FEASIBLE_TOSS_DIRECTION_REJECTION: 6}
 
 
 def test_same_side_and_barrier_layouts_share_one_toss_implementation(*, fixed_direction) -> None:

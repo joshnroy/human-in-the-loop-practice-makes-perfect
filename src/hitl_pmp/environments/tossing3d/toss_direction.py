@@ -17,8 +17,13 @@ is `bin - standoff * (cos, sin)(bin_yaw + direction)`). For one `(state, standof
    proves blocked is skipped without planning. Otherwise the real base motion planner
    (`base_plan_failure`) is asked, and the first plannable direction wins.
 3. If none is plannable, raise `NoFeasibleTossDirectionError` with every direction's
-   reason. Deliberately not a rejection: silently dropping a standoff reshapes the
-   candidate pool's standoff distribution, and that must be loud.
+   reason. Proposal checking (`Tossing3DToss.rejection_reason`) turns that into a
+   rejection; anywhere else it is loud.
+
+Rejections stay rare because the standoff is drawn from a band computed at the bin's
+live pose (`TossStandoffBand`): a practice pick can drag and rotate a robot-side bin,
+and the four bin-relative directions rotate with it, so a band fixed at the reset pose
+can admit a standoff from which every direction is blocked.
 
 **Clearance** is the Euclidean distance from the stand point (the base centre the
 controller targets) to the nearest overhead collider rectangle the base planner itself
@@ -38,6 +43,7 @@ violation raises `TossDirectionInvariantError` rather than going by silently.
 import math
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 import numpy as np
@@ -46,7 +52,7 @@ from pydantic import BaseModel, ConfigDict
 from .kinder_backend import KinderBackend
 from .parameter_feasibility import TossParameterFeasibility
 from .types import PlanarCollisionBox, TossFeasibilityGeometry
-from .wide_long_range_proposal import WideLongRangeTossProposal
+from .wide_long_range_proposal import WIDE_TOSS_STANDOFF_BOUNDS, WideLongRangeTossProposal
 
 TOSS_DIRECTIONS_DEG = (0, 90, 180, 270)
 
@@ -80,7 +86,10 @@ class InfeasibleStandoffBandError(RuntimeError):
 
 
 class TossStandoffBand:
-    """The standoff interval a far-side bin can be thrown at from, before any draw.
+    """The standoff interval a bin can be thrown at from, before any draw.
+
+    Two bands, both computed from the state's live geometry: `robot_side_bounds` for a
+    bin on the robot's side, and the far band below for a bin across the barrier.
 
     A far bin is only ever thrown at from direction 0 (west, see the invariant in this
     module's docstring). The lower bound is the analytic stand line
@@ -91,16 +100,42 @@ class TossStandoffBand:
     planner, no random draw.
     """
 
-    _cache: ClassVar[OrderedDict[TossFeasibilityGeometry, tuple[float, float]]] = OrderedDict()
+    _cache: ClassVar[OrderedDict[tuple[str, TossFeasibilityGeometry], tuple[float, float]]] = (
+        OrderedDict()
+    )
 
     @staticmethod
     def far_bounds(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
+        return TossStandoffBand._cached(kind="far", geometry=geometry)
+
+    @staticmethod
+    def robot_side_bounds(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
+        """The standoff interval a robot-side bin can be thrown at from, at its live pose.
+
+        A bin at its reset pose (inside the practice region, yaw 180) has a plannable
+        direction at every standoff of the controller's range, so this is exactly
+        `WIDE_TOSS_STANDOFF_BOUNDS` there and the draw is unchanged. A practice pick
+        can drag and rotate the bin, and the four directions rotate with it; this
+        band is then clipped to the standoffs at which at least one of them passes
+        the geometry gate. It is the hull of that set: a standoff in a gap, or one
+        the real planner refuses, is rejected per candidate. An empty set returns
+        the full range, so every draw is rejected and the pool comes back empty --
+        the signal the practice planner already replans around.
+        """
+        return TossStandoffBand._cached(kind="robot_side", geometry=geometry)
+
+    @staticmethod
+    def _cached(*, kind: str, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
         cache = TossStandoffBand._cache
-        if geometry in cache:
-            cache.move_to_end(geometry)
-            return cache[geometry]
-        bounds = TossStandoffBand._compute(geometry=geometry)
-        cache[geometry] = bounds
+        key = (kind, geometry)
+        if key in cache:
+            cache.move_to_end(key)
+            return cache[key]
+        if kind == "far":
+            bounds = TossStandoffBand._compute(geometry=geometry)
+        else:
+            bounds = TossStandoffBand._compute_robot_side(geometry=geometry)
+        cache[key] = bounds
         if len(cache) > _BAND_CACHE_LIMIT:
             cache.popitem(last=False)
         return bounds
@@ -149,14 +184,54 @@ class TossStandoffBand:
         if flags[-1]:
             return floor, ceiling
         last = max(index for index, flag in enumerate(flags) if flag)
-        good, bad = grid[last], grid[last + 1]
-        while bad - good > _BAND_BISECTION_TOLERANCE_M:
+        return floor, TossStandoffBand._edge(feasible=feasible, good=grid[last], bad=grid[last + 1])
+
+    @staticmethod
+    def _compute_robot_side(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
+        floor, ceiling = WIDE_TOSS_STANDOFF_BOUNDS
+
+        def feasible(*, standoff: float) -> bool:
+            return any(
+                TossParameterFeasibility.rejection_reason_from_geometry(
+                    geometry=geometry,
+                    params=np.array([
+                        standoff,
+                        TossDirectionSelector.rotation(direction_deg=direction),
+                    ]),
+                )
+                is None
+                for direction in TOSS_DIRECTIONS_DEG
+            )
+
+        steps = max(1, math.ceil((ceiling - floor) / _BAND_SCAN_STEP_M))
+        grid = [floor + (ceiling - floor) * index / steps for index in range(steps + 1)]
+        flags = [feasible(standoff=standoff) for standoff in grid]
+        if all(flags) or not any(flags):
+            return floor, ceiling
+        first = flags.index(True)
+        last = max(index for index, flag in enumerate(flags) if flag)
+        low = (
+            floor
+            if first == 0
+            else TossStandoffBand._edge(feasible=feasible, good=grid[first], bad=grid[first - 1])
+        )
+        high = (
+            ceiling
+            if last == steps
+            else TossStandoffBand._edge(feasible=feasible, good=grid[last], bad=grid[last + 1])
+        )
+        return low, high
+
+    @staticmethod
+    def _edge(*, feasible: Callable[..., bool], good: float, bad: float) -> float:
+        """Bisect a feasible/infeasible pair down to the feasible side of the edge."""
+        while abs(bad - good) > _BAND_BISECTION_TOLERANCE_M:
             middle = (good + bad) / 2
             if feasible(standoff=middle):
                 good = middle
             else:
                 bad = middle
-        return floor, good
+        return good
 
 
 class TossDirectionChoice(BaseModel):
@@ -173,8 +248,10 @@ class TossDirectionChoice(BaseModel):
 class NoFeasibleTossDirectionError(RuntimeError):
     """No direction of the four is plannable for this standoff.
 
-    Not a subclass of `NoFeasibleParametersError`, on purpose: that one is the
-    empty-pool signal the practice loop replans around, and this must stop the run.
+    Proposal checking catches this and rejects the candidate. Not a subclass of
+    `NoFeasibleParametersError`, on purpose: that one is the empty-pool signal the
+    practice loop replans around, and this raised anywhere else -- executing an
+    accepted candidate -- must stop the run.
     """
 
     def __init__(

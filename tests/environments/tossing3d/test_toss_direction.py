@@ -165,7 +165,7 @@ def test_a_second_candidate_at_the_same_rounded_standoff_makes_no_planner_call(*
     assert len(stub.calls) == 2
 
 
-def test_no_feasible_direction_raises_rather_than_rejecting_the_standoff(*, planner) -> None:
+def test_the_selector_raises_when_no_direction_is_feasible(*, planner) -> None:
     planner(failing=frozenset(TOSS_DIRECTIONS_DEG))
     geometry = _geometry(bin_xy=(-0.35, 0.3), bin_yaw=math.pi)
     with pytest.raises(NoFeasibleTossDirectionError):
@@ -199,8 +199,9 @@ def test_the_no_feasible_direction_error_carries_every_directions_reason(*, plan
 
 
 def test_the_no_feasible_direction_error_is_not_the_empty_pool_signal() -> None:
-    """The empty-pool replan catches `NoFeasibleParametersError`; a standoff with no
-    direction must stay loud rather than reshape the pool's standoff distribution."""
+    """Proposal checking turns the selector's error into a rejection; anywhere else --
+    executing an accepted candidate -- it is an impossible state, and the empty-pool
+    replan, which catches `NoFeasibleParametersError`, must not swallow it."""
     from hitl_pmp.core.method.method import NoFeasibleParametersError
 
     assert not issubclass(NoFeasibleTossDirectionError, NoFeasibleParametersError)

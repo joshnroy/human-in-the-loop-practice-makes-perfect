@@ -28,7 +28,12 @@ from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
 from .kinder_backend import KinderBackend
-from .toss_direction import TossDirectionChoice, TossDirectionSelector, TossStandoffBand
+from .toss_direction import (
+    NoFeasibleTossDirectionError,
+    TossDirectionChoice,
+    TossDirectionSelector,
+    TossStandoffBand,
+)
 from .wide_long_range_proposal import (
     WIDE_TOSS_RELEASE_MS_BOUNDS,
     WIDE_TOSS_SPEED_BOUNDS,
@@ -38,6 +43,10 @@ from .wide_long_range_proposal import (
 
 # The name the chosen direction is logged under, beside the three learned parameters.
 TOSS_DIRECTION_ANNOTATION = "toss_direction_deg"
+
+# One key for every standoff no direction reaches, so the proposal log counts them
+# together; the per-direction reasons are the selector's, not the sampler's.
+NO_FEASIBLE_TOSS_DIRECTION_REJECTION = "no_feasible_toss_direction"
 
 
 class Tossing3DToss:
@@ -66,26 +75,28 @@ class Tossing3DToss:
 
     @staticmethod
     def standoff_bounds(*, ground_skill: GroundSkill, state: State) -> tuple[float, float]:
-        """The full band for a bin on the robot's side; the per-bin far band for a
-        bin across the barrier. A function of the bin, robot and barrier poses only."""
+        """The per-bin band at the bin's live pose, yaw included: the robot-side band
+        for a bin on the robot's side (the full band unless the bin was moved), the
+        far band for a bin across the barrier. A function of the state's geometry."""
         robot, bin_, _, barrier, *_ = ground_skill.objects
         bin_x = state.get(obj=bin_, feature_name="x")
         barrier_x = state.get(obj=barrier, feature_name="x")
         robot_x = state.get(obj=robot, feature_name="pos_base_x")
-        if (bin_x - barrier_x) * (robot_x - barrier_x) < 0.0:
-            snapshot = getattr(state, "object_centric", None)
-            geometry = (
-                None
-                if snapshot is None
-                else KinderBackend.toss_feasibility_geometry(snapshot=snapshot)
-            )
-            if geometry is None:
-                # A hand-built state carries no collider geometry; only the analytic
-                # stand line is knowable, and direction selection refuses such a
-                # state anyway.
+        far = (bin_x - barrier_x) * (robot_x - barrier_x) < 0.0
+        snapshot = getattr(state, "object_centric", None)
+        geometry = (
+            None if snapshot is None else KinderBackend.toss_feasibility_geometry(snapshot=snapshot)
+        )
+        if geometry is None:
+            # A hand-built state carries no collider geometry; only the analytic
+            # stand line is knowable, and direction selection refuses such a state
+            # anyway.
+            if far:
                 return WideLongRangeTossProposal.far_standoff_bounds(bin_x=bin_x)
+            return WIDE_TOSS_STANDOFF_BOUNDS
+        if far:
             return TossStandoffBand.far_bounds(geometry=geometry)
-        return WIDE_TOSS_STANDOFF_BOUNDS
+        return TossStandoffBand.robot_side_bounds(geometry=geometry)
 
     @staticmethod
     def choose_direction(*, state: State, params: np.ndarray) -> TossDirectionChoice:
@@ -93,9 +104,14 @@ class Tossing3DToss:
 
     @staticmethod
     def rejection_reason(*, state: State, params: np.ndarray) -> str | None:
-        """Never a rejection: a standoff with a plannable direction is accepted, and one
-        with none raises `NoFeasibleTossDirectionError` from the selector."""
-        Tossing3DToss.choose_direction(state=state, params=params)
+        """A standoff with a plannable direction is accepted; one with none is rejected
+        like any other proposal. The band keeps these rare -- they are a moved bin's
+        gaps and planner refusals -- and a pose with no feasible toss at all empties
+        the pool, which the practice planner replans around."""
+        try:
+            Tossing3DToss.choose_direction(state=state, params=params)
+        except NoFeasibleTossDirectionError:
+            return NO_FEASIBLE_TOSS_DIRECTION_REJECTION
         return None
 
     @staticmethod
