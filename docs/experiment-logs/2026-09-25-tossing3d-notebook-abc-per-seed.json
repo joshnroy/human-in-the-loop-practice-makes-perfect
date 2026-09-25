@@ -1,0 +1,2182 @@
+{
+ "0.0003/0": {
+  "all": {
+   "conditioned": {
+    "n": 28,
+    "cond": 28,
+    "cond_succ": 0,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 3,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.01158766175939735,
+     "toss_potential": null,
+     "tossC": 0.38811714418584975
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.0035272388865472404,
+     "toss_potential": null,
+     "tossC": 0.1650354183493128
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701398,
+     "toss_potential": null,
+     "tossC": 0.09317424726521778
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701398,
+     "toss_potential": null,
+     "tossC": 0.0931742472652178
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701675,
+     "toss_potential": null,
+     "tossC": 0.09317424726521778
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701398,
+     "toss_potential": null,
+     "tossC": 0.09317424726521781
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701953,
+     "toss_potential": null,
+     "tossC": 0.09317424726521778
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701675,
+     "toss_potential": null,
+     "tossC": 0.09317424726521782
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701675,
+     "toss_potential": null,
+     "tossC": 0.09317424726521781
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 28,
+    "cond": 28,
+    "cond_succ": 0,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 3,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.01158766175939735,
+     "toss_potential": null,
+     "tossC": 0.38811714418584975
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.0035272388865472404,
+     "toss_potential": null,
+     "tossC": 0.1650354183493128
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701398,
+     "toss_potential": null,
+     "tossC": 0.09317424726521778
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701398,
+     "toss_potential": null,
+     "tossC": 0.0931742472652178
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701675,
+     "toss_potential": null,
+     "tossC": 0.09317424726521778
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701398,
+     "toss_potential": null,
+     "tossC": 0.09317424726521781
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701953,
+     "toss_potential": null,
+     "tossC": 0.09317424726521778
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701675,
+     "toss_potential": null,
+     "tossC": 0.09317424726521782
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0012993105450701675,
+     "toss_potential": null,
+     "tossC": 0.09317424726521781
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 28,
+    "cond": 0,
+    "cond_succ": 0,
+    "dropped": 28,
+    "dropped_succ": 0
+   },
+   "stranded": 3,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.034998914179039886,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.006958622470038922,
+     "toss_potential": null,
+     "tossC": 0.5438358718862312
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.002276091816956316,
+     "toss_potential": null,
+     "tossC": 0.5830646700421969
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -0.0005303369977299743,
+     "toss_potential": null,
+     "tossC": 0.6001055595491047
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0005303369977298633,
+     "toss_potential": null,
+     "tossC": 0.6001055595491047
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0005303369977299743,
+     "toss_potential": null,
+     "tossC": 0.6001055595491047
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0005303369977297523,
+     "toss_potential": null,
+     "tossC": 0.6001055595491047
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0005303369977297523,
+     "toss_potential": null,
+     "tossC": 0.6001055595491045
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0005303369977299743,
+     "toss_potential": null,
+     "tossC": 0.6001055595491045
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0005303369977298633,
+     "toss_potential": null,
+     "tossC": 0.6001055595491047
+    }
+   }
+  }
+ },
+ "0.0003/1": {
+  "all": {
+   "conditioned": {
+    "n": 9,
+    "cond": 9,
+    "cond_succ": 1,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 1,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.44288566599667434
+    },
+    "2": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.44288566599667417
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.4428856659966742
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 28,
+    "cond": 19,
+    "cond_succ": 1,
+    "dropped": 9,
+    "dropped_succ": 0
+   },
+   "stranded": 4,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "non_human_reset_cube_bin_only",
+     "max_potential": 0.010443077980203386,
+     "toss_potential": null,
+     "tossC": 0.44288566599667434
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.004920868438385517,
+     "toss_potential": null,
+     "tossC": 0.31857430028912237
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.0011509637268725947,
+     "toss_potential": null,
+     "tossC": 0.20027300458190606
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0008494829600867726,
+     "toss_potential": null,
+     "tossC": 0.18096288510270492
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0008494829600867726,
+     "toss_potential": null,
+     "tossC": 0.18096288510270486
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0008494829600866893,
+     "toss_potential": null,
+     "tossC": 0.1809628851027049
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0008494829600868004,
+     "toss_potential": null,
+     "tossC": 0.18096288510270486
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0008494829600867726,
+     "toss_potential": null,
+     "tossC": 0.18096288510270492
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0008494829600867726,
+     "toss_potential": null,
+     "tossC": 0.18096288510270486
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 28,
+    "cond": 10,
+    "cond_succ": 0,
+    "dropped": 18,
+    "dropped_succ": 1
+   },
+   "stranded": 4,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.034998914179039886,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "non_human_reset_cube_bin_only",
+     "max_potential": 0.007720110800194913,
+     "toss_potential": null,
+     "tossC": 0.5438358718862312
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.004467891189107842,
+     "toss_potential": null,
+     "tossC": 0.3516044247884012
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.0011710394358891707,
+     "toss_potential": null,
+     "tossC": 0.1992896311020803
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0008276102171132227,
+     "toss_potential": null,
+     "tossC": 0.17658804587182722
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0008276102171132227,
+     "toss_potential": null,
+     "tossC": 0.17658804587182725
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0008276102171132227,
+     "toss_potential": null,
+     "tossC": 0.17658804587182725
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0008276102171132782,
+     "toss_potential": null,
+     "tossC": 0.17658804587182725
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0008276102171132227,
+     "toss_potential": null,
+     "tossC": 0.17658804587182725
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0008276102171132227,
+     "toss_potential": null,
+     "tossC": 0.17658804587182725
+    }
+   }
+  }
+ },
+ "0.0003/2": {
+  "all": {
+   "conditioned": {
+    "n": 10,
+    "cond": 10,
+    "cond_succ": 2,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 1,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.48807431487675845
+    },
+    "2": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.48807431487675823
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.48807431487675823
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.4880743148767583
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0005999177812133216,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 33,
+    "cond": 22,
+    "cond_succ": 4,
+    "dropped": 11,
+    "dropped_succ": 0
+   },
+   "stranded": 4,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.00826087661535424,
+     "toss_potential": null,
+     "tossC": 0.48807431487675845
+    },
+    "2": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0016812023138769727,
+     "toss_potential": null,
+     "tossC": 0.3327228308528598
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.002042880792956281,
+     "toss_potential": null,
+     "tossC": 0.3106334513561342
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0002137286386049153,
+     "toss_potential": null,
+     "tossC": 0.3266822998396889
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0002137286386049153,
+     "toss_potential": null,
+     "tossC": 0.3266822998396889
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0002137286386049153,
+     "toss_potential": null,
+     "tossC": 0.3266822998396889
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0002137286386049153,
+     "toss_potential": null,
+     "tossC": 0.32668229983968894
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.00021372863860497082,
+     "toss_potential": null,
+     "tossC": 0.32668229983968894
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.00021372863860497082,
+     "toss_potential": null,
+     "tossC": 0.32668229983968894
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 45,
+    "cond": 16,
+    "cond_succ": 4,
+    "dropped": 29,
+    "dropped_succ": 2
+   },
+   "stranded": 6,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.034998914179039886,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.006820444962389038,
+     "toss_potential": null,
+     "tossC": 0.5497764743640228
+    },
+    "2": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0018723122733436681,
+     "toss_potential": null,
+     "tossC": 0.3147201841262464
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.0025850875268812468,
+     "toss_potential": null,
+     "tossC": 0.29708811792917394
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.0016643593998461603,
+     "toss_potential": null,
+     "tossC": 0.3044114348681132
+    },
+    "5": {
+     "action": "PickCube",
+     "max_potential": 0.001981097689758571,
+     "toss_potential": null,
+     "tossC": 0.4184776572363113
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.00024654557390019205,
+     "toss_potential": null,
+     "tossC": 0.3897358506037707
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.00024654557390019205,
+     "toss_potential": null,
+     "tossC": 0.3897358506037707
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.00024654557390008103,
+     "toss_potential": null,
+     "tossC": 0.3897358506037707
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.00024654557390008103,
+     "toss_potential": null,
+     "tossC": 0.3897358506037707
+    }
+   }
+  }
+ },
+ "0.0003/3": {
+  "all": {
+   "conditioned": {
+    "n": 25,
+    "cond": 25,
+    "cond_succ": 0,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 3,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.011397727151774784,
+     "toss_potential": null,
+     "tossC": 0.39292413557674344
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.003727216325081273,
+     "toss_potential": null,
+     "tossC": 0.1658459082161005
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916311,
+     "toss_potential": null,
+     "tossC": 0.10651216638897315
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916588,
+     "toss_potential": null,
+     "tossC": 0.10651216638897312
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916311,
+     "toss_potential": null,
+     "tossC": 0.10651216638897315
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916172,
+     "toss_potential": null,
+     "tossC": 0.10651216638897312
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263915756,
+     "toss_potential": null,
+     "tossC": 0.10651216638897314
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916311,
+     "toss_potential": null,
+     "tossC": 0.10651216638897312
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263915895,
+     "toss_potential": null,
+     "tossC": 0.10651216638897315
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 25,
+    "cond": 25,
+    "cond_succ": 0,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 3,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.011397727151774784,
+     "toss_potential": null,
+     "tossC": 0.39292413557674344
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.003727216325081273,
+     "toss_potential": null,
+     "tossC": 0.1658459082161005
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916311,
+     "toss_potential": null,
+     "tossC": 0.10651216638897315
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916588,
+     "toss_potential": null,
+     "tossC": 0.10651216638897312
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916311,
+     "toss_potential": null,
+     "tossC": 0.10651216638897315
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916172,
+     "toss_potential": null,
+     "tossC": 0.10651216638897312
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263915756,
+     "toss_potential": null,
+     "tossC": 0.10651216638897314
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263916311,
+     "toss_potential": null,
+     "tossC": 0.10651216638897312
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0008519673263915895,
+     "toss_potential": null,
+     "tossC": 0.10651216638897315
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 25,
+    "cond": 0,
+    "cond_succ": 0,
+    "dropped": 25,
+    "dropped_succ": 0
+   },
+   "stranded": 3,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.034998914179039886,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.0068495451012159925,
+     "toss_potential": null,
+     "tossC": 0.5497764743640228
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.0028150328526374002,
+     "toss_potential": null,
+     "tossC": 0.5830646700421969
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -0.00023572163807117352,
+     "toss_potential": null,
+     "tossC": 0.5953986663205427
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.00023572163807128454,
+     "toss_potential": null,
+     "tossC": 0.5953986663205428
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.00023572163807084046,
+     "toss_potential": null,
+     "tossC": 0.5953986663205428
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0002357216380710625,
+     "toss_potential": null,
+     "tossC": 0.5953986663205426
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.00023572163807095148,
+     "toss_potential": null,
+     "tossC": 0.5953986663205428
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0002357216380710625,
+     "toss_potential": null,
+     "tossC": 0.5953986663205428
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.00023572163807072943,
+     "toss_potential": null,
+     "tossC": 0.595398666320543
+    }
+   }
+  }
+ },
+ "0.0003/4": {
+  "all": {
+   "conditioned": {
+    "n": 41,
+    "cond": 41,
+    "cond_succ": 6,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 5,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "OpenGripper",
+     "max_potential": 0.0028498957342109055,
+     "toss_potential": null,
+     "tossC": 0.38811714418584975
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.0035809264181773104,
+     "toss_potential": null,
+     "tossC": 0.17641929176817428
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.011294151557356136,
+     "toss_potential": null,
+     "tossC": 0.1729126418346144
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.0033506629594455273,
+     "toss_potential": null,
+     "tossC": 0.2634147227281777
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.0006706821796029216,
+     "toss_potential": null,
+     "tossC": 0.29824411476378254
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.0006706821796029216,
+     "toss_potential": null,
+     "tossC": 0.29824411476378254
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0006706821796029772,
+     "toss_potential": null,
+     "tossC": 0.29824411476378254
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.0006706821796029216,
+     "toss_potential": null,
+     "tossC": 0.29824411476378254
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0006706821796029772,
+     "toss_potential": null,
+     "tossC": 0.29824411476378254
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 60,
+    "cond": 40,
+    "cond_succ": 5,
+    "dropped": 20,
+    "dropped_succ": 2
+   },
+   "stranded": 7,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03829957830021724,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "OpenGripper",
+     "max_potential": 0.0028498957342109055,
+     "toss_potential": null,
+     "tossC": 0.38811714418584975
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.0035809264181773104,
+     "toss_potential": null,
+     "tossC": 0.17641929176817428
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.002930304027003089,
+     "toss_potential": null,
+     "tossC": 0.1729126418346144
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.00352424499811832,
+     "toss_potential": null,
+     "tossC": 0.27985668633977867
+    },
+    "5": {
+     "action": "PickCube",
+     "max_potential": 0.003774380033481517,
+     "toss_potential": null,
+     "tossC": 0.35588597872119254
+    },
+    "6": {
+     "action": "PickCube",
+     "max_potential": 0.0016912807682907816,
+     "toss_potential": null,
+     "tossC": 0.32435611977161066
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.0013698463316288434,
+     "toss_potential": null,
+     "tossC": 0.25937170749753824
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.001369846331628899,
+     "toss_potential": null,
+     "tossC": 0.25937170749753824
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.0013698463316288434,
+     "toss_potential": null,
+     "tossC": 0.25937170749753824
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 27,
+    "cond": 1,
+    "cond_succ": 1,
+    "dropped": 26,
+    "dropped_succ": 1
+   },
+   "stranded": 4,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.034998914179039886,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "OpenGripper",
+     "max_potential": 0.0012422557768826392,
+     "toss_potential": null,
+     "tossC": 0.5438358718862312
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.002301509087276443,
+     "toss_potential": null,
+     "tossC": 0.5777126985144838
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.0016964693397982789,
+     "toss_potential": null,
+     "tossC": 0.5970543360671745
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -0.000150278402982984,
+     "toss_potential": null,
+     "tossC": 0.6875603647524053
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -0.00015027840298287298,
+     "toss_potential": null,
+     "tossC": 0.6875603647524053
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -0.000150278402982984,
+     "toss_potential": null,
+     "tossC": 0.6875603647524052
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -0.000150278402982984,
+     "toss_potential": null,
+     "tossC": 0.6875603647524053
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -0.00015027840298287298,
+     "toss_potential": null,
+     "tossC": 0.6875603647524053
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -0.00015027840298287298,
+     "toss_potential": null,
+     "tossC": 0.6875603647524053
+    }
+   }
+  }
+ },
+ "0/0": {
+  "all": {
+   "conditioned": {
+    "n": 75,
+    "cond": 75,
+    "cond_succ": 13,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.013703998026072695,
+     "toss_potential": null,
+     "tossC": 0.38811714418584975
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.005417722021267807,
+     "toss_potential": null,
+     "tossC": 0.1650354183493128
+    },
+    "3": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0021677830005749493,
+     "toss_potential": 0.0021677830005749493,
+     "tossC": 0.09317424726521778
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.0005881076444175029,
+     "toss_potential": null,
+     "tossC": 0.05686855023931027
+    },
+    "5": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.009465255247780316,
+     "toss_potential": null,
+     "tossC": 0.11471906712806215
+    },
+    "6": {
+     "action": "PickCube",
+     "max_potential": 0.009021161903008793,
+     "toss_potential": null,
+     "tossC": 0.08359902762572707
+    },
+    "7": {
+     "action": "PickCube",
+     "max_potential": 0.005674847006298139,
+     "toss_potential": null,
+     "tossC": 0.19710948087216712
+    },
+    "8": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0020477105590310796,
+     "toss_potential": 0.0020477105590310796,
+     "tossC": 0.25529992882978636
+    },
+    "9": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0012882745601430212,
+     "toss_potential": 0.0012882745601430212,
+     "tossC": 0.2835161480772016
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 90,
+    "cond": 70,
+    "cond_succ": 17,
+    "dropped": 20,
+    "dropped_succ": 4
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.013703998026072695,
+     "toss_potential": null,
+     "tossC": 0.38811714418584975
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.005417722021267807,
+     "toss_potential": null,
+     "tossC": 0.1650354183493128
+    },
+    "3": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0021677830005749493,
+     "toss_potential": 0.0021677830005749493,
+     "tossC": 0.09317424726521778
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.0005881076444175029,
+     "toss_potential": null,
+     "tossC": 0.05686855023931027
+    },
+    "5": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0012361856105152919,
+     "toss_potential": null,
+     "tossC": 0.11471906712806215
+    },
+    "6": {
+     "action": "PickCube",
+     "max_potential": 0.0007827112655294649,
+     "toss_potential": null,
+     "tossC": 0.10264664930995461
+    },
+    "7": {
+     "action": "PickCube",
+     "max_potential": 0.0024019103866166625,
+     "toss_potential": null,
+     "tossC": 0.2512647145052451
+    },
+    "8": {
+     "action": "PickCube",
+     "max_potential": 0.002990935379813431,
+     "toss_potential": null,
+     "tossC": 0.3267870353556478
+    },
+    "9": {
+     "action": "PickCube",
+     "max_potential": 0.0037454671532823336,
+     "toss_potential": null,
+     "tossC": 0.43601258882700794
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 90,
+    "cond": 23,
+    "cond_succ": 15,
+    "dropped": 67,
+    "dropped_succ": 6
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03814308976422559,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.009182580716114386,
+     "toss_potential": null,
+     "tossC": 0.5438358718862312
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.0044652059472684025,
+     "toss_potential": null,
+     "tossC": 0.5830646700421969
+    },
+    "3": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0033003164760094794,
+     "toss_potential": 0.0033003164760094794,
+     "tossC": 0.6001055595491047
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.001766742619872419,
+     "toss_potential": null,
+     "tossC": 0.6115431293701794
+    },
+    "5": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0013624952553188407,
+     "toss_potential": null,
+     "tossC": 0.6183748530104309
+    },
+    "6": {
+     "action": "PickCube",
+     "max_potential": 0.00086979048790925,
+     "toss_potential": null,
+     "tossC": 0.35352008903821197
+    },
+    "7": {
+     "action": "PickCube",
+     "max_potential": 0.0012278271554796438,
+     "toss_potential": null,
+     "tossC": 0.5995584083082028
+    },
+    "8": {
+     "action": "PickCube",
+     "max_potential": 0.001055308630352636,
+     "toss_potential": null,
+     "tossC": 0.5947068616593036
+    },
+    "9": {
+     "action": "PickCube",
+     "max_potential": 0.0009862644971723178,
+     "toss_potential": null,
+     "tossC": 0.6528359574051357
+    }
+   }
+  }
+ },
+ "0/1": {
+  "all": {
+   "conditioned": {
+    "n": 9,
+    "cond": 9,
+    "cond_succ": 1,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 1,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.44288566599667434
+    },
+    "2": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.44288566599667417
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.4428856659966742
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": 0.0,
+     "toss_potential": null,
+     "tossC": 0.4428856659966743
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 88,
+    "cond": 54,
+    "cond_succ": 13,
+    "dropped": 34,
+    "dropped_succ": 2
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.012438065700929202,
+     "toss_potential": null,
+     "tossC": 0.44288566599667434
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.006865228040742022,
+     "toss_potential": null,
+     "tossC": 0.31857430028912237
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.0028804388083782384,
+     "toss_potential": null,
+     "tossC": 0.20027300458190606
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.003298323063805897,
+     "toss_potential": null,
+     "tossC": 0.2823686373555654
+    },
+    "5": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.004091487211471456,
+     "toss_potential": 0.004091487211471456,
+     "tossC": 0.3429420269942728
+    },
+    "6": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.002132585873503179,
+     "toss_potential": null,
+     "tossC": 0.33432187450693196
+    },
+    "7": {
+     "action": "PickCube",
+     "max_potential": 0.0010498490473564437,
+     "toss_potential": null,
+     "tossC": 0.2726709337022988
+    },
+    "8": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0011183953879619901,
+     "toss_potential": 0.0011183953879619901,
+     "tossC": 0.2869798236558626
+    },
+    "9": {
+     "action": "PickCube",
+     "max_potential": 0.0006295999255111484,
+     "toss_potential": null,
+     "tossC": 0.27684834480878145
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 88,
+    "cond": 45,
+    "cond_succ": 12,
+    "dropped": 43,
+    "dropped_succ": 3
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03814308976422559,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.00971974407086973,
+     "toss_potential": null,
+     "tossC": 0.5438358718862312
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.006424764770069646,
+     "toss_potential": null,
+     "tossC": 0.3516044247884012
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.0029012338589052555,
+     "toss_potential": null,
+     "tossC": 0.1992896311020803
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.0033533990870983077,
+     "toss_potential": null,
+     "tossC": 0.29194717559242406
+    },
+    "5": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.004054021123528595,
+     "toss_potential": 0.004054021123528595,
+     "tossC": 0.3513905490420004
+    },
+    "6": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.002136421551936829,
+     "toss_potential": null,
+     "tossC": 0.34175489064934217
+    },
+    "7": {
+     "action": "PickCube",
+     "max_potential": 0.0010782495668243963,
+     "toss_potential": null,
+     "tossC": 0.27920851371219835
+    },
+    "8": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.001144300611859994,
+     "toss_potential": 0.001144300611859994,
+     "tossC": 0.2927913879976507
+    },
+    "9": {
+     "action": "PickCube",
+     "max_potential": 0.000648377986875448,
+     "toss_potential": null,
+     "tossC": 0.2820022730432581
+    }
+   }
+  }
+ },
+ "0/2": {
+  "all": {
+   "conditioned": {
+    "n": 10,
+    "cond": 10,
+    "cond_succ": 2,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": 2,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 5.551115123125783e-17,
+     "toss_potential": null,
+     "tossC": 0.48807431487675845
+    },
+    "2": {
+     "action": "STOP",
+     "max_potential": -2.7755575615628914e-16,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    },
+    "3": {
+     "action": "STOP",
+     "max_potential": -3.3306690738754696e-16,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    },
+    "4": {
+     "action": "STOP",
+     "max_potential": -2.7755575615628914e-16,
+     "toss_potential": null,
+     "tossC": 0.48807431487675823
+    },
+    "5": {
+     "action": "STOP",
+     "max_potential": -1.6653345369377348e-16,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    },
+    "6": {
+     "action": "STOP",
+     "max_potential": -1.6653345369377348e-16,
+     "toss_potential": null,
+     "tossC": 0.48807431487675823
+    },
+    "7": {
+     "action": "STOP",
+     "max_potential": -2.7755575615628914e-16,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    },
+    "8": {
+     "action": "STOP",
+     "max_potential": -2.220446049250313e-16,
+     "toss_potential": null,
+     "tossC": 0.4880743148767583
+    },
+    "9": {
+     "action": "STOP",
+     "max_potential": -2.220446049250313e-16,
+     "toss_potential": null,
+     "tossC": 0.48807431487675834
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 84,
+    "cond": 48,
+    "cond_succ": 12,
+    "dropped": 36,
+    "dropped_succ": 1
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.010262046936076685,
+     "toss_potential": null,
+     "tossC": 0.48807431487675845
+    },
+    "2": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.004891968088043097,
+     "toss_potential": null,
+     "tossC": 0.3327228308528598
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.00392169015055549,
+     "toss_potential": null,
+     "tossC": 0.3106334513561342
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.0028455968050113967,
+     "toss_potential": null,
+     "tossC": 0.31105792899815443
+    },
+    "5": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.004150785482187225,
+     "toss_potential": 0.004150785482187225,
+     "tossC": 0.4129395784541646
+    },
+    "6": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0014427395613273997,
+     "toss_potential": null,
+     "tossC": 0.34361362226778946
+    },
+    "7": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0016859211001861718,
+     "toss_potential": null,
+     "tossC": 0.39937929632362956
+    },
+    "8": {
+     "action": "PickCube",
+     "max_potential": 0.0011366179289067913,
+     "toss_potential": null,
+     "tossC": 0.3666934974029969
+    },
+    "9": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0006619426273837825,
+     "toss_potential": null,
+     "tossC": 0.3516654093042917
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 84,
+    "cond": 38,
+    "cond_succ": 10,
+    "dropped": 46,
+    "dropped_succ": 3
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03814308976422559,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.008824625594151592,
+     "toss_potential": null,
+     "tossC": 0.5497764743640228
+    },
+    "2": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.005074672152877158,
+     "toss_potential": null,
+     "tossC": 0.3147201841262464
+    },
+    "3": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.005416646606023534,
+     "toss_potential": 0.005416646606023534,
+     "tossC": 0.29708811792917394
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.003469936116991257,
+     "toss_potential": null,
+     "tossC": 0.3044114348681132
+    },
+    "5": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.004708278744013417,
+     "toss_potential": 0.004708278744013417,
+     "tossC": 0.4184776572363113
+    },
+    "6": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0017436316697314602,
+     "toss_potential": null,
+     "tossC": 0.34662881990624145
+    },
+    "7": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.002001866359467863,
+     "toss_potential": null,
+     "tossC": 0.40638368844154077
+    },
+    "8": {
+     "action": "PickCube",
+     "max_potential": 0.0013685018046701858,
+     "toss_potential": null,
+     "tossC": 0.37276337404775683
+    },
+    "9": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0008035921190675532,
+     "toss_potential": null,
+     "tossC": 0.35690291012914005
+    }
+   }
+  }
+ },
+ "0/3": {
+  "all": {
+   "conditioned": {
+    "n": 86,
+    "cond": 86,
+    "cond_succ": 8,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.013081838186930761,
+     "toss_potential": null,
+     "tossC": 0.39292413557674344
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.005416916506111702,
+     "toss_potential": null,
+     "tossC": 0.1658459082161005
+    },
+    "3": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0016368509760268934,
+     "toss_potential": null,
+     "tossC": 0.09722357223139254
+    },
+    "4": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0009230522166112573,
+     "toss_potential": 0.0009230522166112573,
+     "tossC": 0.06499822952367534
+    },
+    "5": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.012235715640058653,
+     "toss_potential": 0.012235715640058653,
+     "tossC": 0.12662408987738344
+    },
+    "6": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0045260832135981255,
+     "toss_potential": null,
+     "tossC": 0.1680858651604254
+    },
+    "7": {
+     "action": "PickCube",
+     "max_potential": 0.0051026426842370465,
+     "toss_potential": null,
+     "tossC": 0.13163471784098235
+    },
+    "8": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.003237330476882433,
+     "toss_potential": null,
+     "tossC": 0.153227343579379
+    },
+    "9": {
+     "action": "PickCube",
+     "max_potential": 0.0034200013730158463,
+     "toss_potential": null,
+     "tossC": 0.14800829764514548
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 86,
+    "cond": 63,
+    "cond_succ": 6,
+    "dropped": 23,
+    "dropped_succ": 2
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.013081838186930761,
+     "toss_potential": null,
+     "tossC": 0.39292413557674344
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.005416916506111702,
+     "toss_potential": null,
+     "tossC": 0.1658459082161005
+    },
+    "3": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0016368509760268934,
+     "toss_potential": null,
+     "tossC": 0.09722357223139254
+    },
+    "4": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0009230522166112573,
+     "toss_potential": 0.0009230522166112573,
+     "tossC": 0.06499822952367534
+    },
+    "5": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0021112453037361034,
+     "toss_potential": 0.0021112453037361034,
+     "tossC": 0.12662408987738344
+    },
+    "6": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0012834982898995428,
+     "toss_potential": null,
+     "tossC": 0.15529157549936623
+    },
+    "7": {
+     "action": "PickCube",
+     "max_potential": 0.0007875211974470303,
+     "toss_potential": null,
+     "tossC": 0.12682663902788285
+    },
+    "8": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0009717412129857939,
+     "toss_potential": null,
+     "tossC": 0.18157177375840525
+    },
+    "9": {
+     "action": "PickCube",
+     "max_potential": 0.0006552824058521645,
+     "toss_potential": null,
+     "tossC": 0.15661331264100778
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 86,
+    "cond": 20,
+    "cond_succ": 4,
+    "dropped": 66,
+    "dropped_succ": 4
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03814308976422559,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "PickCube",
+     "max_potential": 0.008522817387297432,
+     "toss_potential": null,
+     "tossC": 0.5497764743640228
+    },
+    "2": {
+     "action": "PickCube",
+     "max_potential": 0.004492394049585902,
+     "toss_potential": null,
+     "tossC": 0.5830646700421969
+    },
+    "3": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0026713899805265173,
+     "toss_potential": null,
+     "tossC": 0.5986209467203846
+    },
+    "4": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.00238205996358265,
+     "toss_potential": 0.00238205996358265,
+     "tossC": 0.6075970007810998
+    },
+    "5": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0020521663660374445,
+     "toss_potential": 0.0020521663660374445,
+     "tossC": 0.6156300036525983
+    },
+    "6": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0010755320415812286,
+     "toss_potential": null,
+     "tossC": 0.45183021238659743
+    },
+    "7": {
+     "action": "PickCube",
+     "max_potential": 0.0005422102120229977,
+     "toss_potential": null,
+     "tossC": 0.2667517955507649
+    },
+    "8": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.000503745155982005,
+     "toss_potential": null,
+     "tossC": 0.3302035353517879
+    },
+    "9": {
+     "action": "PickCube",
+     "max_potential": 0.00030374117866505124,
+     "toss_potential": null,
+     "tossC": 0.2571455432346915
+    }
+   }
+  }
+ },
+ "0/4": {
+  "all": {
+   "conditioned": {
+    "n": 91,
+    "cond": 91,
+    "cond_succ": 13,
+    "dropped": 0,
+    "dropped_succ": 0
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.012004768899943896,
+     "toss_potential": null,
+     "tossC": 0.38811714418584975
+    },
+    "2": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.006697093193970466,
+     "toss_potential": 0.006697093193970466,
+     "tossC": 0.17641929176817428
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.013605261300970922,
+     "toss_potential": null,
+     "tossC": 0.1665147450349733
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.008566908878648305,
+     "toss_potential": null,
+     "tossC": 0.1615793463282029
+    },
+    "5": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0054519962586946635,
+     "toss_potential": null,
+     "tossC": 0.1510320950110147
+    },
+    "6": {
+     "action": "PickCube",
+     "max_potential": 0.008138708959407048,
+     "toss_potential": null,
+     "tossC": 0.14656437380690251
+    },
+    "7": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.004471773432521503,
+     "toss_potential": 0.004471773432521503,
+     "tossC": 0.19171231807545167
+    },
+    "8": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.004091510323156189,
+     "toss_potential": 0.004091510323156189,
+     "tossC": 0.1569583944573621
+    },
+    "9": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0035807282458197587,
+     "toss_potential": 0.0035807282458197587,
+     "tossC": 0.16581823965454756
+    }
+   }
+  },
+  "non_epsilon": {
+   "conditioned": {
+    "n": 91,
+    "cond": 56,
+    "cond_succ": 12,
+    "dropped": 35,
+    "dropped_succ": 1
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.041494159263919306,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.012004768899943896,
+     "toss_potential": null,
+     "tossC": 0.38811714418584975
+    },
+    "2": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.006697093193970466,
+     "toss_potential": 0.006697093193970466,
+     "tossC": 0.17641929176817428
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.004464491089822303,
+     "toss_potential": null,
+     "tossC": 0.1665147450349733
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.00172755460372781,
+     "toss_potential": null,
+     "tossC": 0.12573864395297335
+    },
+    "5": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.001446322520129134,
+     "toss_potential": null,
+     "tossC": 0.15774142732371949
+    },
+    "6": {
+     "action": "PickCube",
+     "max_potential": 0.002948642365228793,
+     "toss_potential": null,
+     "tossC": 0.20835584511451244
+    },
+    "7": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.004215515878868981,
+     "toss_potential": 0.004215515878868981,
+     "tossC": 0.34142212522429877
+    },
+    "8": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0020288800633944115,
+     "toss_potential": 0.0020288800633944115,
+     "tossC": 0.2718075296796508
+    },
+    "9": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.002200957870807152,
+     "toss_potential": 0.002200957870807152,
+     "tossC": 0.32133517845775855
+    }
+   }
+  },
+  "informed": {
+   "conditioned": {
+    "n": 91,
+    "cond": 29,
+    "cond_succ": 11,
+    "dropped": 62,
+    "dropped_succ": 2
+   },
+   "stranded": null,
+   "first": {
+    "0": {
+     "action": "PickCube",
+     "max_potential": 0.03814308976422559,
+     "toss_potential": null,
+     "tossC": 0.3584362124673378
+    },
+    "1": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.00827294205660517,
+     "toss_potential": null,
+     "tossC": 0.5438358718862312
+    },
+    "2": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.005618081080964843,
+     "toss_potential": 0.005618081080964843,
+     "tossC": 0.5777126985144838
+    },
+    "3": {
+     "action": "PickCube",
+     "max_potential": 0.0034279416015342568,
+     "toss_potential": null,
+     "tossC": 0.5986209467203846
+    },
+    "4": {
+     "action": "PickCube",
+     "max_potential": 0.0016995544163270204,
+     "toss_potential": null,
+     "tossC": 0.2869179424759304
+    },
+    "5": {
+     "action": "ask_for_reset_cube_bin_only",
+     "max_potential": 0.0011008229447560525,
+     "toss_potential": null,
+     "tossC": 0.268859420849502
+    },
+    "6": {
+     "action": "PickCube",
+     "max_potential": 0.0017430683887247334,
+     "toss_potential": null,
+     "tossC": 0.3139619006687287
+    },
+    "7": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.0018969988006450333,
+     "toss_potential": 0.0018969988006450333,
+     "tossC": 0.42166307931581903
+    },
+    "8": {
+     "action": "MoveToTossLocationAndToss",
+     "max_potential": 0.000889978440978656,
+     "toss_potential": 0.000889978440978656,
+     "tossC": 0.34347817114227486
+    },
+    "9": {
+     "action": "PickCube",
+     "max_potential": 0.0006917084054076095,
+     "toss_potential": null,
+     "tossC": 0.37150531326278446
+    }
+   }
+  }
+ }
+}
