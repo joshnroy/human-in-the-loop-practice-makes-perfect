@@ -14,6 +14,7 @@ of test went with the middle rung and are not ported:
 """
 
 import json
+import math
 import pathlib
 
 import pytest
@@ -23,7 +24,6 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
     ORACLE_GRIPPER_RELEASE_MS,
     ORACLE_RELEASE_SPEED_DEG_S,
-    ORACLE_THROW_ROTATION,
     ORACLE_THROW_STANDOFF,
     SkillOraclePolicy,
 )
@@ -31,8 +31,11 @@ from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DOracle
 from hitl_pmp.environments.tossing3d.skills import (
     TOSS_DISTANCE_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
-    TOSS_ROTATION_BOUNDS,
     TOSS_SPEED_BOUNDS,
+)
+from hitl_pmp.environments.tossing3d.toss_direction import (
+    TossDirectionChoice,
+    TossDirectionSelector,
 )
 
 from .observations import HOLDING_ATOMS, INITIAL_ATOMS, state
@@ -40,13 +43,27 @@ from .observations import HOLDING_ATOMS, INITIAL_ATOMS, state
 _ENV = Tossing3DEnvironment()
 _EMPTY_GOAL = Goal(atoms=frozenset())
 
-# The oracle's four dials in slot order, beside the bounds each has to fall inside.
+# The oracle's three dials in slot order, beside the bounds each has to fall inside.
 _ORACLE_TOSS_PARAMS = (
     (ORACLE_THROW_STANDOFF, TOSS_DISTANCE_BOUNDS),
-    (ORACLE_THROW_ROTATION, TOSS_ROTATION_BOUNDS),
     (ORACLE_RELEASE_SPEED_DEG_S, TOSS_SPEED_BOUNDS),
     (ORACLE_GRIPPER_RELEASE_MS, TOSS_RELEASE_MS_BOUNDS),
 )
+
+
+@pytest.fixture(autouse=True)
+def _head_on(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """These hand-built states carry no simulator geometry, so the controller's
+    direction choice is stubbed to the west-facing (0 deg) stand a far bin gets."""
+
+    def select_for_state(*, state, standoff: float) -> TossDirectionChoice:
+        del state, standoff
+        return TossDirectionChoice(
+            direction_deg=0, rotation=0.0, stand_xy=(0.0, 0.0), clearance_m=1.0
+        )
+
+    monkeypatch.setattr(TossDirectionSelector, "select_for_state", select_for_state)
+
 
 # The symbolic state in which the oracle should throw. **An atom set, not a gripper
 # value.** The oracle branches on upstream's `Holding`, which adds a forward-kinematics
@@ -80,9 +97,10 @@ def test_the_oracle_passes_the_pick_no_parameters_at_all() -> None:
 def test_the_oracle_drives_and_throws_once_it_is_holding_the_cube() -> None:
     action = _act(**_HOLDING)
     assert action.action[0] == pytest.approx(Tossing3DEnvironment.move_to_toss_location_and_toss_id)
+    # Slot 2 is the controller-chosen rotation (stubbed to 0 here), not an oracle dial.
     assert list(action.action[1:]) == pytest.approx([
         ORACLE_THROW_STANDOFF,
-        ORACLE_THROW_ROTATION,
+        0.0,
         ORACLE_RELEASE_SPEED_DEG_S,
         ORACLE_GRIPPER_RELEASE_MS,
     ])
@@ -133,13 +151,18 @@ def test_the_throw_standoff_is_upstreams_own_test_value() -> None:
     assert ORACLE_THROW_STANDOFF == 1.35
 
 
-def test_the_throw_rotation_is_head_on() -> None:
-    """Upstream's own value in `test_pick_ground_toss`, and the centre of
-    `TOSS_ROTATION_BOUNDS` -- head-on at the bin. The band itself was widened to
-    +-pi/2 on 2026-09-22 (see test_kinder_pin's deliberate-divergence pin), but it
-    stayed symmetric, so its centre is still upstream's head-on throw."""
-    assert ORACLE_THROW_ROTATION == 0.0
-    assert pytest.approx(sum(TOSS_ROTATION_BOUNDS) / 2) == ORACLE_THROW_ROTATION
+def test_the_oracle_no_longer_chooses_where_to_stand(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The stand direction is the controller's choice for the oracle exactly as for a
+    learner: whatever `TossDirectionSelector` picks is what the action carries."""
+
+    def south(*, state, standoff: float) -> TossDirectionChoice:
+        del state, standoff
+        return TossDirectionChoice(
+            direction_deg=270, rotation=1.5 * math.pi, stand_xy=(0.0, 0.0), clearance_m=1.0
+        )
+
+    monkeypatch.setattr(TossDirectionSelector, "select_for_state", south)
+    assert _act(**_HOLDING).action[2] == pytest.approx(1.5 * math.pi)
 
 
 def test_the_oracle_release_speed_is_upstreams_own_shipped_default() -> None:
@@ -213,13 +236,13 @@ def test_the_label_names_the_skill_and_its_objects() -> None:
     assert label == "PickCube(robot, cube_0, cuboid_barrier, bin_0)"
 
 
-def test_the_toss_label_carries_all_four_dials_in_upstreams_object_order() -> None:
+def test_the_toss_label_carries_the_three_dials_and_the_direction() -> None:
     """A clip of a throw has to say how hard and from where, or two clips at different
     parameters are indistinguishable. The object order is upstream's own
     `(robot, target, held, barrier)`, so the label reads as the controller call it is."""
     label = _act(**_HOLDING).label
     assert label.startswith("MoveToTossLocationAndToss(robot, bin_0, cube_0, cuboid_barrier)")
-    assert "params=[1.35, 0.0, 140.0, 792.0]" in label
+    assert "params=[1.35, 140.0, 792.0], toss_direction_deg=0.0" in label
 
 
 def test_the_provider_forwards_its_configured_standoff() -> None:

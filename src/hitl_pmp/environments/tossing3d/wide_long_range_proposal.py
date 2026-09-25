@@ -1,12 +1,12 @@
-"""The barrier layout's only toss proposal: one draw for every receiver side.
+"""The toss's only proposal: one draw for every receiver side and both layouts.
 
-All four parameters -- standoff, yaw, speed, release -- are drawn jointly and
-independently: yaw, speed and release over the controller's full ranges,
-standoff over the derived shared band (see the bounds' comment; under the
-graded receiver region it equals the controller's full range), and the
-per-state geometry gate keeps the feasible subset. The interface is deliberately
-identical for both bin sides: the fixed far-receiver launch pose (standoff
-2.5 m, yaw 0) that survived
+All three learned parameters -- standoff, speed, release -- are drawn jointly and
+independently: speed and release over the controller's full ranges, standoff over
+the derived shared band (see the bounds' comment; under the graded receiver region
+it equals the controller's full range). There is no yaw: where the robot stands
+about the bin is chosen per state by `TossDirectionSelector`, not drawn here. The
+interface is deliberately identical for both bin sides: the fixed far-receiver
+launch pose (standoff 2.5 m, yaw 0) that survived
 from the calibrated proposal's development ridge was a point mass that (a) made
 far evaluation a 2-parameter problem while robot-side practice explored four,
 (b) starved refits of far-side variety, and (c) kept every "far" number tied to
@@ -28,7 +28,6 @@ from .sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
 from .skills import (
     TOSS_DISTANCE_BOUNDS,
     TOSS_RELEASE_MS_BOUNDS,
-    TOSS_ROTATION_BOUNDS,
     TOSS_SPEED_BOUNDS,
 )
 
@@ -37,10 +36,13 @@ from .skills import (
 # gate-accepted standoff at the natural far bin put the stand at x = 0.994; see
 # the standoff-floor PR). Not derivable from constants in this package -- the
 # barrier pose and robot footprint live in the scene -- so it is pinned here
-# and a change to either upstream quantity must move it.
+# and a change to either upstream quantity must move it. The 2026-09-24
+# feasibility map confirmed it with the real base planner: a far bin is
+# plannable exactly when standoff >= bin_x - 0.994 (away from the barrier-edge
+# corners). 0.99 keeps every per-bin band 4 mm inside that line.
 FAR_STAND_X_LIMIT_M = 0.99
 
-# Yaw, speed and release are the controller's own ranges. Standoff's floor is
+# Speed and release are the controller's own ranges. Standoff's floor is
 # DERIVED: max(the controller's own floor, the nearest far bin
 # (`BIN_RESET_REGION_BY_SIDE[OPPOSITE]`'s x-min) minus the legal standing line
 # above) -- so every draw's standoff is one a far receiver could also demand,
@@ -57,7 +59,6 @@ WIDE_TOSS_STANDOFF_BOUNDS = (
     ),
     TOSS_DISTANCE_BOUNDS[1],
 )
-WIDE_TOSS_YAW_BOUNDS = TOSS_ROTATION_BOUNDS
 WIDE_TOSS_SPEED_BOUNDS = TOSS_SPEED_BOUNDS
 WIDE_TOSS_RELEASE_MS_BOUNDS = TOSS_RELEASE_MS_BOUNDS
 
@@ -71,22 +72,39 @@ class WideLongRangeTossProposal:
         return 450.0 + (420.0 - speed) / 3.0
 
     @staticmethod
-    def sample(*, rng: np.random.Generator) -> np.ndarray:
-        """Return metres, radians, degrees/second, and milliseconds -- all four
-        drawn jointly over the controller's full ranges, for either bin side."""
-        standoff = float(rng.uniform(*WIDE_TOSS_STANDOFF_BOUNDS))
-        yaw = float(rng.uniform(*WIDE_TOSS_YAW_BOUNDS))
+    def far_standoff_bounds(*, bin_x: float) -> tuple[float, float]:
+        """The standoff band a bin across the barrier can actually be thrown at from.
+
+        The robot must stand west of the barrier (x <= `FAR_STAND_X_LIMIT_M`) and west
+        of the bin, `standoff` from it, so any standoff below `bin_x - limit` has no
+        stand at all. Computed from the bin pose before drawing, so nothing is
+        rejected and redrawn -- a filtered draw would silently reshape the pool's
+        standoff distribution. For a near-barrier bin the controller floor binds."""
+        return (
+            max(WIDE_TOSS_STANDOFF_BOUNDS[0], bin_x - FAR_STAND_X_LIMIT_M),
+            WIDE_TOSS_STANDOFF_BOUNDS[1],
+        )
+
+    @staticmethod
+    def sample(
+        *,
+        rng: np.random.Generator,
+        standoff_bounds: tuple[float, float] = WIDE_TOSS_STANDOFF_BOUNDS,
+    ) -> np.ndarray:
+        """Return metres, degrees/second, and milliseconds -- all three drawn
+        jointly and uniformly, the standoff over `standoff_bounds` (the full band
+        unless a per-bin band is supplied)."""
+        standoff = float(rng.uniform(*standoff_bounds))
         speed = float(rng.uniform(*WIDE_TOSS_SPEED_BOUNDS))
         release = float(rng.uniform(*WIDE_TOSS_RELEASE_MS_BOUNDS))
-        return np.array([standoff, yaw, speed, release])
+        return np.array([standoff, speed, release])
 
     @staticmethod
     def contains(*, params: np.ndarray) -> bool:
-        """Whether a `(standoff, yaw, speed, release)` row lies in the closed support."""
-        standoff, yaw, speed, release = (float(value) for value in params)
+        """Whether a `(standoff, speed, release)` row lies in the closed support."""
+        standoff, speed, release = (float(value) for value in params)
         return (
             WIDE_TOSS_STANDOFF_BOUNDS[0] <= standoff <= WIDE_TOSS_STANDOFF_BOUNDS[1]
-            and WIDE_TOSS_YAW_BOUNDS[0] <= yaw <= WIDE_TOSS_YAW_BOUNDS[1]
             and WIDE_TOSS_SPEED_BOUNDS[0] <= speed <= WIDE_TOSS_SPEED_BOUNDS[1]
             and WIDE_TOSS_RELEASE_MS_BOUNDS[0] <= release <= WIDE_TOSS_RELEASE_MS_BOUNDS[1]
         )

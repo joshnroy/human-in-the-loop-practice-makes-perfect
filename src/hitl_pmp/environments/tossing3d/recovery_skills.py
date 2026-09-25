@@ -24,13 +24,8 @@ from hitl_pmp.environments.tossing3d.predicates import (
     Tossing3DAtoms,
 )
 from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
-from hitl_pmp.environments.tossing3d.skills import (
-    TOSS_DISTANCE_BOUNDS,
-    TOSS_RELEASE_MS_BOUNDS,
-    TOSS_ROTATION_BOUNDS,
-    TOSS_SPEED_BOUNDS,
-    Tossing3DSkills,
-)
+from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
 
 ON_BIN_RIM = Predicate(
     name="OnBinRim",
@@ -50,7 +45,11 @@ ON_FLOOR = Predicate(
 
 
 class SameSideSkills:
-    """Operators for floor and bin recovery, with unchanged toss parameter bounds."""
+    """Operators for floor and bin recovery. The toss is the barrier layout's own."""
+
+    # Literally the barrier layout's toss pipeline, not a copy of it: same dimension,
+    # bounds, proposal, direction selection, action encoding and classifier row.
+    TOSS: ClassVar[type[Tossing3DToss]] = Tossing3DToss
 
     _robot: ClassVar[Variable] = Variable(name="robot", type=Tossing3DEnvironment.robot_type)
     _cube: ClassVar[Variable] = Variable(name="cube", type=Tossing3DEnvironment.cube_type)
@@ -135,15 +134,7 @@ class SameSideSkills:
     @staticmethod
     def sample_params(*, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            # The same-side layout keeps its historical independent-bounds toss draw
-            # (measured baselines depend on this stream); the barrier layout's toss
-            # candidates come from WideLongRangeTossProposal via the provider instead.
-            return np.array([
-                rng.uniform(*TOSS_DISTANCE_BOUNDS),
-                rng.uniform(*TOSS_ROTATION_BOUNDS),
-                rng.uniform(*TOSS_SPEED_BOUNDS),
-                rng.uniform(*TOSS_RELEASE_MS_BOUNDS),
-            ])
+            return SameSideSkills.TOSS.sample_params(rng=rng)
         if ground_skill.skill in SameSideSkills.skills():
             return np.zeros(0)
         raise ValueError(f"Unknown skill: {ground_skill.skill.name}")
@@ -151,9 +142,7 @@ class SameSideSkills:
     @staticmethod
     def compute_action(*, ground_skill: GroundSkill, params: np.ndarray, state: State) -> Action:
         if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            return Tossing3DSkills.compute_action(
-                ground_skill=ground_skill, params=params, state=state
-            )
+            return SameSideSkills.TOSS.compute_action(params=params, state=state)
         ids = {
             SameSideSkills.PICK_FLOOR: Tossing3DEnvironment.pick_cube_id,
             SameSideSkills.PICK_BIN: Tossing3DEnvironment.pick_cube_from_bin_id,

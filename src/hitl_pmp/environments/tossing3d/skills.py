@@ -15,7 +15,7 @@ controller. Here the operator half is the `Skill` below and the controller half 
 | --- | --- | --- |
 | `Pick` (distance, rotation) | `pick_shelf` | `PickCube`, **no parameters** |
 | `MoveToThrowPose` (standoff) | `move_to_target` | folded into the toss |
-| `Toss` (speed, ms) | `move_arm_to_conf`, `toss` | `MoveToTossLocationAndToss`, four |
+| `Toss` (speed, ms) | `move_arm_to_conf`, `toss` | `MoveToTossLocationAndToss`, three |
 
 Upstream composed the base move and the throw so that **no predicate has to name the pose
 between them**. On the pick, upstream's `PickCubeController` exposes `sample_parameters`
@@ -41,7 +41,9 @@ Two consequences worth stating rather than discovering:
 
 ## Every continuous bound below is upstream's
 
-`MoveToTossLocationAndTossController` declares all four on itself. The current simulation
+`MoveToTossLocationAndTossController` declares all four of its arguments' bounds on
+itself; three are learned here (standoff, speed, release) and the fourth, the
+rotation about the bin, is chosen per state (`toss_direction.py`). The current simulation
 range extends the standoff to 2.6 m, release speed to 420 deg/s, and release timing down
 to 400 ms so the farther default receivers have feasible release poses and trajectories.
 The low-level toss profile keeps its 140 deg/s default; the composed simulation controller
@@ -120,26 +122,10 @@ from .sides import Tossing3DSides
 # practice. These bounds cover candidates, not guaranteed scoring distances.
 TOSS_DISTANCE_BOUNDS = (1.25, 2.6)
 
-# Upstream's `WAYPOINT_TOLERANCE` (`kinder_models/dynamic3d/utils.py`), how close
-# `_check_robot_is_close_to_pose` requires the base to be to its own planned waypoint.
-WAYPOINT_TOLERANCE = 4 * 1e-2
-
-# Upstream's `MAX_TARGET_ROTATION`: the widest yaw about the bin that still leaves the
-# base within half of `WAYPOINT_TOLERANCE` of the bin's axis at the largest standoff.
-# Computed from the two constants above rather than written as a literal, exactly as
-# upstream computes it, so a bump to either cannot silently drift out of sync.
-MAX_TOSS_ROTATION = float(np.arcsin(0.5 * WAYPOINT_TOLERANCE / TOSS_DISTANCE_BOUNDS[1]))
-# DELIBERATE divergence from upstream's `TARGET_ROTATION_BOUNDS`
-# (+-MAX_TOSS_ROTATION, ~0.44 deg either way): that derivation bounds *waypoint
-# drift*, not what the controller can execute. Measured 2026-09-22 on the live
-# controller, yaw offsets across +-pi/2 all execute (and a +-90 deg 2.5 m throw
-# scored), while robot-side receivers in the grasp-safe rectangle have NO yaw-0
-# toss location west of the barrier -- the fixed-heading band is what starved the
-# validation run's every robot-side pool. This constant is ours (it mirrors, not
-# imports, upstream's), so the widening stays local; nothing is pushed upstream.
-# `MAX_TOSS_ROTATION` above stays pinned to upstream's derivation by
-# test_kinder_pin so drift in its inputs still surfaces.
-TOSS_ROTATION_BOUNDS = (-float(np.pi) / 2, float(np.pi) / 2)
+# There is no rotation bound: the toss no longer samples a yaw. The controller's
+# rotation argument is one of four bin-relative right angles chosen per state by
+# `toss_direction.TossDirectionSelector` (see that module for the rule). This
+# supersedes the local +-pi/2 widening of upstream's `TARGET_ROTATION_BOUNDS`.
 
 # Upstream's `SPEED_BOUNDS`, in joint-path deg/s rather than upstream's rad/s -- see this
 # module's docstring for why the degree convention is kept and where it is converted.
@@ -231,7 +217,8 @@ class Tossing3DSkills:
         # is graspable is a fact of the physics, re-read from observation rather than
         # promised by the operator model.
         ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR}),
-        param_dim=4,
+        # [standoff, speed, release]; the stand direction is the controller's choice.
+        param_dim=3,
         practice_cost=1.0,
     )
 
@@ -258,9 +245,7 @@ class Tossing3DSkills:
         State-independent by the `SkillProvider` contract: a learned sampler generates
         many candidates from this and then picks among them using the state.
 
-        The toss is deliberately absent: its candidates come from
-        `WideLongRangeTossProposal` via `Tossing3DSkillProvider.sample_params` on the
-        barrier layout, and from `SameSideSkills.sample_params` on the same-side one,
+        The toss is deliberately absent: both layouts draw it through `Tossing3DToss`,
         so a toss draw reaching this sampler is a routing bug worth failing loudly on.
         """
         skill = ground_skill.skill
@@ -272,26 +257,16 @@ class Tossing3DSkills:
 
     @staticmethod
     def compute_action(*, ground_skill: GroundSkill, params: np.ndarray, state: State) -> Action:
-        """Realize a (ground skill, parameters) pair as this domain's five-slot vector.
+        """Realize a parameterless skill as this domain's five-slot vector.
 
-        `state` is unused: the four toss parameters are bin-relative standoff, bin-relative
-        yaw, joint-path speed, and release time rather than world coordinates.
+        The toss is absent for the same reason as in `sample_params`: its action needs
+        the state-chosen stand direction, which only `Tossing3DToss.compute_action`
+        supplies.
         """
-        del state
+        del state, params
         skill = ground_skill.skill
         if skill == Tossing3DSkills.PICK_CUBE:
             return np.array([Tossing3DEnvironment.pick_cube_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
-        if skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
-            return np.array(
-                [
-                    Tossing3DEnvironment.move_to_toss_location_and_toss_id,
-                    float(params[0]),
-                    float(params[1]),
-                    float(params[2]),
-                    float(params[3]),
-                ],
-                dtype=float,
-            )
         if skill == Tossing3DSkills.OPEN_GRIPPER:
             return np.array([Tossing3DEnvironment.open_gripper_id, 0.0, 0.0, 0.0, 0.0], dtype=float)
         raise ValueError(f"Unknown skill: {skill.name}")

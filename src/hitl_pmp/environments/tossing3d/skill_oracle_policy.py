@@ -13,14 +13,13 @@ used to supply `ORACLE_PICK_DISTANCE`/`ORACLE_PICK_ROTATION` -- the pair upstrea
 `test_pick_ground_toss` -- and a separate `MoveToThrowPose` standoff. Both are gone: the
 pick takes no parameters and the standoff is now the composed toss's first parameter.
 
-The four the oracle does supply:
+The three the oracle does supply (where it stands about the bin is no longer one of
+them: `Tossing3DToss` chooses the direction per state, exactly as it does for a learner):
 
 - **`ORACLE_THROW_STANDOFF = 1.35`** is upstream's own `target_distance` in
   `test_pick_ground_toss`, and is the standoff every measured number in
   `docs/kinder-environment-validation.md` and `docs/tossing3d-integration-status.md` was
   taken at. It remains inside the expanded `TOSS_DISTANCE_BOUNDS` of `(1.25, 2.6)`.
-- **`ORACLE_THROW_ROTATION = 0.0`** -- head-on. Upstream's own value in the same test,
-  and the centre of `TOSS_ROTATION_BOUNDS`.
 - **`ORACLE_RELEASE_SPEED_DEG_S = 140`** is upstream's own shipped default: what
   `toss_profile_limits()` returns when passed nothing, and the speed every committed
   Tossing3D number was measured at. Not a tuned value; moving it would be a new
@@ -29,7 +28,7 @@ The four the oracle does supply:
   `5/5` band PR #240 measured at `ORACLE_RELEASE_SPEED_DEG_S`, 763.2-821.1 ms. Upstream's
   own 720 is below that band, though inside `TOSS_RELEASE_MS_BOUNDS`.
 
-> **Staleness note, and it applies to every number in this docstring.** All four were
+> **Staleness note, and it applies to every number in this docstring.** All of them were
 > measured against the **three-skill** decomposition, where the base drove to the standoff
 > under `move_to_target` and the swing then ran from a separately-commanded windup. The
 > composed controller plans base motion, windup and swing together in one `reset`.
@@ -60,12 +59,10 @@ from .environment import Tossing3DEnvironment
 from .predicates import HOLDING
 from .sides import Tossing3DSides
 from .skills import Tossing3DSkills
+from .toss import Tossing3DToss
 
 # Upstream's own `target_distance` for the throw.
 ORACLE_THROW_STANDOFF = 1.35
-
-# Head-on, upstream's own value.
-ORACLE_THROW_ROTATION = 0.0
 
 # Upstream's own shipped release speed; see the module docstring.
 ORACLE_RELEASE_SPEED_DEG_S = 140.0
@@ -122,9 +119,11 @@ class SkillOraclePolicy:
                 skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
                 objects=(env.robot, env.bin, env.cube, env.barrier, side_of(obj=env.bin)),
             )
+            # Lifted into the bin's feasible band: a far bin past x ~ 2.24 has no
+            # stand at all at the historical 1.35 m (see `far_standoff_bounds`).
+            low, _ = Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state)
             params = np.array([
-                throw_standoff,
-                ORACLE_THROW_ROTATION,
+                max(throw_standoff, low),
                 ORACLE_RELEASE_SPEED_DEG_S,
                 ORACLE_GRIPPER_RELEASE_MS,
             ])
@@ -140,8 +139,12 @@ class SkillOraclePolicy:
             )
             params = np.zeros(0)
 
-        action = Tossing3DSkills.compute_action(
-            ground_skill=ground_skill, params=params, state=state
+        action = (
+            Tossing3DToss.compute_action(params=params, state=state)
+            if holding
+            else Tossing3DSkills.compute_action(
+                ground_skill=ground_skill, params=params, state=state
+            )
         )
         # Side objects are planner bookkeeping, not physical controller arguments.
         # Keep them out of the human-facing overlay so recordings retain the same
@@ -152,4 +155,7 @@ class SkillOraclePolicy:
         label = f"{ground_skill.skill.name}({objects_desc})"
         if params.size > 0:
             label += f", params={[round(float(value), 2) for value in params]}"
+        if holding:
+            for name, value in Tossing3DToss.action_annotations(action=action).items():
+                label += f", {name}={round(float(value), 2)}"
         return LabeledAction(action=action, label=label)

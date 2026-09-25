@@ -7,13 +7,9 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import GroundSkill
-from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.parameter_feasibility import TossParameterFeasibility
-from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
-from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
 from hitl_pmp.environments.tossing3d.types import PlanarCollisionBox, TossFeasibilityGeometry
 
 
@@ -37,7 +33,8 @@ def _geometry(*, barrier_length: float = 10.0) -> TossFeasibilityGeometry:
 
 
 def _params(*, distance: float, rotation: float = 0.0) -> np.ndarray:
-    return np.array([distance, rotation, 300.0, 700.0])
+    """The controller's `(distance, rotation)` stand pair -- all the gate reads."""
+    return np.array([distance, rotation])
 
 
 @pytest.mark.parametrize(
@@ -139,18 +136,25 @@ def test_rotated_barrier_separator_and_same_side_target() -> None:
     )
 
 
-def test_speed_release_and_input_are_untouched() -> None:
-    geometry = _geometry()
-    for speed, release in [(30.0, 450.0), (420.0, 840.0), (300.0, 700.0)]:
-        params = np.array([2.5, 0.0, speed, release])
-        original = params.copy()
+def test_the_input_is_untouched() -> None:
+    params = _params(distance=2.5)
+    original = params.copy()
+    assert (
+        TossParameterFeasibility.rejection_reason_from_geometry(geometry=_geometry(), params=params)
+        is None
+    )
+    assert np.array_equal(params, original)
+
+
+def test_a_malformed_pair_is_unknown_geometry() -> None:
+    """The gate reads a `(distance, rotation)` pair; anything else proves nothing."""
+    for params in (np.array([1.0, 0.0, 300.0, 700.0]), np.array([1.0])):
         assert (
             TossParameterFeasibility.rejection_reason_from_geometry(
-                geometry=geometry, params=params
+                geometry=_geometry(), params=params
             )
             is None
         )
-        assert np.array_equal(params, original)
 
 
 def test_float32_parameter_semantics_match_controller() -> None:
@@ -174,28 +178,7 @@ def test_float32_overflow_is_unknown_geometry(*, index: int) -> None:
     )
 
 
-def test_missing_snapshot_and_other_skills_are_accepted() -> None:
-    env = Tossing3DEnvironment()
-    toss = GroundSkill(
-        skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-        objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
-    )
-    pick = GroundSkill(
-        skill=Tossing3DSkills.PICK_CUBE,
-        objects=(env.robot, env.cube, env.barrier, Tossing3DSides.robot, env.bin),
-    )
-    assert (
-        TossParameterFeasibility.rejection_reason(
-            state=State(data={}), ground_skill=toss, params=_params(distance=1.0)
-        )
-        is None
-    )
-    assert (
-        TossParameterFeasibility.rejection_reason(
-            state=State(data={}), ground_skill=pick, params=np.zeros(0)
-        )
-        is None
-    )
+def test_a_snapshot_without_geometry_yields_no_geometry() -> None:
     assert KinderBackend.toss_feasibility_geometry(snapshot=object()) is None
 
 
@@ -306,41 +289,113 @@ def test_snapshot_adapter_reads_supplied_state_after_live_environment_changes() 
         # The guard keeps a future pin bump from silently voiding either case.
         old_state = env.reset_to_seed(seed=130)
         assert 2.35 <= float(old_state.get(obj=env.bin, feature_name="x")) <= 2.95
-        toss = GroundSkill(
-            skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
-            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
-        )
         before = KinderBackend.toss_feasibility_geometry(snapshot=old_state.object_centric)
         assert before is not None and before.robot_size == (0.55, 0.55)
         robot = old_state.object_centric.get_object_from_name("robot")
         assert before.robot_state_dtype == str(old_state.object_centric[robot].dtype)
         assert any(o.name.startswith("collider:cuboid_barrier:") for o in before.obstacles)
         assert not any(o.name == "cube_0" for o in before.obstacles)
-        safe = np.array([2.5, 0.0, 360.0, 500.0])
+        safe = np.array([2.5, 0.0])
         assert (
-            TossParameterFeasibility.rejection_reason(
-                state=old_state, ground_skill=toss, params=safe
-            )
+            TossParameterFeasibility.rejection_reason_from_geometry(geometry=before, params=safe)
             is None
         )
-        blocked = np.array([1.35, 0.0, 140.0, 792.0])
-        reason = TossParameterFeasibility.rejection_reason(
-            state=old_state, ground_skill=toss, params=blocked
+        blocked = np.array([1.35, 0.0])
+        reason = TossParameterFeasibility.rejection_reason_from_geometry(
+            geometry=before, params=blocked
         )
         assert reason is not None
         env.reset_to_seed(seed=17)
-        assert KinderBackend.toss_feasibility_geometry(snapshot=old_state.object_centric) == before
+        after = KinderBackend.toss_feasibility_geometry(snapshot=old_state.object_centric)
+        assert after == before
         assert (
-            TossParameterFeasibility.rejection_reason(
-                state=old_state, ground_skill=toss, params=blocked
-            )
+            TossParameterFeasibility.rejection_reason_from_geometry(geometry=after, params=blocked)
             == reason
         )
         assert (
-            TossParameterFeasibility.rejection_reason(
-                state=old_state, ground_skill=toss, params=safe
-            )
+            TossParameterFeasibility.rejection_reason_from_geometry(geometry=after, params=safe)
             is None
         )
     finally:
         env.close()
+
+
+# The live room's six wall colliders at seed 125 (two of them the 45-degree corners).
+_ROOM_WALLS = (
+    PlanarCollisionBox(
+        name="collider:tossing_room:3", center=(-1.25, 2.25), width=2.12, height=0.02, yaw=0.785
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:4", center=(-1.25, -2.25), width=2.12, height=0.02, yaw=-0.785
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:5", center=(1.85, 3.0), width=4.7, height=0.02, yaw=0.0
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:6", center=(1.85, -3.0), width=4.7, height=0.02, yaw=0.0
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:7",
+        center=(-2.0, 0.0),
+        width=3.0,
+        height=0.02,
+        yaw=math.pi / 2,
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:8",
+        center=(4.2, 0.0),
+        width=6.0,
+        height=0.02,
+        yaw=-math.pi / 2,
+    ),
+)
+
+
+def _room_geometry(*, bin_pose: tuple[float, float, float]) -> TossFeasibilityGeometry:
+    return _geometry().model_copy(
+        update={"bin_pose": bin_pose, "obstacles": (*_geometry().obstacles, *_ROOM_WALLS)}
+    )
+
+
+def test_the_room_polygon_is_chained_from_the_wall_colliders() -> None:
+    polygon = TossParameterFeasibility.room_polygon(geometry=_room_geometry(bin_pose=(0, 0, 0)))
+    assert polygon is not None
+    assert len(polygon) == 6
+    expected = {(-2.0, 1.5), (-0.5, 3.0), (4.2, 3.0), (4.2, -3.0), (-0.5, -3.0), (-2.0, -1.5)}
+    for vertex in expected:
+        assert min(math.dist(vertex, found) for found in polygon) < 0.01, vertex
+
+
+def test_no_closed_wall_loop_means_no_room_check() -> None:
+    assert TossParameterFeasibility.room_polygon(geometry=_geometry()) is None
+    # Without walls, a stand far outside any room is not rejected for that reason.
+    assert (
+        TossParameterFeasibility.rejection_reason_from_geometry(
+            geometry=_geometry().model_copy(update={"bin_pose": (-0.5, 0.0, 0.0)}),
+            params=_params(distance=3.0),
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("bin_pose", "distance", "rotation", "reason"),
+    [
+        # West of the x = -2 wall: the footprint clears it, only containment rejects.
+        ((-0.35, 0.0, math.pi), 2.6, math.pi, "outside_room"),
+        # Past a 45-degree corner, beyond the diagonal wall.
+        ((-0.9, -1.0, math.pi), 2.2, 1.5 * math.pi, "outside_room"),
+        # Inside the room with room to spare.
+        ((-0.35, 0.0, math.pi), 1.5, 1.5 * math.pi, None),
+    ],
+)
+def test_a_stand_centre_outside_the_room_is_rejected(
+    *, bin_pose, distance: float, rotation: float, reason
+) -> None:
+    geometry = _room_geometry(bin_pose=bin_pose)
+    assert (
+        TossParameterFeasibility.rejection_reason_from_geometry(
+            geometry=geometry, params=_params(distance=distance, rotation=rotation)
+        )
+        == reason
+    )

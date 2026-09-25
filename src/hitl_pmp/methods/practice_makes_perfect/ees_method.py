@@ -797,7 +797,9 @@ class EesMethod(Method):
         max_proposals = self.num_candidates * self.max_proposals_per_candidate
         sampled = 0
         while len(candidates) < self.num_candidates and sampled < max_proposals:
-            candidate = self.skill_provider.sample_params(ground_skill=ground_skill, rng=self._rng)
+            candidate = self.skill_provider.sample_params_at_state(
+                ground_skill=ground_skill, rng=self._rng, state=state
+            )
             sampled += 1
             reason = self.skill_provider.parameter_rejection_reason(
                 ground_skill=ground_skill, params=candidate, state=state
@@ -1004,10 +1006,17 @@ class EesMethod(Method):
         action = self.skill_provider.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )
+        annotations = self.skill_provider.action_annotations(
+            ground_skill=ground_skill, action=action
+        )
+        if record is not None:
+            record.controller_choices = dict(annotations)
         objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
         label = f"{skill.name}({objects_desc})"
         if params.size > 0:
             label += f", params={[round(float(p), 2) for p in params]}"
+        for name, value in annotations.items():
+            label += f", {name}={round(float(value), 2)}"
         return LabeledAction(action=action, label=label), record
 
     # ------------------------------------------- unreachable Method surface area
@@ -1098,6 +1107,10 @@ class _SkillAttempt(BaseModel):
     # wants those attempts classified honestly, while the learning path must keep
     # ignoring them exactly as it did.
     records_training_row: bool
+    # `SkillProvider.action_annotations` for the executed action: values the domain's
+    # `compute_action` chose itself (Tossing3D's stand direction), logged beside
+    # `params` rather than inside it.
+    controller_choices: dict[str, float] = Field(default_factory=dict)
 
 
 class _EesEpisode:
@@ -1354,6 +1367,7 @@ class _EesEpisode:
                     consultation=attempt.consultation,
                     success=success,
                     params=attempt.params,
+                    controller_choices=attempt.controller_choices,
                     state=state,
                     objects=self._pending.objects,
                 )

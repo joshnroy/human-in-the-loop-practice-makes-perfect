@@ -46,7 +46,6 @@ from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
 from hitl_pmp.environments.tossing3d.skill_oracle_policy import (
     ORACLE_GRIPPER_RELEASE_MS,
     ORACLE_RELEASE_SPEED_DEG_S,
-    ORACLE_THROW_ROTATION,
     ORACLE_THROW_STANDOFF,
     SkillOraclePolicy,
 )
@@ -224,7 +223,6 @@ def test_a_restore_really_rewinds_the_simulator_and_not_just_the_state_object() 
             ground_skill=ground_skill,
             params=np.array([
                 ORACLE_THROW_STANDOFF,
-                ORACLE_THROW_ROTATION,
                 ORACLE_RELEASE_SPEED_DEG_S,
                 ORACLE_GRIPPER_RELEASE_MS,
             ]),
