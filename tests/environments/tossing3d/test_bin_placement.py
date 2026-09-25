@@ -131,6 +131,23 @@ def test_no_robot_side_toss_stand_leaves_the_block_without_a_free_placement() ->
     )
 
 
+def test_the_scene_start_and_spawn_strip_picks_never_empty_the_block() -> None:
+    """The other places a practising robot stands when a reset can come: the scene's
+    reset pose, and the pick stand 0.55 m (`PickCubeController.TARGET_DISTANCE`) from a
+    cube anywhere in its spawn region, at any approach angle."""
+    block = (-0.33, -1.9, 0.3, -1.3)
+    stands = [(-0.045, -0.043, 0.08)]
+    for cx in np.linspace(0.5, 0.75, 6):
+        for cy in np.linspace(-0.25, 0.25, 6):
+            for angle in np.radians(np.arange(0, 360, 15)):
+                stands.append((cx - 0.55 * np.cos(angle), cy - 0.55 * np.sin(angle), angle))
+    for x, y, yaw in stands:
+        robot = BinPlacementRules.aabb(center=(x, y), size=(0.55, 0.55), yaw=yaw)
+        assert BinPlacementRules.free_centre_ranges(
+            ranges=(block,), robot_aabb=robot, cube_spawn=SPAWN, bin_half=BIN_HALF, clearance=0.005
+        ), (x, y, yaw)
+
+
 def test_robot_aabb_covers_the_rotated_footprint() -> None:
     x0, y0, x1, y1 = BinPlacementRules.aabb(center=(0.0, 0.0), size=(0.55, 0.55), yaw=np.pi / 4)
     half = 0.55 / np.sqrt(2)

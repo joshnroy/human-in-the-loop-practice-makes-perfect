@@ -177,3 +177,16 @@ def test_both_problems_draw_the_same_test_scene_seeds() -> None:
     assert drawn == redrawn
     # Not a constant stream -- otherwise the equality above would hold vacuously.
     assert len(set(drawn)) > 1
+
+
+def test_only_the_practice_problem_rebuilds_its_scenes_with_a_robot_side_bin() -> None:
+    """Practice never happens on the opposite side, including the scene every practice
+    task starts from (the initial one under `never`, each period's under `scheduled`).
+    The evaluation problem keeps the task's far-side bin, so test tasks are unchanged."""
+    from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
+
+    args = _build_parser().parse_args([])
+    assert Tossing3DCli.build_practice_problem(args=args).env.scene_bin_destination is (
+        Tossing3DSide.ROBOT
+    )
+    assert Tossing3DCli.build_evaluation_problem(args=args).env.scene_bin_destination is None
