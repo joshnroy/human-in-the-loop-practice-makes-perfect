@@ -80,7 +80,7 @@ def test_reset_success_is_known_even_with_zero_performance_posterior(*, reset_na
     assert reset.add_effects <= after
     assert next_state.accumulated_cost == pytest.approx(mean_cost(belief=beliefs[reset_name]))
     assert next_state.skill_beliefs == state.skill_beliefs
-    assert next_state.pending_examples == state.pending_examples
+    assert next_state.pending_examples == {**state.pending_examples, reset_name: 1}
     assert (
         model.transition_outcomes(
             environment_state=search_state, belief_state=state, practice_action=reset
@@ -105,10 +105,10 @@ def test_real_reset_still_updates_identical_cost_and_performance_filters(
     )
     expected = before.condition_execution(success=True, observed_cost=5.0)
     assert method.pomdp_state.skill_beliefs[reset_name] == expected
-    assert method.pomdp_state.pending_examples.get(reset_name, 0) == 0
+    assert method.pomdp_state.pending_examples.get(reset_name, 0) == 1
     assert method.pomdp_state.accumulated_cost == 5.0
     refitted = refit_belief_state(state=method.pomdp_state)
-    assert refitted.skill_beliefs[reset_name] == expected.refit(training_examples=0)
+    assert refitted.skill_beliefs[reset_name] == expected.refit(training_examples=1)
 
 
 @pytest.mark.parametrize("gripper", ["HandEmpty", "ClosedEmpty"])
@@ -208,7 +208,11 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
     assert reset_atoms == ready.true_atoms
     assert long_atoms == direct_atoms
     assert long_state.skill_beliefs == direct_state.skill_beliefs
-    assert long_state.pending_examples == direct_state.pending_examples
+    # The detour's only belief difference is the reset's own clock tick.
+    assert long_state.pending_examples == {
+        **direct_state.pending_examples,
+        reset.skill.name: 1,
+    }
     saved_cost = mean_cost(belief=state.skill_beliefs[reset.skill.name])
     assert long_state.accumulated_cost - direct_state.accumulated_cost == pytest.approx(saved_cost)
     assert model.J(

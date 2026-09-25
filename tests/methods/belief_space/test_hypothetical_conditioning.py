@@ -56,7 +56,7 @@ def test_outcome_update_keeps_exact_weights_online_and_in_search(
 
 @pytest.mark.parametrize("model", ["global_curve", "local_trend"])
 @pytest.mark.parametrize("engine", ["particle", "grid"])
-def test_fixed_controller_expected_value_has_only_cost_loss_after_low_ess_history(
+def test_fixed_controller_value_is_only_its_clock_and_cost_after_low_ess_history(
     *, model: Model, engine: Engine
 ) -> None:
     env = Tossing3DEnvironment(scene_bg=False)
@@ -76,7 +76,6 @@ def test_fixed_controller_expected_value_has_only_cost_loss_after_low_ess_histor
         # This includes the measured B/particle counterexample: after five
         # failures, resampling a hypothetical child invented gain > action cost.
         for _ in range(6):
-            root = practice_model.J(belief_state=state, summed_cost=0, num_samples=1)
             outcomes = practice_model.outcomes(
                 environment_state=make_tossing3d_search_state(
                     state=state, true_atoms=ground.preconditions
@@ -92,7 +91,16 @@ def test_fixed_controller_expected_value_has_only_cost_loss_after_low_ess_histor
                 for probability, branch, _ in outcomes
             )
             cost = sum(probability * branch.accumulated_cost for probability, branch, _ in outcomes)
-            assert value == pytest.approx(root - 0.0003 * cost, abs=1e-14)
+            # A fixed controller's attempt still carries no S/F value in expectation;
+            # its only effect beyond the cost is advancing its own training clock.
+            pending = dict(state.pending_examples)
+            pending[name] = pending.get(name, 0) + 1
+            clock_only = practice_model.J(
+                belief_state=state.model_copy(update={"pending_examples": pending}),
+                summed_cost=0,
+                num_samples=1,
+            )
+            assert value == pytest.approx(clock_only - 0.0003 * cost, abs=1e-14)
             before = state.skill_beliefs[name]
             assert isinstance(before, BayesianSkillBelief)
             for _, branch, _ in outcomes:

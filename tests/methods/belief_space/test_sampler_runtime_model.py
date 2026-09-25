@@ -208,7 +208,7 @@ def test_forecast_j_is_pure_and_matches_real_refit(*, model: Model, engine: Engi
 
 
 @pytest.mark.parametrize(("model", "engine"), ARMS)
-def test_fixed_controllers_condition_sf_and_cost_without_learning_credit(
+def test_fixed_controllers_condition_sf_and_cost_and_advance_their_clock(
     *, model: Model, engine: Engine
 ) -> None:
     method = _method(model=model, engine=engine)
@@ -221,7 +221,8 @@ def test_fixed_controllers_condition_sf_and_cost_without_learning_credit(
         assert isinstance(after, BayesianSkillBelief)
         assert after.mean_competence() > before.mean_competence()
         assert after.cost_belief != before.cost_belief
-        assert method.pomdp_state.pending_examples.get(name, 0) == 0
+        # Every fixed-controller attempt is a training example, as in the notebook.
+        assert method.pomdp_state.pending_examples.get(name, 0) == 1
     before_refit = dict(method.pomdp_state.skill_beliefs)
     method.end_cycle()
     for name in (PICK_SKILL, OPEN_GRIPPER_SKILL, RESET_SKILL):
@@ -229,12 +230,11 @@ def test_fixed_controllers_condition_sf_and_cost_without_learning_credit(
         after = method.pomdp_state.skill_beliefs[name]
         assert isinstance(before, BayesianSkillBelief)
         assert isinstance(after, BayesianSkillBelief)
-        # Real-boundary n = 0 noise step: latents move, learning credit does not.
         assert (after.latent_values, after.state_weights) != (
             before.latent_values,
             before.state_weights,
         )
-        assert after.total_training_examples == 0
+        assert after.total_training_examples == 1
         assert after.process_transition_count == 1
 
 
