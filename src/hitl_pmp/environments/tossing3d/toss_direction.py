@@ -46,6 +46,7 @@ from pydantic import BaseModel, ConfigDict
 from .kinder_backend import KinderBackend
 from .parameter_feasibility import TossParameterFeasibility
 from .types import PlanarCollisionBox, TossFeasibilityGeometry
+from .wide_long_range_proposal import WideLongRangeTossProposal
 
 TOSS_DIRECTIONS_DEG = (0, 90, 180, 270)
 
@@ -61,6 +62,101 @@ PLANNER_STANDOFF_RESOLUTION_M = 0.01
 # Bounded so a long run cannot grow it without limit; an evicted entry is recomputed,
 # and the planner is seeded, so eviction changes cost, never the answer.
 _PLAN_CACHE_LIMIT = 8192
+
+
+# The far-bin band's upper bound is found by scanning the direction-0 stand along the
+# standoff range at this step, then bisecting the last feasible/infeasible pair down to
+# the tolerance. The scan is also what detects a feasible set that is not one interval,
+# so a gap narrower than the step could go unseen; 5 mm is well under the 0.55 m base.
+_BAND_SCAN_STEP_M = 0.005
+_BAND_BISECTION_TOLERANCE_M = 1e-6
+_BAND_CACHE_LIMIT = 4096
+
+
+class InfeasibleStandoffBandError(RuntimeError):
+    """A far bin's feasible standoff set is empty, not one interval, or excludes the
+    analytic floor. Raised rather than repaired: picking a piece would reshape the
+    candidate pool's standoff distribution silently."""
+
+
+class TossStandoffBand:
+    """The standoff interval a far-side bin can be thrown at from, before any draw.
+
+    A far bin is only ever thrown at from direction 0 (west, see the invariant in this
+    module's docstring). The lower bound is the analytic stand line
+    (`WideLongRangeTossProposal.far_standoff_bounds`). The upper bound is the largest
+    standoff whose direction-0 stand passes the geometry pre-filter, room check
+    included -- below the controller's ceiling exactly when a 45-degree corner wall (or
+    any other collider) intrudes on the west ray. Deterministic: geometry only, no
+    planner, no random draw.
+    """
+
+    _cache: ClassVar[OrderedDict[TossFeasibilityGeometry, tuple[float, float]]] = OrderedDict()
+
+    @staticmethod
+    def far_bounds(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
+        cache = TossStandoffBand._cache
+        if geometry in cache:
+            cache.move_to_end(geometry)
+            return cache[geometry]
+        bounds = TossStandoffBand._compute(geometry=geometry)
+        cache[geometry] = bounds
+        if len(cache) > _BAND_CACHE_LIMIT:
+            cache.popitem(last=False)
+        return bounds
+
+    @staticmethod
+    def clear_cache() -> None:
+        TossStandoffBand._cache.clear()
+
+    @staticmethod
+    def _compute(*, geometry: TossFeasibilityGeometry) -> tuple[float, float]:
+        floor, ceiling = WideLongRangeTossProposal.far_standoff_bounds(bin_x=geometry.bin_pose[0])
+
+        def feasible(*, standoff: float) -> bool:
+            return (
+                TossParameterFeasibility.rejection_reason_from_geometry(
+                    geometry=geometry, params=np.array([standoff, 0.0])
+                )
+                is None
+            )
+
+        steps = max(1, math.ceil((ceiling - floor) / _BAND_SCAN_STEP_M))
+        grid = [floor + (ceiling - floor) * index / steps for index in range(steps + 1)]
+        flags = [feasible(standoff=standoff) for standoff in grid]
+        context = (
+            f"bin_pose={TossDirectionSelector.rounded(values=geometry.bin_pose)}, "
+            f"robot_pose={TossDirectionSelector.rounded(values=geometry.robot_pose)}, "
+            f"scanned [{floor:.4f}, {ceiling:.4f}]"
+        )
+        if not any(flags):
+            raise InfeasibleStandoffBandError(f"far standoff band is empty: {context}")
+        runs = sum(
+            1 for index, flag in enumerate(flags) if flag and (index == 0 or not flags[index - 1])
+        )
+        if runs > 1:
+            feasible_at = [
+                round(standoff, 3) for standoff, flag in zip(grid, flags, strict=True) if flag
+            ]
+            raise InfeasibleStandoffBandError(
+                f"far standoff band is not one interval ({runs} pieces): {context}; "
+                f"feasible from {feasible_at[0]} to {feasible_at[-1]} with gaps"
+            )
+        if not flags[0]:
+            raise InfeasibleStandoffBandError(
+                f"far standoff band excludes the analytic floor {floor:.4f}: {context}"
+            )
+        if flags[-1]:
+            return floor, ceiling
+        last = max(index for index, flag in enumerate(flags) if flag)
+        good, bad = grid[last], grid[last + 1]
+        while bad - good > _BAND_BISECTION_TOLERANCE_M:
+            middle = (good + bad) / 2
+            if feasible(standoff=middle):
+                good = middle
+            else:
+                bad = middle
+        return floor, good
 
 
 class TossDirectionChoice(BaseModel):

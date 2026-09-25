@@ -27,7 +27,8 @@ from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
-from .toss_direction import TossDirectionChoice, TossDirectionSelector
+from .kinder_backend import KinderBackend
+from .toss_direction import TossDirectionChoice, TossDirectionSelector, TossStandoffBand
 from .wide_long_range_proposal import (
     WIDE_TOSS_RELEASE_MS_BOUNDS,
     WIDE_TOSS_SPEED_BOUNDS,
@@ -72,7 +73,18 @@ class Tossing3DToss:
         barrier_x = state.get(obj=barrier, feature_name="x")
         robot_x = state.get(obj=robot, feature_name="pos_base_x")
         if (bin_x - barrier_x) * (robot_x - barrier_x) < 0.0:
-            return WideLongRangeTossProposal.far_standoff_bounds(bin_x=bin_x)
+            snapshot = getattr(state, "object_centric", None)
+            geometry = (
+                None
+                if snapshot is None
+                else KinderBackend.toss_feasibility_geometry(snapshot=snapshot)
+            )
+            if geometry is None:
+                # A hand-built state carries no collider geometry; only the analytic
+                # stand line is knowable, and direction selection refuses such a
+                # state anyway.
+                return WideLongRangeTossProposal.far_standoff_bounds(bin_x=bin_x)
+            return TossStandoffBand.far_bounds(geometry=geometry)
         return WIDE_TOSS_STANDOFF_BOUNDS
 
     @staticmethod
