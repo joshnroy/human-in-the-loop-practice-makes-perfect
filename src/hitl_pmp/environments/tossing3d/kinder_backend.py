@@ -100,6 +100,7 @@ from typing import Any, ClassVar
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
 
+from .bin_placement import BinPlacementRules, BinPlacementViolationError, Rect
 from .types import AbstractAtom, PlanarCollisionBox, TossFeasibilityGeometry
 
 logger = logging.getLogger(__name__)
@@ -743,16 +744,129 @@ class KinderBackend(BaseModel):
         overrides preserve that support through KINDER's footprint-based partial
         reset, without changing the task or its collision checks. Sampling uses the
         live scene's RNG and moves the bin-attached goal region with the bin.
+
+        KINDER's sampler reserves everything but the robot, so the bin's centre
+        ranges are first cut down by `BinPlacementRules` (robot footprint, cube spawn
+        gap) and the placed bin is checked against the same rules afterwards.
         """
         object_centric = self._object_centric()
+        config = object_centric.task_config
+        robot_aabb = self._robot_aabb(snapshot=self._require_state())
+        cube_spawn = self._ground_region_rects(
+            object_centric=object_centric, object_name=self.cube_name
+        )
+        placement, bin_region_name = self._initial_state_placement(
+            object_centric=object_centric, object_name=self.bin_name
+        )
+        region = bin_region
+        if region is None and placement == "on":
+            region = config["regions"][bin_region_name]
+        selected = {}
+        if region is not None:
+            selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
+                object_centric=object_centric,
+                region=region,
+                robot_aabb=robot_aabb,
+                cube_spawn=cube_spawn,
+            )
         regions, overrides = self._movables_reset_regions(
             object_centric=object_centric,
             object_names=(self.cube_name, self.bin_name),
-            selected_regions={} if bin_region is None else {self.bin_name: bin_region},
+            selected_regions=selected,
         )
         object_centric.reset_ground_objects_to_regions(regions, region_configs=overrides)
         self._state = object_centric._get_current_state()  # noqa: SLF001
+        placed = self._require_state()
+        bin_box = self._bin_aabb(snapshot=placed)
+        BinPlacementRules.check(
+            bin_aabb=bin_box,
+            robot_aabb=self._robot_aabb(snapshot=placed),
+            cube_spawn=cube_spawn,
+            context=f"after reset_cube_and_bin (bin_region={bin_region!r})",
+        )
         return self.observe()
+
+    def _bin_region_clear_of_robot_and_cube(
+        self,
+        *,
+        object_centric: Any,
+        region: Mapping[str, Any],
+        robot_aabb: Rect,
+        cube_spawn: tuple[Rect, ...],
+    ) -> dict[str, Any]:
+        """The bin's centre region with the forbidden zones removed, one disjoint
+        rectangle per piece, each keeping its source range's yaw."""
+        half = self._object_half_extent(object_centric=object_centric, object_name=self.bin_name)
+        yaw_ranges = region.get("yaw_ranges", [(0.0, 360.0)] * len(region["ranges"]))
+        ranges: list[Rect] = []
+        yaws: list[tuple[float, float]] = []
+        for extent, (low, high) in zip(region["ranges"], yaw_ranges, strict=True):
+            if low == high:
+                footprint = BinPlacementRules.aabb(
+                    center=(0.0, 0.0),
+                    size=(2 * float(half[0]), 2 * float(half[1])),
+                    yaw=float(np.deg2rad(low)),
+                )
+                bin_half = (footprint[2], footprint[3])
+            else:
+                radius = float(np.linalg.norm(half))
+                bin_half = (radius, radius)
+            pieces = BinPlacementRules.free_centre_ranges(
+                ranges=((float(extent[0]), float(extent[1]), float(extent[2]), float(extent[3])),),
+                robot_aabb=robot_aabb,
+                cube_spawn=cube_spawn,
+                bin_half=bin_half,
+                clearance=KINDER_PLACEMENT_CLEARANCE,
+            )
+            ranges += pieces
+            yaws += [(low, high)] * len(pieces)
+        if not ranges:
+            raise BinPlacementViolationError(
+                f"no bin placement in {region['ranges']!r} is clear of the robot "
+                f"{robot_aabb!r} and {BinPlacementRules.CUBE_SPAWN_MIN_GAP_M} m from the cube "
+                f"spawn region {cube_spawn!r}"
+            )
+        return {
+            **region,
+            "ranges": [list(r) for r in ranges],
+            "yaw_ranges": [list(y) for y in yaws],
+        }
+
+    @staticmethod
+    def _object_half_extent(*, object_centric: Any, object_name: str) -> np.ndarray:
+        config = object_centric.task_config
+        obj = object_centric._objects_dict[object_name]  # noqa: SLF001
+        object_config = config["objects"][obj.REGISTERED_NAME].get(object_name, {})
+        bounds = obj.get_bounding_box_from_config(np.zeros(3, dtype=np.float32), object_config)
+        return (np.asarray(bounds[3:5], dtype=float) - np.asarray(bounds[:2], dtype=float)) / 2
+
+    @staticmethod
+    def _ground_region_rects(*, object_centric: Any, object_name: str) -> tuple[Rect, ...]:
+        """The 2D ranges of the region an object spawns in at full reset."""
+        _, region_name = KinderBackend._initial_state_placement(
+            object_centric=object_centric, object_name=object_name
+        )
+        region = object_centric.task_config["regions"][region_name]
+        return tuple(
+            (float(r[0]), float(r[1]), float(r[2]), float(r[3]))
+            for r in region["ranges"]
+            if len(r) == 4
+        )
+
+    def _robot_aabb(self, *, snapshot: Any) -> Rect:
+        geometry = self.toss_feasibility_geometry(snapshot=snapshot)
+        if geometry is None:
+            raise RuntimeError("cannot read the robot footprint, so bin placement is unenforceable")
+        return BinPlacementRules.aabb(
+            center=geometry.robot_pose[:2], size=geometry.robot_size, yaw=geometry.robot_pose[2]
+        )
+
+    def _bin_aabb(self, *, snapshot: Any) -> Rect:
+        geometry = self.toss_feasibility_geometry(snapshot=snapshot)
+        if geometry is None:
+            raise RuntimeError("cannot read the bin footprint, so bin placement is unverifiable")
+        (box,) = (o for o in geometry.obstacles if o.name == self.bin_name)
+        return BinPlacementRules.aabb(center=box.center, size=(box.width, box.height), yaw=box.yaw)
 
     @staticmethod
     def _movables_reset_regions(
