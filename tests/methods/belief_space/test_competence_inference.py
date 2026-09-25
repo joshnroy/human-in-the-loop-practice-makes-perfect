@@ -75,7 +75,7 @@ def test_particle_and_grid_priors_and_sf_posteriors_agree() -> None:
     (E[phi0] = 1/3) while the particle prior is the notebook's continuous sampler
     (phi0 uniform, E[phi0] = 1/2) -- which the divergence test below pins."""
     model: CompetenceModel = "local_trend"
-    config = InferenceConfig(resample_ess_fraction=0.0)
+    config = InferenceConfig()
     particle = _belief(model=model, engine="particle", count=50000, config=config)
     grid = _belief(model=model, config=config)
     for observations, training in [([True, False, True], 3), ([False, True, True], 4), ([True], 0)]:
@@ -201,16 +201,17 @@ def test_execution_cost_filter_is_identical_and_independent(
 
 @pytest.mark.parametrize("model", ["global_curve", "local_trend"])
 @pytest.mark.parametrize("engine", ["particle", "grid"])
-def test_forecasts_are_immutable_seeded_and_zero_examples_are_noop(
+def test_forecasts_are_immutable_and_seeded_including_zero_examples(
     *, model: CompetenceModel, engine: InferenceEngine
 ) -> None:
     original = _belief(model=model, engine=engine).condition_outcome(success=True)
     signature = original.signature()
-    first = original.refit(training_examples=4)
-    second = original.refit(training_examples=4)
-    assert first.signature() == second.signature()
+    for examples in (0, 4):
+        first = original.refit(training_examples=examples)
+        second = original.refit(training_examples=examples)
+        assert first.signature() == second.signature()
+        assert first.resampling_count == original.resampling_count
     assert original.signature() == signature
-    assert original.refit(training_examples=0) is original
     assert original.advance_learning_rate(process_noise_std=1.0) is original
     # A real zero-example boundary now applies the notebook's n = 0 transition
     # (see the notebook-exact block below); only the bookkeeping is pinned here.
@@ -219,7 +220,7 @@ def test_forecasts_are_immutable_seeded_and_zero_examples_are_noop(
     assert boundary.process_transition_count == 1
     assert boundary.mean_cost() == original.mean_cost()
     if engine == "particle":
-        assert np.array_equal(boundary.ancestors(), np.arange(original.state_count))
+        assert boundary.resampling_count == original.resampling_count + 1
     with pytest.raises(ValueError):
         original.arrays()[0][0, 0] = 0.3
     assert original.sample(rng=np.random.default_rng(4), count=17).shape == (17, 3)
@@ -298,7 +299,7 @@ def test_grid_smoothing_matches_enumeration_and_does_not_repeat_zero_cycle_evide
 
 
 def test_particle_smoothing_tracks_composed_ancestors_and_terminal_weights() -> None:
-    first = _belief(engine="particle", count=12, config=InferenceConfig(resample_ess_fraction=0))
+    first = _belief(engine="particle", count=12, config=InferenceConfig())
     values, _ = first.arrays()
     second = first.advance_cycle(training_examples=1)
     parents = np.array([0, 0, 1, 1, 1, 4, 5, 5, 8, 9, 10, 11], dtype="<i8")
@@ -318,15 +319,17 @@ def test_particle_smoothing_tracks_composed_ancestors_and_terminal_weights() -> 
     assert summaries[-1].smoothed_competence == summaries[-1].filtered_competence
 
 
-def test_particle_resampling_preserves_ancestry_through_multiple_observations() -> None:
-    belief = _belief(engine="particle", count=128, config=InferenceConfig(resample_ess_fraction=1))
+def test_boundary_resampling_records_the_ancestry_of_static_phi() -> None:
+    belief = _belief(model="global_curve", engine="particle", count=128)
     initial_values, _ = belief.arrays()
     for _ in range(12):
         belief = belief.condition_outcome(success=False)
-        values, _ = belief.arrays()
-        np.testing.assert_array_equal(values, initial_values[belief.ancestors()])
-    assert belief.resampling_count > 1
-    assert len(np.unique(belief.ancestors())) < belief.state_count
+    assert belief.resampling_count == 0
+    advanced = belief.advance_cycle(training_examples=3)
+    values, _ = advanced.arrays()
+    np.testing.assert_array_equal(values[:, :4], initial_values[advanced.ancestors(), :4])
+    assert advanced.resampling_count == 1
+    assert len(np.unique(advanced.ancestors())) < belief.state_count
 
 
 @pytest.mark.parametrize("model", ["local_trend"])
@@ -425,7 +428,7 @@ def test_model_a_particle_prior_is_the_notebooks_continuous_one() -> None:
     assert np.all((values[:, 4] >= 0) & (values[:, 4] <= 1))
 
 
-def test_zero_example_boundary_transitions_for_real_but_not_for_search() -> None:
+def test_zero_example_boundary_transitions_for_real_and_for_search() -> None:
     for model in ("local_trend", "global_curve"):
         for engine in ("grid", "particle"):
             belief = _belief(model=model, engine=engine, count=512)
@@ -440,11 +443,14 @@ def test_zero_example_boundary_transitions_for_real_but_not_for_search() -> None
             twice = advanced.advance_cycle(training_examples=0)
             if engine == "particle":
                 assert twice.latent_values != advanced.latent_values
-            # The search forecast keeps refit(0) as the identity: the notebook has
-            # no planner, and imagined noise recreated spurious practice value.
+            # The search forecast is the notebook's predict at zero examples too;
+            # particles keep their weights because a forecast never resamples.
             refitted = belief.refit(training_examples=0)
-            assert refitted.latent_values == belief.latent_values
-            assert refitted.state_weights == belief.state_weights
+            if engine == "particle":
+                assert refitted.latent_values != belief.latent_values
+                assert refitted.state_weights == belief.state_weights
+            else:
+                assert refitted.state_weights == advanced.state_weights
 
 
 def test_beta_parameters_clip_the_mode_at_the_flat_curve_extremes() -> None:
@@ -463,7 +469,7 @@ def test_model_a_engine_priors_deliberately_diverge() -> None:
     phi atoms (phi0 marginal triangular, mean 1/3) while its continuous sampler draws
     phi0 uniformly (mean 1/2). The engines are a discretization pair, not the same
     distribution, so cross-engine Model A comparisons are not apples to apples."""
-    config = InferenceConfig(resample_ess_fraction=0.0)
+    config = InferenceConfig()
     particle = _belief(model="global_curve", engine="particle", count=50000, config=config)
     grid = _belief(model="global_curve", config=config)
     assert particle.mean_competence() == pytest.approx(0.5, abs=0.02)

@@ -241,7 +241,8 @@ def test_random_toss_is_sampler_data_and_cost_evidence_but_never_competence_evid
     assert _belief(method=method, name=TOSS_SKILL) == after_random
     method.end_cycle()
     advanced = _belief(method=method, name=TOSS_SKILL)
-    assert advanced.total_training_examples == advanced.incoming_training_examples == 0
+    # The random toss is a sampler training example, so it advances the clock.
+    assert advanced.total_training_examples == advanced.incoming_training_examples == 1
     # Every real boundary now consumes one process-noise stream, n = 0 included.
     assert advanced.process_transition_count == 1
     assert method.pomdp_state.sampler_training[TOSS_SKILL].failures == 1
@@ -250,7 +251,7 @@ def test_random_toss_is_sampler_data_and_cost_evidence_but_never_competence_evid
 
 
 @pytest.mark.parametrize(("model", "engine"), ARMS)
-def test_hypothetical_and_real_one_class_refits_preserve_competence_without_mutation(
+def test_hypothetical_and_real_one_class_refits_agree_without_mutation(
     *, model: Model, engine: Engine
 ) -> None:
     method = _build(model=model, engine=engine)
@@ -269,16 +270,15 @@ def test_hypothetical_and_real_one_class_refits_preserve_competence_without_muta
         actual = _belief(method=method, name=name)
         predicted = forecast.skill_beliefs[name]
         assert isinstance(predicted, BayesianSkillBelief)
-        # The carve-out made visible: the search forecast kept the zero-example
-        # identity while the real boundary applied the n = 0 noise step, so the
-        # two now differ in latents while agreeing on every learning total.
-        assert (actual.latent_values, actual.state_weights) != (
-            predicted.latent_values,
-            predicted.state_weights,
-        )
-        assert actual.total_training_examples == 0
-        assert actual.process_transition_count == 1
-        assert predicted.process_transition_count == 0
+        # The search forecast and the real boundary apply the same predict step
+        # (the one-class toss attempt still counts as a training example); only
+        # the real boundary resamples particles first.
+        expected_examples = 1 if name == TOSS_SKILL else 0
+        assert actual.total_training_examples == expected_examples
+        assert predicted.total_training_examples == expected_examples
+        assert actual.process_transition_count == predicted.process_transition_count == 1
+        if engine == "grid":
+            assert actual == predicted
     assert method.pomdp_state.pending_examples == {}
     assert method.sampler(skill_name=TOSS_SKILL, param_dim=4).is_fitted
 

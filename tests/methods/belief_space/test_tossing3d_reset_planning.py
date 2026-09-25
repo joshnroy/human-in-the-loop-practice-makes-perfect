@@ -108,7 +108,7 @@ def test_real_reset_still_updates_identical_cost_and_performance_filters(
     assert method.pomdp_state.pending_examples.get(reset_name, 0) == 0
     assert method.pomdp_state.accumulated_cost == 5.0
     refitted = refit_belief_state(state=method.pomdp_state)
-    assert refitted.skill_beliefs[reset_name] == expected
+    assert refitted.skill_beliefs[reset_name] == expected.refit(training_examples=0)
 
 
 @pytest.mark.parametrize("gripper", ["HandEmpty", "ClosedEmpty"])

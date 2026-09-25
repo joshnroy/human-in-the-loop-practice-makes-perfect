@@ -16,8 +16,9 @@ ConcreteSkillBelief = BayesianSkillBelief | ParticleFilterBelief | WeightedHypot
 class SamplerTrainingState(BaseModel):
     """Label support collected so far and used by the currently fitted sampler.
 
-    A one-class fit cannot rank candidates. Its examples remain available for
-    the first mixed-class fit, rather than being spent on fictitious learning.
+    It no longer gates the competence model's training clock -- every attempt
+    advances that, as in the notebook -- only whether search treats the fitted
+    sampler as able to rank candidates (`fitted_mixed_classes`).
     """
 
     model_config = ConfigDict(frozen=True)
@@ -36,13 +37,6 @@ class SamplerTrainingState(BaseModel):
     @property
     def fitted_mixed_classes(self) -> bool:
         return self.fitted_successes > 0 and self.fitted_failures > 0
-
-    @property
-    def refit_examples(self) -> int:
-        if not self.successes or not self.failures:
-            return 0
-        credited = self.fitted_successes + self.fitted_failures if self.fitted_mixed_classes else 0
-        return self.successes + self.failures - credited
 
     def observe(self, *, success: bool) -> "SamplerTrainingState":
         field = "successes" if success else "failures"
