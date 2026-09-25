@@ -54,7 +54,7 @@ def _reset(*, method: Tossing3DPomdpMethod, name: str) -> GroundSkill:
         for skill in method._pomdp_model.ground_skills  # noqa: SLF001
         if skill.skill.name == name
         and skill.objects[-2].name == "robot_side"
-        and skill.objects[-1].name == "opposite_side"
+        and skill.objects[-1].name == "robot_side"
     )
 
 

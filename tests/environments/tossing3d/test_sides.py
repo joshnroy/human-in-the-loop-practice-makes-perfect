@@ -1,32 +1,23 @@
-"""The robot-side receiver region must keep marginal cubes graspable.
+"""The robot-side receiver region is a measured block of the south-wall band.
 
-Measured 2026-09-22 at the live pick controller with the trap-2 stuck arrangement
-(cube 0.073 m off bin center, face gap 0.052 m): every probed bin position with
-x <= -1.0 -- including mid-room y, far from any wall plane -- REFUSED the grasp
-(20/20, "No collision-free cube grasp", 0 steps), so the old robot-side range
-x in [-2.3, -1.48] sat entirely inside the refusing zone. The eastward-extent
-mapping then found the maximal grasp-safe RECTANGLE: every probed point inside
-x in [-0.9, 0.2], y in [-1.0, 1.5] accepted and lifted (14/14 across the two
-probe rounds), while y = -1.5 refused at x = 0.6 and y = +-1.9 refused at
-x = -0.5 (0/2). The y = 0 corridor stays graspable east to at least x = 1.1 but
-the region is north-south asymmetric beyond the rectangle, so only the rectangle
-is encoded.
+Measured 2026-09-24 with the real base motion planner and live picks. Every bin
+centre on a 0.15 m grid over x in [-0.35, 0.40], y in [-1.90, -1.30] was placeable,
+picked the cube from its spawn strip (3 seeds x 4 robot poses, robot clear of the
+bin) and had a plannable stand direction at every standoff in [1.25, 2.60]. The
+edges come from a cube lying in the bin 0.072 m off centre, which the wider band
+x in [-0.35, 0.85], y in [-2.80, -1.30] refused to pick toward the south wall
+(y <= -2.10), the barrier (x >= 0.40) and the south-west corner (y <= -2.00 at
+x = -0.33): 98/160 picked. Each edge keeps 0.10 m to the first refusal; the west edge
+is kindergarden's placement limit (x > -0.338), the north edge the probed one.
 """
 
 from hitl_pmp.environments.tossing3d.sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
 
 
-def test_robot_side_receiver_region_is_the_measured_maximal_grasp_safe_rectangle() -> None:
-    ranges = BIN_RESET_REGION_BY_SIDE[Tossing3DSide.ROBOT].ranges
-    assert len(ranges) == 1
-    x_min, y_min, x_max, y_max = ranges[0]
-    # West edge at the measured -1.0 refuse / -0.9 accept boundary.
-    assert x_min == -0.9
-    # East edge inside the grasp-safe span and clear of the cube spawn strip
-    # (x in [0.54, 0.71]) and the barrier at x = 1.25.
-    assert x_max == 0.2
-    # South edge pulled in to y = -1.0: y = -1.5 refused at x = 0.6.
-    assert (y_min, y_max) == (-1.0, 1.5)
+def test_robot_side_receiver_region_is_the_measured_south_band_block() -> None:
+    region = BIN_RESET_REGION_BY_SIDE[Tossing3DSide.ROBOT]
+    assert region.ranges == ((-0.33, -1.9, 0.3, -1.3),)
+    assert region.yaw_ranges == ((180, 180),)
 
 
 def test_opposite_side_receiver_region_mirrors_the_graded_task_region() -> None:
