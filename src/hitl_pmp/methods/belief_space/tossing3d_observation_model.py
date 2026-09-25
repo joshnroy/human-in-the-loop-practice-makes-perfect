@@ -46,24 +46,29 @@ class SkillBeliefModel:
         was_random_exploration: bool,
         observed_cost: float | None = None,
         resample: bool = True,
+        condition_competence: bool | None = None,
     ) -> Tossing3DBeliefState:
+        """`condition_competence` is the `CompetenceEvidence` decision for this
+        attempt; left as None it falls back to excluding epsilon-random attempts."""
         assert resample or observed_cost is None, "imagined updates do not observe execution costs"
         if self.skill is None:
             return state
         skill_name = self.skill.name
         if skill_name not in state.skill_beliefs:
             return state
+        if condition_competence is None:
+            condition_competence = not was_random_exploration
         skill_beliefs = dict(state.skill_beliefs)
         belief = skill_beliefs[skill_name]
         if observed_cost is not None and isinstance(
             belief, (ParticleFilterBelief, BayesianSkillBelief)
         ):
             belief = (
-                belief.condition_cost(observed_cost=observed_cost)
-                if was_random_exploration
-                else belief.condition_execution(success=success, observed_cost=observed_cost)
+                belief.condition_execution(success=success, observed_cost=observed_cost)
+                if condition_competence
+                else belief.condition_cost(observed_cost=observed_cost)
             )
-        elif not was_random_exploration:
+        elif condition_competence:
             belief = condition_skill_belief(belief=belief, success=success)
         skill_beliefs[skill_name] = belief
         if was_random_exploration:

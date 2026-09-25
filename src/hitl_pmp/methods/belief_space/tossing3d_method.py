@@ -8,7 +8,13 @@ from typing import Any, Literal
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
-from hitl_pmp.core.method.types import GroundSkill, ParameterSamplingDiagnostics, Policy, Skill
+from hitl_pmp.core.method.types import (
+    GroundSkill,
+    ParameterSamplingDiagnostics,
+    Policy,
+    SamplerConsultation,
+    Skill,
+)
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
@@ -40,6 +46,7 @@ from .tossing3d_observation_model import (
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
+from .types.competence_evidence import CompetenceEvidence
 from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
@@ -95,6 +102,7 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_num_particles: int = Field(default=20000, ge=1)
     pomdp_competence_model: Literal["global_curve", "local_trend"] = "local_trend"
     pomdp_inference_engine: Literal["particle", "grid"] = "particle"
+    pomdp_competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
     pomdp_grid_competence_bins: int = Field(default=25, ge=3)
     pomdp_grid_learning_rate_bins: int = Field(default=16, ge=2)
     pomdp_competence_process_noise_std: float = Field(default=0.03, ge=0.0)
@@ -116,6 +124,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
     _remaining_practice_actions: int | None = PrivateAttr(default=None)
+    _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -209,6 +218,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_model = Tossing3DPracticeModel(
             seed=self.seed,
             exploration_epsilon=self.exploration_epsilon,
+            competence_evidence=self.pomdp_competence_evidence,
             ground_skills=tuple(ground_skills),
             linear_cost_lambda=self.pomdp_linear_cost_lambda,
         )
@@ -273,6 +283,18 @@ class Tossing3DPomdpMethod(EesMethod):
         assert remaining_actions >= 0, "remaining_actions must be non-negative"
         self._remaining_practice_actions = remaining_actions
 
+    def record_practice_attempt(
+        self, *, skill_name: str, success: bool, consultation: SamplerConsultation
+    ) -> None:
+        """Remember the consultation of the outcome `observe_outcome` receives next.
+
+        `_EesEpisode.observe_pending` calls this immediately before
+        `observe_outcome`, which deliberately does not carry the consultation."""
+        super().record_practice_attempt(
+            skill_name=skill_name, success=success, consultation=consultation
+        )
+        self._pending_consultation = (skill_name, consultation)
+
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
     ) -> None:
@@ -281,6 +303,12 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
             was_random_exploration=was_random_exploration,
         )
+        pending, self._pending_consultation = self._pending_consultation, None
+        consultation = None
+        if pending is not None:
+            skill_name, consultation = pending
+            assert skill_name == ground_skill.skill.name, (skill_name, ground_skill.skill.name)
+            assert (consultation is SamplerConsultation.EPSILON_RANDOM) == was_random_exploration
         configured_cost_observation = ground_skill.evaluate_practice_cost()
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
@@ -288,12 +316,20 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
             was_random_exploration=was_random_exploration,
             observed_cost=configured_cost_observation,
+            consultation=consultation,
         )
         self.record_diagnostic(
             event="outcome",
             skill=ground_skill.skill.name,
             success=success,
             random_exploration=was_random_exploration,
+            consultation=None if consultation is None else consultation.value,
+            competence_evidence=self.pomdp_competence_evidence.value,
+            competence_conditioned=(
+                not was_random_exploration
+                if consultation is None
+                else self.pomdp_competence_evidence.admits(consultation=consultation)
+            ),
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             configured_cost_observation=configured_cost_observation,

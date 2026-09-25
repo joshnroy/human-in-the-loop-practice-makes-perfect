@@ -8,7 +8,7 @@ from collections.abc import Iterable
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
-from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
 from .tossing3d_constants import (
@@ -34,6 +34,7 @@ from .tossing3d_transition_model import (
     transition_outcomes,
 )
 from .types.belief_state import Tossing3DBeliefState
+from .types.competence_evidence import CompetenceEvidence
 from .types.failure_effects import FailureEffectCount
 from .types.search_state import Tossing3DSearchState
 from .types.skill_belief import SkillBelief, SkillHypothesis
@@ -49,6 +50,7 @@ class Tossing3DPracticeModel(BaseModel):
     ground_skills: tuple[GroundSkill, ...] = Field(default=(), exclude=True)
     random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
+    competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
     deployment_horizon: int = Field(default=4, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     failure_effect_counts: tuple[FailureEffectCount, ...] = Field(default=(), exclude=True)
@@ -191,13 +193,23 @@ class Tossing3DPracticeModel(BaseModel):
         success: bool,
         was_random_exploration: bool,
         observed_cost: float | None = None,
+        consultation: SamplerConsultation | None = None,
     ) -> Tossing3DBeliefState:
-        """Apply any belief observation associated with a practiced skill."""
+        """Apply any belief observation associated with a practiced skill.
+
+        With a `consultation`, `competence_evidence` decides whether the outcome
+        conditions competence; without one (a reset) the attempt is not
+        epsilon-random and is admitted."""
         return self._skill_belief_models[ground_skill].observe_outcome(
             state=state,
             success=success,
             was_random_exploration=was_random_exploration,
             observed_cost=observed_cost,
+            condition_competence=(
+                None
+                if consultation is None
+                else self.competence_evidence.admits(consultation=consultation)
+            ),
         )
 
     def observe_training_example(
@@ -328,6 +340,7 @@ class Tossing3DPracticeModel(BaseModel):
             exploration_epsilon=self.exploration_epsilon,
             random_toss_competence=self.random_toss_competence,
             failure_effect_counts=self.failure_effect_counts,
+            competence_evidence=self.competence_evidence,
         )
 
     def sample_next_states(

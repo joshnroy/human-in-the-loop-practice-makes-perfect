@@ -3,6 +3,7 @@ import sys
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .ees_method import EesMethod
@@ -214,6 +215,16 @@ class Tossing3DPomdpCli(EesCli):
             default="particle",
             help="Bayesian filtering representation; costs retain their shared particle model.",
         )
+        parser.add_argument(
+            "--pomdp-competence-evidence",
+            choices=[evidence.value for evidence in CompetenceEvidence],
+            default=Tossing3DPomdpMethod.model_fields["pomdp_competence_evidence"].default.value,
+            help="Which toss practice outcomes condition competence: all attempts, "
+            "all but epsilon-greedy random picks (default), or only the classifier's "
+            "informed argmax picks. Every attempt still trains the sampler and "
+            "advances the training clock; skills without a sampler are always "
+            "conditioned.",
+        )
         parser.add_argument("--pomdp-grid-competence-bins", type=int, default=25)
         parser.add_argument("--pomdp-grid-learning-rate-bins", type=int, default=16)
         parser.add_argument("--pomdp-competence-process-noise-std", type=float, default=0.03)
@@ -285,6 +296,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_competence_model=args.pomdp_competence_model,
                 pomdp_inference_engine=args.pomdp_inference_engine,
+                pomdp_competence_evidence=CompetenceEvidence(args.pomdp_competence_evidence),
                 pomdp_grid_competence_bins=args.pomdp_grid_competence_bins,
                 pomdp_grid_learning_rate_bins=args.pomdp_grid_learning_rate_bins,
                 pomdp_competence_process_noise_std=args.pomdp_competence_process_noise_std,

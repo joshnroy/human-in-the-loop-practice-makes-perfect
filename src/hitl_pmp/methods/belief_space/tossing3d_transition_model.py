@@ -2,7 +2,7 @@
 
 from functools import cache
 
-from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
@@ -22,6 +22,7 @@ from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
     Tossing3DBeliefState,
 )
+from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.failure_effects import FailureEffectCount
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
@@ -118,6 +119,7 @@ def transition_outcomes(
     exploration_epsilon: float,
     random_toss_competence: float,
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
+    competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
 ) -> tuple[TransitionBranch, ...]:
     assert action in ground_skills
     assert action.preconditions <= environment_state.true_atoms
@@ -168,6 +170,7 @@ def transition_outcomes(
         random_toss_competence=random_toss_competence,
         effects=effects,
         failure_effect_counts=failure_effect_counts,
+        competence_evidence=competence_evidence,
     )
 
 
@@ -231,11 +234,25 @@ def toss_outcomes(
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
     ],
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
+    competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
 ) -> tuple[TransitionBranch, ...]:
+    """Branch on the greedy/epsilon draw, then on S/F.
+
+    Each branch conditions competence exactly when `competence_evidence` would
+    admit the real attempt it imagines, so search forecasts under the evidence
+    rule the robot will actually apply. The greedy draw's consultation is taken
+    as `INFORMED` from a mixed-class fit and `UNINFORMATIVE` from a one-class or
+    unfitted one; the tie-fraction fallback of a mixed fit is not modelled.
+    """
     branches: list[TransitionBranch] = []
     training = state.sampler_training.get(TOSS_SKILL)
     if training is not None and not training.fitted_mixed_classes:
         exploration_epsilon = 0.0
+    greedy_consultation = (
+        SamplerConsultation.UNINFORMATIVE
+        if training is not None and not training.fitted_mixed_classes
+        else SamplerConsultation.INFORMED
+    )
     for is_random, choice_probability, success_probability in (
         (
             False,
@@ -252,7 +269,11 @@ def toss_outcomes(
             if probability <= 0.0:
                 continue
             belief = state.skill_beliefs[TOSS_SKILL]
-            if not is_random:
+            if competence_evidence.admits(
+                consultation=SamplerConsultation.EPSILON_RANDOM
+                if is_random
+                else greedy_consultation
+            ):
                 belief = condition_skill_belief(belief=belief, success=success)
             effect_outcomes = (
                 (
