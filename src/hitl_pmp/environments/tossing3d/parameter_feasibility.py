@@ -16,6 +16,14 @@ from .types import PlanarCollisionBox, TossFeasibilityGeometry
 # strict overlap or strict separation, not a floating-point boundary coincidence.
 _GEOMETRY_TOLERANCE = 1e-9
 
+# The room fixture's collider name in the installed task (`tossing_room`); the
+# outline itself is derived from those colliders' geometry, never written here.
+_ROOM_COLLIDER_TAG = "tossing_room"
+
+# Two wall segments meet if their endpoints are this close: generous against
+# float32 collider poses, and still far too narrow for the 0.55 m base to pass.
+_WALL_JOIN_TOLERANCE_M = 0.05
+
 
 class TossParameterFeasibility:
     """A pure geometry gate on one `(standoff, rotation)` base target."""
@@ -67,12 +75,74 @@ class TossParameterFeasibility:
         for obstacle in geometry.obstacles:
             if TossParameterFeasibility._strictly_overlap(first=robot, second=obstacle):
                 return f"target_collision:{obstacle.name}"
+        polygon = TossParameterFeasibility.room_polygon(geometry=geometry)
+        if polygon is not None and not TossParameterFeasibility._inside(
+            point=target, polygon=polygon
+        ):
+            return "outside_room"
         for obstacle in geometry.obstacles:
             if TossParameterFeasibility._separates(
                 geometry=geometry, target=target, obstacle=obstacle
             ):
                 return f"separating_obstacle:{obstacle.name}"
         return None
+
+    @staticmethod
+    def room_polygon(*, geometry: TossFeasibilityGeometry) -> list[tuple[float, float]] | None:
+        """The room's floor outline, chained from its wall colliders' centre lines.
+
+        Each wall collider is a thin rectangle; its long axis is a wall segment. The
+        segments are chained end to end (endpoints within `_WALL_JOIN_TOLERANCE_M`,
+        far narrower than the 0.55 m base) into one closed loop, so a stand centre
+        outside it is unreachable. No closed loop -- missing, partial or unfamiliar
+        walls -- means no room check, never a rejection on guessed geometry.
+        """
+        segments = []
+        for obstacle in geometry.obstacles:
+            if _ROOM_COLLIDER_TAG not in obstacle.name:
+                continue
+            length = max(obstacle.width, obstacle.height)
+            axis = TossParameterFeasibility._axes(box=obstacle)[
+                0 if obstacle.width >= obstacle.height else 1
+            ]
+            center = np.asarray(obstacle.center)
+            segments.append((
+                tuple(center - axis * length / 2),
+                tuple(center + axis * length / 2),
+            ))
+        if len(segments) < 3:
+            return None
+        polygon = [segments[0][0], segments[0][1]]
+        unused = segments[1:]
+        while unused:
+            tail = np.asarray(polygon[-1])
+            joined = None
+            for first, second in unused:
+                if np.linalg.norm(np.asarray(first) - tail) <= _WALL_JOIN_TOLERANCE_M:
+                    joined = (first, second)
+                    break
+                if np.linalg.norm(np.asarray(second) - tail) <= _WALL_JOIN_TOLERANCE_M:
+                    joined = (second, first)
+                    break
+            if joined is None:
+                return None
+            polygon.append(joined[1])
+            unused.remove(joined if joined in unused else (joined[1], joined[0]))
+        if (
+            np.linalg.norm(np.asarray(polygon[-1]) - np.asarray(polygon[0]))
+            > _WALL_JOIN_TOLERANCE_M
+        ):
+            return None
+        return [(float(x), float(y)) for x, y in polygon[:-1]]
+
+    @staticmethod
+    def _inside(*, point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
+        x, y = point
+        inside = False
+        for (x1, y1), (x2, y2) in zip(polygon, polygon[1:] + polygon[:1], strict=True):
+            if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+                inside = not inside
+        return inside
 
     @staticmethod
     def _axes(*, box: PlanarCollisionBox) -> tuple[np.ndarray, np.ndarray]:

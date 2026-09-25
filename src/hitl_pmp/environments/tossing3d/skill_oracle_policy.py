@@ -119,8 +119,11 @@ class SkillOraclePolicy:
                 skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
                 objects=(env.robot, env.bin, env.cube, env.barrier, side_of(obj=env.bin)),
             )
+            # Lifted into the bin's feasible band: a far bin past x ~ 2.24 has no
+            # stand at all at the historical 1.35 m (see `far_standoff_bounds`).
+            low, _ = Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state)
             params = np.array([
-                throw_standoff,
+                max(throw_standoff, low),
                 ORACLE_RELEASE_SPEED_DEG_S,
                 ORACLE_GRIPPER_RELEASE_MS,
             ])

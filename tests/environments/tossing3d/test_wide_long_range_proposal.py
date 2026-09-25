@@ -241,8 +241,8 @@ def test_every_witness_rung_has_a_plannable_direction_at_both_sides_receivers() 
 def test_a_centre_robot_side_bin_has_no_direction_at_the_top_standoff() -> None:
     """A measured hole, pinned so it cannot change silently: at the robot-side bin
     (-0.35, 0.0) a 2.6 m stand is across the barrier to the east, into the 45-degree
-    corner colliders to the north and south, and outside the west wall (the real
-    planner fails). So the draw raises -- loudly, by design -- rather than being
+    corner colliders to the north and south, and outside the west wall (the room
+    check). So the draw raises -- loudly, by design -- rather than being
     filtered out of the pool."""
     import json as jsonlib
     from pathlib import Path
@@ -267,7 +267,8 @@ def test_a_centre_robot_side_bin_has_no_direction_at_the_top_standoff() -> None:
     reasons = caught.value.reasons
     assert reasons[0].startswith("separating_obstacle:collider:cuboid_barrier")
     assert reasons[90].startswith("target_collision:collider:tossing_room")
-    assert reasons[180] == "base_motion_plan_failed"
+    # Rejected by the room check, so the real planner is never asked.
+    assert reasons[180] == "outside_room"
     assert reasons[270].startswith("target_collision:collider:tossing_room")
 
 

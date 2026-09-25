@@ -36,7 +36,10 @@ from .skills import (
 # gate-accepted standoff at the natural far bin put the stand at x = 0.994; see
 # the standoff-floor PR). Not derivable from constants in this package -- the
 # barrier pose and robot footprint live in the scene -- so it is pinned here
-# and a change to either upstream quantity must move it.
+# and a change to either upstream quantity must move it. The 2026-09-24
+# feasibility map confirmed it with the real base planner: a far bin is
+# plannable exactly when standoff >= bin_x - 0.994 (away from the barrier-edge
+# corners). 0.99 keeps every per-bin band 4 mm inside that line.
 FAR_STAND_X_LIMIT_M = 0.99
 
 # Speed and release are the controller's own ranges. Standoff's floor is
@@ -69,10 +72,29 @@ class WideLongRangeTossProposal:
         return 450.0 + (420.0 - speed) / 3.0
 
     @staticmethod
-    def sample(*, rng: np.random.Generator) -> np.ndarray:
+    def far_standoff_bounds(*, bin_x: float) -> tuple[float, float]:
+        """The standoff band a bin across the barrier can actually be thrown at from.
+
+        The robot must stand west of the barrier (x <= `FAR_STAND_X_LIMIT_M`) and west
+        of the bin, `standoff` from it, so any standoff below `bin_x - limit` has no
+        stand at all. Computed from the bin pose before drawing, so nothing is
+        rejected and redrawn -- a filtered draw would silently reshape the pool's
+        standoff distribution. For a near-barrier bin the controller floor binds."""
+        return (
+            max(WIDE_TOSS_STANDOFF_BOUNDS[0], bin_x - FAR_STAND_X_LIMIT_M),
+            WIDE_TOSS_STANDOFF_BOUNDS[1],
+        )
+
+    @staticmethod
+    def sample(
+        *,
+        rng: np.random.Generator,
+        standoff_bounds: tuple[float, float] = WIDE_TOSS_STANDOFF_BOUNDS,
+    ) -> np.ndarray:
         """Return metres, degrees/second, and milliseconds -- all three drawn
-        jointly over their full ranges, for either bin side."""
-        standoff = float(rng.uniform(*WIDE_TOSS_STANDOFF_BOUNDS))
+        jointly and uniformly, the standoff over `standoff_bounds` (the full band
+        unless a per-bin band is supplied)."""
+        standoff = float(rng.uniform(*standoff_bounds))
         speed = float(rng.uniform(*WIDE_TOSS_SPEED_BOUNDS))
         release = float(rng.uniform(*WIDE_TOSS_RELEASE_MS_BOUNDS))
         return np.array([standoff, speed, release])

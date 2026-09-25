@@ -797,7 +797,9 @@ class EesMethod(Method):
         max_proposals = self.num_candidates * self.max_proposals_per_candidate
         sampled = 0
         while len(candidates) < self.num_candidates and sampled < max_proposals:
-            candidate = self.skill_provider.sample_params(ground_skill=ground_skill, rng=self._rng)
+            candidate = self.skill_provider.sample_params_at_state(
+                ground_skill=ground_skill, rng=self._rng, state=state
+            )
             sampled += 1
             reason = self.skill_provider.parameter_rejection_reason(
                 ground_skill=ground_skill, params=candidate, state=state

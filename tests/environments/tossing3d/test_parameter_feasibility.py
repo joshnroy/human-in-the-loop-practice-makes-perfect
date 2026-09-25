@@ -318,3 +318,84 @@ def test_snapshot_adapter_reads_supplied_state_after_live_environment_changes() 
         )
     finally:
         env.close()
+
+
+# The live room's six wall colliders at seed 125 (two of them the 45-degree corners).
+_ROOM_WALLS = (
+    PlanarCollisionBox(
+        name="collider:tossing_room:3", center=(-1.25, 2.25), width=2.12, height=0.02, yaw=0.785
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:4", center=(-1.25, -2.25), width=2.12, height=0.02, yaw=-0.785
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:5", center=(1.85, 3.0), width=4.7, height=0.02, yaw=0.0
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:6", center=(1.85, -3.0), width=4.7, height=0.02, yaw=0.0
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:7",
+        center=(-2.0, 0.0),
+        width=3.0,
+        height=0.02,
+        yaw=math.pi / 2,
+    ),
+    PlanarCollisionBox(
+        name="collider:tossing_room:8",
+        center=(4.2, 0.0),
+        width=6.0,
+        height=0.02,
+        yaw=-math.pi / 2,
+    ),
+)
+
+
+def _room_geometry(*, bin_pose: tuple[float, float, float]) -> TossFeasibilityGeometry:
+    return _geometry().model_copy(
+        update={"bin_pose": bin_pose, "obstacles": (*_geometry().obstacles, *_ROOM_WALLS)}
+    )
+
+
+def test_the_room_polygon_is_chained_from_the_wall_colliders() -> None:
+    polygon = TossParameterFeasibility.room_polygon(geometry=_room_geometry(bin_pose=(0, 0, 0)))
+    assert polygon is not None
+    assert len(polygon) == 6
+    expected = {(-2.0, 1.5), (-0.5, 3.0), (4.2, 3.0), (4.2, -3.0), (-0.5, -3.0), (-2.0, -1.5)}
+    for vertex in expected:
+        assert min(math.dist(vertex, found) for found in polygon) < 0.01, vertex
+
+
+def test_no_closed_wall_loop_means_no_room_check() -> None:
+    assert TossParameterFeasibility.room_polygon(geometry=_geometry()) is None
+    # Without walls, a stand far outside any room is not rejected for that reason.
+    assert (
+        TossParameterFeasibility.rejection_reason_from_geometry(
+            geometry=_geometry().model_copy(update={"bin_pose": (-0.5, 0.0, 0.0)}),
+            params=_params(distance=3.0),
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("bin_pose", "distance", "rotation", "reason"),
+    [
+        # West of the x = -2 wall: the footprint clears it, only containment rejects.
+        ((-0.35, 0.0, math.pi), 2.6, math.pi, "outside_room"),
+        # Past a 45-degree corner, beyond the diagonal wall.
+        ((-0.9, -1.0, math.pi), 2.2, 1.5 * math.pi, "outside_room"),
+        # Inside the room with room to spare.
+        ((-0.35, 0.0, math.pi), 1.5, 1.5 * math.pi, None),
+    ],
+)
+def test_a_stand_centre_outside_the_room_is_rejected(
+    *, bin_pose, distance: float, rotation: float, reason
+) -> None:
+    geometry = _room_geometry(bin_pose=bin_pose)
+    assert (
+        TossParameterFeasibility.rejection_reason_from_geometry(
+            geometry=geometry, params=_params(distance=distance, rotation=rotation)
+        )
+        == reason
+    )

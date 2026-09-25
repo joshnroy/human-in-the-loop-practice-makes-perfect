@@ -25,6 +25,7 @@ from hitl_pmp.environments.tossing3d.toss_direction import (
     TossDirectionSelector,
 )
 from hitl_pmp.environments.tossing3d.wide_long_range_proposal import (
+    FAR_STAND_X_LIMIT_M,
     WIDE_TOSS_RELEASE_MS_BOUNDS,
     WIDE_TOSS_SPEED_BOUNDS,
     WIDE_TOSS_STANDOFF_BOUNDS,
@@ -275,3 +276,77 @@ def test_the_state_log_carries_three_params_and_the_direction_as_its_own_field()
     assert SkillEvent(**event.model_dump()).toss_direction_deg == pytest.approx(180.0)
     pick = np.array([Tossing3DEnvironment.pick_cube_id, 0.0, 0.0, 0.0, 0.0])
     assert Tossing3DEnvironment.skill_log_params(action=pick) == ((0.0, 0.0, 0.0, 0.0), None)
+
+
+@pytest.mark.parametrize(
+    ("bin_x", "base_x", "expected_low"),
+    [
+        (3.2, 0.0, 3.2 - FAR_STAND_X_LIMIT_M),  # far, floor lifted by the stand line
+        (3.42, 0.0, 3.42 - FAR_STAND_X_LIMIT_M),  # farthest receiver
+        (1.6, 0.0, 1.25),  # far but near the barrier: the controller floor binds
+        (-0.35, 0.0, 1.25),  # robot side: the controller floor binds
+    ],
+)
+def test_the_standoff_band_is_a_function_of_the_bin_pose(
+    *, bin_x: float, base_x: float, expected_low: float
+) -> None:
+    env = Tossing3DEnvironment()
+    low, high = Tossing3DToss.standoff_bounds(
+        ground_skill=_toss(env=env), state=state(env=env, bin_x=bin_x, base_x=base_x)
+    )
+    assert low == pytest.approx(expected_low)
+    assert high == WIDE_TOSS_STANDOFF_BOUNDS[1]
+
+
+def test_a_far_bin_draws_its_standoff_uniformly_inside_its_band_without_rejection() -> None:
+    """Same three uniforms consumed per draw as the unbanded proposal; the standoff is
+    drawn over the per-bin band directly, so nothing is ever redrawn."""
+    env = Tossing3DEnvironment()
+    provider = Tossing3DSkillProvider(env=env)
+    scene = state(env=env, bin_x=3.2)
+    rng = np.random.default_rng(3)
+    direct = np.random.default_rng(3)
+    low = 3.2 - FAR_STAND_X_LIMIT_M
+    standoffs = []
+    for _ in range(200):
+        drawn = provider.sample_params_at_state(ground_skill=_toss(env=env), rng=rng, state=scene)
+        assert tuple(drawn) == (
+            float(direct.uniform(low, WIDE_TOSS_STANDOFF_BOUNDS[1])),
+            float(direct.uniform(*WIDE_TOSS_SPEED_BOUNDS)),
+            float(direct.uniform(*WIDE_TOSS_RELEASE_MS_BOUNDS)),
+        )
+        standoffs.append(float(drawn[0]))
+    assert min(standoffs) >= low
+    assert max(standoffs) - min(standoffs) > 0.9 * (WIDE_TOSS_STANDOFF_BOUNDS[1] - low)
+
+
+def test_ees_draws_toss_candidates_at_the_decision_state(*, fixed_direction) -> None:
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    fixed_direction(direction_deg=0)
+    env = Tossing3DEnvironment()
+    method = EesMethod(
+        env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0, num_candidates=20
+    )
+    candidates = method.sample_parameter_candidates(
+        ground_skill=_toss(env=env), state=state(env=env, bin_x=3.3), explore=True
+    )
+    assert len(candidates) == 20
+    assert min(float(candidate[0]) for candidate in candidates) >= 3.3 - FAR_STAND_X_LIMIT_M
+
+
+def test_random_skills_draws_toss_parameters_at_the_decision_state(*, fixed_direction) -> None:
+    from hitl_pmp.methods.practice_makes_perfect.random_skills_method import (
+        RandomSkillsMethod,
+    )
+
+    fixed_direction(direction_deg=0)
+    env = Tossing3DEnvironment()
+    method = RandomSkillsMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)
+    from .observations import HOLDING_ATOMS
+
+    scene = state(env=env, bin_x=3.3, abstract_atoms=HOLDING_ATOMS, cube_z=0.4)
+    for _ in range(20):
+        labeled, ground_skill = method.choose_ground_skill(state=scene)
+        if ground_skill is not None and ground_skill.skill.param_dim == 3:
+            assert float(labeled.action[1]) >= 3.3 - FAR_STAND_X_LIMIT_M

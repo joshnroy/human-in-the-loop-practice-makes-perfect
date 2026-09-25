@@ -129,6 +129,15 @@ class Tossing3DSkillProvider(SkillProvider):
             return SameSideSkills.sample_params(ground_skill=ground_skill, rng=rng)
         return Tossing3DSkills.sample_params(ground_skill=ground_skill, rng=rng)
 
+    def sample_params_at_state(
+        self, *, ground_skill: GroundSkill, rng: np.random.Generator, state: State
+    ) -> np.ndarray:
+        if ground_skill.skill == Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
+            return Tossing3DToss.sample_params_at_state(
+                rng=rng, ground_skill=ground_skill, state=state
+            )
+        return self.sample_params(ground_skill=ground_skill, rng=rng)
+
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> Action:

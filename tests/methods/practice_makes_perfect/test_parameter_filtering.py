@@ -381,7 +381,7 @@ def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -
     TossDirectionSelector.clear_plan_cache()
     values = [np.array([d, 360.0, 500.0]) for d in [2.5, 2.6]]
     proposals = Mock(side_effect=values)
-    monkeypatch.setattr(Tossing3DSkillProvider, "sample_params", proposals)
+    monkeypatch.setattr(Tossing3DSkillProvider, "sample_params_at_state", proposals)
     labeled, record = method.execute_ground_skill(ground_skill=ground, state=state, explore=False)
     assert record is not None and record.params[0] in (2.5, 2.6)
     assert record.params[1:] == [360.0, 500.0]
@@ -392,7 +392,9 @@ def test_tossing_integration_uses_supplied_evaluation_snapshot(*, monkeypatch) -
     assert planned and all(item is snapshot for item in planned)
     # A standoff whose every stand is across the barrier raises; it is not filtered.
     monkeypatch.setattr(
-        Tossing3DSkillProvider, "sample_params", Mock(return_value=np.array([1.35, 360.0, 500.0]))
+        Tossing3DSkillProvider,
+        "sample_params_at_state",
+        Mock(return_value=np.array([1.35, 360.0, 500.0])),
     )
     with pytest.raises(NoFeasibleTossDirectionError):
         method.execute_ground_skill(ground_skill=ground, state=state, explore=False)

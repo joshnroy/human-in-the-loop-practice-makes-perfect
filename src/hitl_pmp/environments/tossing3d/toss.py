@@ -23,6 +23,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 
+from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.environment.types import Action, State
 
 from .environment import Tossing3DEnvironment
@@ -49,7 +50,30 @@ class Tossing3DToss:
 
     @staticmethod
     def sample_params(*, rng: np.random.Generator) -> np.ndarray:
+        """The state-free draw: standoff over the full band."""
         return WideLongRangeTossProposal.sample(rng=rng)
+
+    @staticmethod
+    def sample_params_at_state(
+        *, rng: np.random.Generator, ground_skill: GroundSkill, state: State
+    ) -> np.ndarray:
+        """The draw a decision uses: standoff over this bin's feasible band."""
+        return WideLongRangeTossProposal.sample(
+            rng=rng,
+            standoff_bounds=Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state),
+        )
+
+    @staticmethod
+    def standoff_bounds(*, ground_skill: GroundSkill, state: State) -> tuple[float, float]:
+        """The full band for a bin on the robot's side; the per-bin far band for a
+        bin across the barrier. A function of the bin, robot and barrier poses only."""
+        robot, bin_, _, barrier, *_ = ground_skill.objects
+        bin_x = state.get(obj=bin_, feature_name="x")
+        barrier_x = state.get(obj=barrier, feature_name="x")
+        robot_x = state.get(obj=robot, feature_name="pos_base_x")
+        if (bin_x - barrier_x) * (robot_x - barrier_x) < 0.0:
+            return WideLongRangeTossProposal.far_standoff_bounds(bin_x=bin_x)
+        return WIDE_TOSS_STANDOFF_BOUNDS
 
     @staticmethod
     def choose_direction(*, state: State, params: np.ndarray) -> TossDirectionChoice:
