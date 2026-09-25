@@ -222,7 +222,7 @@ def test_pick_costs_practice_but_does_not_change_toss_belief() -> None:
     assert mean_competence(belief=after.skill_beliefs[PICK_SKILL]) > mean_competence(
         belief=before.skill_beliefs[PICK_SKILL]
     )
-    assert after.pending_examples.get(PICK_SKILL, 0) == 0
+    assert after.pending_examples.get(PICK_SKILL, 0) == 1
     assert isinstance(after.skill_beliefs[PICK_SKILL], BayesianSkillBelief)
     assert isinstance(before.skill_beliefs[PICK_SKILL], BayesianSkillBelief)
     assert abs(mean_cost(belief=after.skill_beliefs[PICK_SKILL]) - 1.0) < abs(
@@ -351,7 +351,7 @@ def test_completed_human_reset_jointly_updates_performance_and_cost_without_trai
     assert abs(mean_cost(belief=after) - observed_cost) < abs(
         mean_cost(belief=before) - observed_cost
     )
-    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 0
+    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 1
 
 
 def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
@@ -383,7 +383,8 @@ def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
     automatic_after = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
     assert automatic_after == automatic_before.condition_execution(success=True, observed_cost=5.0)
     assert method.pomdp_state.skill_beliefs[RESET_SKILL] == human_before
-    assert method.pomdp_state.pending_examples.get(NON_HUMAN_RESET_SKILL, 0) == 0
+    assert method.pomdp_state.pending_examples.get(NON_HUMAN_RESET_SKILL, 0) == 1
+    assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 0
 
 
 def test_cost_outside_the_shared_particle_support_is_rejected() -> None:

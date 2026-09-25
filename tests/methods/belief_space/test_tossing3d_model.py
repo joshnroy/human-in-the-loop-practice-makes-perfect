@@ -682,7 +682,7 @@ def test_human_reset_observation_updates_its_joint_belief_without_training_credi
     assert abs(mean_cost(belief=observed.skill_beliefs[RESET_SKILL]) - 0.25) < abs(
         mean_cost(belief=state.skill_beliefs[RESET_SKILL]) - 0.25
     )
-    assert observed.pending_examples.get(RESET_SKILL, 0) == 0
+    assert observed.pending_examples.get(RESET_SKILL, 0) == 1
 
 
 def test_human_reset_transition_uses_known_success_without_hypothetical_evidence() -> None:
@@ -693,7 +693,8 @@ def test_human_reset_transition_uses_known_success_without_hypothetical_evidence
     estimated_cost = mean_cost(belief=state.skill_beliefs[RESET_SKILL])
     assert all(outcome[1].accumulated_cost == pytest.approx(estimated_cost) for outcome in outcomes)
     assert outcomes[0][1].skill_beliefs == state.skill_beliefs
-    assert outcomes[0][1].pending_examples == state.pending_examples
+    # No S/F evidence is invented, but the reset's clock advances as the real one will.
+    assert outcomes[0][1].pending_examples == {**state.pending_examples, RESET_SKILL: 1}
 
 
 def test_human_reset_refit_preserves_performance_without_synthetic_learning() -> None:
@@ -707,7 +708,9 @@ def test_human_reset_refit_preserves_performance_without_synthetic_learning() ->
         observed_cost=0.25,
     )
     posterior = refit_belief_state(state=observed)
-    assert posterior.skill_beliefs[RESET_SKILL] == observed.skill_beliefs[RESET_SKILL]
+    assert posterior.skill_beliefs[RESET_SKILL] == observed.skill_beliefs[RESET_SKILL].refit(
+        training_examples=1
+    ).advance_learning_rate(process_noise_std=0.0)
     assert posterior.pending_examples == {}
 
 
@@ -727,7 +730,7 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
         _pending_examples(state=outcome[1], skill_name=TOSS_SKILL) == 0 for outcome in outcomes
     )
     assert all(
-        _pending_examples(state=outcome[1], skill_name=PICK_SKILL) == 0 for outcome in outcomes
+        _pending_examples(state=outcome[1], skill_name=PICK_SKILL) == 1 for outcome in outcomes
     )
     assert mean_competence(
         belief=_belief(state=outcomes[0][1], skill_name=PICK_SKILL)
@@ -739,12 +742,11 @@ def test_pick_outcomes_update_only_its_own_posterior() -> None:
 
 
 @pytest.mark.parametrize("skill_name", [PICK_SKILL, OPEN_GRIPPER_SKILL])
-def test_fixed_controller_data_updates_competence_without_learning(*, skill_name: str) -> None:
+def test_fixed_controller_data_advances_its_own_clock(*, skill_name: str) -> None:
     model = _domain_model()
     skill = _ground_skill(model=model, name=skill_name)
     state = _weighted_default_state()
-    prior_rate = state.skill_beliefs[skill_name].mean_learning_rate()
-    for _ in range(20):
+    for _ in range(3):
         for success in [True, False] * 5:
             state = model.observe_outcome(
                 state=state,
@@ -752,12 +754,9 @@ def test_fixed_controller_data_updates_competence_without_learning(*, skill_name
                 success=success,
                 was_random_exploration=False,
             )
+        assert state.pending_examples == {skill_name: 10}
         state = refit_belief_state(state=state)
-    belief = _belief(state=state, skill_name=skill_name)
-    assert belief.mean_competence() == pytest.approx(0.5, abs=0.01)
-    assert belief.mean_learning_rate() == pytest.approx(prior_rate)
-    assert state.pending_examples == {}
-    assert mean_competence(belief=belief) == pytest.approx(0.5, abs=0.01)
+        assert state.pending_examples == {}
 
 
 def test_first_session_cannot_identify_learning_rate() -> None:

@@ -273,7 +273,8 @@ def test_hypothetical_and_real_one_class_refits_agree_without_mutation(
         # The search forecast and the real boundary apply the same predict step
         # (the one-class toss attempt still counts as a training example); only
         # the real boundary resamples particles first.
-        expected_examples = 1 if name == TOSS_SKILL else 0
+        # Pick's one attempt and the toss's one example each advance their clocks.
+        expected_examples = 1
         assert actual.total_training_examples == expected_examples
         assert predicted.total_training_examples == expected_examples
         assert actual.process_transition_count == predicted.process_transition_count == 1
@@ -296,13 +297,13 @@ def test_cycle_logs_preserve_sf_history_and_zero_example_cycles_for_smoothing(
     method.end_cycle()
     after_empty = _belief(method=method, name=PICK_SKILL)
     # The idle boundary applies the n = 0 noise step, so the latents move while
-    # costs and learning totals stand still.
+    # costs stand still and the total keeps the one attempt from the first cycle.
     assert (after_empty.latent_values, after_empty.state_weights) != (
         after_learning.latent_values,
         after_learning.state_weights,
     )
     assert after_empty.cost_belief == after_learning.cost_belief
-    assert after_empty.total_training_examples == 0
+    assert after_empty.total_training_examples == 1
     assert after_empty.process_transition_count == 2
     assert after_empty.incoming_training_examples == 0
     assert after_empty.cycle_index == 2
@@ -311,11 +312,15 @@ def test_cycle_logs_preserve_sf_history_and_zero_example_cycles_for_smoothing(
     history = method._belief_history[PICK_SKILL]  # noqa: SLF001
     assert [(b.cycle_successes, b.cycle_failures) for b in history] == [(1, 0), (0, 0), (0, 1)]
     assert [b.cycle_index for b in history] == [0, 1, 2]
-    assert [b.total_training_examples for b in history] == [0, 0, 0]
-    assert [b.incoming_training_examples for b in history] == [0, 0, 0]
+    assert [b.total_training_examples for b in history] == [0, 1, 1]
+    assert [b.incoming_training_examples for b in history] == [0, 1, 0]
     events = list(map(json.loads, decision_log.read_text().splitlines()))
     refits = [event for event in events if event["event"] == "refit"]
-    assert [event["training_examples"] for event in refits] == [{}, {}, {}]
+    assert [event["training_examples"] for event in refits] == [
+        {PICK_SKILL: 1},
+        {},
+        {PICK_SKILL: 1},
+    ]
     assert all(event["learning_rate_evidence"] == "success_failure_only" for event in refits)
     assert all("learning_rate_observations" not in event for event in events)
     smoothing = [event for event in events if event["event"] == "smoothing"]

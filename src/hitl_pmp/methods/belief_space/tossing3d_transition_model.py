@@ -149,10 +149,16 @@ def transition_outcomes(
         # run. Its empirical performance telemetry is not uncertain dynamics.
         # Real completions still update S/F, costs and refits, but a forecast must
         # not invent evidence about a known mechanism or move its cost posterior.
+        # It does advance the reset's training clock, exactly as the real
+        # completion will, so search forecasts the same m it will observe.
+        pending = dict(state.pending_examples)
+        pending[action.skill.name] = pending.get(action.skill.name, 0) + 1
         return (
             (
                 1.0,
-                transition_belief_state(state=state, added_cost=cost),
+                transition_belief_state(state=state, added_cost=cost).model_copy(
+                    update={"pending_examples": pending}
+                ),
                 apply_success_effects(
                     true_atoms=environment_state.true_atoms,
                     ground_skill=action,

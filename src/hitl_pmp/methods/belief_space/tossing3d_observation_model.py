@@ -71,10 +71,9 @@ class SkillBeliefModel:
         elif condition_competence:
             belief = condition_skill_belief(belief=belief, success=success)
         skill_beliefs[skill_name] = belief
-        if was_random_exploration:
-            return state.model_copy(update={"skill_beliefs": skill_beliefs})
         pending_examples = dict(state.pending_examples)
         if self.example_source == PracticeExampleSource.OUTCOME:
+            # The notebook's m: every attempt is a data point, success or failure.
             pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         return state.model_copy(
             update={"skill_beliefs": skill_beliefs, "pending_examples": pending_examples}
@@ -97,8 +96,11 @@ class SkillBeliefModel:
 
 
 SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
+    # Fixed controllers advance their training clock once per attempt, as the notebook
+    # counts m for every skill; only the toss's clock is fed by sampler examples.
     Tossing3DSkills.PICK_CUBE: SkillBeliefModel(
         skill=Tossing3DSkills.PICK_CUBE,
+        example_source=PracticeExampleSource.OUTCOME,
     ),
     Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS: SkillBeliefModel(
         skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
@@ -106,6 +108,7 @@ SKILL_BELIEF_MODELS: dict[Skill, SkillBeliefModel] = {
     ),
     Tossing3DSkills.OPEN_GRIPPER: SkillBeliefModel(
         skill=Tossing3DSkills.OPEN_GRIPPER,
+        example_source=PracticeExampleSource.OUTCOME,
     ),
 }
 
@@ -119,7 +122,11 @@ def skill_belief_model(*, ground_skill: GroundSkill) -> SkillBeliefModel:
     if ground_skill.skill.name == OPEN_GRIPPER_SKILL:
         return SKILL_BELIEF_MODELS[Tossing3DSkills.OPEN_GRIPPER]
     if ground_skill.skill.name in RESET_SKILLS:
-        return SkillBeliefModel(skill=ground_skill.skill)
+        # Human and robot resets alike: every completed reset is one attempt (a reset
+        # that fails raises and aborts the run, so only successes are ever observed).
+        return SkillBeliefModel(
+            skill=ground_skill.skill, example_source=PracticeExampleSource.OUTCOME
+        )
     return SKILL_BELIEF_MODELS.get(
         ground_skill.skill,
         SkillBeliefModel(skill=ground_skill.skill),
