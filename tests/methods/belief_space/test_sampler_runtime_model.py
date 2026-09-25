@@ -74,27 +74,23 @@ def _toss_belief(*, state: Tossing3DBeliefState) -> BayesianSkillBelief:
 
 @pytest.mark.parametrize(("model", "engine"), ARMS)
 @pytest.mark.parametrize("first_label", [False, True])
-def test_one_class_cycles_preserve_policy_then_first_mixed_refit_credits_all_data(
+def test_one_class_cycles_advance_the_clock_while_the_sampler_stays_one_class(
     *, model: Model, engine: Engine, first_label: bool
 ) -> None:
     method = _method(model=model, engine=engine)
     for cycle in range(2):
         _row(method=method, success=first_label)
         _row(method=method, success=first_label)
-        before = _toss_belief(state=method.pomdp_state)
         projected = _toss_belief(state=refit_belief_state(state=method.pomdp_state))
-        assert projected is before
+        assert projected.total_training_examples == 2 * (cycle + 1)
         method.end_cycle()
         after = _toss_belief(state=method.pomdp_state)
-        # The real boundary applies the notebook's n = 0 noise step (the search
-        # forecast above stayed the identity); one-class data still earns no
-        # learning credit.
-        assert (after.latent_values, after.state_weights) != (
-            before.latent_values,
-            before.state_weights,
-        )
-        assert after.total_training_examples == 0
+        # The notebook clock: every attempt is a training example, one-class or not.
+        assert after.total_training_examples == 2 * (cycle + 1)
+        assert after.incoming_training_examples == 2
         assert after.process_transition_count == cycle + 1
+        if engine == "grid":
+            assert after == projected
         training = method.pomdp_state.sampler_training[TOSS_SKILL]
         assert training.successes + training.failures == 2 * (cycle + 1)
         assert training.fitted_successes + training.fitted_failures == 2 * (cycle + 1)
@@ -108,16 +104,17 @@ def test_one_class_cycles_preserve_policy_then_first_mixed_refit_credits_all_dat
 
     _row(method=method, success=not first_label, random=True)
     state = method.pomdp_state
-    training = state.sampler_training[TOSS_SKILL]
-    assert not training.fitted_mixed_classes
-    assert training.refit_examples == 5
-    projected = refit_belief_state(state=state)
-    assert projected.sampler_training[TOSS_SKILL].fitted_mixed_classes
-    assert _toss_belief(state=projected).total_training_examples == 5
+    assert not state.sampler_training[TOSS_SKILL].fitted_mixed_classes
+    projected_state = refit_belief_state(state=state)
+    assert projected_state.sampler_training[TOSS_SKILL].fitted_mixed_classes
+    predicted = _toss_belief(state=projected_state)
+    assert predicted.total_training_examples == 5
     method.end_cycle()
     actual = _toss_belief(state=method.pomdp_state)
-    predicted = _toss_belief(state=projected)
-    assert actual == predicted
+    assert actual.total_training_examples == 5
+    assert actual.incoming_training_examples == 1
+    if engine == "grid":
+        assert actual == predicted
     assert actual.process_transition_count == 3
     assert method.sampler(skill_name=TOSS_SKILL, param_dim=4).num_observations == 5
 
@@ -151,10 +148,9 @@ def test_hypothetical_first_success_enables_refit_without_changing_current_sampl
         belief = _toss_belief(state=branch)
         assert belief.cycle_successes + belief.cycle_failures == 1
         assert not branch.sampler_training[TOSS_SKILL].fitted_mixed_classes
-        assert branch.sampler_training[TOSS_SKILL].refit_examples == (2 if success else 0)
         projected = refit_belief_state(state=branch)
         assert projected.sampler_training[TOSS_SKILL].fitted_mixed_classes == success
-        assert _toss_belief(state=projected).total_training_examples == (2 if success else 0)
+        assert _toss_belief(state=projected).total_training_examples == 2
         if success:
             # The model forecasts a mixed fit only for deployment, not between
             # actions of this practice cycle. The current policy stays frozen.
@@ -188,11 +184,8 @@ def test_forecast_j_is_pure_and_matches_real_refit(*, model: Model, engine: Engi
     method = _method(model=model, engine=engine)
     _row(method=method, success=False)
     method.end_cycle()
-    # A MIXED pending cycle: with effective examples > 0 the search refit and the
-    # real boundary run the identical transition off the same noise stream, so the
-    # forecast is exact. (At zero effective examples they now deliberately differ:
-    # refit keeps the identity while the boundary applies the n = 0 noise step --
-    # pinned in test_competence_2x2_integration.)
+    # The search refit and the real boundary run the same transition off the same
+    # noise stream; only the real boundary resamples particles first.
     _row(method=method, success=True)
     _row(method=method, success=False)
     sampler = method.sampler(skill_name=TOSS_SKILL, param_dim=4)
@@ -209,10 +202,7 @@ def test_forecast_j_is_pure_and_matches_real_refit(*, model: Model, engine: Engi
     actual = method._pomdp_model.J(  # noqa: SLF001
         belief_state=method.pomdp_state, summed_cost=7.0, num_samples=1
     )
-    # The pending toss belief transitions identically on both paths, but the
-    # real boundary also noise-steps every IDLE skill belief (search refit
-    # keeps those at the zero-example identity -- the carve-out), so J now
-    # agrees only to within those skills' process noise.
+    # Exact for the grid; particles differ by the real boundary's resampling noise.
     assert actual == pytest.approx(forecast, abs=0.01)
     assert method.pomdp_state.accumulated_cost == 0
 
@@ -284,16 +274,14 @@ def test_sampler_lifecycle_is_in_clone_serialization_and_all_search_keys() -> No
 
 
 @pytest.mark.parametrize(("model", "engine"), ARMS)
-def test_smoothing_spans_identity_cycles_and_first_deferred_transition(
-    *, model: Model, engine: Engine
-) -> None:
+def test_smoothing_spans_cycles_that_each_add_one_example(*, model: Model, engine: Engine) -> None:
     method = _method(model=model, engine=engine)
     for success in (False, False, True, False):
         _row(method=method, success=success)
         method.end_cycle()
     history = method._belief_history[TOSS_SKILL]  # noqa: SLF001
-    assert [belief.total_training_examples for belief in history] == [0, 0, 0, 3]
-    assert [belief.incoming_training_examples for belief in history] == [0, 0, 0, 3]
+    assert [belief.total_training_examples for belief in history] == [0, 1, 2, 3]
+    assert [belief.incoming_training_examples for belief in history] == [0, 1, 1, 1]
     smoothed = smooth_history(history=history)
     assert len(smoothed) == 4
     assert all(np.isfinite(row.smoothed_competence) for row in smoothed)

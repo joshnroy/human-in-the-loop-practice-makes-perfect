@@ -253,7 +253,7 @@ def toss_outcomes(
                 continue
             belief = state.skill_beliefs[TOSS_SKILL]
             if not is_random:
-                belief = condition_skill_belief(belief=belief, success=success, resample=False)
+                belief = condition_skill_belief(belief=belief, success=success)
             effect_outcomes = (
                 (
                     (

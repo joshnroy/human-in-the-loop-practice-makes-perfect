@@ -64,7 +64,7 @@ class SkillBeliefModel:
                 else belief.condition_execution(success=success, observed_cost=observed_cost)
             )
         elif not was_random_exploration:
-            belief = condition_skill_belief(belief=belief, success=success, resample=resample)
+            belief = condition_skill_belief(belief=belief, success=success)
         skill_beliefs[skill_name] = belief
         if was_random_exploration:
             return state.model_copy(update={"skill_beliefs": skill_beliefs})
@@ -188,12 +188,8 @@ def mean_cost(*, belief: ParticleFilterBelief | BayesianSkillBelief) -> float:
     return belief.mean_cost()
 
 
-def condition_skill_belief(
-    *, belief: ConcreteSkillBelief, success: bool, resample: bool = True
-) -> ConcreteSkillBelief:
+def condition_skill_belief(*, belief: ConcreteSkillBelief, success: bool) -> ConcreteSkillBelief:
     """Condition on a greedy-policy outcome without pretending a refit occurred."""
-    if isinstance(belief, BayesianSkillBelief):
-        return belief.condition_outcome(success=success, resample=resample)
     return belief.condition_outcome(success=success)
 
 
@@ -212,18 +208,15 @@ def refit_belief_state(
 ) -> Tossing3DBeliefState:
     """Apply the configured transition; S/F is the only competence evidence.
 
+    The training clock is the notebook's m: every attempt that entered the
+    sampler's training data advances it, whether or not the fit was one-class.
     Real cycle boundaries also reset evidence and ancestry bookkeeping when no
-    training occurred. A hypothetical zero-example forecast remains an identity.
-    Tracked one-class samplers defer learning credit until both labels exist;
-    their first mixed-class refit uses the whole retained training set.
+    training occurred, and a zero-example forecast is still a predict step.
     """
     assert learning_rate_process_noise_std >= 0.0
     refitted_beliefs: dict[str, ConcreteSkillBelief] = {}
     for skill_name, belief in state.skill_beliefs.items():
         count = state.pending_examples.get(skill_name, 0)
-        training = state.sampler_training.get(skill_name)
-        if training is not None:
-            count = training.refit_examples
         refitted: ConcreteSkillBelief
         if isinstance(belief, BayesianSkillBelief):
             refitted = (

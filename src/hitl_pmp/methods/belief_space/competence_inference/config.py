@@ -25,7 +25,6 @@ class InferenceConfig(BaseModel):
     phi_plateau: tuple[float, ...] = tuple(index / 10 for index in range(11))
     phi_rates: tuple[float, ...] = (0.02, 0.05, 0.1, 0.2, 0.4, 0.8)
     phi_concentrations: tuple[float, ...] = (6.0, 24.0, 96.0)
-    resample_ess_fraction: float = Field(default=0.5, ge=0.0, le=1.0)
 
     def scaled_learning_time(
         self, *, model: Literal["global_curve", "local_trend"], time_scale: float

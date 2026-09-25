@@ -92,7 +92,7 @@ class Tossing3DPomdpMethod(EesMethod):
         | None
     ) = Field(default=None, exclude=True, repr=False)
     pomdp_num_samples: int = Field(default=100, ge=1)
-    pomdp_num_particles: int = Field(default=1024, ge=1)
+    pomdp_num_particles: int = Field(default=20000, ge=1)
     pomdp_competence_model: Literal["global_curve", "local_trend"] = "local_trend"
     pomdp_inference_engine: Literal["particle", "grid"] = "particle"
     pomdp_grid_competence_bins: int = Field(default=25, ge=3)
@@ -408,17 +408,14 @@ class Tossing3DPomdpMethod(EesMethod):
     def end_cycle(self) -> None:
         """Advance inferred learning curves at the session boundary.
 
-        Fixed controllers and one-class-only sampler refits have no learning
-        transition. Their S/F evidence still updates the competence posterior.
+        Every attempt that entered the sampler's training data advances the
+        training clock, one-class fits included. Fixed controllers have no
+        training examples, so theirs is the zero-example step.
         """
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
         training_examples = dict(self._pomdp_state.pending_examples)
-        effective_training_examples = {
-            name: training.refit_examples
-            for name, training in self._pomdp_state.sampler_training.items()
-        }
         for skill_name, belief in self._pomdp_state.skill_beliefs.items():
             if isinstance(belief, BayesianSkillBelief):
                 self._belief_history.setdefault(skill_name, []).append(belief)
@@ -447,7 +444,6 @@ class Tossing3DPomdpMethod(EesMethod):
             beliefs=self.belief_diagnostics(),
             estimated_costs=self.practice_skill_costs(),
             training_examples=training_examples,
-            effective_training_examples=effective_training_examples,
             learning_rate_evidence="success_failure_only",
             competence_model=self.pomdp_competence_model,
             inference_engine=self.pomdp_inference_engine,
