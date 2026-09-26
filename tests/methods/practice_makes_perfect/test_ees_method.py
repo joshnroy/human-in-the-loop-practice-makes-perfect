@@ -1606,3 +1606,29 @@ def test_get_task_policy_never_raises_the_cube_bin_reset_even_when_it_alone_reac
     for _ in range(5):
         action = policy(state)
         assert action.label == "no-op (no plan)"
+
+
+def test_tossing3d_practice_offers_no_non_human_reset(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    """EES's practice planner sees only the human reset, never its relabelled duplicate."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = EesMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)
+    offered: dict[str, set[str]] = {}
+
+    def capture(  # noqa: PLR0917 (stands in for a method, so `self` is positional)
+        self: EesMethod, *, skills: tuple[Skill, ...], ground_skill_costs: dict, **_: object
+    ) -> list[GroundSkill]:
+        offered["skills"] = {skill.name for skill in skills}
+        offered["costed"] = {ground.skill.name for ground in ground_skill_costs}
+        return []
+
+    monkeypatch.setattr(EesMethod, "_plan_or_raise", capture)
+    method.plan_to(init_atoms=frozenset(), goal=frozenset(), costs={}, practicing=True)
+    assert ASK_FOR_RESET_CUBE_BIN_ONLY_NAME in offered["skills"]
+    assert not any("non_human_reset" in name for name in offered["skills"] | offered["costed"])
+    assert not any(
+        "non_human_reset" in reset.skill.name
+        for reset in method.skill_provider.movables_reset_skills()
+    )

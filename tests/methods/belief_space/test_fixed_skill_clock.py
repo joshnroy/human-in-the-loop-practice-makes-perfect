@@ -10,7 +10,6 @@ from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvide
 from hitl_pmp.environments.tossing3d.types import Tossing3DState
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.tossing3d_constants import (
-    NON_HUMAN_RESET_SKILL,
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     RESET_SKILL,
@@ -21,7 +20,7 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossin
 from .test_notebook_equivalence import SKILLS, _notebook_run
 
 FIXED = (PICK_SKILL, OPEN_GRIPPER_SKILL)
-RESETS = (RESET_SKILL, NON_HUMAN_RESET_SKILL)
+RESETS = (RESET_SKILL,)
 
 
 def _method() -> Tossing3DPomdpMethod:

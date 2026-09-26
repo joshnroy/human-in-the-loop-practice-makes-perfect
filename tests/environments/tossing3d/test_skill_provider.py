@@ -155,6 +155,7 @@ def test_practice_resets_offer_both_bin_destinations_to_the_planner(*, layout: s
         env=Tossing3DEnvironment(layout=Tossing3DLayout(layout)),
         human_reset_practice_cost=3.0,
         non_human_reset_practice_cost=7.0,
+        offer_non_human_reset=True,
     )
     for group, cost in (
         (provider.human_cube_bin_reset_skills(), 3.0),
@@ -233,13 +234,27 @@ def test_human_reset_cost_is_five_robot_action_equivalents() -> None:
     assert _provider().human_cube_bin_reset_skill().evaluate_practice_cost() == 5.0
 
 
+def test_practice_offers_no_non_human_reset_by_default() -> None:
+    """The automatic reset is a relabelled human reset -- same exception, same oracle,
+    same intervention count -- so offering both makes the choice between them noise."""
+    provider = _provider()
+    assert provider.movables_reset_skills() == provider.human_cube_bin_reset_skills()
+    assert not any(
+        "non_human_reset" in reset.skill.name for reset in provider.movables_reset_skills()
+    )
+
+
+def test_the_non_human_reset_is_offered_only_when_asked_for() -> None:
+    provider = Tossing3DSkillProvider(env=Tossing3DEnvironment(), offer_non_human_reset=True)
+    assert provider.movables_reset_skills() == (
+        *provider.human_cube_bin_reset_skills(),
+        *provider.non_human_cube_bin_reset_skills(),
+    )
+
+
 def test_human_reset_has_two_bin_destination_groundings() -> None:
     provider = _provider()
     human_destinations = provider.human_cube_bin_reset_skills()
-    assert provider.movables_reset_skills() == (
-        *human_destinations,
-        *provider.non_human_cube_bin_reset_skills(),
-    )
     assert {reset.objects[-1].name for reset in human_destinations} == {
         "robot_side",
         "opposite_side",
