@@ -21,7 +21,6 @@ from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
 from .problem import Tossing3DProblem
 from .renderer import Tossing3DRenderer
-from .sides import Tossing3DSide
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF
 from .skill_provider import Tossing3DOracle, Tossing3DSkillProvider
 from .state_log import StateLogHeader, StateLogWriter
@@ -244,14 +243,11 @@ class Tossing3DCli:
 
     @staticmethod
     def build_practice_problem(*, args: argparse.Namespace) -> Tossing3DProblem:
-        """The practice Problem: identical to the evaluation one except that on the
-        barrier layout every practice scene keeps its bin on the robot side, because
-        practice never happens on the opposite side. The same-side layout's own task
-        already places the bin on the robot side, so it is left as it is."""
-        problem = Tossing3DCli.build_problem(args=args)
-        if problem.env.layout is Tossing3DLayout.BARRIER:
-            problem.env.scene_bin_destination = Tossing3DSide.ROBOT
-        return problem
+        """The practice Problem, configured exactly like the evaluation one: every
+        practice scene starts from the task's own bin placement (beyond the barrier on
+        the barrier layout). Whether and where to move the bin is the planner's choice,
+        through a reset grounded for either side."""
+        return Tossing3DCli.build_problem(args=args)
 
     @staticmethod
     def build_evaluation_problem(*, args: argparse.Namespace) -> Tossing3DProblem:

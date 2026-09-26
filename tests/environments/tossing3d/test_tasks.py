@@ -105,9 +105,8 @@ def test_evaluation_tasks_still_place_the_bin_on_the_far_side() -> None:
         env.close()
 
 
-# --- practice scenes keep the bin on the robot side ---------------------------------
+# --- practice scenes start with the task's own far-side bin ------------------------
 
-BLOCK = (-0.33, -1.9, 0.3, -1.3)
 # The first three test tasks at seed 0, recorded before practice scenes changed. They
 # must not move: every evaluation number is comparable only while these hold.
 PINNED_TEST_BINS = (
@@ -121,23 +120,11 @@ def _bin_xy(*, env, state) -> tuple[float, float]:
     return (state.get(obj=env.bin, feature_name="x"), state.get(obj=env.bin, feature_name="y"))
 
 
-def _assert_in_block_and_valid(*, env, state) -> None:
-    from hitl_pmp.environments.tossing3d.bin_placement import BinPlacementRules
-    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
-
-    x, y = _bin_xy(env=env, state=state)
-    assert BLOCK[0] - 1e-3 <= x <= BLOCK[2] + 1e-3
-    assert BLOCK[1] - 1e-3 <= y <= BLOCK[3] + 1e-3
-    geometry = KinderBackend.toss_feasibility_geometry(snapshot=env.backend().snapshot())
-    robot = BinPlacementRules.aabb(
-        center=geometry.robot_pose[:2], size=geometry.robot_size, yaw=geometry.robot_pose[2]
-    )
-    BinPlacementRules.check(
-        bin_aabb=BinPlacementRules.aabb(center=(x, y), size=(0.3, 0.3), yaw=geometry.bin_pose[2]),
-        robot_aabb=robot,
-        cube_spawn=((0.5, -0.25, 0.75, 0.25),),
-        context="practice scene",
-    )
+def _assert_far_side(*, env, state) -> None:
+    bin_x = state.get(obj=env.bin, feature_name="x")
+    barrier_x = state.get(obj=env.barrier, feature_name="x")
+    robot_x = state.get(obj=env.robot, feature_name="pos_base_x")
+    assert (bin_x - barrier_x) * (robot_x - barrier_x) < 0.0, (bin_x, barrier_x, robot_x)
 
 
 needs_kinder = pytest.mark.skipif(
@@ -146,22 +133,30 @@ needs_kinder = pytest.mark.skipif(
 
 
 @needs_kinder
-def test_every_practice_scene_puts_the_bin_in_the_robot_side_block() -> None:
-    """Initial (`hard_reset`, what `never` practices in), sampled train tasks, and the
-    rebuild `reset_to_task` does each `scheduled` period all land in the block."""
-    from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
+def test_every_practice_scene_starts_with_the_tasks_far_side_bin() -> None:
+    """Where a practice scene's bin starts is the task's own `bin_init_region`, beyond
+    the barrier on the barrier layout; whether and where to move it is the planner's
+    choice through a reset. Covers the initial scene (`hard_reset`, what `never`
+    practices in), sampled train tasks, and the rebuild `reset_to_task` does each
+    `scheduled` period."""
+    import argparse
 
-    env = Tossing3DEnvironment(scene_bin_destination=Tossing3DSide.ROBOT)
-    tasks = Tossing3DTasks(env=env, seed=0)
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=0)
+    Tossing3DCli.add_arguments(parser=parser)
+    problem = Tossing3DCli.build_practice_problem(args=parser.parse_args([]))
+    env, tasks = problem.env, problem.tasks
     try:
         env.hard_reset()
-        _assert_in_block_and_valid(env=env, state=env.get_current_state())
+        _assert_far_side(env=env, state=env.get_current_state())
         for _ in range(3):
             task = tasks.sample_train_task()
-            _assert_in_block_and_valid(env=env, state=task.initial_state)
+            _assert_far_side(env=env, state=task.initial_state)
             env.set_state(state=task.initial_state)
             rebuilt = env.get_current_state()
-            _assert_in_block_and_valid(env=env, state=rebuilt)
+            _assert_far_side(env=env, state=rebuilt)
             assert _bin_xy(env=env, state=rebuilt) == pytest.approx(
                 _bin_xy(env=env, state=task.initial_state), abs=1e-6
             )

@@ -298,3 +298,57 @@ def test_a_robot_covering_the_whole_region_raises_instead_of_placing() -> None:
         KinderBackend()._bin_region_clear_of_robot_and_cube(  # noqa: SLF001
             object_centric=_bin_scene(), region=region, robot_aabb=robot, cube_spawn=SPAWN
         )
+
+
+@needs_kinder
+@pytest.mark.parametrize("seed", [2026092401, 2026092403])
+def test_a_far_side_practice_reset_is_placeable_and_tossable(*, seed: int) -> None:
+    """The far-side reset destination the planner may now choose: the bin lands in
+    the far region beyond the barrier, the cube is picked from its spawn strip, and a
+    toss drawn from the far bin's own standoff band (#365, corner-aware) runs to
+    completion. Scoring is not asserted -- that is competence, not feasibility."""
+    from hitl_pmp.core.method.types import GroundSkill
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.predicates import BIN_AT_SIDE, HOLDING
+    from hitl_pmp.environments.tossing3d.sides import (
+        BIN_RESET_REGION_BY_SIDE,
+        Tossing3DSide,
+        Tossing3DSides,
+    )
+    from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+    from hitl_pmp.environments.tossing3d.toss import Tossing3DToss
+
+    far = BIN_RESET_REGION_BY_SIDE[Tossing3DSide.OPPOSITE].ranges[0]
+    env = Tossing3DEnvironment()
+    try:
+        env.reset_to_seed(seed=seed)
+        assert env.reset_movables(destination="opposite_side")
+        placed = env.get_current_state()
+        assert BIN_AT_SIDE.holds(placed, (env.bin, env.barrier, Tossing3DSides.opposite))
+        bx = placed.get(obj=env.bin, feature_name="x")
+        by = placed.get(obj=env.bin, feature_name="y")
+        assert far[0] - 1e-3 <= bx <= far[2] + 1e-3
+        assert far[1] - 1e-3 <= by <= far[3] + 1e-3
+        action = np.zeros(5, dtype=float)
+        action[0] = env.pick_cube_id
+        picked = env.take_action(action=action)
+        assert HOLDING.holds(picked, (env.robot, env.cube)), env.last_skill_error()
+        toss = GroundSkill(
+            skill=Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS,
+            objects=(env.robot, env.bin, env.cube, env.barrier, Tossing3DSides.opposite),
+        )
+        low, high = Tossing3DToss.standoff_bounds(ground_skill=toss, state=picked)
+        assert low < high
+        rng = np.random.default_rng(seed)
+        for _ in range(50):
+            params = Tossing3DToss.sample_params_at_state(rng=rng, ground_skill=toss, state=picked)
+            if Tossing3DToss.rejection_reason(state=picked, params=params) is None:
+                break
+        else:
+            pytest.fail("no far-band standoff had a plannable stand direction")
+        assert low - 1e-9 <= params[0] <= high + 1e-9
+        env.take_action(action=Tossing3DToss.compute_action(params=params, state=picked))
+        assert env.last_skill_error() is None, params
+        assert sum(env.last_controller_steps()) > 0
+    finally:
+        env.close()

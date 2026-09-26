@@ -35,7 +35,7 @@ from .predicates import (
     ROBOT_AT_SIDE,
 )
 from .recovery_skills import ON_BIN_RIM, ON_FLOOR, SameSideSkills
-from .sides import PRACTICE_RESET_DESTINATIONS, Tossing3DSides
+from .sides import Tossing3DSides
 from .skill_oracle_policy import ORACLE_THROW_STANDOFF, SkillOraclePolicy
 from .skills import Tossing3DSkills
 from .toss import Tossing3DToss
@@ -178,19 +178,18 @@ class Tossing3DSkillProvider(SkillProvider):
         typed side facts become true, `InBin` becomes false; same-side `OnBinRim`
         is cleared too. ``HandEmpty`` stays as it was.
 
-        The static precondition binds the robot-relative side object. Practice resets
-        only ever send the bin to the robot side, so the singular and plural APIs
-        return the same grounding."""
-        (reset,) = self.human_cube_bin_reset_skills()
-        return reset
+        The static precondition binds the robot-relative side object. This singular
+        API returns the robot-side grounding; planners use the plural API below, which
+        offers both destinations and lets the planner choose."""
+        return self.human_cube_bin_reset_skills()[0]
 
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
-        """One lifted reset, grounded for each bin destination practice may use.
+        """One lifted reset, grounded once for each typed bin destination.
 
         The cube is always returned to the robot's side so practice can continue;
-        the final parameter is the bin side. Practice never happens on the opposite
-        side (`PRACTICE_RESET_DESTINATIONS`), so the only grounding is the robot
-        side; evaluation's far-side bins come from the task's full reset instead. Functional side
+        the final parameter is the bin side selected by the planner, robot side first.
+        Both groundings carry the same provider-owned cost, so nothing here prefers a
+        side: the choice is the planner's. Functional side
         predicates are cleared through ``ignore_effects`` before the two selected
         atoms are added. This is the one lifted STRIPS action; the two choices are
         ordinary ground actions, not separately named skills. Holding is deleted
@@ -227,14 +226,6 @@ class Tossing3DSkillProvider(SkillProvider):
                 LiftedAtom(
                     predicate=ROBOT_AT_SIDE,
                     variables=(robot, barrier, robot_side),
-                ),
-                # Binds the destination to the robot's own side. EES gives the planner
-                # this LIFTED skill, which it grounds over every side object; without
-                # this atom an opposite-side grounding would be planned at the default
-                # cost, reintroducing the practice-on-the-far-side the provider forbids.
-                LiftedAtom(
-                    predicate=ROBOT_AT_SIDE,
-                    variables=(robot, barrier, bin_destination),
                 ),
             }),
             add_effects=frozenset({
@@ -279,10 +270,10 @@ class Tossing3DSkillProvider(SkillProvider):
                     env.bin,
                     env.barrier,
                     Tossing3DSides.robot,
-                    Tossing3DSides.parse(name=side.value),
+                    destination,
                 ),
             )
-            for side in PRACTICE_RESET_DESTINATIONS
+            for destination in Tossing3DSides.objects()
         )
 
     def non_human_cube_bin_reset_skill(self) -> GroundSkill:
