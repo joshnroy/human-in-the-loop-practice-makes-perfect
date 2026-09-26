@@ -505,3 +505,21 @@ def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
         f"{RESET_SKILL} (belief mean)",
         f"{NON_HUMAN_RESET_SKILL} (belief mean)",
     }
+
+
+def test_a_granted_movables_reset_clears_the_starved_pool_record() -> None:
+    """A starved pool is keyed on a symbolic state, but its cause is geometry: after a
+    movables reset the bin is somewhere else, so last placement's starvations are no
+    longer evidence. Both registries -- EES's selection filter and the search model's
+    action mask -- are cleared, not only at a new session."""
+    method = _build()
+    toss = _grounding(method=method, name=TOSS_SKILL)
+    atoms = toss.preconditions
+    method.record_starved_parameter_pool(ground_skill=toss, true_atoms=atoms)
+    assert method.starved_ground_skills(true_atoms=atoms) == {toss}
+    assert method._pomdp_model.starved_pools  # noqa: SLF001
+    reset = method.skill_provider.human_cube_bin_reset_skills()[1]
+    method.record_action_cost(ground_skill=reset)
+    method.observe_help_granted(state=Tossing3DState.model_construct())
+    assert method.starved_ground_skills(true_atoms=atoms) == frozenset()
+    assert method._pomdp_model.starved_pools == ()  # noqa: SLF001
