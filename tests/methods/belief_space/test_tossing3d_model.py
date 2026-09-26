@@ -572,7 +572,7 @@ def test_cycle_refit_applies_learning_rate_process_noise_without_examples() -> N
     assert np.any(after[:, 1] != before[:, 1])
 
 
-def test_applicable_actions_exclude_only_same_destination_reset_self_loops() -> None:
+def test_applicable_actions_include_same_destination_reset_self_loops() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()
     reset = _ground_skill(model=model, name=RESET_SKILL)
@@ -582,7 +582,7 @@ def test_applicable_actions_exclude_only_same_destination_reset_self_loops() -> 
     )
     actions = model.get_valid_actions(environment_state=ready)
     assert pick in actions
-    assert reset not in actions
+    assert reset in actions
     assert any(
         action.skill.name == RESET_SKILL and action.objects[-1] != reset.objects[-1]
         for action in actions

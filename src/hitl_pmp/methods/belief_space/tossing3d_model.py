@@ -15,7 +15,6 @@ from .tossing3d_constants import (
     OPEN_GRIPPER_SKILL,
     PICK_SKILL,
     PRACTICE_BUDGET,
-    RESET_SKILLS,
     TOSS_SKILL,
 )
 from .tossing3d_deployment_model import (
@@ -29,7 +28,6 @@ from .tossing3d_observation_model import (
     refit_belief_state,
 )
 from .tossing3d_transition_model import (
-    apply_success_effects,
     make_tossing3d_search_state,
     transition_outcomes,
 )
@@ -221,12 +219,11 @@ class Tossing3DPracticeModel(BaseModel):
         )
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
-        """Return applicable actions except dominated symbolic reset self-loops.
+        """Return every applicable action not masked by an observed starved pool.
 
-        A known-success reset that changes no atom only spends nonnegative cost
-        and an action slot in this abstract model. Real geometry randomization
-        may have value that this symbolic state does not represent; pruning here
-        makes no claim of global optimality in the physical simulator.
+        A reset whose symbolic effect changes no atom is still offered: it
+        re-randomizes the geometry, which the abstract state does not represent,
+        so whether that is worth its cost is the planner's choice.
         """
         state_mask = self._atoms_mask(atoms=environment_state.true_atoms)
         return [
@@ -234,15 +231,6 @@ class Tossing3DPracticeModel(BaseModel):
             for index, ground_skill in enumerate(self.ground_skills)
             if self._precondition_masks[index] & state_mask == self._precondition_masks[index]
             and (environment_state.true_atoms, ground_skill) not in self.starved_pools
-            and (
-                ground_skill.skill.name not in RESET_SKILLS
-                or apply_success_effects(
-                    true_atoms=environment_state.true_atoms,
-                    ground_skill=ground_skill,
-                    effects=self._effects,
-                )
-                != environment_state.true_atoms
-            )
         ]
 
     def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
