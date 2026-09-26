@@ -572,7 +572,7 @@ def test_cycle_refit_applies_learning_rate_process_noise_without_examples() -> N
     assert np.any(after[:, 1] != before[:, 1])
 
 
-def test_applicable_actions_exclude_the_reset_self_loop_and_offer_no_far_side_reset() -> None:
+def test_applicable_actions_exclude_only_same_destination_reset_self_loops() -> None:
     model = _domain_model(reset_cost=0.2)
     belief = make_default_tossing3d_belief()
     reset = _ground_skill(model=model, name=RESET_SKILL)
@@ -583,9 +583,10 @@ def test_applicable_actions_exclude_the_reset_self_loop_and_offer_no_far_side_re
     actions = model.get_valid_actions(environment_state=ready)
     assert pick in actions
     assert reset not in actions
-    # Practice never resets the bin to the opposite side, so once the robot-side
-    # reset is a self-loop there is no other reset to take.
-    assert not any(action.skill.name == RESET_SKILL for action in actions)
+    assert any(
+        action.skill.name == RESET_SKILL and action.objects[-1] != reset.objects[-1]
+        for action in actions
+    )
 
 
 def test_search_state_serializes_ees_atoms_without_serializing_predicate_functions() -> None:

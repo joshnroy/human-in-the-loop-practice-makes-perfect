@@ -18,6 +18,7 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import (
     NON_HUMAN_RESET_SKILL,
     PICK_SKILL,
     RESET_SKILL,
+    RESET_SKILLS,
     TOSS_SKILL,
 )
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -26,6 +27,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     mean_cost,
     mean_learning_rate,
 )
+from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
 from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
 from hitl_pmp.methods.belief_space.types.stop_action import STOP_ACTION, StopAction
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -167,7 +169,7 @@ def test_selector_accepts_injected_planner(*, tmp_path: Path) -> None:
     assert decision["solver"] == "injected"
 
 
-def test_action_value_diagnostics_offer_only_the_robot_side_reset() -> None:
+def test_action_value_diagnostics_distinguish_parameterized_reset_destinations() -> None:
     seed_method = _build()
     resets = seed_method.skill_provider.human_cube_bin_reset_skills()
 
@@ -192,11 +194,39 @@ def test_action_value_diagnostics_offer_only_the_robot_side_reset() -> None:
     method.select_skill_to_practice(true_atoms=pick.preconditions)
 
     keys = set(method.practice_action_values())
-    # Practice never resets the bin to the opposite side, so the one reset grounding
-    # is reported under its bare skill name rather than per destination.
-    assert len(resets) == 1
-    assert resets[0].objects[-1].name == "robot_side"
-    assert {key for key in keys if key.startswith(RESET_SKILL)} == {RESET_SKILL}
+    reset_keys = {key for key in keys if key.startswith(f"{RESET_SKILL}(")}
+    assert len(reset_keys) == 2
+    assert any("robot_side" in key for key in reset_keys)
+    assert any("opposite_side" in key for key in reset_keys)
+
+
+def test_the_search_model_grounds_every_reset_mechanism_for_both_destinations() -> None:
+    """The belief-space planner chooses the reset side itself: both the human and
+    the automatic reset are in its action set once per destination, and both
+    destinations are applicable from the same real state."""
+    method = _build()
+    model = method._pomdp_model  # noqa: SLF001
+    # The model grounds over every possible atom, so the robot-side variable is also
+    # bound to the opposite side; those groundings are never applicable (RobotAtSide
+    # holds only for the robot's own side) and are not destinations.
+    resets = [
+        g
+        for g in model.ground_skills
+        if g.skill.name in RESET_SKILLS and g.objects[-2].name == "robot_side"
+    ]
+    assert sorted((g.skill.name, g.objects[-1].name) for g in resets) == sorted(
+        (name, side) for name in RESET_SKILLS for side in ("robot_side", "opposite_side")
+    )
+    pick = _grounding(method=method, name=PICK_SKILL)
+    state = make_tossing3d_search_state(
+        state=method.pomdp_state, true_atoms=pick.preconditions | resets[0].preconditions
+    )
+    offered = {
+        (g.skill.name, g.objects[-1].name)
+        for g in model.get_valid_actions(environment_state=state)
+        if g.skill.name in RESET_SKILLS
+    }
+    assert {side for _name, side in offered} == {"robot_side", "opposite_side"}
 
 
 def test_unit_robot_cost_comes_from_the_shared_skill_provider() -> None:

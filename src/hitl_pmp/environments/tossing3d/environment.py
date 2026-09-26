@@ -172,14 +172,6 @@ class Tossing3DEnvironment(Environment):
     # Upstream's own `test_pick_ground_toss` seed, and the one every number in this
     # domain's docs was measured at. `hard_reset` uses it; `Tasks` supplies its own.
     canonical_seed: int = 125
-    # Set on the PRACTICE environment only (`Tossing3DCli.build_practice_problem`):
-    # every scene rebuild -- `hard_reset`, task sampling, `set_state` -- then moves the
-    # bin into this side's reset region right after the seed's own placement, through
-    # the same occupancy-aware `reset_cube_and_bin` practice resets use. Josh's rule is
-    # that practice never happens on the opposite side, and the barrier task places
-    # its bin there. Deterministic per seed, because the scene RNG is reseeded by the
-    # rebuild. The evaluation environment leaves it None, so test tasks are unchanged.
-    scene_bin_destination: Tossing3DSide | None = None
 
     _backend: KinderBackend | None = PrivateAttr(default=None)
     _last_skill_error: str | None = PrivateAttr(default=None)
@@ -535,11 +527,7 @@ class Tossing3DEnvironment(Environment):
         immediately afterwards; `hard_reset` and `set_state` both go through here, so
         there is exactly one place that puts this domain into a known state.
         """
-        backend = self.backend()
-        backend.reset(seed=seed)
-        if self.scene_bin_destination is not None:
-            region = BIN_RESET_REGION_BY_SIDE[self.scene_bin_destination]
-            backend.reset_cube_and_bin(bin_region=region.model_dump(mode="json"))
+        self.backend().reset(seed=seed)
         self._pickup_blocked = False
         state = self._observed_state(seed=seed, steps_taken=0)
         self._adopt(state=state)

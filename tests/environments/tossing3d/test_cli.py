@@ -179,14 +179,11 @@ def test_both_problems_draw_the_same_test_scene_seeds() -> None:
     assert len(set(drawn)) > 1
 
 
-def test_only_the_practice_problem_rebuilds_its_scenes_with_a_robot_side_bin() -> None:
-    """Practice never happens on the opposite side, including the scene every practice
-    task starts from (the initial one under `never`, each period's under `scheduled`).
-    The evaluation problem keeps the task's far-side bin, so test tasks are unchanged."""
-    from hitl_pmp.environments.tossing3d.sides import Tossing3DSide
-
+def test_the_practice_problem_is_configured_exactly_like_the_evaluation_one() -> None:
+    """No practice-only scene override: a practice scene starts from the task's own
+    bin placement (far side on the barrier layout), the same world evaluation uses."""
     args = _build_parser().parse_args([])
-    assert Tossing3DCli.build_practice_problem(args=args).env.scene_bin_destination is (
-        Tossing3DSide.ROBOT
+    assert (
+        Tossing3DCli.build_practice_problem(args=args).env.model_dump()
+        == Tossing3DCli.build_evaluation_problem(args=args).env.model_dump()
     )
-    assert Tossing3DCli.build_evaluation_problem(args=args).env.scene_bin_destination is None

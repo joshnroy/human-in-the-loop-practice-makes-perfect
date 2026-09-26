@@ -11,7 +11,7 @@ from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_succe
 
 
 @pytest.mark.parametrize("layout", list(Tossing3DLayout))
-@pytest.mark.parametrize("reset_index", [0, 1])
+@pytest.mark.parametrize("reset_index", [0, 1, 2, 3])
 @pytest.mark.parametrize("gripper", ["open", "holding", "closed_empty"])
 def test_reset_forecast_preserves_command_and_removes_grasp(*, layout, reset_index, gripper):
     env = Tossing3DEnvironment(layout=layout)
@@ -35,7 +35,7 @@ def test_reset_forecast_preserves_command_and_removes_grasp(*, layout, reset_ind
 
 
 @pytest.mark.parametrize("layout", list(Tossing3DLayout))
-@pytest.mark.parametrize("reset_index", [0, 1])
+@pytest.mark.parametrize("reset_index", [0, 1, 2, 3])
 def test_classical_plan_opens_gripper_after_resetting_a_held_cube(*, layout, reset_index):
     from hitl_pmp.environments.tossing3d.recovery_skills import ON_FLOOR
     from hitl_pmp.planning.fast_downward import FastDownwardPlanner
