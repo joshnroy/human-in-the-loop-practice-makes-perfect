@@ -119,7 +119,9 @@ def test_real_reset_still_updates_identical_cost_and_performance_filters(
 
 
 @pytest.mark.parametrize("gripper", ["HandEmpty", "ClosedEmpty"])
-def test_only_symbolic_self_loop_resets_are_omitted(*, gripper: str) -> None:
+def test_a_reset_that_changes_no_atom_is_still_offered(*, gripper: str) -> None:
+    """A reset re-randomizes the geometry even when no symbolic atom moves, so whether
+    that is worth its cost is the planner's decision, not a pruning rule's."""
     method = _method()
     model = method._pomdp_model  # noqa: SLF001
     ready = frozenset(
@@ -131,24 +133,34 @@ def test_only_symbolic_self_loop_resets_are_omitted(*, gripper: str) -> None:
             "RobotAtSide",
             "CubeAtSide",
             "BinAtSide",
-            # A ready cube is graspable; without these atoms the reset's
-            # GraspClear/PickupUnblocked add-effects make every destination a
-            # non-self-loop, which is those gates working, not this test's subject.
             "GraspClear",
             "PickupUnblocked",
         )
     )
-    actions = model.get_valid_actions(
-        environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
+    search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
+    self_loop = next(
+        reset
+        for reset in model.ground_skills
+        if reset.skill.name in RESET_SKILLS
+        and reset.objects[-2].name == "robot_side"
+        and reset.objects[-1].name == "opposite_side"
     )
-    resets = [action for action in actions if action.skill.name in RESET_SKILLS]
-    assert resets  # Moving the bin to the other side is not a self-loop.
-    assert all(reset.objects[-1].name == "robot_side" for reset in resets)
+    assert self_loop.preconditions <= ready
+    assert (
+        model.outcomes(environment_state=search_state, state=method.pomdp_state, action=self_loop)[
+            0
+        ][2]
+        == ready
+    )
+    actions = model.get_valid_actions(environment_state=search_state)
+    assert self_loop in actions
+    assert {reset.objects[-1].name for reset in actions if reset.skill.name in RESET_SKILLS} == {
+        "robot_side",
+        "opposite_side",
+    }
     assert {action.skill.name for action in actions if action.skill.name not in RESET_SKILLS} == {
         PICK_SKILL if gripper == "HandEmpty" else OPEN_GRIPPER_SKILL
     }
-    for reset_name in _offered_resets(method=method):
-        assert _reset(method=method, name=reset_name).preconditions <= ready
 
 
 @pytest.mark.parametrize("condition", ["unreachable", "in_bin", "holding"])
