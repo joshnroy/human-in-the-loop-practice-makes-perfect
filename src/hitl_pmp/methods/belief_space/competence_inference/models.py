@@ -6,15 +6,20 @@ learning-rate prior and transition carry no upper cap (`eta_max` is only the gri
 discretization range, whose top bin absorbs the tail mass), Model A's particle prior
 is the notebook's continuous sampler rather than the grid's finite support, the
 zero-new-example cycle transition applies the n=0 noise step rather than the
-identity, and the mode entering `beta_parameters` is clipped into [1e-3, 1 - 1e-3].
-Each of those was a port deviation this change removes.
+identity, the mode entering `beta_parameters` is clipped into [1e-3, 1 - 1e-3], and
+the grid discretizes a density the notebook's way: evaluated at the grid points and
+normalized (Model A's cycle table, Model B's prior), not integrated over bins. Each
+of those was a port deviation now removed. Model B's Gaussian transitions stay CDF bin
+masses, because that is what the notebook's `discretize_normal` computes.
 """
 
 from functools import lru_cache
 from typing import Literal
 
 import numpy as np
-from scipy.special import betainc, ndtr
+from scipy.special import ndtr
+from scipy.stats import beta as beta_distribution
+from scipy.stats import norm
 
 from .config import InferenceConfig
 
@@ -83,9 +88,8 @@ def bin_edges(*, axis: np.ndarray, lower: float, upper: float) -> np.ndarray:
 def curve_cycle_mass(*, config: InferenceConfig, training_examples: int) -> np.ndarray:
     phi = phi_support(config=config)
     alpha, beta = beta_parameters(phi=phi, training_examples=training_examples)
-    edges = np.linspace(0.0, 1.0, config.competence_bins + 1)
-    mass = np.diff(betainc(alpha[:, None], beta[:, None], edges[None, :]), axis=1)
-    mass = np.maximum(mass, 0.0)
+    competence = competence_axis(model="global_curve", config=config)
+    mass = beta_distribution.pdf(competence[None, :], alpha[:, None], beta[:, None])
     mass /= mass.sum(axis=1, keepdims=True)
     mass.setflags(write=False)
     return mass
@@ -114,14 +118,13 @@ def grid_prior(*, model: CompetenceModel, config: InferenceConfig) -> np.ndarray
         ).ravel()
     competence = competence_axis(model=model, config=config)
     rate = learning_rate_axis(config=config)
-    c_edges = bin_edges(axis=competence, lower=0.0, upper=1.0)
-    c_mass = np.diff(
-        betainc(config.initial_competence_alpha, config.initial_competence_beta, c_edges)
+    c_mass = beta_distribution.pdf(
+        competence, config.initial_competence_alpha, config.initial_competence_beta
     )
-    eta_edges = bin_edges(axis=rate, lower=0.0, upper=np.inf)
-    eta_mass = np.diff(2.0 * ndtr(eta_edges / config.initial_eta_sigma) - 1.0)
-    weights = (c_mass[:, None] * eta_mass[None, :]).ravel()
-    return weights / weights.sum()
+    c_mass /= c_mass.sum()
+    eta_mass = norm.pdf(rate, 0.0, config.initial_eta_sigma)
+    eta_mass /= eta_mass.sum()
+    return np.outer(c_mass, eta_mass).ravel()
 
 
 def particle_prior(
