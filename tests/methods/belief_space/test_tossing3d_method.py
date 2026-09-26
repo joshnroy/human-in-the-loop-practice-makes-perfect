@@ -36,10 +36,15 @@ from hitl_pmp.planning.grounding import SkillGrounder
 def _build(**kwargs: object) -> Tossing3DPomdpMethod:
     env = Tossing3DEnvironment(scene_bg=False)
     reset_cost = float(kwargs.pop("human_reset_practice_cost", 5.0))
+    offer_non_human_reset = bool(kwargs.pop("offer_non_human_reset", False))
     config = {"pomdp_search_depth": 2, **kwargs}
     return Tossing3DPomdpMethod(
         env=env,
-        skill_provider=Tossing3DSkillProvider(env=env, human_reset_practice_cost=reset_cost),
+        skill_provider=Tossing3DSkillProvider(
+            env=env,
+            human_reset_practice_cost=reset_cost,
+            offer_non_human_reset=offer_non_human_reset,
+        ),
         seed=0,
         **config,
     )
@@ -201,10 +206,10 @@ def test_action_value_diagnostics_distinguish_parameterized_reset_destinations()
 
 
 def test_the_search_model_grounds_every_reset_mechanism_for_both_destinations() -> None:
-    """The belief-space planner chooses the reset side itself: both the human and
-    the automatic reset are in its action set once per destination, and both
-    destinations are applicable from the same real state."""
-    method = _build()
+    """The belief-space planner chooses the reset side itself: every offered reset
+    mechanism is in its action set once per destination, and both destinations are
+    applicable from the same real state."""
+    method = _build(offer_non_human_reset=True)
     model = method._pomdp_model  # noqa: SLF001
     # The model grounds over every possible atom, so the robot-side variable is also
     # bound to the opposite side; those groundings are never applicable (RobotAtSide
@@ -384,8 +389,17 @@ def test_completed_human_reset_jointly_updates_performance_and_cost_without_trai
     assert method.pomdp_state.pending_examples.get(RESET_SKILL, 0) == 1
 
 
-def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
+def test_practice_offers_only_the_human_reset() -> None:
     method = _build()
+    assert [skill.name for skill in method.human_skills()] == [RESET_SKILL]
+    assert NON_HUMAN_RESET_SKILL not in method.pomdp_state.skill_beliefs
+    offered = {ground.skill.name for ground in method._pomdp_model.ground_skills}  # noqa: SLF001
+    assert RESET_SKILL in offered
+    assert not any("non_human_reset" in name for name in offered)
+
+
+def test_completed_non_human_reset_updates_only_its_own_joint_belief() -> None:
+    method = _build(offer_non_human_reset=True)
     reset_skill = next(
         skill for skill in method.human_skills() if skill.name == NON_HUMAN_RESET_SKILL
     )
@@ -461,7 +475,6 @@ def test_new_practice_session_resets_cost_without_forgetting_learning(*, tmp_pat
         "MoveToTossLocationAndToss (belief mean)",
         "OpenGripper (belief mean)",
         "ask_for_reset_cube_bin_only (belief mean)",
-        "non_human_reset_cube_bin_only (belief mean)",
     }
     assert decision["improvement_potentials"]
     stop_value = method.practice_action_values()["STOP"]
@@ -494,7 +507,7 @@ def test_end_cycle_logs_training_counts_without_learning_rate_observations(
 
 
 def test_duplicate_reset_has_an_independent_joint_particle_belief() -> None:
-    method = _build()
+    method = _build(offer_non_human_reset=True)
     human = method.pomdp_state.skill_beliefs[RESET_SKILL]
     automatic = method.pomdp_state.skill_beliefs[NON_HUMAN_RESET_SKILL]
 

@@ -57,6 +57,11 @@ class Tossing3DSkillProvider(SkillProvider):
     env: Tossing3DEnvironment
     human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
     non_human_reset_practice_cost: float = Field(default=5.0, ge=0.0, allow_inf_nan=False)
+    # Off by default: the automatic reset is the human reset relabelled -- it raises the
+    # same request, the same oracle executes it and it counts as a human intervention --
+    # so offering both leaves the planner choosing between two cost posteriors for one
+    # mechanism, which is noise rather than a decision.
+    offer_non_human_reset: bool = False
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
@@ -310,6 +315,8 @@ class Tossing3DSkillProvider(SkillProvider):
         return destination.name
 
     def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
+        if not self.offer_non_human_reset:
+            return self.human_cube_bin_reset_skills()
         return (*self.human_cube_bin_reset_skills(), *self.non_human_cube_bin_reset_skills())
 
 
