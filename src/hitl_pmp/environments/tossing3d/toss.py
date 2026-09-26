@@ -29,6 +29,7 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from .environment import Tossing3DEnvironment
 from .kinder_backend import KinderBackend
 from .toss_direction import (
+    InfeasibleStandoffBandError,
     NoFeasibleTossDirectionError,
     TossDirectionChoice,
     TossDirectionSelector,
@@ -47,6 +48,11 @@ TOSS_DIRECTION_ANNOTATION = "toss_direction_deg"
 # One key for every standoff no direction reaches, so the proposal log counts them
 # together; the per-direction reasons are the selector's, not the sampler's.
 NO_FEASIBLE_TOSS_DIRECTION_REJECTION = "no_feasible_toss_direction"
+
+# A far bin whose corner-aware standoff band is empty or not one interval: no toss is
+# available at that bin pose, so every proposal is rejected and the pool comes back
+# empty -- the signal the practice planner replans around.
+INFEASIBLE_STANDOFF_BAND_REJECTION = "infeasible_standoff_band"
 
 
 class Tossing3DToss:
@@ -67,11 +73,15 @@ class Tossing3DToss:
     def sample_params_at_state(
         *, rng: np.random.Generator, ground_skill: GroundSkill, state: State
     ) -> np.ndarray:
-        """The draw a decision uses: standoff over this bin's feasible band."""
-        return WideLongRangeTossProposal.sample(
-            rng=rng,
-            standoff_bounds=Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state),
-        )
+        """The draw a decision uses: standoff over this bin's feasible band. A bin with
+        no band still gets a draw, over the analytic far range, so the proposal is
+        rejected by `rejection_reason` rather than raised out of the sampler."""
+        try:
+            bounds = Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state)
+        except InfeasibleStandoffBandError:
+            bin_x = state.get(obj=ground_skill.objects[1], feature_name="x")
+            bounds = WideLongRangeTossProposal.far_standoff_bounds(bin_x=bin_x)
+        return WideLongRangeTossProposal.sample(rng=rng, standoff_bounds=bounds)
 
     @staticmethod
     def standoff_bounds(*, ground_skill: GroundSkill, state: State) -> tuple[float, float]:
@@ -103,11 +113,18 @@ class Tossing3DToss:
         return TossDirectionSelector.select_for_state(state=state, standoff=float(params[0]))
 
     @staticmethod
-    def rejection_reason(*, state: State, params: np.ndarray) -> str | None:
+    def rejection_reason(
+        *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> str | None:
         """A standoff with a plannable direction is accepted; one with none is rejected
         like any other proposal. The band keeps these rare -- they are a moved bin's
         gaps and planner refusals -- and a pose with no feasible toss at all empties
-        the pool, which the practice planner replans around."""
+        the pool, which the practice planner replans around. A far bin with no
+        feasible band is such a pose, so it rejects every proposal."""
+        try:
+            Tossing3DToss.standoff_bounds(ground_skill=ground_skill, state=state)
+        except InfeasibleStandoffBandError:
+            return INFEASIBLE_STANDOFF_BAND_REJECTION
         try:
             Tossing3DToss.choose_direction(state=state, params=params)
         except NoFeasibleTossDirectionError:

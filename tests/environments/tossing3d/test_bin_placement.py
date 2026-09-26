@@ -96,10 +96,11 @@ def test_a_bin_inside_the_robots_footprint_is_no_longer_placeable() -> None:
 
 
 def test_no_robot_side_toss_stand_leaves_the_block_without_a_free_placement() -> None:
-    """With practice resets robot-side only, the robot stands where a toss at a block
-    bin left it: `bin - d (cos, sin)(pi + direction)`. None of those stands, for any
-    corner bin, direction or standoff, covers the whole block. (A robot parked where a
-    far-side toss stood can, which is why practice must not reset to the far side.)"""
+    """After a toss at a block bin the robot stands at `bin - d (cos, sin)(pi +
+    direction)`. None of those stands, for any corner bin, direction or standoff, covers
+    the whole block. (A robot parked where a far-side toss stood can, which is why
+    `reset_cube_and_bin` moves a blocking robot clear first -- see
+    `test_either_reset_after_a_far_side_toss_stand_is_placeable`.)"""
     block = (-0.33, -1.9, 0.3, -1.3)
     for bx, by in (
         (block[0], block[1]),
@@ -342,7 +343,10 @@ def test_a_far_side_practice_reset_is_placeable_and_tossable(*, seed: int) -> No
         rng = np.random.default_rng(seed)
         for _ in range(50):
             params = Tossing3DToss.sample_params_at_state(rng=rng, ground_skill=toss, state=picked)
-            if Tossing3DToss.rejection_reason(state=picked, params=params) is None:
+            if (
+                Tossing3DToss.rejection_reason(ground_skill=toss, state=picked, params=params)
+                is None
+            ):
                 break
         else:
             pytest.fail("no far-band standoff had a plannable stand direction")
@@ -350,5 +354,106 @@ def test_a_far_side_practice_reset_is_placeable_and_tossable(*, seed: int) -> No
         env.take_action(action=Tossing3DToss.compute_action(params=params, state=picked))
         assert env.last_skill_error() is None, params
         assert sum(env.last_controller_steps()) > 0
+    finally:
+        env.close()
+
+
+# The robot pose logged when a 50-cycle run crashed at cycle 45: its footprint AABB was
+# (-0.363, -1.786, 0.411, -1.012), a 0.55 m square turned 45 degrees and centred inside
+# the robot-side block, so no bin centre in the block was clear of it.
+LOGGED_BLOCKING_POSE = (0.024, -1.399, float(np.pi / 4))
+# Where a far-side toss can leave the robot: west of a near-barrier far bin, facing
+# east, centred on the block (`test_no_robot_side_toss_stand_...`'s `far_stand`).
+FAR_TOSS_STAND = (0.0, -1.6, 0.0)
+
+
+def _robot_pose(*, env) -> tuple[float, float, float]:
+    """Read from the live simulator: `_park_robot` restores the backend directly, so
+    the environment's adopted state does not see the parked pose."""
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+
+    geometry = KinderBackend.toss_feasibility_geometry(snapshot=env.backend().snapshot())
+    return tuple(float(value) for value in geometry.robot_pose)
+
+
+def _assert_placed_clear(*, env, destination: str) -> None:
+    from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
+    from hitl_pmp.environments.tossing3d.sides import BIN_RESET_REGION_BY_SIDE, Tossing3DSide
+
+    region = BIN_RESET_REGION_BY_SIDE[Tossing3DSide(destination)].ranges[0]
+    geometry = KinderBackend.toss_feasibility_geometry(snapshot=env.backend().snapshot())
+    bx, by, _ = geometry.bin_pose
+    assert region[0] - 1e-3 <= bx <= region[2] + 1e-3
+    assert region[1] - 1e-3 <= by <= region[3] + 1e-3
+    robot = BinPlacementRules.aabb(
+        center=geometry.robot_pose[:2], size=geometry.robot_size, yaw=geometry.robot_pose[2]
+    )
+    BinPlacementRules.check(
+        bin_aabb=BinPlacementRules.aabb(center=(bx, by), size=(0.3, 0.3), yaw=geometry.bin_pose[2]),
+        robot_aabb=robot,
+        cube_spawn=SPAWN,
+        context=destination,
+    )
+
+
+@needs_kinder
+def test_a_reset_with_the_robot_standing_in_the_block_moves_the_robot_clear_first() -> None:
+    """The logged crash: the robot stood where it covered the whole robot-side block, so
+    `reset_cube_and_bin` found no clear bin centre and raised. A person resetting the
+    scene has the robot move out of the way first; the reset now sends the robot back to
+    its scene-start pose (clear of the block, measured) and then places the bin."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+
+    env = Tossing3DEnvironment()
+    try:
+        env.reset_to_seed(seed=2026092401)
+        start = _robot_pose(env=env)
+        _park_robot(env=env, pose=LOGGED_BLOCKING_POSE)
+        assert env.reset_movables(destination="robot_side")
+        _assert_placed_clear(env=env, destination="robot_side")
+        assert _robot_pose(env=env) == pytest.approx(start, abs=1e-3)
+        # The moved robot is a working robot, not a teleported ghost: it picks from there.
+        from hitl_pmp.environments.tossing3d.predicates import HOLDING
+
+        action = np.zeros(5, dtype=float)
+        action[0] = env.pick_cube_id
+        picked = env.take_action(action=action)
+        assert HOLDING.holds(picked, (env.robot, env.cube)), env.last_skill_error()
+    finally:
+        env.close()
+
+
+@needs_kinder
+@pytest.mark.parametrize("destination", ["robot_side", "opposite_side"])
+def test_either_reset_after_a_far_side_toss_stand_is_placeable(*, destination: str) -> None:
+    """The sequence reopened by letting practice reset far-side: a far-side reset, then
+    the robot standing where a far-side toss leaves it, then the planner asks for
+    either reset. Both must place the bin clear of the robot rather than raise."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+
+    env = Tossing3DEnvironment()
+    try:
+        env.reset_to_seed(seed=2026092403)
+        assert env.reset_movables(destination="opposite_side")
+        _park_robot(env=env, pose=FAR_TOSS_STAND)
+        assert env.reset_movables(destination=destination)
+        _assert_placed_clear(env=env, destination=destination)
+    finally:
+        env.close()
+
+
+@needs_kinder
+def test_a_reset_that_has_room_leaves_the_robot_where_it_stands() -> None:
+    """Moving the robot is a fallback for a genuinely blocked region, never a default:
+    a reset with a free placement leaves the robot exactly where it was."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+
+    env = Tossing3DEnvironment()
+    try:
+        env.reset_to_seed(seed=2026092401)
+        _park_robot(env=env, pose=ROBOT_POSES["north_stand"])
+        before = _robot_pose(env=env)
+        assert env.reset_movables(destination="robot_side")
+        assert _robot_pose(env=env) == pytest.approx(before, abs=1e-6)
     finally:
         env.close()

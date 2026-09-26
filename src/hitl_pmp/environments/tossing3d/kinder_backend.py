@@ -358,6 +358,11 @@ class KinderBackend(BaseModel):
     _env: Any = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
     _robot_name: str = PrivateAttr(default="")
+    # The robot's base pose right after the seeded scene reset: where a movables reset
+    # sends the robot when it stands on every clear bin placement (see
+    # `reset_cube_and_bin`). Measured clear of the robot-side block and the cube's
+    # spawn gap (`test_the_scene_start_and_spawn_strip_picks_never_empty_the_block`).
+    _start_robot_pose: tuple[float, float, float] | None = PrivateAttr(default=None)
     # Upstream's `Tossing3DStateAbstractor`: the five predicates' actual implementation.
     # Held here for the backend's whole lifetime rather than on a `State`, because
     # `Tossing3DEnvironment` deep-copies states and deep-copying this would clone the
@@ -491,6 +496,12 @@ class KinderBackend(BaseModel):
         observation, _ = self._env.reset(seed=seed)
         self._state = self._env.observation_space.devectorize(observation)
         self._robot_name = next(iter(self._state.get_objects(self.api().robot_type))).name
+        robot = self._state.get_object_from_name(self._robot_name)
+        self._start_robot_pose = (
+            float(self._state.get(robot, "pos_base_x")),
+            float(self._state.get(robot, "pos_base_y")),
+            float(self._state.get(robot, "pos_base_rot")),
+        )
         return self.observe()
 
     def close(self) -> None:
@@ -748,6 +759,13 @@ class KinderBackend(BaseModel):
         KINDER's sampler reserves everything but the robot, so the bin's centre
         ranges are first cut down by `BinPlacementRules` (robot footprint, cube spawn
         gap) and the placed bin is checked against the same rules afterwards.
+
+        When the robot stands where it leaves the region no clear bin centre at all
+        (a far-side toss stand, or a failed pick, can cover the whole robot-side
+        block), the robot first moves back to its scene-start pose, as it would be
+        asked to step aside for a person resetting the scene. Only then is a region
+        with still no clear placement an error. A reset with room leaves the robot
+        exactly where it is, and neither destination is treated differently.
         """
         object_centric = self._object_centric()
         config = object_centric.task_config
@@ -763,12 +781,28 @@ class KinderBackend(BaseModel):
             region = config["regions"][bin_region_name]
         selected = {}
         if region is not None:
-            selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
-                object_centric=object_centric,
-                region=region,
-                robot_aabb=robot_aabb,
-                cube_spawn=cube_spawn,
-            )
+            try:
+                selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
+                    object_centric=object_centric,
+                    region=region,
+                    robot_aabb=robot_aabb,
+                    cube_spawn=cube_spawn,
+                )
+            except BinPlacementViolationError as blocked:
+                logger.warning(
+                    "robot at %r blocks every bin placement; moving it to its scene-start "
+                    "pose %r before the reset (%s)",
+                    robot_aabb,
+                    self._start_robot_pose,
+                    blocked,
+                )
+                self._move_robot_to_start_pose()
+                selected[self.bin_name] = self._bin_region_clear_of_robot_and_cube(
+                    object_centric=object_centric,
+                    region=region,
+                    robot_aabb=self._robot_aabb(snapshot=self._require_state()),
+                    cube_spawn=cube_spawn,
+                )
         regions, overrides = self._movables_reset_regions(
             object_centric=object_centric,
             object_names=(self.cube_name, self.bin_name),
@@ -785,6 +819,18 @@ class KinderBackend(BaseModel):
             context=f"after reset_cube_and_bin (bin_region={bin_region!r})",
         )
         return self.observe()
+
+    def _move_robot_to_start_pose(self) -> None:
+        """Put the robot base back at its scene-start pose, at rest. The arm keeps its
+        configuration; the cube and bin are about to be re-placed by the caller."""
+        if self._start_robot_pose is None:
+            raise RuntimeError("no scene-start robot pose recorded; reset the scene first")
+        snapshot = self.snapshot()
+        robot = snapshot.get_object_from_name(self._robot_name)
+        for axis, value in zip(("x", "y", "rot"), self._start_robot_pose, strict=True):
+            snapshot.set(robot, f"pos_base_{axis}", value)
+            snapshot.set(robot, f"vel_base_{axis}", 0.0)
+        self.restore(snapshot=snapshot)
 
     def _bin_region_clear_of_robot_and_cube(
         self,
