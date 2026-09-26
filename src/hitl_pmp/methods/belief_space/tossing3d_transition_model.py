@@ -92,10 +92,15 @@ def apply_success_effects(
     ],
 ) -> frozenset[GroundAtom]:
     add_effects, delete_effects, ignore_effects = effects[ground_skill]
+    # An ignored predicate the operator re-asserts is a functional update: its old
+    # atoms are replaced by the added ones (the reset's sides, the toss's CubeAtSide).
+    # One it does not re-assert is merely unknown -- the toss's GraspClear, which held
+    # after 233/430 real successes -- and a deterministic forecast leaves it as it was
+    # rather than claiming it false, which would make every imagined success end in a
+    # reset.
+    replaced = {atom.predicate for atom in add_effects} & set(ignore_effects)
     kept = {
-        atom
-        for atom in true_atoms
-        if atom.predicate not in ignore_effects and atom not in delete_effects
+        atom for atom in true_atoms if atom.predicate not in replaced and atom not in delete_effects
     }
     conditional_additions = {
         atom
