@@ -343,7 +343,10 @@ def test_a_far_side_practice_reset_is_placeable_and_tossable(*, seed: int) -> No
         rng = np.random.default_rng(seed)
         for _ in range(50):
             params = Tossing3DToss.sample_params_at_state(rng=rng, ground_skill=toss, state=picked)
-            if Tossing3DToss.rejection_reason(state=picked, params=params) is None:
+            if (
+                Tossing3DToss.rejection_reason(ground_skill=toss, state=picked, params=params)
+                is None
+            ):
                 break
         else:
             pytest.fail("no far-band standoff had a plannable stand direction")

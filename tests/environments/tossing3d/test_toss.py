@@ -363,3 +363,47 @@ def test_random_skills_draws_toss_parameters_at_the_decision_state(*, fixed_dire
         labeled, ground_skill = method.choose_ground_skill(state=scene)
         if ground_skill is not None and ground_skill.skill.param_dim == 3:
             assert float(labeled.action[1]) >= 3.3 - FAR_STAND_X_LIMIT_M
+
+
+def test_a_far_bin_with_no_feasible_standoff_band_empties_the_pool_instead_of_raising(
+    *, monkeypatch: pytest.MonkeyPatch, fixed_direction
+) -> None:
+    """A far bin whose corner-aware band is empty (or not one interval) has no toss
+    the robot can take there. With practice scenes and resets now far-side, that must
+    be what the planner replans around -- every proposal rejected, the pool empty,
+    `NoFeasibleParametersError` -- exactly like a standoff with no stand direction,
+    not an uncaught `InfeasibleStandoffBandError` that ends the run."""
+    from hitl_pmp.core.method.method import NoFeasibleParametersError
+    from hitl_pmp.environments.tossing3d.toss import INFEASIBLE_STANDOFF_BAND_REJECTION
+    from hitl_pmp.environments.tossing3d.toss_direction import InfeasibleStandoffBandError
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    fixed_direction(direction_deg=0)
+    original = Tossing3DToss.standoff_bounds
+
+    def empty_band(*, ground_skill, state):
+        del ground_skill, state
+        raise InfeasibleStandoffBandError("far standoff band is empty: stubbed")
+
+    monkeypatch.setattr(Tossing3DToss, "standoff_bounds", staticmethod(empty_band))
+    env = Tossing3DEnvironment()
+    provider = Tossing3DSkillProvider(env=env)
+    toss = _toss(env=env)
+    scene = state(env=env, base_x=-1.0, base_rot=0.0, bin_x=3.2)
+    params = provider.sample_params_at_state(
+        ground_skill=toss, rng=np.random.default_rng(0), state=scene
+    )
+    assert params.shape == (3,)
+    assert (
+        provider.parameter_rejection_reason(ground_skill=toss, params=params, state=scene)
+        == INFEASIBLE_STANDOFF_BAND_REJECTION
+    )
+    method = EesMethod(env=env, skill_provider=provider, seed=0)
+    with pytest.raises(NoFeasibleParametersError):
+        method.sample_parameter_candidates(ground_skill=toss, state=scene, explore=True)
+
+    # A feasible band leaves acceptance to direction selection, as before.
+    monkeypatch.setattr(Tossing3DToss, "standoff_bounds", original)
+    assert provider.parameter_rejection_reason(ground_skill=toss, params=params, state=scene) is (
+        None
+    )

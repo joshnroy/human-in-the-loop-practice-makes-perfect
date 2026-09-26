@@ -155,7 +155,7 @@ class Tossing3DSkillProvider(SkillProvider):
         """Rejects a standoff no direction can plan, rather than raising."""
         if ground_skill.skill != Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS:
             return None
-        return Tossing3DToss.rejection_reason(state=state, params=params)
+        return Tossing3DToss.rejection_reason(ground_skill=ground_skill, state=state, params=params)
 
     def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
