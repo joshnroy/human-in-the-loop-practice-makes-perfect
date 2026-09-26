@@ -260,10 +260,13 @@ class Tossing3DPomdpMethod(EesMethod):
             summed_cost=0.0,
             estimated_costs=self.practice_skill_costs(),
         )
-        # The base class clears the starved-pool registry per session; mirror that
-        # in the search model's mask so the new session's planner starts unmasked.
-        self._pomdp_model = self._pomdp_model.model_copy(update={"starved_pools": ()})
         return super().get_practice_policy(task=task)
+
+    def clear_starved_parameter_pools(self) -> None:
+        """Mirror the base registry's clearing in the search model's action mask, so a
+        new session or a movables reset leaves the planner unmasked too."""
+        super().clear_starved_parameter_pools()
+        self._pomdp_model = self._pomdp_model.model_copy(update={"starved_pools": ()})
 
     def record_starved_parameter_pool(
         self, *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom]

@@ -642,6 +642,16 @@ class EesMethod(Method):
         state may make the same action feasible."""
         self._starved_pools.setdefault(true_atoms, set()).add(ground_skill)
 
+    def clear_starved_parameter_pools(self) -> None:
+        """Forget every starvation: the geometry they were evidence about has moved."""
+        self._starved_pools.clear()
+
+    def observe_help_granted(self, *, state: State) -> None:
+        """A movables reset re-placed the cube and bin, so the starved pools recorded
+        at the old placement no longer describe the scene."""
+        del state
+        self.clear_starved_parameter_pools()
+
     def starved_ground_skills(self, *, true_atoms: frozenset[GroundAtom]) -> frozenset[GroundSkill]:
         return frozenset(self._starved_pools.get(true_atoms, set()))
 
@@ -926,7 +936,7 @@ class EesMethod(Method):
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
         # Starvation is per session: a new period re-randomizes movable geometry,
         # so last session's infeasible pools are no longer evidence.
-        self._starved_pools.clear()
+        self.clear_starved_parameter_pools()
         episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
         self._practice_episode = episode
         return lambda state: episode.step(state=state)
