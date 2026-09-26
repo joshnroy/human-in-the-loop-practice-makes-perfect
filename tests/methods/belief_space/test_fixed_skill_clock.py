@@ -81,7 +81,7 @@ def test_fixed_controller_grid_belief_matches_the_notebook(
     *, notebook: dict[str, Any], skill: str
 ) -> None:
     cycles = notebook["DATA"][skill][0]
-    expected = _notebook_run(notebook=notebook, model="global_curve", cycles=cycles, patched=True)
+    expected = _notebook_run(notebook=notebook, model="global_curve", cycles=cycles)
     method = _method()
     pick = _ground(method=method, name=PICK_SKILL)
     filtered = []

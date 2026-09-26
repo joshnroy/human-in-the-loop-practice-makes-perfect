@@ -73,14 +73,18 @@ def test_particle_and_grid_priors_and_sf_posteriors_agree() -> None:
     """Model B only: the two engines share one prior there. Model A's engines now
     deliberately differ -- the grid is uniform over the constrained phi atoms
     (E[phi0] = 1/3) while the particle prior is the notebook's continuous sampler
-    (phi0 uniform, E[phi0] = 1/2) -- which the divergence test below pins."""
+    (phi0 uniform, E[phi0] = 1/2) -- which the divergence test below pins.
+
+    The predictive tolerances are the notebook's own grid-versus-sampler gap: its grid
+    evaluates the Beta(2, 1) and half-normal densities at grid points that include the
+    endpoints, so the grid prior's competence mean is 0.681 rather than 2/3."""
     model: CompetenceModel = "local_trend"
     config = InferenceConfig()
     particle = _belief(model=model, engine="particle", count=50000, config=config)
     grid = _belief(model=model, config=config)
     for observations, training in [([True, False, True], 3), ([False, True, True], 4), ([True], 0)]:
-        assert particle.mean_competence() == pytest.approx(grid.mean_competence(), abs=0.012)
-        assert particle.mean_learning_rate() == pytest.approx(grid.mean_learning_rate(), abs=0.003)
+        assert particle.mean_competence() == pytest.approx(grid.mean_competence(), abs=0.02)
+        assert particle.mean_learning_rate() == pytest.approx(grid.mean_learning_rate(), abs=0.005)
         for success in observations:
             particle = particle.condition_outcome(success=success)
             grid = grid.condition_outcome(success=success)
@@ -129,19 +133,18 @@ def test_local_grid_includes_clipped_boundary_mass_and_stochastic_rows() -> None
         assert eta_mass.sum(axis=-1) == pytest.approx(np.ones(16))
 
 
-def test_local_grid_prior_integrates_beta_and_halfnormal_with_top_bin_tail() -> None:
+def test_local_grid_prior_evaluates_beta_and_halfnormal_densities_at_grid_points() -> None:
+    """The notebook's `grid_initial`: pdfs at the grid points, each normalized."""
     config = InferenceConfig(competence_bins=3, learning_rate_bins=3, eta_max=0.1)
     _, weights = _belief(config=config).arrays()
     joint = weights.reshape(3, 3)
-    assert joint.sum(axis=1) == pytest.approx([0.25**2, 0.75**2 - 0.25**2, 1 - 0.75**2])
-    assert joint.sum(axis=0) == pytest.approx([
-        2 * ndtr(0.025 / 0.05) - 1,
-        2 * (ndtr(0.075 / 0.05) - ndtr(0.025 / 0.05)),
-        2 * (1 - ndtr(0.075 / 0.05)),
-    ])
-    # The grid's top bin absorbs the half-normal tail beyond eta_max (the third
-    # weight above integrates to +inf); the particle prior is untruncated and is
-    # pinned in the notebook-exact block below.
+    # Beta(2, 1) has density 2c, evaluated at c = 0, 0.5, 1.
+    assert joint.sum(axis=1) == pytest.approx([0.0, 1 / 3, 2 / 3])
+    # Half-normal(0.05) at eta = 0, 0.05, 0.1: proportional to exp(-(eta / 0.05)^2 / 2).
+    halfnormal = np.exp(-0.5 * np.array([0.0, 1.0, 2.0]) ** 2)
+    assert joint.sum(axis=0) == pytest.approx(halfnormal / halfnormal.sum())
+    assert joint == pytest.approx(np.outer(joint.sum(axis=1), joint.sum(axis=0)))
+    # The particle prior is untruncated and is pinned in the notebook-exact block below.
     particles = _belief(engine="particle", count=20000, config=config)
     values, _ = particles.arrays()
     assert np.all(values[:, 1] != config.eta_max) or values[:, 1].max() > config.eta_max
