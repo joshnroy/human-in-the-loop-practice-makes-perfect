@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="utf-8"><title>exp08 epsilon x budget</title>
+<style>
+:root{--bg:#fff;--fg:#111;--mut:#666;--line:#ddd}
+@media (prefers-color-scheme: dark){:root{--bg:#111;--fg:#eee;--mut:#aaa;--line:#333}}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 system-ui,sans-serif;max-width:1300px;margin:auto;padding:16px}
+img{max-width:100%;background:#fff} table{border-collapse:collapse;font-size:12px;display:block;overflow-x:auto}
+td,th{border:1px solid var(--line);padding:3px 6px;text-align:left} .m{color:var(--mut)}
+</style><style>.nc{color:var(--muted,#666)} .card.nc{opacity:.65} .card.nc code{font-size:.75rem;overflow-wrap:anywhere} .snap{background:#fff4d6;color:#4a3b00;border:1px solid #e8d48a;border-radius:8px;padding:6px 10px;margin:8px 0;font-size:.9rem}</style></head><body><p class="snap"><a href="index.html">← Experiment log (committed copy)</a>. Committed snapshot of a live sub-page, taken 2026-09-27 10:30; files that were not committed are marked “not committed”.</p>
+<h1>exp08: Tossing3D exploration epsilon x practice budget</h1>
+<p class="m">Code d7b7ba30 (PR #368 on #367), kindergarden 6a42988, kinder-baselines 427ad6c. Model A (global_curve), learning-rate decay 0.9934366015836147 (inherited from the base sweep), grid engine,
+lambda=0, evidence non_epsilon, seed 0 only (n=1 per arm): <b>no inference is supported</b>; these are single trajectories.
+Colour encodes epsilon (not the project's arm-role colour, since every arm has the same mechanism); linestyle encodes budget: solid 10 cycles x 20 actions, dashed 30 cycles x 20, dotted 10 cycles x 100.
+With n=1 there are no faint per-seed traces to draw: each line is the seed.</p>
+<h2>Where epsilon is actually exercised</h2><p>Before the first practice success the toss classifier is one-class, every draw takes the uninformative branch, and the epsilon coin is never flipped, so all 20-action arms share one trajectory through cycle 4 (checked: sampler draws identical up to cycle 5). eps=0.1 and eps=0 then stay identical through cycle 8, because eps=0.1's coin first fires in cycle 9.</p><ul><li>eps0.5-c10: first practice success in cycle 4; epsilon_random draws in later cycles 20/43 (successes 4/20), cycles [5, 6, 7, 8, 9]</li><li>eps0.25-c10: first practice success in cycle 4; epsilon_random draws in later cycles 7/42 (successes 0/7), cycles [5, 7, 8, 9]</li><li>eps0.1-c10: first practice success in cycle 4; epsilon_random draws in later cycles 3/43 (successes 0/3), cycles [9]</li><li>eps0.0-c10: first practice success in cycle 4; epsilon_random draws in later cycles 0/43 (successes 0/0), cycles []</li><li>eps0.5-c30: first practice success in cycle 4; epsilon_random draws in later cycles 99/211 (successes 12/99), cycles [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]</li><li>eps0.3-c10-s100: first practice success in cycle 0; epsilon_random draws in later cycles 103/385 (successes 6/103), cycles [1, 2, 3, 4, 5, 6, 7, 8, 9]</li></ul>
+<h2>Eval</h2><img src="../2026-09-25-tossing3d-exp08-eval-curves.png">
+<h2>Toss competence: estimated vs empirical</h2><span class="nc">[img not committed: <code>competence_and_informed_rate.png</code>]</span>
+<h2>Toss learning rate: estimated vs empirical vs theoretical max</h2><span class="nc">[img not committed: <code>learning_rate.png</code>]</span>
+<table><tr><th>arm</th><th>status</th><th>eval per checkpoint (of 10)</th><th>final</th><th>eval @10 cycles</th><th>AUC ckpt 0-10</th><th>AUC all</th><th>first practice success cycle</th><th>informed</th><th>epsilon_random</th><th>uninformative</th><th>median landing err, final ckpt (m)</th></tr><tr><td>eps0.5-c10</td><td>done</td><td>0 1 0 2 0 0 7 3 5 5 5</td><td>5/10</td><td>5/10</td><td>28/110</td><td>28/110</td><td>4</td><td>15/23</td><td>4/20</td><td>2/47</td><td>0.056</td></tr><tr><td>eps0.25-c10</td><td>done</td><td>0 1 0 2 0 0 5 4 3 5 5</td><td>5/10</td><td>5/10</td><td>25/110</td><td>25/110</td><td>4</td><td>13/35</td><td>0/7</td><td>2/47</td><td>0.061</td></tr><tr><td>eps0.1-c10</td><td>done</td><td>0 1 0 2 0 0 7 1 1 5 4</td><td>4/10</td><td>4/10</td><td>21/110</td><td>21/110</td><td>4</td><td>18/40</td><td>0/3</td><td>2/47</td><td>-0.253</td></tr><tr><td>eps0.0-c10</td><td>done</td><td>0 1 0 2 0 0 7 1 1 5 4</td><td>4/10</td><td>4/10</td><td>21/110</td><td>21/110</td><td>4</td><td>20/43</td><td>0/0</td><td>2/47</td><td>-0.254</td></tr><tr><td>eps0.5-c30</td><td>done</td><td>0 1 0 2 0 0 7 3 5 5 5 4 4 9 5 7 6 9 7 10 6 7 7 9 9 9 9 5 6 9 8</td><td>8/10</td><td>5/10</td><td>28/110</td><td>173/310</td><td>4</td><td>90/112</td><td>12/99</td><td>2/47</td><td>0.071</td></tr><tr><td>eps0.3-c10-s100</td><td>done</td><td>0 5 7 5 9 9 6 8 7 9 6</td><td>6/10</td><td>6/10</td><td>71/110</td><td>71/110</td><td>0</td><td>193/282</td><td>6/103</td><td>3/47</td><td>-0.002</td></tr></table>
+<h2>Determinism (30-cycle run replays the 10-cycle run's first 10 cycles)</h2><pre>{
+ "eps0.5": {
+  "evals": true,
+  "sampler_draws": [
+   true,
+   90,
+   90
+  ],
+  "episode_traces": [
+   true,
+   384,
+   384
+  ],
+  "evals_prefix_equal": [
+   true,
+   11
+  ],
+  "first_diff": null
+ }
+}</pre>
+<h2>Practice tosses by consultation</h2><img src="../2026-09-25-tossing3d-exp08-practice-by-consultation.png">
+<h2>Eval landing error</h2><span class="nc">[img not committed: <code>landing_error.png</code>]</span>
+<h2>Videos</h2><ul><li><span class="nc" title="not committed: eps0.0-c10-seed0-final-eval.mp4">eps0.0-c10-seed0-final-eval.mp4</span></li><li><span class="nc" title="not committed: eps0.5-c10-seed0-final-eval.mp4">eps0.5-c10-seed0-final-eval.mp4</span></li></ul>
+</body></html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EXP-08a — Exploration ε — 0.5 vs 0.25 vs 0.1 vs 0 at 10 cycles</title>
+<style>
+table.mini { border-collapse:collapse; } table.mini td { padding:2px 10px 2px 0; border:none; vertical-align:top; } .overview ul { margin:0; padding-left:18px; } .overview li { margin:2px 0; }
+:root { --bg:#f6f7f9; --card:#fff; --text:#1b1e24; --muted:#5d6472; --border:#dde1e7; --accent:#0072B2; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#12141a; --card:#1c1f28; --text:#e8eaf0; --muted:#9aa0b0; --border:#2a2e3a; --accent:#56B4E9; } }
+:root[data-theme="dark"] { --bg:#12141a; --card:#1c1f28; --text:#e8eaf0; --muted:#9aa0b0; --border:#2a2e3a; --accent:#56B4E9; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,sans-serif; }
+header { padding:20px 16px 8px; max-width:1400px; margin:auto; }
+h1 { margin:0; font-size:1.5rem; } .sub { color:var(--muted); margin:4px 0 0; }
+nav { position:sticky; top:0; z-index:5; background:var(--bg); border-bottom:1px solid var(--border);
+       display:flex; gap:6px; overflow-x:auto; padding:8px 16px; }
+nav a { white-space:nowrap; color:var(--text); text-decoration:none; padding:5px 10px; border:1px solid var(--border);
+         border-radius:999px; font-size:.85rem; background:var(--card); }
+nav a:hover { border-color:var(--accent); color:var(--accent); }
+main { max-width:1400px; margin:auto; padding:0 16px 48px; }
+section { scroll-margin-top:12px; padding-top:18px; }
+h2 { font-size:1.25rem; margin:0; } h3 { font-size:1.02rem; margin:10px 0 2px; }
+.exp { margin-top:34px; scroll-margin-top:12px; }
+.sep { border-top:3px solid var(--accent); padding-top:10px; display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; }
+.tag { background:var(--accent); color:#fff; font-weight:700; font-size:.8rem; padding:2px 8px; border-radius:6px; }
+.date { color:var(--muted); font-size:.9rem; }
+.meta { border-collapse:collapse; margin:8px 0 4px; max-width:1100px; font-size:.9rem; }
+.meta th { text-align:left; vertical-align:top; color:var(--muted); font-weight:600; padding:3px 14px 3px 0; white-space:nowrap; }
+.meta td { padding:3px 0; }
+.overview { background:var(--card); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:10px; padding:12px 16px; margin-top:16px; }
+.cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr)); gap:18px; }
+.overview ol { margin:4px 0 0; padding-left:20px; font-size:.9rem; } .overview li { margin:3px 0; }
+.empty { color:var(--muted); font-style:italic; padding:8px 0; } .blurb { color:var(--muted); margin:0 0 10px; max-width:980px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr)); gap:12px; }
+.card { display:flex; flex-direction:column; background:var(--card); border:1px solid var(--border); border-radius:10px;
+         overflow:hidden; text-decoration:none; color:var(--text); }
+.card:hover { border-color:var(--accent); }
+.card img, .card video { width:100%; aspect-ratio:16/9; object-fit:contain; background:#fff; display:block; }
+.card video { background:#000; }
+.page { aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; font-size:1.3rem; color:var(--accent);
+         background:linear-gradient(135deg,var(--card),var(--bg)); }
+.cap { padding:8px 10px; font-size:.88rem; }
+ul.dec { margin:0; padding-left:18px; } ul.dec li { margin:2px 0; }
+a.title { color:var(--text); text-decoration:none; } a.title:hover { color:var(--accent); text-decoration:underline; } .more { margin:4px 0 0; font-size:.9rem; } .more a { color:var(--accent); } header .sep h1 { font-size:1.35rem; }
+.pending .page { color:var(--muted); } .pending .page::after { content:" — still rendering"; font-size:.85rem; }
+@media (max-width:640px) { .meta, .meta > tbody, .meta tr, .meta th, .meta td { display:block; } .meta th { white-space:normal; padding:8px 0 0; }
+  .overview { padding:10px; } .overview td { overflow-wrap:anywhere; } }
+body { overflow-wrap:break-word; }
+</style><style>.nc{color:var(--muted,#666)} .card.nc{opacity:.65} .card.nc code{font-size:.75rem;overflow-wrap:anywhere} .snap{background:#fff4d6;color:#4a3b00;border:1px solid #e8d48a;border-radius:8px;padding:6px 10px;margin:8px 0;font-size:.9rem}</style></head><body>
+<header><p class="snap">Committed snapshot of the live Tossing3D experiment log, taken 2026-09-27 10:30. This copy covers EXP-08a to EXP-12 only. Files that were not committed with it are shown as plain text, marked “not committed”.</p><p class="sub"><a href="index.html">← Experiment log</a></p><div class="sep"><span class="tag">EXP-08a</span><span class="date">2026-09-25</span><h1>Exploration ε — 0.5 vs 0.25 vs 0.1 vs 0 at 10 cycles</h1></div></header>
+<main><article class="exp"><table class="meta"><tr><th>Practice side</th><td>Robot side only — FORCED by code, not chosen by the planner. From #366 (first commit 57196f0a, 2026-09-25 00:31; stack commits 47c30231 / fe73dc1c / 8bb9a337) practice resets could only put the bin on the robot side and every practice scene was rebuilt with the bin on the robot side. Josh reversed this on 2026-09-25 ~21:40 (the planner must choose); results here are conditional on forced same-side practice.</td></tr><tr><th>Question</th><td>Is ε = 0.5 (the paper&#x27;s fixed EES value, never annealed) too high for our wide proposal, where only ~1 in 10 random throws score?</td></tr><tr><th>Hypothesis</th><td>Pre-registered. Lowering ε gives the classifier more successes per cycle and so improves eval, best around ε = 0.1–0.25; ε = 0 risks locking into its own biases (e.g. under-throwing). Competing null: no eval change, because eval already uses the classifier&#x27;s pick (the surrogate replay predicted ~0).</td></tr><tr><th>Results TL;DR</th><td><b>No ε effect (one seed, no inference): final 5, 5, 4, 4 of 10 for ε = 0.5, 0.25, 0.1, 0. ε does fire (0.5: 20 random throws, 4 scored; 0.25: 7, 0 scored; 0.1: 3, 0 scored), but random throws score 0/30 to 4/20 while the classifier&#x27;s picks score 15/23 to 20/43, so ε mostly trades good throws for bad ones. All four arms are identical until the first success (cycle 5); ε = 0.1 and ε = 0 give the same eval every cycle despite ε = 0.1&#x27;s three random throws.</b></td></tr><tr><th>Code note</th><td>Launched on d7b7ba30, before EXP-07d&#x27;s change (pick/open/reset counts stay at 0). EXP-07d found that makes essentially no behavioural difference.</td></tr><tr><th>Arms</th><td>ε ∈ {0.5, 0.25, 0.1, 0}, λ = 0, 20 actions × 10 cycles, seed 0, Model A + grid, notebook-matched code, evidence non-ε. One seed per arm: raw numbers only, no inference.</td></tr><tr><th>Status</th><td>Done.</td></tr></table><section id="exp08a-timelines"><h3>Practice timelines — which skill was chosen at each action of each cycle</h3><p class="blurb">Solid = success, faded = failure, ▼ = ε-random toss; the right column gives the cycle&#x27;s toss count and the eval after it.</p><div class="grid"><a class="card" href="../2026-09-25-tossing3d-exp08a-timeline-eps0.5-c10.png"><img loading="lazy" src="../2026-09-25-tossing3d-exp08a-timeline-eps0.5-c10.png" alt="Practice timeline: eps0.5-c10"><span class="cap">Practice timeline: eps0.5-c10</span></a><div class="card nc"><div class="page">not committed</div><span class="cap">Practice timeline: eps0.25-c10<br><code>timelines-exp08-11/eps0.25-c10.png</code></span></div><div class="card nc"><div class="page">not committed</div><span class="cap">Practice timeline: eps0.1-c10<br><code>timelines-exp08-11/eps0.1-c10.png</code></span></div><div class="card nc"><div class="page">not committed</div><span class="cap">Practice timeline: eps0.0-c10<br><code>timelines-exp08-11/eps0.0-c10.png</code></span></div></div></section><section id="exp08a-results"><h3>Results</h3><p class="blurb">All runs finished; figures for every EXP-08 arm are on the shared EXP-08 page.</p><div class="grid"><a class="card" href="exp08-eps-budget.html"><div class="page">page ↗</div><span class="cap">EXP-08 figures and videos (ε arms)</span></a></div></section><section id="committed"><h3>Committed with this log</h3><p class="blurb">The figures and clips from this experiment that are committed to the repository (PNGs downscaled to ≤ 300 KB).</p><div class="grid"><a class="card" href="../2026-09-25-tossing3d-exp08-eval-curves.png"><img loading="lazy" src="../2026-09-25-tossing3d-exp08-eval-curves.png" alt="EXP-08 eval per cycle, every ε / budget arm (Model A + grid, seed 0)"><span class="cap">EXP-08 eval per cycle, every ε / budget arm (Model A + grid, seed 0)</span></a><a class="card" href="../2026-09-25-tossing3d-exp08-practice-by-consultation.png"><img loading="lazy" src="../2026-09-25-tossing3d-exp08-practice-by-consultation.png" alt="EXP-08 practice tosses by how the throw was chosen"><span class="cap">EXP-08 practice tosses by how the throw was chosen</span></a><a class="card" href="../2026-09-25-tossing3d-exp08a-timeline-eps0.5-c10.png"><img loading="lazy" src="../2026-09-25-tossing3d-exp08a-timeline-eps0.5-c10.png" alt="EXP-08a practice timeline, ε = 0.5, 10 cycles"><span class="cap">EXP-08a practice timeline, ε = 0.5, 10 cycles</span></a></div></section></article></main>
+<script>
+document.querySelectorAll('[data-check]').forEach(a => {
+  fetch(a.getAttribute('href'), {method:'HEAD'}).then(r => { if (!r.ok) a.classList.add('pending'); })
+    .catch(() => a.classList.add('pending'));
+});
+document.querySelectorAll('.card video').forEach(v => v.addEventListener('click', e => e.preventDefault()));
+</script></body></html>
