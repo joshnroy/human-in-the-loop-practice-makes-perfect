@@ -210,6 +210,37 @@ def test_the_live_scoring_window_lies_inside_the_bins_live_footprint(*, seed: in
     assert _is_contained(margins=margins), f"live scored window not contained: {margins}"
 
 
+def test_the_shipped_bin_is_as_stiff_as_the_barrier() -> None:
+    """MuJoCo's default soft contact let a fast-landing cube sink past the bin floor's
+    mid-plane, flip the contact normal and end up *under* the bin. The pinned KINDER gives
+    `bin_0` the barrier's solref/solimp; a pin that drops them brings the artefact back.
+    """
+    config = _installed_task_json()
+    bin_options = config["objects"]["bin"]["bin_0"]
+    barrier_options = config["fixtures"]["fixedcuboid"]["cuboid_barrier"]
+    assert bin_options.get("solref") == barrier_options["solref"]
+    assert bin_options.get("solimp") == barrier_options["solimp"]
+
+
+def test_every_live_bin_geom_carries_the_stiff_contact() -> None:
+    import mujoco
+
+    env = _env()
+    try:
+        env.reset_to_seed(seed=CANONICAL_SEED)
+        model = env.backend()._object_centric()._robot_env.sim.model.mj_model  # noqa: SLF001
+        bin_body = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "bin_0")
+        geoms = [g for g in range(model.ngeom) if model.geom_bodyid[g] == bin_body]
+        assert len(geoms) == 5
+        np.testing.assert_allclose(model.geom_solref[geoms], [[0.001, 1.0]] * 5)
+        np.testing.assert_allclose(model.geom_solimp[geoms, :3], [[0.99, 0.99, 0.001]] * 5)
+        # Priority 1 makes the bin's parameters govern its contacts rather than being
+        # averaged with the cube's soft defaults.
+        assert (model.geom_priority[geoms] == 1).all()
+    finally:
+        env.close()
+
+
 def test_the_goal_regions_live_bbox_moves_with_the_bins_own_position() -> None:
     """Regression test for the upstream `1183de7`-style desync: a scene edit (there, the
     bin's init region; here, moving the bin itself) must move the *scored* box along with
