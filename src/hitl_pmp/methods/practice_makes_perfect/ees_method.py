@@ -224,8 +224,9 @@ class EesMethod(Method):
     # domain's proposal, and is NOT flagged as exploration -- predicators returns the
     # random option with indicator False -- so its outcome updates competence and
     # becomes sampler training data. Nothing initiable ends the session, as before.
-    # Triggered only from practice selection: this port's goal phase falls through to
-    # practice on a planning failure, where predicators would go random there too.
+    # A failed goal-phase plan triggers it too, as in predicators, whose for...else
+    # covers the assigned-task goal as well -- see `goal_failure_enters_random_mode`,
+    # which a subclass can decline.
     reproduce_predicators_random_when_stranded: bool = False
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
@@ -1033,6 +1034,11 @@ class EesMethod(Method):
         `goal_pursuit_init_cycles`."""
         return period < self.goal_pursuit_init_cycles or period % self.goal_pursuit_interval == 0
 
+    def goal_failure_enters_random_mode(self) -> bool:
+        """Whether a goal-phase plan that fails switches the episode to random mode
+        (predicators) rather than falling through to practice selection."""
+        return self.reproduce_predicators_random_when_stranded
+
     def observe_environment_reset(self, *, state: State) -> None:
         """Score the in-flight skill against the state the harness is about to
         discard, instead of against the initial state it is about to be reset to.
@@ -1591,6 +1597,9 @@ class _EesEpisode:
                 if plan:
                     return plan
                 self._goal_phase_done = True
+                if self._practicing and method.goal_failure_enters_random_mode():
+                    logger.debug("_EesEpisode: no plan to the task goal -- random mode")
+                    self._random_mode = True
         if not self._practicing:
             return []
         return self._practice_plan(true_atoms=true_atoms)

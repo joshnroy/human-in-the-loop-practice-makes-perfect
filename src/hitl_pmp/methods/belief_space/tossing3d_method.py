@@ -264,6 +264,11 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         return super().get_practice_policy(task=task)
 
+    def goal_failure_enters_random_mode(self) -> bool:
+        """Never: a failed goal plan falls through to this planner's own practice
+        choice, whatever --reproduce-predicators-random-when-stranded says."""
+        return False
+
     def clear_starved_parameter_pools(self) -> None:
         """Mirror the base registry's clearing in the search model's action mask, so a
         new session or a movables reset leaves the planner unmasked too."""

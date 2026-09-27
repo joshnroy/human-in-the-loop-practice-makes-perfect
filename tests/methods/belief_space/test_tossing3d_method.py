@@ -591,3 +591,27 @@ def test_the_belief_space_planner_skips_goal_pursuit_by_default() -> None:
     method = _build()
     assert method.goal_pursuit_horizon == 0
     assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == (1, 1)
+
+
+def test_a_failed_goal_plan_does_not_enter_random_mode_for_the_belief_space_planner() -> None:
+    """Under --reproduce-predicators-random-when-stranded EES goes random when its goal
+    plan fails; our planner keeps its own behaviour and falls through to practice
+    selection (here a depth-0 search, which stops)."""
+    method = _build(
+        pomdp_search_depth=0,
+        goal_pursuit_horizon=100,
+        reproduce_predicators_random_when_stranded=True,
+    )
+    state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    toss = _grounding(method=method, name=TOSS_SKILL)
+    goal = Goal(atoms=frozenset(a for a in toss.add_effects if a.predicate.name == "InBin"))
+    policy = method.get_practice_policy(task=Task(initial_state=state, goal=goal))
+    with pytest.raises(InteractionComplete):
+        policy(state)
+    episode = method._practice_episode
+    assert episode is not None
+    assert episode._goal_phase_done is True
+    assert episode._random_mode is False

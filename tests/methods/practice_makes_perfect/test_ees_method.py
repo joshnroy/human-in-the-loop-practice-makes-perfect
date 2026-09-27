@@ -2198,3 +2198,44 @@ def test_a_non_pursuing_period_still_records_its_task_as_seen() -> None:
     assert method._practice_episode is not None
     assert method._practice_episode._goal_phase_done is True
     assert len(method._seen_tasks) == 2
+
+
+def _unreachable_goal_episode(*, flag: bool) -> tuple[_SelectionCountingEesMethod, list[tuple]]:
+    """A pursued goal no plan reaches: Adjacent(cell0, cell0) never holds."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _SelectionCountingEesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=100,
+        reproduce_predicators_random_when_stranded=flag,
+    )
+    state = env.build_initial_state(light_level=0.0, light_target=0.5)
+    cell0 = env.get_cells()[0]
+    goal = Goal(atoms=frozenset({ADJACENT(state=state, objects=(cell0, cell0))}))
+    env.set_state(state=state)
+    method.get_practice_policy(task=Task(initial_state=state, goal=goal))
+    episode = method._practice_episode
+    assert episode is not None
+    current = env.get_current_state()
+    trace = []
+    for _ in range(3):
+        labeled = episode.step(state=current)
+        trace.append((labeled.label, episode._random_mode))
+        current = env.take_action(action=labeled.action)
+    return method, trace
+
+
+def test_a_failed_goal_plan_enters_random_mode_under_the_flag() -> None:
+    """predicators' `for goal in generate_goals()` for...else covers the assigned-task
+    goal too: no plan to it means random options for the rest of the episode."""
+    method, trace = _unreachable_goal_episode(flag=True)
+    assert all(random_mode for _label, random_mode in trace)
+    assert all(label.startswith("random: ") for label, _mode in trace)
+    assert method.selections == 0
+
+
+def test_without_the_flag_a_failed_goal_plan_falls_through_to_practice() -> None:
+    method, trace = _unreachable_goal_episode(flag=False)
+    assert not any(random_mode for _label, random_mode in trace)
+    assert method.selections >= 1
