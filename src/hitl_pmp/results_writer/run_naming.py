@@ -80,6 +80,11 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
         dest="reproduce_predicators_skip_perfect", toggle=("skip-perfect", ""), optional=True
     ),
     RunNameField(
+        dest="reproduce_predicators_random_when_stranded",
+        toggle=("random-when-stranded", ""),
+        optional=True,
+    ),
+    RunNameField(
         dest="pomdp_linear_cost_lambda",
         prefix="linear-lambda-",
         none_token="hard-budget",

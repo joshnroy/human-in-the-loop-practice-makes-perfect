@@ -215,6 +215,18 @@ class EesMethod(Method):
     # `reproduce_predicators_practice_target_history` is on (predicators'
     # `_ground_op_hist`), else the random-excluding competence history.
     reproduce_predicators_skip_perfect: bool = False
+    # Default FALSE (the original behaviour: when no practice candidate is reachable,
+    # execute one random applicable skill and go back to scoring next step). ON matches
+    # predicators' `_option_policy` for...else ("No reachable goal found. Switching to
+    # random exploration."): the episode switches to random mode for the rest of the
+    # period. Each random step is a uniformly chosen *initiable* ground skill (its
+    # symbolic preconditions hold) with parameters from one accepted draw of the
+    # domain's proposal, and is NOT flagged as exploration -- predicators returns the
+    # random option with indicator False -- so its outcome updates competence and
+    # becomes sampler training data. Nothing initiable ends the session, as before.
+    # Triggered only from practice selection: this port's goal phase falls through to
+    # practice on a planning failure, where predicators would go random there too.
+    reproduce_predicators_random_when_stranded: bool = False
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
     # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
@@ -1064,6 +1076,88 @@ class EesMethod(Method):
                 records_training_row=explore,
             )
 
+        return self._labeled_action(
+            ground_skill=ground_skill, params=params, state=state, record=record
+        ), record
+
+    def execute_random_ground_skill(
+        self, *, ground_skill: GroundSkill, state: State
+    ) -> tuple[LabeledAction, "_SkillAttempt | None"]:
+        """A random-mode step under `reproduce_predicators_random_when_stranded`:
+        predicators' `sample_applicable_option`, which grounds the option with one
+        parameter sample and no learned sampler. Here that sample is the first draw
+        of the domain's proposal the feasibility check accepts, within the same
+        proposal budget `sample_parameter_candidates` uses. The record is marked
+        non-exploratory (predicators' indicator False) so the outcome reaches
+        competence, and it is training data. Filed as UNINFORMATIVE -- a draw the
+        sampler did not rank -- not EPSILON_RANDOM, which is what competence skips."""
+        skill = ground_skill.skill
+        if skill.param_dim == 0:
+            return self._labeled_action(
+                ground_skill=ground_skill,
+                params=np.zeros(0),
+                state=state,
+                record=None,
+                prefix="random: ",
+            ), None
+        max_proposals = self.num_candidates * self.max_proposals_per_candidate
+        rejected: dict[str, int] = {}
+        params: np.ndarray | None = None
+        sampled = 0
+        while params is None and sampled < max_proposals:
+            candidate = self.skill_provider.sample_params_at_state(
+                ground_skill=ground_skill, rng=self._rng, state=state
+            )
+            sampled += 1
+            reason = self.skill_provider.parameter_rejection_reason(
+                ground_skill=ground_skill, params=candidate, state=state
+            )
+            if reason is None:
+                params = candidate
+            else:
+                rejected[reason] = rejected.get(reason, 0) + 1
+        diagnostics = ParameterSamplingDiagnostics(
+            requested_candidates=1,
+            sampled_proposals=sampled,
+            accepted_candidates=int(params is not None),
+            max_proposals=max_proposals,
+            rejection_reasons=rejected,
+        )
+        self.record_parameter_sampling(
+            ground_skill=ground_skill, explore=False, diagnostics=diagnostics
+        )
+        if params is None:
+            raise NoFeasibleParametersError(skill_name=skill.name, diagnostics=diagnostics)
+        record = _SkillAttempt(
+            skill_name=skill.name,
+            param_dim=skill.param_dim,
+            sampler_input=self.sampler_input_row(
+                ground_skill=ground_skill, state=state, params=params
+            ),
+            params=[float(p) for p in params],
+            was_random_exploration=False,
+            was_informed_choice=False,
+            consultation=SamplerConsultation.UNINFORMATIVE,
+            records_training_row=True,
+        )
+        return self._labeled_action(
+            ground_skill=ground_skill,
+            params=params,
+            state=state,
+            record=record,
+            prefix="random: ",
+        ), record
+
+    def _labeled_action(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        params: np.ndarray,
+        state: State,
+        record: "_SkillAttempt | None",
+        prefix: str = "",
+    ) -> LabeledAction:
+        skill = ground_skill.skill
         action = self.skill_provider.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )
@@ -1073,12 +1167,12 @@ class EesMethod(Method):
         if record is not None:
             record.controller_choices = dict(annotations)
         objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
-        label = f"{skill.name}({objects_desc})"
+        label = f"{prefix}{skill.name}({objects_desc})"
         if params.size > 0:
             label += f", params={[round(float(p), 2) for p in params]}"
         for name, value in annotations.items():
             label += f", {name}={round(float(value), 2)}"
-        return LabeledAction(action=action, label=label), record
+        return LabeledAction(action=action, label=label)
 
     # ------------------------------------------- unreachable Method surface area
 
@@ -1203,6 +1297,9 @@ class _EesEpisode:
         # practiced (the prefix just navigates to its preconditions). Only consulted
         # under reproduce_predicators_explore_target_only, to explore that skill alone.
         self._practice_target: GroundSkill | None = None
+        # predicators' `using_random`: set once no practice goal is reachable, under
+        # reproduce_predicators_random_when_stranded, and never cleared this episode.
+        self._random_mode = False
         # Remaining goal-pursuit budget (predicators' `assigned_task_horizon`); None
         # means uncapped. Counts down one per skill while the goal phase runs.
         self._goal_pursuit_remaining: int | None = method.goal_pursuit_horizon
@@ -1322,9 +1419,14 @@ class _EesEpisode:
                 or ground_skill is self._practice_target
             )
             try:
-                labeled, record = method.execute_ground_skill(
-                    ground_skill=ground_skill, state=state, explore=explore
-                )
+                if self._practicing and self._random_mode:
+                    labeled, record = method.execute_random_ground_skill(
+                        ground_skill=ground_skill, state=state
+                    )
+                else:
+                    labeled, record = method.execute_ground_skill(
+                        ground_skill=ground_skill, state=state, explore=explore
+                    )
             except NoFeasibleParametersError:
                 self._plan = []
                 self._practice_target = None
@@ -1469,6 +1571,8 @@ class _EesEpisode:
         applicable skill."""
         method = self._method
         starved = method.starved_ground_skills(true_atoms=true_atoms)
+        if self._random_mode:
+            return self._random_initiable_plan(true_atoms=true_atoms, starved=starved)
         for candidate in method.select_skill_to_practice(true_atoms=true_atoms):
             if candidate == STOP_SKILL:
                 raise InteractionComplete(planner_stop=True)
@@ -1503,6 +1607,16 @@ class _EesEpisode:
             method.record_practice_target(name=candidate.skill.name, field="selected")
             return [*prefix, candidate]
 
+        if method.reproduce_predicators_random_when_stranded:
+            logger.debug("_EesEpisode: no reachable practice goal -- random mode")
+            self._random_mode = True
+        return self._random_initiable_plan(true_atoms=true_atoms, starved=starved)
+
+    def _random_initiable_plan(
+        self, *, true_atoms: frozenset[GroundAtom], starved: frozenset[GroundSkill]
+    ) -> list[GroundSkill]:
+        """One uniformly chosen ground skill whose preconditions hold, or none."""
+        method = self._method
         applicable = [
             ground_skill
             for ground_skill in SkillGrounder.applicable_ground_skills(

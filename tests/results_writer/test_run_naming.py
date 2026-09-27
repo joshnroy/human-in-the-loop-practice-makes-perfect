@@ -219,6 +219,7 @@ def test_omitted_linear_lambda_names_the_effective_hard_budget_objective() -> No
         ("reproduce_predicators_explore_target_only", "explore-target-only"),
         ("reproduce_predicators_seen_task_order", "first-seen-tasks"),
         ("reproduce_predicators_skip_perfect", "skip-perfect"),
+        ("reproduce_predicators_random_when_stranded", "random-when-stranded"),
     ],
 )
 def test_a_predicators_fidelity_flag_is_named_only_when_on(*, dest: str, token: str) -> None:

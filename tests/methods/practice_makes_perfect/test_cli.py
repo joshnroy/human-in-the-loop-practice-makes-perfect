@@ -231,6 +231,10 @@ def test_non_tossing3d_cli_rejects_the_domain_owned_reset_cost() -> None:
             "reproduce-predicators-explore-target-only",
             "reproduce_predicators_explore_target_only",
         ),
+        (
+            "reproduce-predicators-random-when-stranded",
+            "reproduce_predicators_random_when_stranded",
+        ),
     ],
 )
 @pytest.mark.parametrize(("prefix", "expected"), [(None, False), ("", True), ("no-", False)])

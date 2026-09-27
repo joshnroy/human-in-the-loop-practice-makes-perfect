@@ -1995,3 +1995,112 @@ def test_a_perfect_candidate_selected_as_the_last_resort_keeps_its_tally_consist
     assert (tally.num_declined_perfect, tally.num_selected) == (1, 1)
     window = tally.minus(previous=PracticeTargetTally())
     assert window.num_selected == 1
+
+
+# ------------------------------------------- stranded -> random (predicators'
+# `_option_policy` for...else: "No reachable goal found. Switching to random exploration.")
+
+
+class _SelectionCountingEesMethod(EesMethod):
+    """Counts practice-candidate selections, so a test can see that random mode stops
+    asking for them."""
+
+    selections: int = 0
+
+    def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        self.selections += 1
+        return super().select_skill_to_practice(true_atoms=true_atoms)
+
+
+def _random_when_stranded_run(
+    *, flag: bool, steps: int, unreachable_candidate: bool = False
+) -> tuple[_SelectionCountingEesMethod, LightSwitchEnvironment, _EesEpisode, list[tuple]]:
+    """Practice from an empty history (predicators' first episode, where
+    `_ground_op_hist` yields no goal), recording (label, preconditions held,
+    random_mode) per step."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = _SelectionCountingEesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=0,
+        reproduce_predicators_random_when_stranded=flag,
+    )
+    if unreachable_candidate:
+        cells = env.get_cells()
+        # Adjacent(cell2, cell0) never holds, so no plan reaches this candidate.
+        never = GroundSkill(
+            skill=LightSwitchSkills.MOVE_ROBOT, objects=(env.robot, cells[2], cells[0])
+        )
+        method.observe_outcome(ground_skill=never, success=False)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    method.get_practice_policy(task=task)
+    episode = method._practice_episode
+    assert episode is not None
+    state = env.get_current_state()
+    trace: list[tuple] = []
+    for _ in range(steps):
+        atoms = method.abstract_state(state=state)
+        labeled = episode.step(state=state)
+        dispatched = episode._pending
+        assert dispatched is not None
+        trace.append((labeled.label, dispatched.preconditions <= atoms, episode._random_mode))
+        state = env.take_action(action=labeled.action)
+    return method, env, episode, trace
+
+
+def test_random_when_stranded_is_off_by_default() -> None:
+    method, _env = _build()
+    assert method.reproduce_predicators_random_when_stranded is False
+
+
+def test_without_the_flag_an_empty_history_bootstraps_one_step_at_a_time() -> None:
+    """The original behaviour: one random applicable skill, then back to scoring (a
+    selected candidate's plan can span several steps, so selections are not one per
+    step)."""
+    method, _env, _episode, trace = _random_when_stranded_run(flag=False, steps=4)
+    assert not any(random_mode for _label, _held, random_mode in trace)
+    assert not any(label.startswith("random: ") for label, _held, _mode in trace)
+    assert method.selections > 1
+
+
+def test_an_empty_history_switches_to_random_mode_for_the_rest_of_the_episode() -> None:
+    """No practice goal can be generated, so predicators goes random -- and stays
+    random: `using_random` is checked first on every later call, so no candidate is
+    ever selected again this episode, even once history exists."""
+    method, _env, _episode, trace = _random_when_stranded_run(flag=True, steps=12)
+    assert all(random_mode for _label, _held, random_mode in trace)
+    assert method.selections == 1
+    assert all(label.startswith("random: ") for label, _held, _mode in trace)
+
+
+def test_an_unreachable_candidate_also_switches_to_random_mode() -> None:
+    method, _env, _episode, trace = _random_when_stranded_run(
+        flag=True, steps=3, unreachable_candidate=True
+    )
+    assert all(random_mode for _label, _held, random_mode in trace)
+    assert method.selections == 1
+    assert method.practice_target_outcomes()["MoveRobot"].num_unreachable == 1
+
+
+def test_random_mode_draws_only_initiable_skills() -> None:
+    """Initiable = the skill's symbolic preconditions hold in the observed state."""
+    _method, _env, _episode, trace = _random_when_stranded_run(flag=True, steps=30)
+    assert all(held for _label, held, _mode in trace)
+
+
+def test_random_mode_attempts_update_competence_and_become_sampler_data() -> None:
+    """predicators returns `(self._get_random_option(state), False)`: the indicator is
+    False, so `_update_ground_op_hist` observes the outcome into competence, and the
+    segment joins the sampler's training data like any other."""
+    method, _env, _episode, trace = _random_when_stranded_run(flag=True, steps=40)
+    parameterized = [ground for ground in method._competence_models if ground.skill.param_dim > 0]
+    assert parameterized, "40 random steps on Light Switch should reach a parameterized skill"
+    observed = sum(method.competence_model(ground_skill=g).num_observations for g in parameterized)
+    attempts = sum(len(method._all_attempt_outcomes[g]) for g in parameterized)
+    assert observed == attempts > 0
+    assert sum(sampler.num_observations for sampler in method._samplers.values()) == attempts
+    tallies = method.practice_outcomes()
+    assert all(tally.num_random_attempts == 0 for tally in tallies.values())
+    assert len(trace) == 40

@@ -105,6 +105,15 @@ class EesCli:
             "(default off).",
         )
         parser.add_argument(
+            "--reproduce-predicators-random-when-stranded",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reproduce_predicators_random_when_stranded"].default,
+            help="When no practice candidate is reachable, act randomly (uniform "
+            "initiable skill, one proposal draw, not flagged as exploration) for the rest "
+            "of the period, as predicators' explorer does (default off: one random "
+            "applicable skill, then back to scoring).",
+        )
+        parser.add_argument(
             "--goal-pursuit-horizon",
             type=int,
             default=EesMethod.model_fields["goal_pursuit_horizon"].default,
@@ -180,6 +189,9 @@ class EesCli:
                 ),
                 reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
                 reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
+                reproduce_predicators_random_when_stranded=(
+                    args.reproduce_predicators_random_when_stranded
+                ),
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
@@ -327,6 +339,9 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
                 reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
+                reproduce_predicators_random_when_stranded=(
+                    args.reproduce_predicators_random_when_stranded
+                ),
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,
