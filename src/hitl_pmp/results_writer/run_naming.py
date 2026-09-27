@@ -54,6 +54,13 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
         prefix="human-reset-cost-",
         when=("env", "tossing3d"),
     ),
+    # Named only when off. The default arm reuses runs recorded before the flag
+    # existed, so its name must stay what it was; the ablation says so explicitly.
+    RunNameField(
+        dest="human_reset",
+        toggle=("", "no-human-reset"),
+        when=("env", "tossing3d"),
+    ),
     RunNameField(
         dest="pomdp_linear_cost_lambda",
         prefix="linear-lambda-",
@@ -94,9 +101,7 @@ class RunNamer:
         translation is precisely where an axis of variation goes missing without
         anybody noticing. One source, one table, one place to add a field."""
         tokens = [
-            token
-            for field in RUN_NAME_FIELDS
-            if (token := RunNamer._token(field=field, args=args)) is not None
+            token for field in RUN_NAME_FIELDS if (token := RunNamer._token(field=field, args=args))
         ]
         return "-".join(tokens)
 

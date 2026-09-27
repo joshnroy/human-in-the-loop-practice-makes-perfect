@@ -181,9 +181,11 @@ class Tossing3DPomdpMethod(EesMethod):
             stream.write(LogTiming.encode(record=record))
 
     def human_skills(self) -> tuple[Skill, ...]:
-        """Offer every provider-owned reset mechanism to belief-space planning."""
+        """Offer every provider-owned reset mechanism to belief-space planning.
+
+        Empty when the provider offers none (`--no-human-reset`): the robot then has no
+        way out of a stuck scene, which is what that baseline measures."""
         resets = self.skill_provider.movables_reset_skills()
-        assert resets
         return tuple(dict.fromkeys(reset.skill for reset in resets))
 
     def model_post_init(self, __context: object) -> None:

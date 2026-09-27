@@ -187,3 +187,33 @@ def test_the_practice_problem_is_configured_exactly_like_the_evaluation_one() ->
         Tossing3DCli.build_practice_problem(args=args).env.model_dump()
         == Tossing3DCli.build_evaluation_problem(args=args).env.model_dump()
     )
+
+
+def test_the_human_reset_is_on_by_default_and_can_be_switched_off() -> None:
+    assert _build_parser().parse_args([]).human_reset is True
+    assert _build_parser().parse_args(["--human-reset"]).human_reset is True
+    assert _build_parser().parse_args(["--no-human-reset"]).human_reset is False
+
+
+@pytest.mark.parametrize("method", ["ees", "pomdp"])
+@pytest.mark.parametrize("human_reset", [True, False])
+def test_the_human_reset_flag_reaches_both_practice_methods(
+    *, monkeypatch: pytest.MonkeyPatch, method: str, human_reset: bool
+) -> None:
+    """The flag lives on the domain's provider, which both methods plan with, so it is
+    asserted on the Method each method-CLI actually builds rather than on the parser."""
+    from hitl_pmp.environments.tossing3d import cli as tossing3d_cli
+
+    built: list[object] = []
+
+    def capture(**kwargs: object) -> None:
+        built.append(kwargs["method"])
+
+    monkeypatch.setattr(tossing3d_cli.MethodRunner, "run", capture)
+    flag = "--human-reset" if human_reset else "--no-human-reset"
+    Cli.main(argv=["--env", "tossing3d", "--method", method, "--no-scene-bg", flag])
+    (built_method,) = built
+    provider = built_method.skill_provider  # type: ignore[attr-defined]
+    assert provider.offer_human_reset is human_reset
+    assert bool(provider.movables_reset_skills()) is human_reset
+    assert built_method.may_request_human_help() is human_reset  # type: ignore[attr-defined]

@@ -536,3 +536,33 @@ def test_a_granted_movables_reset_clears_the_starved_pool_record() -> None:
     method.observe_help_granted(state=Tossing3DState.model_construct())
     assert method.starved_ground_skills(true_atoms=atoms) == frozenset()
     assert method._pomdp_model.starved_pools == ()  # noqa: SLF001
+
+
+def test_practice_without_the_human_reset_offers_and_models_no_reset() -> None:
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env, offer_human_reset=False),
+        seed=0,
+        pomdp_search_depth=2,
+    )
+    assert method.human_skills() == ()
+    assert not (RESET_SKILLS & set(method.pomdp_state.skill_beliefs))
+    offered = {ground.skill.name for ground in method._pomdp_model.ground_skills}  # noqa: SLF001
+    assert not (RESET_SKILLS & offered)
+    assert method.may_request_human_help() is False
+
+
+def test_removing_the_human_reset_leaves_every_other_prior_unchanged() -> None:
+    """Priors are seeded by position; the reset is appended last, so dropping it must
+    not reseed the robot skills' beliefs."""
+    env = Tossing3DEnvironment(scene_bg=False)
+    without = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env, offer_human_reset=False),
+        seed=0,
+        pomdp_search_depth=2,
+    )
+    with_reset = _build()
+    for name, belief in without.pomdp_state.skill_beliefs.items():
+        assert with_reset.pomdp_state.skill_beliefs[name] == belief

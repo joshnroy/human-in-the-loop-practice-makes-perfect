@@ -62,6 +62,10 @@ class Tossing3DSkillProvider(SkillProvider):
     # so offering both leaves the planner choosing between two cost posteriors for one
     # mechanism, which is noise rather than a decision.
     offer_non_human_reset: bool = False
+    # Off only for the "is the human reset needed?" baseline. Absent, not expensive: no
+    # finite `human_reset_practice_cost` removes the skill, because a planner that is
+    # otherwise stuck will take it at any price (see `EesMethod.plan_to`).
+    offer_human_reset: bool = True
 
     def skills(self) -> tuple[Skill, ...]:
         if self.env.layout == Tossing3DLayout.SAME_SIDE:
@@ -176,7 +180,7 @@ class Tossing3DSkillProvider(SkillProvider):
             return {}
         return Tossing3DToss.action_annotations(action=action)
 
-    def human_cube_bin_reset_skill(self) -> GroundSkill:
+    def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         """Tossing3D's `ask_for_reset_cube_bin_only`: repositions `cube_0`/`bin_0`
         to fresh ground poses via `KinderBackend.reset_cube_and_bin`, robot
         untouched. Effects: `OnGround` (or same-side `OnFloor`) and the selected
@@ -185,10 +189,17 @@ class Tossing3DSkillProvider(SkillProvider):
 
         The static precondition binds the robot-relative side object. This singular
         API returns the robot-side grounding; planners use the plural API below, which
-        offers both destinations and lets the planner choose."""
-        return self.human_cube_bin_reset_skills()[0]
+        offers both destinations and lets the planner choose. `None` when
+        `offer_human_reset` is off."""
+        resets = self.human_cube_bin_reset_skills()
+        return resets[0] if resets else None
 
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
+        """The reset groundings practice may choose, or none when `offer_human_reset`
+        is off."""
+        return self._cube_bin_reset_groundings() if self.offer_human_reset else ()
+
+    def _cube_bin_reset_groundings(self) -> tuple[GroundSkill, ...]:
         """One lifted reset, grounded once for each typed bin destination.
 
         The cube is always returned to the robot's side so practice can continue;
@@ -283,13 +294,12 @@ class Tossing3DSkillProvider(SkillProvider):
 
     def non_human_cube_bin_reset_skill(self) -> GroundSkill:
         """The historical destination with its independent automatic-reset cost."""
-        human = self.human_cube_bin_reset_skill()
-        return self._automatic_reset(reset=human)
+        return self.non_human_cube_bin_reset_skills()[0]
 
     def non_human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
         """Automatic reset destinations share one belief, distinct from human reset."""
         return tuple(
-            self._automatic_reset(reset=reset) for reset in self.human_cube_bin_reset_skills()
+            self._automatic_reset(reset=reset) for reset in self._cube_bin_reset_groundings()
         )
 
     def _automatic_reset(self, *, reset: GroundSkill) -> GroundSkill:
@@ -315,9 +325,8 @@ class Tossing3DSkillProvider(SkillProvider):
         return destination.name
 
     def movables_reset_skills(self) -> tuple[GroundSkill, ...]:
-        if not self.offer_non_human_reset:
-            return self.human_cube_bin_reset_skills()
-        return (*self.human_cube_bin_reset_skills(), *self.non_human_cube_bin_reset_skills())
+        automatic = self.non_human_cube_bin_reset_skills() if self.offer_non_human_reset else ()
+        return (*self.human_cube_bin_reset_skills(), *automatic)
 
 
 class Tossing3DOracle(OraclePolicyProvider):

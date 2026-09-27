@@ -37,6 +37,7 @@ class Namespaces:
             "two_way_ledge": False,
             "unsplit_skills": False,
             "human_reset_practice_cost": 5.0,
+            "human_reset": True,
             "num_cycles": 100,
         }
         fields.update(overrides)
@@ -69,6 +70,24 @@ def test_the_name_carries_environment_method_arm_and_seed() -> None:
 def test_default_human_reset_cost_is_named() -> None:
     name = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
     assert "human-reset-cost-5-0" in name
+
+
+def test_a_run_without_the_human_reset_says_so_and_the_default_name_is_unchanged() -> None:
+    """The with-reset arm reuses runs named before the flag existed, so the default
+    keeps its old name and only the ablation gains a token."""
+    default = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    ablated = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", human_reset=False))
+    assert default == "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-c100-seed3"
+    assert ablated == (
+        "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-no-human-reset-c100-seed3"
+    )
+
+
+def test_missing_tossing3d_human_reset_flag_raises() -> None:
+    args = Namespaces.ees_tossingroom(env="tossing3d")
+    del args.human_reset
+    with pytest.raises(ValueError, match="human-reset"):
+        RunNamer.name(args=args)
 
 
 def test_missing_tossing3d_human_reset_cost_raises() -> None:

@@ -378,3 +378,20 @@ def test_ees_plans_a_reset_to_either_side_only_while_practicing(*, destination: 
     assert provider.movables_reset_destination(ground_skill=resets[0]) == destination
     with pytest.raises(PlanningFailure):
         method.plan_to(init_atoms=init_atoms, goal=goal, costs={}, practicing=False)
+
+
+def test_practice_offers_the_human_reset_by_default() -> None:
+    provider = _provider()
+    assert provider.offer_human_reset is True
+    assert {reset.skill.name for reset in provider.movables_reset_skills()} == {
+        ASK_FOR_RESET_CUBE_BIN_ONLY_NAME
+    }
+
+
+def test_a_provider_without_the_human_reset_offers_no_reset_at_all() -> None:
+    """The "is the human reset needed?" baseline: the skill is absent, not merely
+    expensive, so there is no cost at which a planner could still choose it."""
+    provider = Tossing3DSkillProvider(env=Tossing3DEnvironment(), offer_human_reset=False)
+    assert provider.human_cube_bin_reset_skill() is None
+    assert provider.human_cube_bin_reset_skills() == ()
+    assert provider.movables_reset_skills() == ()

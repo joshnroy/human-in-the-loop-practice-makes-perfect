@@ -1632,3 +1632,32 @@ def test_tossing3d_practice_offers_no_non_human_reset(*, monkeypatch: pytest.Mon
         "non_human_reset" in reset.skill.name
         for reset in method.skill_provider.movables_reset_skills()
     )
+
+
+def test_tossing3d_practice_without_the_human_reset_offers_none(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the human reset switched off, EES's practice planner sees no reset at all
+    and the method no longer claims it may ask a human for help."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = EesMethod(
+        env=env,
+        skill_provider=Tossing3DSkillProvider(env=env, offer_human_reset=False),
+        seed=0,
+    )
+    offered: dict[str, set[str]] = {}
+
+    def capture(  # noqa: PLR0917 (stands in for a method, so `self` is positional)
+        self: EesMethod, *, skills: tuple[Skill, ...], ground_skill_costs: dict, **_: object
+    ) -> list[GroundSkill]:
+        offered["skills"] = {skill.name for skill in skills}
+        offered["costed"] = {ground.skill.name for ground in ground_skill_costs}
+        return []
+
+    monkeypatch.setattr(EesMethod, "_plan_or_raise", capture)
+    method.plan_to(init_atoms=frozenset(), goal=frozenset(), costs={}, practicing=True)
+    assert not any("reset" in name for name in offered["skills"] | offered["costed"])
+    assert method.may_request_human_help() is False

@@ -122,6 +122,14 @@ class Tossing3DCli:
             help="Cost of Tossing3D's provider-owned human cube/bin reset skill, in "
             "robot-action equivalents.",
         )
+        parser.add_argument(
+            "--human-reset",
+            action=argparse.BooleanOptionalAction,
+            default=Tossing3DSkillProvider.model_fields["offer_human_reset"].default,
+            help="Offer the human cube/bin reset skill to practice. --no-human-reset "
+            "removes it outright (not just prices it high), for the baseline that asks "
+            "whether the reset is needed. Evaluation never offers it either way.",
+        )
         parser.set_defaults(scene_bg=True, defer_rendering=False)
 
     @staticmethod
@@ -206,6 +214,7 @@ class Tossing3DCli:
             skill_provider=Tossing3DSkillProvider(
                 env=practice_problem.env,
                 human_reset_practice_cost=args.human_reset_practice_cost,
+                offer_human_reset=args.human_reset,
             ),
             oracle=Tossing3DOracle(
                 env=practice_problem.env, throw_standoff=args.oracle_throw_standoff
