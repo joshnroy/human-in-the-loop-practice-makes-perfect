@@ -261,3 +261,26 @@ def test_the_predicators_fidelity_flags_parse_and_reach_ees(
     )
     assert isinstance(method, EesMethod)
     assert getattr(method, field) is expected
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [([], False), (["--defer-rendering"], True), (["--no-defer-rendering"], False)],
+)
+def test_ees_on_tossing3d_honours_the_defer_rendering_flag(
+    *, argv: list[str], expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """EES renders in-run by default, as it always has; --defer-rendering reaches
+    Tossing3DCli.run_method, which then builds no renderer. POMDP forces it on
+    regardless, and is not this flag's business."""
+    from hitl_pmp.cli import Cli
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+
+    seen: list[bool] = []
+
+    def _run_method(*, args: argparse.Namespace, **_kwargs: object) -> None:
+        seen.append(args.defer_rendering)
+
+    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
+    Cli.main(argv=["--env", "tossing3d", "--method", "ees", *argv])
+    assert seen == [expected]

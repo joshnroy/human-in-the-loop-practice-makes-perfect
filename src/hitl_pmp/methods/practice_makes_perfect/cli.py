@@ -128,6 +128,14 @@ class EesCli:
             "and a reset-free route. Evaluation never offers the reset either way.",
         )
         parser.add_argument(
+            "--defer-rendering",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Build no in-run renderer, so no episode.mp4 or period videos are "
+            "encoded during the run (default off: render as before). Read only by "
+            "domains that render in-run (Tossing3D); --method pomdp forces it on.",
+        )
+        parser.add_argument(
             "--competence-window-size",
             type=int,
             default=EesMethod.model_fields["competence_window_size"].default,

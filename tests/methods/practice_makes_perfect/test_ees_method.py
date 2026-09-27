@@ -1969,3 +1969,27 @@ def test_target_only_exploration_with_goal_pursuit_horizon_zero_still_explores()
         state = env.take_action(action=policy(state).action)
 
     assert sum(sampler.num_observations for sampler in method._samplers.values()) > 0
+
+
+def test_a_perfect_candidate_selected_as_the_last_resort_keeps_its_tally_consistent() -> None:
+    """Ranked last is not removed: when the perfect candidate is the only one, it is
+    selected. Its tally then reads declined_perfect=1, selected=1, and differencing it
+    (what method_runner does per window) must not trip the tally's own validator."""
+    from hitl_pmp.core.method.types import PracticeTargetTally
+
+    method, env = _skip_perfect_build(skip_perfect=True)
+    perfect = _turn_on_light(env=env)
+    for _ in range(5):
+        method.observe_outcome(ground_skill=perfect, success=True)
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=True)
+    init_atoms = method.abstract_state(
+        state=env.build_initial_state(light_level=0.0, light_target=0.5)
+    )
+
+    plan = episode._practice_plan(true_atoms=init_atoms)
+
+    assert plan[-1] == perfect
+    tally = method.practice_target_outcomes()["TurnOnLight"]
+    assert (tally.num_declined_perfect, tally.num_selected) == (1, 1)
+    window = tally.minus(previous=PracticeTargetTally())
+    assert window.num_selected == 1
