@@ -288,3 +288,47 @@ def test_ees_on_tossing3d_honours_the_defer_rendering_flag(
     monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
     Cli.main(argv=["--env", "tossing3d", "--method", "ees", *argv])
     assert seen == [expected]
+
+
+@pytest.mark.parametrize("method_name", ["ees", "pomdp"])
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        ([], (1, 1)),
+        (["--goal-pursuit-init-cycles", "1", "--goal-pursuit-interval", "5"], (1, 5)),
+    ],
+)
+def test_the_goal_pursuit_schedule_flags_reach_both_methods(
+    *,
+    method_name: str,
+    argv: list[str],
+    expected: tuple[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from hitl_pmp.cli import Cli
+    from hitl_pmp.core.method.skill_provider import DomainContext
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import (
+        Tossing3DOracle,
+        Tossing3DSkillProvider,
+    )
+
+    built: list[object] = []
+
+    def _run_method(*, method_factory: object, **_kwargs: object) -> None:
+        env = Tossing3DEnvironment(scene_bg=False)
+        built.append(
+            method_factory(  # type: ignore[operator]
+                DomainContext(
+                    env=env,
+                    skill_provider=Tossing3DSkillProvider(env=env),
+                    oracle=Tossing3DOracle(env=env),
+                )
+            )
+        )
+
+    monkeypatch.setattr(Tossing3DCli, "run_method", staticmethod(_run_method))
+    Cli.main(argv=["--env", "tossing3d", "--method", method_name, *argv])
+    (method,) = built
+    assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == expected  # type: ignore[attr-defined]

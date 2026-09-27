@@ -566,3 +566,28 @@ def test_removing_the_human_reset_leaves_every_other_prior_unchanged() -> None:
     with_reset = _build()
     for name, belief in without.pomdp_state.skill_beliefs.items():
         assert with_reset.pomdp_state.skill_beliefs[name] == belief
+
+
+def test_the_goal_pursuit_schedule_reaches_the_belief_space_planner() -> None:
+    """Tossing3DPomdpMethod inherits EES's goal phase, so the schedule gates it the
+    same way: with predicators' init 1 / interval 5, periods 0 and 5 open in the goal
+    phase and the rest go straight to the belief-space selection."""
+    method = _build(goal_pursuit_horizon=100, goal_pursuit_init_cycles=1, goal_pursuit_interval=5)
+    state = Tossing3DState(
+        data={obj: np.zeros(obj.type.dim) for obj in method.objects()},
+        abstract_atoms=frozenset(),
+    )
+    toss = _grounding(method=method, name=TOSS_SKILL)
+    goal = Goal(atoms=frozenset(a for a in toss.add_effects if a.predicate.name == "InBin"))
+    phases = []
+    for _ in range(7):
+        method.get_practice_policy(task=Task(initial_state=state, goal=goal))
+        assert method._practice_episode is not None
+        phases.append(not method._practice_episode._goal_phase_done)
+    assert [cycle for cycle, pursue in enumerate(phases) if pursue] == [0, 5]
+
+
+def test_the_belief_space_planner_skips_goal_pursuit_by_default() -> None:
+    method = _build()
+    assert method.goal_pursuit_horizon == 0
+    assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == (1, 1)

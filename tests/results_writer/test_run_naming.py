@@ -230,3 +230,16 @@ def test_a_predicators_fidelity_flag_is_named_only_when_on(*, dest: str, token: 
     unregistered = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
     assert off == unregistered
     assert on == off.replace("-c100-seed3", f"-{token}-c100-seed3")
+
+
+@pytest.mark.parametrize(
+    ("dest", "value", "token"),
+    [("goal_pursuit_init_cycles", 2, "goal-init-2"), ("goal_pursuit_interval", 5, "goal-every-5")],
+)
+def test_a_goal_pursuit_schedule_flag_is_named_only_off_its_default(
+    *, dest: str, value: int, token: str
+) -> None:
+    unset = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", **{dest: 1}))
+    set_ = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", **{dest: value}))
+    assert unset == RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    assert set_ == unset.replace("-c100-seed3", f"-{token}-c100-seed3")

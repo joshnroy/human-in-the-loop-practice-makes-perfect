@@ -168,6 +168,9 @@ class RunNameField(BaseModel):
     # that value makes an omitted override and an equivalent explicit override share
     # one run identity.
     none_token: str | None = None
+    # A value that contributes no token -- a numeric flag's default, for a flag added
+    # after runs at that default were named.
+    omit_value: int | None = None
     # Include a domain-specific axis only when another resolved field selects the
     # domain that gives it meaning.
     when: tuple[str, object] | None = None

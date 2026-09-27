@@ -247,6 +247,21 @@ class EesMethod(Method):
     # uncapped behavior, and a Ball-Ring run passes --goal-pursuit-horizon 8 to match
     # the paper's own config for that domain.
     goal_pursuit_horizon: int | None = None
+    # WHICH practice periods run that goal phase at all -- predicators'
+    # `ActiveSamplerLearningApproach._create_explorer`:
+    #
+    #     pursue_task_goal_first = (cycle < init_cycles_to_pursue_goal) or (cycle % n == 0)
+    #
+    # with `CFG.active_sampler_learning_init_cycles_to_pursue_goal` (default 1) and
+    # `CFG.active_sampler_learning_explore_pursue_goal_interval` (default 5; the paper's
+    # yaml overrides it to 1 for both grid_row and ball_and_cup_sticky_table). A
+    # non-pursuing period starts in practice, spending none of the horizon. Interval 1
+    # pursues every period, which is this port's original behaviour and so the default.
+    # Periods are counted by `get_practice_policy` calls, 0-based, matching
+    # `_online_learning_cycle`. Ported from 46379575, which counted in `end_cycle`
+    # instead; the practice loop calls the two once each per cycle.
+    goal_pursuit_init_cycles: int = Field(default=1, ge=0)
+    goal_pursuit_interval: int = Field(default=1, ge=1)
     planning_timeout: float = 10.0
     # --record-sampler-draws' recorder, or None (the default, and what keeps every
     # unrecorded run byte-identical). A pure observer: it is written to and never read
@@ -326,6 +341,8 @@ class EesMethod(Method):
     # every robot-side toss proposal infeasible, and each starvation raised
     # InteractionComplete).
     _starved_pools: dict[frozenset[GroundAtom], set[GroundSkill]] = PrivateAttr()
+    # Practice periods started so far; the cycle index the goal-pursuit schedule reads.
+    _practice_periods: int = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -342,6 +359,7 @@ class EesMethod(Method):
         self._translation_cache = TranslationCache()
         self._practice_episode = None
         self._starved_pools = {}
+        self._practice_periods = 0
 
     # ------------------------------------------------------------------ domain
 
@@ -1000,9 +1018,20 @@ class EesMethod(Method):
         # Starvation is per session: a new period re-randomizes movable geometry,
         # so last session's infeasible pools are no longer evidence.
         self.clear_starved_parameter_pools()
-        episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
+        episode = _EesEpisode(
+            method=self,
+            goal=task.goal.atoms,
+            practicing=True,
+            pursue_goal=self.pursues_goal_in_period(period=self._practice_periods),
+        )
+        self._practice_periods += 1
         self._practice_episode = episode
         return lambda state: episode.step(state=state)
+
+    def pursues_goal_in_period(self, *, period: int) -> bool:
+        """Whether practice period `period` (0-based) opens with the goal phase; see
+        `goal_pursuit_init_cycles`."""
+        return period < self.goal_pursuit_init_cycles or period % self.goal_pursuit_interval == 0
 
     def observe_environment_reset(self, *, state: State) -> None:
         """Score the in-flight skill against the state the harness is about to
@@ -1284,6 +1313,7 @@ class _EesEpisode:
         method: EesMethod,
         goal: frozenset[GroundAtom],
         practicing: bool,
+        pursue_goal: bool = True,
     ) -> None:
         self._method = method
         self._goal = goal
@@ -1292,7 +1322,8 @@ class _EesEpisode:
         self._pending: GroundSkill | None = None
         self._pending_before_atoms: frozenset[GroundAtom] = frozenset()
         self._pending_sampler_record: _SkillAttempt | None = None
-        self._goal_phase_done = False
+        # A practice period the goal-pursuit schedule skips starts in practice.
+        self._goal_phase_done = practicing and not pursue_goal
         # The last skill of the current practice plan -- the one actually being
         # practiced (the prefix just navigates to its preconditions). Only consulted
         # under reproduce_predicators_explore_target_only, to explore that skill alone.

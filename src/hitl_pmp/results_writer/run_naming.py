@@ -84,6 +84,9 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
         toggle=("random-when-stranded", ""),
         optional=True,
     ),
+    # The goal-pursuit schedule, named only off its default (1/1 pursues every period).
+    RunNameField(dest="goal_pursuit_init_cycles", prefix="goal-init-", omit_value=1, optional=True),
+    RunNameField(dest="goal_pursuit_interval", prefix="goal-every-", omit_value=1, optional=True),
     RunNameField(
         dest="pomdp_linear_cost_lambda",
         prefix="linear-lambda-",
@@ -148,6 +151,8 @@ class RunNamer:
                 "under one name."
             )
         value = getattr(args, field.dest)
+        if field.omit_value is not None and value == field.omit_value:
+            return None
         if value is None and field.none_token is not None:
             return field.none_token
         if field.toggle is not None:

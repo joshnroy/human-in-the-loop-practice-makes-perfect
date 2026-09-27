@@ -2104,3 +2104,97 @@ def test_random_mode_attempts_update_competence_and_become_sampler_data() -> Non
     tallies = method.practice_outcomes()
     assert all(tally.num_random_attempts == 0 for tally in tallies.values())
     assert len(trace) == 40
+
+
+# ------------------------------------------- goal-pursuit schedule (predicators'
+# active_sampler_learning_approach._create_explorer: pursue_task_goal_first when
+# cycle < active_sampler_learning_init_cycles_to_pursue_goal or cycle % interval == 0)
+
+
+def _scheduled_goal_phases(*, init_cycles: int, interval: int, cycles: int = 11) -> list[bool]:
+    """Whether each practice period's episode starts in the goal phase."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=100,
+        goal_pursuit_init_cycles=init_cycles,
+        goal_pursuit_interval=interval,
+    )
+    tasks = LightSwitchTasks(env=env, seed=0)
+    phases = []
+    for _ in range(cycles):
+        method.get_practice_policy(task=tasks.sample_train_task())
+        assert method._practice_episode is not None
+        phases.append(not method._practice_episode._goal_phase_done)
+    return phases
+
+
+def test_goal_pursuit_runs_every_cycle_by_default() -> None:
+    method, _env = _build()
+    assert (method.goal_pursuit_init_cycles, method.goal_pursuit_interval) == (1, 1)
+    assert _scheduled_goal_phases(init_cycles=1, interval=1) == [True] * 11
+
+
+def test_predicators_goal_pursuit_schedule_fires_on_cycles_zero_five_and_ten() -> None:
+    """init 1, interval 5: cycle 0 (< 1), then every cycle divisible by 5."""
+    phases = _scheduled_goal_phases(init_cycles=1, interval=5)
+    assert [cycle for cycle, pursue in enumerate(phases) if pursue] == [0, 5, 10]
+
+
+def test_goal_pursuit_init_cycles_alone_pursues_only_the_first_cycles() -> None:
+    phases = _scheduled_goal_phases(init_cycles=2, interval=100)
+    assert [cycle for cycle, pursue in enumerate(phases) if pursue] == [0, 1]
+
+
+def test_a_scheduled_goal_phase_is_still_capped_by_the_horizon() -> None:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_horizon=2,
+        goal_pursuit_init_cycles=1,
+        goal_pursuit_interval=5,
+    )
+    method.get_practice_policy(task=LightSwitchTasks(env=env, seed=0).sample_train_task())
+    episode = method._practice_episode
+    assert episode is not None and episode._goal_phase_done is False
+    for _ in range(2):
+        episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is False
+    episode._tick_goal_pursuit_horizon()
+    assert episode._goal_phase_done is True
+
+
+def test_evaluation_episodes_ignore_the_goal_pursuit_schedule() -> None:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_init_cycles=0,
+        goal_pursuit_interval=100,
+    )
+    episode = _EesEpisode(method=method, goal=frozenset(), practicing=False)
+    assert episode._goal_phase_done is False
+
+
+def test_a_non_pursuing_period_still_records_its_task_as_seen() -> None:
+    """predicators adds the task to `_seen_train_task_idxs` at the top of its option
+    policy whatever `pursue_task_goal_first` is (carried over from 46379575)."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        goal_pursuit_init_cycles=1,
+        goal_pursuit_interval=5,
+    )
+    tasks = LightSwitchTasks(env=env, seed=0)
+    for _ in range(2):
+        method.get_practice_policy(task=tasks.sample_train_task())
+    assert method._practice_episode is not None
+    assert method._practice_episode._goal_phase_done is True
+    assert len(method._seen_tasks) == 2
