@@ -1075,6 +1075,10 @@ class KinderBackend(BaseModel):
             wall_thickness=bin_object.wall_thickness,
         ):
             atoms |= frozenset({("OnBinRim", (self.cube_name, self.bin_name))})
+        from .bin_on_ground import KB_BIN_ON_GROUND, BinOnGroundGeometry
+
+        if BinOnGroundGeometry.holds(bin_=features[self.bin_name]):
+            atoms |= frozenset({(KB_BIN_ON_GROUND, (self.bin_name,))})
         return atoms
 
     def abstraction_diagnostics(self, *, state: Any = None) -> dict[str, Any]:

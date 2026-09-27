@@ -13,6 +13,7 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
+    BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     HAND_EMPTY,
@@ -64,6 +65,8 @@ class SameSideSkills:
         LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
         LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
     })
+    # Every robot skill needs the bin upright on the floor (see `predicates.BIN_ON_GROUND`).
+    _bin_on_ground: ClassVar[LiftedAtom] = LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,))
     _closed: ClassVar[LiftedAtom] = LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
 
     _rim: ClassVar[LiftedAtom] = LiftedAtom(predicate=ON_BIN_RIM, variables=(_cube, _bin))
@@ -71,7 +74,7 @@ class SameSideSkills:
     PICK_RIM: ClassVar[Skill] = Skill(
         name="PickCubeFromRim",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _rim}) | _same_robot_side,
+        preconditions=frozenset({_empty, _rim, _bin_on_ground}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,
@@ -85,7 +88,7 @@ class SameSideSkills:
     PICK_FLOOR: ClassVar[Skill] = Skill(
         name="PickCubeFromFloor",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _floor}) | _same_robot_side,
+        preconditions=frozenset({_empty, _floor, _bin_on_ground}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,
@@ -98,7 +101,7 @@ class SameSideSkills:
     PICK_BIN: ClassVar[Skill] = Skill(
         name="PickCubeFromBin",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _inside}) | _same_robot_side,
+        preconditions=frozenset({_empty, _inside, _bin_on_ground}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,
@@ -110,8 +113,8 @@ class SameSideSkills:
     )
     OPEN: ClassVar[Skill] = Skill(
         name="OpenGripper",
-        parameters=(_robot, _cube),
-        preconditions=frozenset({_closed}),
+        parameters=(_robot, _cube, _bin),
+        preconditions=frozenset({_closed, _bin_on_ground}),
         add_effects=frozenset({
             _empty,
             LiftedAtom(predicate=NOT_HOLDING, variables=(_robot, _cube)),

@@ -135,6 +135,7 @@ def test_a_reset_that_changes_no_atom_is_still_offered(*, gripper: str) -> None:
             "BinAtSide",
             "GraspClear",
             "PickupUnblocked",
+            "BinOnGround",
         )
     )
     search_state = make_tossing3d_search_state(state=method.pomdp_state, true_atoms=ready)
@@ -257,6 +258,7 @@ def test_an_observed_pickup_refusal_leaves_the_pick_and_every_reset_available() 
             "CubeAtSide",
             "BinAtSide",
             "GraspClear",
+            "BinOnGround",
             # Deliberately NOT PickupUnblocked: the refusal was observed.
         )
     )

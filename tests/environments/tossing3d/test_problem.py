@@ -16,6 +16,7 @@ from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.kinder_backend import KinderBackend
 from hitl_pmp.environments.tossing3d.predicates import (
     BIN_AT_SIDE,
+    BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
@@ -83,6 +84,7 @@ def test_the_provider_exposes_every_skill_predicate_type_and_object() -> None:
         BIN_AT_SIDE,
         GRASP_CLEAR,
         PICKUP_UNBLOCKED,
+        BIN_ON_GROUND,
     }
     assert {obj.type for obj in provider.objects()} == set(provider.types())
 

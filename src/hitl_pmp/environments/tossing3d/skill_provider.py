@@ -23,6 +23,7 @@ from .environment import Tossing3DEnvironment
 from .layout import Tossing3DLayout
 from .predicates import (
     BIN_AT_SIDE,
+    BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
@@ -95,6 +96,7 @@ class Tossing3DSkillProvider(SkillProvider):
                 CUBE_AT_SIDE,
                 BIN_AT_SIDE,
                 PICKUP_UNBLOCKED,
+                BIN_ON_GROUND,
                 # Declared here for the same reason the side atoms are: the shared
                 # toss operator forgets GraspClear (ignore_effects), and a forgetting
                 # effect must name a declared predicate in every domain that writes
@@ -113,6 +115,7 @@ class Tossing3DSkillProvider(SkillProvider):
             BIN_AT_SIDE,
             GRASP_CLEAR,
             PICKUP_UNBLOCKED,
+            BIN_ON_GROUND,
         )
 
     def types(self) -> tuple[Type, ...]:
@@ -255,6 +258,9 @@ class Tossing3DSkillProvider(SkillProvider):
                 # Relocating the cube physically heals every observed refusal
                 # instance, so the reset may promise the channel clear.
                 LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(cube,)),
+                # The reset re-places the bin upright on the floor, which is what
+                # lets a plan recover from a tipped bin by paying for it.
+                LiftedAtom(predicate=BIN_ON_GROUND, variables=(bin_,)),
                 LiftedAtom(
                     predicate=CUBE_AT_SIDE,
                     variables=(cube, barrier, robot_side),

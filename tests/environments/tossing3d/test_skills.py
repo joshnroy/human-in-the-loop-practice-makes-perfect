@@ -27,6 +27,7 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
 from hitl_pmp.environments.tossing3d.predicates import (
     BIN_AT_SIDE,
+    BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
@@ -221,6 +222,7 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=GRASP_CLEAR,
             variables=(_SKILLS._cube, _SKILLS._bin),
         ),
+        LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.PICK_CUBE.add_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
@@ -231,9 +233,10 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
         LiftedAtom(predicate=NOT_HOLDING, variables=(_SKILLS._robot, _SKILLS._cube)),
     })
 
-    assert _SKILLS.OPEN_GRIPPER.parameters == (_SKILLS._robot, _SKILLS._cube)
+    assert _SKILLS.OPEN_GRIPPER.parameters == (_SKILLS._robot, _SKILLS._cube, _SKILLS._bin)
     assert _SKILLS.OPEN_GRIPPER.preconditions == frozenset({
-        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube))
+        LiftedAtom(predicate=CLOSED_EMPTY, variables=(_SKILLS._robot, _SKILLS._cube)),
+        LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.OPEN_GRIPPER.add_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,))
@@ -248,6 +251,7 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=BIN_AT_SIDE,
             variables=(_SKILLS._bin, _SKILLS._barrier, _SKILLS._side),
         ),
+        LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects == frozenset({
         LiftedAtom(predicate=HAND_EMPTY, variables=(_SKILLS._robot,)),
@@ -313,6 +317,7 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         BIN_AT_SIDE,
         GRASP_CLEAR,
         PICKUP_UNBLOCKED,
+        BIN_ON_GROUND,
     )
     init_atoms = SkillGrounder.abstract_state(
         state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
@@ -508,7 +513,11 @@ def test_same_side_planner_recovers_from_each_landing(*, inside: bool, closed: b
 
     env = Tossing3DEnvironment(layout=Tossing3DLayout.SAME_SIDE)
     provider = Tossing3DSkillProvider(env=env)
-    atoms = {("OnGround", ("cube_0",)), ("MovableIsDownX", ("cube_0", "cuboid_barrier"))}
+    atoms = {
+        ("OnGround", ("cube_0",)),
+        ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
+        ("BinOnGround", ("bin_0",)),
+    }
     if inside:
         atoms.add(("MovableInGoalRegion", ("cube_0",)))
     if not closed:
@@ -641,7 +650,7 @@ def test_an_observed_refusal_leaves_the_pick_applicable_and_movers_restore_it() 
         for atom in SkillGrounder.all_possible_ground_atoms(
             objects=provider.objects(), predicates=provider.predicates()
         )
-        if atom.predicate in {HAND_EMPTY, ON_GROUND, GRASP_CLEAR}
+        if atom.predicate in {HAND_EMPTY, ON_GROUND, GRASP_CLEAR, BIN_ON_GROUND}
         or (
             atom.predicate in {ROBOT_AT_SIDE, CUBE_AT_SIDE}
             and atom.objects[-1] == Tossing3DSides.robot

@@ -104,6 +104,7 @@ from hitl_pmp.core.problem.environment.types import Action, State
 from .environment import Tossing3DEnvironment
 from .predicates import (
     BIN_AT_SIDE,
+    BIN_ON_GROUND,
     CLOSED_EMPTY,
     CUBE_AT_SIDE,
     GRASP_CLEAR,
@@ -177,6 +178,9 @@ class Tossing3DSkills:
             # the degenerate loop the 2026-09-22 trap diagnosis pinned -- gate it
             # symbolically so recovery (the paid reset) becomes the plan instead.
             LiftedAtom(predicate=GRASP_CLEAR, variables=(_cube, _bin)),
+            # A top-down grasp assumes the bin upright: GraspClear measures a fixed
+            # upright footprint, and a bin on its side puts a wall above the cube.
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
             # Deliberately NOT PickupUnblocked: an observed refusal is information,
             # not a mask. Retrying, tossing or paying for a reset is the planner's
             # choice, and a refused retry is one more failed attempt.
@@ -198,6 +202,7 @@ class Tossing3DSkills:
         preconditions=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
             LiftedAtom(predicate=BIN_AT_SIDE, variables=(_bin, _barrier, _side)),
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
         }),
         add_effects=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
@@ -215,7 +220,10 @@ class Tossing3DSkills:
         }),
         # GraspClear joins CubeAtSide as a functional update: whether the landed cube
         # is graspable is a fact of the physics, re-read from observation rather than
-        # promised by the operator model.
+        # promised by the operator model. BinOnGround is deliberately neither deleted
+        # nor ignored: a toss can tip the bin, but modelling that would make every
+        # imagined post-toss plan require a reset, so the planners assume the bin stays
+        # upright and replan from the observed state when it does not.
         ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR}),
         # [standoff, speed, release]; the stand direction is the controller's choice.
         param_dim=3,
@@ -230,8 +238,13 @@ class Tossing3DSkills:
     # no-op and opening while genuinely holding a cube is not modeled incorrectly.
     OPEN_GRIPPER: ClassVar[Skill] = Skill(
         name="OpenGripper",
-        parameters=(_robot, _cube),
-        preconditions=frozenset({LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))}),
+        # The bin is appended, as #346 appended side and bin parameters, so the
+        # BinOnGround precondition every robot skill carries can name it.
+        parameters=(_robot, _cube, _bin),
+        preconditions=frozenset({
+            LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube)),
+            LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
+        }),
         add_effects=frozenset({LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,))}),
         delete_effects=frozenset({LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))}),
         param_dim=0,

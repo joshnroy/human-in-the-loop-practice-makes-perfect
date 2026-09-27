@@ -73,6 +73,7 @@ hold them to upstream's.
 from hitl_pmp.core.problem.environment.types import Object, State
 from hitl_pmp.core.problem.tasks.types import Predicate
 
+from .bin_on_ground import KB_BIN_ON_GROUND
 from .environment import Tossing3DEnvironment
 from .sides import Tossing3DSides
 from .types import KB_PICKUP_BLOCKED
@@ -191,6 +192,19 @@ REACHABLE = Predicate(
     # domain interesting. Audited at 201/201 agreement before the swap.
     holds=lambda state, objects: Tossing3DAtoms.holds(
         state=state, name=KB_IS_DOWN_X, objects=(objects[0], objects[1])
+    ),
+)
+
+# Upright and resting on the floor. Local, like `GraspClear`, but evaluated at the
+# boundary (`KinderBackend.abstract_atoms`) because it reads the bin's orientation, which
+# the flat state does not carry; see `bin_on_ground.py` for the classifier and for why
+# upstream's `OnGround` cannot back it. Every robot skill requires it, so a tipped bin
+# leaves only the resets, which re-place the bin upright.
+BIN_ON_GROUND = Predicate(
+    name="BinOnGround",
+    types=(Tossing3DEnvironment.bin_type,),
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_BIN_ON_GROUND, objects=(objects[0],)
     ),
 )
 

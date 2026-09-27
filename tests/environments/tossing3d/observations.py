@@ -109,16 +109,23 @@ def observation(
 # `predicates.py`), while what a symbolic-layer test wants is simply *an* abstract state
 # to plan from. Anything asserting the classifiers' own semantics belongs in
 # `test_kb_predicate_parity.py`, which calls upstream's classifiers directly.
+#
+# Every set here has the bin upright on the floor (`BinOnGround`, this domain's own
+# boundary atom -- see `bin_on_ground.py`), because every robot skill requires it.
+BIN_ON_GROUND_ATOM = ("BinOnGround", ("bin_0",))
+
 INITIAL_ATOMS = frozenset({
     ("HandEmpty", ("robot",)),
     ("OnGround", ("cube_0",)),
     ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
+    BIN_ON_GROUND_ATOM,
 })
 
 # Mid-episode: the cube is grasped and lifted, still on the robot's side of the barrier.
 HOLDING_ATOMS = frozenset({
     ("Holding", ("robot", "cube_0")),
     ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
+    BIN_ON_GROUND_ATOM,
 })
 
 # After a scoring throw: the cube is at rest inside the region and the hand is empty.
@@ -126,6 +133,7 @@ LANDED_IN_REGION_ATOMS = frozenset({
     ("HandEmpty", ("robot",)),
     ("OnGround", ("cube_0",)),
     ("MovableInGoalRegion", ("cube_0",)),
+    BIN_ON_GROUND_ATOM,
 })
 
 # After a throw that *missed*: the cube is at rest past the one-way barrier and outside
@@ -138,6 +146,7 @@ LANDED_IN_REGION_ATOMS = frozenset({
 MISSED_TOSS_ATOMS = frozenset({
     ("HandEmpty", ("robot",)),
     ("OnGround", ("cube_0",)),
+    BIN_ON_GROUND_ATOM,
 })
 
 
