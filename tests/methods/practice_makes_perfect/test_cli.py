@@ -220,3 +220,44 @@ def test_non_tossing3d_cli_rejects_the_domain_owned_reset_cost() -> None:
                 "0.1",
             ]
         )
+
+
+@pytest.mark.parametrize(
+    ("flag", "field"),
+    [
+        ("reproduce-predicators-seen-task-order", "reproduce_predicators_seen_task_order"),
+        ("reproduce-predicators-skip-perfect", "reproduce_predicators_skip_perfect"),
+        (
+            "reproduce-predicators-explore-target-only",
+            "reproduce_predicators_explore_target_only",
+        ),
+    ],
+)
+@pytest.mark.parametrize(("prefix", "expected"), [(None, False), ("", True), ("no-", False)])
+def test_the_predicators_fidelity_flags_parse_and_reach_ees(
+    *, flag: str, field: str, prefix: str | None, expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each flag defaults off, so every earlier run keeps its behaviour, and is handed
+    to the EesMethod the factory builds rather than dropped between argparse and the
+    method."""
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    argv = [] if prefix is None else [f"--{prefix}{flag}"]
+    args = _build_ees_parser().parse_args(argv)
+    assert getattr(args, field) is expected
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert isinstance(method, EesMethod)
+    assert getattr(method, field) is expected

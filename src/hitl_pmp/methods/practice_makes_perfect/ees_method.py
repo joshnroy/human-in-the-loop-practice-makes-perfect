@@ -91,20 +91,24 @@ class EesMethod(Method):
        (`active_sampler_explorer.py:400`). `reproduce_predicators_practice_
        target_history` restores predicators' all-attempts bookkeeping for this
        quantity (competence stays random-excluding either way); see that field
-       for why the flag exists. predicators' own `skip_perfect` -- dropping a
-       skill whose measured success rate is exactly 1.0 from the candidate list
-       entirely -- is deliberately not ported: this Method never drops a
-       mastered skill as a candidate, and instead lets the UCB bonus alone
-       deprioritize it as `num_tries` grows.
+       for why the flag exists. predicators' own `skip_perfect` (default True
+       there) scores a ground op whose `_ground_op_hist` success rate is exactly
+       1.0 as `-inf`, ranking it behind every finite candidate; it stays a
+       candidate, tried only once all others are unreachable. Off by default here,
+       so a mastered skill is deprioritized by the UCB bonus alone;
+       `reproduce_predicators_skip_perfect` restores predicators' gate.
     2. The outcome of the *last* skill in an interaction period is never observed
        (there is no subsequent state to check `add_effects` against). predicators
        observes at option termination instead. This loses at most one datapoint
        per period.
-    3. predicators double-counts one `observe()` call per non-exploratory attempt
-       (`active_sampler_learning_approach.py` calls it at both line 407 and 443);
-       that is a bug, and is not reproduced here. The *suppression* those same
-       lines implement -- no competence update when the epsilon-greedy random
-       branch fired -- IS reproduced; see `_SkillAttempt`.
+    3. Not a deviation by default. At reference/predicators 5bd3f5bd,
+       `ActiveSamplerExplorer._update_ground_op_hist` calls `observe(success)`
+       exactly once per attempt, and only when the epsilon-greedy random branch
+       did not fire -- which is what `observe_outcome` does. An earlier reading of
+       predicators claimed it double-observes; it does not.
+       `reproduce_predicators_double_observe` (default off) adds an extra observe
+       of every attempt, and so *creates* a deviation when turned on; see that
+       field.
     4. Candidate practice targets are scored against cached plans that are
        refreshed only every `replan_frequency` scoring calls -- predicators'
        own optimization (`active_sampler_explorer_replan_frequency`), and the
@@ -129,8 +133,9 @@ class EesMethod(Method):
     # CFG.active_sampler_explorer_planning_progress_max_tasks. The paper text says
     # "the 10 most recently seen tasks"; the reference code instead takes
     # `sorted(seen_idxs)[:10]` ("Don't randomize: would lead to noisy estimates").
-    # This follows the text. On this domain the two coincide in effect, since every
-    # Light Switch task differs only in the light's target value.
+    # By default this follows the text; `reproduce_predicators_seen_task_order`
+    # follows the code. On Light Switch the two coincide in effect, since every task
+    # differs only in the light's target value.
     planning_progress_max_tasks: int = 10
     # CFG.active_sampler_explorer_replan_frequency -- the paper: "cache last plan
     # per task, re-run planner once per 100 calls".
@@ -159,13 +164,15 @@ class EesMethod(Method):
     competence_window_size: int = 5
     competence_recency_size: int = 5
 
-    # Kept default FALSE, unlike the other two reproduce_* flags. This restores
-    # predicators' own double-`observe()` bug (deviation 3): it counts each random
-    # attempt once toward competence, which corrupts a mastered skill's estimate down
-    # to ~0.67 and mis-prices the planner's edge costs. Measured NULL on the success
-    # curve, so leaving it off does not hurt matching predicators' results, and it
-    # keeps competence clean. Pass --reproduce-predicators-double-observe for a
-    # bit-exact-faithful (bug-included) run.
+    # Default FALSE, and FALSE is what matches predicators. The flag was added on the
+    # belief that predicators double-observes; it does not. At reference/predicators
+    # 5bd3f5bd, `ActiveSamplerExplorer._update_ground_op_hist` calls
+    # `observe(success)` once, and only for a non-exploration attempt -- exactly this
+    # port's default (deviation 3). Turning this ON therefore CREATES a deviation: it
+    # observes every attempt an extra time, counting each random attempt once toward
+    # competence, which corrupts a mastered skill's estimate down to ~0.67 and
+    # mis-prices the planner's edge costs. Kept so earlier ON runs stay reproducible;
+    # it was measured null on the success curve.
     reproduce_predicators_double_observe: bool = False
 
     # A second, independent ablation switch (see deviation 1 above). predicators
@@ -194,6 +201,20 @@ class EesMethod(Method):
     # predicators together with a goal-pursuit horizon cap; on its own it is an ablation
     # that HELPS long multi-skill plans (Ball-Ring) but STARVES short goal-directed ones.
     reproduce_predicators_explore_target_only: bool = False
+    # Default FALSE (the original behaviour, so earlier runs are unchanged). ON,
+    # planning-progress scoring situates against the FIRST `planning_progress_max_tasks`
+    # seen tasks instead of the most recent ones -- predicators'
+    # `sorted(self._seen_train_task_idxs)[:max_num_tasks]`. This loop draws a
+    # never-repeating train stream, so the lowest indices are the earliest seen.
+    reproduce_predicators_seen_task_order: bool = False
+    # Default FALSE (the original behaviour). ON restores predicators'
+    # `active_sampler_explorer_skip_perfect` (default True there): a candidate whose
+    # `measured_success_rate` is exactly 1.0 scores `-inf`. Like predicators, it stays
+    # in the ranked candidate list, last, so it is still practiced when every finite
+    # candidate is unreachable. The rate reads the all-attempts history when
+    # `reproduce_predicators_practice_target_history` is on (predicators'
+    # `_ground_op_hist`), else the random-excluding competence history.
+    reproduce_predicators_skip_perfect: bool = False
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
     # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
@@ -361,8 +382,9 @@ class EesMethod(Method):
         deliberately random parameter that failed is exactly the negative example
         the classifier needs.
 
-        `reproduce_predicators_double_observe` restores predicators' literal
-        control flow instead; see that field for why the flag exists.
+        That is predicators' own control flow (`_update_ground_op_hist`, one
+        observe per non-exploration attempt). `reproduce_predicators_double_observe`
+        adds an extra observe and so departs from it; see that field.
 
         Independently of competence, every execution is recorded (greedy *and*
         random) into `_all_attempt_outcomes` -- predicators' `_ground_op_hist`.
@@ -372,8 +394,9 @@ class EesMethod(Method):
         self._all_attempt_outcomes.setdefault(ground_skill, []).append(success)
         model = self.competence_model(ground_skill=ground_skill)
         if self.reproduce_predicators_double_observe:
-            model.observe(success=success)  # active_sampler_explorer.py:407
-            if not was_random_exploration:  # :442-443
+            # A deviation from predicators, not a reproduction: see the field.
+            model.observe(success=success)
+            if not was_random_exploration:
                 model.observe(success=success)
             return
         if not was_random_exploration:
@@ -427,10 +450,10 @@ class EesMethod(Method):
 
     def measured_success_rate(self, *, ground_skill: GroundSkill) -> float:
         """Raw (prior-free) success fraction -- deliberately not the posterior
-        mean, which can never reach exactly 1.0 under a Beta prior. Not consulted
-        by `score_ground_skill` (predicators' own `skip_perfect` gate on this
-        value is deliberately not ported, see the class docstring's deviation 1);
-        kept as a diagnostic other code reads directly. Reads the all-attempts
+        mean, which can never reach exactly 1.0 under a Beta prior. Consulted by
+        `score_ground_skill` only under `reproduce_predicators_skip_perfect`
+        (predicators' `skip_perfect` gate); otherwise a diagnostic other code reads
+        directly. Reads the all-attempts
         (`_ground_op_hist`) history when
         `reproduce_predicators_practice_target_history` is on, else the competence
         history (which excludes epsilon-random attempts)."""
@@ -633,6 +656,7 @@ class EesMethod(Method):
         tally = self._practice_target_tallies.get(name, PracticeTargetTally())
         builder = {
             "scored": tally.with_scored,
+            "declined_perfect": tally.with_declined_perfect,
             "selected": tally.with_selected,
             "unreachable": tally.with_unreachable,
         }[field]
@@ -690,7 +714,7 @@ class EesMethod(Method):
     def refresh_planning_progress_plans(self) -> None:
         costs = self.skill_costs()
         plans: list[list[GroundSkill]] = []
-        for init_atoms, goal in self._seen_tasks[-self.planning_progress_max_tasks :]:
+        for init_atoms, goal in self.planning_progress_tasks():
             try:
                 # practicing=False (the default): this scoring pass never results in
                 # a real dispatch -- see plan_to's own docstring -- so it must never
@@ -700,14 +724,30 @@ class EesMethod(Method):
                 continue
         self._cached_plans = plans
 
+    def planning_progress_tasks(
+        self,
+    ) -> list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]]:
+        """The seen tasks scoring situates against: the most recent
+        `planning_progress_max_tasks` by default, the first that many under
+        `reproduce_predicators_seen_task_order`."""
+        if self.reproduce_predicators_seen_task_order:
+            return self._seen_tasks[: self.planning_progress_max_tasks]
+        return self._seen_tasks[-self.planning_progress_max_tasks :]
+
     # ------------------------------------------------- extrapolate + situate (score)
 
     def score_ground_skill(self, *, ground_skill: GroundSkill) -> float:
         """Planning progress: how much cheaper do the seen tasks' plans get if
         *this* skill improves by one cycle's worth of practice? Ported from
-        predicators' `_score_ground_op_planning_progress`. Never returns `-inf`
-        -- predicators' own `skip_perfect` gate is deliberately not ported, see
-        the class docstring's deviation 1."""
+        predicators' `_score_ground_op_planning_progress`. Returns `-inf` only under
+        `reproduce_predicators_skip_perfect`, for a skill whose measured success rate
+        is exactly 1.0 -- before any planning, as predicators returns before
+        `_get_task_plan_for_task`."""
+        if (
+            self.reproduce_predicators_skip_perfect
+            and self.measured_success_rate(ground_skill=ground_skill) == 1.0
+        ):
+            return -math.inf
         model = self.competence_model(ground_skill=ground_skill)
         extrapolated = model.predict_competence(num_additional_data=self.competence_lookahead)
         costs = self.skill_costs()
@@ -737,14 +777,18 @@ class EesMethod(Method):
     def choose_practice_target(self) -> list[GroundSkill]:
         """Candidates in descending score order -- the explorer tries them in turn
         until one's preconditions are actually reachable. Every scored candidate
-        stays a candidate -- `score_ground_skill` never returns `-inf`, so nothing
-        is dropped outright here."""
+        stays a candidate, including one `reproduce_predicators_skip_perfect` scored
+        `-inf`: predicators' `generate_goals` yields every op in score order, so a
+        perfect op is ranked last rather than removed."""
         scored: list[tuple[float, float, GroundSkill]] = []
         # list(...) because scoring can lazily create competence models, which
         # would otherwise mutate the dict mid-iteration.
         for candidate in list(self._competence_models):
             score = self.score_ground_skill(ground_skill=candidate)
-            self.record_practice_target(name=candidate.skill.name, field="scored")
+            self.record_practice_target(
+                name=candidate.skill.name,
+                field="declined_perfect" if score == -math.inf else "scored",
+            )
             # Ties broken randomly, matching predicators' own rng.uniform tiebreak.
             scored.append((score, float(self._rng.uniform()), candidate))
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -1081,8 +1125,9 @@ class _SkillAttempt(BaseModel):
     *random* branch rather than the learned argmax.
 
     That last flag matters: predicators suppresses the *competence* update for
-    randomly-explored attempts (`active_sampler_learning_approach.py` lines
-    442-443) while still keeping them as sampler training data. Without it,
+    randomly-explored attempts (`ActiveSamplerExplorer._update_ground_op_hist`,
+    `if not exploration_indicator`) while still keeping them as sampler training
+    data. Without it,
     competence measures "how often does a coin flip work" rather than "how good
     is this skill when the robot actually tries" -- at the paper's epsilon=0.5
     that roughly halves the apparent competence of a skill the robot has in fact

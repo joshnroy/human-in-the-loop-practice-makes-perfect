@@ -363,7 +363,7 @@ class PracticeTargetTally(BaseModel):
 
     - `num_scored` -- a grounding was scored, came back finite, and entered the ranked
       candidate list. This is "EES was willing to practice it".
-    - `num_declined_perfect` -- a grounding scored `-math.inf` and was dropped, which
+    - `num_declined_perfect` -- a grounding scored `-math.inf` and was ranked last, which
       under `skip_perfect` means and only means its *measured* success rate is exactly
       1.0. Nonzero here beside a zero `num_selected` is the failure state: the skill is
       not being practiced, and the reason is that the domain's success predicate says

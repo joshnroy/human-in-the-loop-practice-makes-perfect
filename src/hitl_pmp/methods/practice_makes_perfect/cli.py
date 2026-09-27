@@ -62,14 +62,15 @@ class EesCli:
             "predicators' settings.py default; the paper's launch configs override it "
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
-        # These three default TRUE to match predicators (which reproduces the paper);
-        # pass --no-... to ablate a single deviation.
+        # Each default is the EesMethod field's; see that field for why it is what it
+        # is. Only --reproduce-predicators-practice-target-history defaults on.
         parser.add_argument(
             "--reproduce-predicators-double-observe",
             action=argparse.BooleanOptionalAction,
             default=EesMethod.model_fields["reproduce_predicators_double_observe"].default,
-            help="Match predicators' double-observe() (default on). --no-... counts a "
-            "practice outcome once instead of twice.",
+            help="Observe each practice outcome an extra time (default off). Despite the "
+            "name this is NOT predicators' behaviour: predicators observes once, only "
+            "for non-exploration attempts, as the default does. On is a deviation.",
         )
         parser.add_argument(
             "--reproduce-predicators-practice-target-history",
@@ -84,8 +85,24 @@ class EesCli:
             action=argparse.BooleanOptionalAction,
             default=EesMethod.model_fields["reproduce_predicators_explore_target_only"].default,
             help="Explore (epsilon-greedy) only on the practice-target skill, greedy "
-            "for the prefix that reaches it, matching predicators (default on). "
+            "for the prefix that reaches it, matching predicators (default off). "
             "--no-... explores every skill during practice.",
+        )
+        parser.add_argument(
+            "--reproduce-predicators-seen-task-order",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reproduce_predicators_seen_task_order"].default,
+            help="Score practice candidates against the first 10 seen tasks, as "
+            "predicators' sorted(seen_train_task_idxs)[:10] does (default off: the 10 "
+            "most recent).",
+        )
+        parser.add_argument(
+            "--reproduce-predicators-skip-perfect",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reproduce_predicators_skip_perfect"].default,
+            help="Rank a candidate whose measured success rate is exactly 1.0 last, "
+            "scoring it -inf, as predicators' active_sampler_explorer_skip_perfect does "
+            "(default off).",
         )
         parser.add_argument(
             "--goal-pursuit-horizon",
@@ -153,6 +170,8 @@ class EesCli:
                 reproduce_predicators_explore_target_only=(
                     args.reproduce_predicators_explore_target_only
                 ),
+                reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
+                reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
             ),
             num_cycles=args.num_cycles,
             max_steps_per_interaction=args.max_steps_per_interaction,
@@ -298,6 +317,8 @@ class Tossing3DPomdpCli(EesCli):
                 reproduce_predicators_explore_target_only=(
                     args.reproduce_predicators_explore_target_only
                 ),
+                reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
+                reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
                 pomdp_max_search_iterations=args.pomdp_max_search_iterations,

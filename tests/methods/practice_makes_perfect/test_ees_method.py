@@ -606,11 +606,13 @@ def test_random_exploration_attempts_do_not_touch_competence_by_default() -> Non
 
 
 def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
-    """predicators calls observe() unconditionally (active_sampler_explorer.py:407)
-    and then again under `if not exploration_indicator` (:442-443), so a greedy
-    attempt lands twice and a random one lands once -- the suppression its own
-    comment describes never actually takes effect. The flag exists to measure what
-    that bug costs, since the paper's published curve contains it."""
+    """What the flag does: a greedy attempt lands twice and a random one once.
+
+    The name is historical and wrong. At reference/predicators 5bd3f5bd,
+    `_update_ground_op_hist` calls observe() once, only under
+    `if not exploration_indicator` -- this port's default. So the flag departs from
+    predicators rather than reproducing it; this test pins what it does, not what
+    predicators does."""
     method, env = _build(seed=1)
     skill = _turn_on_light(env=env)
 
@@ -623,10 +625,10 @@ def test_double_observe_flag_replicates_predicators_observe_counts() -> None:
 
 
 def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
-    """Why the bug slows learning: with random attempts counted at half the weight
-    of greedy ones, a skill the robot has actually mastered still reads as mediocre
-    (its random attempts keep failing), so `skip_perfect` never fires and EES keeps
-    spending transitions re-practicing it."""
+    """What the flag costs: with random attempts counted at half the weight of
+    greedy ones, a skill the robot has actually mastered still reads as mediocre (its
+    random attempts keep failing). Not a predicators behaviour -- see the test
+    above."""
     buggy, env = _build()
     buggy.reproduce_predicators_double_observe = True
     fixed, _ = _build()
@@ -649,8 +651,8 @@ def test_double_observe_caps_a_mastered_skills_competence_below_one() -> None:
 
 def test_predicators_matching_flag_defaults() -> None:
     """The port defaults toward matching predicators, with two documented exceptions.
-    practice_target_history is ON (a clean match). double_observe stays OFF (it is null
-    on the success curve but corrupts competence). explore_target_only stays OFF
+    practice_target_history is ON (a clean match). double_observe is OFF, which is
+    what matches predicators (it observes once, never twice). explore_target_only stays OFF
     because it is coupled to a horizon cap this port lacks -- ON alone starves
     goal-directed learning (see its field comment)."""
     method, _ = _build()
@@ -1812,3 +1814,158 @@ def test_tossing3d_plans_a_pick_retry_after_an_observed_refusal() -> None:
     plan = method.plan_to(init_atoms=refused, goal=goal, costs={})
 
     assert [ground.skill.name for ground in plan] == ["PickCube", "MoveToTossLocationAndToss"]
+
+
+# ------------------------------------------- predicators-fidelity flags (active_sampler_
+# explorer.py at reference/predicators 5bd3f5bd)
+
+
+class _PlanToSpyEesMethod(EesMethod):
+    """Records every goal `plan_to` is asked for and plans nothing, so a test can see
+    which seen tasks a scoring refresh situates against without running Fast
+    Downward."""
+
+    planned_goals: list[frozenset[GroundAtom]] = []
+
+    def plan_to(
+        self,
+        *,
+        init_atoms: frozenset[GroundAtom],
+        goal: frozenset[GroundAtom],
+        costs: dict[GroundSkill, float],
+        practicing: bool = False,
+    ) -> list[GroundSkill]:
+        del init_atoms, costs, practicing
+        self.planned_goals.append(goal)
+        return []
+
+
+def _seen_goals_scored(*, seen_task_order: bool) -> tuple[list[int], int]:
+    """Index of each seen task a refresh plans for, out of twelve seen in order."""
+    env = LightSwitchEnvironment(grid_size=13)
+    method = _PlanToSpyEesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        planned_goals=[],
+        reproduce_predicators_seen_task_order=seen_task_order,
+    )
+    state = env.build_initial_state(light_level=0.0, light_target=0.5)
+    cells = env.get_cells()
+    goals = [
+        frozenset({GroundAtom(predicate=ADJACENT, objects=(cells[i], cells[i]))}) for i in range(12)
+    ]
+    for goal in goals:
+        method.record_seen_task(init_atoms=method.abstract_state(state=state), goal=goal)
+    method.refresh_planning_progress_plans()
+    return [goals.index(goal) for goal in method.planned_goals], method.planning_progress_max_tasks
+
+
+def test_scoring_situates_against_the_most_recent_seen_tasks_by_default() -> None:
+    """The port's original reading of the paper text, kept as the default so every
+    earlier run is unchanged."""
+    indices, max_tasks = _seen_goals_scored(seen_task_order=False)
+    assert max_tasks == 10
+    assert indices == list(range(2, 12))
+
+
+def test_the_seen_task_order_flag_situates_against_the_first_seen_tasks() -> None:
+    """predicators' `_score_ground_op_planning_progress` takes
+    `sorted(self._seen_train_task_idxs)[:max_num_tasks]` ("Don't randomize"). This loop
+    draws a never-repeating train stream, so the lowest indices are the earliest seen."""
+    indices, _max_tasks = _seen_goals_scored(seen_task_order=True)
+    assert indices == list(range(10))
+
+
+def _skip_perfect_build(*, skip_perfect: bool) -> tuple[EesMethod, LightSwitchEnvironment]:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        reproduce_predicators_skip_perfect=skip_perfect,
+    )
+    _record_one_seen_task(method=method, env=env)
+    return method, env
+
+
+def test_skip_perfect_is_off_by_default() -> None:
+    method, _env = _build()
+    assert method.reproduce_predicators_skip_perfect is False
+    assert method.reproduce_predicators_seen_task_order is False
+
+
+def test_skip_perfect_scores_a_perfect_skill_negative_infinity() -> None:
+    """predicators' `active_sampler_explorer_skip_perfect` (default True): a ground op
+    whose `_ground_op_hist` success rate is exactly 1.0 scores `-np.inf`, before any
+    planning or UCB bonus."""
+    method, env = _skip_perfect_build(skip_perfect=True)
+    skill = _turn_on_light(env=env)
+    for _ in range(5):
+        method.observe_outcome(ground_skill=skill, success=True)
+    score_calls = method._score_calls
+
+    assert method.score_ground_skill(ground_skill=skill) == -math.inf
+    # predicators returns before `_get_task_plan_for_task`, so the replan counter
+    # does not advance for a skipped op.
+    assert method._score_calls == score_calls
+
+
+def test_skip_perfect_reads_the_all_attempts_history() -> None:
+    """The rate is `_ground_op_hist`'s, which includes epsilon-random attempts. A skill
+    whose greedy attempts all succeed but whose random ones fail is not perfect there,
+    so it is scored normally."""
+    method, env = _skip_perfect_build(skip_perfect=True)
+    skill = _turn_on_light(env=env)
+    _feed_mastered_at_epsilon_half(method=method, skill=skill, reps=5)
+    assert method.competence_model(ground_skill=skill).num_observations == 5
+
+    assert math.isfinite(method.score_ground_skill(ground_skill=skill))
+
+
+def test_skip_perfect_ranks_a_perfect_skill_last_but_keeps_it_a_candidate() -> None:
+    """predicators sorts every op in `_ground_op_hist` by score and yields them all
+    (`generate_goals`), so a `-inf` op is tried only after every finite one is
+    unreachable -- it is ranked last, not removed. Recorded as declined_perfect."""
+    method, env = _skip_perfect_build(skip_perfect=True)
+    perfect = _turn_on_light(env=env)
+    imperfect = _move_robot_backwards(env=env)
+    for _ in range(5):
+        method.observe_outcome(ground_skill=perfect, success=True)
+    method.observe_outcome(ground_skill=imperfect, success=True)
+    method.observe_outcome(ground_skill=imperfect, success=False)
+
+    ranked = method.choose_practice_target()
+
+    assert ranked == [imperfect, perfect]
+    assert method.practice_target_outcomes()["TurnOnLight"].num_declined_perfect == 1
+    assert method.practice_target_outcomes()["TurnOnLight"].num_scored == 0
+    assert method.practice_target_outcomes()["MoveRobot"].num_scored == 1
+
+
+def test_target_only_exploration_with_goal_pursuit_horizon_zero_still_explores() -> None:
+    """The documented deadlock needs an uncapped goal phase that never ends, so practice
+    (the only place target-only exploration fires) never starts. At horizon 0 the goal
+    phase ends on the first practice step, so exploration and sampler training data
+    begin at once.
+
+    TurnOnLight is made a candidate up front: EES's candidates are only ground skills
+    it has already executed, and at horizon 0 on Light Switch nothing else ever puts
+    the one parameterized skill there -- with or without this flag."""
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        reproduce_predicators_explore_target_only=True,
+        goal_pursuit_horizon=0,
+    )
+    method.observe_outcome(ground_skill=_turn_on_light(env=env), success=False)
+    task = LightSwitchTasks(env=env, seed=0).sample_train_task()
+    env.set_state(state=task.initial_state)
+    policy = method.get_practice_policy(task=task)
+    state = env.get_current_state()
+    for _ in range(20):
+        state = env.take_action(action=policy(state).action)
+
+    assert sum(sampler.num_observations for sampler in method._samplers.values()) > 0

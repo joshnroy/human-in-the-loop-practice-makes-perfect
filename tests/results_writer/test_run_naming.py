@@ -211,3 +211,21 @@ def test_omitted_linear_lambda_names_the_effective_hard_budget_objective() -> No
     )
     assert "-hard-budget-" in name
     assert "linear-lambda-none" not in name
+
+
+@pytest.mark.parametrize(
+    ("dest", "token"),
+    [
+        ("reproduce_predicators_explore_target_only", "explore-target-only"),
+        ("reproduce_predicators_seen_task_order", "first-seen-tasks"),
+        ("reproduce_predicators_skip_perfect", "skip-perfect"),
+    ],
+)
+def test_a_predicators_fidelity_flag_is_named_only_when_on(*, dest: str, token: str) -> None:
+    """Off is the default every earlier run was recorded under, so its name must not
+    change; on gains a token so the two arms cannot collide under one name."""
+    off = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", **{dest: False}))
+    on = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", **{dest: True}))
+    unregistered = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    assert off == unregistered
+    assert on == off.replace("-c100-seed3", f"-{token}-c100-seed3")

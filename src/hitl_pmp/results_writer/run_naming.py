@@ -64,6 +64,21 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
     # EES's and POMDP's own flag, absent on every other method. Named only when off,
     # for the same reason as `human_reset`.
     RunNameField(dest="ees_reset_gate", toggle=("", "no-ees-reset-gate"), optional=True),
+    # EES's predicators-fidelity switches. Each is named only when it departs from its
+    # default, so every run recorded before a flag existed keeps its name.
+    RunNameField(
+        dest="reproduce_predicators_explore_target_only",
+        toggle=("explore-target-only", ""),
+        optional=True,
+    ),
+    RunNameField(
+        dest="reproduce_predicators_seen_task_order",
+        toggle=("first-seen-tasks", ""),
+        optional=True,
+    ),
+    RunNameField(
+        dest="reproduce_predicators_skip_perfect", toggle=("skip-perfect", ""), optional=True
+    ),
     RunNameField(
         dest="pomdp_linear_cost_lambda",
         prefix="linear-lambda-",
