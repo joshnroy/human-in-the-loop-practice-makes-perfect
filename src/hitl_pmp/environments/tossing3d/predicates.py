@@ -209,8 +209,29 @@ BIN_ON_GROUND = Predicate(
 )
 
 
-def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
-    """Whether ``x_object`` is on the named robot-relative halfspace."""
+# The face-to-face clearance a cube on the robot's side needs from the barrier for the
+# live pick to be planned and to hold. Measured by a dense scan at the pick controller
+# (2026-09-27; seed-125 scene, cube moved, gap stepped by 2.5 mm from 0 to 0.10 m) over
+# nine configurations: y in {-1.5, -0.615, 0, 0.6, 1.5} at the scene's own cube yaw
+# (34 deg), yaw 0 and 45 deg at y = 0, and two other robot start poses. Every
+# configuration refused ("No collision-free cube grasp") at gaps <= 0.0425 m, and every
+# one planned and held at every gap >= 0.0625 m; in between the result depends on yaw
+# (axis-aligned cubes hold from 0.05 m, 45-degree ones from 0.0625 m, since a corner
+# reaches 0.010 m closer) and some planned picks ran but did not hold. Only the approach
+# from -x has a base pose there, and the Robotiq palm meets the barrier on the descent.
+# The gap is measured from the axis-aligned half-width, like the footprint test below,
+# so the constant is the yaw-worst-case one.
+BARRIER_GRASP_CLEARANCE_M = 0.0625
+
+
+def _same_barrier_side(
+    *, state: State, x_object: Object, side: Object, robot_side_margin: float = 0.0
+) -> bool:
+    """Whether ``x_object`` is on the named robot-relative halfspace.
+
+    ``robot_side_margin`` widens the excluded band on the robot's side only: an object
+    closer to the barrier than footprint contact plus the margin is on neither side.
+    """
     robot_x = state.get(obj=Tossing3DEnvironment.robot, feature_name="pos_base_x")
     barrier_x = state.get(obj=Tossing3DEnvironment.barrier, feature_name="x")
     object_x = state.get(obj=x_object, feature_name="x")
@@ -230,7 +251,9 @@ def _same_barrier_side(*, state: State, x_object: Object, side: Object) -> bool:
         return False
     same_as_robot = object_delta * robot_delta > 0.0
     if side == Tossing3DSides.robot:
-        return same_as_robot
+        # Exactly the margin counts (the measured 0.0625 m gap held live); the epsilon
+        # keeps float32 scene features from flipping that boundary.
+        return same_as_robot and abs(object_delta) >= clearance + robot_side_margin - 1e-6
     if side == Tossing3DSides.opposite:
         return object_delta * robot_delta < 0.0
     raise ValueError(f"unknown Tossing3D side object {side.name!r}")
@@ -253,8 +276,13 @@ CUBE_AT_SIDE = Predicate(
         Tossing3DEnvironment.barrier_type,
         Tossing3DSides.type,
     ),
+    # On the robot's side only within grasping range: a cube inside the barrier's
+    # grasp band is on neither side, so no pick applies (see BARRIER_GRASP_CLEARANCE_M).
     holds=lambda state, objects: _same_barrier_side(
-        state=state, x_object=objects[0], side=objects[2]
+        state=state,
+        x_object=objects[0],
+        side=objects[2],
+        robot_side_margin=BARRIER_GRASP_CLEARANCE_M,
     ),
 )
 

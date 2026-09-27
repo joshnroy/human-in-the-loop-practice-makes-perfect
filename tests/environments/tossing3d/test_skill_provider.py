@@ -128,7 +128,9 @@ def test_cube_on_or_straddling_barrier_is_on_neither_side() -> None:
         assert not CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, Tossing3DSides.robot))
         assert not CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, Tossing3DSides.opposite))
 
-    for cube_x in (1.3 - 0.056, 1.3 + 0.056):
+    # Just past contact the opposite side holds, but the robot's side also needs the
+    # grasp band (`BARRIER_GRASP_CLEARANCE_M`, see test_cube_grasp_range.py) cleared.
+    for cube_x in (1.3 - 0.056 - 0.0625, 1.3 + 0.056):
         scene.set(obj=env.cube, feature_name="x", feature_val=cube_x)
         assert any(
             CUBE_AT_SIDE.holds(scene, (env.cube, env.barrier, side))
