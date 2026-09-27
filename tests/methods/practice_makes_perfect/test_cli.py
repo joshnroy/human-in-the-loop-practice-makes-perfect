@@ -139,6 +139,37 @@ def test_ees_run_completes_end_to_end_through_the_cli(
     assert re.search(r"success rate: \d+/5", capsys.readouterr().out)
 
 
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [([], True), (["--ees-reset-gate"], True), (["--no-ees-reset-gate"], False)],
+)
+def test_the_ees_reset_gate_flag_parses_and_reaches_ees(
+    *, argv: list[str], expected: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Parsed by --method ees and handed to the EesMethod the factory builds, so
+    --no-ees-reset-gate is not silently dropped between argparse and plan_to."""
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.lightswitch.skill_provider import LightSwitchSkillProvider
+    from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+    args = _build_ees_parser().parse_args(argv)
+    assert args.ees_reset_gate is expected
+    captured: dict[str, object] = {}
+
+    def _capture(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(LightSwitchCli, "run_method", staticmethod(_capture))
+    EesCli.run(args=args, env_cli=LightSwitchCli)
+    env = LightSwitchEnvironment(grid_size=3)
+    method = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=LightSwitchSkillProvider(env=env))
+    )
+    assert isinstance(method, EesMethod)
+    assert method.reset_cost_gate is expected
+
+
 def test_ees_does_not_register_domain_owned_reset_cost() -> None:
     parser = argparse.ArgumentParser()
     EesCli.add_arguments(parser=parser)

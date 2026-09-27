@@ -138,6 +138,12 @@ class EesMethod(Method):
     # CFG.active_sampler_learning_exploration_epsilon -- the paper: "epsilon-greedy
     # with epsilon = 0.5".
     exploration_epsilon: float = 0.5
+    # Whether plan_to declines a practice plan whose human reset costs more than the
+    # priciest ordinary skill (see plan_to). Off, any reset-using plan is accepted and
+    # Fast Downward's own cost minimisation is the only thing choosing between a reset
+    # and a reset-free route -- so a robot stranded with no reset-free plan resets at
+    # whatever the reset costs, rather than staying stuck.
+    reset_cost_gate: bool = True
     # CFG.active_sampler_learning_num_samples
     num_candidates: int = Field(default=100, gt=0)
     # Keep the original iid proposal distribution, conditioning only on the
@@ -488,7 +494,8 @@ class EesMethod(Method):
         own observed competence. Clears the ceiling: accepted. Doesn't: re-requested
         with no reset offered, so a real cheaper alternative still wins and a truly
         unreachable goal still raises `PlanningFailure` -- keeping "stay stuck,
-        unrescued" possible."""
+        unrescued" possible. `reset_cost_gate=False` skips that check: a reset-using
+        plan is returned as planned, whatever the reset costs."""
         skills = self.skills()
         ground_skill_costs = costs
         cube_bin_ground_skills: tuple[GroundSkill, ...] = ()
@@ -508,7 +515,7 @@ class EesMethod(Method):
         plan = self._plan_or_raise(
             skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs
         )
-        if not cube_bin_ground_skills:
+        if not cube_bin_ground_skills or not self.reset_cost_gate:
             return plan
         reset_set = set(cube_bin_ground_skills)
         used = [ground_skill for ground_skill in plan if ground_skill in reset_set]

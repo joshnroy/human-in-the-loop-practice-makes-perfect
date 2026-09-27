@@ -102,6 +102,15 @@ class EesCli:
             help="Per-call Fast Downward timeout, in seconds.",
         )
         parser.add_argument(
+            "--ees-reset-gate",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reset_cost_gate"].default,
+            help="Decline a practice plan whose human reset costs more than the "
+            "priciest ordinary skill (default on). --no-... accepts any reset-using "
+            "plan, so Fast Downward's cost minimisation alone chooses between a reset "
+            "and a reset-free route. Evaluation never offers the reset either way.",
+        )
+        parser.add_argument(
             "--competence-window-size",
             type=int,
             default=EesMethod.model_fields["competence_window_size"].default,
@@ -136,6 +145,7 @@ class EesCli:
                 planning_timeout=args.planning_timeout,
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
+                reset_cost_gate=args.ees_reset_gate,
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history
@@ -280,6 +290,7 @@ class Tossing3DPomdpCli(EesCli):
                 planning_timeout=args.planning_timeout,
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
+                reset_cost_gate=args.ees_reset_gate,
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history

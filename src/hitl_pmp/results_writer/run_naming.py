@@ -61,6 +61,9 @@ RUN_NAME_FIELDS: tuple[RunNameField, ...] = (
         toggle=("", "no-human-reset"),
         when=("env", "tossing3d"),
     ),
+    # EES's and POMDP's own flag, absent on every other method. Named only when off,
+    # for the same reason as `human_reset`.
+    RunNameField(dest="ees_reset_gate", toggle=("", "no-ees-reset-gate"), optional=True),
     RunNameField(
         dest="pomdp_linear_cost_lambda",
         prefix="linear-lambda-",

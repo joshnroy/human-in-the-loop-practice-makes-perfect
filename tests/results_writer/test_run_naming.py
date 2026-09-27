@@ -90,6 +90,19 @@ def test_missing_tossing3d_human_reset_flag_raises() -> None:
         RunNamer.name(args=args)
 
 
+def test_a_run_without_the_ees_reset_gate_says_so_and_the_default_name_is_unchanged() -> None:
+    """Default-on runs predate the flag, so only the ablation gains a token; a method
+    that never registers the flag names nothing."""
+    default = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", ees_reset_gate=True))
+    ablated = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d", ees_reset_gate=False))
+    unregistered = RunNamer.name(args=Namespaces.ees_tossingroom(env="tossing3d"))
+    assert default == unregistered
+    assert default == "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-c100-seed3"
+    assert ablated == (
+        "tossing3d-ees-oneway-split-never-human-reset-cost-5-0-no-ees-reset-gate-c100-seed3"
+    )
+
+
 def test_missing_tossing3d_human_reset_cost_raises() -> None:
     args = Namespaces.ees_tossingroom(env="tossing3d")
     del args.human_reset_practice_cost
