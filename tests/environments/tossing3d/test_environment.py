@@ -257,16 +257,20 @@ def test_the_pick_dispatch_ignores_every_parameter_slot(*, monkeypatch: pytest.M
 @pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="KINDER simulator dependency"
 )
-def test_an_observed_pick_refusal_blocks_picks_until_a_reset_moves_the_cube() -> None:
+def test_an_observed_pick_refusal_is_retryable_until_a_reset_moves_the_cube() -> None:
     """The recovery-state lifecycle on the trap-2 stuck state saved from the
     2026-09-22 grasp-clear validation run: dispatching the pick there is refused
     ("No collision-free cube grasp", 0 steps); the refusal must surface as an
-    observed atom that removes PickupUnblocked from the state, and a movables
-    reset must clear it and leave the cube physically pickable again."""
+    observed atom that removes PickupUnblocked from the state, yet the pick stays
+    applicable -- a retry is dispatched and refused again, one more failed attempt --
+    and a movables reset must clear the atom and leave the cube pickable again."""
     import json as jsonlib
     from pathlib import Path
 
     from hitl_pmp.environments.tossing3d.predicates import HOLDING, PICKUP_UNBLOCKED
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+    from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
+    from hitl_pmp.planning.grounding import SkillGrounder
 
     stuck_path = Path(__file__).parent / "fixtures" / "trap2_stuck_state.json"
     plain = jsonlib.loads(stuck_path.read_text())
@@ -280,6 +284,19 @@ def test_an_observed_pick_refusal_blocks_picks_until_a_reset_moves_the_cube() ->
         assert "No collision-free" in env.last_skill_error()
         assert sum(env.last_controller_steps()) == 0
         assert not PICKUP_UNBLOCKED.holds(refused, (env.cube,))
+        provider = Tossing3DSkillProvider(env=env)
+        applicable = SkillGrounder.applicable_ground_skills(
+            skills=provider.skills(),
+            objects=provider.objects(),
+            true_atoms=SkillGrounder.abstract_state(
+                state=refused, objects=provider.objects(), predicates=provider.predicates()
+            ),
+        )
+        assert any(ground.skill == Tossing3DSkills.PICK_CUBE for ground in applicable)
+        retried = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
+        assert "No collision-free" in (env.last_skill_error() or "")
+        assert sum(env.last_controller_steps()) == 0
+        assert not PICKUP_UNBLOCKED.holds(retried, (env.cube,))
         assert env.reset_movables(destination="robot_side")
         after_reset = env.get_current_state()
         assert PICKUP_UNBLOCKED.holds(after_reset, (env.cube,))

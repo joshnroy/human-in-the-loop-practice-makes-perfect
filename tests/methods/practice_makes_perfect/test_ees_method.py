@@ -1774,3 +1774,41 @@ def test_tossing3d_practice_without_the_human_reset_offers_none(
     method.plan_to(init_atoms=frozenset(), goal=frozenset(), costs={}, practicing=True)
     assert not any("reset" in name for name in offered["skills"] | offered["costed"])
     assert method.may_request_human_help() is False
+
+
+def test_tossing3d_plans_a_pick_retry_after_an_observed_refusal() -> None:
+    """An observed grasp-planner refusal removes PickupUnblocked but does not mask the
+    pick: from the refused state Fast Downward may still plan PickCube, so retrying is
+    a choice EES's own costs make rather than one the operator model forbids."""
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.predicates import (
+        BIN_AT_SIDE,
+        CUBE_AT_SIDE,
+        GRASP_CLEAR,
+        HAND_EMPTY,
+        IN_BIN,
+        NOT_HOLDING,
+        ON_GROUND,
+        ROBOT_AT_SIDE,
+    )
+    from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    env = Tossing3DEnvironment(scene_bg=False)
+    method = EesMethod(env=env, skill_provider=Tossing3DSkillProvider(env=env), seed=0)
+    robot, cube, bin_, barrier = env.robot, env.cube, env.bin, env.barrier
+    refused = frozenset({
+        GroundAtom(predicate=HAND_EMPTY, objects=(robot,)),
+        GroundAtom(predicate=ON_GROUND, objects=(cube,)),
+        GroundAtom(predicate=NOT_HOLDING, objects=(robot, cube)),
+        GroundAtom(predicate=ROBOT_AT_SIDE, objects=(robot, barrier, Tossing3DSides.robot)),
+        GroundAtom(predicate=CUBE_AT_SIDE, objects=(cube, barrier, Tossing3DSides.robot)),
+        GroundAtom(predicate=BIN_AT_SIDE, objects=(bin_, barrier, Tossing3DSides.opposite)),
+        GroundAtom(predicate=GRASP_CLEAR, objects=(cube, bin_)),
+        # Deliberately NOT PickupUnblocked: the refusal was observed.
+    })
+    goal = frozenset({GroundAtom(predicate=IN_BIN, objects=(cube, bin_))})
+
+    plan = method.plan_to(init_atoms=refused, goal=goal, costs={})
+
+    assert [ground.skill.name for ground in plan] == ["PickCube", "MoveToTossLocationAndToss"]

@@ -241,17 +241,16 @@ def test_deleting_a_reset_self_loop_preserves_the_continuation_and_saves_its_cos
     ) == pytest.approx(cost_lambda * saved_cost)
 
 
-@pytest.mark.parametrize("gripper", ["HandEmpty", "ClosedEmpty"])
-def test_an_observed_pickup_block_prunes_picks_and_offers_resets(*, gripper: str) -> None:
-    """The run-level property of the recovery fix: with PickupUnblocked absent (an
-    observed refusal), the pick is inapplicable and every offered reset is available as
-    state-changing actions -- the cheap-refusal loop cannot form."""
+def test_an_observed_pickup_refusal_leaves_the_pick_and_every_reset_available() -> None:
+    """With PickupUnblocked absent (an observed refusal), the pick is still offered
+    alongside every reset: whether to retry it is the planner's choice, and a refused
+    retry is one more failed attempt for the pick's competence belief."""
     method = _method()
     model = method._pomdp_model  # noqa: SLF001
-    blocked = frozenset(
+    refused = frozenset(
         _atom(method=method, name=name)
         for name in (
-            gripper,
+            "HandEmpty",
             "OnGround",
             "NotHolding",
             "RobotAtSide",
@@ -262,8 +261,8 @@ def test_an_observed_pickup_block_prunes_picks_and_offers_resets(*, gripper: str
         )
     )
     actions = model.get_valid_actions(
-        environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=blocked)
+        environment_state=make_tossing3d_search_state(state=method.pomdp_state, true_atoms=refused)
     )
     names = {action.skill.name for action in actions}
-    assert PICK_SKILL not in names
+    assert PICK_SKILL in names
     assert _offered_resets(method=method) <= names

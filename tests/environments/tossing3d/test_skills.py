@@ -221,7 +221,6 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             predicate=GRASP_CLEAR,
             variables=(_SKILLS._cube, _SKILLS._bin),
         ),
-        LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,)),
     })
     assert _SKILLS.PICK_CUBE.add_effects == frozenset({
         LiftedAtom(predicate=HOLDING, variables=(_SKILLS._robot, _SKILLS._cube))
@@ -622,23 +621,34 @@ def test_pick_requires_grasp_clear_and_the_toss_leaves_it_to_observation() -> No
     assert any(atom.predicate == GRASP_CLEAR for atom in reset.skill.add_effects)
 
 
-def test_pick_requires_the_observed_pickup_channel_and_movers_restore_it() -> None:
-    """The recovery-state fix: an OBSERVED grasp-planner refusal makes PickCube
-    inapplicable until something moves the cube -- the toss (which relocates it) or
-    either paid reset. GraspClear prunes the predictable subset; this atom catches
-    the observed remainder."""
-    from hitl_pmp.environments.tossing3d.predicates import PICKUP_UNBLOCKED
+def test_an_observed_refusal_leaves_the_pick_applicable_and_movers_restore_it() -> None:
+    """An OBSERVED grasp-planner refusal is information, not a mask: PickCube stays
+    applicable in a state without PickupUnblocked, so whether to retry the pick, toss
+    or pay for a reset is the planner's choice. The channel itself survives -- the toss
+    and both paid resets still add it back, since each really moves the cube."""
     from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 
-    assert (
-        LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,))
-        in _SKILLS.PICK_CUBE.preconditions
-    )
-    assert (
-        LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,))
-        in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects
-    )
+    unblocked = LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_SKILLS._cube,))
+    assert unblocked not in _SKILLS.PICK_CUBE.preconditions
+    assert unblocked in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.add_effects
     provider = Tossing3DSkillProvider(env=_ENV)
     assert PICKUP_UNBLOCKED in provider.predicates()
     for reset in provider.movables_reset_skills():
         assert any(atom.predicate == PICKUP_UNBLOCKED for atom in reset.skill.add_effects)
+
+    refused = frozenset(
+        atom
+        for atom in SkillGrounder.all_possible_ground_atoms(
+            objects=provider.objects(), predicates=provider.predicates()
+        )
+        if atom.predicate in {HAND_EMPTY, ON_GROUND, GRASP_CLEAR}
+        or (
+            atom.predicate in {ROBOT_AT_SIDE, CUBE_AT_SIDE}
+            and atom.objects[-1] == Tossing3DSides.robot
+        )
+    )
+    assert not any(atom.predicate == PICKUP_UNBLOCKED for atom in refused)
+    applicable = SkillGrounder.applicable_ground_skills(
+        skills=provider.skills(), objects=provider.objects(), true_atoms=refused
+    )
+    assert any(ground.skill == _SKILLS.PICK_CUBE for ground in applicable)

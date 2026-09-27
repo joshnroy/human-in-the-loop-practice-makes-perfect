@@ -177,9 +177,9 @@ class Tossing3DSkills:
             # the degenerate loop the 2026-09-22 trap diagnosis pinned -- gate it
             # symbolically so recovery (the paid reset) becomes the plan instead.
             LiftedAtom(predicate=GRASP_CLEAR, variables=(_cube, _bin)),
-            # The observed-refusal channel: a pick the grasp planner already refused
-            # at this cube position is inapplicable until something moves the cube.
-            LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(_cube,)),
+            # Deliberately NOT PickupUnblocked: an observed refusal is information,
+            # not a mask. Retrying, tossing or paying for a reset is the planner's
+            # choice, and a refused retry is one more failed attempt.
         }),
         add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
         delete_effects=frozenset({

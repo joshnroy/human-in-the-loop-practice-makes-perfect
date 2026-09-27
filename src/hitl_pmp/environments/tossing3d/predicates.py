@@ -334,6 +334,8 @@ GRASP_CLEAR = Predicate(
 # acceptance boundary is configuration-dependent (measured 2026-09-22: the same
 # 0.052 m face gap is accepted at open floor and refused across the whole western
 # strip x <= -1.0), so no geometric constant can reproduce its mesh check exactly.
+# It is observed state only: PickCube does not require it, so a refused pick stays
+# retryable and whether to retry is the planner's choice.
 PICKUP_UNBLOCKED = Predicate(
     name="PickupUnblocked",
     types=(Tossing3DEnvironment.cube_type,),
