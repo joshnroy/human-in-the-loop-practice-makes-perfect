@@ -90,8 +90,19 @@ class Motion(BaseModel):
         if not dense:
             return True
         idx = 0
+        best, since = 1e9, 0
         for _ in range(max_ticks):
             q = self.session.arm()
+            # stalled against something the planning model does not have: give up early
+            remaining = float(np.max(np.abs(ArmMath.wrap(delta=dense[-1] - q)))) + (
+                len(dense) - idx
+            )
+            if remaining < best - 1e-3:
+                best, since = remaining, 0
+            else:
+                since += 1
+                if since > 40:
+                    return False
             while idx < len(dense) - 1 and np.max(np.abs(ArmMath.wrap(delta=dense[idx] - q))) < tol:
                 idx += 1
             err = ArmMath.wrap(delta=dense[idx] - q)

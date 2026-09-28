@@ -42,6 +42,10 @@ class SweepDrawerScene(BaseModel):
     # Mobile base chassis (compiled mesh AABB) and the arm mount offset.
     CHASSIS_HALF: ClassVar[tuple[float, float]] = (0.276, 0.254)
     CHASSIS_TOP: ClassVar[float] = 0.383
+    # The MuJoCo arm's joint ranges (joints 2, 4, 6; the others are continuous). The
+    # PyBullet URDF allows 2.41 / 2.66 / 2.23, so its IK and planner produce configurations
+    # the simulated arm cannot reach -- and it then stalls against the limit.
+    ARM_LIMITS: ClassVar[dict[int, float]] = {1: 2.24, 3: 2.57, 5: 2.09}
     HOME: ClassVar[tuple[float, ...]] = (
         0.0,
         -0.3490658503988659,

@@ -479,8 +479,6 @@ class Primitives(BaseModel):
     def move_drawer(self, *, target: float, speed: float = 0.012) -> str:
         """Grasp the handle and slide the drawer to `target` by driving the base with the
         arm held rigid -- the base, not the arm, supplies the stroke."""
-        from pybullet_helpers.geometry import Pose
-        from scipy.spatial.transform import Rotation
 
         start = self.session.drawer_pos()
         pitch = self.grasp_handle()

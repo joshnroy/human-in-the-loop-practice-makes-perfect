@@ -179,7 +179,8 @@ class PlanningScene(BaseModel):
             sol = inverse_kinematics(self.robot, pose, set_joints=False)
         except InverseKinematicsError:
             return None
-        return np.asarray(sol[:7], dtype=float)
+        q = np.asarray(sol[:7], dtype=float)
+        return q if ArmMath.within_limits(arm=q) else None
 
     def fk(self, *, arm: Sequence[float] | np.ndarray) -> Any:
         self.robot.set_joints(self.fingers(arm=arm))
@@ -216,6 +217,7 @@ class PlanningScene(BaseModel):
             physics_client_id=self.cid,
             held_object=held,
             base_link_to_held_obj=held_tf,
+            additional_state_constraint_fn=lambda q: ArmMath.within_limits(arm=q),
         )
         return None if plan is None else [np.asarray(q[:7], dtype=float) for q in plan]
 
@@ -355,6 +357,12 @@ class PlanningScene(BaseModel):
 
 class ArmMath:
     """Joint-space helpers for the Gen3's continuous joints (1, 3, 5, 7)."""
+
+    @staticmethod
+    def within_limits(*, arm: Sequence[float] | np.ndarray, margin: float = 0.03) -> bool:
+        return all(
+            abs(float(arm[i])) <= lim - margin for i, lim in SweepDrawerScene.ARM_LIMITS.items()
+        )
 
     @staticmethod
     def wrap(*, delta: np.ndarray) -> np.ndarray:
