@@ -208,9 +208,6 @@ class SweepPomdpMethod(EesMethod):
             ),
         )
         assert self.pomdp_competence_model == "local_trend", "Sweep currently supports Model B"
-        assert self.pomdp_inference_engine == "particle", (
-            "Sweep currently supports particle inference"
-        )
         available_names = tuple(sorted({skill.skill.name for skill in ground_skills}))
         assert set(self.trainable_skill_names) <= set(available_names)
         assert set(self.human_skill_names) == {skill.name for skill in human_skills}
@@ -221,6 +218,7 @@ class SweepPomdpMethod(EesMethod):
             trainable_skill_names=self.trainable_skill_names,
             num_particles=self.pomdp_num_particles,
             seed=self.seed,
+            engine=self.pomdp_inference_engine,
             config=InferenceConfig(
                 competence_bins=self.pomdp_grid_competence_bins,
                 learning_rate_bins=self.pomdp_grid_learning_rate_bins,
