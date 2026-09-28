@@ -35,6 +35,7 @@ class PlanningScene(BaseModel):
     _sim: Any = PrivateAttr(default=None)
     _p: Any = PrivateAttr(default=None)
     _drawer: list[tuple[int, int]] = PrivateAttr(default_factory=list)
+    _fixed: list[tuple[int, int]] = PrivateAttr(default_factory=list)
     _chassis: int = PrivateAttr(default=-1)
     _wiper: int = PrivateAttr(default=-1)
 
@@ -49,8 +50,22 @@ class PlanningScene(BaseModel):
         m = self.session.mj_model
         import mujoco
 
-        for body_name in (SweepDrawerScene.DRAWER, SweepDrawerScene.DRAWER + "_handle"):
+        # The target drawer, and the island's five other drawers: their faces and handles
+        # are the island's front, which a floor pick reaches in beside, and the static
+        # colliders do not include them either.
+        target = (SweepDrawerScene.DRAWER, SweepDrawerScene.DRAWER + "_handle")
+        others = tuple(
+            f"kitchen_island_drawer_s{s}c{c}{h}"
+            for s in (0, 1)
+            for c in (0, 1, 2)
+            for h in ("", "_handle")
+            if not (s == 1 and c == 1)
+        )
+        for body_name in target + others:
             b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            if b < 0:
+                continue
+            store = self._drawer if body_name in target else self._fixed
             for g in range(m.ngeom):
                 collides = m.geom_contype[g] + m.geom_conaffinity[g] > 0
                 if (
@@ -63,7 +78,7 @@ class PlanningScene(BaseModel):
                         float(m.geom_size[g][1]),
                         float(m.geom_size[g][2]),
                     )
-                    self._drawer.append((g, create_pybullet_block((0.4, 0.3, 0.2, 1.0), half, cid)))
+                    store.append((g, create_pybullet_block((0.4, 0.3, 0.2, 1.0), half, cid)))
         hx, hy = SweepDrawerScene.CHASSIS_HALF
         self._chassis = create_pybullet_block((0.2, 0.2, 0.2, 1.0), (hx, hy, 0.15), cid)
         w = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, SweepDrawerScene.WIPER)
@@ -123,7 +138,7 @@ class PlanningScene(BaseModel):
         d = self.session.mj_data
         import mujoco
 
-        for g, body in self._drawer:
+        for g, body in self._drawer + self._fixed:
             q = np.zeros(4)
             mujoco.mju_mat2Quat(q, d.geom_xmat[g])
             set_pose(body, Pose(tuple(d.geom_xpos[g]), (q[1], q[2], q[3], q[0])), self.cid)
@@ -140,6 +155,7 @@ class PlanningScene(BaseModel):
     ) -> set[int]:
         out = set(self._sim.get_collision_bodies())
         out |= set(self.drawer_bodies)
+        out |= {b for _, b in self._fixed}
         out.add(self._chassis)
         for c in without_cubes:
             out.discard(self.cube_body(cube=c))
@@ -359,7 +375,7 @@ class ArmMath:
     """Joint-space helpers for the Gen3's continuous joints (1, 3, 5, 7)."""
 
     @staticmethod
-    def within_limits(*, arm: Sequence[float] | np.ndarray, margin: float = 0.03) -> bool:
+    def within_limits(*, arm: Sequence[float] | np.ndarray, margin: float = 0.005) -> bool:
         return all(
             abs(float(arm[i])) <= lim - margin for i, lim in SweepDrawerScene.ARM_LIMITS.items()
         )

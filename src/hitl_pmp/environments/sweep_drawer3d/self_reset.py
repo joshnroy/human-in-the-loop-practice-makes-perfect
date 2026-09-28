@@ -293,6 +293,19 @@ class SweepDrawerSelfReset(BaseModel):
         self._motion.drive_to(target=self.PARK, grip=0.0)
         return f"parked at ({self.PARK[0]}, {self.PARK[1]})"
 
+    def _on_face_ledge(self) -> list[str]:
+        out = []
+        for c in S.CUBES:
+            x, y, z = self.session.position(name=c)
+            front = S.DRAWER_FACE_X + self.session.drawer_pos()
+            if (
+                0.43 < z < 0.47
+                and front - 0.03 < x < front + 0.005
+                and abs(y) < S.DRAWER_HALF_WIDTH
+            ):
+                out.append(c)
+        return out
+
     def run(self) -> ResetOutcome:
         t0, tick0 = time.perf_counter(), self.session.ticks
         self._actions = 0
@@ -304,7 +317,13 @@ class SweepDrawerSelfReset(BaseModel):
             self.clear_drawer()
         if self.session.drawer_pos() > 0.01:
             self._do(name="close_drawer", fn=self._prims.move_drawer, target=0.0)
+        if self._on_face_ledge() and self.session.drawer_pos() < 0.05:
+            # a cube wedged on the closed drawer's face top, against the countertop edge:
+            # open the drawer and it rides out on the face, clear of the counter
+            self._do(name="open_drawer_ledge", fn=self._prims.move_drawer, target=0.12)
         self.gather_loose()
+        if self.session.drawer_pos() > 0.01:
+            self._do(name="close_drawer", fn=self._prims.move_drawer, target=0.0)
         self.restore_cube0()
         self._do(name="park_base", fn=self.park)
         return self.outcome(wall_s=time.perf_counter() - t0, ticks=self.session.ticks - tick0)
