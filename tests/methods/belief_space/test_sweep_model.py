@@ -237,3 +237,129 @@ def test_method_constructs_without_toss_skills_and_preserves_action_budget():
     assert len(choice) == 1
     assert choice[0] == STOP_SKILL or choice[0].skill.name == "OpenDrawer"
     assert "OpenDrawer" in method.practice_action_values()
+
+
+def test_deployment_cache_ignores_only_irrelevant_recovery_beliefs(*, monkeypatch):
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.tossing3d_observation_model import refit_belief_state
+    from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+
+    skills, initial, goal = _chain()
+    beliefs = {s.skill.name: _belief(values=(0.2, 0.8)) for s in skills}
+    beliefs["Recovery"] = _belief(values=(0.1, 0.9))
+    state = Tossing3DBeliefState(skill_beliefs=beliefs)
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=(),
+        random_competences={},
+        deployment=SweepDeploymentExpectation(
+            ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=5
+        ),
+        linear_cost_lambda=0.03,
+    )
+    evaluated_names = []
+    original = SweepDeploymentExpectation.evaluate
+
+    def counted(self, *, beliefs):  # noqa: PLR0917
+        evaluated_names.append(set(beliefs))
+        return original(self, beliefs=beliefs)
+
+    monkeypatch.setattr(SweepDeploymentExpectation, "evaluate", counted)
+    first = model.J(belief_state=state, summed_cost=2, num_samples=1)
+    changed = state.model_copy(
+        update={
+            "skill_beliefs": {**beliefs, "Recovery": _belief(values=(0.9,))},
+            "pending_examples": {"Recovery": 19},
+        }
+    )
+    second = model.J(belief_state=changed, summed_cost=3, num_samples=1)
+    assert first - second == pytest.approx(0.03)
+    assert evaluated_names == [{"OpenDrawer", "PickWiper", "Sweep"}]
+    changed_stock = changed.model_copy(update={"pending_examples": {"OpenDrawer": 2}})
+    value = model.J(belief_state=changed_stock, summed_cost=0, num_samples=1)
+    assert len(evaluated_names) == 2
+    projected = refit_belief_state(state=changed_stock)
+    assert value == original(model.deployment, beliefs=projected.skill_beliefs)
+    changed_deployment = model.model_copy(
+        update={"deployment": model.deployment.model_copy(update={"horizon": 2})}
+    )
+    assert changed_deployment.J(belief_state=state, summed_cost=0, num_samples=1) == 0
+
+
+@pytest.mark.parametrize("pending", [0, 1, 9])
+def test_cached_terminal_value_is_exact_for_particle_forecasts(*, pending):
+    from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+    from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.sweep_observation_model import SweepBeliefs
+    from hitl_pmp.methods.belief_space.tossing3d_observation_model import refit_belief_state
+
+    skills, initial, goal = _chain()
+    names = tuple(skill.skill.name for skill in skills)
+    state = SweepBeliefs.prior(
+        skill_names=names + ("Recovery",),
+        trainable_skill_names=names,
+        seed=17,
+        num_particles=64,
+        config=InferenceConfig(),
+    )
+    state = state.model_copy(
+        update={"pending_examples": {name: pending for name in names + ("Recovery",)}}
+    )
+    deployment = SweepDeploymentExpectation(
+        ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=5
+    )
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=names,
+        random_competences={name: 0.25 for name in names},
+        deployment=deployment,
+        linear_cost_lambda=0.03,
+    )
+    projected = refit_belief_state(state=state)
+    expected = deployment.evaluate(beliefs=projected.skill_beliefs) - 0.03 * 2
+    assert model.J(belief_state=state, summed_cost=2, num_samples=1) == expected
+    counts = EmpiricalFailureEffects.observe(
+        counts=(),
+        ground_skill=skills[0],
+        before_atoms=initial,
+        after_atoms=goal,
+        was_random_exploration=False,
+    )
+    changed = model.model_copy(update={"failure_effect_counts": counts})
+    expected_changed = deployment.model_copy(update={"failure_effect_counts": counts}).evaluate(
+        beliefs=projected.skill_beliefs
+    )
+    assert changed.J(belief_state=state, summed_cost=0, num_samples=1) == expected_changed
+    assert expected_changed > expected + 0.03 * 2
+
+
+def test_signature_memo_matches_original_digest_and_does_not_retain_beliefs():
+    import gc
+    import weakref
+
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.tossing3d_model import Tossing3DPracticeModel
+
+    skills, initial, goal = _chain()
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=(),
+        random_competences={},
+        deployment=SweepDeploymentExpectation(
+            ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=5
+        ),
+    )
+    belief = _belief(values=(0.2, 0.8))
+    digest = Tossing3DPracticeModel._belief_signature(belief=belief)
+    assert model._belief_signature(belief=belief) == digest
+    assert model._belief_signature(belief=belief) == digest
+    reference = weakref.ref(belief)
+    del belief
+    gc.collect()
+    assert reference() is None
+    next_belief = _belief(values=(0.3, 0.7))
+    assert model._belief_signature(belief=next_belief) == Tossing3DPracticeModel._belief_signature(
+        belief=next_belief
+    )
+    assert model._belief_signature(belief=next_belief) != digest

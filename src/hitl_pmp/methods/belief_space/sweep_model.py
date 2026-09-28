@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import weakref
 from collections.abc import Iterable
 
 import numpy as np
@@ -56,6 +57,10 @@ class SweepPracticeModel(BaseModel):
     )
 
     _rng: np.random.Generator = PrivateAttr()
+    _deployment_cache: dict[object, float] = PrivateAttr(default_factory=dict)
+    _signature_cache: dict[int, tuple[weakref.ReferenceType[SkillBelief], bytes]] = PrivateAttr(
+        default_factory=dict
+    )
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
     _precondition_masks: tuple[int, ...] = PrivateAttr(default=())
     _effects: dict[
@@ -162,10 +167,43 @@ class SweepPracticeModel(BaseModel):
         Particle/grid approximation and the existing training forecasts remain.
         """
         assert num_samples >= 1
-        projected = refit_belief_state(state=belief_state)
-        policy_value = self.deployment.model_copy(
-            update={"failure_effect_counts": self.failure_effect_counts}
-        ).evaluate(beliefs=projected.skill_beliefs)
+        names = tuple(dict.fromkeys(skill.skill.name for skill in self.deployment.ordered_skills))
+        key = (
+            self.deployment,
+            self.failure_effect_counts,
+            tuple(
+                (
+                    name,
+                    self._belief_signature(belief=belief_state.skill_beliefs[name]),
+                    belief_state.pending_examples.get(name, 0),
+                )
+                for name in names
+            ),
+        )
+        policy_value = self._deployment_cache.get(key)
+        if policy_value is None:
+            # Independent forecasts for recovery controllers cannot affect this
+            # stock-only deployment policy. Costs are deliberately outside the cache.
+            relevant_state = belief_state.model_copy(
+                update={
+                    "skill_beliefs": {name: belief_state.skill_beliefs[name] for name in names},
+                    "pending_examples": {
+                        name: belief_state.pending_examples.get(name, 0) for name in names
+                    },
+                    "sampler_training": {
+                        name: training
+                        for name, training in belief_state.sampler_training.items()
+                        if name in names
+                    },
+                }
+            )
+            projected = refit_belief_state(state=relevant_state)
+            policy_value = self.deployment.model_copy(
+                update={"failure_effect_counts": self.failure_effect_counts}
+            ).evaluate(beliefs=projected.skill_beliefs)
+            if len(self._deployment_cache) >= 4096:
+                self._deployment_cache.clear()
+            self._deployment_cache[key] = policy_value
         return self.G(policy_value=policy_value, summed_cost=summed_cost)
 
     def observe_outcome(
@@ -226,8 +264,7 @@ class SweepPracticeModel(BaseModel):
                 mask |= 1 << index
         return mask
 
-    @staticmethod
-    def _belief_signature(*, belief: SkillBelief) -> bytes:
+    def _belief_signature(self, *, belief: SkillBelief) -> bytes:
         """Identify a posterior without retaining its potentially large buffers.
 
         Search memo tables live for one solve. A persistent signature-to-integer
@@ -236,6 +273,9 @@ class SweepPracticeModel(BaseModel):
         is constant-size, requires no interning table, and includes all the same
         signature information. Type tags and lengths prevent ambiguous joins.
         """
+        cached = self._signature_cache.get(id(belief))
+        if cached is not None and cached[0]() is belief:
+            return cached[1]
         digest = hashlib.sha256()
 
         def update(*, value: object) -> None:
@@ -274,7 +314,13 @@ class SweepPracticeModel(BaseModel):
             digest.update(payload)
 
         update(value=(type(belief).__module__, type(belief).__qualname__, belief.signature()))
-        return digest.digest()
+        signature = digest.digest()
+        # Beliefs are frozen. Weak references retain no posterior buffers, and
+        # checking object identity prevents stale hits after Python reuses an id.
+        if len(self._signature_cache) >= 8192:
+            self._signature_cache.clear()
+        self._signature_cache[id(belief)] = (weakref.ref(belief), signature)
+        return signature
 
     def search_cache_key(
         self,
