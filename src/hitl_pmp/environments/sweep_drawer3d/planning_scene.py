@@ -36,6 +36,9 @@ class PlanningScene(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     session: SweepDrawerSession
+    # False leaves the island's five other drawers out of every collision check, as the
+    # scene was before they were modelled: for measuring what modelling them is worth.
+    other_drawers: bool = True
 
     _sim: Any = PrivateAttr(default=None)
     _p: Any = PrivateAttr(default=None)
@@ -153,7 +156,8 @@ class PlanningScene(BaseModel):
     ) -> set[int]:
         out = set(self._sim.get_collision_bodies())
         out |= set(self.drawer_bodies)
-        out |= set(self.other_drawer_bodies)
+        if self.other_drawers:
+            out |= set(self.other_drawer_bodies)
         out.add(self._chassis)
         for c in without_cubes:
             out.discard(self.cube_body(cube=c))

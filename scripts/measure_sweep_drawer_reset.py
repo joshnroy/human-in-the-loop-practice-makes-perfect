@@ -21,7 +21,7 @@ from pathlib import Path
 from hitl_pmp.environments.sweep_drawer3d.self_reset import SweepDrawerSelfReset
 from hitl_pmp.environments.sweep_drawer3d.session import SweepDrawerSession
 from hitl_pmp.environments.sweep_drawer3d.stock_skills import StockSweepSkills
-from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene
+from hitl_pmp.environments.sweep_drawer3d.types import Mechanisms, SweepDrawerScene
 
 
 class ResetMeasurement:
@@ -33,7 +33,12 @@ class ResetMeasurement:
 
     @staticmethod
     def cycle(
-        *, seed: int, out: Path, second_attempt: bool = True, replay_log: bool = False
+        *,
+        seed: int,
+        out: Path,
+        second_attempt: bool = True,
+        replay_log: bool = False,
+        without: frozenset[str] = frozenset(),
     ) -> dict:
         out.mkdir(parents=True, exist_ok=True)
         t0 = time.perf_counter()
@@ -46,10 +51,11 @@ class ResetMeasurement:
         after_1 = session.locations()
         piled_1 = {c: session.in_pile(cube=c) for c in SweepDrawerScene.CUBES}
         drawer_1 = session.drawer_pos()
-        reset = SweepDrawerSelfReset(session=session)
+        reset = SweepDrawerSelfReset(session=session, without=without)
         outcome = reset.run()
         record: dict = {
             "seed": seed,
+            "without": sorted(without),
             "after_attempt_1": after_1,
             "in_pile_after_attempt_1": piled_1,
             "drawer_after_attempt_1": round(drawer_1, 4),
@@ -196,6 +202,11 @@ def main() -> int:
         action="store_true",
         help="also write replay_log.jsonl, every joint position at every tick, for rendering",
     )
+    parser.add_argument(
+        "--without",
+        default="",
+        help=f"ablation: comma-separated mechanisms to switch off, of {list(Mechanisms.ALL)}",
+    )
     args = parser.parse_args()
     if args.summarize:
         print(json.dumps(ResetMeasurement.summarize(root=args.output_dir), indent=1))
@@ -207,6 +218,7 @@ def main() -> int:
         out=args.output_dir / str(args.seed),
         second_attempt=not args.no_second_attempt,
         replay_log=args.replay_log,
+        without=Mechanisms.check(names=[n for n in args.without.split(",") if n]),
     )
     print(json.dumps({k: rec[k] for k in ("seed", "after_attempt_1", "reset")}, default=str))
     return 0

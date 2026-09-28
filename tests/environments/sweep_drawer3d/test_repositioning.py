@@ -46,14 +46,14 @@ def _lay_out(
         session.step(action=np.zeros(11))
 
 
-def _reset(*, seed: int = 6) -> tuple[Any, Any]:
+def _reset(*, seed: int = 6, without: tuple[str, ...] = ()) -> tuple[Any, Any]:
     """Seed 6 starts the robot 1.69 m out, clear of the drawer even when it is open;
     seed 1 starts it where an opened drawer would be inside its chassis."""
     from hitl_pmp.environments.sweep_drawer3d.self_reset import SweepDrawerSelfReset
     from hitl_pmp.environments.sweep_drawer3d.session import SweepDrawerSession
 
     session = SweepDrawerSession(seed=seed)
-    return session, SweepDrawerSelfReset(session=session)
+    return session, SweepDrawerSelfReset(session=session, without=frozenset(without))
 
 
 @needs_kinder
@@ -152,6 +152,50 @@ def test_a_turned_floor_cube_against_a_drawer_face_is_picked_by_closing_along_th
         assert session.position(name="cube_4")[2] > 0.07
     finally:
         session.close()
+
+
+@needs_kinder
+def test_without_the_squeeze_grasp_that_cube_has_no_pick() -> None:
+    """The counterfactual: the same cube, the same scene, the closing axis taken only
+    from the cube's own faces."""
+    session, reset = _reset(without=("squeeze",))
+    try:
+        _lay_out(session=session, cubes={"cube_4": (0.9118, 0.0046, 0.01, -147.2)})
+        assert not reset.primitives.pick_feasible(cube="cube_4")
+    finally:
+        session.close()
+
+
+@needs_kinder
+def test_without_the_other_drawers_the_planner_reaches_through_a_drawer_face() -> None:
+    """A fingertip placed 3 cm inside the lower middle drawer's face collides with
+    nothing in a scene that models only the task's drawer."""
+    from pybullet_helpers.geometry import Pose
+
+    from hitl_pmp.environments.sweep_drawer3d.planning_scene import Orientations
+    from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene as S
+
+    inside = Pose(
+        (0.865 + 0.048, 0.2, 0.10),
+        Orientations.from_axes(
+            closing=np.array([0.0, 1.0, 0.0]), approach=np.array([-1.0, 0.0, 0.0])
+        ),
+    )
+    verdicts = {}
+    for without in ((), ("drawers",)):
+        session, reset = _reset(without=without)
+        try:
+            scene = reset._scene
+            scene.sync(base=(1.55, 0.2, float(np.pi)))
+            joints = scene.ik(pose=inside, seed=S.HOME)
+            assert joints is not None
+            verdicts[without] = scene.in_collision(
+                joints=scene.fingers(arm=joints, state=0.8), bodies=scene.bodies()
+            )
+        finally:
+            session.close()
+    assert verdicts[()] is True
+    assert verdicts[("drawers",)] is False
 
 
 @needs_kinder

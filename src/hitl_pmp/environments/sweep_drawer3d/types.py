@@ -1,5 +1,6 @@
 """Data for the SweepIntoDrawer3D self-reset: scene constants, step records, outcomes."""
 
+from collections.abc import Iterable
 from typing import ClassVar, Literal
 
 import numpy as np
@@ -125,6 +126,26 @@ class ResetStep(BaseModel):
     note: str = ""
 
 
+class Mechanisms:
+    """What the reset can be run without, to measure what each part is for.
+
+    wiggle, nudge and shift are repositioning moves. squeeze is a grasp. drawers and
+    board are parts of the model: the island's five other drawers in the planning scene,
+    and the island's bottom board rather than its drawer faces as what a finger on a
+    floor cube faces.
+    """
+
+    ALL: ClassVar[tuple[str, ...]] = ("wiggle", "nudge", "squeeze", "shift", "drawers", "board")
+
+    @staticmethod
+    def check(*, names: Iterable[str]) -> frozenset[str]:
+        chosen = frozenset(names)
+        unknown = sorted(chosen - set(Mechanisms.ALL))
+        if unknown:
+            raise ValueError(f"no such mechanism: {unknown}; there are {list(Mechanisms.ALL)}")
+        return chosen
+
+
 class Retrieval(BaseModel):
     """How one cube got back to the pile."""
 
@@ -133,7 +154,9 @@ class Retrieval(BaseModel):
     blocked: bool
     # Repositioning moves that shifted it before it was picked, in order.
     assists: tuple[str, ...]
-    grasp: Literal["single", "row"]
+    # single: closed on two of the cube's own faces. squeeze: closed across a cube
+    # turned off the closing axis. row: several cubes face to face, at once.
+    grasp: Literal["single", "squeeze", "row"]
 
     @property
     def rescued_by(self) -> tuple[str, ...]:
@@ -143,7 +166,7 @@ class Retrieval(BaseModel):
 
     @property
     def pathway(self) -> str:
-        last = "row grasp" if self.grasp == "row" else "pick"
+        last = {"single": "pick", "squeeze": "squeeze grasp", "row": "row grasp"}[self.grasp]
         if not self.blocked:
             return last
         return " > ".join((*(self.assists or ("neighbours removed",)), last))

@@ -44,9 +44,10 @@ def test_a_step_refused_before_it_moved_owns_no_tick() -> None:
 def test_the_caption_reports_counts_not_percentages() -> None:
     caption = _module().Caption
     head, tail = caption.lines(
-        tick=125, step=_cycle()["steps"][2], drawer=0.246, piled=3, speed=4.0
+        seed=6, tick=125, step=_cycle()["steps"][2], drawer=0.246, piled=3, speed=4.0
     )
     assert head == "robot self-reset:  wiggle drawer"
+    assert tail.startswith("seed 6 ")
     assert "3/5" in tail
     assert "%" not in tail
     assert "12.5 s" in tail
@@ -71,14 +72,70 @@ def test_frames_have_even_dimensions() -> None:
 
 def test_a_composed_frame_holds_both_panels_and_the_caption_bar() -> None:
     layout = _module().Layout
-    w, h = layout.PANEL
-    left = np.full((h, w, 3), 200, dtype=np.uint8)
-    right = np.full((h, w, 3), 90, dtype=np.uint8)
+    h = layout.HEIGHT
+    wide, narrow = (v.width for v in layout.VIEWS)
+    left = np.full((h, wide, 3), 200, dtype=np.uint8)
+    right = np.full((h, narrow, 3), 90, dtype=np.uint8)
     frame = layout.compose(panels=[left, right], lines=("a step", "numbers"))
-    assert frame.shape == (h + layout.BAR, 2 * w, 3)
-    assert tuple(frame[h // 2, w // 2]) == (200, 200, 200)
-    assert tuple(frame[h // 2, w + w // 2]) == (90, 90, 90)
-    assert tuple(frame[h + layout.BAR - 2, 2 * w - 2]) == layout.BACKGROUND
+    assert frame.shape == (h + layout.BAR, wide + narrow, 3)
+    assert tuple(frame[h // 2, wide // 2]) == (200, 200, 200)
+    assert tuple(frame[h // 2, wide + narrow // 2]) == (90, 90, 90)
+    assert tuple(frame[h + layout.BAR - 2, wide + narrow - 2]) == layout.BACKGROUND
+
+
+def test_a_panels_title_is_legible_whatever_the_panel_shows() -> None:
+    """Light text straight onto the frame vanished against a white floor."""
+    layout = _module().Layout
+    h = layout.HEIGHT
+    panels = [np.full((h, v.width, 3), 255, dtype=np.uint8) for v in layout.VIEWS]
+    frame = layout.compose(panels=panels, lines=("", ""))
+    corner = frame[8:40, 10:200].reshape(-1, 3)
+    dark = (corner.sum(axis=1) < 3 * 40).sum()
+    light = (corner.sum(axis=1) > 3 * 200).sum()
+    assert dark > 1000, "the title has a dark ground"
+    assert light > 100, "and light lettering on it"
+
+
+def _tiny_model():
+    import mujoco
+
+    return mujoco.MjModel.from_xml_string(
+        """
+        <mujoco>
+          <worldbody>
+            <body name="room"><geom size="1 1 0.1" type="box"/></body>
+            <body name="drawer"><joint name="drawer_joint" type="slide"/>
+              <geom size="0.1 0.1 0.1" type="box"/></body>
+            <body name="cube"><joint name="cube_joint" type="free"/>
+              <geom size="0.01 0.01 0.01" type="box"/></body>
+          </worldbody>
+        </mujoco>
+        """
+    )
+
+
+def test_logged_joints_are_carried_over_by_name_not_by_position() -> None:
+    """Here the log has the cube first and the drawer after it; the scene the reverse."""
+    header = {
+        "joints": [
+            {"name": "cube_joint", "adr": 0, "n": 7},
+            {"name": "drawer_joint", "adr": 7, "n": 1},
+        ]
+    }
+    mapping = _module().ReplayLog.mapping(header=header, model=_tiny_model())
+    assert mapping == [(0, 1, 7), (7, 0, 1)]
+
+
+def test_a_log_of_a_joint_the_scene_lacks_is_refused() -> None:
+    header = {"joints": [{"name": "kitchen_island_drawer_s0c1_joint", "adr": 0, "n": 1}]}
+    with pytest.raises(ValueError, match="no joint"):
+        _module().ReplayLog.mapping(header=header, model=_tiny_model())
+
+
+def test_a_joint_that_changed_kind_is_refused() -> None:
+    header = {"joints": [{"name": "cube_joint", "adr": 0, "n": 1}]}
+    with pytest.raises(ValueError, match="different kind"):
+        _module().ReplayLog.mapping(header=header, model=_tiny_model())
 
 
 def test_nvenc_and_x264_get_their_own_rate_control_flags() -> None:

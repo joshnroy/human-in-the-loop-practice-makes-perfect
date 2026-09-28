@@ -120,6 +120,43 @@ def test_clearances_for_many_placements_agree_with_the_one_at_a_time_clearance(
             assert many[k] == 0.0
 
 
+def test_a_neighbour_in_the_pads_way_as_they_close_blocks_the_grasp() -> None:
+    """Seed 16: three counter cubes in a touching row. Closing across the row, the open
+    fingers cleared the next cube's corner by 3 mm -- and the pads, closing from 1.6 cm
+    to the cube's face at 1.0 cm, took that corner with them. The neighbour was lifted
+    too, fell on the robot's base, and was thrown 1.9 m when the base next moved."""
+    fp = _fp()
+    neighbour = fp.cube(center=np.array([0.019, 0.003]), yaw=0.0)
+    across_the_row = np.pi / 2
+    where_they_start = fp.finger_clearances(
+        centres=np.zeros((1, 2)),
+        yaw=across_the_row,
+        obstacles=[neighbour],
+        gap=0.032,
+        widen=np.zeros(1),
+    )
+    assert where_they_start[0] > 0.002
+    what_they_sweep = fp.finger_clearances(
+        centres=np.zeros((1, 2)),
+        yaw=across_the_row,
+        obstacles=[neighbour],
+        gap=0.032,
+        widen=np.zeros(1),
+        inner=0.01,
+    )
+    assert what_they_sweep[0] == 0.0
+    # held 5 mm off the cube's middle, away from the neighbour, the pads pass it by 2 mm
+    aside = fp.finger_clearances(
+        centres=np.array([[-0.005, 0.0]]),
+        yaw=across_the_row,
+        obstacles=[neighbour],
+        gap=0.032,
+        widen=np.zeros(1),
+        inner=0.01,
+    )
+    assert aside[0] == pytest.approx(0.002)
+
+
 def test_with_nothing_around_every_placement_is_clear() -> None:
     fp = _fp()
     many = fp.finger_clearances(

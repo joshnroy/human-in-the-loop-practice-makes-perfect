@@ -108,10 +108,16 @@ class Footprints:
         obstacles: list[Polygon],
         gap: float,
         widen: np.ndarray,
+        inner: float | None = None,
     ) -> np.ndarray:
         """`finger_clearance` for many placements at once: one row of `centres` and one
         `widen` each, the same closing axis and opening. Overlap is reported as 0, not as
-        a negative depth -- the grasp search asks only whether a placement is clear."""
+        a negative depth -- the grasp search asks only whether a placement is clear.
+
+        With `inner`, the cube's extent from its centre along the closing axis, each
+        finger's footprint runs from where it starts in to the cube: the strip its pad
+        sweeps as it closes. A neighbour in that strip is taken along with the cube.
+        """
         n = len(centres)
         if not obstacles:
             return np.ones(n)
@@ -119,7 +125,7 @@ class Footprints:
         u = np.array([np.cos(yaw), np.sin(yaw)])
         v = np.array([-np.sin(yaw), np.cos(yaw)])
         half = g.FINGER_HALF_WIDTH + np.asarray(widen, dtype=float) / 2
-        near, far = gap / 2, gap / 2 + g.FINGER_THICK
+        near, far = (gap / 2 if inner is None else inner), gap / 2 + g.FINGER_THICK
         along = np.array([near, far, far, near])
         across = np.array([-1.0, -1.0, 1.0, 1.0])
         # (placement, finger, corner, xy)

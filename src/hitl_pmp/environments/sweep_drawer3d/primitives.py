@@ -6,10 +6,10 @@ only then moves the robot. A primitive that finds nothing raises ExecutionError 
 having touched the world.
 """
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 from shapely.affinity import translate
 from shapely.geometry import Polygon
 
@@ -39,6 +39,7 @@ class Candidate(BaseModel):
     cmd: float = G.CUBE_OPEN_CMD
     pb: float = G.CUBE_OPEN_PB
     partner: str | None = None
+    kind: Literal["single", "squeeze", "row"] = "single"
 
 
 class PickPlan(BaseModel):
@@ -114,6 +115,17 @@ class SqueezeGrasp:
         return out
 
 
+class WiperHold:
+    """Whether the wiper is in the hand."""
+
+    # Held, the wiper's origin is 4 to 5 cm from the gripper (measured on five seeds).
+    REACH = 0.15
+
+    @staticmethod
+    def in_hand(*, gripper: np.ndarray, wiper: np.ndarray) -> bool:
+        return float(np.linalg.norm(np.asarray(gripper) - np.asarray(wiper))) < WiperHold.REACH
+
+
 class DrawerStroke:
     """How far the base drives to slide the drawer, and whether the drawer got there."""
 
@@ -153,6 +165,16 @@ class Primitives(BaseModel):
     session: SweepDrawerSession
     scene: PlanningScene
     motion: Motion
+    # Both True in use; False restores what was there before, to measure the difference.
+    squeeze: bool = True
+    finger_board: bool = True
+
+    _last_pick: PickPlan | None = PrivateAttr(default=None)
+
+    @property
+    def last_pick(self) -> PickPlan | None:
+        """The plan the most recent `pick` carried out."""
+        return self._last_pick
 
     # ================================================================ geometry queries
     def obstacles_2d(
@@ -184,7 +206,7 @@ class Primitives(BaseModel):
     def finger_walls(self, *, cube: str) -> list[Polygon]:
         """Vertical surfaces at the height of the fingers: the same walls in the drawer,
         but on the floor the island's bottom board, not the drawer faces above it."""
-        if self.session.location(cube=cube) == "floor":
+        if self.finger_board and self.session.location(cube=cube) == "floor":
             return [Footprints.island_board()]
         return self.walls(cube=cube)
 
@@ -216,7 +238,7 @@ class Primitives(BaseModel):
         for yaw in faces:
             out += self._grasps_along(cube=cube, centre=c, yaw=yaw, obstacles=obst)
         turned = self.session.yaw(name=cube)
-        for yaw in SqueezeGrasp.headings(face_yaws=faces):
+        for yaw in SqueezeGrasp.headings(face_yaws=faces) if self.squeeze else ():
             out += self._grasps_along(
                 cube=cube,
                 centre=c,
@@ -224,6 +246,7 @@ class Primitives(BaseModel):
                 obstacles=obst,
                 gap=SqueezeGrasp.gap(cube_yaw=turned, closing_yaw=yaw),
                 handicap=SqueezeGrasp.HANDICAP,
+                kind="squeeze",
             )
         out.sort(key=lambda k: -k.score)
         return out
@@ -237,6 +260,7 @@ class Primitives(BaseModel):
         obstacles: list[Polygon],
         gap: float = 0.032,
         handicap: float = 0.0,
+        kind: Literal["single", "squeeze", "row"] = "single",
     ) -> list[Candidate]:
         """Grasps closing along `yaw` with the pads `gap` apart on the way down."""
         from pybullet_helpers.geometry import Pose
@@ -263,6 +287,7 @@ class Primitives(BaseModel):
             obstacles=obstacles,
             gap=gap,
             widen=reach,
+            inner=SqueezeGrasp.span(cube_yaw=self.session.yaw(name=cube), closing_yaw=yaw) / 2,
         )
         out: list[Candidate] = []
         for k, (alpha, side, off_v, off_u) in enumerate(tries):
@@ -284,6 +309,7 @@ class Primitives(BaseModel):
                     score=score - handicap,
                     cmd=cmd,
                     pb=pb,
+                    kind=kind,
                 )
             )
         return out
@@ -376,6 +402,7 @@ class Primitives(BaseModel):
                         cmd=cmd,
                         pb=pb,
                         partner=partner,
+                        kind="row",
                     )
                 )
         out.sort(key=lambda k: -k.score)
@@ -474,6 +501,14 @@ class Primitives(BaseModel):
 
         home_pos, home_q = self.session.initial_pose(name=S.WIPER)
         ee = self.scene.ee_now()
+        lying = self.session.position(name=S.WIPER)
+        if not WiperHold.in_hand(gripper=np.array(ee.position), wiper=lying):
+            # a closed gripper is not a held wiper: the stock PickWiper can finish with
+            # the hand shut on nothing, and the grasp offset below would be meaningless
+            raise ExecutionError(
+                f"the wiper is not in the hand: it lies at {np.round(lying, 3).tolist()},"
+                f" {np.linalg.norm(np.array(ee.position) - lying):.2f} m from the gripper"
+            )
         wiper_now = Pose(
             tuple(self.session.position(name=S.WIPER)), self.session.quaternion(name=S.WIPER)
         )
@@ -731,6 +766,7 @@ class Primitives(BaseModel):
 
         c = self.session.position(name=cube)
         found = self.find_pick(cube=cube, partner=partner, max_stances=max_stances)
+        self._last_pick = found
         k, held, back, base = found.grasp, found.held, found.back, found.base
         plan, down = found.reach, found.down
         self.motion.go_home(grip=0.0)
@@ -783,7 +819,7 @@ class Primitives(BaseModel):
             )
         note = (
             f"stance {np.round(base, 2).tolist()};"
-            f" approach {np.round(k.approach, 2).tolist()},"
+            f" {k.kind} grasp, approach {np.round(k.approach, 2).tolist()},"
             f" closing at {np.degrees(k.yaw) % 180:.0f} deg;"
             f" gripper {g:.2f}; rejected {found.rejected}"
         )

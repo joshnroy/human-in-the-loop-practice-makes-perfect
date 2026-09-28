@@ -81,3 +81,28 @@ def test_a_blocked_cube_freed_without_being_moved_says_so() -> None:
 def test_an_outcome_without_retrievals_still_validates() -> None:
     """Cycle files written before repositioning existed carry no retrieval record."""
     assert _outcome().retrievals == {}
+
+
+def test_a_squeeze_grasp_is_named_in_the_pathway() -> None:
+    """It is not a repositioning move -- nothing is shifted before the pick -- but it is
+    the reason a cube turned against a wall is picked at all."""
+    r = _retrieval(blocked=False, grasp="squeeze")
+    assert r.pathway == "squeeze grasp"
+    assert _retrieval(assists=("wiggle",), grasp="squeeze").pathway == "wiggle > squeeze grasp"
+
+
+def test_mechanisms_that_can_be_switched_off_are_named_once() -> None:
+    from hitl_pmp.environments.sweep_drawer3d.types import Mechanisms
+
+    assert set(Mechanisms.ALL) == {"wiggle", "nudge", "squeeze", "shift", "drawers", "board"}
+    assert Mechanisms.check(names=("wiggle", "squeeze")) == frozenset({"wiggle", "squeeze"})
+
+
+def test_a_misspelt_mechanism_is_refused_rather_than_ignored() -> None:
+    """An ablation that silently switched nothing off would be reported as a null result."""
+    import pytest
+
+    from hitl_pmp.environments.sweep_drawer3d.types import Mechanisms
+
+    with pytest.raises(ValueError, match="wigle"):
+        Mechanisms.check(names=("wigle",))

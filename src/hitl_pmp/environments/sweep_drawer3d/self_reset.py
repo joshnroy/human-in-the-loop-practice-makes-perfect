@@ -20,7 +20,7 @@ from .planning_scene import PlanningScene
 from .primitives import DrawerStroke, Primitives
 from .repositioning import Repositioning
 from .session import SweepDrawerSession
-from .types import CubeLocation, ResetOutcome, Retrieval, SweepDrawerScene
+from .types import CubeLocation, Mechanisms, ResetOutcome, Retrieval, SweepDrawerScene
 
 S = SweepDrawerScene
 
@@ -36,6 +36,8 @@ class SweepDrawerSelfReset(BaseModel):
     max_pushes: int = 10
     max_nudges: int = 12
     max_wiggles: int = 3
+    # Mechanisms to run without (see `Mechanisms`): for ablations, never for use.
+    without: frozenset[str] = frozenset()
 
     # Countertop slots inside `blocks_init_region` (x 0.625..0.825, y -0.2..0), 4-4.5 cm apart.
     SLOTS: ClassVar[tuple[tuple[float, float], ...]] = (
@@ -51,6 +53,9 @@ class SweepDrawerSelfReset(BaseModel):
     PARK: ClassVar[tuple[float, float, float]] = (1.45, -0.25, float(np.pi))
     # A repositioning move "shifted" a cube if it moved it this far within its container.
     SHIFTED: ClassVar[float] = 0.005
+    # How far out the drawer carries a cube on its face for the fingers to clear the
+    # countertop's edge on both sides of it.
+    FRONT_CLEAR: ClassVar[float] = 0.08
 
     _scene: Any = PrivateAttr(default=None)
     _motion: Any = PrivateAttr(default=None)
@@ -59,13 +64,21 @@ class SweepDrawerSelfReset(BaseModel):
     _actions: int = PrivateAttr(default=0)
     _origin: dict[str, CubeLocation] = PrivateAttr(default_factory=dict)
     _blocked: dict[str, bool] = PrivateAttr(default_factory=dict)
+    _refused: dict[str, np.ndarray] = PrivateAttr(default_factory=dict)
     _assists: dict[str, list[str]] = PrivateAttr(default_factory=dict)
-    _grasp: dict[str, Literal["single", "row"]] = PrivateAttr(default_factory=dict)
+    _grasp: dict[str, Literal["single", "squeeze", "row"]] = PrivateAttr(default_factory=dict)
 
     def model_post_init(self, __context: Any) -> None:  # noqa: PLR0917
-        self._scene = PlanningScene(session=self.session)
+        off = Mechanisms.check(names=self.without)
+        self._scene = PlanningScene(session=self.session, other_drawers="drawers" not in off)
         self._motion = Motion(session=self.session, scene=self._scene)
-        self._prims = Primitives(session=self.session, scene=self._scene, motion=self._motion)
+        self._prims = Primitives(
+            session=self.session,
+            scene=self._scene,
+            motion=self._motion,
+            squeeze="squeeze" not in off,
+            finger_board="board" not in off,
+        )
         self._rep = Repositioning(
             session=self.session, scene=self._scene, motion=self._motion, primitives=self._prims
         )
@@ -128,6 +141,24 @@ class SweepDrawerSelfReset(BaseModel):
         for c in cubes:
             if c not in self._blocked:
                 self._blocked[c] = not self._prims.pick_feasible(cube=c)
+                if self._blocked[c]:
+                    self._refused[c] = self._surroundings(cube=c)
+
+    def _surroundings(self, *, cube: str) -> np.ndarray:
+        """What a pick of `cube` depends on: where it lies, where the cubes near it lie,
+        and how far out the drawer is."""
+        at = self.session.position(name=cube)
+        near = [
+            self.session.position(name=c)
+            for c in S.CUBES
+            if c != cube and float(np.linalg.norm(self.session.position(name=c) - at)) < 0.12
+        ]
+        return np.concatenate([at, *near, [self.session.drawer_pos()]])
+
+    def _stuck(self, *, cube: str) -> bool:
+        """The planner found no pick for `cube` and nothing it depends on has moved since,
+        so asking again would only cost the search again."""
+        return Unmoved.since(before=self._refused.get(cube), now=self._surroundings(cube=cube))
 
     def _pick_and_place(self, *, cube: str) -> bool:
         """Pick one cube and put it in the pile; False if the pick found nothing."""
@@ -135,8 +166,9 @@ class SweepDrawerSelfReset(BaseModel):
         if picked is None:
             if cube not in self._grasp:
                 self._blocked[cube] = True
+            self._refused[cube] = self._surroundings(cube=cube)
             return False
-        self._grasp[cube] = "single"
+        self._grasp[cube] = self._prims.last_pick.grasp.kind
         target, yaw = self._target(cube=cube)
         placed = self._do(
             name=f"place_{cube}",
@@ -202,7 +234,8 @@ class SweepDrawerSelfReset(BaseModel):
                 self._do(name="reopen_drawer", fn=self._prims.move_drawer, target=self.open_to)
             self._examine(cubes=todo)
             nearest = min(self._rep.wall_gaps().values(), default=1.0)
-            if wiggles < self.max_wiggles and nearest < self._rep.DRAWER_WALL_CLEAR:
+            shake = "wiggle" not in self.without and wiggles < self.max_wiggles
+            if shake and nearest < self._rep.DRAWER_WALL_CLEAR:
                 wiggles += 1
                 self._reposition(
                     name="wiggle_drawer", fn=self._rep.wiggle_drawer, strategy="wiggle"
@@ -210,7 +243,8 @@ class SweepDrawerSelfReset(BaseModel):
                 continue
             if self._pick_best(todo=todo, failures=failures):
                 continue
-            if nudges < self.max_nudges and self._nudge_best(todo=todo):
+            nudge = "nudge" not in self.without and nudges < self.max_nudges
+            if nudge and self._nudge_best(todo=todo):
                 nudges += 1
                 continue
             if self._try_pairs(todo=todo, failures=failures):
@@ -227,6 +261,8 @@ class SweepDrawerSelfReset(BaseModel):
         )
         for cube in ranked:
             if failures.get(cube, 0) >= 3 or not self._prims.graspable(cube=cube):
+                continue
+            if self._stuck(cube=cube):
                 continue
             if self._pick_and_place(cube=cube):
                 return True
@@ -317,11 +353,20 @@ class SweepDrawerSelfReset(BaseModel):
         ):
             self._recover_hand()
 
+    def clear_front(self) -> None:
+        """Take the cubes off the drawer's face and handle while the drawer is out and
+        before it is shaken: a slam would throw them."""
+        for cube in [c for c in S.CUBES if self.session.rides_drawer_front(cube=c)]:
+            self._examine(cubes=[cube])
+            if not self._stuck(cube=cube):
+                self._pick_and_place(cube=cube)
+
     def gather_loose(self, *, max_rounds: int = 24) -> bool:
         """Floor cubes, countertop cubes outside the pile region, and strays."""
         failures: dict[str, int] = {}
         nudged: dict[str, int] = {}
         pushes = 0
+        shifted = False
         for _ in range(max_rounds):
             todo = [
                 c
@@ -333,12 +378,39 @@ class SweepDrawerSelfReset(BaseModel):
             if not todo:
                 break
             self._examine(cubes=todo)
-            # graspable cubes first: taking one away can free the neighbour it boxed in
-            todo.sort(key=lambda c: (failures.get(c, 0), not self._prims.graspable(cube=c)))
+            # pickable cubes first: taking one away can free the neighbour it boxed in
+            todo.sort(
+                key=lambda c: (
+                    failures.get(c, 0),
+                    self._stuck(cube=c),
+                    not self._prims.graspable(cube=c),
+                )
+            )
             cube = todo[0]
-            stuck = not self._prims.graspable(cube=cube) or failures.get(cube, 0) > 0
+            stuck = (
+                self._stuck(cube=cube)
+                or not self._prims.graspable(cube=cube)
+                or failures.get(cube, 0) > 0
+            )
+            riding = self.session.rides_drawer_front(cube=cube)
+            shift = "shift" not in self.without and not shifted
+            if stuck and riding and shift and self.session.drawer_pos() < 0.06:
+                # on the drawer's face a cube lies a centimetre from the countertop's edge:
+                # slide the drawer out and it rides clear of it
+                shifted = True
+                moved = self._reposition(
+                    name="shift_drawer",
+                    fn=self._prims.move_drawer,
+                    strategy="drawer shift",
+                    target=self.FRONT_CLEAR,
+                )
+                if moved is not None:
+                    for c in todo:
+                        failures[c] = 0
+                    continue
             on_floor = self.session.location(cube=cube) == "floor"
-            if stuck and on_floor and nudged.get(cube, 0) < 2:
+            nudge = "nudge" not in self.without and nudged.get(cube, 0) < 2
+            if stuck and on_floor and nudge:
                 nudged[cube] = nudged.get(cube, 0) + 1
                 moved = self._reposition(
                     name=f"nudge_{cube}", fn=self._rep.nudge, strategy="nudge", cube=cube
@@ -357,7 +429,7 @@ class SweepDrawerSelfReset(BaseModel):
                 if pushed is None:
                     failures[cube] = failures.get(cube, 0) + 1
                 continue
-            if not self._pick_and_place(cube=cube):
+            if self._stuck(cube=cube) or not self._pick_and_place(cube=cube):
                 failures[cube] = failures.get(cube, 0) + 1
         return all(self.session.in_pile(cube=c) for c in S.CUBES)
 
@@ -385,6 +457,7 @@ class SweepDrawerSelfReset(BaseModel):
         if any(self.session.location(cube=c) == "drawer" for c in S.CUBES):
             if self.session.drawer_pos() < self.open_to - 0.02:
                 self._do(name="open_drawer_wide", fn=self._prims.move_drawer, target=self.open_to)
+            self.clear_front()
             self.clear_drawer()
         self.close_drawer()
         self.gather_loose()
@@ -426,3 +499,16 @@ class SweepDrawerSelfReset(BaseModel):
             wall_s=round(wall_s, 1),
             retrievals=retrievals,
         )
+
+
+class Unmoved:
+    """Whether what a pick depends on is where it was when the planner refused it."""
+
+    # Resting cubes jitter by tenths of a millimetre from tick to tick.
+    TOLERANCE: ClassVar[float] = 0.002
+
+    @staticmethod
+    def since(*, before: np.ndarray | None, now: np.ndarray) -> bool:
+        if before is None or before.shape != now.shape:
+            return False
+        return bool(np.max(np.abs(before - now)) < Unmoved.TOLERANCE)

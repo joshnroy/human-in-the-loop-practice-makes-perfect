@@ -9,7 +9,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
@@ -30,6 +30,38 @@ class KinderImports:
         kinder.register_all_environments()
         os.environ["MUJOCO_GL"], os.environ["PYOPENGL_PLATFORM"] = backend
         return kinder
+
+
+class CubePlaces:
+    """Places a cube can rest that move when the drawer does."""
+
+    HANDLE_TOP: ClassVar[float] = 0.328
+    # how far a cube may sit off the ledge's or the bar's middle and still rest on it
+    SLACK: ClassVar[float] = 0.012
+
+    @staticmethod
+    def rides_drawer_front(*, position: np.ndarray, drawer_pos: float) -> bool:
+        """On top of the task drawer's face -- a 2 cm ledge between the countertop's edge
+        and the handle -- or on the handle's bar. Slide the drawer and such a cube goes
+        with it, which is how it is brought clear of the countertop's edge."""
+        s = SweepDrawerScene
+        x, y, z = (float(v) for v in position)
+        if abs(y) > s.DRAWER_HALF_WIDTH:
+            return False
+        rest = s.CUBE_HALF
+        on_face = (
+            abs(z - (s.DRAWER_WALL_TOP + rest)) < CubePlaces.SLACK
+            and s.COUNTER_EDGE_X + drawer_pos - CubePlaces.SLACK
+            < x
+            < s.DRAWER_FACE_X + drawer_pos + CubePlaces.SLACK
+        )
+        on_handle = (
+            abs(z - (CubePlaces.HANDLE_TOP + rest)) < CubePlaces.SLACK
+            and s.DRAWER_FACE_X + drawer_pos - CubePlaces.SLACK
+            < x
+            < s.DRAWER_HANDLE_FRONT_X + drawer_pos + CubePlaces.SLACK
+        )
+        return on_face or on_handle
 
 
 class SweepDrawerSession(BaseModel):
@@ -284,6 +316,11 @@ class SweepDrawerSession(BaseModel):
         if 0.45 < z < 0.52 and 0.125 < x < s.COUNTER_EDGE_X and abs(y) < 1.0:
             return "counter"
         return "other"
+
+    def rides_drawer_front(self, *, cube: str) -> bool:
+        return CubePlaces.rides_drawer_front(
+            position=self.position(name=cube), drawer_pos=self.drawer_pos()
+        )
 
     def in_pile(self, *, cube: str) -> bool:
         """Resting on the countertop inside the task's `blocks_init_region`."""

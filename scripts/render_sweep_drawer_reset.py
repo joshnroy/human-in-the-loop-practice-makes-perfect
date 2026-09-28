@@ -5,8 +5,12 @@
 
 Reads `<run-dir>/replay_log.jsonl` (written by `measure_sweep_drawer_reset.py
 --replay-log`) and `<run-dir>/cycle.json`. Nothing is simulated: every frame is the
-logged joint positions put back into the compiled scene and drawn, from a three-quarter
-view and a close-up of the drawer, with the step that was running captioned beneath.
+logged joint positions put into the scene and drawn, from a three-quarter view and a
+close-up of the drawer, with the step that was running captioned beneath.
+
+The scene drawn is the task's own with its MimicLabs room around it (`scene_bg=True`).
+The measurement runs without the room, so the log is carried over joint by joint, by
+name, and refused if a joint it recorded is missing or a different size.
 """
 
 import argparse
@@ -21,7 +25,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, ConfigDict
 
-from hitl_pmp.environments.sweep_drawer3d.session import SweepDrawerSession
+from hitl_pmp.environments.sweep_drawer3d.session import KinderImports
 from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene
 
 
@@ -33,37 +37,40 @@ class View(BaseModel):
     azimuth: float
     elevation: float
     title: str
+    width: int
 
 
 class Layout:
     """Two panels side by side over a caption bar; every dimension even, as NVENC needs."""
 
-    PANEL: ClassVar[tuple[int, int]] = (960, 720)
+    HEIGHT: ClassVar[int] = 720
     BAR: ClassVar[int] = 64
     BACKGROUND: ClassVar[tuple[int, int, int]] = (16, 16, 16)
     FOREGROUND: ClassVar[tuple[int, int, int]] = (238, 238, 238)
     MUTED: ClassVar[tuple[int, int, int]] = (160, 160, 160)
     VIEWS: ClassVar[tuple[View, ...]] = (
         View(
-            lookat=(1.0, -0.05, 0.35),
-            distance=2.3,
-            azimuth=35.0,
+            lookat=(0.95, 0.0, 0.35),
+            distance=2.5,
+            azimuth=140.0,
             elevation=-28.0,
             title="three-quarter view",
+            width=1152,
         ),
         View(
-            lookat=(1.0, 0.05, 0.22),
+            lookat=(1.06, 0.05, 0.22),
             distance=0.85,
-            azimuth=90.0,
-            elevation=-52.0,
-            title="drawer and floor, close up",
+            azimuth=60.0,
+            elevation=-50.0,
+            title="the drawer, close up",
+            width=768,
         ),
     )
 
     @staticmethod
     def size() -> tuple[int, int]:
         """(width, height) of a whole frame."""
-        return 2 * Layout.PANEL[0], Layout.PANEL[1] + Layout.BAR
+        return sum(v.width for v in Layout.VIEWS), Layout.HEIGHT + Layout.BAR
 
     @staticmethod
     def font(*, size: int) -> Any:
@@ -76,17 +83,17 @@ class Layout:
     def compose(*, panels: list[np.ndarray], lines: tuple[str, str]) -> np.ndarray:
         width, height = Layout.size()
         frame = Image.new("RGB", (width, height), Layout.BACKGROUND)
-        for k, panel in enumerate(panels):
-            frame.paste(Image.fromarray(panel), (k * Layout.PANEL[0], 0))
         draw = ImageDraw.Draw(frame)
-        for k, view in enumerate(Layout.VIEWS):
-            draw.text(
-                (k * Layout.PANEL[0] + 12, 10),
-                view.title,
-                fill=Layout.FOREGROUND,
-                font=Layout.font(size=18),
-            )
-        top = Layout.PANEL[1]
+        left = 0
+        for view, panel in zip(Layout.VIEWS, panels, strict=True):
+            frame.paste(Image.fromarray(panel), (left, 0))
+            font = Layout.font(size=17)
+            box = draw.textbbox((left + 18, 14), view.title, font=font)
+            # the panel behind may be any brightness: the title brings its own ground
+            draw.rectangle((box[0] - 8, box[1] - 6, box[2] + 8, box[3] + 6), fill=Layout.BACKGROUND)
+            draw.text((left + 18, 14), view.title, fill=Layout.FOREGROUND, font=font)
+            left += view.width
+        top = Layout.HEIGHT
         draw.text((14, top + 8), lines[0], fill=Layout.FOREGROUND, font=Layout.font(size=22))
         draw.text((14, top + 38), lines[1], fill=Layout.MUTED, font=Layout.font(size=17))
         return np.asarray(frame, dtype=np.uint8)
@@ -114,7 +121,7 @@ class Caption:
 
     @staticmethod
     def lines(
-        *, tick: int, step: dict | None, drawer: float, piled: int, speed: float
+        *, seed: int, tick: int, step: dict | None, drawer: float, piled: int, speed: float
     ) -> tuple[str, str]:
         if step is None:
             head = "start"
@@ -123,7 +130,8 @@ class Caption:
             head = f"{phase}:  {step['name'].replace('_', ' ')}"
         cubes = len(SweepDrawerScene.CUBES)
         tail = (
-            f"simulated time {tick / 10:6.1f} s   |   drawer open {max(drawer, 0.0) * 100:4.1f} cm"
+            f"seed {seed}   |   simulated time {tick / 10:6.1f} s"
+            f"   |   drawer open {max(drawer, 0.0) * 100:4.1f} cm"
             f"   |   cubes in the pile region {piled}/{cubes}   |   played at {speed:g}x"
         )
         return head, tail
@@ -150,17 +158,29 @@ class ReplayLog:
                     yield record
 
     @staticmethod
-    def check(*, header: dict, model: Any) -> None:
-        """Refuse to draw a log onto a scene it was not recorded from: a moved
-        `reference/kindergarden` pin can reorder the joints under the same names."""
+    def mapping(*, header: dict, model: Any) -> list[tuple[int, int, int]]:
+        """(address in the log, address in the scene, size) for every logged joint.
+
+        By name, not by position: the scene drawn has a room the measured one lacks, and a
+        moved `reference/kindergarden` pin can reorder joints under the same names.
+        """
         import mujoco
 
-        if header["nq"] != model.nq:
-            raise ValueError(f"log has nq={header['nq']}, the compiled scene has {model.nq}")
+        sizes = {
+            int(mujoco.mjtJoint.mjJNT_FREE): 7,
+            int(mujoco.mjtJoint.mjJNT_BALL): 4,
+            int(mujoco.mjtJoint.mjJNT_SLIDE): 1,
+            int(mujoco.mjtJoint.mjJNT_HINGE): 1,
+        }
+        out = []
         for joint in header["joints"]:
             j = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint["name"])
-            if j < 0 or int(model.jnt_qposadr[j]) != joint["adr"]:
-                raise ValueError(f"joint {joint['name']} is not where the log recorded it")
+            if j < 0:
+                raise ValueError(f"the scene has no joint {joint['name']}, which the log recorded")
+            if sizes[int(model.jnt_type[j])] != joint["n"]:
+                raise ValueError(f"joint {joint['name']} is a different kind in the scene")
+            out.append((int(joint["adr"]), int(model.jnt_qposadr[j]), int(joint["n"])))
+        return out
 
 
 class ResetVideo(BaseModel):
@@ -176,6 +196,7 @@ class ResetVideo(BaseModel):
     codec: str = "h264_nvenc"
     first_tick: int = 0
     last_tick: int | None = None
+    room: bool = True
 
     def speed(self) -> float:
         """Playback speed against simulated time, at the scene's 10 Hz control rate."""
@@ -214,20 +235,34 @@ class ResetVideo(BaseModel):
             str(self.output),
         ]
 
+    def scene(self, *, seed: int) -> tuple[Any, Any, Any]:
+        """(environment, model, data) of the scene to draw into."""
+        kinder = KinderImports.load()
+        env = kinder.make(
+            SweepDrawerScene.ENV_ID,
+            render_mode="rgb_array",
+            allow_state_access=True,
+            scene_bg=True if self.room else None,
+        )
+        env.reset(seed=seed)
+        sim = env.unwrapped._object_centric_env._robot_env.sim
+        return env, sim.model.mj_model, sim.data.mj_data
+
     def render(self) -> int:
         import mujoco
 
         cycle = json.loads((self.run_dir / "cycle.json").read_text())
         log = self.run_dir / "replay_log.jsonl"
         header = ReplayLog.header(path=log)
-        session = SweepDrawerSession(seed=int(header["seed"]))
-        model, data = session.mj_model, session.mj_data
-        ReplayLog.check(header=header, model=model)
-        model.vis.global_.offwidth = max(model.vis.global_.offwidth, Layout.PANEL[0])
-        model.vis.global_.offheight = max(model.vis.global_.offheight, Layout.PANEL[1])
-        renderer = mujoco.Renderer(model, height=Layout.PANEL[1], width=Layout.PANEL[0])
-        cameras = []
+        seed = int(header["seed"])
+        env, model, data = self.scene(seed=seed)
+        mapping = ReplayLog.mapping(header=header, model=model)
+        widest = max(v.width for v in Layout.VIEWS)
+        model.vis.global_.offwidth = max(model.vis.global_.offwidth, widest)
+        model.vis.global_.offheight = max(model.vis.global_.offheight, Layout.HEIGHT)
+        renderers, cameras = [], []
         for view in Layout.VIEWS:
+            renderers.append(mujoco.Renderer(model, height=Layout.HEIGHT, width=view.width))
             camera = mujoco.MjvCamera()
             camera.type = mujoco.mjtCamera.mjCAMERA_FREE
             camera.lookat[:] = view.lookat
@@ -237,9 +272,10 @@ class ResetVideo(BaseModel):
                 view.elevation,
             )
             cameras.append(camera)
-        drawer = mujoco.mj_name2id(
+        joint = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_JOINT, SweepDrawerScene.DRAWER + "_joint"
         )
+        drawer = int(model.jnt_qposadr[joint])
         cube_adr = [
             int(
                 model.jnt_qposadr[mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, c + "_joint")]
@@ -256,20 +292,22 @@ class ResetVideo(BaseModel):
                     continue
                 if self.last_tick is not None and record["t"] > self.last_tick:
                     break
-                data.qpos[:] = record["qpos"]
+                for src, dst, n in mapping:
+                    data.qpos[dst : dst + n] = record["qpos"][src : src + n]
                 data.qvel[:] = 0.0
                 mujoco.mj_forward(model, data)
                 panels = []
-                for camera in cameras:
+                for renderer, camera in zip(renderers, cameras, strict=True):
                     renderer.update_scene(data, camera=camera)
                     panels.append(renderer.render().copy())
                 piled = sum(
                     ResetVideo.in_pile(position=data.qpos[adr : adr + 3]) for adr in cube_adr
                 )
                 lines = Caption.lines(
+                    seed=seed,
                     tick=record["t"],
                     step=steps.get(record["t"]),
-                    drawer=float(data.qpos[model.jnt_qposadr[drawer]]),
+                    drawer=float(data.qpos[drawer]),
                     piled=piled,
                     speed=self.speed(),
                 )
@@ -277,8 +315,9 @@ class ResetVideo(BaseModel):
                 frames += 1
             pipe.stdin.close()
             code = pipe.wait()
-        renderer.close()
-        session.close()
+        for renderer in renderers:
+            renderer.close()
+        env.close()
         if code != 0:
             raise RuntimeError(f"ffmpeg exited with {code}")
         return frames
@@ -302,6 +341,9 @@ def main() -> int:
     parser.add_argument("--last-tick", type=int, default=None)
     parser.add_argument("--ffmpeg", default="ffmpeg", help="an ffmpeg built with --codec")
     parser.add_argument("--codec", default="h264_nvenc")
+    parser.add_argument(
+        "--no-room", action="store_true", help="draw the scene without its MimicLabs room"
+    )
     args = parser.parse_args()
     video = ResetVideo(
         run_dir=args.run_dir,
@@ -312,6 +354,7 @@ def main() -> int:
         last_tick=args.last_tick,
         ffmpeg=args.ffmpeg,
         codec=args.codec,
+        room=not args.no_room,
     )
     frames = video.render()
     print(f"{frames} frames at {video.fps} fps, {video.speed():g}x -> {video.output}")

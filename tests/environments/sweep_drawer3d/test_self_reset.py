@@ -67,3 +67,36 @@ def test_counter_objects_no_longer_block_the_stock_base_planner() -> None:
         assert fixed is not None
     finally:
         session.close()
+
+
+def test_jitter_does_not_make_a_refused_pick_worth_planning_again() -> None:
+    """Seed 22: the planner refused two cubes, then searched 30 s for each again, because
+    a position rounded to the millimetre had crossed a rounding boundary."""
+    from hitl_pmp.environments.sweep_drawer3d.self_reset import Unmoved
+
+    before = np.array([0.88549, 0.04975, 0.45389, 0.0003])
+    now = np.array([0.88551, 0.04975, 0.45389, 0.0])
+    assert round(float(before[0]), 3) != round(float(now[0]), 3)
+    assert Unmoved.since(before=before, now=now)
+
+
+def test_a_cube_that_was_shifted_is_worth_planning_again() -> None:
+    from hitl_pmp.environments.sweep_drawer3d.self_reset import Unmoved
+
+    before = np.array([0.8855, 0.0498, 0.4539, 0.0])
+    assert not Unmoved.since(before=before, now=before + np.array([0.08, 0.0, 0.0, 0.08]))
+
+
+def test_a_neighbour_taken_away_makes_a_pick_worth_planning_again() -> None:
+    """Seed 21: a floor cube had no pick until the cube beside it was put back."""
+    from hitl_pmp.environments.sweep_drawer3d.self_reset import Unmoved
+
+    alone = np.array([0.95, 0.15, 0.01, 0.0])
+    beside = np.array([0.95, 0.15, 0.01, 0.96, 0.13, 0.01, 0.0])
+    assert not Unmoved.since(before=beside, now=alone)
+
+
+def test_a_pick_never_refused_is_not_stuck() -> None:
+    from hitl_pmp.environments.sweep_drawer3d.self_reset import Unmoved
+
+    assert not Unmoved.since(before=None, now=np.zeros(4))
