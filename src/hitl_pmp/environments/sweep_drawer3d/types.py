@@ -1,6 +1,6 @@
 """Data for the SweepIntoDrawer3D self-reset: scene constants, step records, outcomes."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import ClassVar, Literal
 
 import numpy as np
@@ -155,8 +155,15 @@ class Retrieval(BaseModel):
     # Repositioning moves that shifted it before it was picked, in order.
     assists: tuple[str, ...]
     # single: closed on two of the cube's own faces. squeeze: closed across a cube
-    # turned off the closing axis. row: several cubes face to face, at once.
-    grasp: Literal["single", "squeeze", "row"]
+    # turned off the closing axis. row: several cubes face to face, at once. none: never
+    # picked -- it came back with the handling of another cube, which nobody planned.
+    grasp: Literal["single", "squeeze", "row", "none"]
+
+    @staticmethod
+    def grasp_of(
+        *, cube: str, picked: Mapping[str, Literal["single", "squeeze", "row"]]
+    ) -> Literal["single", "squeeze", "row", "none"]:
+        return picked.get(cube, "none")
 
     @property
     def rescued_by(self) -> tuple[str, ...]:
@@ -166,7 +173,12 @@ class Retrieval(BaseModel):
 
     @property
     def pathway(self) -> str:
-        last = {"single": "pick", "squeeze": "squeeze grasp", "row": "row grasp"}[self.grasp]
+        last = {
+            "single": "pick",
+            "squeeze": "squeeze grasp",
+            "row": "row grasp",
+            "none": "no pick of its own",
+        }[self.grasp]
         if not self.blocked:
             return last
         return " > ".join((*(self.assists or ("neighbours removed",)), last))

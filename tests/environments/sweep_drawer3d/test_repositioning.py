@@ -20,9 +20,14 @@ FRONT_WALL = 0.872
 
 
 def _lay_out(
-    *, session: Any, drawer: float = 0.0, cubes: dict[str, tuple[float, float, float, float]]
+    *,
+    session: Any,
+    drawer: float = 0.0,
+    cubes: dict[str, tuple[float, float, float, float]],
+    on_their_side: tuple[str, ...] = (),
 ) -> None:
-    """Put the drawer at `drawer` and each named cube at (x, y, z, yaw in degrees)."""
+    """Put the drawer at `drawer` and each named cube at (x, y, z, yaw in degrees), the
+    ones `on_their_side` rolled a quarter turn first, as the sweep leaves many."""
     from scipy.spatial.transform import Rotation
 
     from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene as S
@@ -38,7 +43,10 @@ def _lay_out(
     state = session.state.copy()
     for name, (x, y, z, yaw) in cubes.items():
         obj = state.get_object_from_name(name)
-        q = Rotation.from_euler("z", yaw, degrees=True).as_quat()
+        turn = Rotation.from_euler("z", yaw, degrees=True)
+        if name in on_their_side:
+            turn *= Rotation.from_euler("x", 90.0, degrees=True)
+        q = turn.as_quat()
         for key, value in zip(("x", "y", "z", "qx", "qy", "qz", "qw"), (x, y, z, *q), strict=True):
             state.set(obj, key, float(value))
     session.restore(state=state)
@@ -303,5 +311,68 @@ def test_letting_go_of_a_cube_does_not_shove_the_cube_in_the_next_slot() -> None
         moved = float(np.linalg.norm(session.position(name="cube_1")[:2] - neighbour[:2]))
         assert moved < 0.003
         assert session.in_pile(cube="cube_1")
+    finally:
+        session.close()
+
+
+@needs_kinder
+def test_the_session_reads_a_tipped_cubes_heading_off_its_footprint() -> None:
+    """A cube on its side, turned 25 degrees: the z-y-x Euler yaw of that rotation is
+    not 25 degrees, and the 2D model drew the cube where it was not. Checked against
+    the cube's eight corners dropped onto the counter, which no angle convention enters."""
+    import itertools
+
+    from scipy.spatial.transform import Rotation
+    from shapely.geometry import MultiPoint
+
+    from hitl_pmp.environments.sweep_drawer3d.footprints import Footprints
+
+    session, _ = _reset()
+    try:
+        _lay_out(
+            session=session,
+            cubes={"cube_1": (0.75, -0.10, 0.47, 25.0), "cube_2": (0.70, -0.04, 0.47, 25.0)},
+            on_their_side=("cube_1",),
+        )
+        corners = np.array(list(itertools.product((-0.01, 0.01), repeat=3)))
+        for cube in ("cube_1", "cube_2"):
+            at = session.position(name=cube)[:2]
+            turned = Rotation.from_quat(session.quaternion(name=cube)).apply(corners)[:, :2]
+            real = MultiPoint([tuple(c + at) for c in turned]).convex_hull
+            drawn = Footprints.cube(center=at, yaw=session.yaw(name=cube))
+            assert drawn.symmetric_difference(real).area < 0.02 * real.area, cube
+    finally:
+        session.close()
+
+
+@needs_kinder
+def test_a_pick_lifts_the_cube_it_was_asked_for_and_no_other() -> None:
+    """Seed 4: three cubes in a touching row at the counter's edge, the middle one on its
+    side with its footprint turned 18.5 degrees. Drawn square to the axes, it took a
+    grasp whose pads overlapped the next cube, and the pick lifted both. Drawn where it
+    is, it has no grasp until a neighbour has gone; the row is taken from its end."""
+    from hitl_pmp.environments.sweep_drawer3d.motion import ExecutionError
+
+    session, reset = _reset()
+    try:
+        _lay_out(
+            session=session,
+            cubes={
+                "cube_0": (0.8685, 0.0530, 0.47, -18.5),
+                "cube_1": (0.8656, 0.0294, 0.47, -88.95),
+                "cube_2": (0.8731, 0.0731, 0.47, 158.75),
+                "cube_3": (0.70, -0.15, 0.47, 0.0),
+                "cube_4": (0.66, -0.05, 0.47, 0.0),
+            },
+            on_their_side=("cube_0",),
+        )
+        prims = reset.primitives
+        with pytest.raises(ExecutionError, match="no grasp clears its neighbours"):
+            prims.pick(cube="cube_0")
+        resting = {c: float(session.position(name=c)[2]) for c in ("cube_0", "cube_1")}
+        prims.pick(cube="cube_2")
+        assert session.position(name="cube_2")[2] > 0.52
+        for cube, z in resting.items():
+            assert session.position(name=cube)[2] == pytest.approx(z, abs=0.005), cube
     finally:
         session.close()

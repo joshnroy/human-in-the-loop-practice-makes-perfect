@@ -47,3 +47,14 @@ def test_a_turned_cube_by_a_wall_is_offered_a_closing_axis_along_the_wall() -> N
     headings = _squeeze().headings(face_yaws=faces)
     assert any(abs(h - np.pi / 2) < 1e-9 for h in headings)
     assert any(abs(h) < 1e-9 for h in headings)
+
+
+def test_a_hand_shut_on_a_row_stands_wider_than_one_shut_on_a_cube() -> None:
+    """The check of the shut hand against the cubes beside it uses the hand as it will
+    be: around one cube the planning model's fingers are as far shut as they go."""
+    from hitl_pmp.environments.sweep_drawer3d.primitives import ShutHand
+
+    one = ShutHand.state(held=("cube_2",))
+    row = ShutHand.state(held=("cube_2", "cube_0"))
+    assert one == pytest.approx(ShutHand.STATE)
+    assert row < one

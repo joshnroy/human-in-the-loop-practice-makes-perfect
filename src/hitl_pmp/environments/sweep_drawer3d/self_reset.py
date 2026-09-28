@@ -19,7 +19,7 @@ from .motion import ExecutionError, Motion
 from .planning_scene import PlanningScene
 from .primitives import DrawerStroke, Primitives
 from .repositioning import Repositioning
-from .session import SweepDrawerSession
+from .session import CubeHeading, SweepDrawerSession
 from .types import CubeLocation, Mechanisms, ResetOutcome, Retrieval, SweepDrawerScene
 
 S = SweepDrawerScene
@@ -191,11 +191,7 @@ class SweepDrawerSelfReset(BaseModel):
         if cube == S.CUBES[0] and not free_spot:
             pos, _ = self.session.initial_pose(name=cube)
             quat = self.session.initial_pose(name=cube)[1]
-            from scipy.spatial.transform import Rotation
-
-            return (float(pos[0]), float(pos[1])), float(
-                Rotation.from_quat(quat).as_euler("zyx")[0]
-            )
+            return (float(pos[0]), float(pos[1])), CubeHeading.of(quaternion=quat)
         taken = [
             self.session.position(name=c)[:2]
             for c in S.CUBES
@@ -480,7 +476,7 @@ class SweepDrawerSelfReset(BaseModel):
                 origin=where,
                 blocked=self._blocked.get(c, False),
                 assists=tuple(self._assists.get(c, ())),
-                grasp=self._grasp.get(c, "single"),
+                grasp=Retrieval.grasp_of(cube=c, picked=self._grasp),
             )
             for c, where in self._origin.items()
             if self.session.in_pile(cube=c)

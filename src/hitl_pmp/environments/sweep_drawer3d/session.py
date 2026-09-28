@@ -8,6 +8,7 @@ environments/tossing3d/kinder_backend.py.
 import json
 import os
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import IO, Any, ClassVar
 
@@ -62,6 +63,30 @@ class CubePlaces:
             < s.DRAWER_HANDLE_FRONT_X + drawer_pos + CubePlaces.SLACK
         )
         return on_face or on_handle
+
+
+class CubeHeading:
+    """The turn of a cube's footprint about the vertical, whichever face it rests on.
+
+    The first angle of a z-y-x Euler split is that turn only for a cube still on its start
+    face. The sweep tips cubes onto their sides and their tops, and there that angle is
+    off by anything up to 45 degrees: the 2D model then draws the cube where it is not.
+    """
+
+    @staticmethod
+    def of(*, quaternion: Sequence[float]) -> float:
+        """The direction of the body axis that lies flattest."""
+        axes = Rotation.from_quat(quaternion).as_matrix()
+        # Two axes lie flat on a resting cube. The first of them, so a cube nobody tipped
+        # keeps its own yaw; rounded, so resting jitter cannot swap the two.
+        flattest = min(range(3), key=lambda k: (round(abs(float(axes[2, k])), 1), k))
+        return float(np.arctan2(axes[1, flattest], axes[0, flattest]))
+
+    @staticmethod
+    def quarter_turns_apart(*, a: float, b: float) -> float:
+        """How far two headings of a square footprint differ: at most 45 degrees, since
+        the footprint is the same every quarter turn."""
+        return float(abs((a - b + np.pi / 4) % (np.pi / 2) - np.pi / 4))
 
 
 class SweepDrawerSession(BaseModel):
@@ -269,7 +294,11 @@ class SweepDrawerSession(BaseModel):
         return (qx, qy, qz, qw)
 
     def yaw(self, *, name: str) -> float:
-        return float(Rotation.from_quat(self.quaternion(name=name)).as_euler("zyx")[0])
+        """Turn about the vertical; for a cube its footprint's, whichever face is down."""
+        q = self.quaternion(name=name)
+        if name in SweepDrawerScene.CUBES:
+            return CubeHeading.of(quaternion=q)
+        return float(Rotation.from_quat(q).as_euler("zyx")[0])
 
     def arm(self) -> np.ndarray:
         r = self._obj(name=SweepDrawerScene.ROBOT)

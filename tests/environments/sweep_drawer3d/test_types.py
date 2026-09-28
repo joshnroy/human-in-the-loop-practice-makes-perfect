@@ -106,3 +106,19 @@ def test_a_misspelt_mechanism_is_refused_rather_than_ignored() -> None:
 
     with pytest.raises(ValueError, match="wigle"):
         Mechanisms.check(names=("wigle",))
+
+
+def test_a_cube_that_came_back_without_a_pick_of_its_own_is_not_recorded_as_picked() -> None:
+    """Seed 4: a pick of cube_0 lifted cube_2 with it, and both were set down in the
+    pile. cube_2 was never picked, and its record said it had been."""
+    r = _retrieval(origin="counter", blocked=False, grasp="none")
+    assert r.pathway == "no pick of its own"
+    assert r.rescued_by == ()
+
+
+def test_a_cube_with_no_recorded_grasp_is_one_that_was_never_picked() -> None:
+    from hitl_pmp.environments.sweep_drawer3d.types import Retrieval
+
+    picked = {"cube_0": "squeeze"}
+    assert Retrieval.grasp_of(cube="cube_0", picked=picked) == "squeeze"
+    assert Retrieval.grasp_of(cube="cube_2", picked=picked) == "none"

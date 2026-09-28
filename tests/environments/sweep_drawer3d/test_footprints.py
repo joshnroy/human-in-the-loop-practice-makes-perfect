@@ -172,3 +172,101 @@ def test_clearance_reports_overlap_as_negative() -> None:
     far = fp.cube(center=np.array([0.05, 0.0]), yaw=0.0)
     assert fp.clearance(shape=a, obstacles=[b]) < 0.0
     assert fp.clearance(shape=a, obstacles=[far]) == pytest.approx(0.03)
+
+
+def _heading(*, quaternion: np.ndarray) -> float:
+    from hitl_pmp.environments.sweep_drawer3d.session import CubeHeading
+
+    return CubeHeading.of(quaternion=quaternion)
+
+
+def _shadow(*, quaternion: np.ndarray, center: np.ndarray):
+    """What the cube covers on the ground: its eight corners, turned and dropped. No
+    angle convention enters it."""
+    import itertools
+
+    from scipy.spatial.transform import Rotation
+    from shapely.geometry import MultiPoint
+
+    corners = np.array(list(itertools.product((-0.01, 0.01), repeat=3)))
+    world = Rotation.from_quat(quaternion).apply(corners)[:, :2] + center
+    return MultiPoint([tuple(p) for p in world]).convex_hull
+
+
+FACES_DOWN = {
+    "the face it started on": (0.0, 0.0),
+    "rolled a quarter turn about x": (90.0, 0.0),
+    "rolled the other way about x": (-90.0, 0.0),
+    "rolled a quarter turn about y": (0.0, 90.0),
+    "rolled the other way about y": (0.0, -90.0),
+    "upside down": (180.0, 0.0),
+}
+
+
+@pytest.mark.parametrize("face", sorted(FACES_DOWN))
+@pytest.mark.parametrize("turn", [0.0, 18.5, 37.0, -44.0, 75.0])
+def test_a_cubes_footprint_is_drawn_where_the_cube_is_whichever_face_it_rests_on(
+    *, face: str, turn: float
+) -> None:
+    """The sweep tips cubes over: at the start of the reset 64 of the 160 cubes in seeds
+    0 to 31 rested on another face than at the start of the episode. The first angle of
+    a z-y-x Euler split is the footprint's turn only for a cube on its start face, and
+    drew 57 of the 99 swept cubes' footprints off by more than 5% of their area."""
+    from scipy.spatial.transform import Rotation
+
+    fp = _fp()
+    about_x, about_y = FACES_DOWN[face]
+    onto_the_face = Rotation.from_euler("x", about_x, degrees=True) * Rotation.from_euler(
+        "y", about_y, degrees=True
+    )
+    q = (Rotation.from_euler("z", turn, degrees=True) * onto_the_face).as_quat()
+    center = np.array([0.87, 0.05])
+    drawn = fp.cube(center=center, yaw=_heading(quaternion=q))
+    real = _shadow(quaternion=q, center=center)
+    assert drawn.symmetric_difference(real).area < 0.001 * real.area
+
+
+def test_the_cube_that_was_lifted_with_its_neighbour_is_drawn_where_it_was() -> None:
+    """Seed 4, cube_0, as logged when the reset began: on its side, its footprint turned
+    18.5 degrees. Drawn square to the axes, the grasp filter passed a grasp whose pads
+    overlapped the cube beside it, and the pick lifted both."""
+    from scipy.spatial.transform import Rotation
+
+    fp = _fp()
+    q = Rotation.from_euler("zyx", [180.0, -18.5, 89.8], degrees=True).as_quat()
+    heading = np.degrees(_heading(quaternion=q))
+    assert (heading + 45.0) % 90.0 - 45.0 == pytest.approx(-18.5, abs=0.3)
+    center = np.array([0.8685, 0.0530])
+    drawn = fp.cube(center=center, yaw=_heading(quaternion=q))
+    real = _shadow(quaternion=q, center=center)
+    assert drawn.symmetric_difference(real).area < 0.02 * real.area
+
+
+def test_a_cube_nobody_tipped_keeps_the_yaw_it_has() -> None:
+    """Both of its horizontal axes lie flat; taking the second would report the same
+    footprint a quarter turn on, and a cube put back to a given yaw would be turned."""
+    from scipy.spatial.transform import Rotation
+
+    for yaw in (-2.9, -0.4, 0.0, 0.3, 1.2, 3.0):
+        q = Rotation.from_euler("z", yaw).as_quat()
+        assert _heading(quaternion=q) == pytest.approx(yaw, abs=1e-9)
+
+
+def test_resting_jitter_does_not_flip_the_heading_by_a_quarter_turn() -> None:
+    """A resting cube's rotation wanders by tenths of a degree from tick to tick."""
+    from scipy.spatial.transform import Rotation
+
+    rest = Rotation.from_euler("z", 0.3)
+    for wobble in ((0.2, -0.1), (-0.2, 0.1), (0.05, 0.3), (0.3, 0.05)):
+        q = (rest * Rotation.from_euler("xy", wobble, degrees=True)).as_quat()
+        assert _heading(quaternion=q) == pytest.approx(0.3, abs=0.01)
+
+
+def test_two_headings_a_quarter_turn_apart_are_the_same_footprint() -> None:
+    from hitl_pmp.environments.sweep_drawer3d.session import CubeHeading
+
+    apart = CubeHeading.quarter_turns_apart
+    assert apart(a=0.3, b=0.3 + np.pi / 2) == pytest.approx(0.0, abs=1e-9)
+    assert apart(a=0.3, b=0.3 - np.pi) == pytest.approx(0.0, abs=1e-9)
+    assert apart(a=0.1, b=-0.1) == pytest.approx(0.2)
+    assert apart(a=0.0, b=np.radians(50.0)) == pytest.approx(np.radians(40.0))

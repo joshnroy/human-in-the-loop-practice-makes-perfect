@@ -17,7 +17,7 @@ from .footprints import Footprints
 from .motion import Angles, ExecutionError, Motion
 from .planning_scene import Orientations, PlanningScene
 from .primitives import DRAWER_HOVER_Z, HOVER, Primitives
-from .session import SweepDrawerSession
+from .session import CubeHeading, SweepDrawerSession
 from .types import GripperGeometry, NudgePlan, SweepDrawerScene
 
 S = SweepDrawerScene
@@ -463,7 +463,9 @@ class Repositioning(BaseModel):
                 self.motion.hold(ticks=5, grip=0.0)
                 end = self.session.position(name=cube)
                 along = float((end[:2] - c3[:2]) @ plan.direction)
-                turned = np.degrees(abs(Angles.wrap(angle=self.session.yaw(name=cube) - yaw0)))
+                turned = np.degrees(
+                    CubeHeading.quarter_turns_apart(a=self.session.yaw(name=cube), b=yaw0)
+                )
                 heading = np.degrees(np.arctan2(plan.direction[1], plan.direction[0]))
                 what = (
                     f"{plan.kind} {cube}: {along:.3f} m toward {heading:.0f} deg"

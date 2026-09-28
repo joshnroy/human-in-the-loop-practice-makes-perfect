@@ -6,7 +6,7 @@ only then moves the robot. A primitive that finds nothing raises ExecutionError 
 having touched the world.
 """
 
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, PrivateAttr
@@ -16,7 +16,7 @@ from shapely.geometry import Polygon
 from .footprints import Footprints
 from .motion import ExecutionError, Motion
 from .planning_scene import Orientations, PlanningScene
-from .session import SweepDrawerSession
+from .session import CubeHeading, SweepDrawerSession
 from .types import GripperGeometry, SweepDrawerScene
 
 S = SweepDrawerScene
@@ -124,6 +124,27 @@ class WiperHold:
     @staticmethod
     def in_hand(*, gripper: np.ndarray, wiper: np.ndarray) -> bool:
         return float(np.linalg.norm(np.asarray(gripper) - np.asarray(wiper))) < WiperHold.REACH
+
+
+class ShutHand:
+    """The hand once it has closed on what it holds.
+
+    The descent is checked with the fingers open to let the cube in. Shut, the pads and
+    the links above them stand closer to whatever lies beside the cube; on a leaning
+    hand they reach over a touching neighbour's top edge, pinch it, and lift it too.
+    """
+
+    # The planning model's hand stood 1 to 2 mm from the neighbour in the one grasp
+    # measured to take it, and over 4 mm in grasps beside a neighbour that did not.
+    MARGIN: ClassVar[float] = 0.003
+    # The planning model's fingers shut no further than this: pads 2.2 cm apart.
+    STATE: ClassVar[float] = 0.6
+
+    @staticmethod
+    def state(*, held: tuple[str, ...]) -> float:
+        """One cube is 2 cm across; a row is wider, and the hand shuts that much less."""
+        width = SweepDrawerScene.CUBE_HALF * 2 * len(held) + 0.002
+        return min(Opening.for_gap(gap=width)[1], ShutHand.STATE)
 
 
 class DrawerStroke:
@@ -710,6 +731,7 @@ class Primitives(BaseModel):
             self.scene.sync(base=base)
             everything = self.scene.bodies()
             others = self.scene.bodies(without_cubes=held)
+            bystanders = {self.scene.cube_body(cube=c) for c in S.CUBES if c not in held}
             for k in grasps:
                 ez = k.pose.position[2]
                 floor = DRAWER_HOVER_Z if where == "drawer" else 0.0
@@ -732,6 +754,13 @@ class Primitives(BaseModel):
                 )
                 if down is None:
                     rejected["descent"] = rejected.get("descent", 0) + 1
+                    continue
+                if self.scene.in_collision(
+                    joints=self.scene.fingers(arm=down[-1], state=ShutHand.state(held=held)),
+                    bodies=bystanders,
+                    margin=ShutHand.MARGIN,
+                ):
+                    rejected["closing"] = rejected.get("closing", 0) + 1
                     continue
                 plan = self.scene.plan_arm(goal=q_h, bodies=everything, start=S.HOME, base=base)
                 if plan is None:
@@ -856,7 +885,7 @@ class Primitives(BaseModel):
         )
         turns = [0.0, np.pi / 2, -np.pi / 2, np.pi]
         if target_yaw is not None:
-            held_yaw = float(Rotation.from_quat(held_q).as_euler("zyx")[0])
+            held_yaw = CubeHeading.of(quaternion=held_q)
             first = float((target_yaw - held_yaw + np.pi) % (2 * np.pi) - np.pi)
             turns = [first] + [first + t for t in turns[1:]]
         for dyaw in turns:
