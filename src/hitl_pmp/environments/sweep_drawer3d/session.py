@@ -193,7 +193,15 @@ class SweepDrawerSession(BaseModel):
         return (qx, qy, qz, qw)
 
     def yaw(self, *, name: str) -> float:
-        return float(Rotation.from_quat(self.quaternion(name=name)).as_euler("zyx")[0])
+        """Heading of the footprint. For a cube, the yaw of whichever face is up: a cube
+        lying on its side has a quaternion whose z-y-x yaw is not its footprint's."""
+        q = self.quaternion(name=name)
+        if name in SweepDrawerScene.CUBES:
+            from kinder_models.dynamic3d.utils import upright_grasp_rotations
+
+            u = upright_grasp_rotations(q)[0]
+            return float(2 * np.arctan2(u[2], u[3]))
+        return float(Rotation.from_quat(q).as_euler("zyx")[0])
 
     def arm(self) -> np.ndarray:
         r = self._obj(name=SweepDrawerScene.ROBOT)

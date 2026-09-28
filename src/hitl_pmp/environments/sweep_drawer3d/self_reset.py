@@ -247,7 +247,9 @@ class SweepDrawerSelfReset(BaseModel):
         ):
             self._recover_hand()
 
-    def gather_loose(self, *, max_rounds: int = 12) -> bool:
+    def gather_loose(
+        self, *, max_rounds: int = 12, skip: set[str] | None = None, only: set[str] | None = None
+    ) -> bool:
         """Floor cubes, countertop cubes outside the pile region, and strays."""
         failures: dict[str, int] = {}
         pushes = 0
@@ -258,12 +260,23 @@ class SweepDrawerSelfReset(BaseModel):
                 if self.session.location(cube=c) != "drawer"
                 and not self.session.in_pile(cube=c)
                 and failures.get(c, 0) < 2
+                and c not in (skip or set())
+                and (only is None or c in only)
             ]
             if not todo:
                 return True
             # graspable cubes first; a boxed-in one gets pushed apart instead of picked
             todo.sort(key=lambda c: not self._prims.graspable(cube=c))
             cube = todo[0]
+            if not self._prims.graspable(cube=cube) and self._try_pairs(
+                todo=[
+                    c
+                    for c in todo
+                    if self.session.location(cube=c) == self.session.location(cube=cube)
+                ],
+                failures=failures,
+            ):
+                continue
             if not self._prims.graspable(cube=cube) and pushes < self.max_pushes:
                 pushes += 1
                 if self._do(name=f"push_{cube}", fn=self._prims.push, cube=cube) is None:
@@ -317,11 +330,13 @@ class SweepDrawerSelfReset(BaseModel):
             self.clear_drawer()
         if self.session.drawer_pos() > 0.01:
             self._do(name="close_drawer", fn=self._prims.move_drawer, target=0.0)
+        # floor and counter first: an open drawer overhangs the floor in front of the island
+        self.gather_loose(skip=set(self._on_face_ledge()))
         if self._on_face_ledge() and self.session.drawer_pos() < 0.05:
             # a cube wedged on the closed drawer's face top, against the countertop edge:
             # open the drawer and it rides out on the face, clear of the counter
             self._do(name="open_drawer_ledge", fn=self._prims.move_drawer, target=0.12)
-        self.gather_loose()
+            self.gather_loose(only=set(self._on_face_ledge()) or None)
         if self.session.drawer_pos() > 0.01:
             self._do(name="close_drawer", fn=self._prims.move_drawer, target=0.0)
         self.restore_cube0()

@@ -125,12 +125,28 @@ class Primitives(BaseModel):
         obst = self.obstacles_2d(cube=cube) if obstacles is None else obstacles
         walls = self.walls(cube=cube)
         out: list[Candidate] = []
-        for yaw in self.face_yaws(cube=cube):
+        # Face grasps at a 3.2 cm opening, and corner-to-corner (diagonal) grasps at 3.8 cm:
+        # squeezing two opposite vertical edges turns the cube face-on between the pads,
+        # and it is the only way to get a finger past a cube lying corner-first at a wall.
+        faces = [(y, 0.032, 0.0) for y in self.face_yaws(cube=cube)]
+        diagonals = [(y + np.pi / 4, 0.038, -0.004) for y in self.face_yaws(cube=cube)[:2]]
+        # Beside a wall, also close parallel to it whatever the cube's heading: the pads
+        # land on its corners and square it up, and neither finger goes near the wall.
+        along_wall = []
+        if walls:
+            th = self.session.yaw(name=cube)
+            for w in (np.pi / 2, -np.pi / 2):
+                width = 2 * S.CUBE_HALF * (abs(np.cos(th - w)) + abs(np.sin(th - w)))
+                along_wall.append((w, min(width + 0.01, 0.08), -0.005))
+        for yaw, gap, bonus in faces + diagonals + along_wall:
+            cmd, pb, depth = Opening.for_gap(gap=gap)
             u = np.array([np.cos(yaw), np.sin(yaw)])
             v = np.array([-np.sin(yaw), np.cos(yaw)])
-            for alpha in (0.0, 0.45, 0.7):
+            for alpha in (0.0, 0.45, 0.7) + ((1.05,) if walls else ()):
                 for lean in (0.0,) if alpha == 0 else (1.0, -1.0):
-                    for off_v in (0.0, 0.003, -0.003, 0.005, -0.005):
+                    for off_v in (0.0, 0.003, -0.003, 0.005, -0.005) + (
+                        (0.008, -0.008, 0.011, -0.011) if walls else ()
+                    ):
                         for off_u in (0.0, 0.002, -0.002):
                             ctr = c[:2] + off_v * v + off_u * u
                             reach = 0.019 * np.sin(alpha)
@@ -138,6 +154,7 @@ class Primitives(BaseModel):
                                 center=ctr - 0.5 * reach * lean * v,
                                 yaw=yaw,
                                 obstacles=obst,
+                                gap=gap,
                                 widen=reach,
                             )
                             if clr < 0.002:
@@ -152,9 +169,18 @@ class Primitives(BaseModel):
                                 ctr[1],
                                 support + 0.0124 + 0.012 * np.sin(alpha),
                             ])
-                            pose = Pose(tuple(pad - a * G.PAD_CENTER_PARTIAL), q)
-                            score = min(clr, 0.01) - 0.3 * (abs(off_v) + abs(off_u)) - 0.004 * alpha
-                            out.append(Candidate(pose=pose, approach=a, yaw=yaw, score=score))
+                            pose = Pose(tuple(pad - a * depth), q)
+                            score = (
+                                min(clr, 0.01)
+                                - 0.3 * (abs(off_v) + abs(off_u))
+                                - 0.004 * alpha
+                                + bonus
+                            )
+                            out.append(
+                                Candidate(
+                                    pose=pose, approach=a, yaw=yaw, score=score, cmd=cmd, pb=pb
+                                )
+                            )
         out.sort(key=lambda k: -k.score)
         return out
 
