@@ -1,0 +1,15 @@
+COMPARISONS = [
+    ("ours: reset vs no reset (B λ3e-6)", ("gpoff", "local_trend-lam3e-6"), ("noreset", "local_trend-lam3e-6")),
+    ("EES: reset vs no reset (cost 5)", ("ees-gpoff", "ees-lamcost5"), ("ees-noreset", "ees-lamcost5")),
+    ("ours B λ3e-6 vs EES cost 5 (reset, GP off)", ("gpoff", "local_trend-lam3e-6"), ("ees-gpoff", "ees-lamcost5")),
+    ("ours A λ3e-6 vs EES cost 5 (reset, GP off)", ("gpoff", "global_curve-lam3e-6"), ("ees-gpoff", "ees-lamcost5")),
+    ("ours B λ3e-6 vs EES cost 5 (reset, GP on)", ("gpon", "local_trend-lam3e-6"), ("ees-gpon", "ees-lamcost5")),
+    ("ours B λ3e-6 vs EES (no reset)", ("noreset", "local_trend-lam3e-6"), ("ees-noreset", "ees-lamcost5")),
+    ("GP on vs off: ours B λ0", ("gpon", "local_trend-lam0"), ("gpoff", "local_trend-lam0")),
+    ("GP on vs off: ours B λ3e-6", ("gpon", "local_trend-lam3e-6"), ("gpoff", "local_trend-lam3e-6")),
+    ("GP on vs off: ours A λ0", ("gpon", "global_curve-lam0"), ("gpoff", "global_curve-lam0")),
+    ("GP on vs off: ours A λ3e-6", ("gpon", "global_curve-lam3e-6"), ("gpoff", "global_curve-lam3e-6")),
+    ("GP on vs off: EES cost 0", ("ees-gpon", "ees-lamcost0"), ("ees-gpoff", "ees-lamcost0")),
+    ("GP on vs off: EES cost 0.5", ("ees-gpon", "ees-lamcost0.5"), ("ees-gpoff", "ees-lamcost0.5")),
+    ("GP on vs off: EES cost 5", ("ees-gpon", "ees-lamcost5"), ("ees-gpoff", "ees-lamcost5")),
+]
