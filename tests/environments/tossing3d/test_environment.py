@@ -261,13 +261,21 @@ def test_an_observed_pick_refusal_is_retryable_until_a_reset_moves_the_cube() ->
     """The recovery-state lifecycle on the trap-2 stuck state saved from the
     2026-09-22 grasp-clear validation run: dispatching the pick there is refused
     ("No collision-free cube grasp", 0 steps); the refusal must surface as an
-    observed atom that removes PickupUnblocked from the state, yet the pick stays
-    applicable -- a retry is dispatched and refused again, one more failed attempt --
-    and a movables reset must clear the atom and leave the cube pickable again."""
+    observed atom that removes PickupUnblocked from the state without changing whether
+    the pick is applicable -- a retry is dispatched and refused again, one more failed
+    attempt -- and a movables reset must clear the atom and leave the cube pickable
+    again. The cube lies in the bin 0.033 m from an inner wall, so the in-bin
+    GraspClear calibration now makes the pick inapplicable here before and after the
+    refusal alike; that the refusal itself is not a mask is pinned symbolically in
+    test_skills.py."""
     import json as jsonlib
     from pathlib import Path
 
-    from hitl_pmp.environments.tossing3d.predicates import HOLDING, PICKUP_UNBLOCKED
+    from hitl_pmp.environments.tossing3d.predicates import (
+        GRASP_CLEAR,
+        HOLDING,
+        PICKUP_UNBLOCKED,
+    )
     from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
     from hitl_pmp.environments.tossing3d.skills import Tossing3DSkills
     from hitl_pmp.planning.grounding import SkillGrounder
@@ -279,20 +287,26 @@ def test_an_observed_pick_refusal_is_retryable_until_a_reset_moves_the_cube() ->
         env.reset_to_seed(seed=125)
         restored = env.restore_plain_snapshot(plain=plain)
         assert PICKUP_UNBLOCKED.holds(restored, (env.cube,))
+        assert not GRASP_CLEAR.holds(restored, (env.cube, env.bin))
+        provider = Tossing3DSkillProvider(env=env)
+
+        def pick_applicable(*, state) -> bool:
+            applicable = SkillGrounder.applicable_ground_skills(
+                skills=provider.skills(),
+                objects=provider.objects(),
+                true_atoms=SkillGrounder.abstract_state(
+                    state=state, objects=provider.objects(), predicates=provider.predicates()
+                ),
+            )
+            return any(ground.skill == Tossing3DSkills.PICK_CUBE for ground in applicable)
+
+        before = pick_applicable(state=restored)
         refused = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
         assert env.last_skill_error() is not None
         assert "No collision-free" in env.last_skill_error()
         assert sum(env.last_controller_steps()) == 0
         assert not PICKUP_UNBLOCKED.holds(refused, (env.cube,))
-        provider = Tossing3DSkillProvider(env=env)
-        applicable = SkillGrounder.applicable_ground_skills(
-            skills=provider.skills(),
-            objects=provider.objects(),
-            true_atoms=SkillGrounder.abstract_state(
-                state=refused, objects=provider.objects(), predicates=provider.predicates()
-            ),
-        )
-        assert any(ground.skill == Tossing3DSkills.PICK_CUBE for ground in applicable)
+        assert pick_applicable(state=refused) == before
         retried = env.take_action(action=np.array([0, 0, 0, 0, 0], dtype=float))
         assert "No collision-free" in (env.last_skill_error() or "")
         assert sum(env.last_controller_steps()) == 0

@@ -386,13 +386,15 @@ def test_the_live_exp21_tipped_state_leaves_only_resets_to_both_planners() -> No
         atoms = SkillGrounder.abstract_state(
             state=tipped, objects=provider.objects(), predicates=provider.predicates()
         )
-        # The rest of PickCube's preconditions still hold -- the EXP-21 trap.
+        # The rest of PickCube's preconditions still hold -- the EXP-21 trap. GraspClear
+        # no longer does: the cube lies within the (tipped) bin's footprint 0.046 m
+        # from an inner wall plane, under IN_BIN_GRASP_CLEARANCE_M, so two
+        # preconditions now block the pick rather than BinOnGround alone.
         pick_preconditions_but_bin = {atom.predicate.name for atom in atoms} >= {
             "HandEmpty",
             "OnGround",
             "RobotAtSide",
             "CubeAtSide",
-            "GraspClear",
         }
         assert pick_preconditions_but_bin
         assert (

@@ -134,6 +134,21 @@ def test_the_goal_box_in_the_state_is_the_live_region_bbox_element_for_element()
         env.close()
 
 
+def test_the_bin_wall_thickness_matches_the_installed_task() -> None:
+    """`predicates.GraspClear` measures an in-bin cube's gap to the INNER wall faces as
+    the outer footprint minus `BIN_WALL_THICKNESS_M`, so that constant has to move with
+    the pinned task's own wall thickness."""
+    from hitl_pmp.environments.tossing3d.predicates import (
+        BIN_FOOTPRINT_HALF_M,
+        BIN_WALL_THICKNESS_M,
+    )
+
+    bin_spec = _installed_task_json()["objects"]["bin"]["bin_0"]
+    assert bin_spec["wall_thickness"] == pytest.approx(BIN_WALL_THICKNESS_M)
+    assert bin_spec["length"] / 2 == pytest.approx(BIN_FOOTPRINT_HALF_M)
+    assert bin_spec["width"] / 2 == pytest.approx(BIN_FOOTPRINT_HALF_M)
+
+
 @pytest.mark.parametrize(
     "bin_x,bin_y",
     [

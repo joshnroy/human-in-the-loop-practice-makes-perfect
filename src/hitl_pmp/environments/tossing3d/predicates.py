@@ -318,19 +318,48 @@ BIN_FOOTPRINT_HALF_M = 0.15
 # fingers must clear -- the composite is what the bisection measures directly. The
 # original home for this classifier would be upstream `state_abstractions`, like the
 # five classifier-backed predicates; keeping it local follows #346's side-atom
-# precedent, and migrating it upstream is deliberate follow-up work.
+# precedent, and migrating it upstream is deliberate follow-up work. That bisection
+# was one in-bin configuration (bin at (-0.5, 0), axis offset); the dense in-bin scan
+# behind `IN_BIN_GRASP_CLEARANCE_M` superseded it there, so this now governs only
+# cubes outside the footprint.
 GRASP_CLEARANCE_M = 0.05
+
+# The bin's wall thickness: the installed task JSON's `bin_0.wall_thickness`, which
+# `test_the_bin_wall_thickness_matches_the_installed_task` pins against the pin.
+BIN_WALL_THICKNESS_M = 0.02
+
+# The clearance an in-bin cube's faces need from the bin's INNER wall faces for the
+# top-down grasp to fit, since the gripper descends inside 0.20 m walls. The
+# outside-the-bin `GRASP_CLEARANCE_M` does not transfer: EXP-22's scoring tosses left
+# cubes 0.035-0.043 m from the inner walls, which passed it against the outer plane,
+# and every grasp yaw was refused ("No collision-free cube grasp"), mostly by the outer
+# finger or the Robotiq base meeting a wall on the descent. Measured by a dense scan at
+# the live pick controller (2026-09-27; kindergarden f0d554b; 3621 picks): cube on the
+# floor of an upright bin, offset from the centre along +-x, +-y and the four
+# diagonals (0-0.10 m at 10 mm and 5 mm, 2.5 mm near the boundary), cube yaw 0, 34 and
+# 45 deg, seven robot-start and bin placements in the robot-side reset region (bin yaw
+# 180), four of them EXP-22's frozen ones. The grasp planner refused at gaps up to
+# 0.060 m (yaw-0 diagonals, in all seven placements; near a corner there is no
+# grasp axis with a wall far away) and at none from 0.0625 m; at >= 0.0625 m 1367/1389
+# picks were planned and held. Axis offsets alone can be picked closer, down to
+# 0.030 m in some placements, so this worst case is conservative there; a two-gap
+# rule was fitted and recovered few of those picks. What no clearance describes: 42
+# picks that passed the planner failed mid-execution when re-planned from the observed
+# cube pose (gaps 0.055-0.095 m, 20 of them >= 0.0625 m), and planned picks that did
+# not lift cluster at 0.045-0.055 m with two outliers at 0.0625 and 0.0675 m. Measured
+# from the axis-aligned half-width, like the rest of this predicate, so the constant
+# covers yaw.
+IN_BIN_GRASP_CLEARANCE_M = 0.0625
 
 
 def _grasp_clear(*, state: State, cube: Object, bin_: Object) -> bool:
-    """Whether every cube face clears the bin's wall band by `GRASP_CLEARANCE_M`.
+    """Whether a top-down grasp of the cube fits clear of the bin's walls.
 
-    Two-dimensional and lateral only: the wall band is the square annulus between
-    the footprint rectangle and itself (walls have no reachable interior in this
-    projection), so the signed quantity that matters is the distance from the cube's
-    rectangle to the footprint *boundary*. Inside the bin that is the smallest
-    face-to-plane gap; outside it is the rectangle-to-rectangle distance; a cube
-    straddling a wall is never clear.
+    Two-dimensional and lateral only. Inside the footprint, the smallest gap from a
+    cube face to an inner wall face must reach `IN_BIN_GRASP_CLEARANCE_M` (a cube in
+    the wall's own band has a negative gap). Outside it, the rectangle-to-rectangle
+    distance to the footprint must reach `GRASP_CLEARANCE_M`. A cube straddling the
+    footprint plane is never clear.
     """
     cube_half = state.get(obj=cube, feature_name="bb_x") / 2.0
     inside_gaps: list[float] = []
@@ -349,15 +378,16 @@ def _grasp_clear(*, state: State, cube: Object, bin_: Object) -> bool:
     if straddles and not outside_gaps:
         # A wall passes through the cube's rectangle: touching, never clear.
         return False
-    # Exactly the margin counts as clear (the measured 0.050 m case was accepted
-    # live); the epsilon keeps float arithmetic from flipping that boundary.
+    # Exactly the margin counts as clear (both measured margins held live); the
+    # epsilon keeps float arithmetic from flipping that boundary.
     epsilon = 1e-9
     if outside_gaps:
         # Outside the footprint: rectangle-to-rectangle distance, to which only the
         # axes actually beyond the footprint contribute.
         distance = sum(gap**2 for gap in outside_gaps) ** 0.5
         return distance >= GRASP_CLEARANCE_M - epsilon
-    return min(inside_gaps) >= GRASP_CLEARANCE_M - epsilon
+    inner_gap = min(inside_gaps) - BIN_WALL_THICKNESS_M
+    return inner_gap >= IN_BIN_GRASP_CLEARANCE_M - epsilon
 
 
 GRASP_CLEAR = Predicate(
