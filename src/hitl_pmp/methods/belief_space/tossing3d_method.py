@@ -8,7 +8,13 @@ from typing import Any, Literal
 from pydantic import ConfigDict, Field, PrivateAttr
 
 from hitl_pmp.core.log_timing import LogTiming
-from hitl_pmp.core.method.types import GroundSkill, ParameterSamplingDiagnostics, Policy, Skill
+from hitl_pmp.core.method.types import (
+    GroundSkill,
+    ParameterSamplingDiagnostics,
+    Policy,
+    SamplerConsultation,
+    Skill,
+)
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
 from hitl_pmp.methods.practice_makes_perfect.ees_method import (
@@ -40,6 +46,7 @@ from .tossing3d_observation_model import (
 )
 from .tossing3d_transition_model import make_tossing3d_search_state
 from .types.belief_state import Tossing3DBeliefState
+from .types.competence_evidence import CompetenceEvidence
 from .types.particle_filter_belief import ParticleFilterBelief
 from .types.protocol import BeliefSpaceModel
 from .types.search_state import Tossing3DSearchState
@@ -92,9 +99,10 @@ class Tossing3DPomdpMethod(EesMethod):
         | None
     ) = Field(default=None, exclude=True, repr=False)
     pomdp_num_samples: int = Field(default=100, ge=1)
-    pomdp_num_particles: int = Field(default=1024, ge=1)
+    pomdp_num_particles: int = Field(default=20000, ge=1)
     pomdp_competence_model: Literal["global_curve", "local_trend"] = "local_trend"
     pomdp_inference_engine: Literal["particle", "grid"] = "particle"
+    pomdp_competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
     pomdp_grid_competence_bins: int = Field(default=25, ge=3)
     pomdp_grid_learning_rate_bins: int = Field(default=16, ge=2)
     pomdp_competence_process_noise_std: float = Field(default=0.03, ge=0.0)
@@ -116,6 +124,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _pending_reset: GroundSkill | None = PrivateAttr(default=None)
     _remaining_practice_actions: int | None = PrivateAttr(default=None)
+    _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
 
     def practice_action_values(self) -> dict[str, float]:
         """Values from the last real decision, never an extra search for rendering."""
@@ -172,9 +181,11 @@ class Tossing3DPomdpMethod(EesMethod):
             stream.write(LogTiming.encode(record=record))
 
     def human_skills(self) -> tuple[Skill, ...]:
-        """Offer every provider-owned reset mechanism to belief-space planning."""
+        """Offer every provider-owned reset mechanism to belief-space planning.
+
+        Empty when the provider offers none (`--no-human-reset`): the robot then has no
+        way out of a stuck scene, which is what that baseline measures."""
         resets = self.skill_provider.movables_reset_skills()
-        assert resets
         return tuple(dict.fromkeys(reset.skill for reset in resets))
 
     def model_post_init(self, __context: object) -> None:
@@ -209,6 +220,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pomdp_model = Tossing3DPracticeModel(
             seed=self.seed,
             exploration_epsilon=self.exploration_epsilon,
+            competence_evidence=self.pomdp_competence_evidence,
             ground_skills=tuple(ground_skills),
             linear_cost_lambda=self.pomdp_linear_cost_lambda,
         )
@@ -252,9 +264,46 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         return super().get_practice_policy(task=task)
 
+    def goal_failure_enters_random_mode(self) -> bool:
+        """Never: a failed goal plan falls through to this planner's own practice
+        choice, whatever --reproduce-predicators-random-when-stranded says."""
+        return False
+
+    def clear_starved_parameter_pools(self) -> None:
+        """Mirror the base registry's clearing in the search model's action mask, so a
+        new session or a movables reset leaves the planner unmasked too."""
+        super().clear_starved_parameter_pools()
+        self._pomdp_model = self._pomdp_model.model_copy(update={"starved_pools": ()})
+
+    def record_starved_parameter_pool(
+        self, *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom]
+    ) -> None:
+        """Also mask the pair in the belief-space search model: the base registry
+        filters *selected* candidates, but this planner deterministically re-derives
+        its single choice, so deselection has to reach the search's own action
+        enumeration for it to genuinely choose again."""
+        super().record_starved_parameter_pool(ground_skill=ground_skill, true_atoms=true_atoms)
+        pair = (true_atoms, ground_skill)
+        if pair not in self._pomdp_model.starved_pools:
+            self._pomdp_model = self._pomdp_model.model_copy(
+                update={"starved_pools": (*self._pomdp_model.starved_pools, pair)}
+            )
+
     def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
         assert remaining_actions >= 0, "remaining_actions must be non-negative"
         self._remaining_practice_actions = remaining_actions
+
+    def record_practice_attempt(
+        self, *, skill_name: str, success: bool, consultation: SamplerConsultation
+    ) -> None:
+        """Remember the consultation of the outcome `observe_outcome` receives next.
+
+        `_EesEpisode.observe_pending` calls this immediately before
+        `observe_outcome`, which deliberately does not carry the consultation."""
+        super().record_practice_attempt(
+            skill_name=skill_name, success=success, consultation=consultation
+        )
+        self._pending_consultation = (skill_name, consultation)
 
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
@@ -264,6 +313,12 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
             was_random_exploration=was_random_exploration,
         )
+        pending, self._pending_consultation = self._pending_consultation, None
+        consultation = None
+        if pending is not None:
+            skill_name, consultation = pending
+            assert skill_name == ground_skill.skill.name, (skill_name, ground_skill.skill.name)
+            assert (consultation is SamplerConsultation.EPSILON_RANDOM) == was_random_exploration
         configured_cost_observation = ground_skill.evaluate_practice_cost()
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
@@ -271,12 +326,20 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
             was_random_exploration=was_random_exploration,
             observed_cost=configured_cost_observation,
+            consultation=consultation,
         )
         self.record_diagnostic(
             event="outcome",
             skill=ground_skill.skill.name,
             success=success,
             random_exploration=was_random_exploration,
+            consultation=None if consultation is None else consultation.value,
+            competence_evidence=self.pomdp_competence_evidence.value,
+            competence_conditioned=(
+                not was_random_exploration
+                if consultation is None
+                else self.pomdp_competence_evidence.admits(consultation=consultation)
+            ),
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             configured_cost_observation=configured_cost_observation,
@@ -391,17 +454,14 @@ class Tossing3DPomdpMethod(EesMethod):
     def end_cycle(self) -> None:
         """Advance inferred learning curves at the session boundary.
 
-        Fixed controllers and one-class-only sampler refits have no learning
-        transition. Their S/F evidence still updates the competence posterior.
+        Every attempt that entered the sampler's training data advances the
+        training clock, one-class fits included. Fixed controllers have no
+        training examples, so theirs is the zero-example step.
         """
         # Flush the in-flight EES action against the pre-reset state before refitting.
         self.observe_environment_reset(state=self.env.get_current_state())
         super().end_cycle()
         training_examples = dict(self._pomdp_state.pending_examples)
-        effective_training_examples = {
-            name: training.refit_examples
-            for name, training in self._pomdp_state.sampler_training.items()
-        }
         for skill_name, belief in self._pomdp_state.skill_beliefs.items():
             if isinstance(belief, BayesianSkillBelief):
                 self._belief_history.setdefault(skill_name, []).append(belief)
@@ -430,7 +490,6 @@ class Tossing3DPomdpMethod(EesMethod):
             beliefs=self.belief_diagnostics(),
             estimated_costs=self.practice_skill_costs(),
             training_examples=training_examples,
-            effective_training_examples=effective_training_examples,
             learning_rate_evidence="success_failure_only",
             competence_model=self.pomdp_competence_model,
             inference_engine=self.pomdp_inference_engine,

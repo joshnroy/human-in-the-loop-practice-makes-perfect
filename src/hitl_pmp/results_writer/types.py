@@ -161,12 +161,16 @@ class RunNameField(BaseModel):
     prefix: str = ""
     # (when true, when false) for a store_true flag. A store_true's off state has no
     # word of its own, so naming both states is the only way a run says which ledge it
-    # ran on rather than leaving a reader to infer it from a missing token.
+    # ran on rather than leaving a reader to infer it from a missing token. An empty
+    # word omits that state, for a flag added after runs in its default state were named.
     toggle: tuple[str, str] | None = None
     # Some optional overrides have a canonical effective value when omitted. Naming
     # that value makes an omitted override and an equivalent explicit override share
     # one run identity.
     none_token: str | None = None
+    # A value that contributes no token -- a numeric flag's default, for a flag added
+    # after runs at that default were named.
+    omit_value: int | None = None
     # Include a domain-specific axis only when another resolved field selects the
     # domain that gives it meaning.
     when: tuple[str, object] | None = None

@@ -197,3 +197,25 @@ def test_park_wiper_can_expose_reachable_cube_without_unnecessary_nudge():
     # This fails until the model can represent that possibility without inventing
     # an unconditional Pickable effect for every loose cube.
     assert pick.preconditions <= after
+
+
+def test_evaluation_resets_preserve_distinct_state_and_replay_paths(*, monkeypatch, tmp_path):
+    session = Mock()
+    constructor = Mock(return_value=session)
+    monkeypatch.setattr(environment_module, "SweepDrawerSession", constructor)
+    result = StartValidation(seed=0, valid=True, checks={}, poses={}, reasons=())
+    monkeypatch.setattr(SweepRegions, "validate", staticmethod(lambda **kwargs: result))
+    monkeypatch.setattr(SweepDrawerEnvironment, "observe", lambda self: _state())
+    env = SweepDrawerEnvironment(evaluation=True, output_dir=tmp_path)
+    try:
+        env.reset_to_seed(seed=0)
+        env.reset_to_seed(seed=1)
+    finally:
+        env.close()
+    first, second = [call.kwargs for call in constructor.call_args_list]
+    assert first["seed"] == 0 and second["seed"] == 1
+    assert first["log_path"] != second["log_path"]
+    assert first["replay_path"] != second["replay_path"]
+    assert first["log_path"].parent.name == "000000-seed0"
+    assert second["log_path"].parent.name == "000001-seed1"
+    assert env._hard_reset_count == 2

@@ -363,7 +363,7 @@ class PracticeTargetTally(BaseModel):
 
     - `num_scored` -- a grounding was scored, came back finite, and entered the ranked
       candidate list. This is "EES was willing to practice it".
-    - `num_declined_perfect` -- a grounding scored `-math.inf` and was dropped, which
+    - `num_declined_perfect` -- a grounding scored `-math.inf` and was ranked last, which
       under `skip_perfect` means and only means its *measured* success rate is exactly
       1.0. Nonzero here beside a zero `num_selected` is the failure state: the skill is
       not being practiced, and the reason is that the domain's success predicate says
@@ -438,15 +438,17 @@ class PracticeTargetTally(BaseModel):
         if negative:
             raise ValueError(f"practice-target counts cannot be negative: {negative}")
         # Selection and the reachability rejection both happen by walking the ranked
-        # list, so both are drawn from the scored pool. The walk short-circuits at the
-        # first success, which is why this is an inequality and not equality: the
-        # candidates below the winner were scored and never examined.
+        # list, so both are drawn from the ranked pool: scored candidates plus declined-
+        # perfect ones, which skip_perfect ranks last rather than removing. The walk
+        # short-circuits at the first success, which is why this is an inequality and
+        # not equality: the candidates below the winner were ranked and never examined.
         examined = self.num_selected + self.num_unreachable
-        if examined > self.num_scored:
+        ranked = self.num_scored + self.num_declined_perfect
+        if examined > ranked:
             raise ValueError(
                 f"selected ({self.num_selected}) and unreachable ({self.num_unreachable}) "
-                f"groundings sum to {examined}, which exceeds the {self.num_scored} scored "
-                "candidates they are drawn from"
+                f"groundings sum to {examined}, which exceeds the {ranked} ranked "
+                "(scored or declined-perfect) candidates they are drawn from"
             )
         return self
 

@@ -63,7 +63,13 @@ class StockSweepSkills:
 
     @staticmethod
     def run(
-        *, session: SweepDrawerSession, skill: str, label: str, phase: str, limit: int = 600
+        *,
+        session: SweepDrawerSession,
+        skill: str,
+        label: str,
+        phase: str,
+        limit: int = 600,
+        params: np.ndarray | None = None,
     ) -> ResetStep:
         """Ground and run one stock skill to termination (or failure)."""
         StockSweepSkills.install_planning_fixes()
@@ -80,7 +86,12 @@ class StockSweepSkills:
             session.env.action_space, None, pybullet_sim=sweep.PyBulletSim(state)
         )
         controller = lifted[skill].ground(tuple(state.get_object_from_name(n) for n in names))
-        params = controller.sample_parameters(state, np.random.default_rng(0))
+        if params is None:
+            params = controller.sample_parameters(state, np.random.default_rng(0))
+        else:
+            params = np.asarray(params, dtype=float)
+            if params.shape != (2,) or not np.isfinite(params).all():
+                raise ValueError("Stock Sweep parameters must be two finite values")
         session.begin(name=label, kind=f"kinder-models {skill}", phase=phase)
         error, finished = "", False
         try:

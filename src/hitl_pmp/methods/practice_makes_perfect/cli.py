@@ -3,6 +3,7 @@ import sys
 
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .ees_method import EesMethod
@@ -61,14 +62,15 @@ class EesCli:
             "predicators' settings.py default; the paper's launch configs override it "
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
-        # These three default TRUE to match predicators (which reproduces the paper);
-        # pass --no-... to ablate a single deviation.
+        # Each default is the EesMethod field's; see that field for why it is what it
+        # is. Only --reproduce-predicators-practice-target-history defaults on.
         parser.add_argument(
             "--reproduce-predicators-double-observe",
             action=argparse.BooleanOptionalAction,
             default=EesMethod.model_fields["reproduce_predicators_double_observe"].default,
-            help="Match predicators' double-observe() (default on). --no-... counts a "
-            "practice outcome once instead of twice.",
+            help="Observe each practice outcome an extra time (default off). Despite the "
+            "name this is NOT predicators' behaviour: predicators observes once, only "
+            "for non-exploration attempts, as the default does. On is a deviation.",
         )
         parser.add_argument(
             "--reproduce-predicators-practice-target-history",
@@ -83,8 +85,33 @@ class EesCli:
             action=argparse.BooleanOptionalAction,
             default=EesMethod.model_fields["reproduce_predicators_explore_target_only"].default,
             help="Explore (epsilon-greedy) only on the practice-target skill, greedy "
-            "for the prefix that reaches it, matching predicators (default on). "
+            "for the prefix that reaches it, matching predicators (default off). "
             "--no-... explores every skill during practice.",
+        )
+        parser.add_argument(
+            "--reproduce-predicators-seen-task-order",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reproduce_predicators_seen_task_order"].default,
+            help="Score practice candidates against the first 10 seen tasks, as "
+            "predicators' sorted(seen_train_task_idxs)[:10] does (default off: the 10 "
+            "most recent).",
+        )
+        parser.add_argument(
+            "--reproduce-predicators-skip-perfect",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reproduce_predicators_skip_perfect"].default,
+            help="Rank a candidate whose measured success rate is exactly 1.0 last, "
+            "scoring it -inf, as predicators' active_sampler_explorer_skip_perfect does "
+            "(default off).",
+        )
+        parser.add_argument(
+            "--reproduce-predicators-random-when-stranded",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reproduce_predicators_random_when_stranded"].default,
+            help="When no practice candidate is reachable, act randomly (uniform "
+            "initiable skill, one proposal draw, not flagged as exploration) for the rest "
+            "of the period, as predicators' explorer does (default off: one random "
+            "applicable skill, then back to scoring).",
         )
         parser.add_argument(
             "--goal-pursuit-horizon",
@@ -95,10 +122,43 @@ class EesCli:
             "8 for Ball-Ring, num_cells+2 for Light Switch). Omit for uncapped.",
         )
         parser.add_argument(
+            "--goal-pursuit-init-cycles",
+            type=int,
+            default=EesMethod.model_fields["goal_pursuit_init_cycles"].default,
+            help="Pursue the task goal in the first N practice periods regardless of "
+            "--goal-pursuit-interval (predicators' "
+            "active_sampler_learning_init_cycles_to_pursue_goal, default 1).",
+        )
+        parser.add_argument(
+            "--goal-pursuit-interval",
+            type=int,
+            default=EesMethod.model_fields["goal_pursuit_interval"].default,
+            help="Pursue the task goal in periods where period %% N == 0 (predicators' "
+            "active_sampler_learning_explore_pursue_goal_interval: 5 in settings.py, 1 in "
+            "the paper's yaml). Default 1: every period, as before.",
+        )
+        parser.add_argument(
             "--planning-timeout",
             type=float,
             default=EesMethod.model_fields["planning_timeout"].default,
             help="Per-call Fast Downward timeout, in seconds.",
+        )
+        parser.add_argument(
+            "--ees-reset-gate",
+            action=argparse.BooleanOptionalAction,
+            default=EesMethod.model_fields["reset_cost_gate"].default,
+            help="Decline a practice plan whose human reset costs more than the "
+            "priciest ordinary skill (default on). --no-... accepts any reset-using "
+            "plan, so Fast Downward's cost minimisation alone chooses between a reset "
+            "and a reset-free route. Evaluation never offers the reset either way.",
+        )
+        parser.add_argument(
+            "--defer-rendering",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Build no in-run renderer, so no episode.mp4 or period videos are "
+            "encoded during the run (default off: render as before). Read only by "
+            "domains that render in-run (Tossing3D); --method pomdp forces it on.",
         )
         parser.add_argument(
             "--competence-window-size",
@@ -132,15 +192,23 @@ class EesCli:
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
+                goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
+                goal_pursuit_interval=args.goal_pursuit_interval,
                 planning_timeout=args.planning_timeout,
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
+                reset_cost_gate=args.ees_reset_gate,
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history
                 ),
                 reproduce_predicators_explore_target_only=(
                     args.reproduce_predicators_explore_target_only
+                ),
+                reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
+                reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
+                reproduce_predicators_random_when_stranded=(
+                    args.reproduce_predicators_random_when_stranded
                 ),
             ),
             num_cycles=args.num_cycles,
@@ -214,6 +282,16 @@ class Tossing3DPomdpCli(EesCli):
             default="particle",
             help="Bayesian filtering representation; costs retain their shared particle model.",
         )
+        parser.add_argument(
+            "--pomdp-competence-evidence",
+            choices=[evidence.value for evidence in CompetenceEvidence],
+            default=Tossing3DPomdpMethod.model_fields["pomdp_competence_evidence"].default.value,
+            help="Which toss practice outcomes condition competence: all attempts, "
+            "all but epsilon-greedy random picks (default), or only the classifier's "
+            "informed argmax picks. Every attempt still trains the sampler and "
+            "advances the training clock; skills without a sampler are always "
+            "conditioned.",
+        )
         parser.add_argument("--pomdp-grid-competence-bins", type=int, default=25)
         parser.add_argument("--pomdp-grid-learning-rate-bins", type=int, default=16)
         parser.add_argument("--pomdp-competence-process-noise-std", type=float, default=0.03)
@@ -246,6 +324,10 @@ class Tossing3DPomdpCli(EesCli):
 
     @staticmethod
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
+        if args.env == "sweep_drawer3d":
+            from hitl_pmp.methods.belief_space.sweep_cli import SweepPomdpCli
+            SweepPomdpCli.run(args=args, env_cli=env_cli)
+            return
         if env_cli.__name__ != "Tossing3DCli":
             raise ValueError("--method pomdp currently supports only --env tossing3d")
         # Preserve replayable simulator states, but do not render or encode frames in
@@ -266,15 +348,23 @@ class Tossing3DPomdpCli(EesCli):
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
+                goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
+                goal_pursuit_interval=args.goal_pursuit_interval,
                 planning_timeout=args.planning_timeout,
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
+                reset_cost_gate=args.ees_reset_gate,
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history
                 ),
                 reproduce_predicators_explore_target_only=(
                     args.reproduce_predicators_explore_target_only
+                ),
+                reproduce_predicators_seen_task_order=args.reproduce_predicators_seen_task_order,
+                reproduce_predicators_skip_perfect=args.reproduce_predicators_skip_perfect,
+                reproduce_predicators_random_when_stranded=(
+                    args.reproduce_predicators_random_when_stranded
                 ),
                 pomdp_search_depth=args.pomdp_search_depth,
                 pomdp_solver=args.pomdp_solver,
@@ -285,6 +375,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_num_particles=args.pomdp_num_particles,
                 pomdp_competence_model=args.pomdp_competence_model,
                 pomdp_inference_engine=args.pomdp_inference_engine,
+                pomdp_competence_evidence=CompetenceEvidence(args.pomdp_competence_evidence),
                 pomdp_grid_competence_bins=args.pomdp_grid_competence_bins,
                 pomdp_grid_learning_rate_bins=args.pomdp_grid_learning_rate_bins,
                 pomdp_competence_process_noise_std=args.pomdp_competence_process_noise_std,

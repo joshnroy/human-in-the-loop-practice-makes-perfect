@@ -2,7 +2,7 @@
 
 from functools import cache
 
-from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.methods.belief_space.competence_inference import BayesianSkillBelief
 from hitl_pmp.methods.belief_space.failure_effect_model import EmpiricalFailureEffects
@@ -22,6 +22,7 @@ from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
     Tossing3DBeliefState,
 )
+from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.failure_effects import FailureEffectCount
 from hitl_pmp.methods.belief_space.types.particle_filter_belief import ParticleFilterBelief
 from hitl_pmp.methods.belief_space.types.search_state import Tossing3DSearchState
@@ -91,10 +92,15 @@ def apply_success_effects(
     ],
 ) -> frozenset[GroundAtom]:
     add_effects, delete_effects, ignore_effects = effects[ground_skill]
+    # An ignored predicate the operator re-asserts is a functional update: its old
+    # atoms are replaced by the added ones (the reset's sides, the toss's CubeAtSide).
+    # One it does not re-assert is merely unknown -- the toss's GraspClear, which held
+    # after 233/430 real successes -- and a deterministic forecast leaves it as it was
+    # rather than claiming it false, which would make every imagined success end in a
+    # reset.
+    replaced = {atom.predicate for atom in add_effects} & set(ignore_effects)
     kept = {
-        atom
-        for atom in true_atoms
-        if atom.predicate not in ignore_effects and atom not in delete_effects
+        atom for atom in true_atoms if atom.predicate not in replaced and atom not in delete_effects
     }
     conditional_additions = {
         atom
@@ -118,6 +124,7 @@ def transition_outcomes(
     exploration_epsilon: float,
     random_toss_competence: float,
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
+    competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
 ) -> tuple[TransitionBranch, ...]:
     assert action in ground_skills
     assert action.preconditions <= environment_state.true_atoms
@@ -147,10 +154,16 @@ def transition_outcomes(
         # run. Its empirical performance telemetry is not uncertain dynamics.
         # Real completions still update S/F, costs and refits, but a forecast must
         # not invent evidence about a known mechanism or move its cost posterior.
+        # It does advance the reset's training clock, exactly as the real
+        # completion will, so search forecasts the same m it will observe.
+        pending = dict(state.pending_examples)
+        pending[action.skill.name] = pending.get(action.skill.name, 0) + 1
         return (
             (
                 1.0,
-                transition_belief_state(state=state, added_cost=cost),
+                transition_belief_state(state=state, added_cost=cost).model_copy(
+                    update={"pending_examples": pending}
+                ),
                 apply_success_effects(
                     true_atoms=environment_state.true_atoms,
                     ground_skill=action,
@@ -168,6 +181,7 @@ def transition_outcomes(
         random_toss_competence=random_toss_competence,
         effects=effects,
         failure_effect_counts=failure_effect_counts,
+        competence_evidence=competence_evidence,
     )
 
 
@@ -231,11 +245,25 @@ def toss_outcomes(
         tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]],
     ],
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
+    competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
 ) -> tuple[TransitionBranch, ...]:
+    """Branch on the greedy/epsilon draw, then on S/F.
+
+    Each branch conditions competence exactly when `competence_evidence` would
+    admit the real attempt it imagines, so search forecasts under the evidence
+    rule the robot will actually apply. The greedy draw's consultation is taken
+    as `INFORMED` from a mixed-class fit and `UNINFORMATIVE` from a one-class or
+    unfitted one; the tie-fraction fallback of a mixed fit is not modelled.
+    """
     branches: list[TransitionBranch] = []
     training = state.sampler_training.get(TOSS_SKILL)
     if training is not None and not training.fitted_mixed_classes:
         exploration_epsilon = 0.0
+    greedy_consultation = (
+        SamplerConsultation.UNINFORMATIVE
+        if training is not None and not training.fitted_mixed_classes
+        else SamplerConsultation.INFORMED
+    )
     for is_random, choice_probability, success_probability in (
         (
             False,
@@ -252,8 +280,12 @@ def toss_outcomes(
             if probability <= 0.0:
                 continue
             belief = state.skill_beliefs[TOSS_SKILL]
-            if not is_random:
-                belief = condition_skill_belief(belief=belief, success=success, resample=False)
+            if competence_evidence.admits(
+                consultation=SamplerConsultation.EPSILON_RANDOM
+                if is_random
+                else greedy_consultation
+            ):
+                belief = condition_skill_belief(belief=belief, success=success)
             effect_outcomes = (
                 (
                     (
