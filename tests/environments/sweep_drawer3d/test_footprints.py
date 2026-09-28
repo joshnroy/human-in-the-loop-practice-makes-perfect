@@ -50,6 +50,84 @@ def test_the_palm_cannot_hover_over_a_cube_pressed_to_the_drawer_front() -> None
     assert fp.clearance(shape=leaning, obstacles=walls) > 0.0
 
 
+def test_by_the_island_the_fingers_and_the_palm_face_different_walls() -> None:
+    """The lower drawers' faces begin 3.6 cm above the floor, at x = 0.895. A finger on a
+    floor cube is below them; what it faces is the island's bottom board, 2 cm further
+    back. The palm, 6.5 cm up, faces the drawer faces. Seed 7 leaves a cube 1.7 cm from
+    those faces. The palm clears them only by leaning away, which points the fingertips
+    toward them: past the plane of the faces, but short of the board."""
+    fp = _fp()
+    cube = np.array([0.9118, 0.0])
+    along_the_faces, alpha = np.pi / 2, 0.7
+    faces = fp.island_faces(drawer_pos=0.0)
+    upright = fp.palm(center=cube, yaw=along_the_faces, lean=0.0, alpha=0.0)
+    assert fp.clearance(shape=upright, obstacles=[faces]) < 0.0
+    # closing axis along +y, v = -x: lean -1 carries the palm toward +x, off the faces
+    leaning = fp.palm(center=cube, yaw=along_the_faces, lean=-1.0, alpha=alpha)
+    assert fp.clearance(shape=leaning, obstacles=[faces]) > 0.003
+    # the tilted fingers, as Primitives.grasp_candidates lays them out
+    reach = 0.019 * np.sin(alpha)
+    tilted = {
+        "center": cube - 0.5 * reach * -1.0 * np.array([-1.0, 0.0]),
+        "yaw": along_the_faces,
+        "widen": reach,
+    }
+    assert fp.finger_clearance(**tilted, obstacles=[faces]) < 0.0
+    assert fp.finger_clearance(**tilted, obstacles=[fp.island_board()]) > 0.002
+
+
+def test_the_open_task_drawer_carries_the_palms_wall_out_with_it() -> None:
+    fp = _fp()
+    assert fp.island_faces(drawer_pos=0.25).bounds[2] == pytest.approx(0.895 + 0.25)
+    assert fp.island_faces(drawer_pos=-0.001).bounds[2] == pytest.approx(0.895)
+    assert fp.island_board().bounds[2] == pytest.approx(0.875)
+
+
+def _scattered(*, seed: int) -> tuple[np.ndarray, np.ndarray, list]:
+    """Finger placements around a cube, with neighbours and a wall crowding it."""
+    fp = _fp()
+    rng = np.random.default_rng(seed)
+    centres = rng.uniform(-0.01, 0.01, size=(40, 2))
+    widen = rng.uniform(0.0, 0.013, size=40)
+    obstacles = [
+        fp.cube(center=rng.uniform(-0.06, 0.06, size=2), yaw=float(rng.uniform(0, np.pi)))
+        for _ in range(4)
+    ]
+    obstacles += fp.drawer_walls(drawer_pos=0.25 - 0.872 - 0.04)
+    return centres, widen, obstacles
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+@pytest.mark.parametrize("yaw", [0.0, 0.6, np.pi / 2])
+@pytest.mark.parametrize("gap", [0.032, 0.0343])
+def test_clearances_for_many_placements_agree_with_the_one_at_a_time_clearance(
+    *, seed: int, yaw: float, gap: float
+) -> None:
+    """The grasp search tries some 600 finger placements per cube; computed one by one
+    through shapely's affine transforms they took 0.18 s a cube and 48 s a nudge."""
+    fp = _fp()
+    centres, widen, obstacles = _scattered(seed=seed)
+    many = fp.finger_clearances(centres=centres, yaw=yaw, obstacles=obstacles, gap=gap, widen=widen)
+    assert many.shape == (40,)
+    for k in range(40):
+        one = fp.finger_clearance(
+            center=centres[k], yaw=yaw, obstacles=obstacles, gap=gap, widen=float(widen[k])
+        )
+        if one > 0:
+            assert many[k] == pytest.approx(one, abs=1e-9)
+        else:
+            # overlapping: the scalar reports how much, the grasp search only that it does
+            assert many[k] == 0.0
+
+
+def test_with_nothing_around_every_placement_is_clear() -> None:
+    fp = _fp()
+    many = fp.finger_clearances(
+        centres=np.zeros((3, 2)), yaw=0.0, obstacles=[], gap=0.032, widen=np.zeros(3)
+    )
+    assert many.tolist() == [1.0, 1.0, 1.0]
+
+
 def test_clearance_reports_overlap_as_negative() -> None:
     fp = _fp()
     a = fp.cube(center=np.zeros(2), yaw=0.0)

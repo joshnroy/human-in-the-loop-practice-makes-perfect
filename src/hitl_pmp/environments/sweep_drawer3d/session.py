@@ -39,11 +39,16 @@ class SweepDrawerSession(BaseModel):
 
     seed: int
     log_path: Path | None = None
+    # Every joint position at every tick, for drawing the run afterwards. The state log
+    # cannot serve: it records the gripper's command, not where the fingers are, and
+    # only the one drawer the task opens.
+    replay_path: Path | None = None
 
     _env: Any = PrivateAttr(default=None)
     _state: Any = PrivateAttr(default=None)
     _ticks: int = PrivateAttr(default=0)
     _log: IO[str] | None = PrivateAttr(default=None)
+    _replay: IO[str] | None = PrivateAttr(default=None)
     _steps: list[ResetStep] = PrivateAttr(default_factory=list)
     _current: dict[str, Any] | None = PrivateAttr(default=None)
     _initial: dict[str, tuple[np.ndarray, tuple[float, float, float, float]]] = PrivateAttr(
@@ -76,7 +81,11 @@ class SweepDrawerSession(BaseModel):
                     },
                 }
             )
-            self._tick()
+        if self.replay_path is not None:
+            self.replay_path.parent.mkdir(parents=True, exist_ok=True)
+            self._replay = self.replay_path.open("w")
+            self._replay.write(json.dumps(self.replay_header()) + "\n")
+        self._tick()
 
     # ------------------------------------------------------------------ plumbing
     @property
@@ -120,16 +129,51 @@ class SweepDrawerSession(BaseModel):
         if self._log is not None:
             self._log.close()
             self._log = None
+        if self._replay is not None:
+            self._replay.close()
+            self._replay = None
         self._env.close()
+
+    def replay_header(self) -> dict[str, Any]:
+        """Which joint each logged position belongs to, so a replay can refuse a scene
+        whose joints have moved under the same names."""
+        import mujoco
+
+        m = self.mj_model
+        sizes = {
+            int(mujoco.mjtJoint.mjJNT_FREE): 7,
+            int(mujoco.mjtJoint.mjJNT_BALL): 4,
+            int(mujoco.mjtJoint.mjJNT_SLIDE): 1,
+            int(mujoco.mjtJoint.mjJNT_HINGE): 1,
+        }
+        joints = [
+            {
+                "name": mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, j) or f"joint_{j}",
+                "adr": int(m.jnt_qposadr[j]),
+                "n": sizes[int(m.jnt_type[j])],
+            }
+            for j in range(m.njnt)
+        ]
+        return {
+            "kind": "header",
+            "env": SweepDrawerScene.ENV_ID,
+            "seed": self.seed,
+            "nq": int(m.nq),
+            "joints": joints,
+        }
 
     def _write(self, *, record: dict[str, Any]) -> None:
         if self._log is not None:
             self._log.write(json.dumps(record) + "\n")
 
     def _tick(self) -> None:
+        name = None if self._current is None else self._current["name"]
+        if self._replay is not None:
+            qpos = [round(float(v), 5) for v in self.mj_data.qpos]
+            record = {"kind": "tick", "t": self._ticks, "step": name, "qpos": qpos}
+            self._replay.write(json.dumps(record) + "\n")
         if self._log is None:
             return
-        name = None if self._current is None else self._current["name"]
         snapshot = {
             n: [round(float(v), 5) for v in self._state[self._obj(name=n)]]
             for n in self.logged_objects()
@@ -244,7 +288,7 @@ class SweepDrawerSession(BaseModel):
     def in_pile(self, *, cube: str) -> bool:
         """Resting on the countertop inside the task's `blocks_init_region`."""
         s = SweepDrawerScene
-        x, y, z = self.position(name=cube)
+        x, y, z = (float(v) for v in self.position(name=cube))
         return (
             s.PILE_X[0] <= x <= s.PILE_X[1] and s.PILE_Y[0] <= y <= s.PILE_Y[1] and 0.45 < z < 0.5
         )

@@ -41,8 +41,24 @@ class Candidate(BaseModel):
     partner: str | None = None
 
 
+class PickPlan(BaseModel):
+    """A pick the planning scene has passed end to end, not yet carried out."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    grasp: Candidate
+    held: tuple[str, ...]
+    path: Any
+    base: tuple[float, float, float]
+    # how far back along the approach axis the hover sits
+    back: float
+    reach: Any
+    down: Any
+    rejected: dict[str, int]
+
+
 class Opening:
-    """Gripper command <-> inner pad gap, measured in both models (probe_grip.py)."""
+    """Gripper command <-> inner pad gap, measured in both models."""
 
     MJ_CMD = (0.0, 0.2, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6)
     MJ_GAP = (0.0851, 0.0699, 0.0615, 0.0572, 0.0529, 0.0485, 0.044, 0.0349)
@@ -56,6 +72,77 @@ class Opening:
         pb = float(np.interp(-gap, [-g for g in Opening.PB_GAP], Opening.PB_STATE))
         depth = float(np.interp(cmd, [0.0, G.CUBE_OPEN_CMD], [0.0253, G.PAD_CENTER_PARTIAL]))
         return cmd, pb, depth
+
+
+class SqueezeGrasp:
+    """A grasp that closes across a cube turned off the closing axis.
+
+    The pads meet two of the cube's corners and turn it square between them as they
+    close. A face grasp takes its closing axis from the cube; this one takes it from the
+    surroundings, so a cube turned against a wall can be closed on along the wall, with
+    both fingers beside it, where its own face directions would put a finger in the wall.
+    """
+
+    # Room between the open pads and the cube's widest extent, both sides together.
+    SPARE = 0.006
+    # Closing axes tried, evenly over half a turn.
+    COUNT = 8
+    # A heading this close to a face direction is that face grasp over again.
+    SAME = float(np.radians(10.0))
+    # Ranked below every face grasp: the cube moves in the hand as the pads close.
+    HANDICAP = 0.02
+
+    @staticmethod
+    def span(*, cube_yaw: float, closing_yaw: float) -> float:
+        """The cube's widest extent along the closing axis."""
+        u = np.array([np.cos(closing_yaw), np.sin(closing_yaw)])
+        return 2.0 * Footprints.support_distance(yaw=cube_yaw, direction=u)
+
+    @staticmethod
+    def gap(*, cube_yaw: float, closing_yaw: float) -> float:
+        return SqueezeGrasp.span(cube_yaw=cube_yaw, closing_yaw=closing_yaw) + SqueezeGrasp.SPARE
+
+    @staticmethod
+    def headings(*, face_yaws: list[float]) -> list[float]:
+        quarter = np.pi / 2
+        out = []
+        for k in range(SqueezeGrasp.COUNT):
+            heading = k * np.pi / SqueezeGrasp.COUNT
+            off = [abs((heading - f + quarter / 2) % quarter - quarter / 2) for f in face_yaws]
+            if not off or min(off) > SqueezeGrasp.SAME:
+                out.append(float(heading))
+        return out
+
+
+class DrawerStroke:
+    """How far the base drives to slide the drawer, and whether the drawer got there."""
+
+    # Half the reset's own "drawer closed" criterion (ResetOutcome.drawer_closed, 1 cm).
+    CLOSED_TOLERANCE = 0.005
+    OPEN_TOLERANCE = 0.03
+    # A closing stroke exactly as long as the remaining slide does not shut the drawer:
+    # slack in the grip and the arm's compliance absorb part of it (a 1.5 cm stroke moved
+    # the drawer 4 mm). Driving past shut lets the joint limit end the stroke instead.
+    CLOSE_OVERSHOOT = 0.02
+
+    @staticmethod
+    def closing(*, target: float) -> bool:
+        return target <= DrawerStroke.CLOSED_TOLERANCE
+
+    @staticmethod
+    def base_travel(*, start: float, target: float) -> float:
+        travel = target - start
+        return (
+            travel - DrawerStroke.CLOSE_OVERSHOOT if DrawerStroke.closing(target=target) else travel
+        )
+
+    @staticmethod
+    def reached(*, end: float, target: float) -> bool:
+        """A close that stops short of shut is a failure, not 'within 3 cm of closed', so
+        the reset hears about it and can close again."""
+        if DrawerStroke.closing(target=target):
+            return end < DrawerStroke.CLOSED_TOLERANCE
+        return abs(end - target) <= DrawerStroke.OPEN_TOLERANCE
 
 
 class Primitives(BaseModel):
@@ -81,21 +168,25 @@ class Primitives(BaseModel):
             p = moved.get(other, self.session.position(name=other))
             if abs(p[2] - z) < 0.05:
                 out.append(Footprints.cube(center=p[:2], yaw=self.session.yaw(name=other)))
-        out += self.walls(cube=cube)
+        out += self.finger_walls(cube=cube)
         return out
 
     def walls(self, *, cube: str) -> list[Polygon]:
-        """Vertical surfaces taller than the palm around `cube`: the drawer's walls for a
-        cube inside it, the island's front (drawer faces) for a cube on the floor."""
-        from shapely.geometry import box
-
+        """Vertical surfaces at the height of the palm around `cube`: the drawer's walls
+        for a cube inside it, the island's drawer faces for a cube on the floor."""
         where = self.session.location(cube=cube)
         if where == "drawer":
             return Footprints.drawer_walls(drawer_pos=self.session.drawer_pos())
         if where == "floor":
-            front = S.DRAWER_FACE_X + max(self.session.drawer_pos(), 0.0)
-            return [box(-1.0, -1.1, front, 1.1)]
+            return [Footprints.island_faces(drawer_pos=self.session.drawer_pos())]
         return []
+
+    def finger_walls(self, *, cube: str) -> list[Polygon]:
+        """Vertical surfaces at the height of the fingers: the same walls in the drawer,
+        but on the floor the island's bottom board, not the drawer faces above it."""
+        if self.session.location(cube=cube) == "floor":
+            return [Footprints.island_board()]
+        return self.walls(cube=cube)
 
     def support(self, *, cube: str) -> float:
         return float(self.session.position(name=cube)[2] - S.CUBE_HALF)
@@ -115,47 +206,86 @@ class Primitives(BaseModel):
         at: np.ndarray | None = None,
         obstacles: list[Polygon] | None = None,
     ) -> list[Candidate]:
-        """Face grasps: both closing axes x tilts that lean the palm away from walls x small
-        offsets, best first. Kept only if the fingers clear everything in 2D and, in the
-        drawer, the palm clears the walls."""
+        """Face grasps, then squeeze grasps: closing axes x tilts that lean the palm away
+        from walls x small offsets, best first. Kept only if the fingers clear everything
+        in 2D and, beside a wall, the palm clears it."""
+        c = self.session.position(name=cube) if at is None else at
+        obst = self.obstacles_2d(cube=cube) if obstacles is None else obstacles
+        faces = self.face_yaws(cube=cube)
+        out: list[Candidate] = []
+        for yaw in faces:
+            out += self._grasps_along(cube=cube, centre=c, yaw=yaw, obstacles=obst)
+        turned = self.session.yaw(name=cube)
+        for yaw in SqueezeGrasp.headings(face_yaws=faces):
+            out += self._grasps_along(
+                cube=cube,
+                centre=c,
+                yaw=yaw,
+                obstacles=obst,
+                gap=SqueezeGrasp.gap(cube_yaw=turned, closing_yaw=yaw),
+                handicap=SqueezeGrasp.HANDICAP,
+            )
+        out.sort(key=lambda k: -k.score)
+        return out
+
+    def _grasps_along(
+        self,
+        *,
+        cube: str,
+        centre: np.ndarray,
+        yaw: float,
+        obstacles: list[Polygon],
+        gap: float = 0.032,
+        handicap: float = 0.0,
+    ) -> list[Candidate]:
+        """Grasps closing along `yaw` with the pads `gap` apart on the way down."""
         from pybullet_helpers.geometry import Pose
 
-        c = self.session.position(name=cube) if at is None else at
+        cmd, pb, depth = Opening.for_gap(gap=gap)
         support = self.support(cube=cube)
-        obst = self.obstacles_2d(cube=cube) if obstacles is None else obstacles
         walls = self.walls(cube=cube)
+        u = np.array([np.cos(yaw), np.sin(yaw)])
+        v = np.array([-np.sin(yaw), np.cos(yaw)])
+        tries = [
+            (alpha, lean, off_v, off_u)
+            for alpha in (0.0, 0.45, 0.7)
+            for lean in ((0.0,) if alpha == 0 else (1.0, -1.0))
+            for off_v in (0.0, 0.003, -0.003, 0.005, -0.005)
+            for off_u in (0.0, 0.002, -0.002)
+        ]
+        centres = np.array([centre[:2] + off_v * v + off_u * u for _, _, off_v, off_u in tries])
+        # a tilted finger reaches toward the side the palm leans away from
+        reach = np.array([0.019 * np.sin(alpha) for alpha, _, _, _ in tries])
+        lean = np.array([lean for _, lean, _, _ in tries])
+        clear = Footprints.finger_clearances(
+            centres=centres - 0.5 * (reach * lean)[:, None] * v,
+            yaw=yaw,
+            obstacles=obstacles,
+            gap=gap,
+            widen=reach,
+        )
         out: list[Candidate] = []
-        for yaw in self.face_yaws(cube=cube):
-            u = np.array([np.cos(yaw), np.sin(yaw)])
-            v = np.array([-np.sin(yaw), np.cos(yaw)])
-            for alpha in (0.0, 0.45, 0.7):
-                for lean in (0.0,) if alpha == 0 else (1.0, -1.0):
-                    for off_v in (0.0, 0.003, -0.003, 0.005, -0.005):
-                        for off_u in (0.0, 0.002, -0.002):
-                            ctr = c[:2] + off_v * v + off_u * u
-                            reach = 0.019 * np.sin(alpha)
-                            clr = Footprints.finger_clearance(
-                                center=ctr - 0.5 * reach * lean * v,
-                                yaw=yaw,
-                                obstacles=obst,
-                                widen=reach,
-                            )
-                            if clr < 0.002:
-                                continue
-                            if walls:
-                                palm = Footprints.palm(center=ctr, yaw=yaw, lean=lean, alpha=alpha)
-                                if Footprints.clearance(shape=palm, obstacles=walls) < 0.003:
-                                    continue
-                            q, a = Orientations.tilted(yaw=yaw, lean=lean, alpha=alpha)
-                            pad = np.array([
-                                ctr[0],
-                                ctr[1],
-                                support + 0.0124 + 0.012 * np.sin(alpha),
-                            ])
-                            pose = Pose(tuple(pad - a * G.PAD_CENTER_PARTIAL), q)
-                            score = min(clr, 0.01) - 0.3 * (abs(off_v) + abs(off_u)) - 0.004 * alpha
-                            out.append(Candidate(pose=pose, approach=a, yaw=yaw, score=score))
-        out.sort(key=lambda k: -k.score)
+        for k, (alpha, side, off_v, off_u) in enumerate(tries):
+            if clear[k] < 0.002:
+                continue
+            ctr = centres[k]
+            if walls:
+                palm = Footprints.palm(center=ctr, yaw=yaw, lean=side, alpha=alpha)
+                if Footprints.clearance(shape=palm, obstacles=walls) < 0.003:
+                    continue
+            q, a = Orientations.tilted(yaw=yaw, lean=side, alpha=alpha)
+            pad = np.array([ctr[0], ctr[1], support + 0.0124 + 0.012 * np.sin(alpha)])
+            score = min(float(clear[k]), 0.01) - 0.3 * (abs(off_v) + abs(off_u)) - 0.004 * alpha
+            out.append(
+                Candidate(
+                    pose=Pose(tuple(pad - a * depth), q),
+                    approach=a,
+                    yaw=yaw,
+                    score=score - handicap,
+                    cmd=cmd,
+                    pb=pb,
+                )
+            )
         return out
 
     def row_between(self, *, cube: str, partner: str) -> tuple[str, ...] | None:
@@ -214,7 +344,7 @@ class Primitives(BaseModel):
                     center=self.session.position(name=o)[:2], yaw=self.session.yaw(name=o)
                 )
             ]
-        ] + self.walls(cube=cube)
+        ] + self.finger_walls(cube=cube)
         walls = self.walls(cube=cube)
         v = np.array([-np.sin(yaw), np.cos(yaw)])
         support = self.support(cube=cube)
@@ -479,18 +609,27 @@ class Primitives(BaseModel):
     def move_drawer(self, *, target: float, speed: float = 0.012) -> str:
         """Grasp the handle and slide the drawer to `target` by driving the base with the
         arm held rigid -- the base, not the arm, supplies the stroke."""
-        from pybullet_helpers.geometry import Pose
-        from scipy.spatial.transform import Rotation
-
         start = self.session.drawer_pos()
         pitch = self.grasp_handle()
         x, y, th = self.session.base()
         hold = self.session.arm()
-        ticks = int(abs(target - start) / speed) + 60
+        travel = DrawerStroke.base_travel(start=start, target=target)
+        ticks = int(abs(travel) / speed) + 60
         self.motion.drive_straight(
-            target=(x + (target - start), y, th), grip=1.0, arm=hold, speed=speed, max_ticks=ticks
+            target=(x + travel, y, th), grip=1.0, arm=hold, speed=speed, max_ticks=ticks
         )
         self.motion.hold(ticks=5, grip=1.0, arm=hold)
+        self.release_handle(hold=hold)
+        end = self.session.drawer_pos()
+        if not DrawerStroke.reached(end=end, target=target):
+            raise ExecutionError(f"drawer at {end:.3f} after moving it toward {target}")
+        return f"drawer {start:.3f} -> {end:.3f} (target {target}); handle pitch {pitch:.2f}"
+
+    def release_handle(self, *, hold: np.ndarray) -> None:
+        """Open the hand, back straight off the handle along the approach axis, retract."""
+        from pybullet_helpers.geometry import Pose
+        from scipy.spatial.transform import Rotation
+
         self.motion.set_gripper(command=0.0, arm=hold)
         ee = self.scene.ee_now()
         a = Rotation.from_quat(ee.orientation).as_matrix()[:, 2]
@@ -501,18 +640,14 @@ class Primitives(BaseModel):
         if back:
             self.motion.follow(path=back, grip=0.0)
         self.motion.go_home(grip=0.0)
-        end = self.session.drawer_pos()
-        if abs(end - target) > 0.03:
-            raise ExecutionError(f"drawer at {end:.3f} after moving it toward {target}")
-        return f"drawer {start:.3f} -> {end:.3f} (target {target}); handle pitch {pitch:.2f}"
 
     # ================================================================ cubes
-    def pick(
+    def find_pick(
         self, *, cube: str, partner: str | None = None, max_stances: int = 40
-    ) -> tuple[Any, str]:
-        """Top-down (possibly tilted) face grasp at 3.2 cm opening -- or, with `partner`,
-        both cubes at once; returns EE->cube."""
-        from pybullet_helpers.geometry import Pose, multiply_poses
+    ) -> PickPlan:
+        """Search stances and grasps for a pick the planning scene passes end to end:
+        base path, hover, straight descent, arm plan. Moves nothing."""
+        from pybullet_helpers.geometry import Pose
 
         where = self.session.location(cube=cube)
         c = self.session.position(name=cube)
@@ -527,9 +662,7 @@ class Primitives(BaseModel):
             else self.pair_candidates(cube=cube, partner=partner)
         )
         if not grasps:
-            raise ExecutionError(
-                f"{cube} ({where}) is boxed in: no face grasp clears its neighbours"
-            )
+            raise ExecutionError(f"{cube} ({where}) is boxed in: no grasp clears its neighbours")
         rejected: dict[str, int] = {}
         for tried, stance in enumerate(self.stances(target=c, where=where)):
             if tried >= max_stances:
@@ -569,64 +702,92 @@ class Primitives(BaseModel):
                 if plan is None:
                     rejected["arm"] = rejected.get("arm", 0) + 1
                     continue
-                # ---- execute
-                self.motion.go_home(grip=0.0)
-                if not self.motion.drive(path=path, grip=0.0):
-                    raise ExecutionError("base did not converge")
-                moved = self.session.position(name=cube) - c
-                target = Pose(tuple(np.array(k.pose.position) + moved), k.pose.orientation)
-                hover_now = Pose(
-                    tuple(np.array(target.position) - k.approach * back), k.pose.orientation
+                return PickPlan(
+                    grasp=k,
+                    held=held,
+                    path=path,
+                    base=base,
+                    back=back,
+                    reach=plan,
+                    down=down,
+                    rejected=rejected,
                 )
-                redo = self.resolve_at_actual_base(
-                    hover=hover_now,
-                    target=target,
-                    bodies=self.scene.bodies(),
-                    descent_bodies=self.scene.bodies(without_cubes=held),
-                    finger_state=k.pb,
-                    margin=0.001,
-                    step=0.008,
-                )
-                if redo is not None:
-                    plan, down = redo
-                self.motion.follow(path=plan, grip=0.0)
-                self.motion.set_gripper(command=k.cmd)
-                reached = self.motion.follow(path=down, grip=k.cmd, final_tol=0.006)
-                ee_at = np.array(self.scene.ee_now().position)
-                aim = np.array(target.position)
-                cube_at = self.session.position(name=cube)
-                pads = self.pad_centers()
-                g = self.motion.set_gripper(command=1.0)
-                ee = self.scene.ee_now()
-                cube_pose = Pose(
-                    tuple(self.session.position(name=cube)), self.session.quaternion(name=cube)
-                )
-                ee_to_cube = multiply_poses(ee.invert(), cube_pose)
-                up = self.scene.linear_path(
-                    start=self.session.arm(),
-                    target=Pose(tuple(np.array(ee.position) - k.approach * back), ee.orientation),
-                )
-                # the descent run backwards is a known-feasible way out
-                self.motion.follow(path=up if up else list(reversed(down)), grip=1.0)
-                lifted = all(self.session.position(name=h)[2] > c[2] + 0.06 for h in held)
-                if not lifted:
-                    self.motion.set_gripper(command=0.0)
-                    self.motion.go_home(grip=0.0)
-                    raise ExecutionError(
-                        f"grasp missed or slipped (fingers {g:.2f});"
-                        f" stance {np.round(base, 2).tolist()}; descent reached {reached};"
-                        f" EE minus aim {np.round(ee_at - aim, 4).tolist()};"
-                        f" cube moved {np.round(cube_at - c, 4).tolist()};"
-                        f" approach {np.round(k.approach, 2).tolist()};"
-                        f" pads minus cube {[np.round(p - cube_at, 4).tolist() for p in pads]}"
-                    )
-                note = (
-                    f"stance {np.round(base, 2).tolist()};"
-                    f" approach {np.round(k.approach, 2).tolist()};"
-                    f" gripper {g:.2f}; rejected {rejected}"
-                )
-                return ee_to_cube, note
         raise ExecutionError(f"no feasible pick for {cube} ({where}); rejected {rejected}")
+
+    def pick_feasible(self, *, cube: str) -> bool:
+        """Whether the planner finds a pick for `cube` where it lies. Moves nothing."""
+        try:
+            self.find_pick(cube=cube)
+        except ExecutionError:
+            return False
+        return True
+
+    def pick(
+        self, *, cube: str, partner: str | None = None, max_stances: int = 40
+    ) -> tuple[Any, str]:
+        """Top-down (possibly tilted) grasp -- or, with `partner`, a whole row at once;
+        returns EE->cube."""
+        from pybullet_helpers.geometry import Pose, multiply_poses
+
+        c = self.session.position(name=cube)
+        found = self.find_pick(cube=cube, partner=partner, max_stances=max_stances)
+        k, held, back, base = found.grasp, found.held, found.back, found.base
+        plan, down = found.reach, found.down
+        self.motion.go_home(grip=0.0)
+        if not self.motion.drive(path=found.path, grip=0.0):
+            raise ExecutionError("base did not converge")
+        moved = self.session.position(name=cube) - c
+        target = Pose(tuple(np.array(k.pose.position) + moved), k.pose.orientation)
+        hover_now = Pose(tuple(np.array(target.position) - k.approach * back), k.pose.orientation)
+        redo = self.resolve_at_actual_base(
+            hover=hover_now,
+            target=target,
+            bodies=self.scene.bodies(),
+            descent_bodies=self.scene.bodies(without_cubes=held),
+            finger_state=k.pb,
+            margin=0.001,
+            step=0.008,
+        )
+        if redo is not None:
+            plan, down = redo
+        self.motion.follow(path=plan, grip=0.0)
+        self.motion.set_gripper(command=k.cmd)
+        reached = self.motion.follow(path=down, grip=k.cmd, final_tol=0.006)
+        ee_at = np.array(self.scene.ee_now().position)
+        aim = np.array(target.position)
+        cube_at = self.session.position(name=cube)
+        pads = self.pad_centers()
+        g = self.motion.set_gripper(command=1.0)
+        ee = self.scene.ee_now()
+        cube_pose = Pose(
+            tuple(self.session.position(name=cube)), self.session.quaternion(name=cube)
+        )
+        ee_to_cube = multiply_poses(ee.invert(), cube_pose)
+        up = self.scene.linear_path(
+            start=self.session.arm(),
+            target=Pose(tuple(np.array(ee.position) - k.approach * back), ee.orientation),
+        )
+        # the descent run backwards is a known-feasible way out
+        self.motion.follow(path=up if up else list(reversed(down)), grip=1.0)
+        lifted = all(self.session.position(name=h)[2] > c[2] + 0.06 for h in held)
+        if not lifted:
+            self.motion.set_gripper(command=0.0)
+            self.motion.go_home(grip=0.0)
+            raise ExecutionError(
+                f"grasp missed or slipped (fingers {g:.2f});"
+                f" stance {np.round(base, 2).tolist()}; descent reached {reached};"
+                f" EE minus aim {np.round(ee_at - aim, 4).tolist()};"
+                f" cube moved {np.round(cube_at - c, 4).tolist()};"
+                f" approach {np.round(k.approach, 2).tolist()};"
+                f" pads minus cube {[np.round(p - cube_at, 4).tolist() for p in pads]}"
+            )
+        note = (
+            f"stance {np.round(base, 2).tolist()};"
+            f" approach {np.round(k.approach, 2).tolist()},"
+            f" closing at {np.degrees(k.yaw) % 180:.0f} deg;"
+            f" gripper {g:.2f}; rejected {found.rejected}"
+        )
+        return ee_to_cube, note
 
     def place(
         self,
@@ -636,9 +797,12 @@ class Primitives(BaseModel):
         ee_to_cube: Any,
         target_yaw: float | None = None,
         drop: float = 0.004,
+        release: float = G.CUBE_OPEN_CMD,
     ) -> str:
         """Carry the held cube to `target_xy` on the countertop and release it just above,
-        turned to `target_yaw` if given (the stock Sweep is anchored on cube_0's full pose)."""
+        turned to `target_yaw` if given (the stock Sweep is anchored on cube_0's full pose).
+        `release` is the gripper command that lets go: the single-cube opening unless a
+        whole row is held."""
         from pybullet_helpers.geometry import Pose, multiply_poses
         from scipy.spatial.transform import Rotation
 
@@ -709,10 +873,12 @@ class Primitives(BaseModel):
                         carry, down = redo
                     self.motion.follow(path=carry, grip=1.0)
                     self.motion.follow(path=down, grip=1.0, final_tol=0.006)
-                    self.motion.set_gripper(command=0.0)
+                    # Open only as far as letting go takes. Opened fully, a pad swings
+                    # 5 cm out and shoves the cube in the next slot out of the pile.
+                    self.motion.set_gripper(command=release)
                     up = self.scene.linear_path(start=self.session.arm(), target=pre)
                     if up:
-                        self.motion.follow(path=up, grip=0.0)
+                        self.motion.follow(path=up, grip=release)
                     self.motion.go_home(grip=0.0)
                     self.motion.hold(ticks=5, grip=0.0)
                     fin = self.session.position(name=cube)

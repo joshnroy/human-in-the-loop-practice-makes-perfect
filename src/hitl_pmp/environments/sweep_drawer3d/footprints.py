@@ -6,6 +6,7 @@ handed to the 3D planning scene, which remains the authority for everything it p
 """
 
 import numpy as np
+import shapely
 from shapely import affinity
 from shapely.geometry import LineString, Polygon, box
 from shapely.geometry.base import BaseGeometry
@@ -40,6 +41,19 @@ class Footprints:
             box(-1.0, y, 3.0, y + 0.1),
             box(-1.0, -y - 0.1, 3.0, -y),
         ]
+
+    @staticmethod
+    def island_board() -> Polygon:
+        """What a finger on a floor cube faces at the island: its bottom board, which
+        stands 2 cm high and 2 cm back from the drawer faces above it."""
+        return box(-1.0, -1.1, SweepDrawerScene.COUNTER_EDGE_X, 1.1)
+
+    @staticmethod
+    def island_faces(*, drawer_pos: float) -> Polygon:
+        """What the palm over a floor cube faces: the drawer faces, which begin 3.6 cm
+        above the floor -- carried out over the floor by the task's drawer when it is
+        open, since the arm cannot reach in beneath it."""
+        return box(-1.0, -1.1, SweepDrawerScene.DRAWER_FACE_X + max(drawer_pos, 0.0), 1.1)
 
     @staticmethod
     def clearance(*, shape: BaseGeometry, obstacles: list[Polygon]) -> float:
@@ -85,6 +99,38 @@ class Footprints:
             )
             best = min(best, Footprints.clearance(shape=finger, obstacles=obstacles))
         return best
+
+    @staticmethod
+    def finger_clearances(
+        *,
+        centres: np.ndarray,
+        yaw: float,
+        obstacles: list[Polygon],
+        gap: float,
+        widen: np.ndarray,
+    ) -> np.ndarray:
+        """`finger_clearance` for many placements at once: one row of `centres` and one
+        `widen` each, the same closing axis and opening. Overlap is reported as 0, not as
+        a negative depth -- the grasp search asks only whether a placement is clear."""
+        n = len(centres)
+        if not obstacles:
+            return np.ones(n)
+        g = GripperGeometry
+        u = np.array([np.cos(yaw), np.sin(yaw)])
+        v = np.array([-np.sin(yaw), np.cos(yaw)])
+        half = g.FINGER_HALF_WIDTH + np.asarray(widen, dtype=float) / 2
+        near, far = gap / 2, gap / 2 + g.FINGER_THICK
+        along = np.array([near, far, far, near])
+        across = np.array([-1.0, -1.0, 1.0, 1.0])
+        # (placement, finger, corner, xy)
+        corners = (
+            np.asarray(centres, dtype=float)[:, None, None, :]
+            + np.array([-1.0, 1.0])[None, :, None, None] * along[None, None, :, None] * u
+            + (half[:, None, None] * across[None, None, :])[..., None] * v
+        )
+        fingers = shapely.polygons(corners.reshape(n * 2, 4, 2))
+        gaps = shapely.distance(fingers[:, None], np.array(obstacles, dtype=object)[None, :])
+        return np.minimum(gaps.min(axis=1).reshape(n, 2).min(axis=1), 1.0)
 
     @staticmethod
     def palm(*, center: np.ndarray, yaw: float, lean: float, alpha: float) -> Polygon:

@@ -38,3 +38,46 @@ def test_a_wiper_off_its_spot_is_a_failure() -> None:
     counter' is not enough."""
     assert not _outcome(wiper_xy_error=0.05).success
     assert not _outcome(wiper_on_counter=False).success
+
+
+def _retrieval(**overrides: object):
+    from hitl_pmp.environments.sweep_drawer3d.types import Retrieval
+
+    fields: dict[str, object] = {
+        "origin": "drawer",
+        "blocked": True,
+        "assists": (),
+        "grasp": "single",
+    }
+    fields.update(overrides)
+    return Retrieval.model_validate(fields)
+
+
+def test_a_blocked_cube_is_rescued_by_every_move_that_shifted_it() -> None:
+    r = _retrieval(assists=("wiggle", "nudge"))
+    assert r.rescued_by == ("wiggle", "nudge")
+    assert r.pathway == "wiggle > nudge > pick"
+
+
+def test_a_cube_that_was_graspable_where_it_lay_was_rescued_by_nothing() -> None:
+    """The wiggle shifts every cube in the drawer, including ones a grasp already fitted;
+    shifting a cube is not rescuing it."""
+    r = _retrieval(blocked=False, assists=("wiggle",))
+    assert r.rescued_by == ()
+    assert r.pathway == "pick"
+
+
+def test_a_row_grasp_is_named_in_the_pathway() -> None:
+    assert _retrieval(assists=("wiggle",), grasp="row").pathway == "wiggle > row grasp"
+
+
+def test_a_blocked_cube_freed_without_being_moved_says_so() -> None:
+    """Its neighbours were taken away, or a second pick attempt worked."""
+    r = _retrieval(assists=())
+    assert r.rescued_by == ()
+    assert r.pathway == "neighbours removed > pick"
+
+
+def test_an_outcome_without_retrievals_still_validates() -> None:
+    """Cycle files written before repositioning existed carry no retrieval record."""
+    assert _outcome().retrievals == {}

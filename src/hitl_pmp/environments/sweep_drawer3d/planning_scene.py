@@ -1,12 +1,17 @@
 """The PyBullet planning model, with the three things kinder-models' PyBulletSim lacks.
 
 kinder-models plans arm motions in a PyBulletSim built from the state's static colliders
-and cubes. For this scene that model omits (1) the drawer -- drawers carry only a slide
-`pos`, so no box of the drawer exists to collide with, and arm paths planned there pass
+and cubes. For this scene that model omits (1) the drawers -- drawers carry only a slide
+`pos`, so no box of a drawer exists to collide with, and arm paths planned there pass
 straight through its walls; (2) the mobile base, so an arm reaching low near the robot
 can pass through its own chassis; and (3) the wiper, so a carried wiper is never checked.
 All three are added here from the compiled MuJoCo model, which is the scene's own CAD:
-the drawer's boxes are re-posed from the live simulator on every `sync`. The island slab
+the drawers' boxes are re-posed from the live simulator on every `sync`.
+
+The island has six drawers, two rows of three, and all six are modelled, not only the one
+the task opens. The lower row's faces and handles stand where a floor cube by the island
+lies: with only the task's drawer in the model, a plan to reach such a cube is "collision
+free" straight through a drawer face, and the arm is stopped by it on execution. The island slab
 (`collider:kitchen_island:7`) stays in: it is faithful, and the grasps below are placed so
 they do not need it removed.
 """
@@ -35,6 +40,7 @@ class PlanningScene(BaseModel):
     _sim: Any = PrivateAttr(default=None)
     _p: Any = PrivateAttr(default=None)
     _drawer: list[tuple[int, int]] = PrivateAttr(default_factory=list)
+    _other_drawers: list[tuple[int, int]] = PrivateAttr(default_factory=list)
     _chassis: int = PrivateAttr(default=-1)
     _wiper: int = PrivateAttr(default=-1)
 
@@ -49,21 +55,22 @@ class PlanningScene(BaseModel):
         m = self.session.mj_model
         import mujoco
 
-        for body_name in (SweepDrawerScene.DRAWER, SweepDrawerScene.DRAWER + "_handle"):
-            b = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, body_name)
-            for g in range(m.ngeom):
-                collides = m.geom_contype[g] + m.geom_conaffinity[g] > 0
-                if (
-                    m.geom_bodyid[g] == b
-                    and m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX
-                    and collides
-                ):
-                    half = (
-                        float(m.geom_size[g][0]),
-                        float(m.geom_size[g][1]),
-                        float(m.geom_size[g][2]),
-                    )
-                    self._drawer.append((g, create_pybullet_block((0.4, 0.3, 0.2, 1.0), half, cid)))
+        task = (SweepDrawerScene.DRAWER, SweepDrawerScene.DRAWER + "_handle")
+        for g in range(m.ngeom):
+            body_name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, m.geom_bodyid[g]) or ""
+            collides = m.geom_contype[g] + m.geom_conaffinity[g] > 0
+            if (
+                body_name.startswith(SweepDrawerScene.ISLAND_DRAWERS)
+                and m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX
+                and collides
+            ):
+                half = (
+                    float(m.geom_size[g][0]),
+                    float(m.geom_size[g][1]),
+                    float(m.geom_size[g][2]),
+                )
+                block = create_pybullet_block((0.4, 0.3, 0.2, 1.0), half, cid)
+                (self._drawer if body_name in task else self._other_drawers).append((g, block))
         hx, hy = SweepDrawerScene.CHASSIS_HALF
         self._chassis = create_pybullet_block((0.2, 0.2, 0.2, 1.0), (hx, hy, 0.15), cid)
         w = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, SweepDrawerScene.WIPER)
@@ -93,7 +100,13 @@ class PlanningScene(BaseModel):
 
     @property
     def drawer_bodies(self) -> list[int]:
+        """The boxes of the drawer the task opens, handle included."""
         return [b for _, b in self._drawer]
+
+    @property
+    def other_drawer_bodies(self) -> list[int]:
+        """The boxes of the island's five other drawers, handles included."""
+        return [b for _, b in self._other_drawers]
 
     @property
     def chassis_body(self) -> int:
@@ -123,7 +136,7 @@ class PlanningScene(BaseModel):
         d = self.session.mj_data
         import mujoco
 
-        for g, body in self._drawer:
+        for g, body in self._drawer + self._other_drawers:
             q = np.zeros(4)
             mujoco.mju_mat2Quat(q, d.geom_xmat[g])
             set_pose(body, Pose(tuple(d.geom_xpos[g]), (q[1], q[2], q[3], q[0])), self.cid)
@@ -140,6 +153,7 @@ class PlanningScene(BaseModel):
     ) -> set[int]:
         out = set(self._sim.get_collision_bodies())
         out |= set(self.drawer_bodies)
+        out |= set(self.other_drawer_bodies)
         out.add(self._chassis)
         for c in without_cubes:
             out.discard(self.cube_body(cube=c))

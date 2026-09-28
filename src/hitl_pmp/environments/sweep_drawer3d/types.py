@@ -2,6 +2,7 @@
 
 from typing import ClassVar, Literal
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict
 
 CubeLocation = Literal["drawer", "counter", "floor", "other"]
@@ -19,6 +20,8 @@ class SweepDrawerScene(BaseModel):
     CUBES: ClassVar[tuple[str, ...]] = tuple(f"cube_{i}" for i in range(5))
     WIPER: ClassVar[str] = "wiper_0"
     DRAWER: ClassVar[str] = "kitchen_island_drawer_s1c1"
+    # Body-name prefix of the island's six drawers (rows s0, s1; columns c0..c2).
+    ISLAND_DRAWERS: ClassVar[str] = "kitchen_island_drawer_"
     ROBOT: ClassVar[str] = "robot"
     ISLAND_SLAB: ClassVar[str] = "collider:kitchen_island:7"
 
@@ -80,6 +83,31 @@ class GripperGeometry(BaseModel):
     PALM_LEVER: ClassVar[float] = 0.075
 
 
+class NudgePlan(BaseModel):
+    """One stroke of the closed fingertips: which cube, which way, how far, how tilted."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    cube: str
+    # push: frees a cube in the rigid 2D model. stir: a push that model expects nothing
+    # of, made on a cube that has no grasp.
+    kind: Literal["push", "stir"]
+    direction: np.ndarray
+    distance: float
+    alpha: float
+    # the point on the floor the fingertip is centred behind: the cube's centre, or a
+    # little to one side of it
+    aim: np.ndarray
+    # which way the palm leans when the fingertip is beside a wall; None when it is
+    # behind the cube and the palm leans along the push
+    away: np.ndarray | None = None
+    # the cube's extent from its centre against the push
+    rear: float
+    score: float
+    # where the rigid 2D model puts every cube the stroke shifts
+    moved: dict[str, np.ndarray]
+
+
 class ResetStep(BaseModel):
     """One executed (or refused) primitive of the reset, as written to the step log."""
 
@@ -97,6 +125,30 @@ class ResetStep(BaseModel):
     note: str = ""
 
 
+class Retrieval(BaseModel):
+    """How one cube got back to the pile."""
+
+    origin: CubeLocation
+    # No grasp fitted where the sweep left it, or a pick attempted there failed.
+    blocked: bool
+    # Repositioning moves that shifted it before it was picked, in order.
+    assists: tuple[str, ...]
+    grasp: Literal["single", "row"]
+
+    @property
+    def rescued_by(self) -> tuple[str, ...]:
+        """A move rescued a cube only if the cube needed rescuing: the wiggle shifts
+        every cube in the drawer, graspable or not."""
+        return self.assists if self.blocked else ()
+
+    @property
+    def pathway(self) -> str:
+        last = "row grasp" if self.grasp == "row" else "pick"
+        if not self.blocked:
+            return last
+        return " > ".join((*(self.assists or ("neighbours removed",)), last))
+
+
 class ResetOutcome(BaseModel):
     """Where everything ended up after a reset, against the four reset criteria."""
 
@@ -109,6 +161,7 @@ class ResetOutcome(BaseModel):
     robot_actions: int
     ticks: int
     wall_s: float
+    retrievals: dict[str, Retrieval] = {}
 
     @property
     def n_in_pile(self) -> int:
