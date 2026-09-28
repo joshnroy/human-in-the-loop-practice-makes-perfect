@@ -48,16 +48,17 @@ class Layout:
     BACKGROUND: ClassVar[tuple[int, int, int]] = (16, 16, 16)
     FOREGROUND: ClassVar[tuple[int, int, int]] = (238, 238, 238)
     MUTED: ClassVar[tuple[int, int, int]] = (160, 160, 160)
-    VIEWS: ClassVar[tuple[View, ...]] = (
-        View(
-            lookat=(0.95, 0.0, 0.35),
-            distance=2.5,
-            azimuth=140.0,
-            elevation=-28.0,
-            title="three-quarter view",
-            width=1152,
-        ),
-        View(
+    WIDE: ClassVar[View] = View(
+        lookat=(0.95, 0.0, 0.35),
+        distance=2.5,
+        azimuth=140.0,
+        elevation=-28.0,
+        title="three-quarter view",
+        width=1152,
+    )
+    # Each looks at where one kind of cube ends up; none of them shows the others.
+    CLOSE_UPS: ClassVar[dict[str, View]] = {
+        "drawer": View(
             lookat=(1.06, 0.05, 0.22),
             distance=0.85,
             azimuth=60.0,
@@ -65,12 +66,35 @@ class Layout:
             title="the drawer, close up",
             width=768,
         ),
-    )
+        # from in front of the island and to one side: from over the counter, as the
+        # other two are, the floor at the island's foot is hidden by the counter
+        "floor": View(
+            lookat=(0.95, 0.06, 0.02),
+            distance=0.9,
+            azimuth=215.0,
+            elevation=-35.0,
+            title="the floor by the island, close up",
+            width=768,
+        ),
+        "rim": View(
+            lookat=(0.93, 0.04, 0.42),
+            distance=0.7,
+            azimuth=60.0,
+            elevation=-40.0,
+            title="the drawer's rim, close up",
+            width=768,
+        ),
+    }
+
+    @staticmethod
+    def views(*, close_up: str) -> tuple[View, View]:
+        return Layout.WIDE, Layout.CLOSE_UPS[close_up]
 
     @staticmethod
     def size() -> tuple[int, int]:
         """(width, height) of a whole frame."""
-        return sum(v.width for v in Layout.VIEWS), Layout.HEIGHT + Layout.BAR
+        width = Layout.WIDE.width + Layout.CLOSE_UPS["drawer"].width
+        return width, Layout.HEIGHT + Layout.BAR
 
     @staticmethod
     def font(*, size: int) -> Any:
@@ -80,12 +104,14 @@ class Layout:
             return ImageFont.load_default()
 
     @staticmethod
-    def compose(*, panels: list[np.ndarray], lines: tuple[str, str]) -> np.ndarray:
+    def compose(
+        *, views: tuple[View, View], panels: list[np.ndarray], lines: tuple[str, str]
+    ) -> np.ndarray:
         width, height = Layout.size()
         frame = Image.new("RGB", (width, height), Layout.BACKGROUND)
         draw = ImageDraw.Draw(frame)
         left = 0
-        for view, panel in zip(Layout.VIEWS, panels, strict=True):
+        for view, panel in zip(views, panels, strict=True):
             frame.paste(Image.fromarray(panel), (left, 0))
             font = Layout.font(size=17)
             box = draw.textbbox((left + 18, 14), view.title, font=font)
@@ -197,6 +223,7 @@ class ResetVideo(BaseModel):
     first_tick: int = 0
     last_tick: int | None = None
     room: bool = True
+    close_up: str = "drawer"
 
     def speed(self) -> float:
         """Playback speed against simulated time, at the scene's 10 Hz control rate."""
@@ -257,11 +284,12 @@ class ResetVideo(BaseModel):
         seed = int(header["seed"])
         env, model, data = self.scene(seed=seed)
         mapping = ReplayLog.mapping(header=header, model=model)
-        widest = max(v.width for v in Layout.VIEWS)
+        views = Layout.views(close_up=self.close_up)
+        widest = max(v.width for v in views)
         model.vis.global_.offwidth = max(model.vis.global_.offwidth, widest)
         model.vis.global_.offheight = max(model.vis.global_.offheight, Layout.HEIGHT)
         renderers, cameras = [], []
-        for view in Layout.VIEWS:
+        for view in views:
             renderers.append(mujoco.Renderer(model, height=Layout.HEIGHT, width=view.width))
             camera = mujoco.MjvCamera()
             camera.type = mujoco.mjtCamera.mjCAMERA_FREE
@@ -311,7 +339,8 @@ class ResetVideo(BaseModel):
                     piled=piled,
                     speed=self.speed(),
                 )
-                pipe.stdin.write(Layout.compose(panels=panels, lines=lines).tobytes())
+                frame = Layout.compose(views=views, panels=panels, lines=lines)
+                pipe.stdin.write(frame.tobytes())
                 frames += 1
             pipe.stdin.close()
             code = pipe.wait()
@@ -344,6 +373,7 @@ def main() -> int:
     parser.add_argument(
         "--no-room", action="store_true", help="draw the scene without its MimicLabs room"
     )
+    parser.add_argument("--close-up", default="drawer", choices=sorted(Layout.CLOSE_UPS))
     args = parser.parse_args()
     video = ResetVideo(
         run_dir=args.run_dir,
@@ -355,6 +385,7 @@ def main() -> int:
         ffmpeg=args.ffmpeg,
         codec=args.codec,
         room=not args.no_room,
+        close_up=args.close_up,
     )
     frames = video.render()
     print(f"{frames} frames at {video.fps} fps, {video.speed():g}x -> {video.output}")

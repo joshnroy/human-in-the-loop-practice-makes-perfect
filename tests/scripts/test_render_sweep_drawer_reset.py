@@ -73,10 +73,12 @@ def test_frames_have_even_dimensions() -> None:
 def test_a_composed_frame_holds_both_panels_and_the_caption_bar() -> None:
     layout = _module().Layout
     h = layout.HEIGHT
-    wide, narrow = (v.width for v in layout.VIEWS)
+    wide, narrow = (v.width for v in layout.views(close_up="drawer"))
     left = np.full((h, wide, 3), 200, dtype=np.uint8)
     right = np.full((h, narrow, 3), 90, dtype=np.uint8)
-    frame = layout.compose(panels=[left, right], lines=("a step", "numbers"))
+    frame = layout.compose(
+        views=layout.views(close_up="drawer"), panels=[left, right], lines=("a step", "numbers")
+    )
     assert frame.shape == (h + layout.BAR, wide + narrow, 3)
     assert tuple(frame[h // 2, wide // 2]) == (200, 200, 200)
     assert tuple(frame[h // 2, wide + narrow // 2]) == (90, 90, 90)
@@ -87,8 +89,9 @@ def test_a_panels_title_is_legible_whatever_the_panel_shows() -> None:
     """Light text straight onto the frame vanished against a white floor."""
     layout = _module().Layout
     h = layout.HEIGHT
-    panels = [np.full((h, v.width, 3), 255, dtype=np.uint8) for v in layout.VIEWS]
-    frame = layout.compose(panels=panels, lines=("", ""))
+    views = layout.views(close_up="drawer")
+    panels = [np.full((h, v.width, 3), 255, dtype=np.uint8) for v in views]
+    frame = layout.compose(views=views, panels=panels, lines=("", ""))
     corner = frame[8:40, 10:200].reshape(-1, 3)
     dark = (corner.sum(axis=1) < 3 * 40).sum()
     light = (corner.sum(axis=1) > 3 * 200).sum()
@@ -172,3 +175,28 @@ def test_a_cube_is_in_the_pile_only_on_the_counter_inside_the_region() -> None:
     assert video.in_pile(position=np.array([0.76, -0.08, 0.47]))
     assert not video.in_pile(position=np.array([0.826, -0.08, 0.47]))
     assert not video.in_pile(position=np.array([0.76, -0.08, 0.2373]))
+
+
+@pytest.mark.parametrize("close_up", ["drawer", "floor", "rim"])
+def test_every_close_up_keeps_the_frame_the_same_size(*, close_up: str) -> None:
+    """A clip cannot change size between videos that are shown side by side."""
+    layout = _module().Layout
+    views = layout.views(close_up=close_up)
+    assert len(views) == 2
+    assert views[0].title == "three-quarter view"
+    assert sum(v.width for v in views) == layout.size()[0]
+
+
+def test_the_floor_close_up_looks_at_the_floor_in_front_of_the_island() -> None:
+    """The drawer close-up looks into the open drawer, 22 cm up; a cube on the floor
+    against the lower drawers' faces is under it and out of its frame."""
+    layout = _module().Layout
+    floor = layout.views(close_up="floor")[1]
+    drawer = layout.views(close_up="drawer")[1]
+    assert floor.lookat[2] < 0.1 < drawer.lookat[2]
+    assert 0.895 < floor.lookat[0] < 1.05
+
+
+def test_an_unknown_close_up_is_refused() -> None:
+    with pytest.raises(KeyError):
+        _module().Layout.views(close_up="ceiling")
