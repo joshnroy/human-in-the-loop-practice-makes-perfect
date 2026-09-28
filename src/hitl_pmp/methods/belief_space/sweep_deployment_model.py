@@ -39,6 +39,12 @@ class SweepDeploymentExpectation(BaseModel):
         }
 
         @cache
+        def moment(*, name: str, successes: int, failures: int) -> float:
+            return beliefs[name].competence_outcome_probability(
+                successes=successes, failures=failures
+            )
+
+        @cache
         def visit(
             *, atoms: frozenset[GroundAtom], remaining: int, counts: tuple[tuple[int, int], ...]
         ) -> float:
@@ -53,17 +59,14 @@ class SweepDeploymentExpectation(BaseModel):
                 return 0.0
             index = indexes[action.skill.name]
             successes, failures = counts[index]
-            belief = beliefs[action.skill.name]
-            denominator = belief.competence_outcome_probability(
-                successes=successes, failures=failures
-            )
+            denominator = moment(name=action.skill.name, successes=successes, failures=failures)
             if denominator == 0:
                 return 0.0
             value = 0.0
             for success in (True, False):
                 updated = (successes + int(success), failures + int(not success))
                 probability = (
-                    belief.competence_outcome_probability(successes=updated[0], failures=updated[1])
+                    moment(name=action.skill.name, successes=updated[0], failures=updated[1])
                     / denominator
                 )
                 if probability <= 0:
