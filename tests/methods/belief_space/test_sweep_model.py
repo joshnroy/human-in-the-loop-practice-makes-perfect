@@ -363,3 +363,42 @@ def test_signature_memo_matches_original_digest_and_does_not_retain_beliefs():
         belief=next_belief
     )
     assert model._belief_signature(belief=next_belief) != digest
+
+
+def test_canonical_exp22c_grid_engine_is_forwarded_without_changing_cost_prior():
+    # EXP-22c B lambda3e-6 seed0 config: grid25x16,1024costparticles,weight0.
+    from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
+    from hitl_pmp.methods.belief_space.competence_inference import (
+        InferenceConfig,
+        create_bayesian_prior,
+    )
+    from hitl_pmp.methods.belief_space.sweep_method import SweepPomdpMethod
+
+    _, initial, goal = _chain()
+    method = SweepPomdpMethod(
+        env=LightSwitchEnvironment(),
+        skill_provider=_ChainProvider(),
+        pomdp_search_depth=6,
+        pomdp_num_particles=1024,
+        pomdp_num_samples=100,
+        pomdp_inference_engine="grid",
+        pomdp_grid_competence_bins=25,
+        pomdp_grid_learning_rate_bins=16,
+        pomdp_observation_probability_weight=0.0,
+        pomdp_linear_cost_lambda=3e-6,
+        random_competences={name: 0.25 for name in ("OpenDrawer", "PickWiper", "Sweep")},
+        deployment_initial_atoms=initial,
+        deployment_goal_atoms=goal,
+    )
+    for index, (name, belief) in enumerate(sorted(method.pomdp_state.skill_beliefs.items())):
+        expected = create_bayesian_prior(
+            model="local_trend",
+            engine="grid",
+            seed=index,
+            num_particles=1024,
+            config=InferenceConfig(),
+        )
+        assert belief.signature() == expected.signature(), name
+        assert belief.state_count == 25 * 16
+        assert belief.cost_belief.num_particles == 1024
+    assert method.pomdp_planner.observation_probability_weight == 0.0

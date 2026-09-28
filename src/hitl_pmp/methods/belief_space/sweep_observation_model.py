@@ -1,5 +1,7 @@
 """Sweep uses the existing Model B inference and per-attempt training clocks."""
 
+from typing import Literal
+
 from hitl_pmp.core.method.types import GroundSkill
 
 from .competence_inference import InferenceConfig, create_bayesian_prior
@@ -31,12 +33,13 @@ class SweepBeliefs:
         seed: int,
         num_particles: int,
         config: InferenceConfig,
+        engine: Literal["particle", "grid"] = "particle",
     ) -> Tossing3DBeliefState:
         return Tossing3DBeliefState(
             skill_beliefs={
                 name: create_bayesian_prior(
                     model="local_trend",
-                    engine="particle",
+                    engine=engine,
                     seed=seed + index,
                     num_particles=num_particles,
                     config=config,
