@@ -67,3 +67,41 @@ def test_counter_objects_no_longer_block_the_stock_base_planner() -> None:
         assert fixed is not None
     finally:
         session.close()
+
+
+@needs_kinder
+def test_arm_limits_follow_the_simulated_arm_not_the_urdf() -> None:
+    """The PyBullet URDF allows joint 2 to 2.41 rad; the MuJoCo arm stops at 2.24, where a
+    plan that relied on the difference stalls. HOME itself must stay admissible."""
+    from hitl_pmp.environments.sweep_drawer3d.planning_scene import ArmMath
+    from hitl_pmp.environments.sweep_drawer3d.types import SweepDrawerScene
+
+    assert ArmMath.within_limits(arm=SweepDrawerScene.HOME)
+    q = list(SweepDrawerScene.HOME)
+    q[1] = 2.35
+    assert not ArmMath.within_limits(arm=q)
+
+
+@needs_kinder
+def test_a_cube_lying_on_its_side_reports_its_up_face_heading() -> None:
+    """Footprints use the heading of the face that is up; a quaternion rolled 90 degrees
+    about x has a z-y-x yaw unrelated to that heading."""
+    import numpy as np
+    from scipy.spatial.transform import Rotation
+
+    from hitl_pmp.environments.sweep_drawer3d.session import SweepDrawerSession
+
+    session = SweepDrawerSession(seed=1)
+    try:
+        state = session.state.copy()
+        cube = state.get_object_from_name("cube_0")
+        q = (
+            Rotation.from_euler("z", 30, degrees=True) * Rotation.from_euler("x", 90, degrees=True)
+        ).as_quat()
+        for k, v in zip(("qx", "qy", "qz", "qw"), q, strict=True):
+            state.set(cube, k, float(v))
+        session._state = state
+        yaw = np.degrees(session.yaw(name="cube_0")) % 90
+        assert min(abs(yaw - 30), abs(yaw - 30 - 90), abs(yaw - 30 + 90)) < 1.0
+    finally:
+        session.close()
