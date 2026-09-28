@@ -487,10 +487,23 @@ class Primitives(BaseModel):
         x, y, th = self.session.base()
         hold = self.session.arm()
         ticks = int(abs(target - start) / speed) + 60
+        # closing: aim 1 cm past shut so the drawer seats on its stop (seed 1 stopped 1 mm
+        # short of the 1 cm criterion when aimed exactly at 0)
+        stroke = (target - 0.01 if target <= 0.0 else target) - start
         self.motion.drive_straight(
-            target=(x + (target - start), y, th), grip=1.0, arm=hold, speed=speed, max_ticks=ticks
+            target=(x + stroke, y, th), grip=1.0, arm=hold, speed=speed, max_ticks=ticks
         )
         self.motion.hold(ticks=5, grip=1.0, arm=hold)
+        self.release_handle(hold=hold)
+        end = self.session.drawer_pos()
+        if abs(end - target) > 0.03:
+            raise ExecutionError(f"drawer at {end:.3f} after moving it toward {target}")
+        return f"drawer {start:.3f} -> {end:.3f} (target {target}); handle pitch {pitch:.2f}"
+
+    def release_handle(self, *, hold: np.ndarray) -> None:
+        from pybullet_helpers.geometry import Pose
+        from scipy.spatial.transform import Rotation
+
         self.motion.set_gripper(command=0.0, arm=hold)
         ee = self.scene.ee_now()
         a = Rotation.from_quat(ee.orientation).as_matrix()[:, 2]
@@ -501,10 +514,53 @@ class Primitives(BaseModel):
         if back:
             self.motion.follow(path=back, grip=0.0)
         self.motion.go_home(grip=0.0)
-        end = self.session.drawer_pos()
-        if abs(end - target) > 0.03:
-            raise ExecutionError(f"drawer at {end:.3f} after moving it toward {target}")
-        return f"drawer {start:.3f} -> {end:.3f} (target {target}); handle pitch {pitch:.2f}"
+
+    def slam_drawer(
+        self, *, strokes: int = 2, open_to: float = 0.25, top_speed: float = 1.0
+    ) -> str:
+        """Shake cubes off the drawer's front wall: holding the handle, accelerate the
+        drawer shut gently (2 m/s^2, under the cubes' ~9.8 m/s^2 friction limit, so they
+        ride along), meet the closed stop at speed so they slide on toward the back, then
+        reopen slowly so they ride out again. Measured on four packed clusters: 1.5-4 cm
+        off the wall per stroke; a fast start instead presses them into the wall."""
+        s = SweepDrawerScene
+        wall = s.DRAWER_FRONT_INNER_X
+
+        def gaps() -> list[float]:
+            dp = self.session.drawer_pos()
+            return [
+                wall + dp - self.session.position(name=c)[0] - s.CUBE_HALF
+                for c in s.CUBES
+                if self.session.location(cube=c) == "drawer"
+            ]
+
+        before = min(gaps(), default=0.0)
+        self.grasp_handle()
+        hold = self.session.arm()
+        for _ in range(strokes):
+            v = 0.0
+            for _ in range(60):
+                if self.session.drawer_pos() < 0.004:
+                    break
+                v = min(top_speed, v + 2.0 * 0.1)
+                a = np.zeros(11)
+                a[0] = -v * 0.1
+                a[3:10] = np.clip(hold - self.session.arm(), -0.1, 0.1)
+                a[-1] = 1.0
+                self.session.step(action=a)
+            self.motion.hold(ticks=5, grip=1.0, arm=hold)
+            x, y, th = self.session.base()
+            dp = self.session.drawer_pos()
+            self.motion.drive_straight(
+                target=(x + open_to - dp, y, th), grip=1.0, arm=hold, speed=0.012, max_ticks=80
+            )
+            self.motion.hold(ticks=5, grip=1.0, arm=hold)
+        self.release_handle(hold=hold)
+        after = min(gaps(), default=0.0)
+        return (
+            f"{strokes} slam strokes: closest cube {before:.3f} -> {after:.3f} m off the front"
+            f" wall; drawer at {self.session.drawer_pos():.3f}"
+        )
 
     # ================================================================ cubes
     def pick(

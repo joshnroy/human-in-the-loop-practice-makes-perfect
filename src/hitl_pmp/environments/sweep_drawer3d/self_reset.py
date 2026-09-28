@@ -32,6 +32,7 @@ class SweepDrawerSelfReset(BaseModel):
     open_to: float = 0.25
     max_drawer_rounds: int = 20
     max_pushes: int = 10
+    max_slams: int = 6
 
     # Countertop slots inside `blocks_init_region` (x 0.625..0.825, y -0.2..0), 4-4.5 cm apart.
     SLOTS: ClassVar[tuple[tuple[float, float], ...]] = (
@@ -118,9 +119,15 @@ class SweepDrawerSelfReset(BaseModel):
         self._motion.go_home(grip=0.0)
 
     # ------------------------------------------------------------------ phases
+    def _wall_bound(self, *, todo: list[str]) -> bool:
+        """Any cube close enough to the front wall that the palm cannot come down by it."""
+        wall = S.DRAWER_FRONT_INNER_X + self.session.drawer_pos()
+        return any(wall - self.session.position(name=c)[0] - S.CUBE_HALF < 0.045 for c in todo)
+
     def clear_drawer(self) -> bool:
         failures: dict[str, int] = {}
         pushes = 0
+        slams = 0
         for _ in range(self.max_drawer_rounds):
             todo = [c for c in S.CUBES if self.session.location(cube=c) == "drawer"]
             if not todo:
@@ -154,6 +161,13 @@ class SweepDrawerSelfReset(BaseModel):
                     self._recover_hand()
                 progressed = True
                 break
+            if not progressed and slams < self.max_slams and self._wall_bound(todo=todo):
+                # cubes pressed to the front wall: slide them off it before anything else
+                if self._do(name="slam_drawer", fn=self._prims.slam_drawer, strokes=2) is not None:
+                    slams += 2
+                    progressed = True
+                else:
+                    slams = self.max_slams
             if not progressed:
                 progressed = self._try_pairs(todo=todo, failures=failures)
             if not progressed and pushes < self.max_pushes:
@@ -165,6 +179,14 @@ class SweepDrawerSelfReset(BaseModel):
                         pushes += 1
                         progressed = True
                         break
+            if not progressed and slams < self.max_slams:
+                # nothing fits: a stroke also reshuffles a packed cluster, so try one more
+                if self._do(name="slam_drawer", fn=self._prims.slam_drawer, strokes=1) is not None:
+                    slams += 1
+                    failures.clear()
+                    progressed = True
+                else:
+                    slams = self.max_slams
             if not progressed:
                 return False
         return not any(self.session.location(cube=c) == "drawer" for c in S.CUBES)
