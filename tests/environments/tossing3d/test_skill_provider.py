@@ -273,7 +273,11 @@ def test_human_reset_cost_is_provider_configuration() -> None:
 def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) -> None:
     """Offering a reset must preserve ordinary plans and rescue stranded cubes."""
     from hitl_pmp.environments.tossing3d.layout import Tossing3DLayout
-    from hitl_pmp.environments.tossing3d.predicates import BIN_ON_GROUND, HAND_EMPTY
+    from hitl_pmp.environments.tossing3d.predicates import (
+        BIN_ON_GROUND,
+        HAND_EMPTY,
+        PICK_PLANNABLE,
+    )
     from hitl_pmp.environments.tossing3d.recovery_skills import CLOSED_EMPTY, ON_FLOOR
     from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 
@@ -299,6 +303,7 @@ def test_same_side_plans_with_optional_reset(*, stranded: bool, closed: bool) ->
                 predicate=CUBE_AT_SIDE,
                 objects=(env.cube, env.barrier, Tossing3DSides.robot),
             ),
+            GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)),
         }
     plan = method.plan_to(
         init_atoms=frozenset(atoms),

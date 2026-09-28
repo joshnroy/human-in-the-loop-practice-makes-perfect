@@ -92,6 +92,7 @@ renderer for.
 import copy
 import logging
 import os
+from collections import OrderedDict
 from collections.abc import Mapping, MutableMapping, Sequence
 from pathlib import Path
 from types import ModuleType
@@ -328,6 +329,8 @@ class KinderBackend(BaseModel):
     # A single joint-motor actuation, not a multi-phase trajectory -- generous headroom
     # against `pick_step_limit`/`toss_step_limit` rather than a measured tick count.
     open_gripper_step_limit: ClassVar[int] = 100
+    # Verdicts kept by `pick_cube_plan_failure`. A run visits a few thousand states.
+    pick_plan_cache_size: ClassVar[int] = 4096
 
     task_config_path: Path | None = None
     env_id: str = "kinder/Tossing3D-o1-v0"
@@ -368,6 +371,11 @@ class KinderBackend(BaseModel):
     # `Tossing3DEnvironment` deep-copies states and deep-copying this would clone the
     # PyBullet client it does forward kinematics through.
     _abstractor: Any = PrivateAttr(default=None)
+    # `pick_cube_plan_failure`'s verdicts, keyed by the exact state they were planned
+    # from. The verdict is a pure function of that state, so an entry never goes stale;
+    # the bound only caps memory. Evaluation episodes restart from the same few seeded
+    # scenes every cycle, which is where most of the hits come from.
+    _pick_plan_failures: OrderedDict[bytes, str | None] = PrivateAttr(default_factory=OrderedDict)
 
     @staticmethod
     def configure_headless_rendering(
@@ -1042,6 +1050,11 @@ class KinderBackend(BaseModel):
         Object names are translated to *this domain's* on the way out. KINDER resolves
         the robot's name from the robot config at reset; this domain's `Object` is the
         literal `"robot"`. Everything else already agrees.
+
+        Three atoms are this domain's own rather than upstream's: `OnBinRim`,
+        `BinOnGround` and `PickPlannable`. The last is the one that is not geometry
+        read off `state`: it is a dry run of the pick controller's planning from
+        `state` (`pick_cube_plan_failure`), equally pure in its argument.
         """
         if self._abstractor is None:
             raise RuntimeError("KinderBackend.reset() has not run yet; there is no abstractor.")
@@ -1079,6 +1092,21 @@ class KinderBackend(BaseModel):
 
         if BinOnGroundGeometry.holds(bin_=features[self.bin_name]):
             atoms |= frozenset({(KB_BIN_ON_GROUND, (self.bin_name,))})
+        from .pick_plannable import KB_PICK_PLANNABLE, PickPlannableGate
+
+        # See `pick_plannable.py` for the three cases and why each is what it is.
+        if ("Holding", (self.robot_atom_name, self.cube_name)) in atoms:
+            plannable = True
+        elif PickPlannableGate.cube_across_barrier(
+            robot_x=features[kinder_robot]["pos_base_x"],
+            cube=features[self.cube_name],
+            barrier=features[self.barrier_name],
+        ):
+            plannable = False
+        else:
+            plannable = self.pick_cube_plan_failure(state=subject) is None
+        if plannable:
+            atoms |= frozenset({(KB_PICK_PLANNABLE, (self.robot_atom_name, self.cube_name))})
         return atoms
 
     def abstraction_diagnostics(self, *, state: Any = None) -> dict[str, Any]:
@@ -1219,40 +1247,14 @@ class KinderBackend(BaseModel):
         `assert plan is not None`, which `Exception` would have caught -- so both kinds
         arrive here and both must be reported rather than propagated.
         """
-        api = self.api()
         state = self._require_state()
-        factory = {
-            "tossing": api.tossing_controllers,
-            "shelf": api.shelf_controllers,
-        }
-        if module not in factory:
-            raise ValueError(f"unknown controller module {module!r}; known: {sorted(factory)}")
-        if module == "tossing" and key == "pick_cube" and pybullet_sim is None:
-            from kinder_models.dynamic3d.utils import PyBulletSim
-            from pybullet_helpers.geometry import Pose
-
-            obj = state.get_object_from_name(self.bin_name)
-            bin_object = self._object_centric().get_object(self.bin_name)
-            pybullet_sim = PyBulletSim(state)
-            pybullet_sim.add_bin(
-                name=self.bin_name,
-                pose=Pose(
-                    tuple(state.get(obj, f) for f in ("x", "y", "z")),
-                    tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
-                ),
-                length=bin_object.length,
-                width=bin_object.width,
-                height=bin_object.height,
-                wall_thickness=bin_object.wall_thickness,
-            )
-        kwargs = {} if pybullet_sim is None else {"pybullet_sim": pybullet_sim}
-        if module == "tossing":
-            kwargs["init_constant_state"] = state
-        lifted = factory[module](self._env.action_space, **kwargs)
-        if key not in lifted:
-            raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
-        objects = tuple(state.get_object_from_name(name) for name in object_names)
-        controller = lifted[key].ground(objects)
+        controller = self._ground_controller(
+            module=module,
+            key=key,
+            object_names=object_names,
+            state=state,
+            pybullet_sim=pybullet_sim,
+        )
 
         try:
             controller.reset(state, params)
@@ -1303,6 +1305,111 @@ class KinderBackend(BaseModel):
             limit,
         )
         return ControllerRun(steps=limit, terminated=False)
+
+    def _ground_controller(
+        self,
+        *,
+        module: str,
+        key: str,
+        object_names: Sequence[str],
+        state: Any,
+        pybullet_sim: Any = None,
+    ) -> Any:
+        """One upstream controller, grounded on `state` and not yet reset.
+
+        The single place a controller is built, so a dispatched skill and
+        `pick_cube_plan_failure`'s dry run cannot come to differ in their collision
+        model: `pick_cube` plans in `_pick_collision_sim(state)` either way.
+        """
+        api = self.api()
+        factory = {
+            "tossing": api.tossing_controllers,
+            "shelf": api.shelf_controllers,
+        }
+        if module not in factory:
+            raise ValueError(f"unknown controller module {module!r}; known: {sorted(factory)}")
+        if module == "tossing" and key == "pick_cube" and pybullet_sim is None:
+            pybullet_sim = self._pick_collision_sim(state=state)
+        kwargs = {} if pybullet_sim is None else {"pybullet_sim": pybullet_sim}
+        if module == "tossing":
+            kwargs["init_constant_state"] = state
+        lifted = factory[module](self._env.action_space, **kwargs)
+        if key not in lifted:
+            raise ValueError(f"{module} has no controller {key!r}; known: {sorted(lifted)}")
+        objects = tuple(state.get_object_from_name(name) for name in object_names)
+        return lifted[key].ground(objects)
+
+    def _pick_collision_sim(self, *, state: Any) -> Any:
+        """The pick's planning scene: a PyBullet client built fresh from `state`, with
+        the bin added at the pose `state` gives it."""
+        from kinder_models.dynamic3d.utils import PyBulletSim
+        from pybullet_helpers.geometry import Pose
+
+        obj = state.get_object_from_name(self.bin_name)
+        bin_object = self._object_centric().get_object(self.bin_name)
+        pybullet_sim = PyBulletSim(state)
+        pybullet_sim.add_bin(
+            name=self.bin_name,
+            pose=Pose(
+                tuple(state.get(obj, f) for f in ("x", "y", "z")),
+                tuple(state.get(obj, f) for f in ("qx", "qy", "qz", "qw")),
+            ),
+            length=bin_object.length,
+            width=bin_object.width,
+            height=bin_object.height,
+            wall_thickness=bin_object.wall_thickness,
+        )
+        return pybullet_sim
+
+    def pick_cube_plan_failure(self, *, state: Any = None) -> str | None:
+        """Dry-run the pick controller's planning from `state` (default: the live one).
+
+        `None` when the controller finds a complete plan, else the reason it gave. This
+        is `run_pick_cube` up to and including `controller.reset` and nothing after it:
+        the same construction (`_ground_controller`), the same state, the same call. No
+        `env.step` is made, so MuJoCo is not advanced; the planning happens in a
+        PyBullet client of its own; and upstream seeds every planning call with a
+        constant and a generator local to that call, so no shared random stream moves
+        either.
+
+        Cached on the exact bytes of `state`: the verdict is a pure function of it.
+
+        The client is closed here rather than left to collection. A dispatched pick's
+        is released by `PyBulletSim`'s finalizer, but the controller class upstream
+        builds per grounding sits in a reference cycle, so that waits for the cyclic
+        collector -- measured at up to 22 clients alive at once across 400 dry runs.
+        `PyBulletSim.close()` runs that same finalizer once and marks it spent, so this
+        is not the double disconnect the module docstring warns against.
+        """
+        subject = self._require_state() if state is None else state
+        key = b"".join(
+            obj.name.encode() + b"\0" + np.asarray(subject[obj]).tobytes()
+            for obj in sorted(subject, key=lambda obj: obj.name)
+        )
+        if key in self._pick_plan_failures:
+            self._pick_plan_failures.move_to_end(key)
+            return self._pick_plan_failures[key]
+        pybullet_sim = self._pick_collision_sim(state=subject)
+        failure: str | None = None
+        try:
+            controller = self._ground_controller(
+                module="tossing",
+                key="pick_cube",
+                object_names=(self.robot_name, self.cube_name, self.barrier_name),
+                state=subject,
+                pybullet_sim=pybullet_sim,
+            )
+            controller.reset(subject, None)
+        except BaseException as exc:  # noqa: BLE001  (see `run_controller`)
+            if isinstance(exc, KeyboardInterrupt | SystemExit):
+                raise
+            failure = f"{type(exc).__name__}: {exc}"
+        finally:
+            pybullet_sim.close()
+        self._pick_plan_failures[key] = failure
+        while len(self._pick_plan_failures) > self.pick_plan_cache_size:
+            self._pick_plan_failures.popitem(last=False)
+        return failure
 
     def run_pick_cube(self) -> ControllerRun:
         """Run upstream's single floor-or-bin cube pickup controller.

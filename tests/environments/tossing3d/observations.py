@@ -114,11 +114,17 @@ def observation(
 # boundary atom -- see `bin_on_ground.py`), because every robot skill requires it.
 BIN_ON_GROUND_ATOM = ("BinOnGround", ("bin_0",))
 
+# The pick controller's planner finds a plan (`PickPlannable`, the other boundary atom
+# of this domain's own -- see `pick_plannable.py`). Present where the cube is in the
+# open on the robot's side and while it is held; absent once it is past the barrier.
+PICK_PLANNABLE_ATOM = ("PickPlannable", ("robot", "cube_0"))
+
 INITIAL_ATOMS = frozenset({
     ("HandEmpty", ("robot",)),
     ("OnGround", ("cube_0",)),
     ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
     BIN_ON_GROUND_ATOM,
+    PICK_PLANNABLE_ATOM,
 })
 
 # Mid-episode: the cube is grasped and lifted, still on the robot's side of the barrier.
@@ -126,6 +132,7 @@ HOLDING_ATOMS = frozenset({
     ("Holding", ("robot", "cube_0")),
     ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
     BIN_ON_GROUND_ATOM,
+    PICK_PLANNABLE_ATOM,
 })
 
 # After a scoring throw: the cube is at rest inside the region and the hand is empty.

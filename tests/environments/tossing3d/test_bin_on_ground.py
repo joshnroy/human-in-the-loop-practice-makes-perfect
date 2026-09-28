@@ -36,6 +36,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
@@ -208,6 +209,7 @@ def _pickable_atoms(*, provider: Tossing3DSkillProvider) -> frozenset[GroundAtom
         GroundAtom(predicate=CUBE_AT_SIDE, objects=(cube, barrier, Tossing3DSides.robot)),
         GroundAtom(predicate=BIN_AT_SIDE, objects=(bin_, barrier, Tossing3DSides.opposite)),
         GroundAtom(predicate=GRASP_CLEAR, objects=(cube, bin_)),
+        GroundAtom(predicate=PICK_PLANNABLE, objects=(robot, cube)),
         GroundAtom(predicate=PICKUP_UNBLOCKED, objects=(cube,)),
     })
 
@@ -386,10 +388,11 @@ def test_the_live_exp21_tipped_state_leaves_only_resets_to_both_planners() -> No
         atoms = SkillGrounder.abstract_state(
             state=tipped, objects=provider.objects(), predicates=provider.predicates()
         )
-        # The rest of PickCube's preconditions still hold -- the EXP-21 trap. GraspClear
-        # no longer does: the cube lies within the (tipped) bin's footprint 0.046 m
-        # from an inner wall plane, under IN_BIN_GRASP_CLEARANCE_M, so two
-        # preconditions now block the pick rather than BinOnGround alone.
+        # The rest of PickCube's preconditions still hold -- the EXP-21 trap -- but
+        # for PickPlannable: the pick controller's own planner finds no grasp under
+        # the tipped bin's wall, so two preconditions block the pick rather than
+        # BinOnGround alone.
+        assert not PICK_PLANNABLE.holds(tipped, (env.robot, env.cube))
         pick_preconditions_but_bin = {atom.predicate.name for atom in atoms} >= {
             "HandEmpty",
             "OnGround",

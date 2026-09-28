@@ -1792,6 +1792,7 @@ def test_tossing3d_plans_a_pick_retry_after_an_observed_refusal() -> None:
         IN_BIN,
         NOT_HOLDING,
         ON_GROUND,
+        PICK_PLANNABLE,
         ROBOT_AT_SIDE,
     )
     from hitl_pmp.environments.tossing3d.sides import Tossing3DSides
@@ -1808,6 +1809,7 @@ def test_tossing3d_plans_a_pick_retry_after_an_observed_refusal() -> None:
         GroundAtom(predicate=CUBE_AT_SIDE, objects=(cube, barrier, Tossing3DSides.robot)),
         GroundAtom(predicate=BIN_AT_SIDE, objects=(bin_, barrier, Tossing3DSides.opposite)),
         GroundAtom(predicate=GRASP_CLEAR, objects=(cube, bin_)),
+        GroundAtom(predicate=PICK_PLANNABLE, objects=(robot, cube)),
         GroundAtom(predicate=BIN_ON_GROUND, objects=(bin_,)),
         # Deliberately NOT PickupUnblocked: the refusal was observed.
     })

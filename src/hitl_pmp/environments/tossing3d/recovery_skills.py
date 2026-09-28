@@ -21,6 +21,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_PLANNABLE,
     ROBOT_AT_SIDE,
     Tossing3DAtoms,
 )
@@ -68,13 +69,18 @@ class SameSideSkills:
     # Every robot skill needs the bin upright on the floor (see `predicates.BIN_ON_GROUND`).
     _bin_on_ground: ClassVar[LiftedAtom] = LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,))
     _closed: ClassVar[LiftedAtom] = LiftedAtom(predicate=CLOSED_EMPTY, variables=(_robot, _cube))
+    # All three picks dispatch through the barrier layout's one pick controller, so
+    # each requires that its planner finds a plan (see `predicates.PICK_PLANNABLE`).
+    _plannable: ClassVar[LiftedAtom] = LiftedAtom(
+        predicate=PICK_PLANNABLE, variables=(_robot, _cube)
+    )
 
     _rim: ClassVar[LiftedAtom] = LiftedAtom(predicate=ON_BIN_RIM, variables=(_cube, _bin))
 
     PICK_RIM: ClassVar[Skill] = Skill(
         name="PickCubeFromRim",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _rim, _bin_on_ground}) | _same_robot_side,
+        preconditions=frozenset({_empty, _rim, _bin_on_ground, _plannable}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,
@@ -88,7 +94,7 @@ class SameSideSkills:
     PICK_FLOOR: ClassVar[Skill] = Skill(
         name="PickCubeFromFloor",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _floor, _bin_on_ground}) | _same_robot_side,
+        preconditions=frozenset({_empty, _floor, _bin_on_ground, _plannable}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,
@@ -101,7 +107,7 @@ class SameSideSkills:
     PICK_BIN: ClassVar[Skill] = Skill(
         name="PickCubeFromBin",
         parameters=(_robot, _cube, _bin, _barrier, _side),
-        preconditions=frozenset({_empty, _inside, _bin_on_ground}) | _same_robot_side,
+        preconditions=frozenset({_empty, _inside, _bin_on_ground, _plannable}) | _same_robot_side,
         add_effects=frozenset({_held}),
         delete_effects=frozenset({
             _empty,

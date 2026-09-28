@@ -823,15 +823,18 @@ def test_weighted_belief_refit_preserves_rate_weights_without_new_outcomes() -> 
 
 
 def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgetting_it() -> None:
-    """The toss operator forgets `GraspClear` (a fact the physics decides, re-read from
-    observation), but imagination used to drop the atom -- i.e. claim the landed cube
-    is NOT graspable -- so after any imagined success only a reset could follow. In
-    real practice `GraspClear` held after 233/430 toss successes. An ignored predicate
-    the operator does not re-assert is left as it was; one it re-asserts (`CubeAtSide`
-    here, both side atoms for a reset) is still replaced, not duplicated."""
+    """The toss operator forgets `GraspClear` and `PickPlannable` (facts the physics
+    decides, re-read from observation), but imagination used to drop such an atom --
+    i.e. claim the landed cube is NOT pickable -- so after any imagined success only a
+    reset could follow. In real practice `GraspClear` held after 233/430 toss
+    successes. An ignored predicate the operator does not re-assert is left as it was;
+    one it re-asserts (`CubeAtSide` here, both side atoms for a reset) is still
+    replaced, not duplicated. `PickPlannable` is what the pick requires now, and it is
+    carried as present while the cube is held for exactly this forecast."""
     from hitl_pmp.environments.tossing3d.predicates import (
         CUBE_AT_SIDE,
         GRASP_CLEAR,
+        PICK_PLANNABLE,
         PICKUP_UNBLOCKED,
     )
     from hitl_pmp.methods.belief_space.tossing3d_transition_model import apply_success_effects
@@ -856,6 +859,7 @@ def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgettin
         | {robot_side}
         | {
             GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)),
+            GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)),
             GroundAtom(
                 predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, Tossing3DSides.opposite)
             ),
@@ -864,6 +868,7 @@ def test_an_imagined_toss_success_leaves_the_cube_pickable_rather_than_forgettin
     effects = {g: (g.add_effects, g.delete_effects, g.ignore_effects) for g in model.ground_skills}
     landed = apply_success_effects(true_atoms=held, ground_skill=toss, effects=effects)
     assert GroundAtom(predicate=GRASP_CLEAR, objects=(env.cube, env.bin)) in landed
+    assert GroundAtom(predicate=PICK_PLANNABLE, objects=(env.robot, env.cube)) in landed
     assert GroundAtom(predicate=PICKUP_UNBLOCKED, objects=(env.cube,)) in landed
     assert {a for a in landed if a.predicate == CUBE_AT_SIDE} == {
         GroundAtom(predicate=CUBE_AT_SIDE, objects=(env.cube, env.barrier, Tossing3DSides.robot))

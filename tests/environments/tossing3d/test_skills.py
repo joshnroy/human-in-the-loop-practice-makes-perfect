@@ -36,6 +36,7 @@ from hitl_pmp.environments.tossing3d.predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
@@ -219,8 +220,8 @@ def test_the_two_operator_models_are_exactly_as_declared() -> None:
             variables=(_SKILLS._cube, _SKILLS._barrier, _SKILLS._side),
         ),
         LiftedAtom(
-            predicate=GRASP_CLEAR,
-            variables=(_SKILLS._cube, _SKILLS._bin),
+            predicate=PICK_PLANNABLE,
+            variables=(_SKILLS._robot, _SKILLS._cube),
         ),
         LiftedAtom(predicate=BIN_ON_GROUND, variables=(_SKILLS._bin,)),
     })
@@ -274,6 +275,7 @@ def test_only_toss_replaces_a_functional_side_fact() -> None:
     assert _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects == frozenset({
         CUBE_AT_SIDE,
         GRASP_CLEAR,
+        PICK_PLANNABLE,
     })
 
 
@@ -318,6 +320,7 @@ def test_integration_fast_downward_plans_the_two_skill_solve() -> None:
         GRASP_CLEAR,
         PICKUP_UNBLOCKED,
         BIN_ON_GROUND,
+        PICK_PLANNABLE,
     )
     init_atoms = SkillGrounder.abstract_state(
         state=state(abstract_atoms=INITIAL_ATOMS), objects=objects, predicates=predicates
@@ -517,6 +520,7 @@ def test_same_side_planner_recovers_from_each_landing(*, inside: bool, closed: b
         ("OnGround", ("cube_0",)),
         ("MovableIsDownX", ("cube_0", "cuboid_barrier")),
         ("BinOnGround", ("bin_0",)),
+        ("PickPlannable", ("robot", "cube_0")),
     }
     if inside:
         atoms.add(("MovableInGoalRegion", ("cube_0",)))
@@ -609,20 +613,19 @@ def test_rim_support_uses_bin_frame_and_rejects_non_support(*, yaw: float) -> No
     assert not RimGeometry.supported(cube=cube, bin_=bin_ | tipped, wall_thickness=0.01)
 
 
-def test_pick_requires_grasp_clear_and_the_toss_leaves_it_to_observation() -> None:
-    """The GraspClear gate: a pick must name the bin whose walls it measures, the toss
-    cannot promise the landing is graspable (functional update, like CubeAtSide), and
-    the paid reset re-establishes it -- its cube region sits >= 1.7 m from either bin
-    destination region, so a reset cube is clear by construction."""
+def test_grasp_clear_is_observed_state_and_the_toss_leaves_it_to_observation() -> None:
+    """GraspClear is no longer a gate: PickPlannable replaced it in the pick (see
+    test_pick_plannable.py), so no skill conditions on it. It stays in the vocabulary
+    as observed state -- the toss cannot promise the landing is clear of the walls
+    (functional update, like CubeAtSide), and the paid reset re-establishes it, its
+    cube region sitting >= 1.7 m from either bin destination region."""
     from hitl_pmp.environments.tossing3d.predicates import GRASP_CLEAR
     from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
 
     pick = _SKILLS.PICK_CUBE
     assert _SKILLS._bin in pick.parameters
-    assert (
-        LiftedAtom(predicate=GRASP_CLEAR, variables=(_SKILLS._cube, _SKILLS._bin))
-        in pick.preconditions
-    )
+    for skill in _every_skill():
+        assert not any(atom.predicate == GRASP_CLEAR for atom in skill.preconditions), skill.name
     assert GRASP_CLEAR in _SKILLS.MOVE_TO_TOSS_LOCATION_AND_TOSS.ignore_effects
     provider = Tossing3DSkillProvider(env=_ENV)
     assert GRASP_CLEAR in provider.predicates()
@@ -650,7 +653,7 @@ def test_an_observed_refusal_leaves_the_pick_applicable_and_movers_restore_it() 
         for atom in SkillGrounder.all_possible_ground_atoms(
             objects=provider.objects(), predicates=provider.predicates()
         )
-        if atom.predicate in {HAND_EMPTY, ON_GROUND, GRASP_CLEAR, BIN_ON_GROUND}
+        if atom.predicate in {HAND_EMPTY, ON_GROUND, PICK_PLANNABLE, BIN_ON_GROUND}
         or (
             atom.predicate in {ROBOT_AT_SIDE, CUBE_AT_SIDE}
             and atom.objects[-1] == Tossing3DSides.robot

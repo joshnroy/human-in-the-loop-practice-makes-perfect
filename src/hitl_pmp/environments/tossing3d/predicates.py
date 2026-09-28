@@ -75,6 +75,7 @@ from hitl_pmp.core.problem.tasks.types import Predicate
 
 from .bin_on_ground import KB_BIN_ON_GROUND
 from .environment import Tossing3DEnvironment
+from .pick_plannable import KB_PICK_PLANNABLE
 from .sides import Tossing3DSides
 from .types import KB_PICKUP_BLOCKED
 
@@ -205,6 +206,20 @@ BIN_ON_GROUND = Predicate(
     types=(Tossing3DEnvironment.bin_type,),
     holds=lambda state, objects: Tossing3DAtoms.holds(
         state=state, name=KB_BIN_ON_GROUND, objects=(objects[0],)
+    ),
+)
+
+# The pick controller's own planner finds a plan from this state: a dry run of its
+# grasp, base and arm planning, made at the boundary (`KinderBackend.abstract_atoms`)
+# and looked up here. It is what PickCube requires in place of `GraspClear`: a fitted
+# clearance describes the one geometry it was fitted to, and the planner it
+# approximates is available to ask. See `pick_plannable.py` for when the dry run is
+# made and what the atom is when it is not.
+PICK_PLANNABLE = Predicate(
+    name="PickPlannable",
+    types=(Tossing3DEnvironment.robot_type, Tossing3DEnvironment.cube_type),
+    holds=lambda state, objects: Tossing3DAtoms.holds(
+        state=state, name=KB_PICK_PLANNABLE, objects=(objects[0], objects[1])
     ),
 )
 

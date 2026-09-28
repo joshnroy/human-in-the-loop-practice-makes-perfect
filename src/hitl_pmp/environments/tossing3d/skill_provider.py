@@ -32,6 +32,7 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
@@ -97,6 +98,7 @@ class Tossing3DSkillProvider(SkillProvider):
                 BIN_AT_SIDE,
                 PICKUP_UNBLOCKED,
                 BIN_ON_GROUND,
+                PICK_PLANNABLE,
                 # Declared here for the same reason the side atoms are: the shared
                 # toss operator forgets GraspClear (ignore_effects), and a forgetting
                 # effect must name a declared predicate in every domain that writes
@@ -113,9 +115,13 @@ class Tossing3DSkillProvider(SkillProvider):
             ROBOT_AT_SIDE,
             CUBE_AT_SIDE,
             BIN_AT_SIDE,
+            # Observed state only since PickPlannable replaced it in the pick: no
+            # skill conditions on it, the toss still forgets it and the resets still
+            # add it.
             GRASP_CLEAR,
             PICKUP_UNBLOCKED,
             BIN_ON_GROUND,
+            PICK_PLANNABLE,
         )
 
     def types(self) -> tuple[Type, ...]:
@@ -252,9 +258,12 @@ class Tossing3DSkillProvider(SkillProvider):
                 LiftedAtom(predicate=NOT_HOLDING, variables=(robot, cube)),
                 # The reset's cube region (blocks_init_region, x in [0.5, 0.75]) sits
                 # >= 1.7 m from either bin destination region, so a reset cube clears
-                # the walls by construction -- this add effect is what lets a plan
-                # recover from a not-GraspClear landing by paying for the reset.
+                # the walls by construction.
                 LiftedAtom(predicate=GRASP_CLEAR, variables=(cube, bin_)),
+                # The reset puts the cube in its spawn strip, in the open and on the
+                # robot's side. This add effect is what lets a plan recover from a
+                # cube the pick controller cannot plan for by paying for the reset.
+                LiftedAtom(predicate=PICK_PLANNABLE, variables=(robot, cube)),
                 # Relocating the cube physically heals every observed refusal
                 # instance, so the reset may promise the channel clear.
                 LiftedAtom(predicate=PICKUP_UNBLOCKED, variables=(cube,)),

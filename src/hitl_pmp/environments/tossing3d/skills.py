@@ -113,6 +113,7 @@ from .predicates import (
     IN_BIN,
     NOT_HOLDING,
     ON_GROUND,
+    PICK_PLANNABLE,
     PICKUP_UNBLOCKED,
     ROBOT_AT_SIDE,
 )
@@ -164,8 +165,8 @@ class Tossing3DSkills:
         # Upstream's own object order for `pick_cube`: (robot, cube, barrier). The
         # barrier is unused by the controller and present so the operator can say the
         # cube is still on this side of it. The bin comes last, appended after #346's
-        # side for the same reason the side was: the GraspClear gate has to name the
-        # bin whose walls it measures, and appending preserves upstream's prefix order.
+        # side for the same reason the side was: BinOnGround has to name the bin, and
+        # appending preserves upstream's prefix order.
         parameters=(_robot, _cube, _barrier, _side, _bin),
         preconditions=frozenset({
             LiftedAtom(predicate=HAND_EMPTY, variables=(_robot,)),
@@ -173,17 +174,17 @@ class Tossing3DSkills:
             # The barrier is one-way: see this module's docstring, choice 1.
             LiftedAtom(predicate=ROBOT_AT_SIDE, variables=(_robot, _barrier, _side)),
             LiftedAtom(predicate=CUBE_AT_SIDE, variables=(_cube, _barrier, _side)),
-            # The grasp planner refuses a cube whose faces sit within
-            # GRASP_CLEARANCE_M of the bin's wall band, and retrying such a pick is
-            # the degenerate loop the 2026-09-22 trap diagnosis pinned -- gate it
-            # symbolically so recovery (the paid reset) becomes the plan instead.
-            LiftedAtom(predicate=GRASP_CLEAR, variables=(_cube, _bin)),
-            # A top-down grasp assumes the bin upright: GraspClear measures a fixed
-            # upright footprint, and a bin on its side puts a wall above the cube.
+            # The controller's own planner finds a plan from here. A pick it would
+            # refuse at dispatch moves nothing, so retrying it is a loop the planners
+            # never leave; without this atom only the paid reset applies. It replaces
+            # GraspClear, whose fitted clearances each described one refusal geometry
+            # and blocked cubes the controller does pick.
+            LiftedAtom(predicate=PICK_PLANNABLE, variables=(_robot, _cube)),
+            # Every robot skill requires the bin upright on the floor.
             LiftedAtom(predicate=BIN_ON_GROUND, variables=(_bin,)),
             # Deliberately NOT PickupUnblocked: an observed refusal is information,
-            # not a mask. Retrying, tossing or paying for a reset is the planner's
-            # choice, and a refused retry is one more failed attempt.
+            # not a mask. A pick that was planned and then failed while executing
+            # stays retryable, and is one more failed attempt.
         }),
         add_effects=frozenset({LiftedAtom(predicate=HOLDING, variables=(_robot, _cube))}),
         delete_effects=frozenset({
@@ -218,13 +219,14 @@ class Tossing3DSkills:
         delete_effects=frozenset({
             LiftedAtom(predicate=HOLDING, variables=(_robot, _cube)),
         }),
-        # GraspClear joins CubeAtSide as a functional update: whether the landed cube
-        # is graspable is a fact of the physics, re-read from observation rather than
-        # promised by the operator model. BinOnGround is deliberately neither deleted
-        # nor ignored: a toss can tip the bin, but modelling that would make every
-        # imagined post-toss plan require a reset, so the planners assume the bin stays
-        # upright and replan from the observed state when it does not.
-        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR}),
+        # GraspClear and PickPlannable join CubeAtSide as functional updates: whether
+        # the landed cube can be picked is a fact of the physics, re-read from
+        # observation rather than promised by the operator model. BinOnGround is
+        # deliberately neither deleted nor ignored: a toss can tip the bin, but
+        # modelling that would make every imagined post-toss plan require a reset, so
+        # the planners assume the bin stays upright and replan from the observed state
+        # when it does not.
+        ignore_effects=frozenset({CUBE_AT_SIDE, GRASP_CLEAR, PICK_PLANNABLE}),
         # [standoff, speed, release]; the stand direction is the controller's choice.
         param_dim=3,
         practice_cost=1.0,

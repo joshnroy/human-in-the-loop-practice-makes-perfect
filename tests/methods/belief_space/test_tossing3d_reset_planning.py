@@ -134,6 +134,7 @@ def test_a_reset_that_changes_no_atom_is_still_offered(*, gripper: str) -> None:
             "CubeAtSide",
             "BinAtSide",
             "GraspClear",
+            "PickPlannable",
             "PickupUnblocked",
             "BinOnGround",
         )
@@ -258,6 +259,7 @@ def test_an_observed_pickup_refusal_leaves_the_pick_and_every_reset_available() 
             "CubeAtSide",
             "BinAtSide",
             "GraspClear",
+            "PickPlannable",
             "BinOnGround",
             # Deliberately NOT PickupUnblocked: the refusal was observed.
         )
