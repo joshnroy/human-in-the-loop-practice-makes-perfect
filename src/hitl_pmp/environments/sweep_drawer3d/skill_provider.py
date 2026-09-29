@@ -17,6 +17,23 @@ class SweepDrawerSkillProvider(SkillProvider):
     human_reset_enabled: bool = True
     human_reset_practice_cost: float = Field(default=1.0, ge=0.0)
     robot_practice_costs: dict[str, float] = Field(default_factory=dict)
+    stock_parameter_bounds: dict[str, tuple[tuple[float, float], tuple[float, float]]] = Field(
+        default_factory=lambda: {
+            "OpenDrawer": ((0.65, 0.95), (-13 * np.pi / 12, -11 * np.pi / 12)),
+            "PickWiper": ((0.55, 0.85), (-13 * np.pi / 12, -11 * np.pi / 12)),
+            "Sweep": ((0.40, 0.70), (-13 * np.pi / 12, -11 * np.pi / 12)),
+        }
+    )
+
+    def validate_trainable_support(self) -> None:
+        """Fail closed on missing or degenerate approved learning supports."""
+        if set(self.stock_parameter_bounds) != set(SweepSymbols.TRAINABLE):
+            raise ValueError("Expected exactly the three trainable stock supports")
+        for name, bounds in self.stock_parameter_bounds.items():
+            if any(not np.isfinite([lo, hi]).all() or lo >= hi for lo, hi in bounds):
+                raise ValueError(f"Nonfinite or degenerate support for {name}")
+            if bounds[0][0] <= 0:
+                raise ValueError(f"Nonpositive distance support for {name}")
 
     def skills(self) -> tuple[Skill, ...]:
         return SweepSymbols.skills(costs=self.robot_practice_costs)
@@ -38,13 +55,8 @@ class SweepDrawerSkillProvider(SkillProvider):
         name = ground_skill.skill.name
         if name not in SweepSymbols.TRAINABLE:
             return np.empty(0)
-        from kinder_models.dynamic3d.sweep3D import parameterized_skills as stock
-
-        bounds = {
-            "OpenDrawer": (stock.OPEN_DRAWER_DISTANCE_BOUNDS, stock.OPEN_DRAWER_ROT_BOUNDS),
-            "PickWiper": (stock.PICK_WIPER_DISTANCE_BOUNDS, stock.PICK_WIPER_ROT_BOUNDS),
-            "Sweep": (stock.SWEEP_DISTANCE_BOUNDS, stock.SWEEP_ROT_BOUNDS),
-        }[name]
+        self.validate_trainable_support()
+        bounds = self.stock_parameter_bounds[name]
         return np.array([rng.uniform(*interval) for interval in bounds])
 
     def compute_action(

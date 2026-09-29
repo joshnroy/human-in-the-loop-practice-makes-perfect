@@ -80,7 +80,10 @@ class SweepDrawerCli:
             human_reset_enabled=not args.no_human_reset,
             human_reset_practice_cost=args.human_reset_practice_cost,
             robot_practice_costs=manifest["robot_practice_costs"],
+            **({"stock_parameter_bounds": manifest["stock_parameter_bounds"]}
+               if "stock_parameter_bounds" in manifest else {}),
         )
+        provider.validate_trainable_support()
         context = DomainContext(
             env=practice, skill_provider=provider, oracle=SweepDrawerOracle(env=practice)
         )

@@ -14,14 +14,17 @@ from hitl_pmp.environments.sweep_drawer3d.symbolic import SweepSymbols
 
 class Calibration:
     @staticmethod
-    def execute(*, env, provider, name, rng):
+    def execute(*, env, provider, name, rng, fixed_params=None):
         skill = next(s for s in provider.skills() if s.name == name)
         ground = GroundSkill(skill=skill, objects=(SweepSymbols.SCENE,))
         if not all(
             a.predicate.holds(env.get_current_state(), a.objects) for a in ground.preconditions
         ):
             return None
-        params = provider.sample_params(ground_skill=ground, rng=rng)
+        params = (
+            provider.sample_params(ground_skill=ground, rng=rng)
+            if fixed_params is None else np.asarray(fixed_params, dtype=float)
+        )
         env.take_action(
             action=provider.compute_action(
                 ground_skill=ground, params=params, state=env.get_current_state()
@@ -50,10 +53,15 @@ class Calibration:
             "parameter_rng_seed": 20260928,
             "estimator": "Beta(1,1) posterior mean: (successes+1)/(attempts+2)",
             "preparation": (
-                "Sweep only: fixed OpenResetDrawer then PickWiper using rng0; "
+                "Sweep only: fixed OpenResetDrawer then nominal PickWiper(.7,-pi); "
                 "failed preconditions logged, no retry or seed replacement"
             ),
             "prior_use": "frozen random competence in the existing ModelB domain descriptor",
+            "approved_parameter_bounds": {
+                "OpenDrawer": [[.65, .95], [-13*np.pi/12, -11*np.pi/12]],
+                "PickWiper": [[.55, .85], [-13*np.pi/12, -11*np.pi/12]],
+                "Sweep": [[.40, .70], [-13*np.pi/12, -11*np.pi/12]],
+            },
         }
         (args.output / "plan.json").write_text(json.dumps(plan, indent=2))
         rng = np.random.default_rng(plan["parameter_rng_seed"])
@@ -69,10 +77,12 @@ class Calibration:
                 try:
                     env.hard_reset()
                     provider = SweepDrawerSkillProvider(env=env, human_reset_enabled=False)
+                    provider.validate_trainable_support()
                     if args.skill == "Sweep":
                         for name in ("OpenResetDrawer", "PickWiper"):
                             result = Calibration.execute(
-                                env=env, provider=provider, name=name, rng=np.random.default_rng(0)
+                                env=env, provider=provider, name=name, rng=np.random.default_rng(0),
+                                fixed_params=(.7, -np.pi) if name == "PickWiper" else (),
                             )
                             record["preparation"].append(result)
                     record["attempt"] = Calibration.execute(

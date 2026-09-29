@@ -69,12 +69,12 @@
     "pomdp_learning_time_scale": "1.0",
     "pomdp_linear_cost_lambda": "3e-06",
     "pomdp_log_full_search_tree": "False",
-    "pomdp_max_search_iterations": "100",
+    "pomdp_max_search_iterations": 1000,
     "pomdp_num_particles": "1024",
     "pomdp_num_samples": "100",
     "pomdp_observation_probability_weight": "0.0",
     "pomdp_search_depth": 20,
-    "pomdp_solver": "expectimax"
+    "pomdp_solver": "determinized_astar"
   },
   "cost_calibration": {
     "frozen_before_experiment_scores": true,
@@ -157,10 +157,58 @@
   "readiness_gates": [
     "physical_wiper_fix_and_valid_start_recovery_checked",
     "shared_human_robot_contracts_and_no_auto_reset_verified",
-    "complete_exact_depth20_search_value_action_verified",
+    "approved_determinized_runtime_and_structural_recovery_path_checked",
     "random_stock_competence_calibration_frozen",
     "native_costs_manifest_and_source_commit_frozen",
     "draft_stack_PR_and_own_pinned_dependencies_verified",
     "all8first_seed_runs_pass_measurement_checks_before_expanding3seeds"
-  ]
+  ],
+  "solver_authorization": "Josh explicitly approved determinized A* only on September29 overnight: approximate sampled successor search,1000 queue pops/decision,20 remaining physical actions; replaces exact expectimax.",
+  "stock_parameter_bounds": {
+    "OpenDrawer": [
+      [
+        0.65,
+        0.95
+      ],
+      [
+        -3.4033920413889427,
+        -2.8797932657906435
+      ]
+    ],
+    "PickWiper": [
+      [
+        0.55,
+        0.85
+      ],
+      [
+        -3.4033920413889427,
+        -2.8797932657906435
+      ]
+    ],
+    "Sweep": [
+      [
+        0.4,
+        0.7
+      ],
+      [
+        -3.4033920413889427,
+        -2.8797932657906435
+      ]
+    ]
+  },
+  "launch_order": [
+    [
+      "ees-low",
+      "ees-high",
+      "pomdp-low",
+      "pomdp-high"
+    ],
+    [
+      "ees-mid",
+      "ees-nohuman",
+      "pomdp-mid",
+      "pomdp-nohuman"
+    ]
+  ],
+  "solver_coverage_caveat": "Structural13-action reset is applicable and reaches shared target. Synthetic1000-pop diagnostics seed0..2 finish0.461\u20130.480s but sample0/3 complete robot-only resets; approximation does not guarantee recovery exploration or a cost crossover."
 }

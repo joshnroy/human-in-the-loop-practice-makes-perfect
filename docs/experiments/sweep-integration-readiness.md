@@ -1,6 +1,6 @@
-# Sweep integration checkpoint (not pilot-ready)
+# Sweep integration checkpoint (not launch-ready)
 
-## Current checkpoint, September29 00:15 EDT
+## Historical checkpoint, September29 00:15 EDT
 
 The integrated contract/exact-search suite passes57/57 tests at commit4d134209; earlier EES baseline coverage passed70/70. Explicit human reset after holding the wiper restores the shared target. EES smoke v2 completes2/2cycles,3/3evaluation checkpoints and4/4physical actions with1/1practice initialization and0human interventions. Those actions alternate OpenResetDrawer/CloseDrawer; short-smoke success is plumbing evidence, not evidence that the stock samplers learned. Full declared-start satisfaction is logged separately from partial robot recovery.
 
@@ -40,3 +40,9 @@ Verification:27/28 targeted tests pass;1/28 strict expected failure documents fu
 - Freeze calibrated random-exploration competence, native cost levels, and complete horizon coverage before the8-arm pilot. Candidate numerical proposals are not pilot results.
 
 No Sweep learning experiment has been launched. Do not infer readiness from successful imports or passing isolated tests.
+
+## Current checkpoint, September29 approximately00:34 EDT
+
+New explicit overnight authorization resolves support and solver decisions. Approved support implementation passes2/2 tests, including24/24 distinct bounded draws per stock skill. Three capped approved-calibration services are running24contexts each; singleton-support diagnostics remain preserved and excluded. Physical controller89b8b53f is integrated (local712ae3a4),6/6 physical regressions pass; fresh valid seeds0,1,2 are3/3 successful full resets while the full31-valid-seed remeasurement continues separately.
+
+Determinized1000-pop diagnostics complete in0.461–0.480s with20 remaining actions. A structural13-action robot reset reaches the target, but0/3 sampled diagnostic trees contain a complete robot reset. This approximation limitation is recorded and will not be hidden or fixed by forcing choices. Remaining gates: calibration summaries, current valid-start controller remeasurement, both-method end-to-end checks, frozen manifest/pins and draft stack PR. No Sweep learning jobs have launched.
