@@ -36,6 +36,7 @@ from .expectimax import ExpectimaxPlanner
 from .failure_effect_model import EmpiricalFailureEffects
 from .planner import BeliefSpacePlanner
 from .sweep_deployment_model import SweepDeploymentExpectation
+from .sweep_expectimax import SweepExpectimaxPlanner
 from .sweep_model import SweepPracticeModel
 from .sweep_observation_model import SweepBeliefs
 from .tossing3d_constants import LEARNING_RATE_PROCESS_NOISE_STD
@@ -73,7 +74,7 @@ def make_belief_space_planner(
     if planner is not None:
         return planner
     if solver == "expectimax":
-        return ExpectimaxPlanner(
+        return SweepExpectimaxPlanner(
             use_model_j=True,
             observation_probability_weight=observation_probability_weight,
         )

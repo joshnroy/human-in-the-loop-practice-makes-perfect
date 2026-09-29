@@ -1,5 +1,7 @@
 """Provider-owned effects and learned failure effects for Sweep practice."""
 
+from collections.abc import Callable
+
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
@@ -33,6 +35,7 @@ class SweepTransitions:
         random_competences: dict[str, float],
         failure_effect_counts: tuple[FailureEffectCount, ...] = (),
         competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
+        imagined_update: Callable[..., Tossing3DBeliefState] | None = None,
     ) -> tuple[TransitionBranch, ...]:
         assert action in ground_skills and action.preconditions <= environment_state.true_atoms
         name = action.skill.name
@@ -76,15 +79,26 @@ class SweepTransitions:
                 probability = choice_probability * outcome_probability
                 if probability <= 0:
                     continue
-                next_state = model.observe_outcome(
-                    state=charged,
-                    success=success,
-                    was_random_exploration=random,
-                    resample=False,
-                    condition_competence=competence_evidence.admits(consultation=consultation),
-                )
-                if trainable:
-                    next_state = model.observe_training_example(state=next_state, success=success)
+                if imagined_update is not None:
+                    next_state = imagined_update(
+                        state=charged,
+                        action=action,
+                        success=success,
+                        was_random_exploration=random,
+                        condition_competence=competence_evidence.admits(consultation=consultation),
+                    )
+                else:
+                    next_state = model.observe_outcome(
+                        state=charged,
+                        success=success,
+                        was_random_exploration=random,
+                        resample=False,
+                        condition_competence=competence_evidence.admits(consultation=consultation),
+                    )
+                    if trainable:
+                        next_state = model.observe_training_example(
+                            state=next_state, success=success
+                        )
                 successors = (
                     (
                         (

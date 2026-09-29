@@ -402,3 +402,325 @@ def test_canonical_exp22c_grid_engine_is_forwarded_without_changing_cost_prior()
         assert belief.state_count == 25 * 16
         assert belief.cost_belief.num_particles == 1024
     assert method.pomdp_planner.observation_probability_weight == 0.0
+
+
+def test_factored_imagined_update_reuses_only_matching_skill_evidence(*, monkeypatch):
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.tossing3d_observation_model import SkillBeliefModel
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+    from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+
+    skills, initial, goal = _chain()
+    state = Tossing3DBeliefState(
+        skill_beliefs={s.skill.name: _belief(values=(0.2, 0.8)) for s in skills}
+    )
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=(),
+        random_competences={},
+        deployment=SweepDeploymentExpectation(
+            ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=5
+        ),
+        linear_cost_lambda=0.01,
+    )
+    calls = []
+    original = SkillBeliefModel.observe_outcome
+
+    def counted(self, **kwargs):  # noqa: PLR0917
+        calls.append(kwargs["success"])
+        return original(self, **kwargs)
+
+    monkeypatch.setattr(SkillBeliefModel, "observe_outcome", counted)
+
+    def outcomes(*, state):
+        return model.outcomes(
+            environment_state=make_tossing3d_search_state(state=state, true_atoms=initial),
+            state=state,
+            action=skills[0],
+        )
+
+    first = outcomes(state=state)
+    changed = state.model_copy(
+        update={
+            "accumulated_cost": 7.0,
+            "skill_beliefs": {**state.skill_beliefs, "Sweep": _belief(values=(0.3,))},
+            "pending_examples": {"Sweep": 4},
+        }
+    )
+    second = outcomes(state=changed)
+    assert calls == [True, False]
+    for (p1, b1, a1), (p2, b2, a2) in zip(first, second, strict=True):
+        assert (p1, a1) == (p2, a2)
+        assert b1.skill_beliefs["OpenDrawer"] == b2.skill_beliefs["OpenDrawer"]
+        assert b2.skill_beliefs["Sweep"] == changed.skill_beliefs["Sweep"]
+        assert b2.pending_examples == {"Sweep": 4, "OpenDrawer": 1}
+        assert b2.accumulated_cost == b1.accumulated_cost + 7
+    changed_evidence = changed.model_copy(
+        update={"skill_beliefs": {**changed.skill_beliefs, "OpenDrawer": _belief(values=(0.4,))}}
+    )
+    outcomes(state=changed_evidence)
+    assert calls == [True, False, True, False]
+
+
+@pytest.mark.parametrize("engine", ["particle", "grid"])
+@pytest.mark.parametrize("depth", [0, 1, 3])
+def test_exact_caches_preserve_root_choice_and_all_action_values(*, engine, depth):
+    from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+    from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.sweep_observation_model import SweepBeliefs
+    from hitl_pmp.methods.belief_space.sweep_transition_model import SweepTransitions
+    from hitl_pmp.methods.belief_space.tossing3d_observation_model import refit_belief_state
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+    from hitl_pmp.methods.belief_space.types.belief_state import SamplerTrainingState
+    from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
+
+    class ReferenceModel(SweepPracticeModel):
+        def outcomes(self, *, environment_state, state, action):
+            return SweepTransitions.outcomes(
+                environment_state=environment_state,
+                state=state,
+                action=action,
+                ground_skills=self.ground_skills,
+                effects=self._effects,
+                exploration_epsilon=self.exploration_epsilon,
+                trainable_skill_names=self.trainable_skill_names,
+                human_skill_names=self.human_skill_names,
+                random_competences=self.random_competences,
+                failure_effect_counts=self.failure_effect_counts,
+                competence_evidence=self.competence_evidence,
+            )
+
+        def J(self, *, belief_state, summed_cost, num_samples):
+            projected = refit_belief_state(state=belief_state)
+            value = self.deployment.evaluate(beliefs=projected.skill_beliefs)
+            return self.G(policy_value=value, summed_cost=summed_cost)
+
+        def search_cache_key(self, **kwargs):
+            # Disable the search transposition table as well as the model caches.
+            return object()
+
+    skills, initial, goal = _chain()
+    names = tuple(s.skill.name for s in skills)
+    state = SweepBeliefs.prior(
+        skill_names=names,
+        trainable_skill_names=names,
+        seed=3,
+        num_particles=64,
+        config=InferenceConfig(),
+        engine=engine,
+    )
+    # Include both epsilon branches and class-count updates after a mixed fit.
+    state = state.model_copy(
+        update={
+            "sampler_training": {
+                name: SamplerTrainingState().observe(success=True).observe(success=False).refitted()
+                for name in names
+            }
+        }
+    )
+    kwargs = dict(
+        ground_skills=skills,
+        trainable_skill_names=names,
+        random_competences={name: 0.25 for name in names},
+        deployment=SweepDeploymentExpectation(
+            ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=5
+        ),
+        linear_cost_lambda=3e-6,
+    )
+    results = []
+    roots = []
+    for cls in (ReferenceModel, SweepPracticeModel):
+        trace = SearchTrace()
+        planner = ExpectimaxPlanner(use_model_j=True, observation_probability_weight=0.0)
+        results.append(
+            planner.solve(
+                environment_state=make_tossing3d_search_state(state=state, true_atoms=initial),
+                summed_cost=0,
+                belief_state=state,
+                horizon=depth,
+                model=cls(**kwargs),
+                num_samples=1,
+                trace=trace,
+            )
+        )
+        roots.append([
+            (event["action"], event["value"])
+            for event in trace.events
+            if event["event"] == "action_value"
+        ])
+    assert results[0] == results[1]
+    assert roots[0] == roots[1]
+
+
+@pytest.mark.parametrize("cost_lambda", [None, 0.0, 3e-6])
+@pytest.mark.parametrize("surprise", [0.0, 0.1])
+def test_exact_recovery_suffix_pruning_preserves_value_and_horizon(*, cost_lambda, surprise):
+    from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
+    from hitl_pmp.methods.belief_space.sweep_expectimax import SweepExpectimaxPlanner
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+    from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+
+    skills, initial, goal = _chain()
+    # First two skills only restore reachability; only Sweep enters J.
+    deployment = SweepDeploymentExpectation(
+        ordered_skills=(skills[2],), initial_atoms=skills[1].add_effects, goal_atoms=goal, horizon=3
+    )
+    state = Tossing3DBeliefState(
+        skill_beliefs={skill.skill.name: _belief(values=(0.2, 0.8)) for skill in skills}
+    )
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=("Sweep",),
+        random_competences={"Sweep": 0.25},
+        deployment=deployment,
+        linear_cost_lambda=cost_lambda,
+    )
+    for horizon in (1, 2, 3, 4):
+        reference = ExpectimaxPlanner(use_model_j=True, observation_probability_weight=surprise)
+        optimized = SweepExpectimaxPlanner(
+            use_model_j=True, observation_probability_weight=surprise
+        )
+        args = dict(
+            environment_state=make_tossing3d_search_state(state=state, true_atoms=initial),
+            belief_state=state,
+            summed_cost=0,
+            horizon=horizon,
+            model=model,
+            num_samples=1,
+        )
+        expected = reference.solve(**args)
+        actual = optimized.solve(**args)
+        assert actual == expected
+        if horizon >= 2:
+            assert optimized.pruned_recovery_suffixes > 0
+            assert optimized.next_node < reference.next_node
+
+
+def test_relaxed_pruning_keeps_learned_failure_shortcuts():
+    from hitl_pmp.methods.belief_space.sweep_expectimax import SweepExpectimaxPlanner
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+    from hitl_pmp.methods.belief_space.types.belief_state import Tossing3DBeliefState
+    from hitl_pmp.methods.belief_space.types.failure_effects import FailureEffectCount
+
+    skills, initial, goal = _chain()
+    state = Tossing3DBeliefState(
+        skill_beliefs={skill.skill.name: _belief(values=(0.2, 0.8)) for skill in skills}
+    )
+    for shortcut in (False, True):
+        model = SweepPracticeModel(
+            ground_skills=skills,
+            trainable_skill_names=("Sweep",),
+            random_competences={"Sweep": 0.25},
+            deployment=SweepDeploymentExpectation(
+                ordered_skills=(skills[2],),
+                initial_atoms=skills[1].add_effects,
+                goal_atoms=goal,
+                horizon=3,
+            ),
+            failure_effect_counts=(
+                FailureEffectCount(
+                    ground_skill=skills[0],
+                    before_atoms=initial,
+                    was_random_exploration=False,
+                    add_effects=skills[2].preconditions,
+                    delete_effects=frozenset(),
+                ),
+            )
+            if shortcut
+            else (),
+        )
+        planner = SweepExpectimaxPlanner(use_model_j=True)
+        planner.solve(
+            environment_state=make_tossing3d_search_state(state=state, true_atoms=initial),
+            belief_state=state,
+            summed_cost=0,
+            horizon=0,
+            model=model,
+            num_samples=1,
+        )
+        assert planner._deployment_attempt_reachable(atoms=initial, horizon=2) is shortcut
+        assert planner._deployment_attempt_reachable(atoms=initial, horizon=3)
+
+
+@pytest.mark.parametrize("horizon", [2, 3])
+def test_full_sweep_root_action_values_match_reference_with_pruning(*, horizon):
+    from hitl_pmp.environments.sweep_drawer3d.symbolic import SWEEP_PREDICATES, SweepSymbols
+    from hitl_pmp.methods.belief_space.competence_inference import InferenceConfig
+    from hitl_pmp.methods.belief_space.expectimax import ExpectimaxPlanner
+    from hitl_pmp.methods.belief_space.sweep_expectimax import SweepExpectimaxPlanner
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.sweep_observation_model import SweepBeliefs
+    from hitl_pmp.methods.belief_space.tossing3d_transition_model import make_tossing3d_search_state
+    from hitl_pmp.methods.belief_space.types.search_trace import SearchTrace
+
+    def atoms(*, names):
+        return frozenset(
+            GroundAtom(predicate=SWEEP_PREDICATES[name], objects=(SweepSymbols.SCENE,))
+            for name in names
+        )
+
+    skills = tuple(
+        GroundSkill(skill=skill, objects=(SweepSymbols.SCENE,)) for skill in SweepSymbols.skills()
+    ) + (SweepSymbols.human_reset(cost=3),)
+    initial = atoms(
+        names=(
+            "HandEmpty",
+            "WiperHome",
+            "DrawerClosed",
+            "RobotHome",
+            "AnyCubeInPile",
+            *(f"InPile{i}" for i in range(5)),
+        )
+    )
+    current = atoms(
+        names=(
+            "HoldingWiper",
+            "DrawerOpen",
+            *(f"{name}{i}" for i in range(5) for name in ("Loose", "Blocked")),
+        )
+    )
+    goal = atoms(names=tuple(f"InDrawer{i}" for i in range(5)))
+    state = SweepBeliefs.prior(
+        skill_names=tuple(skill.skill.name for skill in skills),
+        trainable_skill_names=SweepSymbols.TRAINABLE,
+        seed=0,
+        num_particles=1024,
+        config=InferenceConfig(),
+        engine="grid",
+    )
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=SweepSymbols.TRAINABLE,
+        human_skill_names=(skills[-1].skill.name,),
+        random_competences={name: 0.25 for name in SweepSymbols.TRAINABLE},
+        deployment=SweepDeploymentExpectation(
+            ordered_skills=skills[:3], initial_atoms=initial, goal_atoms=goal, horizon=5
+        ),
+        linear_cost_lambda=3e-6,
+    )
+    results = []
+    roots = []
+    for cls in (ExpectimaxPlanner, SweepExpectimaxPlanner):
+        trace = SearchTrace()
+        planner = cls(use_model_j=True)
+        results.append(
+            planner.solve(
+                environment_state=make_tossing3d_search_state(state=state, true_atoms=current),
+                belief_state=state,
+                summed_cost=0,
+                horizon=horizon,
+                model=model,
+                num_samples=1,
+                trace=trace,
+            )
+        )
+        roots.append([
+            (event["action"], event["value"])
+            for event in trace.events
+            if event["event"] == "action_value"
+        ])
+    assert results[0] == results[1]
+    assert roots[0] == roots[1]

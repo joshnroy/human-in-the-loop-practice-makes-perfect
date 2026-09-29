@@ -57,6 +57,11 @@ class SweepPracticeModel(BaseModel):
     )
 
     _rng: np.random.Generator = PrivateAttr()
+    _imagined_updates: dict[object, Tossing3DBeliefState] = PrivateAttr(default_factory=dict)
+    _atom_masks: dict[frozenset[GroundAtom], int] = PrivateAttr(default_factory=dict)
+    _state_keys: dict[int, tuple[weakref.ReferenceType[Tossing3DBeliefState], object]] = (
+        PrivateAttr(default_factory=dict)
+    )
     _deployment_cache: dict[object, float] = PrivateAttr(default_factory=dict)
     _signature_cache: dict[int, tuple[weakref.ReferenceType[SkillBelief], bytes]] = PrivateAttr(
         default_factory=dict
@@ -257,11 +262,18 @@ class SweepPracticeModel(BaseModel):
         ]
 
     def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
+        frozen = frozenset(atoms)
+        cached = self._atom_masks.get(frozen)
+        if cached is not None:
+            return cached
         mask = 0
-        for atom in atoms:
+        for atom in frozen:
             index = self._atom_indexes.get(atom)
             if index is not None:
                 mask |= 1 << index
+        if len(self._atom_masks) >= 8192:
+            self._atom_masks.clear()
+        self._atom_masks[frozen] = mask
         return mask
 
     def _belief_signature(self, *, belief: SkillBelief) -> bytes:
@@ -273,7 +285,9 @@ class SweepPracticeModel(BaseModel):
         is constant-size, requires no interning table, and includes all the same
         signature information. Type tags and lengths prevent ambiguous joins.
         """
-        cached = self._signature_cache.get(id(belief))
+        assert self.__pydantic_private__ is not None
+        signatures = self.__pydantic_private__["_signature_cache"]
+        cached = signatures.get(id(belief))
         if cached is not None and cached[0]() is belief:
             return cached[1]
         digest = hashlib.sha256()
@@ -317,9 +331,9 @@ class SweepPracticeModel(BaseModel):
         signature = digest.digest()
         # Beliefs are frozen. Weak references retain no posterior buffers, and
         # checking object identity prevents stale hits after Python reuses an id.
-        if len(self._signature_cache) >= 8192:
-            self._signature_cache.clear()
-        self._signature_cache[id(belief)] = (weakref.ref(belief), signature)
+        if len(signatures) >= 8192:
+            signatures.clear()
+        signatures[id(belief)] = (weakref.ref(belief), signature)
         return signature
 
     def search_cache_key(
@@ -333,13 +347,7 @@ class SweepPracticeModel(BaseModel):
         assert summed_cost == belief_state.accumulated_cost
         return (
             self._atoms_mask(atoms=environment_state.true_atoms),
-            tuple(
-                (skill_name, self._belief_signature(belief=belief))
-                for skill_name, belief in sorted(belief_state.skill_beliefs.items())
-            ),
-            tuple(sorted(belief_state.pending_examples.items())),
-            tuple(sorted(belief_state.sampler_training.items())),
-            belief_state.accumulated_cost,
+            self._state_key(state=belief_state),
             horizon,
         )
 
@@ -362,6 +370,62 @@ class SweepPracticeModel(BaseModel):
             random_competences=self.random_competences,
             failure_effect_counts=self.failure_effect_counts,
             competence_evidence=self.competence_evidence,
+            imagined_update=self._imagined_update,
+        )
+
+    def _imagined_update(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        action: GroundSkill,
+        success: bool,
+        was_random_exploration: bool,
+        condition_competence: bool,
+    ) -> Tossing3DBeliefState:
+        name = action.skill.name
+        trainable = name in self.trainable_skill_names
+        training = state.sampler_training.get(name)
+        key = (
+            name,
+            trainable,
+            self._belief_signature(belief=state.skill_beliefs[name]),
+            state.pending_examples.get(name, 0),
+            training,
+            success,
+            was_random_exploration,
+            condition_competence,
+        )
+        updated = self._imagined_updates.get(key)
+        if updated is None:
+            # An imagined observation touches only this skill. Keeping its local
+            # state permits reuse across unrelated skills' histories and charges.
+            local = state.model_copy(
+                update={
+                    "skill_beliefs": {name: state.skill_beliefs[name]},
+                    "pending_examples": {name: state.pending_examples.get(name, 0)},
+                    "sampler_training": {} if training is None else {name: training},
+                    "accumulated_cost": 0.0,
+                }
+            )
+            update_model = self._skill_belief_models_by_name[name]
+            updated = update_model.observe_outcome(
+                state=local,
+                success=success,
+                was_random_exploration=was_random_exploration,
+                resample=False,
+                condition_competence=condition_competence,
+            )
+            if trainable:
+                updated = update_model.observe_training_example(state=updated, success=success)
+            if len(self._imagined_updates) >= 2048:
+                self._imagined_updates.clear()
+            self._imagined_updates[key] = updated
+        return state.model_copy(
+            update={
+                "skill_beliefs": {**state.skill_beliefs, **updated.skill_beliefs},
+                "pending_examples": {**state.pending_examples, **updated.pending_examples},
+                "sampler_training": {**state.sampler_training, **updated.sampler_training},
+            }
         )
 
     def sample_next_states(
@@ -409,17 +473,28 @@ class SweepPracticeModel(BaseModel):
             merged[key] = (next_environment, cost, previous_probability + probability)
         return list(merged.values())
 
-    @staticmethod
-    def transition_key(*, environment_state: Tossing3DSearchState, cost: float) -> object:
-        state = environment_state.state
-        return (
-            environment_state.atoms,
-            tuple(sorted(state.skill_beliefs.items())),
+    def _state_key(self, *, state: Tossing3DBeliefState) -> object:
+        assert self.__pydantic_private__ is not None
+        cache = self.__pydantic_private__["_state_keys"]
+        cached = cache.get(id(state))
+        if cached is not None and cached[0]() is state:
+            return cached[1]
+        key = (
+            tuple(
+                (name, self._belief_signature(belief=belief))
+                for name, belief in sorted(state.skill_beliefs.items())
+            ),
             tuple(sorted(state.pending_examples.items())),
             tuple(sorted(state.sampler_training.items())),
             state.accumulated_cost,
-            cost,
         )
+        if len(cache) >= 8192:
+            cache.clear()
+        cache[id(state)] = (weakref.ref(state), key)
+        return key
+
+    def transition_key(self, *, environment_state: Tossing3DSearchState, cost: float) -> object:
+        return (environment_state.atoms, self._state_key(state=environment_state.state), cost)
 
     def compute_next_belief_state(
         self,
