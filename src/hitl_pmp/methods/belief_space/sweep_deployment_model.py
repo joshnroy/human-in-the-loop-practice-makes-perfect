@@ -1,7 +1,7 @@
 """Exact expectation of a fixed symbolic deployment policy."""
 
 from collections.abc import Mapping
-from functools import cache
+from functools import cache, lru_cache
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -29,14 +29,13 @@ class SweepDeploymentExpectation(BaseModel):
     failure_effect_counts: tuple[FailureEffectCount, ...] = ()
 
     def evaluate(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
-        names = tuple(sorted({skill.skill.name for skill in self.ordered_skills}))
-        indexes = {name: index for index, name in enumerate(names)}
-        effects: dict[
-            GroundSkill, tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]]
-        ] = {
-            skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
-            for skill in self.ordered_skills
-        }
+        names, monomials = self._compile(
+            ordered_skills=self.ordered_skills,
+            initial_atoms=self.initial_atoms,
+            goal_atoms=self.goal_atoms,
+            horizon=self.horizon,
+            failure_effect_counts=self.failure_effect_counts,
+        )
 
         @cache
         def moment(*, name: str, successes: int, failures: int) -> float:
@@ -44,33 +43,54 @@ class SweepDeploymentExpectation(BaseModel):
                 successes=successes, failures=failures
             )
 
+        value = 0.0
+        for counts, coefficient in monomials:
+            term = coefficient
+            for name, (successes, failures) in zip(names, counts, strict=True):
+                if successes == failures == 0:
+                    continue
+                denominator = moment(name=name, successes=0, failures=0)
+                if denominator == 0:
+                    term = 0.0
+                    break
+                term *= moment(name=name, successes=successes, failures=failures) / denominator
+            value += term
+        return value
+
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _compile(
+        *,
+        ordered_skills: tuple[GroundSkill, ...],
+        initial_atoms: frozenset[GroundAtom],
+        goal_atoms: frozenset[GroundAtom],
+        horizon: int,
+        failure_effect_counts: tuple[FailureEffectCount, ...],
+    ) -> tuple[tuple[str, ...], tuple[tuple[tuple[tuple[int, int], ...], float], ...]]:
+        names = tuple(sorted({skill.skill.name for skill in ordered_skills}))
+        indexes = {name: index for index, name in enumerate(names)}
+        zero = tuple((0, 0) for _ in names)
+        effects: dict[
+            GroundSkill, tuple[frozenset[GroundAtom], frozenset[GroundAtom], frozenset[object]]
+        ] = {
+            skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
+            for skill in ordered_skills
+        }
+
         @cache
         def visit(
-            *, atoms: frozenset[GroundAtom], remaining: int, counts: tuple[tuple[int, int], ...]
-        ) -> float:
-            if self.goal_atoms <= atoms:
-                return 1.0
+            *, atoms: frozenset[GroundAtom], remaining: int
+        ) -> tuple[tuple[tuple[tuple[int, int], ...], float], ...]:
+            if goal_atoms <= atoms:
+                return ((zero, 1.0),)
             if remaining == 0:
-                return 0.0
-            action = next(
-                (skill for skill in self.ordered_skills if skill.preconditions <= atoms), None
-            )
+                return ()
+            action = next((skill for skill in ordered_skills if skill.preconditions <= atoms), None)
             if action is None:
-                return 0.0
+                return ()
             index = indexes[action.skill.name]
-            successes, failures = counts[index]
-            denominator = moment(name=action.skill.name, successes=successes, failures=failures)
-            if denominator == 0:
-                return 0.0
-            value = 0.0
+            polynomial: dict[tuple[tuple[int, int], ...], float] = {}
             for success in (True, False):
-                updated = (successes + int(success), failures + int(not success))
-                probability = (
-                    moment(name=action.skill.name, successes=updated[0], failures=updated[1])
-                    / denominator
-                )
-                if probability <= 0:
-                    continue
                 successors = (
                     (
                         (
@@ -82,19 +102,21 @@ class SweepDeploymentExpectation(BaseModel):
                     )
                     if success
                     else EmpiricalFailureEffects.outcomes(
-                        counts=self.failure_effect_counts,
+                        counts=failure_effect_counts,
                         ground_skill=action,
                         true_atoms=atoms,
                         was_random_exploration=False,
                     )
                 )
-                next_counts = counts[:index] + (updated,) + counts[index + 1 :]
-                value += probability * sum(
-                    weight * visit(atoms=next_atoms, remaining=remaining - 1, counts=next_counts)
-                    for weight, next_atoms in successors
-                )
-            return value
+                for weight, next_atoms in successors:
+                    for counts, coefficient in visit(atoms=next_atoms, remaining=remaining - 1):
+                        successes, failures = counts[index]
+                        updated = (
+                            counts[:index]
+                            + ((successes + int(success), failures + int(not success)),)
+                            + counts[index + 1 :]
+                        )
+                        polynomial[updated] = polynomial.get(updated, 0.0) + weight * coefficient
+            return tuple(polynomial.items())
 
-        return visit(
-            atoms=self.initial_atoms, remaining=self.horizon, counts=tuple((0, 0) for _ in names)
-        )
+        return names, visit(atoms=initial_atoms, remaining=horizon)
