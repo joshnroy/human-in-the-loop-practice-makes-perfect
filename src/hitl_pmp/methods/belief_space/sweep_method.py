@@ -1,4 +1,11 @@
-"""Tossing3D method backed by situated belief-space expectimax."""
+"""Sweep adapter preserving the EXP-22c Model B inference/execution contract.
+
+The caller supplies calibrated exploration competences, symbolic deployment
+starts/goals and an explicitly selected practice search depth. Recovery skills
+are physically fixed controllers. Their generic Model B priors and per-attempt
+clocks intentionally match the existing method; only stock skills enter the
+terminal deployment policy. No simulator timing is used as observed cost.
+"""
 
 import time
 from collections import Counter
@@ -28,17 +35,12 @@ from .determinized import DeterminizedAStarPlanner
 from .expectimax import ExpectimaxPlanner
 from .failure_effect_model import EmpiricalFailureEffects
 from .planner import BeliefSpacePlanner
-from .tossing3d_constants import (
-    LEARNING_RATE_PROCESS_NOISE_STD,
-    OPEN_GRIPPER_SKILL,
-    PICK_SKILL,
-    PICK_SKILLS,
-    RESET_SKILLS,
-    TOSS_SKILL,
-)
-from .tossing3d_model import Tossing3DPracticeModel
+from .sweep_deployment_model import SweepDeploymentExpectation
+from .sweep_expectimax import SweepExpectimaxPlanner
+from .sweep_model import SweepPracticeModel
+from .sweep_observation_model import SweepBeliefs
+from .tossing3d_constants import LEARNING_RATE_PROCESS_NOISE_STD
 from .tossing3d_observation_model import (
-    make_default_tossing3d_belief,
     mean_competence,
     mean_cost,
     mean_learning_rate,
@@ -53,13 +55,13 @@ from .types.search_state import Tossing3DSearchState
 from .types.search_trace import SearchTrace
 from .types.skill_belief import COST_MAX
 from .types.stop_action import STOP_ACTION, StopAction
-from .types.theta import Tossing3DTheta
+from .types.sweep_theta import SweepTheta
 
 
 def make_belief_space_planner(
     *,
     planner: (
-        BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
+        BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, SweepTheta, GroundSkill]
         | None
     ),
     solver: Literal["expectimax", "determinized_astar"],
@@ -67,12 +69,12 @@ def make_belief_space_planner(
     seed: int,
     observation_probability_weight: float,
     log_full_search_tree: bool = False,
-) -> BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]:
+) -> BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, SweepTheta, GroundSkill]:
     """Return the injected planner or construct the configured planner once."""
     if planner is not None:
         return planner
     if solver == "expectimax":
-        return ExpectimaxPlanner(
+        return SweepExpectimaxPlanner(
             use_model_j=True,
             observation_probability_weight=observation_probability_weight,
         )
@@ -84,18 +86,24 @@ def make_belief_space_planner(
     )
 
 
-class Tossing3DPomdpMethod(EesMethod):
+class SweepPomdpMethod(EesMethod):
     """EES learner/executor with situated belief-space practice decisions."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    pomdp_search_depth: int = Field(default=3, ge=0)
+    pomdp_search_depth: int = Field(ge=0)
+    trainable_skill_names: tuple[str, ...] = ("OpenDrawer", "PickWiper", "Sweep")
+    human_skill_names: tuple[str, ...] = ()
+    random_competences: dict[str, float]
+    deployment_initial_atoms: frozenset[GroundAtom] = Field(exclude=True)
+    deployment_goal_atoms: frozenset[GroundAtom] = Field(exclude=True)
+    deployment_horizon: int = Field(default=5, ge=0)
     pomdp_log_full_search_tree: bool = False
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     pomdp_planner: (
-        BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, Tossing3DTheta, GroundSkill]
+        BeliefSpacePlanner[Tossing3DSearchState, Tossing3DBeliefState, SweepTheta, GroundSkill]
         | None
     ) = Field(default=None, exclude=True, repr=False)
     pomdp_num_samples: int = Field(default=100, ge=1)
@@ -117,7 +125,7 @@ class Tossing3DPomdpMethod(EesMethod):
     decision_log: Path | None = None
 
     _pomdp_state: Tossing3DBeliefState = PrivateAttr()
-    _pomdp_model: Tossing3DPracticeModel = PrivateAttr()
+    _pomdp_model: SweepPracticeModel = PrivateAttr()
     _decision_index: int = PrivateAttr(default=0)
     _cycle_index: int = PrivateAttr(default=0)
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
@@ -190,23 +198,6 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def model_post_init(self, __context: object) -> None:
         super().model_post_init(__context)
-        self._pomdp_state = make_default_tossing3d_belief(
-            num_particles=self.pomdp_num_particles,
-            seed=self.seed,
-            model=self.pomdp_competence_model,
-            engine=self.pomdp_inference_engine,
-            inference_config=InferenceConfig(
-                competence_bins=self.pomdp_grid_competence_bins,
-                learning_rate_bins=self.pomdp_grid_learning_rate_bins,
-                sigma_competence=self.pomdp_competence_process_noise_std,
-                sigma_eta=self.pomdp_learning_rate_process_noise_std,
-                learning_rate_decay=self.pomdp_learning_rate_decay,
-                eta_max=self.pomdp_learning_rate_max,
-            ).scaled_learning_time(
-                model=self.pomdp_competence_model, time_scale=self.pomdp_learning_time_scale
-            ),
-            additional_skill_names=tuple(skill.name for skill in self.human_skills()),
-        )
         robot_skills = self.skills()
         human_skills = self.human_skills()
         practice_skills = (*robot_skills, *human_skills)
@@ -217,11 +208,48 @@ class Tossing3DPomdpMethod(EesMethod):
                 objects=self.objects(), predicates=self.predicates()
             ),
         )
-        self._pomdp_model = Tossing3DPracticeModel(
+        assert self.pomdp_competence_model == "local_trend", "Sweep currently supports Model B"
+        available_names = tuple(sorted({skill.skill.name for skill in ground_skills}))
+        assert set(self.trainable_skill_names) <= set(available_names)
+        assert set(self.human_skill_names) == {skill.name for skill in human_skills}
+        assert set(self.random_competences) == set(self.trainable_skill_names)
+        assert all(0 <= value <= 1 for value in self.random_competences.values())
+        self._pomdp_state = SweepBeliefs.prior(
+            skill_names=available_names,
+            trainable_skill_names=self.trainable_skill_names,
+            num_particles=self.pomdp_num_particles,
+            seed=self.seed,
+            engine=self.pomdp_inference_engine,
+            config=InferenceConfig(
+                competence_bins=self.pomdp_grid_competence_bins,
+                learning_rate_bins=self.pomdp_grid_learning_rate_bins,
+                sigma_competence=self.pomdp_competence_process_noise_std,
+                sigma_eta=self.pomdp_learning_rate_process_noise_std,
+                learning_rate_decay=self.pomdp_learning_rate_decay,
+                eta_max=self.pomdp_learning_rate_max,
+            ).scaled_learning_time(model="local_trend", time_scale=self.pomdp_learning_time_scale),
+        )
+        stock = tuple(
+            ground
+            for name in self.trainable_skill_names
+            for ground in ground_skills
+            if ground.skill.name == name
+        )
+        deployment = SweepDeploymentExpectation(
+            ordered_skills=stock,
+            initial_atoms=self.deployment_initial_atoms,
+            goal_atoms=self.deployment_goal_atoms,
+            horizon=self.deployment_horizon,
+        )
+        self._pomdp_model = SweepPracticeModel(
             seed=self.seed,
             exploration_epsilon=self.exploration_epsilon,
             competence_evidence=self.pomdp_competence_evidence,
             ground_skills=tuple(ground_skills),
+            trainable_skill_names=self.trainable_skill_names,
+            human_skill_names=self.human_skill_names,
+            random_competences=self.random_competences,
+            deployment=deployment,
             linear_cost_lambda=self.pomdp_linear_cost_lambda,
         )
         self.pomdp_planner = make_belief_space_planner(
@@ -231,14 +259,6 @@ class Tossing3DPomdpMethod(EesMethod):
             seed=self.seed,
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
-        )
-        available = {ground_skill.skill.name for ground_skill in ground_skills}
-        missing = {TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
-        if not (available & PICK_SKILLS):
-            missing.add(PICK_SKILL)
-        assert not missing, (
-            "Tossing3DPomdpMethod requires canonical Tossing3D skills; missing "
-            f"{sorted(missing)} from {sorted(available)}"
         )
         assert all(skill.skill.practice_cost is not None for skill in ground_skills)
         assert all(skill.evaluate_practice_cost() <= COST_MAX for skill in ground_skills), (
@@ -271,7 +291,7 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def clear_starved_parameter_pools(self) -> None:
         """Mirror the base registry's clearing in the search model's action mask, so a
-        new session or a movables reset leaves the planner unmasked too."""
+        new session or a human reset leaves the planner unmasked too."""
         super().clear_starved_parameter_pools()
         self._pomdp_model = self._pomdp_model.model_copy(update={"starved_pools": ()})
 
@@ -370,7 +390,7 @@ class Tossing3DPomdpMethod(EesMethod):
         updates: dict[str, object] = {
             "accumulated_cost": self._pomdp_state.accumulated_cost + action_cost
         }
-        if ground_skill.skill.name in RESET_SKILLS:
+        if ground_skill.skill.name in self.human_skill_names:
             self._pending_reset = ground_skill
         self._pomdp_state = self._pomdp_state.model_copy(update=updates)
         self.record_diagnostic(
@@ -390,7 +410,7 @@ class Tossing3DPomdpMethod(EesMethod):
         success: bool,
         was_random_exploration: bool,
     ) -> None:
-        if success or ground_skill.skill.name not in {*PICK_SKILLS, TOSS_SKILL, OPEN_GRIPPER_SKILL}:
+        if success or ground_skill.skill.name in self.human_skill_names:
             return
         counts = EmpiricalFailureEffects.observe(
             counts=self._pomdp_model.failure_effect_counts,
@@ -502,7 +522,7 @@ class Tossing3DPomdpMethod(EesMethod):
         model: BeliefSpaceModel[
             Tossing3DSearchState,
             Tossing3DBeliefState,
-            Tossing3DTheta,
+            SweepTheta,
             GroundSkill,
         ] = self._pomdp_model
         planner = self.pomdp_planner
@@ -584,6 +604,15 @@ class Tossing3DPomdpMethod(EesMethod):
                 else None
             ),
             model=self._pomdp_model.model_dump(mode="json"),
+            deployment={
+                "policy": "first_applicable_stock_skill",
+                "ordered_skills": [
+                    str(skill.skill.name) for skill in self._pomdp_model.deployment.ordered_skills
+                ],
+                "initial_atoms": sorted(str(atom) for atom in self.deployment_initial_atoms),
+                "goal_atoms": sorted(str(atom) for atom in self.deployment_goal_atoms),
+                "horizon": self.deployment_horizon,
+            },
             failure_effect_counts=EmpiricalFailureEffects.diagnostics(
                 counts=self._pomdp_model.failure_effect_counts
             ),

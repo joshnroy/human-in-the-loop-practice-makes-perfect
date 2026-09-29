@@ -24,6 +24,7 @@ from pathlib import Path
 from hitl_pmp.cli_protocols import EnvironmentCli, MethodCli
 from hitl_pmp.environments.ballring.cli import BallRingCli
 from hitl_pmp.environments.lightswitch.cli import LightSwitchCli
+from hitl_pmp.environments.sweep_drawer3d.cli import SweepDrawerCli
 from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
 from hitl_pmp.environments.tossingroom.cli import (
     TossingRoomCli,
@@ -43,6 +44,7 @@ from hitl_pmp.practice_loop import PracticeResetPolicy
 ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     "ballring": BallRingCli,
     "lightswitch": LightSwitchCli,
+    "sweep_drawer3d": SweepDrawerCli,
     "tossing3d": Tossing3DCli,
     # Tossing Room: split `ThrowTrash`/`ThrowRecycling` lifted skills, with the item
     # WEIGHT drawn at pickup off a per-task pre-sampled array instead of frozen into the

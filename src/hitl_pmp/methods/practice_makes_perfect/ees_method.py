@@ -91,20 +91,24 @@ class EesMethod(Method):
        (`active_sampler_explorer.py:400`). `reproduce_predicators_practice_
        target_history` restores predicators' all-attempts bookkeeping for this
        quantity (competence stays random-excluding either way); see that field
-       for why the flag exists. predicators' own `skip_perfect` -- dropping a
-       skill whose measured success rate is exactly 1.0 from the candidate list
-       entirely -- is deliberately not ported: this Method never drops a
-       mastered skill as a candidate, and instead lets the UCB bonus alone
-       deprioritize it as `num_tries` grows.
+       for why the flag exists. predicators' own `skip_perfect` (default True
+       there) scores a ground op whose `_ground_op_hist` success rate is exactly
+       1.0 as `-inf`, ranking it behind every finite candidate; it stays a
+       candidate, tried only once all others are unreachable. Off by default here,
+       so a mastered skill is deprioritized by the UCB bonus alone;
+       `reproduce_predicators_skip_perfect` restores predicators' gate.
     2. The outcome of the *last* skill in an interaction period is never observed
        (there is no subsequent state to check `add_effects` against). predicators
        observes at option termination instead. This loses at most one datapoint
        per period.
-    3. predicators double-counts one `observe()` call per non-exploratory attempt
-       (`active_sampler_learning_approach.py` calls it at both line 407 and 443);
-       that is a bug, and is not reproduced here. The *suppression* those same
-       lines implement -- no competence update when the epsilon-greedy random
-       branch fired -- IS reproduced; see `_SkillAttempt`.
+    3. Not a deviation by default. At reference/predicators 5bd3f5bd,
+       `ActiveSamplerExplorer._update_ground_op_hist` calls `observe(success)`
+       exactly once per attempt, and only when the epsilon-greedy random branch
+       did not fire -- which is what `observe_outcome` does. An earlier reading of
+       predicators claimed it double-observes; it does not.
+       `reproduce_predicators_double_observe` (default off) adds an extra observe
+       of every attempt, and so *creates* a deviation when turned on; see that
+       field.
     4. Candidate practice targets are scored against cached plans that are
        refreshed only every `replan_frequency` scoring calls -- predicators'
        own optimization (`active_sampler_explorer_replan_frequency`), and the
@@ -129,8 +133,9 @@ class EesMethod(Method):
     # CFG.active_sampler_explorer_planning_progress_max_tasks. The paper text says
     # "the 10 most recently seen tasks"; the reference code instead takes
     # `sorted(seen_idxs)[:10]` ("Don't randomize: would lead to noisy estimates").
-    # This follows the text. On this domain the two coincide in effect, since every
-    # Light Switch task differs only in the light's target value.
+    # By default this follows the text; `reproduce_predicators_seen_task_order`
+    # follows the code. On Light Switch the two coincide in effect, since every task
+    # differs only in the light's target value.
     planning_progress_max_tasks: int = 10
     # CFG.active_sampler_explorer_replan_frequency -- the paper: "cache last plan
     # per task, re-run planner once per 100 calls".
@@ -138,6 +143,12 @@ class EesMethod(Method):
     # CFG.active_sampler_learning_exploration_epsilon -- the paper: "epsilon-greedy
     # with epsilon = 0.5".
     exploration_epsilon: float = 0.5
+    # Whether plan_to declines a practice plan whose human reset costs more than the
+    # priciest ordinary skill (see plan_to). Off, any reset-using plan is accepted and
+    # Fast Downward's own cost minimisation is the only thing choosing between a reset
+    # and a reset-free route -- so a robot stranded with no reset-free plan resets at
+    # whatever the reset costs, rather than staying stuck.
+    reset_cost_gate: bool = True
     # CFG.active_sampler_learning_num_samples
     num_candidates: int = Field(default=100, gt=0)
     # Keep the original iid proposal distribution, conditioning only on the
@@ -153,13 +164,15 @@ class EesMethod(Method):
     competence_window_size: int = 5
     competence_recency_size: int = 5
 
-    # Kept default FALSE, unlike the other two reproduce_* flags. This restores
-    # predicators' own double-`observe()` bug (deviation 3): it counts each random
-    # attempt once toward competence, which corrupts a mastered skill's estimate down
-    # to ~0.67 and mis-prices the planner's edge costs. Measured NULL on the success
-    # curve, so leaving it off does not hurt matching predicators' results, and it
-    # keeps competence clean. Pass --reproduce-predicators-double-observe for a
-    # bit-exact-faithful (bug-included) run.
+    # Default FALSE, and FALSE is what matches predicators. The flag was added on the
+    # belief that predicators double-observes; it does not. At reference/predicators
+    # 5bd3f5bd, `ActiveSamplerExplorer._update_ground_op_hist` calls
+    # `observe(success)` once, and only for a non-exploration attempt -- exactly this
+    # port's default (deviation 3). Turning this ON therefore CREATES a deviation: it
+    # observes every attempt an extra time, counting each random attempt once toward
+    # competence, which corrupts a mastered skill's estimate down to ~0.67 and
+    # mis-prices the planner's edge costs. Kept so earlier ON runs stay reproducible;
+    # it was measured null on the success curve.
     reproduce_predicators_double_observe: bool = False
 
     # A second, independent ablation switch (see deviation 1 above). predicators
@@ -188,6 +201,33 @@ class EesMethod(Method):
     # predicators together with a goal-pursuit horizon cap; on its own it is an ablation
     # that HELPS long multi-skill plans (Ball-Ring) but STARVES short goal-directed ones.
     reproduce_predicators_explore_target_only: bool = False
+    # Default FALSE (the original behaviour, so earlier runs are unchanged). ON,
+    # planning-progress scoring situates against the FIRST `planning_progress_max_tasks`
+    # seen tasks instead of the most recent ones -- predicators'
+    # `sorted(self._seen_train_task_idxs)[:max_num_tasks]`. This loop draws a
+    # never-repeating train stream, so the lowest indices are the earliest seen.
+    reproduce_predicators_seen_task_order: bool = False
+    # Default FALSE (the original behaviour). ON restores predicators'
+    # `active_sampler_explorer_skip_perfect` (default True there): a candidate whose
+    # `measured_success_rate` is exactly 1.0 scores `-inf`. Like predicators, it stays
+    # in the ranked candidate list, last, so it is still practiced when every finite
+    # candidate is unreachable. The rate reads the all-attempts history when
+    # `reproduce_predicators_practice_target_history` is on (predicators'
+    # `_ground_op_hist`), else the random-excluding competence history.
+    reproduce_predicators_skip_perfect: bool = False
+    # Default FALSE (the original behaviour: when no practice candidate is reachable,
+    # execute one random applicable skill and go back to scoring next step). ON matches
+    # predicators' `_option_policy` for...else ("No reachable goal found. Switching to
+    # random exploration."): the episode switches to random mode for the rest of the
+    # period. Each random step is a uniformly chosen *initiable* ground skill (its
+    # symbolic preconditions hold) with parameters from one accepted draw of the
+    # domain's proposal, and is NOT flagged as exploration -- predicators returns the
+    # random option with indicator False -- so its outcome updates competence and
+    # becomes sampler training data. Nothing initiable ends the session, as before.
+    # A failed goal-phase plan triggers it too, as in predicators, whose for...else
+    # covers the assigned-task goal as well -- see `goal_failure_enters_random_mode`,
+    # which a subclass can decline.
+    reproduce_predicators_random_when_stranded: bool = False
 
     # predicators' `CFG.horizon`, read by active_sampler_explorer as
     # `assigned_task_horizon`: how many skills it will spend pursuing the assigned
@@ -208,6 +248,21 @@ class EesMethod(Method):
     # uncapped behavior, and a Ball-Ring run passes --goal-pursuit-horizon 8 to match
     # the paper's own config for that domain.
     goal_pursuit_horizon: int | None = None
+    # WHICH practice periods run that goal phase at all -- predicators'
+    # `ActiveSamplerLearningApproach._create_explorer`:
+    #
+    #     pursue_task_goal_first = (cycle < init_cycles_to_pursue_goal) or (cycle % n == 0)
+    #
+    # with `CFG.active_sampler_learning_init_cycles_to_pursue_goal` (default 1) and
+    # `CFG.active_sampler_learning_explore_pursue_goal_interval` (default 5; the paper's
+    # yaml overrides it to 1 for both grid_row and ball_and_cup_sticky_table). A
+    # non-pursuing period starts in practice, spending none of the horizon. Interval 1
+    # pursues every period, which is this port's original behaviour and so the default.
+    # Periods are counted by `get_practice_policy` calls, 0-based, matching
+    # `_online_learning_cycle`. Ported from 46379575, which counted in `end_cycle`
+    # instead; the practice loop calls the two once each per cycle.
+    goal_pursuit_init_cycles: int = Field(default=1, ge=0)
+    goal_pursuit_interval: int = Field(default=1, ge=1)
     planning_timeout: float = 10.0
     # --record-sampler-draws' recorder, or None (the default, and what keeps every
     # unrecorded run byte-identical). A pure observer: it is written to and never read
@@ -278,6 +333,17 @@ class EesMethod(Method):
     # have judged it. None until the first practice period, and never an
     # *evaluation* episode: those observe nothing at all.
     _practice_episode: "_EesEpisode | None" = PrivateAttr()
+    # Ground actions whose parameter pool starved (0 accepted proposals) at a
+    # symbolic state, keyed by that state. Scoped to one practice session: cleared
+    # in get_practice_policy, never during evaluation. Exists so an exhausted
+    # sampler *deselects* the action and the planner chooses again, instead of
+    # ending the session -- the 2026-09-22 robot-side validation run lost nine of
+    # ten practice cycles at 0 actions to exactly that (a fixed 2.5 m standoff made
+    # every robot-side toss proposal infeasible, and each starvation raised
+    # InteractionComplete).
+    _starved_pools: dict[frozenset[GroundAtom], set[GroundSkill]] = PrivateAttr()
+    # Practice periods started so far; the cycle index the goal-pursuit schedule reads.
+    _practice_periods: int = PrivateAttr()
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -293,6 +359,8 @@ class EesMethod(Method):
         self._practice_target_tallies = {}
         self._translation_cache = TranslationCache()
         self._practice_episode = None
+        self._starved_pools = {}
+        self._practice_periods = 0
 
     # ------------------------------------------------------------------ domain
 
@@ -345,8 +413,9 @@ class EesMethod(Method):
         deliberately random parameter that failed is exactly the negative example
         the classifier needs.
 
-        `reproduce_predicators_double_observe` restores predicators' literal
-        control flow instead; see that field for why the flag exists.
+        That is predicators' own control flow (`_update_ground_op_hist`, one
+        observe per non-exploration attempt). `reproduce_predicators_double_observe`
+        adds an extra observe and so departs from it; see that field.
 
         Independently of competence, every execution is recorded (greedy *and*
         random) into `_all_attempt_outcomes` -- predicators' `_ground_op_hist`.
@@ -356,8 +425,9 @@ class EesMethod(Method):
         self._all_attempt_outcomes.setdefault(ground_skill, []).append(success)
         model = self.competence_model(ground_skill=ground_skill)
         if self.reproduce_predicators_double_observe:
-            model.observe(success=success)  # active_sampler_explorer.py:407
-            if not was_random_exploration:  # :442-443
+            # A deviation from predicators, not a reproduction: see the field.
+            model.observe(success=success)
+            if not was_random_exploration:
                 model.observe(success=success)
             return
         if not was_random_exploration:
@@ -411,10 +481,10 @@ class EesMethod(Method):
 
     def measured_success_rate(self, *, ground_skill: GroundSkill) -> float:
         """Raw (prior-free) success fraction -- deliberately not the posterior
-        mean, which can never reach exactly 1.0 under a Beta prior. Not consulted
-        by `score_ground_skill` (predicators' own `skip_perfect` gate on this
-        value is deliberately not ported, see the class docstring's deviation 1);
-        kept as a diagnostic other code reads directly. Reads the all-attempts
+        mean, which can never reach exactly 1.0 under a Beta prior. Consulted by
+        `score_ground_skill` only under `reproduce_predicators_skip_perfect`
+        (predicators' `skip_perfect` gate); otherwise a diagnostic other code reads
+        directly. Reads the all-attempts
         (`_ground_op_hist`) history when
         `reproduce_predicators_practice_target_history` is on, else the competence
         history (which excludes epsilon-random attempts)."""
@@ -478,8 +548,9 @@ class EesMethod(Method):
         own observed competence. Clears the ceiling: accepted. Doesn't: re-requested
         with no reset offered, so a real cheaper alternative still wins and a truly
         unreachable goal still raises `PlanningFailure` -- keeping "stay stuck,
-        unrescued" possible."""
-        skills = self.skills()
+        unrescued" possible. `reset_cost_gate=False` skips that check: a reset-using
+        plan is returned as planned, whatever the reset costs."""
+        skills = self.skills() if practicing else self.skill_provider.deployment_skills()
         ground_skill_costs = costs
         cube_bin_ground_skills: tuple[GroundSkill, ...] = ()
         if practicing:
@@ -498,7 +569,7 @@ class EesMethod(Method):
         plan = self._plan_or_raise(
             skills=skills, init_atoms=init_atoms, goal=goal, ground_skill_costs=ground_skill_costs
         )
-        if not cube_bin_ground_skills:
+        if not cube_bin_ground_skills or not self.reset_cost_gate:
             return plan
         reset_set = set(cube_bin_ground_skills)
         used = [ground_skill for ground_skill in plan if ground_skill in reset_set]
@@ -616,10 +687,35 @@ class EesMethod(Method):
         tally = self._practice_target_tallies.get(name, PracticeTargetTally())
         builder = {
             "scored": tally.with_scored,
+            "declined_perfect": tally.with_declined_perfect,
             "selected": tally.with_selected,
             "unreachable": tally.with_unreachable,
         }[field]
         self._practice_target_tallies[name] = builder()
+
+    def record_starved_parameter_pool(
+        self, *, ground_skill: GroundSkill, true_atoms: frozenset[GroundAtom]
+    ) -> None:
+        """Deselect `ground_skill` at `true_atoms` for the rest of this practice
+        session: its candidate pool just starved (0 accepted proposals), so
+        dispatching it again from the same symbolic state would only starve again.
+        Keyed by the pair, not the action alone -- a pool's feasibility depends on
+        the geometry the symbolic state stands for, and a reset that changes the
+        state may make the same action feasible."""
+        self._starved_pools.setdefault(true_atoms, set()).add(ground_skill)
+
+    def clear_starved_parameter_pools(self) -> None:
+        """Forget every starvation: the geometry they were evidence about has moved."""
+        self._starved_pools.clear()
+
+    def observe_help_granted(self, *, state: State) -> None:
+        """A movables reset re-placed the cube and bin, so the starved pools recorded
+        at the old placement no longer describe the scene."""
+        del state
+        self.clear_starved_parameter_pools()
+
+    def starved_ground_skills(self, *, true_atoms: frozenset[GroundAtom]) -> frozenset[GroundSkill]:
+        return frozenset(self._starved_pools.get(true_atoms, set()))
 
     def practice_target_outcomes(self) -> dict[str, PracticeTargetTally]:
         """Per lifted skill, cumulative over the run; method_runner.py differences them
@@ -649,7 +745,7 @@ class EesMethod(Method):
     def refresh_planning_progress_plans(self) -> None:
         costs = self.skill_costs()
         plans: list[list[GroundSkill]] = []
-        for init_atoms, goal in self._seen_tasks[-self.planning_progress_max_tasks :]:
+        for init_atoms, goal in self.planning_progress_tasks():
             try:
                 # practicing=False (the default): this scoring pass never results in
                 # a real dispatch -- see plan_to's own docstring -- so it must never
@@ -659,14 +755,30 @@ class EesMethod(Method):
                 continue
         self._cached_plans = plans
 
+    def planning_progress_tasks(
+        self,
+    ) -> list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]]:
+        """The seen tasks scoring situates against: the most recent
+        `planning_progress_max_tasks` by default, the first that many under
+        `reproduce_predicators_seen_task_order`."""
+        if self.reproduce_predicators_seen_task_order:
+            return self._seen_tasks[: self.planning_progress_max_tasks]
+        return self._seen_tasks[-self.planning_progress_max_tasks :]
+
     # ------------------------------------------------- extrapolate + situate (score)
 
     def score_ground_skill(self, *, ground_skill: GroundSkill) -> float:
         """Planning progress: how much cheaper do the seen tasks' plans get if
         *this* skill improves by one cycle's worth of practice? Ported from
-        predicators' `_score_ground_op_planning_progress`. Never returns `-inf`
-        -- predicators' own `skip_perfect` gate is deliberately not ported, see
-        the class docstring's deviation 1."""
+        predicators' `_score_ground_op_planning_progress`. Returns `-inf` only under
+        `reproduce_predicators_skip_perfect`, for a skill whose measured success rate
+        is exactly 1.0 -- before any planning, as predicators returns before
+        `_get_task_plan_for_task`."""
+        if (
+            self.reproduce_predicators_skip_perfect
+            and self.measured_success_rate(ground_skill=ground_skill) == 1.0
+        ):
+            return -math.inf
         model = self.competence_model(ground_skill=ground_skill)
         extrapolated = model.predict_competence(num_additional_data=self.competence_lookahead)
         costs = self.skill_costs()
@@ -696,14 +808,18 @@ class EesMethod(Method):
     def choose_practice_target(self) -> list[GroundSkill]:
         """Candidates in descending score order -- the explorer tries them in turn
         until one's preconditions are actually reachable. Every scored candidate
-        stays a candidate -- `score_ground_skill` never returns `-inf`, so nothing
-        is dropped outright here."""
+        stays a candidate, including one `reproduce_predicators_skip_perfect` scored
+        `-inf`: predicators' `generate_goals` yields every op in score order, so a
+        perfect op is ranked last rather than removed."""
         scored: list[tuple[float, float, GroundSkill]] = []
         # list(...) because scoring can lazily create competence models, which
         # would otherwise mutate the dict mid-iteration.
         for candidate in list(self._competence_models):
             score = self.score_ground_skill(ground_skill=candidate)
-            self.record_practice_target(name=candidate.skill.name, field="scored")
+            self.record_practice_target(
+                name=candidate.skill.name,
+                field="declined_perfect" if score == -math.inf else "scored",
+            )
             # Ties broken randomly, matching predicators' own rng.uniform tiebreak.
             scored.append((score, float(self._rng.uniform()), candidate))
         scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -773,7 +889,9 @@ class EesMethod(Method):
         max_proposals = self.num_candidates * self.max_proposals_per_candidate
         sampled = 0
         while len(candidates) < self.num_candidates and sampled < max_proposals:
-            candidate = self.skill_provider.sample_params(ground_skill=ground_skill, rng=self._rng)
+            candidate = self.skill_provider.sample_params_at_state(
+                ground_skill=ground_skill, rng=self._rng, state=state
+            )
             sampled += 1
             reason = self.skill_provider.parameter_rejection_reason(
                 ground_skill=ground_skill, params=candidate, state=state
@@ -898,9 +1016,28 @@ class EesMethod(Method):
         those checks key on."""
         init_atoms = self.abstract_state(state=task.initial_state)
         self.record_seen_task(init_atoms=init_atoms, goal=task.goal.atoms)
-        episode = _EesEpisode(method=self, goal=task.goal.atoms, practicing=True)
+        # Starvation is per session: a new period re-randomizes movable geometry,
+        # so last session's infeasible pools are no longer evidence.
+        self.clear_starved_parameter_pools()
+        episode = _EesEpisode(
+            method=self,
+            goal=task.goal.atoms,
+            practicing=True,
+            pursue_goal=self.pursues_goal_in_period(period=self._practice_periods),
+        )
+        self._practice_periods += 1
         self._practice_episode = episode
         return lambda state: episode.step(state=state)
+
+    def pursues_goal_in_period(self, *, period: int) -> bool:
+        """Whether practice period `period` (0-based) opens with the goal phase; see
+        `goal_pursuit_init_cycles`."""
+        return period < self.goal_pursuit_init_cycles or period % self.goal_pursuit_interval == 0
+
+    def goal_failure_enters_random_mode(self) -> bool:
+        """Whether a goal-phase plan that fails switches the episode to random mode
+        (predicators) rather than falling through to practice selection."""
+        return self.reproduce_predicators_random_when_stranded
 
     def observe_environment_reset(self, *, state: State) -> None:
         """Score the in-flight skill against the state the harness is about to
@@ -974,14 +1111,103 @@ class EesMethod(Method):
                 records_training_row=explore,
             )
 
+        return self._labeled_action(
+            ground_skill=ground_skill, params=params, state=state, record=record
+        ), record
+
+    def execute_random_ground_skill(
+        self, *, ground_skill: GroundSkill, state: State
+    ) -> tuple[LabeledAction, "_SkillAttempt | None"]:
+        """A random-mode step under `reproduce_predicators_random_when_stranded`:
+        predicators' `sample_applicable_option`, which grounds the option with one
+        parameter sample and no learned sampler. Here that sample is the first draw
+        of the domain's proposal the feasibility check accepts, within the same
+        proposal budget `sample_parameter_candidates` uses. The record is marked
+        non-exploratory (predicators' indicator False) so the outcome reaches
+        competence, and it is training data. Filed as UNINFORMATIVE -- a draw the
+        sampler did not rank -- not EPSILON_RANDOM, which is what competence skips."""
+        skill = ground_skill.skill
+        if skill.param_dim == 0:
+            return self._labeled_action(
+                ground_skill=ground_skill,
+                params=np.zeros(0),
+                state=state,
+                record=None,
+                prefix="random: ",
+            ), None
+        max_proposals = self.num_candidates * self.max_proposals_per_candidate
+        rejected: dict[str, int] = {}
+        params: np.ndarray | None = None
+        sampled = 0
+        while params is None and sampled < max_proposals:
+            candidate = self.skill_provider.sample_params_at_state(
+                ground_skill=ground_skill, rng=self._rng, state=state
+            )
+            sampled += 1
+            reason = self.skill_provider.parameter_rejection_reason(
+                ground_skill=ground_skill, params=candidate, state=state
+            )
+            if reason is None:
+                params = candidate
+            else:
+                rejected[reason] = rejected.get(reason, 0) + 1
+        diagnostics = ParameterSamplingDiagnostics(
+            requested_candidates=1,
+            sampled_proposals=sampled,
+            accepted_candidates=int(params is not None),
+            max_proposals=max_proposals,
+            rejection_reasons=rejected,
+        )
+        self.record_parameter_sampling(
+            ground_skill=ground_skill, explore=False, diagnostics=diagnostics
+        )
+        if params is None:
+            raise NoFeasibleParametersError(skill_name=skill.name, diagnostics=diagnostics)
+        record = _SkillAttempt(
+            skill_name=skill.name,
+            param_dim=skill.param_dim,
+            sampler_input=self.sampler_input_row(
+                ground_skill=ground_skill, state=state, params=params
+            ),
+            params=[float(p) for p in params],
+            was_random_exploration=False,
+            was_informed_choice=False,
+            consultation=SamplerConsultation.UNINFORMATIVE,
+            records_training_row=True,
+        )
+        return self._labeled_action(
+            ground_skill=ground_skill,
+            params=params,
+            state=state,
+            record=record,
+            prefix="random: ",
+        ), record
+
+    def _labeled_action(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        params: np.ndarray,
+        state: State,
+        record: "_SkillAttempt | None",
+        prefix: str = "",
+    ) -> LabeledAction:
+        skill = ground_skill.skill
         action = self.skill_provider.compute_action(
             ground_skill=ground_skill, params=params, state=state
         )
+        annotations = self.skill_provider.action_annotations(
+            ground_skill=ground_skill, action=action
+        )
+        if record is not None:
+            record.controller_choices = dict(annotations)
         objects_desc = ", ".join(obj.name for obj in ground_skill.objects)
-        label = f"{skill.name}({objects_desc})"
+        label = f"{prefix}{skill.name}({objects_desc})"
         if params.size > 0:
             label += f", params={[round(float(p), 2) for p in params]}"
-        return LabeledAction(action=action, label=label), record
+        for name, value in annotations.items():
+            label += f", {name}={round(float(value), 2)}"
+        return LabeledAction(action=action, label=label)
 
     # ------------------------------------------- unreachable Method surface area
 
@@ -1028,8 +1254,9 @@ class _SkillAttempt(BaseModel):
     *random* branch rather than the learned argmax.
 
     That last flag matters: predicators suppresses the *competence* update for
-    randomly-explored attempts (`active_sampler_learning_approach.py` lines
-    442-443) while still keeping them as sampler training data. Without it,
+    randomly-explored attempts (`ActiveSamplerExplorer._update_ground_op_hist`,
+    `if not exploration_indicator`) while still keeping them as sampler training
+    data. Without it,
     competence measures "how often does a coin flip work" rather than "how good
     is this skill when the robot actually tries" -- at the paper's epsilon=0.5
     that roughly halves the apparent competence of a skill the robot has in fact
@@ -1071,6 +1298,10 @@ class _SkillAttempt(BaseModel):
     # wants those attempts classified honestly, while the learning path must keep
     # ignoring them exactly as it did.
     records_training_row: bool
+    # `SkillProvider.action_annotations` for the executed action: values the domain's
+    # `compute_action` chose itself (Tossing3D's stand direction), logged beside
+    # `params` rather than inside it.
+    controller_choices: dict[str, float] = Field(default_factory=dict)
 
 
 class _EesEpisode:
@@ -1088,6 +1319,7 @@ class _EesEpisode:
         method: EesMethod,
         goal: frozenset[GroundAtom],
         practicing: bool,
+        pursue_goal: bool = True,
     ) -> None:
         self._method = method
         self._goal = goal
@@ -1096,11 +1328,15 @@ class _EesEpisode:
         self._pending: GroundSkill | None = None
         self._pending_before_atoms: frozenset[GroundAtom] = frozenset()
         self._pending_sampler_record: _SkillAttempt | None = None
-        self._goal_phase_done = False
+        # A practice period the goal-pursuit schedule skips starts in practice.
+        self._goal_phase_done = practicing and not pursue_goal
         # The last skill of the current practice plan -- the one actually being
         # practiced (the prefix just navigates to its preconditions). Only consulted
         # under reproduce_predicators_explore_target_only, to explore that skill alone.
         self._practice_target: GroundSkill | None = None
+        # predicators' `using_random`: set once no practice goal is reachable, under
+        # reproduce_predicators_random_when_stranded, and never cleared this episode.
+        self._random_mode = False
         # Remaining goal-pursuit budget (predicators' `assigned_task_horizon`); None
         # means uncapped. Counts down one per skill while the goal phase runs.
         self._goal_pursuit_remaining: int | None = method.goal_pursuit_horizon
@@ -1128,93 +1364,130 @@ class _EesEpisode:
         self.observe_pending(true_atoms=true_atoms, state=state)
         self._tick_goal_pursuit_horizon()
 
-        # Closed-loop execution: if the next queued skill's preconditions no longer
-        # hold, the plan has diverged (a stochastic outcome -- e.g. a bare ball
-        # placed on a table falling to the floor -- broke a downstream skill's
-        # preconditions) and executing it anyway would drive an inapplicable action
-        # into the env. Discard the stale plan and replan instead. This mirrors
-        # predicators, whose option policy raises OptionExecutionFailure when a step
-        # is not initiable and re-plans (active_sampler_explorer.py:340-343) rather
-        # than ever feeding simulate() an inapplicable option. The earlier open-loop
-        # execution is what tripped Ball-Ring's pick/place obj_type_id asserts.
-        if self._plan and not (self._plan[0].preconditions <= true_atoms):
-            self._plan = []
+        # The `while` exists for one event only: a starved parameter pool (see the
+        # except branch below) deselects its ground action and retries planning in
+        # the same step, so a session never ends *because* one pool was empty.
+        # Termination: every iteration returns, raises, records a strictly new
+        # starved (state, action) pair, or flips `_goal_phase_done` once.
+        while True:
+            # Closed-loop execution: if the next queued skill's preconditions no
+            # longer hold, the plan has diverged (a stochastic outcome -- e.g. a
+            # bare ball placed on a table falling to the floor -- broke a downstream
+            # skill's preconditions) and executing it anyway would drive an
+            # inapplicable action into the env. Discard the stale plan and replan
+            # instead. This mirrors predicators, whose option policy raises
+            # OptionExecutionFailure when a step is not initiable and re-plans
+            # (active_sampler_explorer.py:340-343) rather than ever feeding
+            # simulate() an inapplicable option. The earlier open-loop execution is
+            # what tripped Ball-Ring's pick/place obj_type_id asserts.
+            if self._plan and not (self._plan[0].preconditions <= true_atoms):
+                self._plan = []
 
-        if not self._plan:
-            self._plan = self._next_plan(true_atoms=true_atoms)
-            # The practice target is the last skill of a practice plan (a goal-pursuit
-            # plan has none); the prefix just reaches its preconditions.
-            self._practice_target = (
-                self._plan[-1]
-                if (self._practicing and self._goal_phase_done and self._plan)
-                else None
-            )
-        if not self._plan:
-            if self._practicing:
-                # The selector returned STOP, or no candidate/setup/bootstrap action
-                # was available. End the period without a no-op or a paid reset.
-                logger.debug(
-                    "_EesEpisode._next_plan: STOP or no available practice action "
-                    "-- raising InteractionComplete at step #%d "
-                    "true_atoms=%s",
-                    self._debug_step_count,
-                    sorted(
-                        f"{a.predicate.name}({','.join(o.name for o in a.objects)})"
-                        for a in true_atoms
+            if not self._plan:
+                self._plan = self._next_plan(true_atoms=true_atoms)
+                # The practice target is the last skill of a practice plan (a
+                # goal-pursuit plan has none); the prefix just reaches its
+                # preconditions.
+                self._practice_target = (
+                    self._plan[-1]
+                    if (self._practicing and self._goal_phase_done and self._plan)
+                    else None
+                )
+            if not self._plan:
+                if self._practicing:
+                    # The selector returned STOP, or no candidate/setup/bootstrap
+                    # action was available. End the period without a no-op or a
+                    # paid reset.
+                    logger.debug(
+                        "_EesEpisode._next_plan: STOP or no available practice action "
+                        "-- raising InteractionComplete at step #%d "
+                        "true_atoms=%s",
+                        self._debug_step_count,
+                        sorted(
+                            f"{a.predicate.name}({','.join(o.name for o in a.objects)})"
+                            for a in true_atoms
+                        ),
+                    )
+                    raise InteractionComplete
+                # Evaluation: run_task_episode owns termination (goal check +
+                # horizon), so degrade to a no-op rather than ending its episode
+                # from in here. The environment supplies the action, since only it
+                # knows what inaction means in its own action space -- see
+                # Environment.noop_action.
+                return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
+
+            ground_skill = self._plan.pop(0)
+            if self._practicing and ground_skill in method.starved_ground_skills(
+                true_atoms=true_atoms
+            ):
+                # Replanning re-chose an action whose pool already starved in this
+                # very state -- planning is deterministic, so executing would only
+                # starve again. Try once more with the goal phase closed (a goal
+                # plan cannot deselect, but the practice selector can); if practice
+                # planning itself reproduced it, end the period as before.
+                self._plan = []
+                self._practice_target = None
+                if not self._goal_phase_done:
+                    self._goal_phase_done = True
+                    continue
+                raise InteractionComplete(planner_stop=False)
+            if method.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
+                if self._practicing:
+                    method.record_action_cost(ground_skill=ground_skill)
+                # Dispatch to the rescue mechanism, not execute_ground_skill --
+                # this "skill" has no controller/effects to score. self._pending
+                # stays untouched: nothing here for observe_pending to settle.
+                raise HumanCubeBinResetRequested(
+                    cost=ground_skill.evaluate_practice_cost(),
+                    destination=method.skill_provider.movables_reset_destination(
+                        ground_skill=ground_skill
                     ),
                 )
-                raise InteractionComplete
-            # Evaluation: run_task_episode owns termination (goal check + horizon),
-            # so degrade to a no-op rather than ending its episode from in here.
-            # The environment supplies the action, since only it knows what inaction
-            # means in its own action space -- see Environment.noop_action.
-            return LabeledAction(action=self._noop_action(), label="no-op (no plan)")
-
-        ground_skill = self._plan.pop(0)
-        if method.skill_provider.is_movables_reset_skill(ground_skill=ground_skill):
+            # By default every skill executed during practice explores
+            # (epsilon-greedy). Under reproduce_predicators_explore_target_only,
+            # only the practice target does -- the prefix that navigates to it uses
+            # the greedy learned sampler, matching predicators
+            # (active_sampler_explorer.py fires its exploration sampler only once
+            # next_practice_nsrt's preconditions hold). On this domain's long
+            # multi-skill plans, exploring every step spends ~half of all actions
+            # on off-target random params; this flag measures that cost.
+            explore = self._practicing and (
+                not method.reproduce_predicators_explore_target_only
+                or ground_skill is self._practice_target
+            )
+            try:
+                if self._practicing and self._random_mode:
+                    labeled, record = method.execute_random_ground_skill(
+                        ground_skill=ground_skill, state=state
+                    )
+                else:
+                    labeled, record = method.execute_ground_skill(
+                        ground_skill=ground_skill, state=state, explore=explore
+                    )
+            except NoFeasibleParametersError:
+                self._plan = []
+                self._practice_target = None
+                if not self._practicing:
+                    return LabeledAction(
+                        action=self._noop_action(), label="no-op (no feasible parameters)"
+                    )
+                # No controller was dispatched, so nothing to score and nothing to
+                # charge. Deselect this (state, action) pair for the session and
+                # let the planner choose again in this same step, instead of ending
+                # the period -- an empty pool is a geometric fact about one action,
+                # not a reason to stop practicing everything else.
+                method.record_starved_parameter_pool(
+                    ground_skill=ground_skill, true_atoms=true_atoms
+                )
+                continue
             if self._practicing:
+                # Charge only once action construction has succeeded, even if no
+                # later policy call observes this actual attempt.
                 method.record_action_cost(ground_skill=ground_skill)
-            # Dispatch to the rescue mechanism, not execute_ground_skill -- this
-            # "skill" has no controller/effects to score. self._pending stays
-            # untouched: nothing here for observe_pending to settle.
-            raise HumanCubeBinResetRequested(
-                cost=ground_skill.evaluate_practice_cost(),
-                destination=method.skill_provider.movables_reset_destination(
-                    ground_skill=ground_skill
-                ),
-            )
-        # By default every skill executed during practice explores (epsilon-greedy).
-        # Under reproduce_predicators_explore_target_only, only the practice target
-        # does -- the prefix that navigates to it uses the greedy learned sampler,
-        # matching predicators (active_sampler_explorer.py fires its exploration
-        # sampler only once next_practice_nsrt's preconditions hold). On this domain's
-        # long multi-skill plans, exploring every step spends ~half of all actions on
-        # off-target random params; this flag measures that cost.
-        explore = self._practicing and (
-            not method.reproduce_predicators_explore_target_only
-            or ground_skill is self._practice_target
-        )
-        try:
-            labeled, record = method.execute_ground_skill(
-                ground_skill=ground_skill, state=state, explore=explore
-            )
-        except NoFeasibleParametersError:
-            self._plan = []
-            self._practice_target = None
-            if self._practicing:
-                # No controller was dispatched. End without a fake failure,
-                # execution cost, or unrequested reset, and distinguish this
-                # from an algorithmic STOP decision.
-                raise InteractionComplete(planner_stop=False) from None
-            return LabeledAction(action=self._noop_action(), label="no-op (no feasible parameters)")
-        if self._practicing:
-            # Charge only once action construction has succeeded, even if no
-            # later policy call observes this actual attempt.
-            method.record_action_cost(ground_skill=ground_skill)
-        self._pending = ground_skill
-        self._pending_before_atoms = true_atoms
-        self._pending_sampler_record = record
-        return labeled
+            self._pending = ground_skill
+            self._pending_before_atoms = true_atoms
+            self._pending_sampler_record = record
+            return labeled
 
     def _tick_goal_pursuit_horizon(self) -> None:
         """Spend one step of the goal-pursuit budget, and end the goal phase once it
@@ -1295,6 +1568,7 @@ class _EesEpisode:
                     consultation=attempt.consultation,
                     success=success,
                     params=attempt.params,
+                    controller_choices=attempt.controller_choices,
                     state=state,
                     objects=self._pending.objects,
                 )
@@ -1323,6 +1597,9 @@ class _EesEpisode:
                 if plan:
                     return plan
                 self._goal_phase_done = True
+                if self._practicing and method.goal_failure_enters_random_mode():
+                    logger.debug("_EesEpisode: no plan to the task goal -- random mode")
+                    self._random_mode = True
         if not self._practicing:
             return []
         return self._practice_plan(true_atoms=true_atoms)
@@ -1333,9 +1610,19 @@ class _EesEpisode:
         execution. If candidates are exhausted, bootstrap with a uniformly random
         applicable skill."""
         method = self._method
+        starved = method.starved_ground_skills(true_atoms=true_atoms)
+        if self._random_mode:
+            return self._random_initiable_plan(true_atoms=true_atoms, starved=starved)
         for candidate in method.select_skill_to_practice(true_atoms=true_atoms):
             if candidate == STOP_SKILL:
                 raise InteractionComplete(planner_stop=True)
+            if candidate in starved:
+                # Its parameter pool starved at this symbolic state earlier in the
+                # session (see record_starved_parameter_pool); selecting it again
+                # would only starve again. Not tallied: record_practice_target's
+                # contract is pure observation of decisions already made, and this
+                # skip *is* the decision.
+                continue
             if candidate.preconditions <= true_atoms:
                 method.record_practice_target(name=candidate.skill.name, field="selected")
                 return [candidate]
@@ -1360,9 +1647,25 @@ class _EesEpisode:
             method.record_practice_target(name=candidate.skill.name, field="selected")
             return [*prefix, candidate]
 
-        applicable = SkillGrounder.applicable_ground_skills(
-            skills=method.skills(), objects=method.objects(), true_atoms=true_atoms
-        )
+        if method.reproduce_predicators_random_when_stranded:
+            logger.debug("_EesEpisode: no reachable practice goal -- random mode")
+            self._random_mode = True
+        return self._random_initiable_plan(true_atoms=true_atoms, starved=starved)
+
+    def _random_initiable_plan(
+        self, *, true_atoms: frozenset[GroundAtom], starved: frozenset[GroundSkill]
+    ) -> list[GroundSkill]:
+        """One uniformly chosen ground skill whose preconditions hold, or none."""
+        method = self._method
+        applicable = [
+            ground_skill
+            for ground_skill in SkillGrounder.applicable_ground_skills(
+                skills=method.skills(), objects=method.objects(), true_atoms=true_atoms
+            )
+            # Same deselection as the candidate loop above: a bootstrap draw of a
+            # starved action would starve again, not bootstrap anything.
+            if ground_skill not in starved
+        ]
         if not applicable:
             return []
         return [method.random_choice(ground_skills=applicable)]

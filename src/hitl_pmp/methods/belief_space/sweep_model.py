@@ -1,8 +1,9 @@
-"""Expectimax-facing composition of the Tossing3D practice model."""
+"""Expectimax-facing composition of the Sweep practice model."""
 
 from __future__ import annotations
 
 import hashlib
+import weakref
 from collections.abc import Iterable
 
 import numpy as np
@@ -11,45 +12,40 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 from hitl_pmp.core.method.types import GroundSkill, SamplerConsultation
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 
-from .tossing3d_constants import (
-    OPEN_GRIPPER_SKILL,
-    PICK_SKILL,
-    PRACTICE_BUDGET,
-    TOSS_SKILL,
-)
-from .tossing3d_deployment_model import (
-    DeploymentPolicyExpectation,
-    evaluate_deployment_policies,
-    evaluate_deployment_policy,
-)
+from .sweep_canonical_likelihood import SweepCanonicalLikelihood
+from .sweep_deployment_model import SweepDeploymentExpectation
+from .sweep_observation_model import SweepBeliefs
+from .sweep_transition_model import SweepTransitions
+from .tossing3d_constants import PRACTICE_BUDGET
 from .tossing3d_observation_model import (
     SkillBeliefModel,
-    make_skill_belief_models,
     refit_belief_state,
 )
 from .tossing3d_transition_model import (
     make_tossing3d_search_state,
-    transition_outcomes,
 )
 from .types.belief_state import Tossing3DBeliefState
 from .types.competence_evidence import CompetenceEvidence
 from .types.failure_effects import FailureEffectCount
 from .types.search_state import Tossing3DSearchState
-from .types.skill_belief import SkillBelief, SkillHypothesis
-from .types.theta import Tossing3DTheta
+from .types.skill_belief import SkillBelief, SkillHypothesis, WeightedHypothesis
+from .types.sweep_theta import SweepTheta
+from .types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 
-class Tossing3DPracticeModel(BaseModel):
+class SweepPracticeModel(BaseModel):
     """Connect Tossing3D dynamics and beliefs to the generic expectimax protocol."""
 
     model_config = ConfigDict(frozen=True)
 
     seed: int = 0
     ground_skills: tuple[GroundSkill, ...] = Field(default=(), exclude=True)
-    random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
+    trainable_skill_names: tuple[str, ...]
+    human_skill_names: tuple[str, ...] = ()
+    random_competences: dict[str, float]
+    deployment: SweepDeploymentExpectation = Field(exclude=True)
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
-    deployment_horizon: int = Field(default=4, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     failure_effect_counts: tuple[FailureEffectCount, ...] = Field(default=(), exclude=True)
     # (symbolic state, ground action) pairs whose parameter pool starved this
@@ -62,6 +58,17 @@ class Tossing3DPracticeModel(BaseModel):
     )
 
     _rng: np.random.Generator = PrivateAttr()
+    _canonical: SweepCanonicalLikelihood | None = PrivateAttr(default=None)
+    _imagined_updates: dict[object, Tossing3DBeliefState] = PrivateAttr(default_factory=dict)
+    _atom_masks: dict[frozenset[GroundAtom], int] = PrivateAttr(default_factory=dict)
+    _state_keys: dict[int, tuple[weakref.ReferenceType[Tossing3DBeliefState], object]] = (
+        PrivateAttr(default_factory=dict)
+    )
+    _deployment_cache: dict[object, float] = PrivateAttr(default_factory=dict)
+    _projected_cache: dict[tuple[bytes, int], SkillBelief] = PrivateAttr(default_factory=dict)
+    _signature_cache: dict[int, tuple[weakref.ReferenceType[SkillBelief], bytes]] = PrivateAttr(
+        default_factory=dict
+    )
     _atom_indexes: dict[GroundAtom, int] = PrivateAttr(default_factory=dict)
     _precondition_masks: tuple[int, ...] = PrivateAttr(default=())
     _effects: dict[
@@ -98,26 +105,23 @@ class Tossing3DPracticeModel(BaseModel):
             skill: (skill.add_effects, skill.delete_effects, skill.ignore_effects)
             for skill in self.ground_skills
         }
-        self._skill_belief_models, self._skill_belief_models_by_name = make_skill_belief_models(
-            ground_skills=self.ground_skills
+        self._skill_belief_models, self._skill_belief_models_by_name = SweepBeliefs.models(
+            ground_skills=self.ground_skills, trainable_skill_names=self.trainable_skill_names
         )
 
-    def sample_theta_from_belief(self, *, belief_state: Tossing3DBeliefState) -> Tossing3DTheta:
+    def sample_theta_from_belief(self, *, belief_state: Tossing3DBeliefState) -> SweepTheta:
         return self.sample_thetas_from_belief(belief_state=belief_state, num_samples=1)[0]
 
     def sample_thetas_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
-    ) -> list[Tossing3DTheta]:
+    ) -> list[SweepTheta]:
         projected = refit_belief_state(state=belief_state)
-        pick = self.sample_skills(belief=projected.skill_beliefs[PICK_SKILL], count=num_samples)
-        toss = self.sample_skills(belief=projected.skill_beliefs[TOSS_SKILL], count=num_samples)
-        opened = self.sample_skills(
-            belief=projected.skill_beliefs[OPEN_GRIPPER_SKILL], count=num_samples
-        )
+        draws = {
+            name: self.sample_skills(belief=belief, count=num_samples)
+            for name, belief in projected.skill_beliefs.items()
+        }
         return [
-            Tossing3DTheta.model_construct(
-                pick=pick[index], toss=toss[index], open_gripper=opened[index]
-            )
+            SweepTheta(skills={name: values[index] for name, values in draws.items()})
             for index in range(num_samples)
         ]
 
@@ -133,29 +137,26 @@ class Tossing3DPracticeModel(BaseModel):
             for row in parameters
         ]
 
-    def evaluate_policy(self, *, sampled_theta: Tossing3DTheta) -> float:
-        return evaluate_deployment_policy(
-            toss_competence=sampled_theta.toss.competence,
-            pick_competence=sampled_theta.pick.competence,
-            open_competence=sampled_theta.open_gripper.competence,
-            horizon=self.deployment_horizon,
-        )
+    def evaluate_policy(self, *, sampled_theta: SweepTheta) -> float:
+        beliefs = {
+            name: WeightedHypothesisBelief(
+                hypotheses=(WeightedHypothesis(hypothesis=hypothesis, probability=1.0),)
+            )
+            for name, hypothesis in sampled_theta.skills.items()
+        }
+        return self.deployment.model_copy(
+            update={"failure_effect_counts": self.failure_effect_counts}
+        ).evaluate(beliefs=beliefs)
 
     def sample_policy_values_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> np.ndarray:
-        projected = refit_belief_state(state=belief_state)
-        competences = []
-        for skill_name in (PICK_SKILL, TOSS_SKILL, OPEN_GRIPPER_SKILL):
-            competences.append(
-                projected.skill_beliefs[skill_name].sample(rng=self._rng, count=num_samples)[:, 0]
+        return np.asarray([
+            self.evaluate_policy(sampled_theta=theta)
+            for theta in self.sample_thetas_from_belief(
+                belief_state=belief_state, num_samples=num_samples
             )
-        return evaluate_deployment_policies(
-            toss_competences=competences[1],
-            pick_competences=competences[0],
-            open_competences=competences[2],
-            horizon=self.deployment_horizon,
-        )
+        ])
 
     def G(self, *, policy_value: float, summed_cost: float) -> float:
         """Apply either the PDF's hard-budget or linear-cost objective."""
@@ -174,13 +175,50 @@ class Tossing3DPracticeModel(BaseModel):
         Particle/grid approximation and the existing training forecasts remain.
         """
         assert num_samples >= 1
-        projected = refit_belief_state(state=belief_state)
-        policy_value = DeploymentPolicyExpectation.evaluate(
-            pick=projected.skill_beliefs[PICK_SKILL],
-            toss=projected.skill_beliefs[TOSS_SKILL],
-            opened=projected.skill_beliefs[OPEN_GRIPPER_SKILL],
-            horizon=self.deployment_horizon,
+        names = tuple(dict.fromkeys(skill.skill.name for skill in self.deployment.ordered_skills))
+        key = (
+            self.deployment,
+            self.failure_effect_counts,
+            tuple(
+                (
+                    name,
+                    self._belief_signature(belief=belief_state.skill_beliefs[name]),
+                    belief_state.pending_examples.get(name, 0),
+                )
+                for name in names
+            ),
         )
+        policy_value = self._deployment_cache.get(key)
+        if policy_value is None:
+            # Independent forecasts for recovery controllers cannot affect this
+            # stock-only deployment policy. Costs are deliberately outside the cache.
+            projected_beliefs: dict[str, SkillBelief] = {}
+            for name in names:
+                count = belief_state.pending_examples.get(name, 0)
+                projection_key = (
+                    self._belief_signature(belief=belief_state.skill_beliefs[name]),
+                    count,
+                )
+                projected = self._projected_cache.get(projection_key)
+                if projected is None:
+                    local = belief_state.model_copy(
+                        update={
+                            "skill_beliefs": {name: belief_state.skill_beliefs[name]},
+                            "pending_examples": {name: count},
+                            "sampler_training": {},
+                        }
+                    )
+                    projected = refit_belief_state(state=local).skill_beliefs[name]
+                    if len(self._projected_cache) >= 2048:
+                        self._projected_cache.clear()
+                    self._projected_cache[projection_key] = projected
+                projected_beliefs[name] = projected
+            policy_value = self.deployment.model_copy(
+                update={"failure_effect_counts": self.failure_effect_counts}
+            ).evaluate(beliefs=projected_beliefs)
+            if len(self._deployment_cache) >= 4096:
+                self._deployment_cache.clear()
+            self._deployment_cache[key] = policy_value
         return self.G(policy_value=policy_value, summed_cost=summed_cost)
 
     def observe_outcome(
@@ -234,15 +272,21 @@ class Tossing3DPracticeModel(BaseModel):
         ]
 
     def _atoms_mask(self, *, atoms: Iterable[GroundAtom]) -> int:
+        frozen = frozenset(atoms)
+        cached = self._atom_masks.get(frozen)
+        if cached is not None:
+            return cached
         mask = 0
-        for atom in atoms:
+        for atom in frozen:
             index = self._atom_indexes.get(atom)
             if index is not None:
                 mask |= 1 << index
+        if len(self._atom_masks) >= 8192:
+            self._atom_masks.clear()
+        self._atom_masks[frozen] = mask
         return mask
 
-    @staticmethod
-    def _belief_signature(*, belief: SkillBelief) -> bytes:
+    def _belief_signature(self, *, belief: SkillBelief) -> bytes:
         """Identify a posterior without retaining its potentially large buffers.
 
         Search memo tables live for one solve. A persistent signature-to-integer
@@ -251,6 +295,11 @@ class Tossing3DPracticeModel(BaseModel):
         is constant-size, requires no interning table, and includes all the same
         signature information. Type tags and lengths prevent ambiguous joins.
         """
+        assert self.__pydantic_private__ is not None
+        signatures = self.__pydantic_private__["_signature_cache"]
+        cached = signatures.get(id(belief))
+        if cached is not None and cached[0]() is belief:
+            return cached[1]
         digest = hashlib.sha256()
 
         def update(*, value: object) -> None:
@@ -289,7 +338,13 @@ class Tossing3DPracticeModel(BaseModel):
             digest.update(payload)
 
         update(value=(type(belief).__module__, type(belief).__qualname__, belief.signature()))
-        return digest.digest()
+        signature = digest.digest()
+        # Beliefs are frozen. Weak references retain no posterior buffers, and
+        # checking object identity prevents stale hits after Python reuses an id.
+        if len(signatures) >= 8192:
+            signatures.clear()
+        signatures[id(belief)] = (weakref.ref(belief), signature)
+        return signature
 
     def search_cache_key(
         self,
@@ -302,13 +357,7 @@ class Tossing3DPracticeModel(BaseModel):
         assert summed_cost == belief_state.accumulated_cost
         return (
             self._atoms_mask(atoms=environment_state.true_atoms),
-            tuple(
-                (skill_name, self._belief_signature(belief=belief))
-                for skill_name, belief in sorted(belief_state.skill_beliefs.items())
-            ),
-            tuple(sorted(belief_state.pending_examples.items())),
-            tuple(sorted(belief_state.sampler_training.items())),
-            belief_state.accumulated_cost,
+            self._state_key(state=belief_state),
             horizon,
         )
 
@@ -319,16 +368,91 @@ class Tossing3DPracticeModel(BaseModel):
         state: Tossing3DBeliefState,
         action: GroundSkill,
     ) -> tuple[tuple[float, Tossing3DBeliefState, frozenset[GroundAtom]], ...]:
-        return transition_outcomes(
+        return SweepTransitions.outcomes(
             environment_state=environment_state,
             state=state,
             action=action,
             ground_skills=self.ground_skills,
             effects=self._effects,
             exploration_epsilon=self.exploration_epsilon,
-            random_toss_competence=self.random_toss_competence,
+            trainable_skill_names=self.trainable_skill_names,
+            human_skill_names=self.human_skill_names,
+            random_competences=self.random_competences,
             failure_effect_counts=self.failure_effect_counts,
             competence_evidence=self.competence_evidence,
+            imagined_update=self._imagined_update,
+        )
+
+    def begin_exact_search(self, *, state: Tossing3DBeliefState) -> None:
+        self._imagined_updates.clear()
+        self._canonical = SweepCanonicalLikelihood(state=state)
+
+    def end_exact_search(self) -> None:
+        self._canonical = None
+        self._imagined_updates.clear()
+
+    def _imagined_update(
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        action: GroundSkill,
+        success: bool,
+        was_random_exploration: bool,
+        condition_competence: bool,
+    ) -> Tossing3DBeliefState:
+        name = action.skill.name
+        trainable = name in self.trainable_skill_names
+        training = state.sampler_training.get(name)
+        key = (
+            name,
+            trainable,
+            self._belief_signature(belief=state.skill_beliefs[name]),
+            state.pending_examples.get(name, 0),
+            training,
+            success,
+            was_random_exploration,
+            condition_competence,
+        )
+        updated = self._imagined_updates.get(key)
+        if updated is None:
+            # An imagined observation touches only this skill. Keeping its local
+            # state permits reuse across unrelated skills' histories and charges.
+            local = state.model_copy(
+                update={
+                    "skill_beliefs": {name: state.skill_beliefs[name]},
+                    "pending_examples": {name: state.pending_examples.get(name, 0)},
+                    "sampler_training": {} if training is None else {name: training},
+                    "accumulated_cost": 0.0,
+                }
+            )
+            update_model = self._skill_belief_models_by_name[name]
+            canonical = (
+                self._canonical.condition(
+                    name=name, belief=state.skill_beliefs[name], success=success
+                )
+                if self._canonical is not None and condition_competence
+                else None
+            )
+            updated = update_model.observe_outcome(
+                state=local,
+                success=success,
+                was_random_exploration=was_random_exploration,
+                resample=False,
+                condition_competence=condition_competence and canonical is None,
+            )
+            if canonical is not None:
+                updated = updated.model_copy(update={"skill_beliefs": {name: canonical}})
+            if trainable:
+                updated = update_model.observe_training_example(state=updated, success=success)
+            if len(self._imagined_updates) >= 2048:
+                self._imagined_updates.clear()
+            self._imagined_updates[key] = updated
+        return state.model_copy(
+            update={
+                "skill_beliefs": {**state.skill_beliefs, **updated.skill_beliefs},
+                "pending_examples": {**state.pending_examples, **updated.pending_examples},
+                "sampler_training": {**state.sampler_training, **updated.sampler_training},
+            }
         )
 
     def sample_next_states(
@@ -376,17 +500,28 @@ class Tossing3DPracticeModel(BaseModel):
             merged[key] = (next_environment, cost, previous_probability + probability)
         return list(merged.values())
 
-    @staticmethod
-    def transition_key(*, environment_state: Tossing3DSearchState, cost: float) -> object:
-        state = environment_state.state
-        return (
-            environment_state.atoms,
-            tuple(sorted(state.skill_beliefs.items())),
+    def _state_key(self, *, state: Tossing3DBeliefState) -> object:
+        assert self.__pydantic_private__ is not None
+        cache = self.__pydantic_private__["_state_keys"]
+        cached = cache.get(id(state))
+        if cached is not None and cached[0]() is state:
+            return cached[1]
+        key = (
+            tuple(
+                (name, self._belief_signature(belief=belief))
+                for name, belief in sorted(state.skill_beliefs.items())
+            ),
             tuple(sorted(state.pending_examples.items())),
             tuple(sorted(state.sampler_training.items())),
             state.accumulated_cost,
-            cost,
         )
+        if len(cache) >= 8192:
+            cache.clear()
+        cache[id(state)] = (weakref.ref(state), key)
+        return key
+
+    def transition_key(self, *, environment_state: Tossing3DSearchState, cost: float) -> object:
+        return (environment_state.atoms, self._state_key(state=environment_state.state), cost)
 
     def compute_next_belief_state(
         self,
