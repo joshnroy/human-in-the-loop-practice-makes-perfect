@@ -72,3 +72,36 @@ Raw JSON is [beside this note](sweep-exact-search-benchmarks.json). Profiles,
 probe script and a git-show copy of the baseline model are preserved under
 scratchpad/exact-search/ in the sweep-exact-search worktree. Service names are
 sweep-exact-{baseline,final,pruned}-{3,20}; all are finished.
+
+
+## Updated contract follow-up
+
+After importing integration contract commit e42f734c, the diagnostic fixture
+explicitly includes DrawerNotOpen and SweepReachable0–4 in the valid deployment
+start and DrawerNotClosed/RobotAway in its held-wiper/open-drawer practice state.
+This is a separate fixture version; do not compare its timing as if the old
+model were unchanged. Combined focused method/environment/CLI tests pass48/48.
+
+| Updated-contract variant | Depth | Solver seconds | Expanded | Cached | Completed |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Baseline exact search |3|0.536|51|819|1/1|
+| Exact caches and pruning |3|0.277|43|797|1/1|
+| Exact caches and pruning |20|119.303|27485|362691|0/1|
+
+Depth3 baseline and optimized values/actions still agree exactly:
+0.7092781152855239 and the human reset. The depth20 probe pruned13159 suffixes
+and reached1261.9MiB peak RSS, but remained in the first deep subtree. Thus the
+contract corrections do not yet establish depth20 readiness or a completion ETA.
+Services sweep-exact-updated-{baseline-3,pruned-3,pruned-20} are finished; updated
+profiles and script remain beside the original evidence in scratchpad/exact-search/.
+
+A further read-only diagnostic identified a large potential source of missed
+transpositions: all70/70 orderings of four successes and four failures produce
+different grid posterior weight byte strings. Maximum absolute weight difference
+is1.2143e-17; posterior mean ranges0.545454644313975–0.5454546443139752.
+The Bayesian likelihood is mathematically commutative, but sequential floating
+normalization is not byte-identical, and the current signature includes those
+bytes. A sufficient-statistic/canonical-likelihood factorization might merge
+these histories while preserving the mathematical model; it would change the
+floating-point operation order and requires separate correctness validation.
+No rounding, approximate belief merging or canonicalization was applied here.

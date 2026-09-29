@@ -670,15 +670,18 @@ def test_full_sweep_root_action_values_match_reference_with_pruning(*, horizon):
             "HandEmpty",
             "WiperHome",
             "DrawerClosed",
+            "DrawerNotOpen",
             "RobotHome",
             "AnyCubeInPile",
-            *(f"InPile{i}" for i in range(5)),
+            *(f"{name}{i}" for i in range(5) for name in ("InPile", "SweepReachable")),
         )
     )
     current = atoms(
         names=(
             "HoldingWiper",
             "DrawerOpen",
+            "DrawerNotClosed",
+            "RobotAway",
             *(f"{name}{i}" for i in range(5) for name in ("Loose", "Blocked")),
         )
     )
