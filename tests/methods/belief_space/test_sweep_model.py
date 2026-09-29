@@ -883,3 +883,72 @@ def test_canonical_segment_rejects_new_cost_clock_or_external_posteriors():
     assert inside is not None
     assert segment.condition(name="Sweep", belief=inside, success=False) is not None
     assert segment.condition(name="Other", belief=root, success=True) is None
+
+
+def test_terminal_forecasts_cache_each_independent_skill(*, monkeypatch):
+    from hitl_pmp.methods.belief_space.competence_inference import (
+        BayesianSkillBelief,
+        InferenceConfig,
+    )
+    from hitl_pmp.methods.belief_space.sweep_model import SweepPracticeModel
+    from hitl_pmp.methods.belief_space.sweep_observation_model import SweepBeliefs
+
+    skills, initial, goal = _chain()
+    names = tuple(skill.skill.name for skill in skills)
+    state = SweepBeliefs.prior(
+        skill_names=names,
+        trainable_skill_names=names,
+        seed=7,
+        num_particles=64,
+        config=InferenceConfig(),
+        engine="grid",
+    )
+    model = SweepPracticeModel(
+        ground_skills=skills,
+        trainable_skill_names=names,
+        random_competences={name: 0.25 for name in names},
+        deployment=SweepDeploymentExpectation(
+            ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=5
+        ),
+        linear_cost_lambda=0,
+    )
+    calls = []
+    refit = BayesianSkillBelief.refit
+
+    def counted(self, *, training_examples):  # noqa: PLR0917
+        calls.append((id(self), training_examples))
+        return refit(self, training_examples=training_examples)
+
+    monkeypatch.setattr(BayesianSkillBelief, "refit", counted)
+    model.J(belief_state=state, summed_cost=0, num_samples=1)
+    changed = state.model_copy(update={"pending_examples": {"Sweep": 1}})
+    model.J(belief_state=changed, summed_cost=0, num_samples=1)
+    assert len(calls) == 4
+    assert calls[-1] == (id(state.skill_beliefs["Sweep"]), 1)
+
+
+def test_deployment_symbolic_topology_compiles_once(*, monkeypatch):
+    import hitl_pmp.methods.belief_space.sweep_deployment_model as module
+
+    skills, initial, goal = _chain()
+    evaluator = SweepDeploymentExpectation(
+        ordered_skills=skills, initial_atoms=initial, goal_atoms=goal, horizon=7
+    )
+    calls = []
+    original = module.apply_success_effects
+
+    def counted(**kwargs):
+        calls.append(kwargs["ground_skill"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(module, "apply_success_effects", counted)
+    first = evaluator.evaluate(
+        beliefs={skill.skill.name: _belief(values=(0.2, 0.8)) for skill in skills}
+    )
+    first_count = len(calls)
+    assert first_count > 0
+    second = evaluator.evaluate(
+        beliefs={skill.skill.name: _belief(values=(0.4, 0.9)) for skill in skills}
+    )
+    assert len(calls) == first_count
+    assert second > first

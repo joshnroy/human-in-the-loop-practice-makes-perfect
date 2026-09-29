@@ -65,6 +65,7 @@ class SweepPracticeModel(BaseModel):
         PrivateAttr(default_factory=dict)
     )
     _deployment_cache: dict[object, float] = PrivateAttr(default_factory=dict)
+    _projected_cache: dict[tuple[bytes, int], SkillBelief] = PrivateAttr(default_factory=dict)
     _signature_cache: dict[int, tuple[weakref.ReferenceType[SkillBelief], bytes]] = PrivateAttr(
         default_factory=dict
     )
@@ -191,23 +192,30 @@ class SweepPracticeModel(BaseModel):
         if policy_value is None:
             # Independent forecasts for recovery controllers cannot affect this
             # stock-only deployment policy. Costs are deliberately outside the cache.
-            relevant_state = belief_state.model_copy(
-                update={
-                    "skill_beliefs": {name: belief_state.skill_beliefs[name] for name in names},
-                    "pending_examples": {
-                        name: belief_state.pending_examples.get(name, 0) for name in names
-                    },
-                    "sampler_training": {
-                        name: training
-                        for name, training in belief_state.sampler_training.items()
-                        if name in names
-                    },
-                }
-            )
-            projected = refit_belief_state(state=relevant_state)
+            projected_beliefs: dict[str, SkillBelief] = {}
+            for name in names:
+                count = belief_state.pending_examples.get(name, 0)
+                projection_key = (
+                    self._belief_signature(belief=belief_state.skill_beliefs[name]),
+                    count,
+                )
+                projected = self._projected_cache.get(projection_key)
+                if projected is None:
+                    local = belief_state.model_copy(
+                        update={
+                            "skill_beliefs": {name: belief_state.skill_beliefs[name]},
+                            "pending_examples": {name: count},
+                            "sampler_training": {},
+                        }
+                    )
+                    projected = refit_belief_state(state=local).skill_beliefs[name]
+                    if len(self._projected_cache) >= 2048:
+                        self._projected_cache.clear()
+                    self._projected_cache[projection_key] = projected
+                projected_beliefs[name] = projected
             policy_value = self.deployment.model_copy(
                 update={"failure_effect_counts": self.failure_effect_counts}
-            ).evaluate(beliefs=projected.skill_beliefs)
+            ).evaluate(beliefs=projected_beliefs)
             if len(self._deployment_cache) >= 4096:
                 self._deployment_cache.clear()
             self._deployment_cache[key] = policy_value
