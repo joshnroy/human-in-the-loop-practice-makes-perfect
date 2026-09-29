@@ -12,6 +12,7 @@ import numpy as np
 from gymnasium.spaces import Box
 from pydantic import PrivateAttr
 
+from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, State
 
@@ -145,8 +146,15 @@ class SweepDrawerEnvironment(Environment):
                 self._execute_recovery(name=name)
             except ExecutionError as exc:
                 error = str(exc)
-            self.session().end(success=not error, note=error)
         self.current_state = self.observe()
+        symbolic = GroundSkill(skill=SweepSymbols.skills()[index], objects=(SweepSymbols.SCENE,))
+        effects_hold = all(
+            a.predicate.holds(self.current_state, a.objects) for a in symbolic.add_effects
+        )
+        if name not in SweepSymbols.TRAINABLE:
+            if not effects_hold and not error:
+                error = "Controller returned without achieving declared observed effects"
+            self.session().end(success=not error and effects_hold, note=error)
         self._write_event(
             event={
                 "kind": "action",
@@ -154,6 +162,7 @@ class SweepDrawerEnvironment(Environment):
                 "index": self._action_count,
                 "params": action[1:].tolist(),
                 "error": error,
+                "symbolic_success": effects_hold,
                 "ticks": self.session().ticks - before,
                 "facts": {
                     n: bool(self.current_state.get(obj=SweepSymbols.SCENE, feature_name=n))
@@ -226,6 +235,8 @@ class SweepDrawerEnvironment(Environment):
             HoldingWiper=float(holding_wiper),
             DrawerOpen=float(session.drawer_pos() >= 0.15),
             DrawerClosed=float(session.drawer_pos() < 0.01),
+            DrawerNotOpen=float(session.drawer_pos() < 0.15),
+            DrawerNotClosed=float(session.drawer_pos() >= 0.01),
         )
         validation = SweepRegions.validate(session=session)
         values["WiperHome"] = float(
@@ -234,14 +245,17 @@ class SweepDrawerEnvironment(Environment):
         values["RobotHome"] = float(
             all(validation.checks.get(f"{S.ROBOT}:{k}", False) for k in ("region", "yaw"))
         )
+        values["RobotAway"] = 1.0 - values["RobotHome"]
         for i, cube in enumerate(S.CUBES):
-            in_pile = session.in_pile(cube=cube)
+            in_pile = all(validation.checks.get(f"{cube}:{k}", False) for k in ("region", "yaw"))
             held = cube in self._held
             loose = not in_pile and not held
             pickable = empty and loose and reset.primitives.pick_feasible(cube=cube)
+            in_drawer = SweepRegions.in_goal(session=session, cube=cube)
             values.update({
                 f"InPile{i}": float(in_pile),
-                f"InDrawer{i}": float(SweepRegions.in_goal(session=session, cube=cube)),
+                f"InDrawer{i}": float(in_drawer),
+                f"SweepReachable{i}": float(in_pile or in_drawer),
                 f"HoldingCube{i}": float(held),
                 f"Loose{i}": float(loose),
                 f"Pickable{i}": float(pickable),
@@ -267,7 +281,45 @@ class SweepDrawerEnvironment(Environment):
         )
 
     def reset_movables(self, *, destination: str | None = None) -> bool:
-        raise NotImplementedError("Shared valid-start human reset adapter is not yet validated")
+        """Explicit charged human reset to this run's validated start sample.
+
+        Sweep's approved intervention includes the robot, unlike the historical
+        cube-bin-only intervention in Toss. No automatic practice/eval path calls
+        this method. Restoring a fixed valid sample introduces no resampling.
+        """
+        if self.evaluation:
+            raise RuntimeError("Human intervention is unavailable during evaluation")
+        if destination is not None:
+            raise ValueError("Sweep has one declared start destination")
+        if self._initial_state is None or self._initial_validation is None:
+            raise RuntimeError("No validated initial sample for human reset")
+        if not self._initial_validation.valid:
+            raise RuntimeError("Human reset cannot repair an invalid initializer")
+        self.session().begin(name="HumanReset", kind="HumanReset", phase="practice")
+        self.session().restore(state=self._initial_state.copy())
+        self._held.clear()
+        self.current_state = self.observe()
+        validation = SweepRegions.validate(session=self.session())
+        reset = SweepSymbols.human_reset(cost=0.0)
+        effects_hold = all(
+            a.predicate.holds(self.current_state, a.objects) for a in reset.add_effects
+        )
+        succeeded = validation.valid and effects_hold
+        self._human_reset_count += 1
+        self.session().end(success=succeeded, note="explicit human start-distribution restoration")
+        self._write_event(
+            event={
+                "kind": "human_reset",
+                "index": self._human_reset_count,
+                "seed": self.session().seed,
+                "success": succeeded,
+                "validation": validation.model_dump(),
+                "effects_hold": effects_hold,
+            }
+        )
+        if not succeeded:
+            raise RuntimeError("Human reset failed its shared declared-start contract")
+        return True
 
     def _write_event(self, *, event: dict[str, Any]) -> None:
         if self.output_dir is None:

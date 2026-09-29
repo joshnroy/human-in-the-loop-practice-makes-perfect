@@ -1,5 +1,13 @@
 # Sweep integration checkpoint (not pilot-ready)
 
+## Current checkpoint, September28 23:50 EDT
+
+Josh explicitly approved the issue/fix table, resolving the earlier authorization block. The drawer, pick-candidate, reachable-cube Sweep, declared-region observation, shared explicit human reset, and deployment-skill corrections are implemented. Focused Sweep/model tests31/31 pass; baseline EES tests70/70 pass. The strengthened physical smoke held the wiper, executed one human reset, and verified the full shared start target:1/1 passed, with1initial reset,1controller action,1human intervention, no resampling. A missing recorder API dependency from the76732331 import was diagnosed and the exact matching sampler_draws.py imported; six affected source files now pass mypy. No learning pilot has launched.
+
+Exact depth20 practice search remains the primary unresolved gate. A delegated optimizer is testing exact caches and sound pruning; initial60-second probes remain incomplete. Wiper physical recovery and native calibration/frozen launch manifest also remain prerequisites. The older checkpoint below is retained as history, including its now-resolved approval block.
+
+## Historical18:23 checkpoint
+
 The implementation is isolated on `codex/sweep-learning-integration`. It contains the original Sweep physical controllers plus the approved EXP22c method/core changes from76732331, preserving Sweep KINDER8f600231 and kinder-baselines427ad6cd. Local dependency copies have independent Git metadata and clean pinned content.
 
 Implemented: continuous-practice environment with an explicit no-automatic-reset invariant; stock OpenDrawer/PickWiper/Sweep parameter forwarding;28 individual robot operators (including explicit OpenGripper); fixed valid-start candidate filter and shared seed manifest; separate evaluation environment with all5-cube goal and per-cube diagnostic; unique state/replay files for every episode; per-action physical effect/tick records; CLI registration and canonical grid ModelB adapter; exact deployment expectation and caching; actual resolved method configuration and sampler-draw recording.

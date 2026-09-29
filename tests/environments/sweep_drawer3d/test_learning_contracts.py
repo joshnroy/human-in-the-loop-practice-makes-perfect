@@ -137,9 +137,11 @@ def test_human_symbolic_reset_reaches_entire_declared_target():
         "HandEmpty",
         "WiperHome",
         "DrawerClosed",
+        "DrawerNotOpen",
         "RobotHome",
         "AnyCubeInPile",
         *(f"InPile{i}" for i in range(5)),
+        *(f"SweepReachable{i}" for i in range(5)),
     }
     assert after == _atoms(names=expected)
     assert reset.evaluate_practice_cost() == 3.0
@@ -178,10 +180,6 @@ def test_all_declared_recovery_actions_have_dispatch_paths(*, monkeypatch):
         env._execute_recovery(name="UnimplementedRecovery")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="ParkWiper does not yet forecast newly feasible picks",
-)
 def test_park_wiper_can_expose_reachable_cube_without_unnecessary_nudge():
     skills = {
         s.name: GroundSkill(skill=s, objects=(SweepSymbols.SCENE,)) for s in SweepSymbols.skills()
@@ -193,10 +191,62 @@ def test_park_wiper_can_expose_reachable_cube_without_unnecessary_nudge():
         ground_skill=park,
         effects={park: (park.add_effects, park.delete_effects, park.ignore_effects)},
     )
-    # A parked-wiper scene may have a feasible direct pick in the real controller.
-    # This fails until the model can represent that possibility without inventing
-    # an unconditional Pickable effect for every loose cube.
+    # A candidate pick may fail its physical planner. Availability does not claim
+    # exact future feasibility, and parking invents no universal Pickable fact.
     assert pick.preconditions <= after
+    assert not _atoms(names=("Pickable0",)) <= after
+
+
+def test_intermediate_drawer_can_open_or_close_without_claiming_endpoints():
+    skills = {
+        s.name: GroundSkill(skill=s, objects=(SweepSymbols.SCENE,)) for s in SweepSymbols.skills()
+    }
+    middle = _atoms(names=("HandEmpty", "DrawerNotOpen", "DrawerNotClosed"))
+    assert skills["OpenDrawer"].preconditions <= middle
+    assert skills["OpenResetDrawer"].preconditions <= middle
+    assert skills["CloseDrawer"].preconditions <= middle
+    assert not _atoms(names=("DrawerOpen",)) <= middle
+    assert not _atoms(names=("DrawerClosed",)) <= middle
+
+
+def test_sweep_cannot_predict_unreachable_cube_success_but_allows_already_scored():
+    sweep = next(
+        GroundSkill(skill=s, objects=(SweepSymbols.SCENE,))
+        for s in SweepSymbols.skills()
+        if s.name == "Sweep"
+    )
+    partial = _atoms(
+        names=(
+            "HoldingWiper",
+            "DrawerOpen",
+            "AnyCubeInPile",
+            "InDrawer0",
+            *(f"InPile{i}" for i in range(1, 5)),
+            *(f"SweepReachable{i}" for i in range(5)),
+        )
+    )
+    assert sweep.preconditions <= partial
+    floor = partial - _atoms(names=("SweepReachable4", "InPile4"))
+    assert not sweep.preconditions <= floor
+    assert not sweep.add_effects <= partial  # observed partial credit is not task success
+
+
+def test_deployment_skill_contract_matches_model_stock_policy():
+    from hitl_pmp.environments.sweep_drawer3d.skill_provider import SweepDrawerSkillProvider
+
+    provider = SweepDrawerSkillProvider(env=SweepDrawerEnvironment())
+    assert tuple(s.name for s in provider.deployment_skills()) == SweepSymbols.TRAINABLE
+    assert len(provider.skills()) == 28
+
+
+def test_robot_parking_requires_observed_departure_from_declared_start():
+    park = next(
+        GroundSkill(skill=s, objects=(SweepSymbols.SCENE,))
+        for s in SweepSymbols.skills()
+        if s.name == "ParkRobot"
+    )
+    assert not park.preconditions <= _atoms(names=("HandEmpty", "RobotHome"))
+    assert park.preconditions <= _atoms(names=("HandEmpty", "RobotAway"))
 
 
 def test_evaluation_resets_preserve_distinct_state_and_replay_paths(*, monkeypatch, tmp_path):

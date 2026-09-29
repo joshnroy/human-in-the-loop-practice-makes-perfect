@@ -550,7 +550,7 @@ class EesMethod(Method):
         unreachable goal still raises `PlanningFailure` -- keeping "stay stuck,
         unrescued" possible. `reset_cost_gate=False` skips that check: a reset-using
         plan is returned as planned, whatever the reset costs."""
-        skills = self.skills()
+        skills = self.skills() if practicing else self.skill_provider.deployment_skills()
         ground_skill_costs = costs
         cube_bin_ground_skills: tuple[GroundSkill, ...] = ()
         if practicing:

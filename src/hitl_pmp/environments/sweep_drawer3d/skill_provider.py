@@ -21,6 +21,10 @@ class SweepDrawerSkillProvider(SkillProvider):
     def skills(self) -> tuple[Skill, ...]:
         return SweepSymbols.skills(costs=self.robot_practice_costs)
 
+    def deployment_skills(self) -> tuple[Skill, ...]:
+        """Same three physical task controllers used by the deployment model."""
+        return tuple(s for s in self.skills() if s.name in SweepSymbols.TRAINABLE)
+
     def predicates(self) -> tuple[Predicate, ...]:
         return SweepSymbols.predicates()
 
@@ -69,9 +73,11 @@ class SweepDrawerSkillProvider(SkillProvider):
             "HandEmpty",
             "WiperHome",
             "DrawerClosed",
+            "DrawerNotOpen",
             "RobotHome",
             "AnyCubeInPile",
             *(f"InPile{i}" for i in range(5)),
+            *(f"SweepReachable{i}" for i in range(5)),
         )
         return frozenset(
             GroundAtom(predicate=SWEEP_PREDICATES[n], objects=(SweepSymbols.SCENE,)) for n in names
