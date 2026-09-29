@@ -34,10 +34,14 @@ def test_the_robot_pulls_the_drawer_past_the_countertop_and_closes_it_again() ->
 
 def test_stock_planning_functions_are_unmodified_upstream():
     from kinder_models.dynamic3d import utils
+    from kinder_models.dynamic3d.sweep3D import base_collision
     from kinder_models.dynamic3d.sweep3D import parameterized_skills as sweep
 
     assert sweep.PyBulletSim is utils.PyBulletSim
-    assert sweep.run_base_motion_planning is utils.run_base_motion_planning
+    # Josh approved this narrow native Sweep collision-admission exception.
+    # Require direct fork-native reuse; never install a runtime monkeypatch.
+    assert sweep.run_base_motion_planning is base_collision.run_base_motion_planning
+    assert base_collision._plan is utils.run_base_motion_planning
 
 
 def test_jitter_does_not_make_a_refused_pick_worth_planning_again() -> None:
