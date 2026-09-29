@@ -163,6 +163,10 @@ class SweepDrawerEnvironment(Environment):
                 "params": action[1:].tolist(),
                 "error": error,
                 "symbolic_success": effects_hold,
+                "declared_start_target_satisfied": all(
+                    atom.predicate.holds(self.current_state, atom.objects)
+                    for atom in SweepSymbols.human_reset(cost=0.0).add_effects
+                ),
                 "ticks": self.session().ticks - before,
                 "facts": {
                     n: bool(self.current_state.get(obj=SweepSymbols.SCENE, feature_name=n))
